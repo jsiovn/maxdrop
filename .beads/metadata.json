@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_database": "maxdrop",
+  "project_id": "412855bc-e09e-42b3-a34d-1d7a29471c0f"
+}

@@ -1,0 +1,9 @@
+repos:
+    primary: "."
+export:
+    auto: false
+routing:
+    mode: maintainer
+events-journal: true
+sync:
+    remote: origin
