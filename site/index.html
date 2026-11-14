@@ -174,7 +174,7 @@ footer p { margin: 0; }
     <div>
       <p class="eyebrow">Blender extension · early release</p>
       <h1>MaxDrop</h1>
-      <p class="lead">Drop a 3ds Max <code>.max</code> file onto Blender and get its meshes and materials. 3ds Max does not have to be installed.</p>
+      <p class="lead">Drop a 3ds Max <code>.max</code> file onto Blender and get its meshes and materials, or give it the <code>.zip</code>, <code>.rar</code> or <code>.7z</code> the scene came in. 3ds Max does not have to be installed.</p>
       <ul class="meta" aria-label="Release">
         <li>Version {{version}}</li>
         <li>Blender {{blender_min}} or newer</li>
@@ -272,14 +272,16 @@ footer p { margin: 0; }
         <div class="card">
           <h3>Import a scene</h3>
           <ol class="steps">
-            <li>Drag a <code>.max</code> file from your file manager onto Blender's 3D Viewport, or choose <em>File › Import › MaxDrop (.max)</em>.</li>
+            <li>Drag a <code>.max</code> file from your file manager onto Blender's 3D Viewport, or choose <em>File › Import › MaxDrop (.max, .zip, .rar, .7z)</em>.</li>
             <li>Check the options. For a scene modelled in millimeters set <strong>Scale</strong> to <code>0.001</code>, in centimeters <code>0.01</code>, in inches <code>0.0254</code>.</li>
             <li>Click <strong>Import</strong>. A large scene takes a while; Blender does not respond until it is done.</li>
           </ol>
+          <p>Scene packs work too: choose the <code>.zip</code>, <code>.rar</code> or <code>.7z</code> in <em>File › Import</em>, or drop the <code>.rar</code> or <code>.7z</code>. MaxDrop unpacks the scene with its maps into a folder named after the archive, next to it, and imports it from there. Nothing else in the pack is written or run.</p>
         </div>
         <div class="card">
           <h3>The options</h3>
           <ul>
+            <li><strong>Scene</strong> picks the <code>.max</code> to import from a pack that holds several.</li>
             <li><strong>Image Search</strong> also looks for the textures in the subfolders of the scene's folder.</li>
             <li><strong>Object Filter</strong> picks what to bring in: materials, UV maps, primitives, empties.</li>
             <li><strong>Collection</strong> puts the scene into a new collection named after the file.</li>
@@ -296,7 +298,7 @@ footer p { margin: 0; }
         </div>
         <div class="card" id="side-by-side">
           <h3>Next to io_scene_max</h3>
-          <p>MaxDrop can be enabled together with the importer it comes from. When you drop a <code>.max</code> file, Blender then asks which one to use: pick <strong>MaxDrop (.max)</strong>.</p>
+          <p>MaxDrop can be enabled together with the importer it comes from. When you drop a <code>.max</code> file, Blender then asks which one to use: pick <strong>MaxDrop (.max, .rar, .7z)</strong>.</p>
         </div>
         <div class="card" id="updating">
           <h3>Updating</h3>
@@ -328,6 +330,14 @@ footer p { margin: 0; }
         <p>Put the texture files in the folder of the <code>.max</code> file or in a subfolder and keep <strong>Image Search</strong> ticked. A channel driven by a procedural or nested map keeps its plain color in this version.</p>
       </details>
       <details>
+        <summary>Dropping a <code>.zip</code> opens Blender's extension installer</summary>
+        <p>Blender takes every dropped <code>.zip</code> for an extension to install, before any importer is asked. Choose the <code>.zip</code> in <em>File › Import › MaxDrop</em> instead; a <code>.rar</code> or <code>.7z</code> can be dropped.</p>
+      </details>
+      <details>
+        <summary>A <code>.rar</code> or <code>.7z</code> cannot be read</summary>
+        <p>MaxDrop unpacks them with a program already on your computer and brings none itself: UnRAR (installed with WinRAR), 7-Zip, or a recent bsdtar (the <code>tar</code> of an up-to-date Windows 11, and of macOS). Install one, or extract the archive yourself and import the <code>.max</code>. Archives with a password or split into parts are not read.</p>
+      </details>
+      <details>
         <summary>“Online access is off”</summary>
         <p>Only <strong>Check for Updates</strong> goes online. Allow it in <em>Edit › Preferences › System › Network › Allow Online Access</em>. Importing works without it.</p>
       </details>
@@ -353,7 +363,7 @@ footer p { margin: 0; }
         </div>
         <div>
           <h3>Privacy</h3>
-          <p>The importer reads the file you give it and the textures beside it, on your computer. The add-on goes online for one thing only, when you press Check for Updates: it reads the version list of this site. No telemetry, no account.</p>
+          <p>The importer reads the file you give it and the textures beside it, on your computer; from a scene pack it writes the scene and its maps into a folder next to the archive. The add-on goes online for one thing only, when you press Check for Updates: it reads the version list of this site. No telemetry, no account.</p>
         </div>
         <div>
           <h3>Open source</h3>

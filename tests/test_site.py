@@ -144,6 +144,18 @@ class Page(unittest.TestCase):
                 "Editable Mesh and Editable Poly"):
             self.assertTrue(needle in page, needle)
 
+    def test_the_page_says_how_scene_packs_are_imported(self):
+        page = self.page()
+        for needle in (
+                "MaxDrop (.max, .zip, .rar, .7z)",                 # the menu entry
+                "MaxDrop (.max, .rar, .7z)",                       # the file handler, for a drop
+                "into a folder named after the archive, next to it",
+                "Nothing else in the pack is written or run.",
+                "Blender takes every dropped <code>.zip</code> for an extension to install",
+                "UnRAR (installed with WinRAR), 7-Zip, or a recent bsdtar",
+                "<strong>Scene</strong> picks the <code>.max</code> to import from a pack that holds several."):
+            self.assertTrue(needle in page, needle)
+
     def test_the_page_adapts_to_the_screen_and_the_color_scheme(self):
         page = self.page()
         self.assertIn('<meta name="viewport" content="width=device-width, initial-scale=1">', page)

@@ -1,8 +1,8 @@
 # MaxDrop
 
 A free Blender extension that imports 3ds Max `.max` scenes, meshes and materials, **without 3ds Max**: drop the
-file onto Blender, or use *File › Import › MaxDrop (.max)*. Blender 4.2 or newer; tested on 4.2 LTS, 4.5 LTS and
-5.2 LTS.
+file onto Blender, or use *File › Import › MaxDrop*. It also takes the `.zip`, `.rar` or `.7z` scene pack the
+scene was downloaded as. Blender 4.2 or newer; tested on 4.2 LTS, 4.5 LTS and 5.2 LTS.
 
 > **Early release.** MaxDrop is a new fork of [io_scene_max](https://github.com/nrgsille76/io_scene_max), and
 > version 0.0.1 imports exactly what that importer imports: editable meshes with their UVs and simple materials.
@@ -49,8 +49,12 @@ above.
 
 ## Use
 
-1. Drag a `.max` file from your file manager onto the 3D Viewport, or choose *File › Import › MaxDrop (.max)*.
+1. Drag a `.max` file from your file manager onto the 3D Viewport, or choose *File › Import › MaxDrop (.max,
+   .zip, .rar, .7z)*. A scene pack works too: choose its `.zip`, `.rar` or `.7z` in *File › Import*, or drop the
+   `.rar` or `.7z` (a `.zip` cannot be dropped, see the FAQ).
 2. Check the options:
+   - **Scene**: only for a pack that holds several `.max` files. Pick the one to import; the popup also says how
+     many texture files come with it and where it will be unpacked.
    - **Scale**: scene units are not read yet, so one 3ds Max unit becomes one meter. Use `0.001` for a scene in
      millimeters, `0.01` for centimeters, `0.0254` for inches.
    - **Image Search** also looks for the textures in the subfolders of the scene's folder.
@@ -63,6 +67,19 @@ above.
 A `.max` file names its texture files but does not contain them: keep the maps in the folder of the scene or in a
 subfolder. A texture that is not found is skipped and the material keeps its color.
 
+### Scene packs
+
+From a `.zip`, `.rar` or `.7z`, MaxDrop writes the chosen `.max` and the pack's image and `.ies` files, side by side,
+into a folder named after the archive next to it, then imports the scene from there. Nothing else in the pack is
+written, and nothing in it is run. Importing the same pack again uses that folder again; a folder you extracted
+yourself next to the archive is used as it is. To unpack somewhere else, set **Unpack Scene Packs Into** in
+*Preferences › Add-ons › MaxDrop*; that folder is also used when the archive's own folder cannot be written.
+
+A `.zip` is read by MaxDrop itself. A `.rar` or `.7z` is unpacked by a program already on your computer: UnRAR
+(installed with WinRAR), 7-Zip, or a recent bsdtar (the `tar` of an up-to-date Windows 11, and of macOS).
+MaxDrop brings none of them and refuses versions with known security problems; without one, extract the archive
+yourself and import the `.max`.
+
 ## Update
 
 With **Check for Updates on Startup** ticked for the repository, Blender offers new versions in *Get Extensions*.
@@ -74,7 +91,12 @@ right away.
 **Do I need 3ds Max, V-Ray or Corona?** No. MaxDrop reads the `.max` file itself.
 
 **Can I keep io_scene_max installed?** Yes. MaxDrop has its own id, operator and file handler. When both are
-enabled and you drop a `.max` file, Blender asks which importer to use: pick **MaxDrop (.max)**.
+enabled and you drop a `.max` file, Blender asks which importer to use: pick **MaxDrop (.max, .rar, .7z)**.
+
+**Can I give it the archive I downloaded?** Yes: choose the `.zip`, `.rar` or `.7z` in *File › Import › MaxDrop*,
+or drop a `.rar` or `.7z` onto the 3D Viewport (see *Scene packs* above). A dropped `.zip` opens Blender's own
+extension installer instead, because Blender takes every dropped `.zip` for an extension to install before it asks
+any importer; it then complains about a missing manifest. Import a `.zip` through *File › Import*.
 
 **The scene arrives huge.** Import again with the **Scale** of its units (see *Use*).
 
@@ -88,7 +110,8 @@ MaxDrop's own test file is saved by 3ds Max 2020. Tell us in an issue when a fil
 
 ## Privacy
 
-The importer reads the file you give it and the textures beside it, on your computer. The add-on goes online for
+The importer reads the file you give it and the textures beside it, on your computer; from a scene pack it writes
+the scene and its maps into a folder next to the archive (or the folder you chose). The add-on goes online for
 one thing only, when you press **Check for Updates**: it reads the version list on `jsiovn.github.io`. No
 telemetry, no account.
 

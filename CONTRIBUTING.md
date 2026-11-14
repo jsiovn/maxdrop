@@ -46,11 +46,12 @@ the same extension enabled from two repositories clashes.
 | Path | What it is |
 |------|------------|
 | `maxdrop/__init__.py` | Thin aggregator: registers the modules of `_NAMES`, reloads them, and drops the modules imported on demand. |
-| `maxdrop/ops.py` | The import operator, its options popup, the `.max` file handler and the *File › Import* entry. |
+| `maxdrop/ops.py` | The import operator, its options popup (with the scene of a pack), the file handler for `.max`, `.rar` and `.7z`, and the *File › Import* entry. |
 | `maxdrop/import_max.py` | The engine inherited from io_scene_max: reads the file and builds the Blender objects. Imported only when a file is imported. |
-| `maxdrop/prefs.py` | The add-on preferences: version, Check for Updates, texture search folders. |
+| `maxdrop/prefs.py` | The add-on preferences: version, Check for Updates, where scene packs are unpacked, texture search folders. |
 | `maxdrop/update.py` | Check for Updates. The only code that goes online. |
 | `maxdrop/compat.py` | What differs between Blender 4.2 and 5.2. |
+| `maxdrop/intake/` | Scene packs: `archive.py` lists a `.zip`, `.rar` or `.7z` and unpacks the chosen `.max` with its maps into a flat folder; `external.py` runs the unpacker found on the computer for `.rar` and `.7z`. Plain Python, no `bpy`. |
 | `site/index.html`, `tools/make_site.py` | The landing page and the script that fills it from `dist/index.json`. |
 | `tools/baseline.py`, `tools/baseline_import.py` | Measure one import: time, peak memory, counts ([docs/BASELINE.md](docs/BASELINE.md)). |
 | `LICENSE`, `maxdrop/LICENSE` | The GPL v3 text, and the same file again so that it is in every zip. `tools/check_zip.py` checks a built zip for it. |
@@ -71,7 +72,9 @@ the same extension enabled from two repositories clashes.
   permission goes into the manifest.
 - Files that come from io_scene_max keep their copyright and license header. A change to one adds a line saying
   what changed and when; new files are `GPL-3.0-or-later`.
-- No new dependencies: the standard library and what Blender ships.
+- No new dependencies: the standard library and what Blender ships. `.rar` and `.7z` scene packs are unpacked by
+  a program found on the user's computer (UnRAR, 7-Zip, bsdtar), never bundled: UnRAR's license is not compatible
+  with the GPL, and a bundled program would have to be kept up to date by this project.
 - A change users can see gets a line in `CHANGELOG.md` and, if it changes what is imported, in
   `docs/SUPPORT.md`.
 

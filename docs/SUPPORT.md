@@ -73,6 +73,10 @@ of each path and looks for it in the folder of the `.max` file, and with **Image
 A file that is not found is skipped; the material keeps its plain color. The texture search folders of the
 add-on preferences are stored but not used by this version.
 
+From a scene pack, the image and `.ies` files of the pack are unpacked flat into the folder of the `.max`, so the
+lookup above finds them wherever they were in the archive. Of two maps with the same file name, the one nearest to
+the scene in the archive is kept.
+
 ## Files
 
 - `.max` files as 3ds Max writes them (OLE compound files). A scene whose streams 3ds Max compressed is only
@@ -80,6 +84,19 @@ add-on preferences are stored but not used by this version.
 - MaxDrop's own test file comes from 3ds Max 2020. The reader inherited from io_scene_max is written for many
   versions, which this project has not verified one by one yet.
 - A very large scene works but needs time and memory: see [BASELINE.md](BASELINE.md).
+- **Scene packs**: a `.zip`, `.rar` or `.7z` holding the scene, chosen in *File › Import*; a `.rar` or `.7z` can
+  also be dropped (a dropped `.zip` goes to Blender's extension installer). The format is recognised by the file's
+  content. The chosen `.max` and the pack's image and `.ies` files are unpacked into a folder named after the
+  archive, next to it or in the folder set in the preferences, and the scene is imported from there; a pack with
+  several scenes asks which one. Everything else in the pack is skipped.
+- `.zip` is read by Python's own `zipfile`: stored, Deflate, bzip2 and LZMA entries; not encrypted entries,
+  Deflate64 or archives split into parts. File names without the UTF-8 flag are decoded as UTF-8, then GBK,
+  Shift-JIS, cp1252, cp437.
+- `.rar` (RAR 5; RAR 4 through UnRAR or 7-Zip only) and `.7z` need a program already installed: UnRAR 7.23 or
+  newer, 7-Zip 25.01 or newer, or bsdtar 3.7.4 or newer (the `tar` of the system on macOS and Linux is taken
+  whatever version it prints). Not readable: password-protected archives and archives split into volumes.
+- Limits for one pack: 20,000 entries listed, 5,000 files and 16 GiB written, 4 GiB per file, 15 minutes, and
+  512 MiB left free on the disk.
 
 ## What comes next
 
