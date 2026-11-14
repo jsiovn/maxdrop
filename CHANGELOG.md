@@ -15,8 +15,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   The chosen `.max` is unpacked with the pack's image and `.ies` files into a folder named after the archive and
   imported from there; nothing else in the pack is written or run. A pack with several scenes asks which one in
   the options popup (**Scene**). An unpacked pack is used again, and so is a folder you extracted yourself.
-- `.rar` and `.7z` are unpacked by a program already installed (UnRAR, 7-Zip or bsdtar), from fixed paths and only
-  in versions without known extraction problems. MaxDrop bundles none.
+- `.rar` and `.7z` are unpacked by a program already installed (UnRAR, 7-Zip or bsdtar), from fixed paths and,
+  except for a bsdtar of macOS or Linux itself, only in versions without known extraction problems. MaxDrop bundles
+  none.
 - **Unpack Scene Packs Into** in the add-on preferences: next to the archive (default) or a folder of your choice,
   which is also used when the archive's folder cannot be written.
 
@@ -25,6 +26,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - The file handler is labelled `MaxDrop (.max, .rar, .7z)` and the menu entry `MaxDrop (.max, .zip, .rar, .7z)`;
   their ids are unchanged.
 - The extension's file permission says that scene archives are unpacked.
+- Several `.max` files chosen at once are imported one after the other, each on its own: an object can no longer
+  be parented to an object of the same name from another file.
 
 ## [0.0.1] - 2026-11-14
 

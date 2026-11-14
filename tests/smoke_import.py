@@ -14,7 +14,9 @@ one material; the counts are printed so that runs on different Blender versions 
 
 Every .max is then packed into a .zip in a scratch folder (the scene with the image and .ies files of its folder
 tree) and imported from it: same checks, no fewer images, unpacked beside the zip. A zip holding it twice under two
-names must be refused in EXEC mode with both names in the message, then import once the scene is named. A .zip,
+names must be refused in EXEC mode with both names in the message, then import once the scene is named. The same
+files are also chosen through directory + files, as the file browser and a drop pass them: a .max with a
+one-scene zip, a two-scene zip with another pack (refused), a file named .zip that is not one (refused). A .zip,
 .rar or .7z given as argument is imported through the operator as it is.
 Prints `IMPORT PASSED` (exit 0) or `IMPORT FAILED` (exit 1).
 """
@@ -112,16 +114,20 @@ def as_pack(max_path, scratch, images_of_max, archive):
     check("%s in a .zip: every image comes from the pack folder" % name, not outside, ", ".join(outside[:5]))
 
 
+def attempt(**options):
+    """(result, error message) of the operator in an emptied scene."""
+    empty_scene()
+    try:
+        return bpy.ops.import_scene.maxdrop(**options), ""
+    except RuntimeError as e:  # bpy.ops raises with the message when the operator reports an error
+        return {'CANCELLED'}, str(e)
+
+
 def two_scenes(max_path, scratch):
     name = os.path.basename(max_path)
     folder = os.path.join(scratch, "two")
     zip_path = make_zip(os.path.join(folder, "two.zip"), [("a/" + name, max_path), ("b/" + SECOND, max_path)])
-    empty_scene()
-    message = ""
-    try:
-        result = bpy.ops.import_scene.maxdrop(filepath=zip_path)
-    except RuntimeError as e:  # bpy.ops raises with the message when the operator reports an error
-        result, message = {'CANCELLED'}, str(e)
+    result, message = attempt(filepath=zip_path)
     check("two scenes in a .zip, none named: cancelled in EXEC mode", result == {'CANCELLED'}, str(result))
     check("two scenes in a .zip, none named: the message names both",
           ("a/" + name) in message and ("b/" + SECOND) in message, message.strip())
@@ -129,6 +135,35 @@ def two_scenes(max_path, scratch):
     import_one(zip_path, "two scenes in a .zip, %s named" % SECOND, pack_scene=SECOND)
     check("two scenes in a .zip: the named scene is unpacked into its own folder",
           os.path.isfile(os.path.join(folder, "two", "second", SECOND)))
+
+
+def selections(max_path, scratch):
+    """directory + files, as the file browser and a drop fill them."""
+    name = os.path.basename(max_path)
+    folder = os.path.join(scratch, "selection")
+    os.makedirs(folder)
+    shutil.copy(max_path, os.path.join(folder, name))
+    make_zip(os.path.join(folder, "one.zip"), [("x/" + SECOND, max_path)])
+    make_zip(os.path.join(folder, "two.zip"), [("a/" + name, max_path), ("b/" + SECOND, max_path)])
+    with open(os.path.join(folder, "fake.zip"), "wb") as f:
+        f.write(b"not an archive, whatever its name says")
+
+    result, message = attempt(directory=folder, files=[{"name": name}, {"name": "one.zip"}])
+    meshes = [ob for ob in bpy.data.objects if ob.type == 'MESH' and len(ob.data.polygons)]
+    check("a .max and a one-scene .zip chosen together: both imported", result == {'FINISHED'} and len(meshes) >= 2,
+          "%s, %d meshes %s" % (result, len(meshes), message.strip()))
+    check("a .max and a one-scene .zip chosen together: the pack is unpacked",
+          os.path.isfile(os.path.join(folder, "one", SECOND)))
+
+    result, message = attempt(directory=folder, files=[{"name": "two.zip"}, {"name": "one.zip"}])
+    check("a two-scene .zip chosen with another pack: cancelled, import it alone",
+          result == {'CANCELLED'} and "import that pack alone" in message, message.strip())
+    check("a two-scene .zip chosen with another pack: nothing of it unpacked",
+          not os.path.exists(os.path.join(folder, "two")))
+
+    result, message = attempt(directory=folder, files=[{"name": "fake.zip"}])
+    check("a file named .zip that is not an archive: cancelled with a message",
+          result == {'CANCELLED'} and "is not a .zip, .rar or .7z archive" in message, message.strip())
 
 
 def run():
@@ -152,6 +187,7 @@ def run():
             work = os.path.join(scratch, str(n))
             as_pack(path, work, images, archive)
             two_scenes(path, work)
+            selections(path, work)
     finally:
         maxdrop.unregister()
         shutil.rmtree(scratch, ignore_errors=True)

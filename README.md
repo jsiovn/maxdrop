@@ -72,13 +72,14 @@ subfolder. A texture that is not found is skipped and the material keeps its col
 From a `.zip`, `.rar` or `.7z`, MaxDrop writes the chosen `.max` and the pack's image and `.ies` files, side by side,
 into a folder named after the archive next to it, then imports the scene from there. Nothing else in the pack is
 written, and nothing in it is run. Importing the same pack again uses that folder again; a folder you extracted
-yourself next to the archive is used as it is. To unpack somewhere else, set **Unpack Scene Packs Into** in
-*Preferences › Add-ons › MaxDrop*; that folder is also used when the archive's own folder cannot be written.
+yourself next to the archive, named after it, is used as it is. To unpack somewhere else, set **Unpack Scene
+Packs Into** in *Preferences › Add-ons › MaxDrop*; that folder is also used when the archive's own folder cannot
+be written.
 
 A `.zip` is read by MaxDrop itself. A `.rar` or `.7z` is unpacked by a program already on your computer: UnRAR
 (installed with WinRAR), 7-Zip, or a recent bsdtar (the `tar` of an up-to-date Windows 11, and of macOS).
-MaxDrop brings none of them and refuses versions with known security problems; without one, extract the archive
-yourself and import the `.max`.
+MaxDrop brings none of them and refuses versions with known extraction problems (a bsdtar of macOS or Linux
+itself excepted, see [SECURITY.md](SECURITY.md)); without one, extract the archive yourself and import the `.max`.
 
 ## Update
 

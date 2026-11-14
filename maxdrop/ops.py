@@ -87,7 +87,6 @@ def _listing(path):
         found = archive.list_pack(path)
         if len(_LISTINGS) >= _CACHE_MAX:
             _LISTINGS.clear()
-            _TARGETS.clear()
         _LISTINGS[key] = found
     return found
 
@@ -143,18 +142,23 @@ def _choose(path, scenes, text):
 
 
 def _target(path, context):
-    """The folder the popup names, or the reason there is none."""
+    """(the folder the pack folder will be made in, None), or (None, the reason there is none). The pack folder's
+    own name is archive.unpack()'s choice (a free name, an earlier unpack, a copy extracted by hand)."""
     try:
-        parent = prefs.pack_parent(path, context)
+        return prefs.pack_parent(path, context), None
     except ValueError as e:
-        return str(e)
-    return os.path.join(parent, os.path.splitext(os.path.basename(path))[0])
+        return None, str(e)
 
 
 def _scene_search(self, context, edit_text):
     try:
-        packs = [p for p in _paths(self) if _archive().kind(p) is not None]
-        scenes = _listing(packs[0]).scenes if len(packs) == 1 else []
+        archive = _archive()
+        packs = [p for p in _paths(self) if archive.kind(p) is not None]
+        found = _cached(packs[0]) if len(packs) == 1 else None
+        # Listing a .rar or .7z starts a program: only a .zip is listed from a keystroke.
+        if found is None and len(packs) == 1 and archive.kind(packs[0]) == archive.KIND_ZIP:
+            found = _listing(packs[0])
+        scenes = found.scenes if found is not None else []
     except Exception:  # a suggestion list must never raise in the UI
         return []
     if edit_text in scenes:
@@ -239,14 +243,13 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
         layout.use_property_split = True
         layout.use_property_decorate = False
 
+        packs = [(p, _cached(p)) for p in _paths(self)]
+        packs = [(p, listing) for p, listing in packs if listing is not None]
         space = getattr(context, "space_data", None)
-        if space is not None and space.type == 'FILE_BROWSER':
-            import_pack(layout, self, None, context)
-        else:
-            packs = [(p, _cached(p)) for p in _paths(self)]
-            packs = [(p, listing) for p, listing in packs if listing is not None]
-            if packs:
-                import_pack(layout, self, packs, context)
+        if packs:
+            import_pack(layout, self, packs)
+        elif space is not None and space.type == 'FILE_BROWSER':
+            import_pack(layout, self, None)
         import_include(layout, self)
         import_transform(layout, self)
 
@@ -285,8 +288,11 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
         if open_choice:
             path = open_choice[0]
             # Only with a window: without one INVOKE_DEFAULT runs execute() again, which would loop.
-            if self.options.is_invoke and not bpy.app.background and self._reopen(path):
-                return {'CANCELLED'}
+            if self.options.is_invoke and not bpy.app.background:
+                self.report({'WARNING'}, "%s holds several scenes: choose one in the Scene field."
+                            % os.path.basename(path))
+                if self._reopen(path):
+                    return {'CANCELLED'}
             scenes = dict(packs)[path].scenes
             return self._error("%s holds %d scenes: %s. Type one into the Scene field and import again."
                                % (os.path.basename(path), len(scenes), _scene_list(scenes)))
@@ -338,12 +344,15 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
             finally:
                 if window:
                     window.cursor_set('DEFAULT')
+            if len(_TARGETS) >= _CACHE_MAX:
+                _TARGETS.clear()
+            # Here, not in draw(): finding the folder probes it by creating a folder.
             for path, _found in packs:
                 _TARGETS[_norm(path)] = _target(path, context)
         return self.invoke_popup(context)
 
 
-def import_pack(layout, operator, packs, context):
+def import_pack(layout, operator, packs):
     """packs: [(path, listing)] of a drop or a re-opened popup; None in the file browser, where nothing is listed."""
     header, body = layout.panel("MAXDROP_import_pack", default_closed=False)
     header.label(text="Scene Pack")
@@ -363,11 +372,13 @@ def import_pack(layout, operator, packs, context):
         else:
             body.label(text="Scene: " + _base(listing.scenes[0]))
         body.label(text=_plural(listing.assets, "texture file"))
-        target = _TARGETS.get(_norm(path)) or _target(path, context)
-        if os.path.isabs(target):
-            body.label(text="Unpacks into " + target)
+        parent, problem = _TARGETS.get(_norm(path), (None, None))
+        if problem:
+            body.label(text=problem, icon='ERROR')
         else:
-            body.label(text=target, icon='ERROR')
+            body.label(text="Unpacks into a folder named after the archive" + (" in" if parent else ""))
+            if parent:
+                body.label(text=parent)
 
 
 def import_include(layout, operator):
