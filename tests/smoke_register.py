@@ -26,6 +26,7 @@ OPERATORS = ("IMPORT_SCENE_OT_maxdrop", "MAXDROP_OT_check_updates", "MAXDROP_OT_
              "MAXDROP_OT_texture_dir_remove")
 HANDLER = "IO_FH_maxdrop"
 ENGINE = "maxdrop.import_max"
+INTAKE = "maxdrop.intake"
 failures = []
 
 
@@ -64,13 +65,19 @@ def run():
         check("%s: %d operators" % (round_, len(operators())), operators() == list(OPERATORS),
               sorted(set(OPERATORS) - set(operators())))
         handler = getattr(bpy.types, HANDLER, None)
-        check("%s: the .max file handler imports with import_scene.maxdrop and exports nothing" % round_,
-              handler is not None and handler.bl_import_operator == "import_scene.maxdrop"
-              and handler.bl_file_extensions == ".max" and not getattr(handler, "bl_export_operator", ""))
+        # .zip is left out on purpose: Blender's extension installer takes every dropped .zip first.
+        check("%s: the file handler takes .max, .rar and .7z, imports with import_scene.maxdrop, exports nothing"
+              % round_, handler is not None and handler.bl_import_operator == "import_scene.maxdrop"
+              and handler.bl_file_extensions == ".max;.rar;.7z" and not getattr(handler, "bl_export_operator", ""))
+        props = bpy.ops.import_scene.maxdrop.get_rna_type().properties
+        check("%s: the operator has the Scene field of a pack" % round_, "pack_scene" in props.keys())
+        check("%s: the file browser shows .max, .zip, .rar and .7z" % round_,
+              props["filter_glob"].default == "*.max;*.zip;*.rar;*.7z")
         check("%s: File > Import has the entry" % round_, in_import_menu(pkg))
         check("%s: the preferences belong to the package" % round_,
               sys.modules[pkg.__name__ + ".prefs"].MaxDropPreferences.bl_idname == pkg.__name__)
         check("%s: the engine is not loaded before an import" % round_, ENGINE not in sys.modules)
+        check("%s: the scene pack intake is not loaded before an import" % round_, INTAKE not in sys.modules)
         pkg.unregister()
         left = ["%s.%s" % (m, c) for m, c, ok in registered(pkg) if ok]
         check("%s: unregister removes every class" % round_, not left, ", ".join(left))
@@ -81,8 +88,12 @@ def run():
             # What an import leaves behind must not survive a reload: the files may be a newer version's.
             engine = importlib.import_module(ENGINE)
             check("the engine loads", hasattr(engine, "load") and getattr(pkg, "import_max", None) is engine)
+            intake = importlib.import_module(INTAKE + ".archive")
+            check("the scene pack intake loads", hasattr(intake, "unpack") and hasattr(pkg, "intake"))
             pkg = importlib.reload(pkg)
             check("reload drops the cached engine", ENGINE not in sys.modules and not hasattr(pkg, "import_max"))
+            check("reload drops the cached intake",
+                  not [m for m in sys.modules if m.startswith(INTAKE)] and not hasattr(pkg, "intake"))
 
 
 try:

@@ -25,7 +25,7 @@ copyright = [
 ]
 
 [permissions]
-files = "Read .max scenes and the textures they use"
+files = "Read .max scenes and textures, unpack scene archives"
 # Only the Check for Updates button: it reads the published repository index over HTTPS.
 network = "Check for updates of the add-on"
 

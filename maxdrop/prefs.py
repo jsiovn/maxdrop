@@ -2,12 +2,14 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Preferences of MaxDrop: the version with Check for Updates, and the folders to search for textures."""
+"""Preferences of MaxDrop: the version with Check for Updates, where scene packs are unpacked, and the folders to
+search for textures."""
 
 import os
+import tempfile
 
 import bpy
-from bpy.props import CollectionProperty, IntProperty, StringProperty
+from bpy.props import CollectionProperty, EnumProperty, IntProperty, StringProperty
 
 from . import update
 
@@ -30,6 +32,35 @@ def texture_dirs(context=None):
         if folder and os.path.isdir(folder) and folder not in found:
             found.append(folder)
     return found
+
+
+def writable(folder):
+    """True when a folder can be created in folder: os.access does not see Windows ACLs."""
+    try:
+        os.rmdir(tempfile.mkdtemp(prefix=".maxdrop-probe-", dir=folder))
+    except OSError:
+        return False
+    return True
+
+
+_CHOOSE = "Choose a folder under Unpack Scene Packs Into in the MaxDrop preferences."
+
+
+def pack_parent(archive_path, context=None):
+    """The folder a scene pack is unpacked into (its pack folder is made inside). ValueError with the message for
+    the user when there is none."""
+    p = _preferences(context)
+    folder = os.path.normpath(bpy.path.abspath(p.pack_dir)) if p is not None and p.pack_dir else ""
+    if p is not None and p.pack_target == 'FOLDER':
+        if not folder or not os.path.isdir(folder):
+            raise ValueError("The folder to unpack scene packs into does not exist. " + _CHOOSE)
+        return folder
+    beside = os.path.dirname(os.path.abspath(archive_path))
+    if writable(beside):
+        return beside
+    if folder and os.path.isdir(folder) and writable(folder):
+        return folder
+    raise ValueError("Cannot write into %s. %s" % (beside, _CHOOSE))
 
 
 class MaxDropTextureDir(bpy.types.PropertyGroup):
@@ -79,10 +110,28 @@ class MaxDropPreferences(bpy.types.AddonPreferences):
     bl_idname = __package__
 
     texture_dirs: CollectionProperty(type=MaxDropTextureDir)
+    pack_target: EnumProperty(
+        name="Unpack Scene Packs Into",
+        description="Where a .zip, .rar or .7z scene pack is unpacked before the import",
+        items=(('ARCHIVE', "Next to the Archive", "A folder named after the archive, beside it. The folder below "
+                "is used when the archive's folder cannot be written"),
+               ('FOLDER', "This Folder", "A folder named after the archive, inside the folder below")),
+        default='ARCHIVE',
+    )
+    pack_dir: StringProperty(
+        name="Folder",
+        description="Where scene packs are unpacked with This Folder, and when the archive's own folder cannot "
+        "be written",
+        subtype='DIR_PATH',
+    )
 
     def draw(self, context):
         col = self.layout.column()
         update.draw(col)
+        col.separator()
+        col.label(text="Unpack Scene Packs Into")
+        col.row().prop(self, "pack_target", expand=True)
+        col.prop(self, "pack_dir", text="")
         col.separator()
         col.label(text="Texture Search Folders")
         for i, item in enumerate(self.texture_dirs):

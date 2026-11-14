@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Import test for the MaxDrop dev package: every .max given, through the operator a user runs.
+"""Import test for the MaxDrop dev package: every .max given, through the operator a user runs, also as a pack.
 
 Run headless with an isolated profile so your own preferences are never touched:
   $env:BLENDER_USER_RESOURCES="<scratch>\\profile"
@@ -11,17 +11,27 @@ Run headless with an isolated profile so your own preferences are never touched:
 Without arguments it takes tests/fixtures/*.max; with no file at all it prints `IMPORT SKIPPED` and exits 0.
 Each file is imported into an emptied scene with the default options and must bring at least one mesh with faces and
 one material; the counts are printed so that runs on different Blender versions can be compared.
+
+Every .max is then packed into a .zip in a scratch folder (the scene with the image and .ies files of its folder
+tree) and imported from it: same checks, no fewer images, unpacked beside the zip. A zip holding it twice under two
+names must be refused in EXEC mode with both names in the message, then import once the scene is named. A .zip,
+.rar or .7z given as argument is imported through the operator as it is.
 Prints `IMPORT PASSED` (exit 0) or `IMPORT FAILED` (exit 1).
 """
 import glob
 import os
+import shutil
 import sys
+import tempfile
 import traceback
+import zipfile
 
 import bpy
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+ARCHIVES = (".zip", ".rar", ".7z")
+SECOND = "second.max"
 failures = []
 
 
@@ -46,10 +56,11 @@ def empty_scene():
             block.remove(item)
 
 
-def import_one(path):
-    name = os.path.basename(path)
+def import_one(path, label=None, **options):
+    """Import into an emptied scene and check it; the number of images."""
+    name = label or os.path.basename(path)
     empty_scene()
-    result = bpy.ops.import_scene.maxdrop(filepath=path)
+    result = bpy.ops.import_scene.maxdrop(filepath=path, **options)
     meshes = [ob for ob in bpy.data.objects if ob.type == 'MESH']
     check("%s: the operator finishes" % name, result == {'FINISHED'}, str(result))
     check("%s: a mesh with faces arrives" % name, any(len(ob.data.polygons) for ob in meshes))
@@ -57,6 +68,67 @@ def import_one(path):
     print("COUNTS %s: objects=%d meshes=%d vertices=%d polygons=%d materials=%d images=%d" % (
         name, len(bpy.data.objects), len(meshes), sum(len(ob.data.vertices) for ob in meshes),
         sum(len(ob.data.polygons) for ob in meshes), len(bpy.data.materials), len(bpy.data.images)))
+    return len(bpy.data.images)
+
+
+def inside(path, folder):
+    path, folder = os.path.normcase(os.path.abspath(path)), os.path.normcase(os.path.abspath(folder))
+    return os.path.commonpath([path, folder]) == folder
+
+
+def maps_of(max_path, extensions):
+    """(path in the zip, file) of the image and .ies files of the scene's folder tree."""
+    root = os.path.dirname(os.path.abspath(max_path))
+    for folder, _dirs, names in os.walk(root):
+        for n in sorted(names):
+            if n.rsplit(".", 1)[-1].casefold() in extensions:
+                full = os.path.join(folder, n)
+                yield os.path.relpath(full, root).replace(os.sep, "/"), full
+
+
+def make_zip(path, entries):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_STORED) as zf:
+        for arcname, source in entries:
+            zf.write(source, arcname)
+    return path
+
+
+def as_pack(max_path, scratch, images_of_max, archive):
+    name = os.path.basename(max_path)
+    stem = os.path.splitext(name)[0]
+    folder = os.path.join(scratch, "one")
+    entries = [(stem + "/" + name, max_path)]
+    entries += [(stem + "/" + arc, full) for arc, full in maps_of(max_path, archive.ASSET_EXTENSIONS)]
+    zip_path = make_zip(os.path.join(folder, stem + ".zip"), entries)
+    images = import_one(zip_path, "%s in a .zip (%d map files)" % (name, len(entries) - 1))
+    check("%s in a .zip: no fewer images than from the .max" % name, images >= images_of_max,
+          "%d from the .zip, %d from the .max" % (images, images_of_max))
+    pack = os.path.join(folder, stem)
+    check("%s in a .zip: unpacked beside the zip with its marker" % name,
+          os.path.isfile(os.path.join(pack, name)) and os.path.isfile(os.path.join(pack, archive.MARKER)), pack)
+    outside = [img.filepath for img in bpy.data.images
+               if img.filepath and not inside(bpy.path.abspath(img.filepath), pack)]
+    check("%s in a .zip: every image comes from the pack folder" % name, not outside, ", ".join(outside[:5]))
+
+
+def two_scenes(max_path, scratch):
+    name = os.path.basename(max_path)
+    folder = os.path.join(scratch, "two")
+    zip_path = make_zip(os.path.join(folder, "two.zip"), [("a/" + name, max_path), ("b/" + SECOND, max_path)])
+    empty_scene()
+    message = ""
+    try:
+        result = bpy.ops.import_scene.maxdrop(filepath=zip_path)
+    except RuntimeError as e:  # bpy.ops raises with the message when the operator reports an error
+        result, message = {'CANCELLED'}, str(e)
+    check("two scenes in a .zip, none named: cancelled in EXEC mode", result == {'CANCELLED'}, str(result))
+    check("two scenes in a .zip, none named: the message names both",
+          ("a/" + name) in message and ("b/" + SECOND) in message, message.strip())
+    check("two scenes in a .zip, none named: nothing unpacked", not os.path.exists(os.path.join(folder, "two")))
+    import_one(zip_path, "two scenes in a .zip, %s named" % SECOND, pack_scene=SECOND)
+    check("two scenes in a .zip: the named scene is unpacked into its own folder",
+          os.path.isfile(os.path.join(folder, "two", "second", SECOND)))
 
 
 def run():
@@ -66,13 +138,23 @@ def run():
     sys.path.insert(0, ROOT)
     import maxdrop
     maxdrop.register()
+    scratch = tempfile.mkdtemp(prefix="maxdrop-smoke-")
     try:
-        for path in files:
+        from maxdrop.intake import archive
+        for n, path in enumerate(files):
             check("%s exists" % path, os.path.isfile(path))
-            if os.path.isfile(path):
+            if not os.path.isfile(path):
+                continue
+            if path.lower().endswith(ARCHIVES):
                 import_one(path)
+                continue
+            images = import_one(path)
+            work = os.path.join(scratch, str(n))
+            as_pack(path, work, images, archive)
+            two_scenes(path, work)
     finally:
         maxdrop.unregister()
+        shutil.rmtree(scratch, ignore_errors=True)
     return True
 
 
