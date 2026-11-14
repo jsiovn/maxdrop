@@ -120,9 +120,9 @@ CHANGELOG.md
 
 ## Verification
 
-Prerequisites: Windows, repo root `D:\www\maxdrop`, the fixture `C:\maxdrop_fixtures\box_poly_standard.max`
-(outside the repo), Blender 5.2 `C:\Program Files\Blender Foundation\Blender 5.2\blender.exe`, portable
-`D:\tools\blender\blender-4.2.23-windows-x64\blender.exe` and `D:\tools\blender\blender-4.5.16-windows-x64\blender.exe`,
+Prerequisites: Windows, the repo root, the local fixture (outside the repo; its path is in the bead notes),
+Blender 5.2 `C:\Program Files\Blender Foundation\Blender 5.2\blender.exe`, portable Blender 4.2.23 and 4.5.16
+(paths in the bead notes),
 WinRAR 7.23 `C:\Program Files\WinRAR\Rar.exe`. `<S>` = a fresh scratch folder in the session scratchpad.
 
 1. `python -I -m unittest discover tests` -> `OK`.
@@ -130,7 +130,7 @@ WinRAR 7.23 `C:\Program Files\WinRAR\Rar.exe`. `<S>` = a fresh scratch folder in
    `BLENDER_USER_RESOURCES=<S>/profile-<v> "<B>" --background --factory-startup --python-exit-code 1 --python tests/smoke_register.py`
    -> last line `SMOKE PASSED`, exit 0.
 3. For each `<B>`:
-   `BLENDER_USER_RESOURCES=<S>/profile-<v> "<B>" --background --factory-startup --python-exit-code 1 --python tests/smoke_import.py -- C:/maxdrop_fixtures/box_poly_standard.max`
+   `BLENDER_USER_RESOURCES=<S>/profile-<v> "<B>" --background --factory-startup --python-exit-code 1 --python tests/smoke_import.py -- <the local fixture>`
    -> PASS lines for the .max, its zip (mesh, material, pack folder), the two-scene zip cancelled naming both
    scenes, the chosen scene; last line `IMPORT PASSED`, exit 0.
 4. Blender 5.2 only: copy the fixture to `<S>/rar/box/`, run `"C:/Program Files/WinRAR/Rar.exe" a -r -ma5 -ep1

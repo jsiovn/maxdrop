@@ -1,9 +1,9 @@
 # What MaxDrop imports
 
-**This page describes version 0.0.2.** It converts exactly what
-[io_scene_max](https://github.com/nrgsille76/io_scene_max) 1.9.2 converts: the engine (`maxdrop/import_max.py`)
-is that importer's, unchanged. What 0.0.2 adds is in front of it: a scene pack (`.zip`, `.rar`, `.7z`) is unpacked
-and its `.max` imported as before (see [Files](#files)).
+**This page describes version 0.0.2.** It converts exactly what [io_scene_max](https://github.com/nrgsille76/io_scene_max)
+1.9.2 converts: the engine (`maxdrop/import_max.py`) is that importer's, unchanged. What 0.0.2 adds is in front of
+it: a scene pack (`.zip`, `.rar`, `.7z`) is unpacked and its `.max` imported as before (see [Files](#files)), and
+several `.max` files chosen at once are imported one after the other.
 
 How far to trust the list: it says what the code does. Checked against 3ds Max so far, on MaxDrop's own test
 file, are an Editable Poly object, its first UV channel, its transform and a Standard material. Everything else
@@ -34,7 +34,7 @@ is read from the code and has not been compared with 3ds Max yet. The page is up
 | | Version 0.0.2 |
 |---|---|
 | Position, rotation, scale | **Imported** as static values of a Position / Rotation / Scale controller (Position XYZ, Bezier, TCB, Euler XYZ, the first entry of a list controller). Pivot offsets are applied to meshes. An object driven by another controller (LookAt, constraints…) arrives untransformed |
-| Parent and child | **Imported**, matched by object name: two objects with the same name can end up under the wrong parent |
+| Parent and child | **Imported**, matched by object name within one file: two objects with the same name can end up under the wrong parent |
 | Scene units | Not yet: one 3ds Max unit becomes one Blender unit, a meter. Set **Scale** when importing (`0.001` for millimeters, `0.01` for centimeters, `0.0254` for inches) |
 | Instances | Imported as separate copies of the mesh, not as shared mesh data |
 | Smoothing groups | Not yet: every mesh arrives flat-shaded |

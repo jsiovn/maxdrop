@@ -89,8 +89,8 @@ Working directory: the repo root. Blender paths are machine-specific (bead notes
 1. `python -I -m unittest discover tests` -> `OK`.
 2. Bundled Pythons, each -> `OK`:
    - `"C:\Program Files\Blender Foundation\Blender 5.2\5.2\python\bin\python.exe" -I -m unittest discover tests`
-   - `D:\tools\blender\blender-4.2.23-windows-x64\4.2\python\bin\python.exe -I -m unittest discover tests`
-   - `D:\tools\blender\blender-4.5.16-windows-x64\4.5\python\bin\python.exe -I -m unittest discover tests`
+   - `<portable Blender 4.2.23>\4.2\python\bin\python.exe -I -m unittest discover tests`
+   - `<portable Blender 4.5.16>\4.5\python\bin\python.exe -I -m unittest discover tests`
 3. `git check-ignore -q x.zip && git check-ignore -q pack.rar && git check-ignore -q pack.7z` -> exit 0; and
    `git check-ignore -q tests/fixtures/packs/a.zip` -> exit 1.
 4. Smoke register, isolated profile in the scratchpad, on each of Blender 5.2, 4.2.23, 4.5.16:

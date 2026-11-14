@@ -76,8 +76,8 @@ Working directory: the repo root. Machine paths come from the bead notes; none i
 1. `python -I -m unittest discover tests` -> `OK`; the output lists every real-tool case as `RAN` or `SKIPPED`.
 2. Bundled Pythons, each -> `OK`:
    - `"C:\Program Files\Blender Foundation\Blender 5.2\5.2\python\bin\python.exe" -I -m unittest discover tests`
-   - `D:\tools\blender\blender-4.2.23-windows-x64\4.2\python\bin\python.exe -I -m unittest discover tests`
-   - `D:\tools\blender\blender-4.5.16-windows-x64\4.5\python\bin\python.exe -I -m unittest discover tests`
+   - `<portable Blender 4.2.23>\4.2\python\bin\python.exe -I -m unittest discover tests`
+   - `<portable Blender 4.5.16>\4.5\python\bin\python.exe -I -m unittest discover tests`
 3. Once with the portable 7-Zip of the scratchpad: `MAXDROP_TEST_7Z=<scratch>\7zip\7z.exe python -I -m
    unittest tests.test_intake_external -v` -> 7-Zip cases `RAN`, `OK`.
 4. On this machine (System32 tar.exe, UnRAR.exe) the real-tool cases RAN: RAR 5 normal + solid + 7z give the

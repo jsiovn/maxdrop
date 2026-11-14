@@ -34,7 +34,7 @@ version bump and the docs that must be true for 0.0.2.
       with scene packs added in front of it; every "Version 0.0.1" table heading and the Textures paragraph -> 0.0.2.
 - [ ] `README.md`: "version 0.0.2 imports exactly what that importer imports" and "## What version 0.0.2 imports".
 - [ ] `SECURITY.md` line 55: "version 0.0.2 uses the parser inherited from io_scene_max as it is".
-- [ ] `site/index.html` line 193: "This version imports exactly what that importer imports, now also from the scene
+- [ ] `site/index.html` line 193: "This version imports exactly what that importer imports, also from the scene
       pack it came in; nothing more yet."
 - [ ] Run `python -I -m unittest discover tests` -> `OK` (includes `test_this_release_is_in_the_changelog`).
 - [ ] Commit `Set version 0.0.2 and make the docs true for it` (Bead: maxdrop-tpr.4).
@@ -90,13 +90,13 @@ copies afterwards. Results go to the bead notes as counts only.
 
 ## Verification
 
-Working directory `D:\www\maxdrop`; Blender paths in the bead notes (5.2 installed, 4.2.23 and 4.5.16 portable).
+Working directory: the repo root; Blender paths in the bead notes (5.2 installed, 4.2.23 and 4.5.16 portable).
 Each Blender run: `BLENDER_USER_RESOURCES=<scratch>/profile-<ver>` + `--background --factory-startup --python-exit-code 1`.
 
 1. `python -I -m unittest discover tests` -> `OK`
 2. `<blender> ... --python tests/smoke_register.py` -> `SMOKE PASSED`, on 5.2, 4.2.23, 4.5.16
-3. `<blender> ... --python tests/smoke_import.py -- C:\maxdrop_fixtures\box_poly_standard.max` -> `IMPORT PASSED`, on all three
-4. `<blender> ... --python <scratch>/gate_packs.py -- D:\www\maxdrop C:\maxdrop_fixtures\box_poly_standard.max <scratch>/gate-<ver>` -> `GATE PASSED` on all three (7z password case recorded as not testable)
+3. `<blender> ... --python tests/smoke_import.py -- <the local fixture>` -> `IMPORT PASSED`, on all three
+4. `<blender> ... --python <scratch>/gate_packs.py -- <repo root> <the local fixture> <scratch>/gate-<ver>` -> `GATE PASSED` on all three (7z password case recorded as not testable)
 5. `powershell -ExecutionPolicy Bypass -File build.ps1` -> `Built ...\dist\maxdrop-0.0.2.zip ...`; check_zip runs inside it; also `python tools/check_zip.py dist\maxdrop-0.0.2.zip` -> exit 0
 6. Install 0.0.1 + upgrade to 0.0.2 from localhost on 4.2.23 and 5.2 -> version 0.0.2 installed, operator registered, pack import FINISHED
 7. Corpus scene A on 5.2: zip and rar import FINISHED; counts recorded (no names); scratch copies removed
