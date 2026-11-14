@@ -1,3 +1,5 @@
+# Modified for MaxDrop, 2026-11-14: the build output and the local corpus are added below.
+
 # Librarys.
 lib/
 .env
@@ -22,3 +24,26 @@ __pypackages__/
 
 # Locally built extensions.
 .zip
+
+# MaxDrop: the build output (build.ps1).
+dist/
+
+# MaxDrop: scenes that are not ours never enter the repository. Fixtures are the self-authored files of
+# tests/fixtures/ only.
+corpus/
+*.max
+!tests/fixtures/*.max
+
+.beads/proxieddb/
+
+# BEGIN TEMPLATE AGENT WORKFLOW LOCAL-ONLY
+.beads-credential-key
+.beads/interactions.jsonl
+.beads/epic-runs
+.claude/scheduled_tasks.lock
+.claude/settings.local.json
+.bv/
+*.db
+.dolt/
+*.gate.lock*
+# END TEMPLATE AGENT WORKFLOW LOCAL-ONLY

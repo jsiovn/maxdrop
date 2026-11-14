@@ -1,0 +1,84 @@
+# Contributing
+
+Bug reports, ideas and pull requests are welcome.
+
+## Reporting a bug
+
+Open an [issue](https://github.com/jsiovn/maxdrop/issues/new/choose) with your Blender version, your operating
+system, how you installed the add-on and what the system console printed during the import (on Windows: *Window ›
+Toggle System Console*; elsewhere start Blender from a terminal). Say which 3ds Max version and renderer the file
+comes from if you know.
+
+A `.max` file that shows the problem helps most, but only attach one you made yourself or may share: **never
+post a scene you bought or received from a client.** If the scene cannot be shared, a small file with one
+object that shows the same problem is just as good.
+
+Check [docs/SUPPORT.md](docs/SUPPORT.md) first: much of what a scene holds is simply not imported yet.
+
+## Working on the code
+
+You need Blender 4.2 or newer and any Python 3 for the plain tests. There is nothing to install.
+
+```powershell
+python -I -m unittest discover tests                  # the tools, the landing page, the license files: no Blender
+powershell -ExecutionPolicy Bypass -File build.ps1    # dist\: the zip, index.json and the landing page
+```
+
+Run the Blender tests headless with a profile of their own, so your preferences are never touched:
+
+```powershell
+$env:BLENDER_USER_RESOURCES = "$env:TEMP\maxdrop-profile"
+& blender --background --factory-startup --python-exit-code 1 --python tests\smoke_register.py
+& blender --background --factory-startup --python-exit-code 1 --python tests\smoke_import.py -- <a .max file>
+```
+
+On Linux and macOS the same commands work with `BLENDER_USER_RESOURCES=/tmp/maxdrop-profile blender …` and
+forward slashes; `build.ps1` is three Blender commands, `python tools/check_zip.py <zip>` and
+`python tools/make_site.py dist` (see the `test` workflow).
+
+To try an install or an update the way users get them, serve `dist\` with
+`python -m http.server --directory dist`, add `http://127.0.0.1:8000/index.json` in *Preferences › Get Extensions
+› Repositories* and install from it. Do not test with *Install from Disk*: Blender never updates that copy, and
+the same extension enabled from two repositories clashes.
+
+## Layout
+
+| Path | What it is |
+|------|------------|
+| `maxdrop/__init__.py` | Thin aggregator: registers the modules of `_NAMES`, reloads them, and drops the modules imported on demand. |
+| `maxdrop/ops.py` | The import operator, its options popup, the `.max` file handler and the *File › Import* entry. |
+| `maxdrop/import_max.py` | The engine inherited from io_scene_max: reads the file and builds the Blender objects. Imported only when a file is imported. |
+| `maxdrop/prefs.py` | The add-on preferences: version, Check for Updates, texture search folders. |
+| `maxdrop/update.py` | Check for Updates. The only code that goes online. |
+| `maxdrop/compat.py` | What differs between Blender 4.2 and 5.2. |
+| `site/index.html`, `tools/make_site.py` | The landing page and the script that fills it from `dist/index.json`. |
+| `tools/baseline.py`, `tools/baseline_import.py` | Measure one import: time, peak memory, counts ([docs/BASELINE.md](docs/BASELINE.md)). |
+| `LICENSE`, `maxdrop/LICENSE` | The GPL v3 text, and the same file again so that it is in every zip. `tools/check_zip.py` checks a built zip for it. |
+| `tests/` | `test_site.py`, `test_license.py` (plain Python), `smoke_register.py`, `smoke_import.py` (inside Blender). |
+
+## Conventions
+
+- **Blender 4.2 LTS to 5.2 LTS, one zip.** Write Python 3.11 syntax (4.2 and 4.5 ship 3.11). Reach node sockets
+  by name and check that they exist, never by index: `Thin Wall` and `Diffuse Roughness` are missing in 4.2. Use
+  `Material.surface_render_method`, not `shadow_method` or `blend_method`. Anything else that differs goes into
+  `compat.py`.
+- **No commercial assets in git, ever**: no bought scene, none of its textures, names or dumps. Test files are
+  self-authored, tiny, and free of user names, machine names and paths.
+- English only for UI strings and comments; comment only the non-obvious *why*.
+- Operators are `maxdrop.*` (the importer is `import_scene.maxdrop`), classes `MAXDROP_OT_*`; every module in
+  `_NAMES` has `register()` / `unregister()` and its classes in a module-level `_classes` tuple.
+- Only `update.py` reaches the network, only on the button, and it honours `bpy.app.online_access`. A new
+  permission goes into the manifest.
+- Files that come from io_scene_max keep their copyright and license header. A change to one adds a line saying
+  what changed and when; new files are `GPL-3.0-or-later`.
+- No new dependencies: the standard library and what Blender ships.
+- A change users can see gets a line in `CHANGELOG.md` and, if it changes what is imported, in
+  `docs/SUPPORT.md`.
+
+## Pull requests
+
+Keep them small and say what you tested and on which Blender version. The `test` workflow runs the plain tests
+and, on Blender 4.2 LTS, 4.5 LTS and 5.2 LTS, the build and the register smoke test.
+
+By contributing you agree that your work is released under the [GNU General Public License](LICENSE), either
+version 3 of the License, or (at your option) any later version (GPL-3.0-or-later).

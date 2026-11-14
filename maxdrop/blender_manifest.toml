@@ -1,0 +1,35 @@
+schema_version = "1.0.0"
+
+id = "maxdrop"
+version = "0.0.1"
+name = "MaxDrop"
+tagline = "Import 3ds Max .max scenes with materials, no 3ds Max needed"
+maintainer = "jsiovn"
+type = "add-on"
+
+website = "https://jsiovn.github.io/maxdrop/"
+
+tags = ["Import-Export", "Mesh", "Material"]
+
+blender_version_min = "4.2.0"
+
+license = [
+  "SPDX:GPL-3.0-or-later",
+]
+# A fork of io_scene_max: the first three lines are the upstream manifest's own.
+copyright = [
+  "2023-2024 Sebastian Schrand",
+  "2017-2022 Jens M. Plonka",
+  "2005-2018 Philippe Lagadec",
+  "2026 jsiovn",
+]
+
+[permissions]
+files = "Read .max scenes and the textures they use"
+# Only the Check for Updates button: it reads the published repository index over HTTPS.
+network = "Check for updates of the add-on"
+
+[build]
+paths_exclude_pattern = [
+  "__pycache__/",
+]

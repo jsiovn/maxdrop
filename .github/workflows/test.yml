@@ -1,0 +1,80 @@
+name: Test
+
+# The plain tests (the tools, the landing page and the license files: no Blender, no network), then on each
+# Blender of the matrix: build, validate, the license text in the zip and the register smoke test.
+#
+# Runs on pull requests and by hand. On a push to main it runs as the first job of the Publish workflow, which
+# calls this file: nothing is published unless it passes, and the tests do not run twice.
+
+on:
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Plain Python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: The tools, the landing page, the license files
+        run: python3 -I -m unittest discover tests
+
+  blender:
+    name: Blender ${{ matrix.blender }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The three LTS lines the manifest's blender_version_min = 4.2.0 covers: all three must pass, the
+        # manifest only claims what is tested.
+        blender: ["4.2.23", "4.5.16", "5.2.4"]
+    env:
+      BLENDER_VERSION: ${{ matrix.blender }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Blender
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ~/blender
+          key: blender-${{ matrix.blender }}-linux-x64
+
+      - name: Download Blender
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          series=${BLENDER_VERSION%.*}
+          mkdir -p ~/blender
+          curl -fsSL "https://download.blender.org/release/Blender$series/blender-$BLENDER_VERSION-linux-x64.tar.xz" \
+            | tar -xJ -C ~/blender --strip-components=1
+
+      # Blender links X11/GL libraries even when it runs headless.
+      - name: Libraries Blender links
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libx11-6 libxi6 libxxf86vm1 libxfixes3 libxrender1 libxkbcommon0 libsm6 libgl1 libegl1 >/dev/null
+
+      - name: Build, validate, index, make the landing page
+        run: |
+          set -euo pipefail
+          B=~/blender/blender
+          version=$(grep -m1 -oP '^version\s*=\s*"\K[^"]+' maxdrop/blender_manifest.toml)
+          mkdir -p dist
+          "$B" --factory-startup --command extension build --source-dir maxdrop --output-dir dist
+          "$B" --factory-startup --command extension validate "dist/maxdrop-$version.zip"
+          # The GPL text travels with the add-on.
+          python3 tools/check_zip.py "dist/maxdrop-$version.zip"
+          "$B" --factory-startup --command extension server-generate --repo-dir dist
+          python3 tools/make_site.py dist
+          test -s dist/index.html
+
+      - name: Register smoke test
+        run: |
+          BLENDER_USER_RESOURCES="$RUNNER_TEMP/blender-profile" ~/blender/blender --background --factory-startup \
+            --python-exit-code 1 --python tests/smoke_register.py

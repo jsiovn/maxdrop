@@ -1,0 +1,72 @@
+name: Bug report
+description: A .max file does not import as it should, or the add-on misbehaves
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. MaxDrop is an early release: please check
+        [what it imports](https://github.com/jsiovn/maxdrop/blob/main/docs/SUPPORT.md) first, much of a scene
+        (lights, cameras, modifiers, units) is not imported yet.
+
+        **Never attach a scene you bought or received from a client.** A small file you made yourself that shows
+        the same problem is just as useful.
+  - type: input
+    id: blender
+    attributes:
+      label: Blender version
+      description: Help › About Blender, e.g. 4.5.3 LTS
+    validations:
+      required: true
+  - type: input
+    id: addon
+    attributes:
+      label: MaxDrop version
+      description: Shown in Preferences › Add-ons › MaxDrop
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: Windows 11, macOS 15 (Apple Silicon), Ubuntu 24.04 …
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install it?
+      options:
+        - Dragged the button of the install page onto Blender
+        - Added the repository URL in Get Extensions
+        - Install from Disk
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: Where the .max file comes from
+      description: 3ds Max version and renderer if you know them
+      placeholder: 3ds Max 2020, V-Ray 5
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+      description: The import options you used, what arrived in Blender and what is wrong or missing.
+    validations:
+      required: true
+  - type: textarea
+    id: console
+    attributes:
+      label: System console output
+      description: >-
+        Windows: Window › Toggle System Console. macOS / Linux: start Blender from a terminal. Paste what the
+        import printed: the lines "reading …", "skipping …" and any error. Remove object and file names you do
+        not want to publish.
+      render: text
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: Screenshots, the file size, how many objects the scene has …

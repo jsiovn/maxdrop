@@ -2,10 +2,13 @@
 #
 # SPDX-License-Identifier: GPL-2.0-or-later
 
+# Modified for MaxDrop, 2026-11-14 (jsiovn). This file was `__init__.py` of io_scene_max 1.9.2. The operator, the
+# file handler, the panel ids and the menu text are renamed so that MaxDrop can be installed next to io_scene_max;
+# the export operator the handler named never existed and is gone; the package `__init__.py` now reloads the
+# modules. The options and what they import are unchanged.
+
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
-__version__ = "1.9.2"
-__date__ = "18 Nov 2023"
 
 
 import bpy
@@ -13,7 +16,6 @@ from bpy_extras.io_utils import (
     ImportHelper,
     orientation_helper,
     axis_conversion,
-    poll_file_object_drop,
 )
 from bpy.props import (
     BoolProperty,
@@ -23,17 +25,14 @@ from bpy.props import (
     CollectionProperty,
 )
 
-if "bpy" in locals():
-    import importlib
-    if "import_max" in locals():
-        importlib.reload(import_max)
+from .compat import poll_file_object_drop
 
 
 @orientation_helper(axis_forward='Y', axis_up='Z')
-class ImportMax(bpy.types.Operator, ImportHelper):
-    """Import Autodesk MAX"""
-    bl_idname = "import_scene.max"
-    bl_label = "Import MAX (.max)"
+class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
+    """Import a 3ds Max .max scene"""
+    bl_idname = "import_scene.maxdrop"
+    bl_label = "Import .max (MaxDrop)"
     bl_options = {'PRESET', 'UNDO'}
 
     filename_ext = ".max"
@@ -97,7 +96,7 @@ class ImportMax(bpy.types.Operator, ImportHelper):
 
 
 def import_include(layout, operator):
-    header, body = layout.panel("MAX_import_include", default_closed=False)
+    header, body = layout.panel("MAXDROP_import_include", default_closed=False)
     header.label(text="Include")
     if body:
         layrow = layout.row(align=True)
@@ -110,7 +109,7 @@ def import_include(layout, operator):
 
 
 def import_transform(layout, operator):
-    header, body = layout.panel("MAX_import_transform", default_closed=False)
+    header, body = layout.panel("MAXDROP_import_transform", default_closed=False)
     header.label(text="Transform")
     if body:
         layout.prop(operator, "scale_objects")
@@ -121,11 +120,10 @@ def import_transform(layout, operator):
         layout.prop(operator, "axis_up")
 
 
-class IO_FH_max(bpy.types.FileHandler):
-    bl_idname = "IO_FH_max"
-    bl_label = "3DS MAX"
-    bl_import_operator = "import_scene.max"
-    bl_export_operator = "export_scene.max"
+class IO_FH_maxdrop(bpy.types.FileHandler):
+    bl_idname = "IO_FH_maxdrop"
+    bl_label = "MaxDrop (.max)"
+    bl_import_operator = "import_scene.maxdrop"
     bl_file_extensions = ".max"
 
     @classmethod
@@ -134,20 +132,19 @@ class IO_FH_max(bpy.types.FileHandler):
 
 
 def menu_func(self, context):
-    self.layout.operator(ImportMax.bl_idname, text="Autodesk MAX (.max)")
+    self.layout.operator(IMPORT_SCENE_OT_maxdrop.bl_idname, text="MaxDrop (.max)")
+
+
+_classes = (IMPORT_SCENE_OT_maxdrop, IO_FH_maxdrop)
 
 
 def register():
-    bpy.utils.register_class(ImportMax)
-    bpy.utils.register_class(IO_FH_max)
+    for cls in _classes:
+        bpy.utils.register_class(cls)
     bpy.types.TOPBAR_MT_file_import.append(menu_func)
 
 
 def unregister():
     bpy.types.TOPBAR_MT_file_import.remove(menu_func)
-    bpy.utils.unregister_class(IO_FH_max)
-    bpy.utils.unregister_class(ImportMax)
-
-
-if __name__ == "__main__":
-    register()
+    for cls in reversed(_classes):
+        bpy.utils.unregister_class(cls)

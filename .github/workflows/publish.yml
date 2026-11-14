@@ -1,0 +1,231 @@
+name: Publish
+
+# Runs the Test workflow, then builds the extension with Blender's own CLI, publishes a static extension
+# repository (index.json + zip) and its landing page on GitHub Pages for Blender's Check for Updates, and cuts
+# release v<version>.
+#
+# EVERY PUSH TO MAIN IS TESTED HERE (the `test` job calls test.yml); a failed test publishes nothing.
+#
+# PUBLISHING IS GATED ON THE VERSION in maxdrop/blender_manifest.toml, not on which files changed:
+#   * deploy runs only when that version differs from the one live in index.json, so a published
+#     version's zip stays immutable - bump the version to ship;
+#   * release runs only when tag v<version> does not exist yet.
+# The two are decided separately so a run that deployed but failed to release (or the reverse)
+# completes the missing half when re-run.
+#
+# A VERSION'S ZIP IS BUILT ONCE: as soon as release v<version> exists, every later run publishes that
+# release's zip again instead of building, so the hash in index.json never changes for a version.
+#
+# A CHANGE TO THE LANDING PAGE ALONE (site/**, tools/**) ships by hand: "Run workflow" with "redeploy"
+# ticked. It publishes the page again around the zip of the existing release.
+#
+# ONE-TIME OWNER SETUP (there is no configure-pages step):
+#   gh api repos/jsiovn/maxdrop/pages -X POST -f build_type=workflow   # 409 -> use -X PUT
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      redeploy:
+        description: Deploy the landing page again without a version bump (the released zip is kept)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  BLENDER_VERSION: "5.2.4"
+  SITE: https://jsiovn.github.io/maxdrop
+  EXTENSION_ID: maxdrop
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      deploy: ${{ steps.gate.outputs.deploy }}
+      release: ${{ steps.gate.outputs.release }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read version from the manifest
+        id: meta
+        run: |
+          set -euo pipefail
+          version=$(grep -m1 -oP '^version\s*=\s*"\K[^"]+' "$EXTENSION_ID/blender_manifest.toml") || {
+            echo "::error::No version line in $EXTENSION_ID/blender_manifest.toml."; exit 1; }
+          if ! printf '%s' "$version" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Malformed version '$version'."; exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # Fail open on an unreachable index.json (first deploy, Pages outage): the worst misfire is
+      # an idempotent re-deploy of the same version, never a skipped new one.
+      - name: Gate - what is already published
+        id: gate
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          REDEPLOY: ${{ inputs.redeploy }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          live=$(curl -fsSL --max-time 20 "$SITE/index.json?t=$(date +%s)" 2>/dev/null \
+            | python3 -c 'import json, os, sys; print(next((p["version"] for p in json.load(sys.stdin)["data"] if p["id"] == os.environ["EXTENSION_ID"]), ""))' \
+            2>/dev/null || true)
+          # reuse: a released version is published with that release's zip, never with a new build.
+          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            release=false
+            reuse=true
+          elif git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null 2>&1; then
+            release=false
+            reuse=false
+          else
+            release=true
+            reuse=false
+          fi
+          if [ "$live" != "$VERSION" ] || [ "$REDEPLOY" = true ]; then
+            deploy=true
+          else
+            deploy=false
+          fi
+          echo "Live: '${live:-none}', manifest: $VERSION -> deploy=$deploy, release=$release, reuse=$reuse"
+          if [ "$deploy" = false ] && [ "$release" = false ]; then
+            echo "::notice::Version $VERSION is already published and released. Bump 'version' in $EXTENSION_ID/blender_manifest.toml to ship changes, or run this workflow by hand with 'redeploy' for the landing page alone."
+          fi
+          echo "deploy=$deploy" >> "$GITHUB_OUTPUT"
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+          echo "reuse=$reuse" >> "$GITHUB_OUTPUT"
+
+      - name: Guard - CHANGELOG section for this version
+        if: steps.gate.outputs.deploy == 'true' || steps.gate.outputs.release == 'true'
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          awk -v v="$VERSION" '
+            index($0, "## [" v "]") == 1 { on = 1; next }
+            on && /^## \[/ { exit }
+            on { print }
+          ' CHANGELOG.md > release_notes.md
+          if ! grep -qF "## [$VERSION]" CHANGELOG.md || ! grep -q '[^[:space:]]' release_notes.md; then
+            echo "::error::CHANGELOG.md has no non-empty '## [$VERSION]' section."; exit 1
+          fi
+
+      - name: Cache Blender
+        if: steps.gate.outputs.deploy == 'true' || steps.gate.outputs.release == 'true'
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ~/blender
+          key: blender-${{ env.BLENDER_VERSION }}-linux-x64
+
+      - name: Download Blender
+        if: (steps.gate.outputs.deploy == 'true' || steps.gate.outputs.release == 'true') && steps.cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          series=${BLENDER_VERSION%.*}
+          mkdir -p ~/blender
+          curl -fsSL "https://download.blender.org/release/Blender$series/blender-$BLENDER_VERSION-linux-x64.tar.xz" \
+            | tar -xJ -C ~/blender --strip-components=1
+
+      # Blender links X11/GL libraries even when it only runs a --command.
+      - name: Build, validate and index the extension, make the landing page
+        if: steps.gate.outputs.deploy == 'true' || steps.gate.outputs.release == 'true'
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          REUSE: ${{ steps.gate.outputs.reuse }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libx11-6 libxi6 libxxf86vm1 libxfixes3 libxrender1 libxkbcommon0 libsm6 libgl1 libegl1 >/dev/null
+          B=~/blender/blender
+          mkdir -p dist
+          if [ "$REUSE" = true ]; then
+            gh release download "v$VERSION" --repo "$GITHUB_REPOSITORY" --pattern "$EXTENSION_ID-$VERSION.zip" --dir dist
+          else
+            "$B" --factory-startup --command extension build --source-dir "$EXTENSION_ID" --output-dir dist
+          fi
+          "$B" --factory-startup --command extension validate "dist/$EXTENSION_ID-$VERSION.zip"
+          # The GPL text travels with the add-on: no page and no release for a zip without it.
+          python3 tools/check_zip.py "dist/$EXTENSION_ID-$VERSION.zip"
+          # No --html: Blender's page is a bare table, ours is made from site/index.html.
+          "$B" --factory-startup --command extension server-generate --repo-dir dist
+          python3 -c '
+          import json, os
+          ids = [(p["id"], p["version"]) for p in json.load(open("dist/index.json"))["data"]]
+          want = [(os.environ["EXTENSION_ID"], os.environ["VERSION"])]
+          assert ids == want, "index.json lists %r, expected %r" % (ids, want)
+          print("index.json OK:", ids)
+          '
+          python3 tools/make_site.py dist --site "$SITE"
+          test -s dist/index.html
+
+      - name: Upload Pages artifact
+        if: steps.gate.outputs.deploy == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - name: Upload release files
+        if: steps.gate.outputs.release == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: |
+            dist/${{ env.EXTENSION_ID }}-${{ steps.meta.outputs.version }}.zip
+            release_notes.md
+
+  deploy:
+    needs: build
+    # The ref check is not redundant with the environment's branch policy: workflow_dispatch can
+    # run from any branch, and that policy is a repo setting.
+    if: needs.build.outputs.deploy == 'true' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  release:
+    needs: [build, deploy]
+    # Runs after a successful deploy, or when there was nothing to deploy.
+    if: >-
+      always() && needs.build.result == 'success' && needs.build.outputs.release == 'true'
+      && github.ref == 'refs/heads/main'
+      && (needs.deploy.result == 'success' || needs.deploy.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          gh release create "v$VERSION" "dist/$EXTENSION_ID-$VERSION.zip" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "MaxDrop $VERSION" --notes-file release_notes.md
