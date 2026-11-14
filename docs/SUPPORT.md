@@ -1,8 +1,9 @@
 # What MaxDrop imports
 
-**This page describes version 0.0.1.** It is the first release of the fork and converts exactly what
+**This page describes version 0.0.2.** It converts exactly what
 [io_scene_max](https://github.com/nrgsille76/io_scene_max) 1.9.2 converts: the engine (`maxdrop/import_max.py`)
-is that importer's, unchanged.
+is that importer's, unchanged. What 0.0.2 adds is in front of it: a scene pack (`.zip`, `.rar`, `.7z`) is unpacked
+and its `.max` imported as before (see [Files](#files)).
 
 How far to trust the list: it says what the code does. Checked against 3ds Max so far, on MaxDrop's own test
 file, are an Editable Poly object, its first UV channel, its transform and a Standard material. Everything else
@@ -13,7 +14,7 @@ is read from the code and has not been compared with 3ds Max yet. The page is up
 
 ## Objects
 
-| In the `.max` file | Version 0.0.1 |
+| In the `.max` file | Version 0.0.2 |
 |---|---|
 | Editable Poly, Editable Mesh | **Imported**: vertices, faces (polygons stay polygons), material IDs |
 | UV channels of those meshes | **Imported**, one UV layer per channel found (`UVMap`, `UVMap_1`, …) |
@@ -30,7 +31,7 @@ is read from the code and has not been compared with 3ds Max yet. The page is up
 
 ## Scene structure
 
-| | Version 0.0.1 |
+| | Version 0.0.2 |
 |---|---|
 | Position, rotation, scale | **Imported** as static values of a Position / Rotation / Scale controller (Position XYZ, Bezier, TCB, Euler XYZ, the first entry of a list controller). Pivot offsets are applied to meshes. An object driven by another controller (LookAt, constraints…) arrives untransformed |
 | Parent and child | **Imported**, matched by object name: two objects with the same name can end up under the wrong parent |
@@ -46,7 +47,7 @@ is read from the code and has not been compared with 3ds Max yet. The page is up
 A material becomes a Principled BSDF through Blender's `PrincipledBSDFWrapper`. Values are copied as they are
 stored in the file: colors are not converted between 3ds Max's and Blender's color spaces.
 
-| Material | Version 0.0.1 |
+| Material | Version 0.0.2 |
 |---|---|
 | Standard, Physical Material | **Imported** |
 | VRayMtl | **Imported** |
@@ -57,7 +58,7 @@ stored in the file: colors are not converted between 3ds Max's and Blender's col
 | VRay2SidedMtl, Shellac, CoronaLayeredMtl | Their sub-materials, as slots |
 | VRayLightMtl, VRayFastSSS2, VRayCarPaintMtl, VRayBlendMtl, other wrappers and every other material | Not yet: the object gets no material from it |
 
-| Channel | Version 0.0.1 |
+| Channel | Version 0.0.2 |
 |---|---|
 | Base color, roughness, metallic, IOR, opacity (alpha), specular level and tint | **Imported** as plain values |
 | Emission | The color only; its strength stays at Blender's default |
@@ -68,7 +69,7 @@ stored in the file: colors are not converted between 3ds Max's and Blender's col
 
 ## Textures
 
-A `.max` file stores the paths of its texture files, not the images. Version 0.0.1 takes only the **file name**
+A `.max` file stores the paths of its texture files, not the images. Version 0.0.2 takes only the **file name**
 of each path and looks for it in the folder of the `.max` file, and with **Image Search** on in its subfolders.
 A file that is not found is skipped; the material keeps its plain color. The texture search folders of the
 add-on preferences are stored but not used by this version.

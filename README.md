@@ -5,14 +5,14 @@ file onto Blender, or use *File › Import › MaxDrop*. It also takes the `.zip
 scene was downloaded as. Blender 4.2 or newer; tested on 4.2 LTS, 4.5 LTS and 5.2 LTS.
 
 > **Early release.** MaxDrop is a new fork of [io_scene_max](https://github.com/nrgsille76/io_scene_max), and
-> version 0.0.1 imports exactly what that importer imports: editable meshes with their UVs and simple materials.
+> version 0.0.2 imports exactly what that importer imports: editable meshes with their UVs and simple materials.
 > Lights, cameras, modifiers and scene units are not read yet, so a whole interior scene arrives incomplete.
 > [docs/SUPPORT.md](docs/SUPPORT.md) is the honest list.
 
 > **Independent.** Not affiliated with, endorsed by or supported by Autodesk or Chaos. Autodesk and 3ds Max are
 > trademarks of Autodesk, Inc.; V-Ray and Corona are trademarks of Chaos.
 
-## What version 0.0.1 imports
+## What version 0.0.2 imports
 
 - **Editable Mesh and Editable Poly** objects: vertices, faces, material IDs, UV channels.
 - **Primitives**: Box, Sphere, Cylinder, Cone, Torus, Plane, rebuilt as Blender primitives.

@@ -52,7 +52,7 @@ unless you prefer otherwise.
 
 ## Known limits of this version
 
-A `.max` file is a complex binary format and version 0.0.1 uses the parser inherited from io_scene_max as it is.
+A `.max` file is a complex binary format and version 0.0.2 uses the parser inherited from io_scene_max as it is.
 It has not been hardened against malformed or hostile files yet: such a file can make Blender use a lot of
 memory, take very long or stop with a Python error. Memory safety is Python's, so the realistic risk is a hang
 or a crash of that Blender session, not code execution, but treat files from unknown sources with the usual
