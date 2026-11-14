@@ -57,6 +57,10 @@ powershell -ExecutionPolicy Bypass -File build.ps1    # dist\ (git-ignored): zip
   meters, Z up, linear color; material, light and camera rules; the report) **never import `bpy` or
   `mathutils`**, so they run under plain Python; `maxdrop/build/` is the only part that creates Blender data.
   Dispatch on ClassID, never on class-name strings.
+- `maxdrop/intake/`: what a scene was downloaded as, turned into a `.max` on disk. `archive.py` lists a scene
+  pack (`.zip` through `zipfile`; `.rar` and `.7z` through backends of the same interface) and unpacks the
+  chosen `.max` with its maps into a flat folder. Imported on demand, **never imports `bpy` or `mathutils`**;
+  its tests load it by path.
 - `site/index.html` + `tools/make_site.py`: the landing page, filled from `dist/index.json` (`{{token}}`
   values). Self-contained: no third-party requests. The install link keeps the form Blender's own generator
   emits (`./maxdrop-<version>.zip?repository=.%2Findex.json&blender_version_min=4.2.0`).
@@ -90,6 +94,13 @@ powershell -ExecutionPolicy Bypass -File build.ps1    # dist\ (git-ignored): zip
 - **Untrusted input:** a `.max` file comes from anywhere. Bounded reads, depth and cycle guards, a size cap on
   compressed streams; texture lookup never follows a UNC path. No network except the update button, no
   telemetry.
+- **Archives (scene packs) are untrusted too:** the format comes from the magic bytes, never the extension. A
+  name stored in an archive never decides a path: only base names are used, they pass the name policy
+  (`refused_reason`) and the output is flat. Only the chosen `.max`, image files and `.ies` are written; nothing
+  from a pack is executed or imported as code. Never `extract()` / `extractall()`: stream each entry and count
+  the bytes really written against the limits (`Limits`). Unpack into a staging folder beside the destination,
+  rename at the end, remove staging on any failure, and remove only folders this code created. A folder without
+  the `.maxdrop-pack.json` marker is never written into.
 - **Install from the repository, not from disk:** Blender only upgrades an extension inside the repository it
   came from.
 - English only for UI strings, comments and docs; comment only non-obvious *why*.
