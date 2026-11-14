@@ -22,6 +22,7 @@ import re
 import shutil
 import stat
 import struct
+import sys
 import tempfile
 import time
 import unicodedata
@@ -344,6 +345,12 @@ class ZipBackend:
 
 
 _BACKENDS = {KIND_ZIP: ZipBackend()}
+
+# .rar and .7z go through a program already on the computer (external.py), which registers itself here. Not when
+# this file is loaded by path without its package, as tests/test_intake.py does: then only .zip is read.
+if __package__:
+    from . import external as _external
+    _external.install(sys.modules[__name__])
 
 
 def backend_for(path):

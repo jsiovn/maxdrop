@@ -20,7 +20,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: The tools, the landing page, the license files
+      # bsdtar for the .rar and .7z tests of the scene packs: ubuntu-latest has no bsdtar and no unrar, and its
+      # 7z is below the version MaxDrop accepts; those cases print SKIPPED.
+      - name: bsdtar
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libarchive-tools >/dev/null
+          bsdtar --version
+      - name: The tools, the landing page, the license files, the scene packs
         run: python3 -I -m unittest discover tests
 
   blender:
