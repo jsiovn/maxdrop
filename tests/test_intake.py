@@ -178,7 +178,7 @@ class FlatAndFolders(Base):
         marker = json.loads(read(os.path.join(folder, archive.MARKER)))
         st = os.stat(path)
         self.assertEqual(marker, {"archive": "pack.zip", "size": st.st_size, "mtime_ns": st.st_mtime_ns,
-                                  "scene": "room.max", "files": 4, "format": 1})
+                                  "scene": "room.max", "files": 4, "format": 1, "wanted": None})
 
     def test_default_destination_is_the_archive_folder(self):
         path = self.pack([("room.max", b"MAX")])
@@ -199,13 +199,27 @@ class FlatAndFolders(Base):
         self.assertEqual(self.listing(r.folder), sorted([archive.MARKER, "room.max", "wood.jpg", "Stone.PNG"]))
         self.assertEqual((r.written, r.unwanted), (3, 1))
 
+    def test_a_folder_unpacked_with_wanted_serves_only_what_it_covers(self):
+        path = self.pack([("room.max", b"MAX"), ("a.jpg", b"A"), ("b.jpg", b"B")])
+        first = archive.unpack(path, dest_parent=self.out, wanted={"a.jpg"})
+        self.assertEqual(archive.unpack(path, dest_parent=self.out, wanted={"A.JPG"}).mode, "reused")
+        wider = archive.unpack(path, dest_parent=self.out, wanted={"a.jpg", "b.jpg"})
+        self.assertEqual((wider.mode, wider.folder), ("unpacked", os.path.join(self.out, "pack (2)")))
+        self.assertIn("b.jpg", os.listdir(wider.folder))
+        every = archive.unpack(path, dest_parent=self.out)
+        self.assertEqual((every.mode, every.folder), ("unpacked", os.path.join(self.out, "pack (3)")))
+        self.assertEqual(archive.unpack(path, dest_parent=self.out, wanted={"b.jpg"}).folder, wider.folder)
+        self.assertEqual(sorted(os.listdir(first.folder)), sorted([archive.MARKER, "room.max", "a.jpg"]))
+
 
 class TwoScenes(Base):
     def test_each_scene_in_its_own_folder_of_the_pack(self):
         path = self.pack([("a/one.max", b"1"), ("b/two.max", b"2"), ("a/wood.jpg", b"A"), ("b/wood.jpg", b"B")])
         self.assertEqual(archive.list_pack(path).scenes, ["a/one.max", "b/two.max"])
-        with self.assertRaisesRegex(PackError, "no scene"):
+        with self.assertRaisesRegex(PackError, "holds 2 scenes: choose one"):
             archive.unpack(path, dest_parent=self.out)
+        with self.assertRaisesRegex(PackError, "holds no scene c/three.max"):
+            archive.unpack(path, "c/three.max", dest_parent=self.out)
         one = archive.unpack(path, "a/one.max", dest_parent=self.out)
         two = archive.unpack(path, "b/two.max", dest_parent=self.out)
         top = os.path.join(self.out, "pack")
@@ -224,6 +238,22 @@ class TwoScenes(Base):
             archive.unpack(path, "a/one.max", dest_parent=self.out, limits=archive.Limits(file_bytes=1000))
         self.assert_clean(before)
         self.assertEqual(os.listdir(self.out), [])
+
+    def test_failure_of_a_later_scene_keeps_the_pack_folder_and_the_first_scene(self):
+        class Failing(archive.ZipBackend):
+            def extract(self, path, wanted, staging, budget):
+                super().extract(path, wanted, staging, budget)
+                raise PackError("disk gone")
+
+        path = self.pack([("a/one.max", b"1"), ("b/two.max", b"2"), ("b/wood.jpg", b"W")])
+        one = archive.unpack(path, "a/one.max", dest_parent=self.out)
+        before = files_under(self.tmp)
+        self.addCleanup(archive._BACKENDS.__setitem__, "zip", archive._BACKENDS["zip"])
+        archive._BACKENDS["zip"] = Failing()
+        with self.assertRaisesRegex(PackError, "disk gone"):
+            archive.unpack(path, "b/two.max", dest_parent=self.out)
+        self.assert_clean(before)
+        self.assertEqual(sorted(os.listdir(os.path.dirname(one.folder))), sorted([archive.MARKER, "one"]))
 
 
 class Duplicates(Base):
@@ -257,7 +287,9 @@ class NamePolicy(Base):
     def test_refused_reason(self):
         for base in ["", ".", ".."] + [archive.Entry(n).base for n in REFUSED]:
             self.assertIsNotNone(archive.refused_reason(base), repr(base))
-        for base in ["wood.jpg", "x" * 196 + ".jpg", "CONSOLE.jpg", "com10.jpg", "lpt.jpg", "中文.png", ".jpg",
+        for base in ["\U0001F600" * 128 + ".jpg", "\u6728" * 84 + ".jpg"]:
+            self.assertEqual(archive.refused_reason(base), "longer than 200 characters", len(base))
+        for base in ["wood.jpg", "x" * 196 + ".jpg", "\u6728" * 83 + ".jpg", "CONSOLE.jpg", "com10.jpg", "lpt.jpg", "中文.png", ".jpg",
                      "a b.jpg", "COM0.jpg"]:
             self.assertIsNone(archive.refused_reason(base), repr(base))
 
@@ -315,7 +347,7 @@ class NamePolicy(Base):
         self.assertEqual(self.listing(r.folder), sorted([archive.MARKER, "room.max", "ok.png"]))
 
 
-class Limits(Base):
+class LimitTests(Base):
     def test_a_lying_declared_size_stops_at_the_limit(self):
         class Liar(archive.ZipBackend):
             def names(self, path):
@@ -357,10 +389,48 @@ class Limits(Base):
                 self.assert_clean(before)
                 self.assertEqual(os.listdir(self.out), [])
 
+    def test_wall_time_through_unpack(self):
+        path = self.pack([("room.max", b"MAX")])
+        before = files_under(self.tmp)
+        with self.assertRaisesRegex(PackError, "longer than"):
+            archive.unpack(path, dest_parent=self.out, limits=archive.Limits(seconds=-1))
+        self.assert_clean(before)
+        self.assertEqual(os.listdir(self.out), [])
+
+    def test_staging_holds_exactly_the_planned_regular_files(self):
+        def extra(staging):
+            write(os.path.join(staging, "setup.exe"), b"E")
+
+        def folder(staging):
+            os.remove(os.path.join(staging, "wood.jpg"))
+            os.mkdir(os.path.join(staging, "wood.jpg"))
+
+        def hardlink(staging):
+            os.link(os.path.join(staging, "wood.jpg"), os.path.join(self.tmp, "outside.jpg"))
+
+        def missing(staging):
+            os.remove(os.path.join(staging, "wood.jpg"))
+
+        path = self.pack([("room.max", b"MAX"), ("wood.jpg", b"W")])
+        self.addCleanup(archive._BACKENDS.__setitem__, "zip", archive._BACKENDS["zip"])
+        for tamper in (extra, folder, hardlink, missing):
+            with self.subTest(tamper=tamper.__name__):
+                class Tamper(archive.ZipBackend):
+                    def extract(self, path, wanted, staging, budget):
+                        super().extract(path, wanted, staging, budget)
+                        tamper(staging)
+
+                archive._BACKENDS["zip"] = Tamper()
+                with self.assertRaisesRegex(PackError, "wrote other files than asked for"):
+                    archive.unpack(path, dest_parent=self.out)
+                if os.path.exists(os.path.join(self.tmp, "outside.jpg")):
+                    os.remove(os.path.join(self.tmp, "outside.jpg"))
+                self.assertEqual(os.listdir(self.out), [])
+
     def test_budget_counts_files_and_time(self):
         budget = archive._Budget(archive.Limits(files=1))
         budget.start_file("a")
-        with self.assertRaisesRegex(PackError, "more than 1 files"):
+        with self.assertRaisesRegex(PackError, "more files to unpack than the 1"):
             budget.start_file("b")
         budget = archive._Budget(archive.Limits(seconds=0))
         budget.deadline -= 1

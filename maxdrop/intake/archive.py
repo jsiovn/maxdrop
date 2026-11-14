@@ -53,6 +53,9 @@ ASSET_EXTENSIONS = IMAGE_EXTENSIONS | {"ies"}
 SCENE_EXTENSION = "max"
 
 MAX_NAME_LENGTH = 200
+# NTFS stores 255 UTF-16 units per name, ext4 and APFS 255 UTF-8 bytes: a name within 200 characters can still
+# exceed either.
+_NAME_UNITS_MAX = 255
 _RESERVED = frozenset(
     ["CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"]
     + ["%s%s" % (p, d) for p in ("COM", "LPT") for d in "123456789¹²³"])
@@ -93,11 +96,12 @@ DEFAULT_LIMITS = Limits()
 
 
 def _size_text(n):
-    for unit in ("bytes", "KiB", "MiB", "GiB"):
-        if n < 1024 or unit == "GiB":
-            return ("%d %s" % (n, unit)) if unit == "bytes" else ("%.1f %s" % (n, unit))
+    if n < 1024:
+        return "%d bytes" % n
+    for unit in ("KiB", "MiB", "GiB"):
         n /= 1024.0
-    return ""
+        if n < 1024 or unit == "GiB":
+            return "%.1f %s" % (n, unit)
 
 
 class _Budget:
@@ -113,7 +117,7 @@ class _Budget:
 
     def start_file(self, name):
         if self.files >= self.limits.files:
-            raise PackError("The pack holds more than %d files to unpack, the most MaxDrop writes from one pack. "
+            raise PackError("The pack holds more files to unpack than the %d MaxDrop writes from one pack. "
                             "Extract it by hand." % self.limits.files)
         self.files += 1
         self.current = 0
@@ -186,7 +190,8 @@ def refused_reason(base):
         return "reserved device name"
     if base[-1] in ". ":
         return "ends in a dot or a space"
-    if len(base) > MAX_NAME_LENGTH:
+    if (len(base) > MAX_NAME_LENGTH or len(base.encode("utf-16-le", "surrogatepass")) // 2 > _NAME_UNITS_MAX
+            or len(base.encode("utf-8", "surrogatepass")) > _NAME_UNITS_MAX):
         return "longer than %d characters" % MAX_NAME_LENGTH
     return None
 
@@ -204,8 +209,6 @@ def _skip_key(base):
     ext = extension(base)
     return "." + ext if ext else "(no extension)"
 
-
-# --- zip -------------------------------------------------------------------------------------------------------
 
 _ZIP_FLAG_ENCRYPTED = 0x1
 _ZIP_FLAG_PATCHED = 0x20
@@ -226,7 +229,8 @@ def _zip_methods():
 
 def _zip_unicode_path(extra, raw):
     """The name of an Info-ZIP Unicode Path extra field (0x7075) that matches the raw name, else None. Only
-    Python 3.13 applies it itself; reading it here gives every Blender the same names."""
+    Python 3.13 applies it itself; reading it here gives every Blender the same names for well-formed fields (a
+    malformed one is ignored here but makes Python 3.13 refuse the archive)."""
     pos = 0
     while pos + 4 <= len(extra):
         tp, ln = struct.unpack_from("<HH", extra, pos)
@@ -366,8 +370,6 @@ def _is_scene(e):
             and refused_reason(e.base) is None)
 
 
-# --- listing ---------------------------------------------------------------------------------------------------
-
 @dataclasses.dataclass
 class PackListing:
     kind: str
@@ -409,8 +411,6 @@ def list_pack(path, limits=DEFAULT_LIMITS):
                         % (len(guessed), "" if len(guessed) == 1 else "s"))
     return PackListing(k, backend.name, scenes, assets, skipped, problems, encrypted, guessed)
 
-
-# --- unpacking -------------------------------------------------------------------------------------------------
 
 @dataclasses.dataclass
 class UnpackResult:
@@ -479,13 +479,21 @@ def _read_marker(folder):
     return data if isinstance(data, dict) else None
 
 
-def _marker_matches(marker, ident, scene_name):
-    return (marker is not None and marker.get("format") == MARKER_FORMAT and marker.get("scene") == scene_name
-            and all(marker.get(k) == v for k, v in ident.items()))
+def _marker_matches(marker, ident, scene_name, wanted=None):
+    """wanted: the name_key() set asked for now, None for every asset. A folder unpacked with a filter serves
+    only a request it covers."""
+    if not (marker is not None and marker.get("format") == MARKER_FORMAT and marker.get("scene") == scene_name
+            and all(marker.get(k) == v for k, v in ident.items())):
+        return False
+    stored = marker.get("wanted")
+    if stored is None:
+        return True
+    return wanted is not None and isinstance(stored, list) and wanted <= set(stored)
 
 
-def _write_marker(folder, ident, scene_name, files):
-    data = dict(ident, format=MARKER_FORMAT, scene=scene_name, files=files)
+def _write_marker(folder, ident, scene_name, files, wanted=None):
+    data = dict(ident, format=MARKER_FORMAT, scene=scene_name, files=files,
+                wanted=None if wanted is None else sorted(wanted))
     with open(os.path.join(folder, MARKER), "x", encoding="utf-8") as f:
         json.dump(data, f, indent=1, sort_keys=True)
 
@@ -524,7 +532,7 @@ def _candidates(parent, name):
         yield os.path.join(parent, "%s (%d)" % (name, n))
 
 
-def _probe(folder, scene, ident):
+def _probe(folder, scene, ident, wanted):
     """What a candidate folder offers for the scene: "free", ("reused" | "in_place", .max path), or None (taken:
     never written into)."""
     if not os.path.lexists(folder):
@@ -534,7 +542,7 @@ def _probe(folder, scene, ident):
     marker = _read_marker(folder)
     if marker is not None:
         max_path = os.path.join(folder, scene.base)
-        if _marker_matches(marker, ident, scene.name) and os.path.isfile(max_path):
+        if _marker_matches(marker, ident, scene.name, wanted) and os.path.isfile(max_path):
             return ("reused", max_path)
         return None
     found = _find_copy(folder, scene.base)
@@ -546,12 +554,12 @@ def _safe_stem(name, fallback):
     return stem if stem and refused_reason(stem) is None else fallback
 
 
-def _destination(path, dest_parent, scene, several, ident):
+def _destination(path, dest_parent, scene, several, ident, wanted):
     """("free", folder, container to create or None) or ("reused" | "in_place", .max path)."""
     stem = _safe_stem(os.path.basename(path), "pack")
     if not several:
         for folder in _candidates(dest_parent, stem):
-            found = _probe(folder, scene, ident)
+            found = _probe(folder, scene, ident, wanted)
             if found == "free":
                 return ("free", folder, None)
             if found:
@@ -572,7 +580,7 @@ def _destination(path, dest_parent, scene, several, ident):
             if not _marker_matches(marker, ident, None):
                 continue
             for folder in _candidates(top, sub):
-                found = _probe(folder, scene, ident)
+                found = _probe(folder, scene, ident, wanted)
                 if found == "free":
                     return ("free", folder, None)
                 if found:
@@ -602,6 +610,22 @@ def _check_space(entries, folder, limits):
                         % (folder, _size_text(declared + limits.free_margin), _size_text(free)))
 
 
+def _check_staging(staging, targets, path):
+    """Exactly the planned names, each a regular file with one link: a backend must not leave a link, a folder
+    or anything else behind."""
+    on_disk = []
+    with os.scandir(staging) as it:
+        for item in it:
+            if not item.is_file(follow_symlinks=False) or os.lstat(item.path).st_nlink != 1:
+                on_disk = None
+                break
+            on_disk.append(name_key(item.name))
+    # By name_key: a file system may store a name in another Unicode normal form (macOS).
+    if on_disk is None or sorted(on_disk) != sorted(name_key(t) for t in targets):
+        raise PackError("Unpacking %s wrote other files than asked for. Extract it by hand."
+                        % os.path.basename(path))
+
+
 def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=None):
     """Unpack the scene (its archive path, as list_pack gives it; may be None when the pack holds one) with its
     maps. wanted: optional set of name_key() base names; when given, only those assets are written.
@@ -617,17 +641,23 @@ def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=Non
         raise PackError("%s holds no .max scene." % os.path.basename(path))
     if scene is None and len(scenes) == 1:
         chosen = scenes[0]
+    elif scene is None:
+        raise PackError("%s holds %d scenes: choose one." % (os.path.basename(path), len(scenes)))
     else:
         chosen = next((e for e in scenes if e.name == scene), None)
         if chosen is None:
             raise PackError("%s holds no scene %s." % (os.path.basename(path), scene))
     dest_parent = os.path.abspath(dest_parent or os.path.dirname(path))
-    st = os.stat(path)
+    try:
+        st = os.stat(path)
+    except OSError as e:
+        raise PackError("%s could not be read (%s)." % (os.path.basename(path), e)) from None
     ident = {"archive": os.path.basename(path), "size": st.st_size, "mtime_ns": st.st_mtime_ns}
 
     result = UnpackResult(max_path="", folder="", mode="unpacked", backend=backend.name)
     result.guessed = [e.name for e in entries if e.guessed]
-    found = _destination(path, dest_parent, chosen, len(scenes) > 1, ident)
+    wanted = None if wanted is None else {name_key(w) for w in wanted}
+    found = _destination(path, dest_parent, chosen, len(scenes) > 1, ident, wanted)
     if found[0] in ("reused", "in_place"):
         result.mode, result.max_path = found
         result.folder = os.path.dirname(result.max_path)
@@ -637,7 +667,7 @@ def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=Non
         return result
 
     _free, folder, container = found
-    assets = _select(entries, chosen, None if wanted is None else {name_key(w) for w in wanted}, result)
+    assets = _select(entries, chosen, wanted, result)
     plan = [(chosen, chosen.base)] + [(e, e.base) for e in assets]
     for e, _target in plan:
         if e.encrypted:
@@ -659,12 +689,8 @@ def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=Non
         staging = tempfile.mkdtemp(prefix=STAGING_PREFIX, dir=parent)
         try:
             backend.extract(path, plan, staging, _Budget(limits))
-            # By name_key: a file system may store a name in another Unicode normal form (macOS).
-            on_disk = sorted(name_key(n) for n in os.listdir(staging))
-            if on_disk != sorted(name_key(t) for _e, t in plan):
-                raise PackError("Unpacking %s wrote other files than asked for. Extract it by hand."
-                                % os.path.basename(path))
-            _write_marker(staging, ident, chosen.name, len(plan))
+            _check_staging(staging, [t for _e, t in plan], path)
+            _write_marker(staging, ident, chosen.name, len(plan), wanted)
             os.rename(staging, folder)
         except BaseException:
             shutil.rmtree(staging, ignore_errors=True)
