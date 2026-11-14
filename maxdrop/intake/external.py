@@ -60,8 +60,10 @@ _7Z_MAGIC = b"7z\xbc\xaf\x27\x1c"
 # with it (RAR 7 no longer writes RAR 4), so RAR 4 is UnRAR / 7-Zip only.
 _ORDER = {"rar": (UNRAR, SEVENZIP, BSDTAR), "rar4": (UNRAR, SEVENZIP), "7z": (SEVENZIP, BSDTAR)}
 
-# Characters that turn an exact name into a pattern for that program (7-Zip runs with -spd: no wildcards).
-_PATTERN_CHARS = {UNRAR: "*?", SEVENZIP: "", BSDTAR: "*?[\\"}
+# Characters that turn an exact name into a pattern and cannot be escaped for that program (7-Zip runs with
+# -spd: no wildcards; bsdtar takes \[ \* \? but a literal backslash would be read as an escape).
+_PATTERN_CHARS = {UNRAR: "*?", SEVENZIP: "", BSDTAR: "\\"}
+_BSDTAR_ESCAPE = re.compile(r"([\[\]*?])")
 # 7-Zip asks for a password on an encrypted archive unless one is given.
 _DUMMY_PASSWORD = "maxdrop-no-password"
 
@@ -91,7 +93,6 @@ def _error(message):
     return _archive.PackError(message)
 
 
-# --- Versions and discovery -----------------------------------------------------------------------------------
 
 _VERSION_RE = {
     UNRAR: re.compile(r"^\s*UNRAR (\d+)\.(\d+)", re.M),
@@ -106,7 +107,7 @@ def parse_version(flavor, text):
     return tuple(int(g) for g in m.groups()) if m else None
 
 
-def version_text(version, flavor=BSDTAR):
+def version_text(version, flavor):
     """As the vendor writes it: UnRAR 7.01 and 7-Zip 25.01 have two-digit minors."""
     if flavor in (UNRAR, SEVENZIP) and len(version) == 2:
         return "%d.%02d" % version
@@ -133,16 +134,37 @@ _EXE_MAGIC_POSIX = (b"\x7fELF", b"\xfe\xed\xfa\xce", b"\xfe\xed\xfa\xcf", b"\xce
                     b"\xca\xfe\xba\xbe")
 
 
+_LONG_PREFIX = "\\\\?\\"
+
+
+def _long(path):
+    """On Windows, the extended form of an absolute path: the programs write deeper than 260 characters, and
+    Python sees such files only through it unless long paths are enabled system-wide."""
+    if not _WINDOWS or path.startswith(_LONG_PREFIX):
+        return path
+    path = os.path.abspath(path)
+    if path.startswith("\\\\"):
+        return _LONG_PREFIX + "UNC\\" + path[2:]
+    return _LONG_PREFIX + path
+
+
+def _plain(path):
+    if path.startswith(_LONG_PREFIX + "UNC\\"):
+        return "\\\\" + path[len(_LONG_PREFIX) + 4:]
+    return path[len(_LONG_PREFIX):] if path.startswith(_LONG_PREFIX) else path
+
+
 def _inside(path, folder):
+    path, folder = os.path.normcase(_plain(path)), os.path.normcase(_plain(folder))
     try:
-        return os.path.commonpath([os.path.normcase(path), os.path.normcase(folder)]) == os.path.normcase(folder)
+        return os.path.commonpath([path, folder]) == folder
     except ValueError:  # another drive
         return False
 
 
 def real_executable(path, pack_dir=None):
-    """True for a native program at an absolute path: never a script, a .bat / .cmd, or a file in the pack's
-    folder."""
+    """True for a native program at an absolute path: never a script, a .bat / .cmd, or a file lying in the
+    pack's own folder."""
     if not path or not os.path.isabs(path):
         return False
     try:
@@ -158,7 +180,9 @@ def real_executable(path, pack_dir=None):
             return False
     elif head not in _EXE_MAGIC_POSIX or not os.access(path, os.X_OK):
         return False
-    if pack_dir and _inside(os.path.realpath(path), os.path.realpath(pack_dir)):
+    # The pack's own folder, not every folder below it: a pack at a drive root still finds Program Files.
+    if pack_dir and (os.path.normcase(os.path.dirname(os.path.realpath(path)))
+                     == os.path.normcase(os.path.realpath(pack_dir))):
         return False
     return True
 
@@ -234,7 +258,8 @@ def probe(flavor, path, pack_dir=None):
     key = (flavor, path, st.st_size, st.st_mtime_ns)
     if key not in _PROBED:
         try:
-            code, text, _reason = run(_version_args(flavor, path), PROBE_SECONDS, MESSAGE_OUTPUT_CAP)
+            _code, out, err = run(_version_args(flavor, path), PROBE_SECONDS, MESSAGE_OUTPUT_CAP)
+            text = out + "\n" + err
         except ToolFailed:
             text = ""
         version = parse_version(flavor, text)
@@ -264,7 +289,6 @@ def find_tools(order, pack_dir=None):
     return usable, old
 
 
-# --- Running a program ----------------------------------------------------------------------------------------
 
 class ToolFailed(Exception):
     """A program ended without doing its job; the next program may do better."""
@@ -348,11 +372,12 @@ def _output_encoding(flavor):
 
 
 def run(args, timeout, cap, watch=None, overflow_fatal=False, encoding="utf-8", label=None):
-    """Run a program; (exit code, output text, None). The output is stdout and stderr together, at most cap bytes,
-    decoded with surrogateescape. watch() is called while it runs and may raise to stop it. On a timeout, or more
-    output than cap when overflow_fatal, the program and its children are ended and ToolFailed is raised."""
+    """Run a program; (exit code, stdout, stderr), each at most cap bytes, decoded with surrogateescape. stderr is
+    kept apart so that a warning never reads as a listed name. watch() is called while it runs and may raise to
+    stop it. On a timeout, or more output than cap when overflow_fatal, the program and its children are ended
+    and ToolFailed is raised."""
     label = label or os.path.basename(args[0])
-    kwargs = dict(stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+    kwargs = dict(stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                   cwd=os.path.dirname(args[0]), env=_environment(), close_fds=True)
     if _WINDOWS:
         kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
@@ -362,14 +387,14 @@ def run(args, timeout, cap, watch=None, overflow_fatal=False, encoding="utf-8", 
         proc = subprocess.Popen(args, **kwargs)
     except (OSError, ValueError) as e:
         raise ToolFailed(label, "could not be started (%s)" % e) from None
-    # The programs used here start no children; the job still catches any started before it is assigned.
+    # A child started before the assignment would escape the job; these programs start none.
     job = _windows_job(proc) if _WINDOWS else None
-    buf = bytearray()
+    bufs = (bytearray(), bytearray())
     overflow = threading.Event()
 
-    def reader():
+    def reader(stream, buf):
         while True:
-            chunk = proc.stdout.read1(65536) if hasattr(proc.stdout, "read1") else proc.stdout.read(65536)
+            chunk = stream.read1(65536) if hasattr(stream, "read1") else stream.read(65536)
             if not chunk:
                 return
             room = cap - len(buf)
@@ -378,8 +403,9 @@ def run(args, timeout, cap, watch=None, overflow_fatal=False, encoding="utf-8", 
             if len(chunk) > room:
                 overflow.set()
 
-    thread = threading.Thread(target=reader, daemon=True)
-    thread.start()
+    threads = [threading.Thread(target=reader, args=(s, b), daemon=True) for s, b in zip((proc.stdout, proc.stderr), bufs)]
+    for t in threads:
+        t.start()
     deadline = time.monotonic() + max(timeout, 0.0)
     next_watch = 0.0
     reason = None
@@ -409,20 +435,24 @@ def run(args, timeout, cap, watch=None, overflow_fatal=False, encoding="utf-8", 
             proc.wait(10)
         except subprocess.TimeoutExpired:
             pass
-        thread.join(5)
+        for t, stream in zip(threads, (proc.stdout, proc.stderr)):
+            t.join(5)
+            if not t.is_alive():
+                stream.close()
         if job is not None:
             job[0].CloseHandle(job[1])
-        if proc.stdout is not None and not thread.is_alive():
-            proc.stdout.close()
-    text = bytes(buf).decode(encoding, "surrogateescape").lstrip("\ufeff")
+    out, err = (bytes(b).decode(encoding, "surrogateescape").lstrip("\ufeff") for b in bufs)
+    if reason is None and overflow_fatal and overflow.is_set():
+        reason = "wrote more output than %d bytes" % cap
     if reason is not None:
-        raise ToolFailed(label, reason, text)
-    if overflow_fatal and overflow.is_set():
-        raise ToolFailed(label, "wrote more output than %d bytes" % cap, text)
-    return proc.returncode, text, None
+        raise ToolFailed(label, reason, _joined(out, err))
+    return proc.returncode, out, err
 
 
-# --- Listings ---------------------------------------------------------------------------------------------------
+def _joined(out, err):
+    return "\n".join(t for t in (err, out) if t.strip())
+
+
 
 def list_args(tool, archive):
     """The listing command(s) of a program: a list of argument lists."""
@@ -544,11 +574,11 @@ def list_entries(tool, archive):
     encoding = _output_encoding(tool.flavor)
     texts = []
     for args in list_args(tool, archive):
-        code, text, _r = run(args, LIST_SECONDS, LIST_OUTPUT_CAP, overflow_fatal=True, encoding=encoding,
+        code, out, err = run(args, LIST_SECONDS, LIST_OUTPUT_CAP, overflow_fatal=True, encoding=encoding,
                              label=tool.label)
         if code != 0:
-            raise ToolFailed(tool.label, "exit code %d" % code, text)
-        texts.append(text)
+            raise ToolFailed(tool.label, "exit code %d" % code, _joined(out, err))
+        texts.append(out)
     volume = False
     if tool.flavor == UNRAR:
         raw, volume = parse_unrar(texts[0])
@@ -568,7 +598,6 @@ def list_entries(tool, archive):
     return entries
 
 
-# --- Headers ----------------------------------------------------------------------------------------------------
 
 def _vint(data, pos):
     value = shift = 0
@@ -649,7 +678,6 @@ def _precheck(archive):
     return "rar4" if head.startswith(_RAR4_MAGIC) else None
 
 
-# --- Extraction -------------------------------------------------------------------------------------------------
 
 def extract_args(tool, archive, list_file, out):
     """The extraction command: the names come from list_file (one per line, NUL-separated for bsdtar)."""
@@ -660,9 +688,9 @@ def extract_args(tool, archive, list_file, out):
         return [p, "e", "-c-", "-cfg-", "-p-", "-y", "-o-", "-ol-", "-ai", "-idq", "-scfl", "-scfr", "--", archive,
                 "@" + list_file, out + os.sep]
     if tool.flavor == SEVENZIP:
-        # -spd: names are not wildcards; -r-: no recursion; -aos: never overwrite. Never -snld: it lifts 7-Zip's
-        # link checks.
-        return [p, "e", "-y", "-aos", "-bd", "-bso0", "-bsp0", "-sccUTF-8", "-scsUTF-8", "-spd", "-r-",
+        # -spd: names are not wildcards; -r-: no recursion; -aos: never overwrite; -sns-: no NTFS streams, which
+        # the file check cannot see. Never -snld: it lifts 7-Zip's link checks.
+        return [p, "e", "-y", "-aos", "-bd", "-bso0", "-bsp0", "-sccUTF-8", "-scsUTF-8", "-spd", "-r-", "-sns-",
                 "-p" + _DUMMY_PASSWORD, "-o" + out, "-i@" + list_file, "--", archive]
     # bsdtar has no flat mode: paths are kept under out and flattened afterwards. -k: never overwrite.
     return [p, "-x", "-k", "-o", "--no-same-permissions", "--no-acls", "--no-xattrs", "--no-fflags", "-f", archive,
@@ -672,7 +700,7 @@ def extract_args(tool, archive, list_file, out):
 def list_file_bytes(tool, names):
     if tool.flavor == BSDTAR:
         encoding = _output_encoding(BSDTAR)
-        return b"".join(n.encode(encoding, "surrogateescape") + b"\0" for n in names)
+        return b"".join(_BSDTAR_ESCAPE.sub(r"\\\1", n).encode(encoding, "surrogateescape") + b"\0" for n in names)
     return "".join(n + "\n" for n in names).encode("utf-8", "surrogateescape")
 
 
@@ -693,6 +721,39 @@ def _remove_tree(path):
         shutil.rmtree(path, onexc=retry)
     else:
         shutil.rmtree(path, onerror=retry)
+
+
+def drop_streams(path):
+    """Remove the NTFS alternate data streams of a file (UnRAR restores them and has no switch against it): the
+    file check sees only the main stream. No-op off Windows or on a volume without streams."""
+    if not _WINDOWS:
+        return
+    import ctypes
+    from ctypes import wintypes
+
+    class FindStreamData(ctypes.Structure):
+        _fields_ = [("StreamSize", ctypes.c_int64), ("cStreamName", ctypes.c_wchar * 296)]
+
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.FindFirstStreamW.restype = wintypes.HANDLE
+    k32.FindFirstStreamW.argtypes = [wintypes.LPCWSTR, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+    k32.FindNextStreamW.argtypes = [wintypes.HANDLE, ctypes.c_void_p]
+    k32.FindClose.argtypes = [wintypes.HANDLE]
+    data = FindStreamData()
+    handle = k32.FindFirstStreamW(path, 0, ctypes.byref(data), 0)
+    if handle in (None, wintypes.HANDLE(-1).value):
+        return
+    names = []
+    try:
+        while True:
+            if data.cStreamName != "::$DATA":
+                names.append(data.cStreamName)
+            if not k32.FindNextStreamW(handle, ctypes.byref(data)):
+                break
+    finally:
+        k32.FindClose(handle)
+    for name in names:  # ":name:$DATA"
+        os.remove(path + name[:-len(":$DATA")] if name.endswith(":$DATA") else path + name)
 
 
 def _is_link(item, st):
@@ -846,6 +907,7 @@ class ExternalBackend:
                 failures.append(e)
                 continue
             if names is None:
+                failures.append(ToolFailed(tool.label, "cannot ask for every file of the scene by its name"))
                 continue
             work = tempfile.mkdtemp(prefix=WORK_PREFIX, dir=staging)
             try:
@@ -855,7 +917,7 @@ class ExternalBackend:
             except ToolFailed as e:
                 failures.append(e)
             finally:
-                _remove_tree(work)
+                _remove_tree(_long(work))
         raise _error(self._failure(path, failures))
 
     def _extract_with(self, tool, path, wanted, names, work, staging, budget):
@@ -868,15 +930,16 @@ class ExternalBackend:
         if remaining <= 0:
             budget.check_time()
         try:
-            code, text, _r = run(extract_args(tool, path, list_file, out), remaining, MESSAGE_OUTPUT_CAP,
-                                 watch=_watcher(out, budget), encoding=_output_encoding(tool.flavor),
-                                 label=tool.label)
+            code, out_text, err_text = run(extract_args(tool, path, list_file, out), remaining, MESSAGE_OUTPUT_CAP,
+                                           watch=_watcher(_long(out), budget), encoding=_output_encoding(tool.flavor),
+                                           label=tool.label)
         except ToolFailed:
             budget.check_time()     # a timeout of the pack's own budget ends everything
             raise
+        text = _joined(out_text, err_text)
         if code != 0:
             raise ToolFailed(tool.label, "exit code %d" % code, text)
-        found = collect(out, tool.flavor != BSDTAR, tool.label, budget.limits.files + len(wanted) + 64)
+        found = collect(_long(out), tool.flavor != BSDTAR, tool.label, budget.limits.files + len(wanted) + 64)
         targets = {_archive.name_key(t): t for _e, t in wanted}
         extra = sorted(set(found) - set(targets))
         if extra:
@@ -889,7 +952,8 @@ class ExternalBackend:
             budget.start_file(target)
             budget.add(size)
             os.chmod(src, 0o644)
-            os.rename(src, os.path.join(staging, target))
+            drop_streams(src)
+            os.rename(src, os.path.join(_long(staging), target))
 
 
 def _mentions_password(output):

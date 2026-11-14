@@ -1,7 +1,8 @@
 name: Test
 
-# The plain tests (the tools, the landing page and the license files: no Blender, no network), then on each
-# Blender of the matrix: build, validate, the license text in the zip and the register smoke test.
+# The plain tests (the tools, the landing page, the license files and the scene packs: no Blender; the tests
+# themselves use no network, only apt installs bsdtar), then on each Blender of the matrix: build, validate, the
+# license text in the zip and the register smoke test.
 #
 # Runs on pull requests and by hand. On a push to main it runs as the first job of the Publish workflow, which
 # calls this file: nothing is published unless it passes, and the tests do not run twice.
@@ -21,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # bsdtar for the .rar and .7z tests of the scene packs: ubuntu-latest has no bsdtar and no unrar, and its
-      # 7z is below the version MaxDrop accepts; those cases print SKIPPED.
+      # 7z is a shell wrapper or below the version MaxDrop accepts; those cases print SKIPPED.
       - name: bsdtar
         run: |
           set -euo pipefail

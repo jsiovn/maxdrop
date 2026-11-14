@@ -82,10 +82,9 @@ def rar5_header(htype, hflags=0, aflags=0, extra=()):
 class TempCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="maxdrop-ext-")
-        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.addCleanup(external._remove_tree, external._long(self.tmp))
 
 
-# --- Pure parts -------------------------------------------------------------------------------------------------
 
 class VersionTests(unittest.TestCase):
     def test_banners(self):
@@ -144,6 +143,25 @@ class DiscoveryTests(TempCase):
         other = tempfile.mkdtemp(prefix="maxdrop-ext-pack-")
         self.addCleanup(shutil.rmtree, other, True)
         self.assertTrue(external.real_executable(good, pack_dir=other))
+        # A pack in a folder above the program (a drive root) does not hide it.
+        self.assertTrue(external.real_executable(good, pack_dir=os.path.dirname(self.tmp)))
+        self.assertTrue(external.real_executable(good, pack_dir=os.path.splitdrive(self.tmp)[0] + os.sep))
+
+    def test_find_tools_order_floor_and_duplicates(self):
+        tools = {"/a/unrar-old": Tool(UNRAR, "/a/unrar-old", (7, 1)), "/b/unrar": Tool(UNRAR, "/b/unrar", (7, 23)),
+                 "/c/unrar": Tool(UNRAR, "/c/unrar", (7, 30)), "/d/tar": Tool(BSDTAR, "/d/tar", (3, 8, 9))}
+        order = {UNRAR: ["/a/unrar-old", "/a/unrar-old", "/missing", "/b/unrar", "/c/unrar"], SEVENZIP: ["/none"],
+                 BSDTAR: ["/d/tar"]}
+        probed = []
+        saved = (external.candidates, external.probe)
+        self.addCleanup(lambda: (setattr(external, "candidates", saved[0]), setattr(external, "probe", saved[1])))
+        external.candidates = lambda flavor, platform=None: order[flavor]
+        external.probe = lambda flavor, path, pack_dir=None: probed.append(path) or tools.get(path)
+        usable, old = external.find_tools((UNRAR, SEVENZIP, BSDTAR))
+        self.assertEqual([t.path for t in usable], ["/b/unrar", "/d/tar"])
+        self.assertEqual([t.path for t in old], ["/a/unrar-old"])
+        self.assertEqual(probed.count("/a/unrar-old"), 1, "the same file is probed once")
+        self.assertNotIn("/c/unrar", probed, "one usable program of each kind is enough")
 
     def test_candidates_are_absolute_and_fixed(self):
         for platform in ("linux", "darwin", "win32"):
@@ -303,7 +321,7 @@ class ParserTests(unittest.TestCase):
         self.assertIn("pattern", external._unaskable(UNRAR, "pack*\\a.jpg"))
         self.assertIn("pattern", external._unaskable(UNRAR, "a?.jpg"))
         self.assertEqual(external._unaskable(UNRAR, "[a].jpg"), "")
-        self.assertIn("pattern", external._unaskable(BSDTAR, "[a].jpg"))
+        self.assertEqual(external._unaskable(BSDTAR, "[site] room/a*b?.jpg"), "", "escaped in the list file")
         self.assertIn("pattern", external._unaskable(BSDTAR, "dir\\a.jpg"))
         self.assertIn("option", external._unaskable(BSDTAR, "-C/a.jpg"))
         self.assertEqual(external._unaskable(SEVENZIP, "*[?].jpg"), "")
@@ -341,7 +359,7 @@ class ArgumentTests(unittest.TestCase):
         self.assertEqual(u[-4:], ["--", self.archive_path, "@" + lst, out + os.sep])
         z = external.extract_args(self.sevenzip, self.archive_path, lst, out)
         self.assertEqual(z[:2], [self.sevenzip.path, "e"])
-        for switch in ("-spd", "-r-", "-aos", "-scsUTF-8", "-o" + out, "-i@" + lst):
+        for switch in ("-spd", "-r-", "-aos", "-sns-", "-scsUTF-8", "-o" + out, "-i@" + lst):
             self.assertIn(switch, z)
         self.assertFalse([a for a in z if a.startswith("-snl")], "-snld lifts 7-Zip's link checks")
         self.assertEqual(z[-2:], ["--", self.archive_path])
@@ -358,6 +376,8 @@ class ArgumentTests(unittest.TestCase):
         names = ["pack\\scene.max", "pack\\café.jpg"]
         self.assertEqual(external.list_file_bytes(self.unrar, names), "pack\\scene.max\npack\\café.jpg\n".encode())
         self.assertEqual(external.list_file_bytes(self.tar, ["a/b.jpg", "c.max"]), b"a/b.jpg\0c.max\0")
+        self.assertEqual(external.list_file_bytes(self.tar, ["[s] r/w[1]*?.jpg"]),
+                         b"\\[s\\] r/w\\[1\\]\\*\\?.jpg\0")
 
 
 class HeaderTests(unittest.TestCase):
@@ -432,13 +452,17 @@ class MessageTests(unittest.TestCase):
         self.assertLess(len(message), 600)
 
 
-# --- The runner, with Python children -----------------------------------------------------------------------------
 
 class RunTests(TempCase):
     def test_output_and_exit_code(self):
         code, text, _r = external.run([PY, "-I", "-c", "import sys; print('hello'); sys.exit(3)"], 30, 1000)
         self.assertEqual(code, 3)
         self.assertEqual(text.strip(), "hello")
+
+    def test_stderr_apart(self):
+        code, out, err = external.run([PY, "-I", "-c", "import sys; print('name'); sys.stderr.write('warn')"],
+                                      30, 1000)
+        self.assertEqual((code, out.strip(), err.strip()), (0, "name", "warn"))
 
     def test_stdin_is_closed(self):
         code, text, _r = external.run([PY, "-I", "-c", "import sys; print(repr(sys.stdin.read()))"], 30, 1000)
@@ -525,6 +549,20 @@ class CollectTests(TempCase):
         with self.assertRaisesRegex(PackError, "a link"):
             external.collect(self.tmp, False, "t", 100)
 
+    @unittest.skipUnless(os.name == "nt", "NTFS streams")
+    def test_drop_streams(self):
+        path = self.write("a.jpg", b"main")
+        try:
+            with open(path + ":hidden", "wb") as f:
+                f.write(b"stream")
+        except OSError as e:
+            self.skipTest("no streams on this volume: %s" % e)
+        external.drop_streams(external._long(path))
+        with self.assertRaises(OSError):
+            open(path + ":hidden", "rb").close()
+        with open(path, "rb") as f:
+            self.assertEqual(f.read(), b"main")
+
     def test_count_guard(self):
         for i in range(5):
             self.write("f%d.jpg" % i)
@@ -532,7 +570,6 @@ class CollectTests(TempCase):
             external.collect(self.tmp, True, "t", 3)
 
 
-# --- The backend with a stand-in program (Python) -----------------------------------------------------------------
 
 FAKE_RAR = rar5_header(1)
 PLAN = ["pack\\scene.max", "pack\\maps\\wood.jpg"]
@@ -640,7 +677,6 @@ class StandInTests(TempCase):
         self.assertEqual(self.left(), ["scene.rar"])
 
 
-# --- Real programs on the test packs ------------------------------------------------------------------------------
 
 def _real_tools():
     tools, notes = {}, []
@@ -740,7 +776,8 @@ class RealToolTests(TempCase):
                 pack = os.path.join(case_dir, "pwdata.rar")
                 shutil.copyfile(os.path.join(PACKS, "pwdata.rar"), pack)
                 start = time.monotonic()
-                with self.assertRaisesRegex(PackError, "encrypted|password"):
+                # The message comes from the program; an older libarchive may not name the password.
+                with self.assertRaisesRegex(PackError, "encrypted|password|could not be unpacked"):
                     archive.unpack(pack)
                 self.assertLess(time.monotonic() - start, 30)
                 self.assertEqual(os.listdir(case_dir), ["pwdata.rar"])
@@ -756,9 +793,50 @@ class RealToolTests(TempCase):
                 shutil.copyfile(os.path.join(PACKS, "pwdata.rar"), pack)
                 entries = external.list_entries(tool, pack)
                 self.assertFalse(any(e.encrypted for e in entries))
-                with self.assertRaisesRegex(PackError, "password-protected"):
+                with self.assertRaisesRegex(PackError, "password-protected|could not be unpacked"):
                     archive.unpack(pack)
                 self.assertEqual(os.listdir(case_dir), ["pwdata.rar"])
+                say(label, True)
+
+    def make_7z(self, tool, files):
+        """A .7z written by bsdtar from files {relative path: data}, in a folder of its own."""
+        src = os.path.join(self.tmp, "src")
+        for rel, data in files.items():
+            path = os.path.abspath(os.path.join(src, *rel.split("/")))
+            if os.name == "nt":  # written through the extended form, independent of the code under test
+                path = "\\\\?\\" + path
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "wb") as f:
+                f.write(data)
+        case_dir = tempfile.mkdtemp(dir=self.tmp)
+        pack = os.path.join(case_dir, "made.7z")
+        tops = sorted({rel.split("/")[0] for rel in files})
+        done = subprocess.run([tool.path, "-a", "-cf", pack, "-C", src] + tops, stdin=subprocess.DEVNULL,
+                              capture_output=True, timeout=60)
+        if done.returncode != 0:
+            self.skipTest("bsdtar could not write the test pack: %r" % done.stderr[-300:])
+        return case_dir, pack
+
+    def test_tar_brackets_and_wildcards_in_folder_names(self):
+        for tool, label in self.tools_for("[ ] in folder and file names", (BSDTAR,)):
+            with self.subTest(tool=tool.label):
+                self.only(tool)
+                case_dir, pack = self.make_7z(tool, {"[site] room/scene.max": b"S", "[site] room/wood[1].jpg": b"W"})
+                result = archive.unpack(pack)
+                self.assertEqual(folder_files(result.folder), {"scene.max": b"S", "wood[1].jpg": b"W"})
+                say(label, True)
+
+    def test_tar_deep_paths(self):
+        """Deeper than Windows' 260 characters: unpacked, and nothing left behind on failure either."""
+        deep = "/".join(["d%02d_%s" % (i, "x" * 40) for i in range(6)])
+        for tool, label in self.tools_for("paths over 260 characters", (BSDTAR,)):
+            with self.subTest(tool=tool.label):
+                self.only(tool)
+                case_dir, pack = self.make_7z(tool, {"pack/%s/scene.max" % deep: b"S",
+                                                     "pack/%s/wood.jpg" % deep: b"W"})
+                result = archive.unpack(pack)
+                self.assertEqual(folder_files(result.folder), {"scene.max": b"S", "wood.jpg": b"W"})
+                self.assertEqual(sorted(os.listdir(case_dir)), ["made", "made.7z"])
                 say(label, True)
 
     def test_password_on_the_headers(self):
