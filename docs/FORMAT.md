@@ -104,6 +104,51 @@ field (FixtureNoRender has `0x800`).
   transform = offset * world. hierarchy: FixtureRoot and FixtureChild (offset `[5, 5, 0]`) match the oracle's
   `object_transform`.
 
+## Geometry
+
+`maxdrop/reader/geometry.py` reads an Editable Mesh or Editable Poly base object into arrays;
+`tests/unit/test_geometry.py` checks every fixture's vertex and face counts against the oracle's `base_verts` and
+`base_faces`, and the smoothing groups, material IDs and map channels against the fixture scripts. Both classes keep
+their mesh in a `0x08FE` container. Counts are `u32`, indices `u32`, coordinates `f32`; material IDs are stored
+zero-based (3ds Max shows ID 1 for 0), smoothing groups as a bit set (bit 0 = group 1).
+
+Editable Mesh `(0xE44F10B3, 0)` (editable_mesh: 8 vertices, 12 triangles):
+
+| Chunk | Content |
+|---|---|
+| `0x0914` | count, then 3 x `f32` per vertex |
+| `0x0912` | count, then 20 bytes per triangle: 3 vertex indices, smoothing groups, flags. The flags' high 16 bits are the material ID: editable_mesh has 0, 0, 0, 0, 1, 1, 2, 2, 1, 1, 2, 2 (Max IDs 1-3 as the script sets them); its low bits are `0x3` there |
+| `0x0959` | `i32` map channel; its `0x2394` and `0x2396` follow (editable_mesh: channel 1, after `0x2398` = 1) |
+| `0x2394` | map vertices: count, then 3 x `f32` (editable_mesh: 12) |
+| `0x2396` | map faces: count (= the face count), then 3 map vertex indices per face |
+
+editable_mesh: smoothing groups `1` on faces 1-4 (bottom and top) and `2` on the sides, as the script sets them.
+
+Editable Poly `(0x1BF8338D, 0x192F6098)` (box_poly_standard, multi_uv and the boxes of every other fixture: 8
+vertices, 6 quads):
+
+| Chunk | Content |
+|---|---|
+| `0x0100` | count, then per vertex `u32` flags + 3 x `f32` (16 bytes; flags `0` in every fixture) |
+| `0x010A` | edges: count, then `u32` flags + 2 vertex indices (12 bytes); not needed for the mesh, not read |
+| `0x011A` | faces: count, then per face a variable record, below |
+| `0x0120` | number of map channels, unused ones included: box_poly_standard `2` (channel 1 only), multi_uv `4` (channels 1, 2, 3), `0` in hierarchy and layers_flags (no channel) |
+| `0x0124` | `i32` map channel; its `0x0128` and `0x012B` follow |
+| `0x0128` | map vertices: count, then 3 x `f32` (box_poly_standard: 24 in channel 1; multi_uv: 12, 8, 13 in channels 1, 2, 3) |
+| `0x012B` | map faces, no count: per face of `0x011A` a `u32` degree and that many map vertex indices |
+
+A face record of `0x011A`: `u32` degree, the vertex indices, a `u16` field mask, then each field the mask names, in
+this order:
+
+| Mask bit | Field | Shown by |
+|---|---|---|
+| `0x01` | `u32` face flags | not by a fixture (see Open) |
+| `0x08` | `u16` material ID | every box: `1, -, 4, 3, 5, 2` = Max IDs 2, 1, 5, 4, 6, 3 (bottom, top, front, right, back, left: a Box's own IDs); absent on the top, whose ID is 1 |
+| `0x10` | `u32` smoothing groups | every box: `2, 4, 8, 16, 32, 64`, one group per side |
+| `0x20` | `2 * (degree - 3)` x `u32`: the triangulation diagonals, as vertex positions within the face | every quad: `[0, 2]`, in multi_uv `[2, 0]` |
+
+A field whose value is zero is left out: the top of every box has mask `0x30`, the other faces `0x38`.
+
 ## Open
 
 Not shown by any fixture yet, so not stated above:
@@ -115,7 +160,20 @@ Not shown by any fixture yet, so not stated above:
   modifier.
 - The sign convention of the offset rotation: every fixture's is the identity.
 - The meaning of the flag bits in `0x0960` and of the first `u32` of `0x2035`.
-- The system unit, the optional fields of Editable Poly faces.
+- The system unit.
+- Geometry seen only in the corpus (scenes A and B, every Editable Mesh and Poly decoded, vertex and face counts
+  equal to the oracle on every node; `geometry.py` relies on them):
+  - dead Editable Poly records: a vertex or edge whose flags have bit `0x2` is stored as its flags alone (4 bytes);
+    a dead face has degree 0 and the face-flags field (mask `0x01`) with bit `0x2`. polyop.getNumVerts and
+    getNumFaces count them, so `MeshData.stored_vertices` / `stored_faces` do; the arrays leave them out. The map
+    face of a dead face keeps its old degree;
+  - the `0x01` face flags of live faces (values `0x1`, `0x8`, `0x20`, `0x40000`, ... ): not decoded, only bit
+    `0x2` is used. No mask bit other than `0x01`, `0x08`, `0x10`, `0x20` occurs: `geometry.py` refuses one;
+  - Editable Mesh map channels `-2`, `-1`, `0` (alpha, illumination, vertex color) besides `1` and up, `0x0956`
+    before several channels and `0x23A0` after them (not map data), and triangle flags `0x0`-`0x7` and `0x40`-`0x47`
+    in the low bits (edge visibility 1/2/4; not decoded);
+  - other Editable Poly chunks (`0x0200`, `0x0210`, `0x0300`) and Editable Mesh selection chunks (`0x092C`-`0x092E`):
+    not read.
 - Controllers seen only in the corpus (scenes A and B, compared with their oracle; `controllers.py` relies on
   them):
   - a Bezier Float with its `0x2501` directly in the object, not in `0x7127` (under ScaleXYZ, list weights);
