@@ -34,11 +34,13 @@ A node becomes an EMPTY placeholder when its base object is not an Editable Mesh
 object, or when the reader refuses its geometry or its record; placeholders counts them by the class name of the
 file's class directory ("" when there is none). A Dummy helper (a group head is one) is an EMPTY too, but that is
 its conversion, not a placeholder. A group head keeps its members as children: that is how 3ds Max stores a group.
+Modifiers are listed, not evaluated: the base mesh is built.
 
 Layers: each node names its layer's object index (None without one, or when the layer record cannot be read, which
 is an issue); desc.layers holds the layers that hold a node and their parent layers, in the Layer Manager's order
 with every parent before its children. A node's hidden, frozen and renderable flags are its own: a hidden layer
-hides its nodes in 3ds Max without setting their flag, so build/ applies the layer's flags to its collection. Modifiers are listed, not evaluated: the base mesh is built.
+hides its nodes in 3ds Max without setting their flag, so build/ applies the layer's flags to its collection.
+
 A local matrix with shear (a scale along a rotated axis) is reported: Blender's matrix_basis cannot hold it. A
 base object's reader arrays are dropped once its last node is described.
 Nothing here imports bpy; numpy is imported when a scene is described.

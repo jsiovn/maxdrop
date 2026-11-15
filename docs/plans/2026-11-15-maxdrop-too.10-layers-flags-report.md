@@ -44,7 +44,8 @@ on them like the corpus-only facts.
   `frozen`, `renderable`, `group_head`, `group_member`; `unknown_controllers` Counter; a Dummy helper is an empty
   but not a placeholder.
 - Create `maxdrop/convert/report.py`: `Report`, `gather(desc, ...)`, `Report.text()`, `Report.summary()`.
-- Create `maxdrop/build/collections.py`: `make(desc, parent, name, view_layer)` -> `Collections`.
+- Create `maxdrop/build/collections.py`: `make(desc, parent, name)` -> `Collections`, then `finish(cols, view_layer)`
+  excludes the hidden layers once the objects are linked (hide_set fails in an excluded collection).
 - Modify `maxdrop/build/objects.py`: `build(desc, collection, collections=None, view_layer=None)` links to the
   layer's collection and sets `hide_viewport` / `hide_set` / `hide_render` / `hide_select`.
 - Create `maxdrop/build/report.py`: `publish(report)` -> `(level, line)`.

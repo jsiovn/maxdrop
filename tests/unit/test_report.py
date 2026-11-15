@@ -75,9 +75,9 @@ class TestSynthetic(unittest.TestCase):
         self.assertEqual((rep.hidden, rep.unrenderable, rep.frozen, rep.groups), (1, 1, 1, 1))
         self.assertEqual(dict(rep.modifiers), {"TurboSmooth": 1, "UVW Map": 2})
         self.assertEqual(rep.geometry_errors, [("Wall", "0x0100 of 3 bytes has no count")])
-        self.assertEqual(rep.issues, [("object 7", "transform: unknown controller class"),
-                                      ("object 99", "node: damaged")])
-        self.assertEqual(rep.left_out, 2 + 3 + 1 + 1 + 2)
+        self.assertEqual(rep.issues, [("object 99", "node: damaged")])  # the unknown controller is counted by class
+        self.assertEqual(rep.unknown_controller_nodes, 1)
+        self.assertEqual(rep.left_out, 2 + 3 + 1 + 1 + 1 + 1)
 
     def test_text(self):
         self.assertEqual(self.rep.text().split("\n"), [
@@ -95,8 +95,7 @@ class TestSynthetic(unittest.TestCase):
             "  UV channels past Blender's limit: 1",
             "  Geometry errors: 1",
             "    Wall: 0x0100 of 3 bytes has no count",
-            "  Other issues: 2",
-            "    object 7: transform: unknown controller class",
+            "  Other issues: 1",
             "    object 99: node: damaged",
         ])
 

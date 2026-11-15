@@ -74,20 +74,15 @@ def close(a, b, tolerance):
 
 def world_of(ob):
     """ob's world matrix: matrix_world, or for an object hidden in the viewport (left out of the evaluated scene,
-    so matrix_world is never updated) the same product Blender evaluates, up the parent chain."""
-    if not any(o.hide_viewport for o in _chain(ob)):
+    so its matrix_world is never updated) the same product Blender evaluates, up the parent chain. A visible child
+    of a hidden parent is read from matrix_world: Blender must place it."""
+    if not ob.hide_viewport:
         return ob.matrix_world
     m = ob.matrix_basis.copy()
     while ob.parent is not None:
         m = ob.parent.matrix_basis @ ob.matrix_parent_inverse @ m
         ob = ob.parent
     return m
-
-
-def _chain(ob):
-    while ob is not None:
-        yield ob
-        ob = ob.parent
 
 
 def max_rows(m, meters):
@@ -216,7 +211,15 @@ def check_layer_flags(modules):
     desc.layers.append(child)
     moved = next(n for n in desc.nodes if n.name == "FixtureHidden")
     moved.layer = child.index
+    head = next(n for n in desc.nodes if n.name == "FixtureGroup")
+    head.hidden = True  # hiding a parent in 3ds Max leaves its children visible
     cols, _built, view_layer = build_scene(desc, "layer_flags", modules)
+    members = {ob.name: ob for ob in bpy.data.objects["FixtureGroup"].children}
+    placed = {name: tuple(round(v / desc.meters, 4) for v in ob.matrix_world.translation)
+              for name, ob in members.items()}
+    check("hidden parent: its visible children are placed by Blender",
+          placed == {"FixtureGroupA": (0.0, 30.0, 0.0), "FixtureGroupB": (20.0, 30.0, 0.0)}
+          and not any(ob.hide_get(view_layer=view_layer) for ob in members.values()), str(placed))
     lcs = view_layer.layer_collection.children["layer_flags"].children
     check("hidden layer: excluded in the view layer", lcs[b.name].exclude and not lcs[a.name].exclude)
     check("hidden layer: its child layer is nested below it",

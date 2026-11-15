@@ -18,21 +18,25 @@ repository. Lists are cut after MAX_LISTED entries. No bpy.
 import collections
 import os
 
+from ..reader import controllers
+
 MAX_LISTED = 50
 LEVEL_INFO, LEVEL_WARNING = "INFO", "WARNING"
 GEOMETRY = "geometry: "
+UNKNOWN_CONTROLLER = "transform: " + controllers.UNKNOWN_CLASS  # convert.scene's wording of that issue
 
 
 class Report:
     """Counters and lists of one import. issues and geometry_errors are [(node label, reason)]."""
     __slots__ = ("source", "unit", "meters", "nodes", "objects_built", "meshes_built", "layers", "hidden_layers",
                  "hidden", "unrenderable", "frozen", "groups", "placeholders", "unknown_controllers", "modifiers",
-                 "dropped_uv_layers", "geometry_errors", "issues", "pack", "pack_name")
+                 "dropped_uv_layers", "unknown_controller_nodes", "geometry_errors", "issues", "pack", "pack_name")
 
     def __init__(self, source=""):
         self.source, self.unit, self.meters = source, None, 1.0
         self.nodes = self.objects_built = self.meshes_built = self.layers = self.hidden_layers = 0
         self.hidden = self.unrenderable = self.frozen = self.groups = self.dropped_uv_layers = 0
+        self.unknown_controller_nodes = 0  # their issues, listed by class in unknown_controllers instead
         self.placeholders = collections.Counter()
         self.unknown_controllers = collections.Counter()
         self.modifiers = collections.Counter()  # class name -> nodes whose stack holds it, not applied
@@ -42,9 +46,11 @@ class Report:
     @property
     def left_out(self):
         """How many things were not converted: placeholders, nodes with modifiers not applied, UV channels without
-        room, geometry errors and other issues."""
-        return (sum(self.placeholders.values()) + sum(self.modifiers.values()) + self.dropped_uv_layers
-                + len(self.geometry_errors) + len(self.issues))
+        room, unknown controllers, geometry errors and other issues."""
+        return (sum(self.placeholders.values()) + sum(self.modifiers.values()) + self._problems())
+
+    def _problems(self):
+        return len(self.geometry_errors) + len(self.issues) + self.dropped_uv_layers + self.unknown_controller_nodes
 
     def summary(self):
         """(level, one line) for the operator's report."""
@@ -57,7 +63,7 @@ class Report:
             parts.append(_plural(sum(self.placeholders.values()), "placeholder"))
         if self.modifiers:
             parts.append(_plural(sum(self.modifiers.values()), "modifier") + " not applied")
-        problems = len(self.geometry_errors) + len(self.issues) + self.dropped_uv_layers
+        problems = self._problems()
         if problems:
             parts.append(_plural(problems, "issue"))
         return LEVEL_WARNING, "Imported %s: %s; %s. See the text MaxDrop Report." % (name, built, ", ".join(parts))
@@ -169,7 +175,9 @@ def gather(desc, source="", objects_built=None, meshes_built=None, dropped_uv_la
     labels = {node.index: node.name or "object %d" % node.index for node in desc.nodes}
     for index, reason in desc.issues:
         label = labels.get(index, "object %d" % index)
-        if reason.startswith(GEOMETRY):
+        if reason == UNKNOWN_CONTROLLER and desc.unknown_controllers:  # counted by class already
+            rep.unknown_controller_nodes += 1
+        elif reason.startswith(GEOMETRY):
             rep.geometry_errors.append((label, reason[len(GEOMETRY):]))
         else:
             rep.issues.append((label, reason))

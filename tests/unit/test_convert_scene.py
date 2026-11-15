@@ -201,7 +201,6 @@ class DamagedInput(unittest.TestCase):
         leaf = next(n for n in desc.nodes if n.name == "FixtureLeaf")
         self.assertEqual((leaf.parent, leaf.kind), (child, conv.MESH))
 
-
     def layered(self, parents=None, broken=()):
         """layers_flags with parent layers set by name and some layer records refused."""
         sc = self.scene("layers_flags")
@@ -246,9 +245,6 @@ class DamagedInput(unittest.TestCase):
         real = conv.controllers.Transforms
 
         class Fake(real):
-            def __init__(self, scene):
-                super().__init__(scene)
-
             def local(self, i):
                 m = super().local(i)
                 node = self.scene.node(i)

@@ -26,7 +26,7 @@ class Collections:
         self.root, self.layers, self.hidden = root, {}, []
 
     def of(self, node):
-        return self.layers.get(node.layer, self.root) if node.layer is not None else self.root
+        return self.layers.get(node.layer, self.root)
 
 
 def make(desc, parent, name):
