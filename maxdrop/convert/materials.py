@@ -45,8 +45,19 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   mixes the transparency color into the base, as for VRayMtl; IOR, thin-walled; emission color at emission
   weight times luminance / LUMENS_PER_WATT (cd/m2 to Blender's W/(m2 sr)), a weight map standing for the
   weight; coating; map slots where on.
-- Wrappers (VRay2SidedMtl, VRayBlendMtl, VRayOverrideMtl, VRayMtlWrapper, DoubleSided, Shellac) -> the first set
-  sub-material in 3ds Max's getSubMtl order; Shell Material -> its render sub-material. Peeling stops at any other
+- CoronaPhysicalMtl: base = base color times base level; roughness, or 1 - it in glossiness mode (every roughness
+  of the material, a map then inverted); metallic from the metalness mode; transmission = refraction amount, the base
+  mixed toward white (thin mode: the thin absorption color) by it; IOR, thin mode; alpha = the mean of the linear
+  opacity color times its level; emission color at its level; clearcoat amount, IOR, roughness and absorption color;
+  maps where on, their amounts fractions. Specular stays 0.5 (Corona derives it from the IOR).
+- CoronaLegacyMtl (CoronaMtl): diffuse, reflection, refraction, opacity and self-illumination colors times their
+  levels; specular = the mean reflection; roughness = 1 - glossiness (PBR mode or not); transmission and the glass
+  base color as for VRayMtl, the IOR as well (refraction IOR when it refracts, else the Fresnel IOR); a Fresnel IOR
+  of CORONA_METAL_IOR or more with a bright reflection (as METAL_REFLECTION) is a metal in the reflection color.
+- CoronaLightMtl -> emission (color, intensity, map) and its opacity map.
+- Wrappers (VRay2SidedMtl, VRayBlendMtl, VRayOverrideMtl, VRayMtlWrapper, DoubleSided, Shellac, CoronaLayeredMtl:
+  base, then its layers) -> the first set sub-material in 3ds Max's getSubMtl order; Shell Material -> its render
+  sub-material. Peeling stops at any other
   class (a Multi/Sub-Object included), at most MAX_PEEL wrappers deep; each wrapper object peeled counts once.
 - Multi/Sub-Object: entry k has the material ID materialIDList[k] (zero-based, as the faces store it), the
   material materialList[k] and the switch mapEnabled[k]; the first entry with an ID wins. A face ID without an
@@ -64,9 +75,9 @@ scene's gamma setting is not read from the file (GAMMA_NOTE), and the sRGB curve
 gamma 2.2, the one Blender applies to sRGB textures as well.
 A missing, animated or non-finite parameter takes the class's default; an IOR is clamped to 1..100. The SSS radius is
 in meters (VRayFastSSS2 stores it in centimeters whatever the system unit).
-Parameter ids: docs/FORMAT.md for the classes of the fixtures; the others (named beside each rule) were read from
-3ds Max 2020 + V-Ray 5.2 through the SDK or from probe scenes it saved, not from a fixture. No bpy, no
-mathutils.
+Parameter ids: docs/FORMAT.md for the classes of the fixtures (the Corona ones: Corona 12); the others (named beside
+each rule) were read from 3ds Max 2020 + V-Ray 5.2 through the SDK or from probe scenes it saved, not from a
+fixture. No bpy, no mathutils.
 """
 import collections
 import dataclasses
@@ -80,6 +91,7 @@ ChunkError = chunks.ChunkError
 
 MAX_PEEL = 8
 METAL_REFLECTION = 0.25  # mean linear reflection (about sRGB 137 grey) above which Fresnel off means metal
+CORONA_METAL_IOR = 10.0  # a CoronaLegacyMtl Fresnel IOR from which a bright reflection is a metal (made with 999)
 GREY_SRGB = 128 / 255
 
 # The classes no fixture has: reader/classids.py takes a class only with a fixture.
@@ -106,6 +118,7 @@ WRAPPERS = {
     VRAY_MTL_WRAPPER: (0,),  # baseMtl
     DOUBLE_SIDED_MTL: (0, 1),  # material1 (facing), material2 (back)
     SHELLAC_MTL: (0, 1),  # shellacMtl1 (base), shellacMtl2
+    classids.CORONA_LAYERED_MTL: (1000, 1001),  # baseMtl, layers (table)
 }
 SHELL_RENDER_INDEX, SHELL_SUBS = 1, (2, 3)  # renderMtlIndex; originalMaterial, bakedMaterial
 
@@ -216,9 +229,10 @@ def mean(rgb):
 
 
 def class_name(superclass, class_id):
-    """The class name for the report: the class directory's for a known class, else the ClassID."""
+    """The class name for the report: the class directory's for a known class (without the blanks around it:
+    CoronaPhysicalMtl's starts with a carriage return), else the ClassID."""
     cid = ClassId(*class_id)
-    return classids.name_of(superclass, cid) or CLASS_NAMES.get(cid) or "ClassID%s" % (cid,)
+    return (classids.name_of(superclass, cid) or CLASS_NAMES.get(cid) or "ClassID%s" % (cid,)).strip()
 
 
 def _finite(v):
@@ -695,6 +709,83 @@ def physical_mtl(conv, m, ir):
     ir.alpha = Input(1.0, conv.map_ref(m, 133, 183, None, 0, ir=ir))
 
 
+def _corona_amount_map(conv, m, map_pid, ir, invert=False):
+    """A Corona map slot: the map at map_pid, its switch at + 1, its amount (a fraction) at + 2."""
+    return conv.map_ref(m, map_pid, map_pid + 1, map_pid + 2, 0, invert=invert, ir=ir, percent=False)
+
+
+def corona_physical_mtl(conv, m, ir):
+    """CoronaPhysicalMtl, block 0 (map, its switch and amount at id, id + 1, id + 2): 101 baseColor, 102 baseLevel,
+    103 base map, 111 metalnessMode, 121 opacityColor, 122 opacityLevel, 123 opacity map, 131 baseRoughness,
+    132 its map, 171 baseIor, 191 refractionAmount, 192 its map, 203 useThinMode, 211 clearcoatAmount,
+    221 clearcoatIor, 231 clearcoatRoughness, 331 selfIllumColor, 332 selfIllumLevel, 333 its map, 351 baseBump map,
+    381 thinAbsorptionColor, 391 clearcoatAbsorptionColor, 411 / 412 metalness map (on), 421 roughnessMode (1:
+    every roughness is a glossiness)."""
+    gloss = m.param(421, 0) == 1
+    level = max(0.0, _num(m, 102, 0, 1.0))
+    base = tuple(min(1.0, c * level) for c in _rgb(m, 101, 0, (0.5, 0.5, 0.5)))
+    t = _clamp01(_num(m, 191, 0, 0.0))
+    thin = _flag(m, 203, 0, False)
+    if t > 0:  # the refraction is clear unless thin mode tints it
+        base = _mix(base, _rgb(m, 381, 0, (1.0, 1.0, 1.0)) if thin else (1.0, 1.0, 1.0), t)
+    ir.base_color = Input(base, _corona_amount_map(conv, m, 103, ir))
+    r = _clamp01(_num(m, 131, 0, 0.75))
+    ir.roughness = Input(1.0 - r if gloss else r, _corona_amount_map(conv, m, 132, ir, invert=gloss))
+    ir.metallic = Input(1.0 if m.param(111, 0) == 1 else 0.0, conv.map_ref(m, 411, 412, None, 0, ir=ir))
+    ir.transmission = Input(t, _corona_amount_map(conv, m, 192, ir))
+    ir.ior = _ior(_num(m, 171, 0, 1.5))
+    ir.thin_walled = thin
+    opacity = _clamp01(mean(_rgb(m, 121, 0, (1.0, 1.0, 1.0))) * max(0.0, _num(m, 122, 0, 1.0)))
+    ir.alpha = Input(opacity, _corona_amount_map(conv, m, 123, ir))
+    ir.emission_color = Input(_rgb(m, 331, 0, (1.0, 1.0, 1.0)), _corona_amount_map(conv, m, 333, ir))
+    ir.emission_strength = max(0.0, _num(m, 332, 0, 0.0))
+    ir.coat_weight = _clamp01(_num(m, 211, 0, 0.0))
+    ir.coat_ior = _ior(_num(m, 221, 0, 1.5))
+    c = _clamp01(_num(m, 231, 0, 0.0))
+    ir.coat_roughness = 1.0 - c if gloss else c
+    ir.coat_color = _rgb(m, 391, 0, (1.0, 1.0, 1.0))
+    conv.bump_slot(ir, _corona_amount_map(conv, m, 351, ir))
+
+
+def corona_legacy_mtl(conv, m, ir):
+    """CoronaLegacyMtl (CoronaMtl), block 0: colors 101 diffuse, 102 reflect, 103 refract, 105 opacity, 107
+    selfIllum; their levels 121, 122, 123, 127, 128; maps 141 diffuse, 142 reflect, 143 reflectGlossiness,
+    144 refract, 146 opacity, 147 bump, 158 selfIllum, each switched on by id + 20, with amounts (fractions) 290,
+    291, 292, 293, 295, 296, 303; 180 reflectGlossiness, 182 fresnelIor,
+    183 ior, 210 thin. 402 pbrMode only changes how Corona curves the glossiness: 1 - glossiness either way."""
+    def slot(map_pid, on_pid, amount_pid, invert=False):
+        return conv.map_ref(m, map_pid, on_pid, amount_pid, 0, invert=invert, ir=ir, percent=False)
+    diffuse = tuple(min(1.0, c * max(0.0, _num(m, 121, 0, 1.0))) for c in _rgb(m, 101, 0, (0.5, 0.5, 0.5)))
+    reflect_color = _rgb(m, 102, 0, (1.0, 1.0, 1.0))
+    reflection = tuple(min(1.0, c * max(0.0, _num(m, 122, 0, 0.0))) for c in reflect_color)
+    refract_color = _rgb(m, 103, 0, (1.0, 1.0, 1.0))
+    t = _clamp01(mean(refract_color) * max(0.0, _num(m, 123, 0, 0.0)))
+    reflection_map = slot(142, 162, 291)
+    fresnel_ior = _num(m, 182, 0, 1.52)
+    ir.base_color = Input(_mix(diffuse, refract_color, t) if t > 0 else diffuse, slot(141, 161, 290))
+    ir.specular = Input(_clamp01(mean(reflection)), reflection_map)
+    ir.roughness = Input(_roughness(_num(m, 180, 0, 1.0), False), slot(143, 163, 292, invert=True))
+    if fresnel_ior >= CORONA_METAL_IOR and mean(reflection) >= METAL_REFLECTION:
+        ir.metallic = Input(1.0)
+        ir.base_color = Input(reflection, reflection_map)
+    ir.transmission = Input(t, slot(144, 164, 293))
+    ir.ior = _ior(_num(m, 183, 0, 1.52) if t > 0 else fresnel_ior)
+    ir.thin_walled = _flag(m, 210, 0, False)
+    opacity = _clamp01(mean(_rgb(m, 105, 0, (1.0, 1.0, 1.0))) * max(0.0, _num(m, 127, 0, 1.0)))
+    ir.alpha = Input(opacity, slot(146, 166, 295))
+    ir.emission_color = Input(_rgb(m, 107, 0, (1.0, 1.0, 1.0)), slot(158, 178, 303))
+    ir.emission_strength = max(0.0, _num(m, 128, 0, 0.0))
+    conv.bump_slot(ir, slot(147, 167, 296))
+
+
+def corona_light_mtl(conv, m, ir):
+    """CoronaLightMtl, block 0: 110 intensity, 111 / 112 texmap (on), 113 color, 150 / 151 opacityTexmap (on)."""
+    ir.base_color, ir.roughness, ir.specular = Input((0.0, 0.0, 0.0)), Input(1.0), Input(0.0)
+    ir.emission_color = Input(_rgb(m, 113, 0, (1.0, 1.0, 1.0)), conv.map_ref(m, 111, 112, None, 0, ir=ir))
+    ir.emission_strength = max(0.0, _num(m, 110, 0, 1.0))
+    ir.alpha = Input(1.0, conv.map_ref(m, 150, 151, None, 0, ir=ir))
+
+
 # (superclass, ClassId) -> rule(converter, MtlBase, MaterialIR): fills the IR in place
 RULES = {
     (classids.SC_MATERIAL, classids.STANDARD_MTL): standard_mtl,
@@ -704,6 +795,9 @@ RULES = {
     (classids.SC_MATERIAL, VRAY_FAST_SSS2): vray_fast_sss2,
     (classids.SC_MATERIAL, VRAY_CAR_PAINT_MTL): vray_car_paint_mtl,
     (classids.SC_MATERIAL, VRAY_CAR_PAINT_MTL2): vray_car_paint_mtl2,
+    (classids.SC_MATERIAL, classids.CORONA_PHYSICAL_MTL): corona_physical_mtl,
+    (classids.SC_MATERIAL, classids.CORONA_LEGACY_MTL): corona_legacy_mtl,
+    (classids.SC_MATERIAL, classids.CORONA_LIGHT_MTL): corona_light_mtl,
 }
 
 

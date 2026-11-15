@@ -734,6 +734,190 @@ def _desc(**meshes):
                                          for k, (u, f) in meshes.items()})
 
 
+def _lin(s):
+    c = s / 255.0
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+
+def _lins(*s):
+    return tuple(_lin(c) for c in s)
+
+
+class Corona(unittest.TestCase, Close):
+    """tools/fixtures/corona_physical.ms, corona_legacy.ms, corona_layered.ms and corona_light.ms, by hand."""
+
+    def convert(self, fixture, *names):
+        cf, graph, by_name = _fixture(fixture)
+        with cf:
+            conv = mat.MaterialConverter(graph)
+            irs = [conv.convert(by_name[n]) for n in names]
+        return conv, irs
+
+    def test_physical(self):
+        conv, (rough, gloss, glass) = self.convert("corona_physical", "FixtureCoronaPhysRough",
+                                                   "FixtureCoronaPhysGloss", "FixtureCoronaPhysGlass")
+        self.assertEqual((rough.source, rough.unknown), ("CoronaPhysicalMtl", False))  # the leading CR stripped
+        self.close(rough.base_color.value, tuple(c * 0.9 for c in _lins(200, 120, 60)), "base x level 0.9")
+        self.close(rough.roughness.value, 0.35, "roughness mode")
+        self.close(rough.metallic.value, 0.0)
+        self.close(rough.ior, 1.45)
+        self.close(rough.coat_weight, 0.4)
+        self.close(rough.coat_ior, 1.6)
+        self.close(rough.coat_roughness, 0.2)
+        self.close(rough.coat_color, _lins(230, 210, 190), "clearcoat absorption color")
+        self.close(rough.emission_color.value, _lins(255, 128, 0))
+        self.close(rough.emission_strength, 2.5)
+        self.close(rough.alpha.value, _lin(200) * 0.8, "mean opacity color x level")
+        self.close(rough.specular.value, 0.5, "from the IOR")
+        self.close(gloss.base_color.value, _lins(220, 180, 90))
+        self.close(gloss.metallic.value, 1.0, "metalness mode metal")
+        self.close(gloss.roughness.value, 0.3, "glossiness 0.7")
+        self.close(gloss.coat_roughness, 0.1, "the clearcoat roughness is a glossiness too")
+        tint = _lins(150, 200, 255)
+        self.close(glass.base_color.value, tuple(_lin(40) * 0.1 + c * 0.9 for c in tint), "toward the thin tint")
+        self.close(glass.transmission.value, 0.9)
+        self.assertTrue(glass.thin_walled)
+        self.close(glass.ior, 1.52)
+        self.close(glass.roughness.value, 0.05)
+        self.assertEqual((conv.stats.issues, dict(conv.stats.unknown)), ([], {}))
+
+    def test_legacy(self):
+        conv, (pbr, old, metal) = self.convert("corona_legacy", "FixtureCoronaLegacyPbr", "FixtureCoronaLegacyGloss",
+                                               "FixtureCoronaLegacyMetal")
+        self.assertEqual(pbr.source, "CoronaLegacyMtl")
+        self.close(pbr.base_color.value, tuple(c * 0.85 for c in _lins(180, 60, 40)), "diffuse x level")
+        self.close(pbr.specular.value, _lin(220) * 0.6, "mean reflection x level")
+        self.close(pbr.roughness.value, 0.28, "1 - glossiness 0.72")
+        self.close(pbr.metallic.value, 0.0)
+        self.close(pbr.ior, 1.6, "Fresnel IOR without refraction")
+        self.close(pbr.emission_color.value, _lins(0, 128, 255))
+        self.close(pbr.emission_strength, 1.5)
+        self.close(pbr.alpha.value, _lin(230) * 0.9)
+        refract = _lins(200, 230, 255)
+        t = sum(refract) / 3 * 0.75
+        self.close(old.transmission.value, t, "mean refraction x level")
+        self.close(old.base_color.value, tuple(d * (1 - t) + r * t for d, r in zip(_lins(90, 110, 130), refract)))
+        self.close(old.roughness.value, 0.6, "PBR mode off: 1 - glossiness all the same")
+        self.close(old.specular.value, 1.0)
+        self.close(old.ior, 1.33, "the refraction IOR")
+        self.assertTrue(old.thin_walled)
+        self.close(metal.metallic.value, 1.0, "Fresnel IOR 999 and a bright reflection")
+        self.close(metal.base_color.value, _lins(250, 200, 120), "the reflection color")
+        self.close(metal.roughness.value, 0.1)
+        self.assertEqual(conv.stats.issues, [])
+
+    def test_layered_peels_to_its_base_or_first_layer(self):
+        cf, graph, by_name = _fixture("corona_layered")
+        with cf:
+            conv = mat.MaterialConverter(graph)
+            layered = conv.convert(by_name["FixtureCoronaLayered"])
+            base = conv.convert(by_name["FixtureCoronaLayerBase"])
+            nobase = conv.convert(by_name["FixtureCoronaLayeredNoBase"])
+            only = by_name["FixtureCoronaLayerOnly"]
+            self.assertEqual(conv.peel(by_name["FixtureCoronaLayeredNoBase"]), (only, None))
+        self.assertIs(layered, base)
+        self.close(base.base_color.value, _lins(90, 160, 70))
+        self.close(base.roughness.value, 0.45)
+        self.assertEqual(nobase.name, "FixtureCoronaLayerOnly")
+        self.close(nobase.base_color.value, _lins(70, 80, 200))
+        self.assertEqual(conv.stats.peeled, {"CoronaLayeredMtl": 2})
+
+    def test_light(self):
+        cf, graph, by_name = _fixture("corona_light")
+        with cf:
+            conv = mat.MaterialConverter(graph)
+            light, plain = conv.convert(by_name["FixtureCoronaLight"]), conv.convert(by_name["FixtureCoronaLightPlain"])
+        self.close(light.base_color.value, (0.0, 0.0, 0.0))
+        self.close(light.specular.value, 0.0)
+        self.close(light.emission_color.value, _lins(255, 200, 150))
+        self.close(light.emission_strength, 12.5)
+        self.assertEqual(light.emission_color.map, mat.MapRef(by_name["FixtureCLightTex"]))
+        self.assertEqual(light.alpha.map, mat.MapRef(by_name["FixtureCLightAlpha"]))
+        self.close(plain.emission_color.value, _lins(100, 150, 255))
+        self.close(plain.emission_strength, 3.0)
+        self.assertIsNone(plain.emission_color.map, "texmapOn off")
+
+    def test_map_slots(self):
+        cf, graph, by_name = _fixture("corona_maps")
+        with cf:
+            conv = mat.MaterialConverter(graph)
+            ir, legacy = conv.convert(by_name["FixtureCoronaMaps"]), conv.convert(by_name["FixtureCoronaLegacyMaps"])
+        self.assertEqual(ir.base_color.map.index, by_name["FixtureCBase"])
+        self.close(ir.base_color.map.amount, 0.75, "a fraction")
+        self.assertEqual(ir.roughness.map.index, by_name["FixtureCGloss"])
+        self.assertTrue(ir.roughness.map.invert, "glossiness mode")
+        self.close(ir.roughness.map.amount, 0.6)
+        self.close(ir.roughness.value, 0.4)
+        self.assertEqual(ir.alpha.map, mat.MapRef(by_name["FixtureCOpacity"]))
+        self.assertEqual(ir.normal.index, by_name["FixtureCNormal"])
+        self.close(ir.normal.amount, 0.9)
+        self.assertEqual(ir.metallic.map, mat.MapRef(by_name["FixtureCColor"]))
+        self.assertEqual(ir.emission_color.map, mat.MapRef(by_name["FixtureCMix"]))
+        self.assertEqual(legacy.base_color.map, mat.MapRef(by_name["FixtureCMultiply"]))
+        self.assertEqual(legacy.specular.map, mat.MapRef(by_name["FixtureCAdd"]))
+        self.assertEqual(legacy.roughness.map, mat.MapRef(by_name["FixtureCLegacyGloss"], 1.0, True))
+        self.assertEqual(legacy.bump, mat.MapRef(by_name["FixtureCLegacyBump"], 0.5))
+        self.assertEqual(legacy.alpha.map, mat.MapRef(by_name["FixtureCHdr"]))
+        self.assertIsNone(legacy.emission_color.map, "slot switched off")
+        self.assertEqual(conv.stats.issues, [])
+
+
+def _corona(index, class_id, **params):
+    return FakeMtl(index, class_id, "C", {0: {int(k[1:]): v for k, v in params.items()}})
+
+
+class CoronaSynthetic(unittest.TestCase, Close):
+    def test_physical_defaults(self):
+        _conv, ir = _convert(_corona(0, classids.CORONA_PHYSICAL_MTL))
+        self.close(ir.base_color.value, (_lin(127.5),) * 3)
+        self.close(ir.roughness.value, 0.75)
+        self.close(ir.ior, 1.5)
+        self.close(ir.alpha.value, 1.0)
+        self.close(ir.emission_strength, 0.0)
+        self.assertIsNone(ir.base_color.map)
+
+    def test_physical_maps_and_switches(self):
+        objects = [_map(i) for i in range(1, 6)]
+        _conv, ir = _convert(_corona(0, classids.CORONA_PHYSICAL_MTL, p103=Ref(1), p105=0.5, p132=Ref(2), p421=1,
+                                     p192=Ref(3), p193=0, p351=Ref(4), p353=2.0, p411=Ref(5), p412=1), *objects)
+        self.assertEqual(ir.base_color.map, mat.MapRef(1, 0.5))
+        self.assertEqual(ir.roughness.map, mat.MapRef(2, 1.0, True))
+        self.assertIsNone(ir.transmission.map, "switched off")
+        self.assertEqual(ir.bump, mat.MapRef(4, 2.0))
+        self.assertEqual(ir.metallic.map, mat.MapRef(5))
+
+    def test_legacy_metal_needs_both_ior_and_reflection(self):
+        bright = dict(p102=(1.0, 1.0, 1.0), p122=1.0)
+        for params, metal in ((dict(bright, p182=999.0), 1.0), (dict(bright, p182=9.0), 0.0),
+                              (dict(p102=(0.2, 0.2, 0.2), p122=1.0, p182=999.0), 0.0)):
+            _conv, ir = _convert(_corona(0, classids.CORONA_LEGACY_MTL, **params))
+            self.close(ir.metallic.value, metal, str(params))
+
+    def test_legacy_defaults_reflect_nothing(self):
+        _conv, ir = _convert(_corona(0, classids.CORONA_LEGACY_MTL))
+        self.close(ir.specular.value, 0.0, "levelReflect 0")
+        self.close(ir.transmission.value, 0.0)
+        self.close(ir.ior, 1.52)
+
+    def test_damaged_values_take_defaults(self):
+        _conv, ir = _convert(_corona(0, classids.CORONA_PHYSICAL_MTL, p101=(float("nan"), 0, 0), p131="x",
+                                     p171=float("inf")))
+        self.close(ir.base_color.value, (_lin(127.5),) * 3)
+        self.close(ir.roughness.value, 0.75)
+        self.close(ir.ior, 1.5)
+
+    def test_light_defaults(self):
+        _conv, ir = _convert(_corona(0, classids.CORONA_LIGHT_MTL))
+        self.close(ir.emission_color.value, (1.0, 1.0, 1.0))
+        self.close(ir.emission_strength, 1.0)
+
+    def test_layered_with_nothing_set_is_grey(self):
+        conv, ir = _convert(_corona(0, classids.CORONA_LAYERED_MTL, p1000=Ref(None), p1001=[Ref(None)] * 3))
+        self.assertTrue(ir.unknown)
+        self.close(ir.base_color.value, GREY)
+        self.assertTrue(any("no sub-material" in r for _i, r in conv.stats.issues))
+
+
 class Assign(unittest.TestCase):
     def names(self, slots):
         return [[ir and ir.name for ir in s] for s in slots]

@@ -35,6 +35,13 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
   tiling is in scene units). Cropping or placement when applied and not the whole image; the Output (invert,
   amount, RGB level and offset) when it changes anything; alpha when the Bitmap gives its alpha to a mono input
   (mono output Alpha) or as its color (RGB output Alpha). A Bitmap without a file is no image (an issue).
+- CoronaBitmap -> Image the same way, from its own parameters: UVW scale and offset, W angle, tiling (none, repeat,
+  mirror) per axis, map channel, blur, clipping (crop or place), gamma (-1 automatic), mono / RGB output alpha, real-
+  world scale (an issue); its Output part as a Bitmap's.
+- CoronaColor -> Constant (color and hex as swatches, the HDR color linear, the temperature through kelvin_rgb, times
+  the multiplier). CoronaMix: operation mix -> Mix(bottom, top, amount, mask), multiply -> Multiply (under a Mix for
+  an amount below 1 or a mask), any other operation peeled to its first bitmap (an issue); layer multipliers and
+  offsets are an issue.
 - Kept as nodes (the allow-list): Mix (color 1 / 2 where a map is off or missing, the mask, the mix amount; its
   curve is not converted: an issue), RGB Multiply, Color Correction (hue shift in turns, saturation as a factor;
   lightness either standard, brightness and contrast as fractions, or advanced, gain and gamma, whichever is chosen;
@@ -42,7 +49,7 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
   mode, no mask; any other is peeled).
 - Peeled to the first usable map below, an approximation counted by class: Falloff (map 1 when on, else color 1),
   VRayDirt (the unoccluded map when on, else the unoccluded color), Output (map 1; its own Output's invert kept),
-  RGB Tint (map 1), VRayColor2Bump (its map). Any other map class with maps below gives the first Bitmap below it
+  RGB Tint (map 1), VRayColor2Bump (its map). Any other map class with maps below gives the first image below it
   (depth first, in reference order), counted the same way; one without is unsupported (counted, no graph).
 - Normal maps (VRayNormalMap, Normal Bump, CoronaNormal) in a normal or bump input -> NormalMap: the normal image
   with the class's multiplier as its strength, flip red / green and swap, and the additional bump map as a Bump with
@@ -86,7 +93,8 @@ RGB_MULTIPLY = ClassId(0x00000290, 0)
 COLOR_CORRECTION = ClassId(0x000002D0, 0)
 COMPOSITE = ClassId(0x00000280, 0)
 NORMAL_BUMP = ClassId(0x243E22C6, 0x63F6A014)
-CORONA_NORMAL = ClassId(0x2870CEAA, 0xCC18437C)
+CORONA_NORMAL = classids.CORONA_NORMAL
+IMAGES = (classids.BITMAP_TEX, classids.CORONA_BITMAP)  # map classes that are an image file
 
 # normal map class -> parameter ids in block 0: normal map, its switch, multiplier, bump map, its switch, multiplier,
 # flip red, flip green, swap red and green, the tangents' map channel (None: the class has no such parameter)
@@ -98,6 +106,22 @@ NORMAL_MAPS = {
     CORONA_NORMAL: _NormalIds(500, None, 501, 507, 509, 508, 503, 504, 505, None),
 }
 NORMAL_BUMP_METHOD, CORONA_ADD_GAMMA = 6, 502
+
+# CoronaBitmap, block 0: tiling 0 none, 1 repeat, 2 mirror; wAngle in radians. uAngle (130) is the U offset times
+# 2 pi (Corona keeps the two in step, for an environment map's turn): not read
+CB_FILE, CB_CHANNEL, CB_SCALE, CB_OFFSET, CB_BLUR, CB_TILE_U, CB_TILE_V, CB_REAL_WORLD = (
+    101, 103, 105, 106, 107, 108, 109, 114)
+CB_MONO, CB_RGB, CB_CLIP_ON, CB_CLIP_MODE, CB_CLIP_U, CB_CLIP_V, CB_CLIP_W, CB_CLIP_H = (
+    117, 118, 119, 120, 121, 122, 123, 124)
+CB_GAMMA, CB_W_ANGLE = 125, 129
+CB_NO_TILE, CB_MIRROR = 0, 2
+# CoronaColor, block 0: method 0 color, 1 HDR color (linear), 2 temperature, 3 hex
+CC_METHOD, CC_TEMPERATURE, CC_COLOR, CC_MULTIPLIER, CC_HDR, CC_HEX = 50, 51, 52, 57, 58, 59
+# CoronaMix, block 0: result = mix(bottom, operation(bottom, top), amount), the mask map replacing the amount
+CM_OPERATION, CM_AMOUNT, CM_MULT_TOP, CM_MULT_BOTTOM, CM_OFFSET_TOP, CM_OFFSET_BOTTOM = 200, 201, 202, 203, 204, 205
+CM_MAP_TOP, CM_MAP_BOTTOM, CM_COLOR_TOP, CM_COLOR_BOTTOM, CM_MASK, CM_MASK_ON, CM_TOP_ON, CM_BOTTOM_ON = (
+    206, 207, 208, 209, 210, 211, 212, 213)
+CM_MULTIPLY, CM_MIX = 2, 6
 
 # Bitmap, block 0
 BM_CLIP_U, BM_CLIP_V, BM_CLIP_W, BM_CLIP_H, BM_APPLY, BM_CROP_PLACE, BM_MONO, BM_RGB, BM_FILE = (
@@ -326,6 +350,24 @@ def _linear(rgb):
     return tuple(_srgb_to_linear(min(1.0, max(0.0, c))) for c in rgb[:3])
 
 
+def _vec(m, pid, default):
+    """A point3 parameter as a tuple of floats, default when it is unusable."""
+    v = m.param(pid, 0)
+    n = len(default)
+    if isinstance(v, tuple) and len(v) >= n and all(_finite(c) for c in v[:n]):
+        return tuple(float(c) for c in v[:n])
+    return default
+
+
+def kelvin_rgb(kelvin):
+    """A color temperature as an sRGB swatch (0..1): the curve fit of the rules source, 1000 K to 40000 K."""
+    t = min(40000.0, max(1000.0, kelvin)) / 100.0
+    r = 255.0 if t <= 66.0 else 329.698727446 * (t - 60.0) ** -0.1332047592
+    g = 99.4708025861 * math.log(t) - 161.1195681661 if t <= 66.0 else 288.1221695283 * (t - 60.0) ** -0.0755148492
+    b = 255.0 if t >= 66.0 else 0.0 if t <= 19.0 else 138.5177312231 * math.log(t - 10.0) - 305.0447927307
+    return tuple(min(255.0, max(0.0, c)) / 255.0 for c in (r, g, b))
+
+
 def _ref(m, pid, tab=0):
     """The object index of a reference parameter, None when it is empty or not a reference."""
     v = m.param(pid, 0, tab=tab)
@@ -461,7 +503,7 @@ class TexmapConverter:
         if m is None:
             return None
         key, chain, depth = ClassId(*m.class_id), chain + (i,), depth + 1
-        if key == classids.BITMAP_TEX:
+        if key in IMAGES:
             return self._image(m, kind, walk)
         if key in NORMAL_MAPS:
             return self._normal(m, NORMAL_MAPS[key], kind, walk, depth, chain)
@@ -503,7 +545,7 @@ class TexmapConverter:
                 sub = self.graph.get(c)
             except ChunkError:
                 continue
-            if ClassId(*sub.class_id) == classids.BITMAP_TEX:
+            if ClassId(*sub.class_id) in IMAGES:
                 image = self._image(sub, kind, walk)
                 if image is not None:
                     return image
@@ -527,14 +569,18 @@ class TexmapConverter:
         return self._node(_ref(m, map_pid, tab), kind, walk, depth, chain)
 
     def _image(self, m, kind, walk):
-        value = m.param(BM_FILE, 0)
+        """The Image of a Bitmap or CoronaBitmap, None (an issue) without a file."""
+        corona = ClassId(*m.class_id) == classids.CORONA_BITMAP
+        value = m.param(CB_FILE if corona else BM_FILE, 0)
         entry = self.assets.entry(value) if self.assets is not None else None
         if entry is None:
-            self._issue(walk, m.index, "Bitmap %r: no file" % (m.name,))
+            self._issue(walk, m.index, "%s %r: no file" % ("CoronaBitmap" if corona else "Bitmap", m.name))
             return None
         found = self.textures.find(entry.path, entry.resolved) if self.textures is not None else None
-        uv = next((p for _s, p in sorted(m.parts.items()) if p.superclass == classids.SC_UVGEN), None)
         out = next((p for _s, p in sorted(m.parts.items()) if p.superclass == classids.SC_TEXOUTPUT), None)
+        if corona:
+            return self._corona_image(m, kind, walk, entry, found, out)
+        uv = next((p for _s, p in sorted(m.parts.items()) if p.superclass == classids.SC_UVGEN), None)
         mapping = self._mapping(uv)
         if mapping.environment:
             self._issue(walk, m.index, "Bitmap %r: environment mapping, drawn with the UVs" % (m.name,))
@@ -551,6 +597,36 @@ class TexmapConverter:
             crop = Crop(*clip, place=m.param(BM_CROP_PLACE, 0) == 1)
         gamma = self._gamma(m)
         alpha = m.param(BM_MONO if kind == DATA else BM_RGB, 0) == 1
+        return Image(m.index, entry.name, entry.path, entry.resolved, found, mapping, crop, self._output(out),
+                     colorspace(kind, gamma), gamma, alpha)
+
+    def _corona_image(self, m, kind, walk, entry, found, out):
+        """A CoronaBitmap's Image. Its tiling, offset and W angle place the image as a Bitmap's do (measured in
+        3ds Max); its environment mode applies only to an environment map."""
+        def mode(pid):
+            v = m.param(pid, 0)
+            return v if v in (0, 1, 2) else 1
+        tile_u, tile_v = mode(CB_TILE_U), mode(CB_TILE_V)
+        channel = m.param(CB_CHANNEL, 0)
+        if not (isinstance(channel, int) and not isinstance(channel, bool) and 0 <= channel <= 99):
+            channel = 1
+        mapping = Mapping(
+            channel=channel, tiling=_vec(m, CB_SCALE, (1.0, 1.0, 1.0))[:2],
+            offset=_vec(m, CB_OFFSET, (0.0, 0.0, 0.0))[:2],
+            angle=(0.0, 0.0, _num(m, CB_W_ANGLE, 0.0)),
+            tile=(tile_u != CB_NO_TILE, tile_v != CB_NO_TILE), mirror=(tile_u == CB_MIRROR, tile_v == CB_MIRROR),
+            real_world=_flag(m, CB_REAL_WORLD, False), blur=_num(m, CB_BLUR, 1.0))
+        if mapping.real_world:
+            self._issue(walk, m.index, "CoronaBitmap %r: real-world scale, its tiling in scene units not converted"
+                        % (m.name,))
+        crop = None
+        clip = tuple(_num(m, pid, d) for pid, d in ((CB_CLIP_U, 0.0), (CB_CLIP_V, 0.0), (CB_CLIP_W, 1.0),
+                                                     (CB_CLIP_H, 1.0)))
+        if _flag(m, CB_CLIP_ON, False) and clip != (0.0, 0.0, 1.0, 1.0):
+            crop = Crop(*clip, place=m.param(CB_CLIP_MODE, 0) == 1)
+        gamma = _num(m, CB_GAMMA, -1.0)  # -1: automatic
+        gamma = gamma if 0.1 <= gamma <= 10.0 else None
+        alpha = m.param(CB_MONO if kind == DATA else CB_RGB, 0) == 1
         return Image(m.index, entry.name, entry.path, entry.resolved, found, mapping, crop, self._output(out),
                      colorspace(kind, gamma), gamma, alpha)
 
@@ -762,7 +838,69 @@ def _composite(conv, m, kind, walk, depth, chain):
     return Composite(tuple(layers))
 
 
-_KEEP = {MIX: _mix, RGB_MULTIPLY: _rgb_multiply, COLOR_CORRECTION: _color_correction, COMPOSITE: _composite}
+def _hex_rgb(text):
+    """'#RRGGBB' as a swatch (0..1), None when it is not one."""
+    s = text.strip().lstrip("#") if isinstance(text, str) else ""
+    if len(s) != 6:
+        return None
+    try:
+        return tuple(int(s[k:k + 2], 16) / 255.0 for k in (0, 2, 4))
+    except ValueError:
+        return None
+
+
+def _corona_color(conv, m, kind, walk, depth, chain):
+    """50 method (0 color 52, 1 HDR color 58, 2 temperature 51, 3 hex 59), 57 multiplier. Color, hex and temperature
+    are swatches, decoded from sRGB like every swatch after the multiplier; the HDR color is linear already."""
+    method, mult = m.param(CC_METHOD, 0), max(0.0, _num(m, CC_MULTIPLIER, 1.0))
+    if method == 1:
+        rgb = tuple(max(0.0, c) * mult for c in _vec(m, CC_HDR, (1.0, 1.0, 1.0)))
+        return Constant(rgb if kind == COLOR else sum(rgb) / 3.0)
+    swatch = None
+    if method == 2:
+        swatch = kelvin_rgb(_num(m, CC_TEMPERATURE, 6500.0))
+    elif method == 3:
+        swatch = _hex_rgb(m.param(CC_HEX, 0))
+        if swatch is None:
+            conv._issue(walk, m.index, "CoronaColor %r: hex color %r not read: its color" % (
+                m.name, m.param(CC_HEX, 0)))
+    elif method not in (None, 0):
+        conv._issue(walk, m.index, "CoronaColor %r: method %r not converted: its color" % (m.name, method))
+    if swatch is None:
+        v = m.param(CC_COLOR, 0)
+        swatch = v[:3] if isinstance(v, tuple) and len(v) >= 3 and all(_finite(c) for c in v[:3]) else (1.0,) * 3
+    lin = _linear(tuple(c * mult for c in swatch))
+    return Constant(lin if kind == COLOR else sum(lin) / 3.0)
+
+
+def _corona_mix(conv, m, kind, walk, depth, chain):
+    """Operation mix -> Mix(bottom, top, amount, mask), multiply -> Multiply (under a Mix when the amount is below 1
+    or a mask is set); any other operation is peeled to its first bitmap. A layer without a map (or with its map
+    switched off) is its color."""
+    bottom = conv._sub(m, CM_MAP_BOTTOM, CM_BOTTOM_ON, kind, walk, depth, chain) or \
+        conv._constant(m, CM_COLOR_BOTTOM, kind, (0.0, 0.0, 0.0))
+    top = conv._sub(m, CM_MAP_TOP, CM_TOP_ON, kind, walk, depth, chain) or \
+        conv._constant(m, CM_COLOR_TOP, kind, (1.0, 1.0, 1.0))
+    mask = conv._sub(m, CM_MASK, CM_MASK_ON, DATA, walk, depth, chain)
+    amount = min(1.0, max(0.0, _num(m, CM_AMOUNT, 1.0)))
+    op = m.param(CM_OPERATION, 0)
+    if op not in (CM_MIX, CM_MULTIPLY):
+        image = conv._peel_to_image(m, kind, walk, depth, chain, "operation %r and no bitmap below" % (op,))
+        if image is not None:
+            conv._issue(walk, m.index, "CoronaMix %r: operation %r drawn as its first bitmap" % (m.name, op))
+        return image
+    if (_num(m, CM_MULT_TOP, 1.0), _num(m, CM_MULT_BOTTOM, 1.0), _num(m, CM_OFFSET_TOP, 0.0),
+            _num(m, CM_OFFSET_BOTTOM, 0.0)) != (1.0, 1.0, 0.0, 0.0):
+        walk.approximated = True
+        conv._issue(walk, m.index, "CoronaMix %r: layer multipliers and offsets not converted" % (m.name,))
+    if op == CM_MIX:
+        return Mix(bottom, top, amount, mask)
+    product = Multiply(bottom, top)
+    return product if mask is None and amount == 1.0 else Mix(bottom, product, amount, mask)
+
+
+_KEEP = {MIX: _mix, RGB_MULTIPLY: _rgb_multiply, COLOR_CORRECTION: _color_correction, COMPOSITE: _composite,
+         classids.CORONA_COLOR: _corona_color, classids.CORONA_MIX: _corona_mix}
 _PEEL = {FALLOFF: _falloff, VRAY_DIRT: _vray_dirt, OUTPUT: _output_map, RGB_TINT: _rgb_tint,
          VRAY_COLOR2BUMP: _color2bump}
 

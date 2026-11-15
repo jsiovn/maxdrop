@@ -550,6 +550,201 @@ def _image(b, chunk_map, kind=tx.COLOR):
     return tex, tex.convert(mat.MapRef(b.index), kind)
 
 
+class CoronaMaps(Checks):
+    """corona_maps.ms and corona_light.ms."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.f = Fixture("corona_maps")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.f.close()
+
+    def test_class_ids_match_the_class_directory(self):
+        names = {(e.superclass, e.class_id): e.name for e in (self.f.scene.entry(i) for i in range(len(self.f.scene)))
+                 if e is not None}
+        for cid, name in ((classids.CORONA_BITMAP, "CoronaBitmap"), (classids.CORONA_NORMAL, "CoronaNormal"),
+                          (classids.CORONA_COLOR, "CoronaColor"), (classids.CORONA_MIX, "CoronaMix")):
+            self.assertEqual(names.get((classids.SC_TEXMAP, cid)), name, name)
+
+    def test_base_bitmap_placement(self):
+        g = self.f.irs["FixtureCoronaMaps"].textures["base_color"]
+        self.assertIsInstance(g.root, tx.Mix)
+        self.close(g.root.factor, 0.75)
+        self.close(g.root.a.value, tuple(_lin(c) for c in (150, 140, 130)))
+        image = g.root.b
+        self.image(image, "fixture_c_base.png", tx.SRGB, tiling=(2.0, 3.0), offset=(0.1, 0.2), w_angle=30.0,
+                   channel=2)
+        self.assertEqual((image.mapping.tile, image.mapping.mirror), ((True, False), (True, False)))
+        self.close(image.mapping.blur, 0.8)
+        self.assertEqual((image.gamma, image.crop, image.output, image.alpha), (None, None, None, False))
+        self.assertEqual((g.approximated, g.issues), (False, ()))
+
+    def test_glossiness_bitmap_with_gamma_1(self):
+        g = self.f.irs["FixtureCoronaMaps"].textures["roughness"]
+        self.close(g.root.factor, 0.6)
+        self.close(g.root.a.value, 0.4)
+        self.assertIsInstance(g.root.b, tx.Invert)
+        self.image(g.root.b.input, "fixture_c_gloss.png", tx.NON_COLOR)
+        self.close(g.root.b.input.gamma, 1.0)
+
+    def test_placed_opacity_gives_its_alpha(self):
+        image = self.f.irs["FixtureCoronaMaps"].textures["alpha"].root
+        self.image(image, "fixture_c_opacity.png", tx.NON_COLOR)
+        self.close((image.crop.u, image.crop.v, image.crop.w, image.crop.h), (0.1, 0.2, 0.5, 0.6))
+        self.assertTrue(image.crop.place)
+        self.assertTrue(image.alpha)
+
+    def test_corona_normal_in_bump(self):
+        n = self.f.irs["FixtureCoronaMaps"].textures["normal"].root
+        self.assertIsInstance(n, tx.NormalMap)
+        self.close(n.strength, 0.8 * 0.9)
+        self.assertTrue(n.flip_green)
+        self.image(n.input, "fixture_c_normal.png", tx.NON_COLOR)
+        self.close(n.bump.strength, 0.3 * 0.9)
+        self.image(n.bump.input, "fixture_c_normal_bump.png", tx.NON_COLOR)
+
+    def test_corona_color_is_a_constant(self):
+        root = self.f.irs["FixtureCoronaMaps"].textures["metallic"].root
+        self.close(root.value, sum(_lin(c) for c in (100, 150, 200)) / 3, "a data input: the mean")
+
+    def test_corona_mix_with_a_mask(self):
+        root = self.f.irs["FixtureCoronaMaps"].textures["emission_color"].root
+        self.assertIsInstance(root, tx.Mix)
+        self.close(root.factor, 0.4)
+        self.close(root.a.value, tuple(_lin(c) for c in (10, 20, 30)), "the bottom color")
+        self.image(root.b, "fixture_c_top.png", tx.SRGB)
+        self.image(root.mask, "fixture_c_mask.png", tx.NON_COLOR)
+
+    def test_legacy_slots(self):
+        t = self.f.irs["FixtureCoronaLegacyMaps"].textures
+        self.assertIsInstance(t["base_color"].root, tx.Multiply)
+        self.image(t["base_color"].root.a, "fixture_c_mul_bottom.png", tx.SRGB)
+        self.image(t["base_color"].root.b, "fixture_c_mul_top.png", tx.SRGB)
+        self.assertIsInstance(t["roughness"].root, tx.Invert)
+        self.image(t["roughness"].root.input, "fixture_c_legacy_gloss.png", tx.NON_COLOR)
+        self.assertIsInstance(t["bump"].root, tx.Bump)
+        self.close(t["bump"].root.strength, 0.5)
+        self.close(t["alpha"].root.value, 0.5, "HDR color 0.25 0.5 0.75, linear: the mean")
+        self.assertNotIn("emission_color", t)
+
+    def test_add_is_peeled_to_its_bitmap(self):
+        g = self.f.irs["FixtureCoronaLegacyMaps"].textures["specular"]
+        self.image(g.root, "fixture_c_add_top.png", tx.SRGB)
+        self.assertTrue(g.approximated)
+        self.assertEqual(len(g.issues), 1)
+        self.assertIn("operation 0", g.issues[0])
+        self.assertEqual(self.f.tex.stats.peeled, collections.Counter({"CoronaMix": 1}))
+        self.assertEqual(self.f.tex.stats.unsupported, collections.Counter())
+        self.assertEqual(len(self.f.tex.stats.issues), 1)
+
+    def test_light_maps(self):
+        f = Fixture("corona_light")
+        try:
+            t = f.irs["FixtureCoronaLight"].textures
+            self.image(t["emission_color"].root, "fixture_c_light.png", tx.SRGB)
+            self.image(t["alpha"].root, "fixture_c_light_alpha.png", tx.NON_COLOR)
+            self.assertEqual(f.irs["FixtureCoronaLightPlain"].textures, {})
+        finally:
+            f.close()
+
+
+G2 = bytes(range(16, 32))
+
+
+def _cbitmap(index, guid=G1, **params):
+    p = {101: pblock.Asset(guid)}
+    p.update({int(k[1:]): v for k, v in params.items()})
+    return FakeMap(index, classids.CORONA_BITMAP, p, cls="CoronaBitmap")
+
+
+def _ccolor(index, **params):
+    return FakeMap(index, classids.CORONA_COLOR, {int(k[1:]): v for k, v in params.items()}, cls="CoronaColor")
+
+
+def _cmix(index, children=(), **params):
+    return FakeMap(index, classids.CORONA_MIX, {int(k[1:]): v for k, v in params.items()}, children,
+                   cls="CoronaMix")
+
+
+class CoronaSynthetic(Checks):
+    def test_kelvin(self):
+        self.close(tx.kelvin_rgb(6600.0), (1.0, 1.0, 1.0), "about white")
+        r, g, b = tx.kelvin_rgb(3000.0)
+        self.close((r, g, b), (1.0, 177.20027 / 255, 109.91725 / 255))
+        # Corona's own 3000 K, measured with renderMap: (255, 121.6, 39.2) linear
+        for ours, corona in zip(tx._linear((r, g, b)), (1.0, 121.607 / 255, 39.1868 / 255)):
+            self.assertAlmostEqual(ours, corona, delta=0.04)
+        self.assertEqual(tx.kelvin_rgb(100.0), tx.kelvin_rgb(1000.0))
+
+    def test_corona_color_methods(self):
+        cases = (
+            (dict(p50=0, p52=(0.5, 0.5, 0.5), p57=2.0), (1.0, 1.0, 1.0)),
+            (dict(p50=1, p58=(2.0, 0.5, 0.25), p57=1.0), (2.0, 0.5, 0.25)),
+            (dict(p50=2, p51=3000.0), tx._linear(tx.kelvin_rgb(3000.0))),
+            (dict(p50=3, p59="#FF8000"), (1.0, _lin(128), 0.0)),
+        )
+        for params, want in cases:
+            tex = _tex(_ccolor(1, **params))
+            self.close(tex.convert(mat.MapRef(1), tx.COLOR).root.value, want, str(params))
+            self.assertEqual(tex.stats.issues, [])
+        tex = _tex(_ccolor(1, p50=3, p59="#12", p52=(1.0, 0.0, 0.0)))
+        self.close(tex.convert(mat.MapRef(1), tx.COLOR).root.value, (1.0, 0.0, 0.0), "a bad hex: the color")
+        self.assertIn("hex color", tex.stats.issues[0][1])
+        tex = _tex(_ccolor(1, p50=9))
+        self.close(tex.convert(mat.MapRef(1), tx.DATA).root.value, 1.0)
+        self.assertIn("method 9", tex.stats.issues[0][1])
+
+    def test_corona_mix_multiply_and_its_amount(self):
+        objects = (_cmix(1, [2, 3], p200=2, p201=0.5, p206=Ref(2), p207=Ref(3)), _cbitmap(2), _cbitmap(3))
+        root = _tex(*objects).convert(mat.MapRef(1), tx.COLOR).root
+        self.assertIsInstance(root, tx.Mix)
+        self.close(root.factor, 0.5)
+        self.assertIsInstance(root.b, tx.Multiply)
+        self.assertIs(root.a, root.b.a, "the bottom, shared")
+
+    def test_corona_mix_switched_off_layers_and_multipliers(self):
+        tex = _tex(_cmix(1, [2], p200=6, p201=0.3, p206=Ref(2), p212=0, p202=2.0), _cbitmap(2))
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.close(g.root.b.value, (1.0, 1.0, 1.0), "top map off: the top color")
+        self.close(g.root.a.value, (0.0, 0.0, 0.0), "the bottom color")
+        self.assertTrue(g.approximated)
+        self.assertIn("multipliers", g.issues[0])
+
+    def test_corona_mix_other_operation_without_a_bitmap(self):
+        tex = _tex(_cmix(1, p200=4))
+        self.assertIsNone(tex.convert(mat.MapRef(1), tx.COLOR))
+        self.assertEqual(tex.stats.unsupported, collections.Counter({"CoronaMix": 1}))
+
+    def test_corona_bitmap_defaults_gamma_and_real_world(self):
+        g = _tex(_cbitmap(1)).convert(mat.MapRef(1), tx.COLOR)
+        self.assertEqual(g.root.mapping, tx.Mapping())
+        self.assertIsNone(g.root.gamma)
+        tex = _tex(_cbitmap(1, p125=2.2, p114=1, p108=7, p103=-3))
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.close(g.root.gamma, 2.2)
+        self.assertEqual(g.root.colorspace, tx.SRGB)
+        self.assertTrue(g.root.mapping.real_world)
+        self.assertEqual((g.root.mapping.tile, g.root.mapping.channel), ((True, True), 1), "bad values: defaults")
+        self.assertIn("real-world", g.issues[0])
+
+    def test_corona_bitmap_without_a_file(self):
+        tex = _tex(_cbitmap(1, guid=G2))
+        self.assertIsNone(tex.convert(mat.MapRef(1), tx.COLOR))
+        self.assertIn("CoronaBitmap", tex.stats.issues[0][1])
+
+    def test_corona_bitmap_found_below_an_unknown_class(self):
+        tex = _tex(FakeMap(1, (0x1234, 0), children=[2], cls="Noise"), _cbitmap(2, p105=(4.0, 4.0, 1.0)))
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.close(g.root.mapping.tiling, (4.0, 4.0))
+        self.assertTrue(g.approximated)
+
+    def test_corona_bitmap_file_in_the_asset_helpers(self):
+        m = _cbitmap(1)
+        self.assertEqual(assets.bitmap_file(_table(), m).name, "a.png")
+
+
 class Guards(Checks):
     def test_unreadable_placement_takes_the_defaults(self):
         _tex_, g = _image(*_placed(old={2: float("nan"), 3: 2.0}))  # no chunk for the Placement object
