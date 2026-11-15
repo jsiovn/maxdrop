@@ -6,7 +6,7 @@
 
     rep = gather(desc, source="scene.max", objects_built=n, meshes_built=m, dropped_uv_layers=k, pack=result)
     add_materials(rep, len(built.materials), builder.classes, conv.stats, tex.stats, index.report,
-                  builder.sockets_skipped, bpy.app.version_string)   # when the import made materials
+                  sockets=builder.sockets_skipped, blender=bpy.app.version_string)   # when materials were made
     rep.text()                          # the whole report, lines joined with "\n"
     rep.summary()                       # (level, line): "INFO" when nothing was approximated or left out, else
                                         # "WARNING"
