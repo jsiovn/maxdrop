@@ -70,9 +70,11 @@ above.
    - Every import makes a collection named after the file, with one collection per 3ds Max layer below it.
 3. Click **Import**. A large scene takes a while and Blender does not respond until it is done
    ([docs/BASELINE.md](docs/BASELINE.md) has measured times).
-4. The text **MaxDrop Report** in the Text Editor (and the system console) lists what arrived and what did
-   not, such as lights kept as empties. Material problems, such as a texture that is not found, are printed
-   to the system console only.
+4. The status bar sums up the import in one line. The text **MaxDrop Report** in the Text Editor (and the
+   system console) lists what arrived and what did not, such as lights kept as empties, and what became of the
+   materials: converted by class, wrappers and maps approximated, textures found and the ones not found by
+   file name. The report names your scene's objects and files: it stays on your computer. A bug report asks
+   for it.
 
 A `.max` file names its texture files but does not contain them. MaxDrop looks for each file name in the scene's
 folder, then in `maps` or `textures` folders beside it, then in the **Texture Search Folders** of the add-on

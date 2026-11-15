@@ -21,9 +21,14 @@ the hierarchy, with its 3ds Max class name in the custom property `maxdrop_class
 
 After every import the **import report** says what arrived and what did not: the unit, the objects and meshes
 built, layers, hidden and frozen objects, groups, the placeholders by class, the modifiers not applied, unknown
-controllers and geometry errors, the unpack of a scene pack, each texture file that was not found and each
-material input this Blender version lacks. It is printed to the system console and kept in the text **MaxDrop
-Report** (Text Editor). Maps that were simplified (see below) are not listed yet.
+controllers and geometry errors, the unpack of a scene pack; the materials built and converted by class, the
+wrappers and maps that were simplified (peeled to what is below them) by class, material and map classes without a
+rule, the textures found by each step of the lookup and the ones not found by file name (for a scene from a pack:
+whether the archive held that file and why it was not written), each material input this Blender version lacks,
+and what a material or map rule could not convert. It is printed to the system console (each line starting with
+`MaxDrop:`) and kept in the text **MaxDrop Report** (Text Editor); the status bar shows a one-line summary, a
+warning when anything was simplified or left out. The report names the scene's objects and files: it stays on
+your computer.
 
 ## Objects
 
@@ -139,4 +144,4 @@ the scene in the archive is kept.
 
 ## What comes next
 
-In this order: the full material report, room shells (splines, Extrude, UVW Map), then lights and cameras.
+In this order: room shells (splines, Extrude, UVW Map), then lights and cameras.

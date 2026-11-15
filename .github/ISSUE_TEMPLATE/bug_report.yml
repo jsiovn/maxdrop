@@ -57,12 +57,21 @@ body:
     validations:
       required: true
   - type: textarea
+    id: report
+    attributes:
+      label: MaxDrop Report
+      description: >-
+        After an import, open the Text Editor, pick the text "MaxDrop Report" and paste all of it here: it says
+        what was converted, approximated and left out (materials, maps, textures not found). It names objects,
+        materials and files of your scene: remove the names you do not want to publish.
+      render: text
+  - type: textarea
     id: console
     attributes:
       label: System console output
       description: >-
-        Windows: Window › Toggle System Console. macOS / Linux: start Blender from a terminal. Paste what the
-        import printed: the lines "reading …", "skipping …" and any error. Remove object and file names you do
+        Windows: Window › Toggle System Console. macOS / Linux: start Blender from a terminal. Paste any error
+        the import printed (the report's own lines start with "MaxDrop:"). Remove object and file names you do
         not want to publish.
       render: text
   - type: textarea

@@ -23,8 +23,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   become a Principled BSDF (roughness or glossiness mode, metalness, refraction, opacity, self-illumination,
   clearcoat, bump); CoronaLayeredMtl gives its base material. CoronaBitmap is imported like a Bitmap, CoronaColor as a
   color, CoronaMix (mix and multiply) as nodes, CoronaNormal as a Normal Map node.
-- The import report names each texture file that was not found (its node stays, without an image) and each
-  material input this Blender version lacks (Thin Wall on 4.2 and 4.5).
+- **The import report covers the materials**: materials built and converted by class, wrappers and maps that
+  were simplified, material and map classes without a rule, textures found per lookup step and the ones not found
+  by file name (for a scene pack: whether the archive held the file), the material inputs this Blender version
+  lacks (Thin Wall on 4.2 and 4.5) and what a rule could not convert. The status bar line counts the materials and
+  warns when anything was simplified or left out. The bug report form asks for the report.
 
 ### Removed
 
