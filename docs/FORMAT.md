@@ -38,9 +38,13 @@ An object points to others by object index.
 - `0x2034`: an `i32` array; the position is the reference slot, `-1` an empty slot. ViewportManager in
   hierarchy: `[0, -1]`; a node's Position/Rotation/Scale: three entries in every fixture, its Editable Poly two,
   the Editable Mesh of editable_mesh one.
-- `0x2035`: a `u32`, then `(u32 slot, i32 index)` pairs. The first value is 16 for Node and RootNode, 48 for
-  Texmaps and 2 for Bezier Float, Bezier Scale, Bezier Color, Boolean Controller and Grid Reference in every
-  fixture; its meaning is unknown and the reader ignores it. RootNode and the controllers have no pairs.
+- `0x2035`: a `u32`, then `(u32 slot, i32 index)` pairs. The first value is the number of reference slots: 16
+  for Node and RootNode, 48 for Texmaps and 2 for Bezier Float, Bezier Scale, Bezier Color, Boolean Controller and
+  Grid Reference in every fixture, 34 for VRayMtl (vray_basic, vray_maps, vray_wrappers: what the SDK's
+  `NumRefs` reports for a VRayMtl), and for a ParamBlock2 the number of its reference slots (25 and 37 in
+  standard_physical and vray_wrappers; 37 for the VRayBlendMtl block, see [Parameter blocks](#parameter-blocks)).
+  Every pair's slot is below it (`test_scene.py`). The reader does not need it. RootNode and the controllers have
+  no pairs.
 
 ## Nodes
 
@@ -215,17 +219,136 @@ system unit: of the Scene stream, only one leaf holds the setting itself.
 - The user and computer name (Render Data, the author fields), the names and the paths are never returned by the
   reader; the fixtures hold them blanked (`tools/sanitize_fixture.py`).
 
+## Parameter blocks
+
+`maxdrop/reader/pblock.py` reads them; `tests/unit/test_materials.py` (RAW-PARAM PARITY) checks every stored
+parameter of every block of every material and map in every fixture against the oracle's `material_graph`, by
+parameter id, within 1e-5 (relative above 1): 193 values in vray_basic, 637 in vray_maps, 2,024 in vray_wrappers,
+295 in standard_physical. `tests/unit/test_pblock.py` covers each rule on synthetic bytes.
+
+A ParamBlock2 is an object of class `(0x82, 0)`, superclass `0x82`, referenced by its owner (the material, map or
+part whose parameters it holds):
+
+| Chunk | Content |
+|---|---|
+| `0x0009` | 16 bytes: `u32` (4 to 43 in the fixtures, unknown), `u16` block id (the descriptor's: VRayMtl 1 to 6, Bitmap 0 and 1), `u32` descriptor version (`0x55F03700` in all but one of the fixtures' 2,253 blocks), `u16` number of entries, `u32` the owner's object index (the referencing object in every fixture) |
+| `0x000B` | instead of `0x0009` (ViewportManager's block in every fixture): the descriptor's ClassID (8 bytes), then the same 16 bytes |
+| `0x100E` | one per stored parameter, below |
+| `0x0013` | the owner references, below |
+| `0x000F`, `0x0003` | the asset of the file-name or bitmap entry before it, below |
+| `0x000C`, `0x0011`, `0x1005` | not read (rollout state and names) |
+
+An entry (`0x100E`): `u16` parameter id, `u32` type (the SDK's ParamType2; bit `0x800` = a table), `u32` the
+parameter definition's flags (the same bits the SDK's `ParamDef.Flags` reports: `0x1` animatable, `0x2`
+transient, `0x100` P_NO_REF, `0x200` P_OWNERS_REF), `u32` unknown, then:
+
+- a scalar: a `u8` tag and the value. Tag `0x40` = a stored value, `0xC0` = the stored value of an animatable
+  parameter, `0x80` = a controller, no value (a probe saved by 3ds Max 2020 with three animated VRayMtl
+  parameters; no fixture);
+- a table: a `u8` 0, a `u32` element count, then a tag and a value per element. vray_wrappers: Multi/Sub-Object
+  `materialList`, `mapEnabled`, `names`, `materialIDList` (3 each); VRayBlendMtl `coatMtl`, `blend`,
+  `texmap_blend`, `texmap_blend_multiplier` (9 each); Standard `maps`, `mapAmounts` (24 each).
+
+| Type | Value | Shown by |
+|---|---|---|
+| 0 float, 5 angle, 6 percent, 7 world, 11 color channel | `f32` as stored: radians, a fraction (Standard `opacity` 83 % = 0.83) | every fixture |
+| 1 int, 4 bool, 12 time, 13 radio button, 19 index | `i32` | every fixture |
+| 2 color, 3 point3, 10 hsv | 3 x `f32` (colors 0..1) | every fixture |
+| 22 point4, 23 float color with alpha | 4 x `f32` | standard_physical (Physical Material colors) |
+| 8 string | `u32` byte count, UTF-16LE with a terminating NUL; count `0xFFFFFFFF` = none | vray_wrappers `names`; Standard's `shaderByName` is stored as none (3ds Max reports it from the shader) |
+| 9 file name | `i32`: -1 none, -2 the asset follows as the next sibling `0x000F{0x0002: 16-byte asset id}` | vray_maps (the Bitmap's `fileName` is transient; its file is the bitmap's asset) |
+| 16 bitmap | `u8` (1: set), the data follows as the next sibling `0x0003{0x1201, 0x1260{0x0002: asset id}}` | vray_maps, standard_physical (Bitmap parameter 13) |
+| 14 material, 15 map, 17 node, 18 reference target, 21 ParamBlock2 | with P_OWNERS_REF or P_NO_REF an `i32` object index (-1: none); otherwise no value | below |
+
+Reference parameters, checked against the oracle's targets on every fixture:
+
+- P_OWNERS_REF (the owner holds the reference): the stored index is often -1 although the map is set (every map
+  of FixtureVRayMaps but its opacity map). `0x0013` holds `u32` count, then `u16` parameter id, `u16` the owner's
+  reference slot, `u16` (unknown) per parameter: VRayMtl `texmap_diffuse` (100) is at the VRayMtl's slot 7,
+  `texmap_reflection` (101) at 8, `texmap_bump` (103) at 10, `texmap_reflectionGlossiness` (104) at 11,
+  `texmap_opacity` (112) at 19; Multi/Sub-Object `materialList` (0) at 1, element k at 1 + k; VRay2SidedMtl
+  `frontMtl` / `backMtl` at 1 / 2; Shell `originalMaterial` / `bakedMaterial` at 1 / 2; Bitmap `output` (15) at 2.
+  A parameter missing from `0x0013` uses its stored index (Bitmap `coords`, 14: the Placement object).
+- P_NO_REF: the stored index is the target (Standard `maps`: the diffuse Bitmap, which the material's Texmaps
+  object references).
+- Neither flag: the elements take the block's own reference slots 0, 1, 2 ... in entry order, tables expanded
+  and transient entries included: VRayBlendMtl `baseMtl` 0, `coatMtl` 1-9, `texmap_blend` 10-18, its transient
+  aliases `coatMtl_0`... and `texmap_blend_0`... 19-36 (37 slots, the block's `0x2035` count; the aliases' slots
+  are empty); VRayNormalMap `normal_map` 0, `bump_map` 1.
+
+Transient parameters are mostly not stored (VRayMtl: 25 of the 80 parameters of block 1, among them
+`bump_multiplier` 102 and the `texmap_*` 109-128 that mirror block 4). Some are stored anyway with a stale value
+(VRayMtl's alias 56 in block 5, VRayBlendMtl `blend_0`...): the parity test does not compare transient
+parameters. A block may store no entry at all (Standard's dynamics block, 4).
+
+The old ParamBlock (class `(8, 0)`): `0x0001` `u32` count, `0x0005` `u16` (unknown: 2, 3 or 6), then per
+parameter a `0x0002` container: `0x0003` `u32` index, an empty `0x0004` on some (unknown), and the value chunk
+`0x0100` + ParamType: `0x0100` float, `0x0101` int, `0x0104` bool (fixtures: the Bitmap's Placement and Output,
+the Standard material's sampler); `0x0102` color and `0x0103` point3 follow the SDK's ParamType, no fixture has
+them.
+
+## Materials and maps
+
+`maxdrop/reader/materials.py` reads them; `test_materials.py` checks on every fixture that the materials and maps
+reached from the nodes are those of the oracle's graph, and that each one's sub-materials and maps are among the
+reader's children.
+
+- A material has superclass `0x0C00`, a map `0x0C10`. The name is a `0x4001` string inside a container whose id
+  depends on the class: `0x4000` (Standard, Bitmap, Multi/Sub-Object, Shell, VRay2SidedMtl, VRayBlendMtl,
+  VRayNormalMap), `0x5431` (VRayMtl), `0x0100` (Physical Material). The reader takes the first container child
+  holding a `0x4001`.
+- The parameter blocks are among the material's references (VRayMtl: slots 1 to 6 = blocks 1 to 6; Standard:
+  slots 3 to 7 = blocks 0 to 4). References of superclass UVGen (`0x0C20`), XYZGen (`0x0C30`), TexOutput
+  (`0x0C40`), Shader (`0x10B0`) and Sampler (`0x1110`) are parts with blocks of their own: a Bitmap's Placement
+  (slot 0, an old ParamBlock: 0 U offset, 1 V offset, 2 U tiling, 3 V tiling, 6 W angle in radians, 7 blur, set
+  by vray_maps' script) and Output (slot 2), a Standard material's Blinn shader (slot 2, a ParamBlock2 with the
+  colors: 0 ambient, 1 diffuse, 2 specular, 9 specular level, 10 glossiness, 11 soften) and sampler (slot 8).
+- Sub-materials and maps are referenced by the material (P_OWNERS_REF parameters), by one of its blocks
+  (VRayBlendMtl, VRayNormalMap) or, for a Standard material, by its Texmaps object (class `(0x1200, 0)`,
+  superclass `0x1080`, slot 1).
+- 3ds Max's own `getSubMtl` of a Multi/Sub-Object answers by material ID and skipped ID 3 of 1, 3, 7: the IDs are
+  `materialIDList` (stored zero-based: `[0, 2, 6]`), the materials `materialList` in the same order.
+
+Parameter ids used so far, per class and block (the oracle names every one of them; these are set to distinct
+values by the fixture scripts or read by the tests):
+
+| Class (ClassID) | Block | Parameters |
+|---|---|---|
+| VRayMtl `(0x37BF3F2F, 0x7034695C)` | 1 basic | 1 diffuse, 68 diffuse_roughness, 81 selfIllumination, 83 selfIllumination_multiplier, 2 reflection, 3 reflection_glossiness, 62 hilight_glossiness, 4 reflection_subdivs, 8 reflection_fresnel, 63 reflection_ior, 64 / 65 lock glossiness / IOR, 91 reflection_metalness, 5 refraction, 6 refraction_glossiness, 9 refraction_ior, 23 refraction_fogColor, 24 refraction_fogMult, 107 refraction_thinWalled, 25 translucency_on, 37 translucency_color, 94 sheen_color, 95 sheen_glossiness, 96 coat_amount, 97 coat_color, 98 coat_glossiness, 99 coat_ior (vray_basic) |
+| | 2 BRDF | 10 brdf_type (4 = GGX), 54 anisotropy, 58 anisotropy_rotation (stored in degrees, as shown), 69 soften, 86 gtr_gamma, 89 brdf_useRoughness |
+| | 3 options | 11 option_traceReflection, 13 option_doubleSided, 22 option_cutOff, 84 option_opacityMode |
+| | 4 maps | map, on, multiplier: 100 / 150 / 200 diffuse, 101 / 151 / 201 reflection, 102 / 152 / 202 refraction, 103 / 153 / 203 bump, 104 / 154 / 204 reflectionGlossiness, 105 refractionGlossiness, 106 displacement, 109 refractionIOR, 110 hilightGlossiness, 111 reflectionIOR, 112 / 162 / 212 opacity, 113 roughness, 117 self_illumination, 119 metalness (multipliers in percent: 63.0 = 63 %) |
+| VRay2SidedMtl `(0x6066686A, 0x11731B4B)` | 0 | 0 frontMtl, 1 backMtl, 7 translucency, 3 backMtlOn, 4 texmap_translucency, 8 force1SidedSubMtls |
+| VRayBlendMtl `(0x3DA0041B, 0x0F436E31)` | 0 | 0 baseMtl, 1 coatMtl (table), 2 blend (color table), 3 texmap_blend, 4 texmap_blend_multiplier, 6 coatMtl_enable, 5 additiveMode |
+| Shell Material `(0x255, 0)` | 0 | 2 originalMaterial, 3 bakedMaterial, 0 viewportMtlIndex, 1 renderMtlIndex |
+| Multi/Sub-Object `(0x200, 0)` | 0 | 0 materialList, 1 mapEnabled, 2 names, 3 materialIDList (zero-based) |
+| Standard `(2, 0)` | 0 shader | 0 shaderType, 2 twoSided |
+| | 1 extended | 1 opacity (fraction), 6 ior |
+| | 3 maps | 0 mapEnables, 1 maps, 2 mapAmounts (fractions; slot 1 = diffuse) |
+| Physical Material `(0x3D6B1CEC, 0xDEADC001)` | 0 | 1 base_weight, 2 base_color (float color with alpha), 3 reflectivity, 4 roughness, 6 metalness, 10 refl_color, 11 diff_roughness, 30 transparency, 31 trans_color, 33 trans_ior, 50 emission, 51 emit_color, 60 coating, 62 coat_roughness |
+| Bitmap `(0x240, 0)` | 0 | 0-3 clip u, v, w, h, 7 cropPlace, 8 filtering, 12 preMultAlpha, 13 bitmap (asset), 14 coords, 15 output |
+| VRayNormalMap `(0x71FA6E51, 0x72057C2F)` | 0 | 0 normal_map, 2 normal_map_on, 3 normal_map_multiplier, 4 bump_map, 5 bump_map_on, 6 bump_map_multiplier, 1 map_channel, 8 flip_green |
+
 ## Open
 
 Not shown by any fixture yet, so not stated above:
 
+- Parameter blocks seen only elsewhere (`pblock.py` relies on them):
+  - entries in `0x000E` instead of `0x100E`, same layout, in corpus scene A (saved as 3ds Max 2012); scenes A and
+    B walk without an issue: 726 and 560 materials and maps, 33,543 and 41,274 stored parameters;
+  - a controller on a parameter (tag `0x80`, no value): a probe with three animated VRayMtl parameters had them at
+    the block's reference slots 0, 1, 2 in entry order (`Animated(index)` in the reader). Where controllers go
+    when the block also holds references is assumed (after those), not shown; corpus scene A has 4 such values.
+  - not known: the first `u32` of `0x0009`, the fourth `u32` of an entry, the third `u16` of a `0x0013` record,
+    `0x0005` and `0x0004` of the old ParamBlock, and the value layout of the types no file has shown (matrix3,
+    and the others the reader keeps as raw bytes).
 - Other root container ids: `0x2014` and `0x2023` occur in older files, and the 64-bit chunk header (size 0,
   then a `u64`) in large ones.
 - Derived objects (an object with modifiers): special id `0x2032`, past the class directory, referencing its
   modifiers and then its base object. The reader follows them (`Scene.object_stack`), but no fixture has a
   modifier.
 - The sign convention of the offset rotation: every fixture's is the identity.
-- The meaning of bit `0x800` and the other flag bits in `0x0960`, and of the first `u32` of `0x2035`.
+- The meaning of bit `0x800` and the other flag bits in `0x0960`.
 - Layer and node flags no fixture has, found with `tools/maxdiff.py` on scratch files saved by 3ds Max 2020 (three
   boxes on two layers; the same scene saved again; then one change per file). `reader/scene.py` relies on them:
   - node frozen: `0x0960` bit `0x200000`, plus an empty `0x0976` chunk; node not renderable: `0x099C` bit
