@@ -23,7 +23,7 @@ scene was downloaded as. Blender 4.2 or newer; tested on 4.2 LTS, 4.5 LTS and 5.
   those flags.
 - **Materials** as a Principled BSDF with their maps as nodes (tiling, offset, rotation, cropping, Mix, Color
   Correction, normal and bump maps): VRayMtl and the other V-Ray materials and wrappers, Standard, Physical,
-  Multi/Sub-Object. Corona materials arrive grey with their name for now.
+  Multi/Sub-Object, CoronaPhysicalMtl, CoronaMtl, CoronaLightMtl and CoronaLayeredMtl.
 - **Textures** that are plain image files, next to the `.max` file, in a `maps` or `textures` folder beside it, or
   in folders you add in the preferences.
 

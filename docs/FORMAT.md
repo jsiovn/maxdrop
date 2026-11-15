@@ -359,13 +359,37 @@ The maps of texmap_rules (block 0 each; `convert/texmaps.py`):
 | Normal Bump `(0x243E22C6, 0x63F6A014)` | 0 mult_spin, 1 bump_spin, 2 normal_map, 3 bump_map, 4 / 5 their switches, 6 method (0 tangent), 7 flipred, 8 flipgreen, 9 swap_rg |
 | CoronaNormal `(0x2870CEAA, 0xCC18437C)` | 500 normalMap, 501 multiplier, 502 addGamma, 503 flipRed, 504 flipGreen, 505 swapRedGreen, 507 additionalBump, 508 additionalBumpStrength, 509 additionalBumpOn |
 
+The Corona classes of corona_physical, corona_legacy, corona_maps, corona_layered and corona_light (3ds Max 2020 +
+Corona 12, DLL `coronamaxutils2020.dlt`; block 0 each). CoronaPhysicalMtl's class-directory name starts with a
+carriage return (`"\rCoronaPhysicalMtl"`); MAXScript's `CoronaMtl` is CoronaLegacyMtl. Corona names its obsolete
+parameters `removedParam`: they are not saved. A Corona map amount is a fraction (CoronaPhysicalMtl's base and
+roughness amounts and CoronaLayeredMtl's amounts are percent in MAXScript: 75.0 there is 0.75 here). One older scene
+(Corona's 2015-era DLL `coronamaxutils2015.dlt`) has the same ClassIDs and the same parameter ids for
+CoronaLegacyMtl, CoronaBitmap and CoronaNormal.
+
+| Class (ClassID) | Parameters |
+|---|---|
+| CoronaPhysicalMtl `(0x6912AB89, 0x87151720)` | 101 baseColor, 102 baseLevel, 103 / 104 / 105 baseTexmap (on, amount), 111 metalnessMode (1 metal), 121 opacityColor, 122 opacityLevel, 123 / 124 / 125 opacity map, 131 baseRoughness, 132 / 133 / 134 its map, 171 baseIor, 191 refractionAmount, 192 / 193 / 194 its map, 203 useThinMode, 211 clearcoatAmount, 221 clearcoatIor, 231 clearcoatRoughness, 331 selfIllumColor, 332 selfIllumLevel, 333 / 334 / 335 its map, 351 / 352 / 353 baseBumpTexmap, 381 thinAbsorptionColor, 391 clearcoatAbsorptionColor, 411 / 412 metalnessTexmap (on; no amount), 421 roughnessMode (0 roughness, 1 glossiness), 461 iorMode |
+| CoronaLegacyMtl `(0x70BE6506, 0x448931DD)` | colors 101 diffuse, 102 reflect, 103 refract, 105 opacity, 107 selfIllum; levels 121, 122, 123, 127, 128; maps 141 diffuse, 142 reflect, 143 reflectGlossiness, 144 refract, 146 opacity, 147 bump, 158 selfIllum, each switched on by its id + 20, amounts 290, 291, 292, 293, 295, 296, 303; 180 reflectGlossiness, 182 fresnelIor, 183 ior, 210 thin, 402 pbrMode |
+| CoronaLayeredMtl `(0x65486584, 0x8425554E)` | 1000 baseMtl, 1001 layers (table of 10), 1002 amounts, 1003 mixmaps, 1004 layersOn; getSubMtl answers the base, then the layers |
+| CoronaLightMtl `(0x53B7717A, 0x500D5093)` | 110 intensity, 111 texmap, 112 texmapOn, 113 color, 150 opacityTexmap, 151 opacityTexmapOn, 168 twosidedEmission |
+| CoronaBitmap `(0xABBA5784, 0x65484244)` | 101 filename (asset), 103 uvwChannel, 105 uvwScale, 106 uvwOffset (point3), 107 filteringBlur, 108 / 109 tilingU / V (0 none, 1 repeat, 2 mirror), 114 realWorldScale, 117 monoChannelOutput, 118 rgbChannelOutput (1 alpha as gray), 119 clippingOn, 120 clippingMode (0 crop, 1 place), 121-124 clipping u, v, width, height, 125 gamma (-1 automatic), 129 wAngle (radians), 130 uAngle (the U offset times 2 pi, kept in step by Corona); its Output part at slot 1 |
+| CoronaColor `(0x68426DCA, 0x372362D4)` | 50 method (0 color, 1 HDR color, 2 temperature, 3 hex), 51 temperature (K), 52 color, 56 alpha, 57 multiplier, 58 colorHdr, 59 hexColor |
+| CoronaMix `(0x6847286F, 0x3FFFAAB4)` | 200 mixOperation (0 add, 1 subtract, 2 multiply, 3 divide, 4 minimum, 5 maximum, 6 mix, 7 gamma, 8 difference), 201 mixAmount, 202 / 203 multiplierTop / Bottom, 204 / 205 offsetTop / Bottom, 206 / 207 texmapTop / Bottom, 208 / 209 colorTop / Bottom, 210 texmapMix, 211 / 212 / 213 switches of the mix, top and bottom maps, 214 mixInSRgb |
+
+What the Corona maps do was measured with `renderMap` in 3ds Max 2020: a CoronaBitmap's UVW scale, offset and W
+angle place the image exactly as a Bitmap's tiling, offset and W angle; CoronaMix gives mix(bottom, operation(bottom,
+top), amount), the mix map replacing the amount when it is on (the operation numbers above come from that).
+
 ## Asset metadata
 
 - The files a scene names are listed in the stream `FileAssetMetaData3` (every fixture; empty, 0 bytes, when the
   scene names no file). Records follow each other with no header and no count; a string is a `u32` count of
   UTF-16 units (the NUL not counted), the units, then a UTF-16 NUL, present also for count 0. A record: the
   16-byte asset id, the asset type (`Bitmap`), the path as stored, and a third string, empty in every fixture.
-  vray_maps: 7 records, standard_physical: 1, texmap_rules: 22 (`reader/assets.py`, `tests/unit/test_assets.py`).
+  vray_maps: 7 records, standard_physical: 1, texmap_rules: 22, corona_maps: 13, corona_light: 3, corona_layered: 1
+  (`reader/assets.py`, `tests/unit/test_assets.py`). A CoronaBitmap's file is the asset id in its parameter 101
+  (`filename`, type 9).
 - A Bitmap's file is the asset id in its parameter 13 (`bitmap`, type 16, block 0, see the ParamBlock2 value
   types above); its `fileName` (16) is transient and not stored. The id's record holds the file name 3ds Max
   reports as `fileName` (oracle) for every Bitmap of vray_maps and standard_physical.

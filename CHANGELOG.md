@@ -19,14 +19,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - **Texture maps as nodes**: a Bitmap keeps its tiling, offset, rotation, tile and mirror, cropping and map
   channel; Mix, RGB Multiply, Color Correction and Composite become nodes; Falloff, VRayDirt and other wrappers
   give the map below them. Color maps load as sRGB, data maps as Non-Color.
+- **Corona materials by MaxDrop's own rules**: CoronaPhysicalMtl, CoronaMtl (CoronaLegacyMtl) and CoronaLightMtl
+  become a Principled BSDF (roughness or glossiness mode, metalness, refraction, opacity, self-illumination,
+  clearcoat, bump); CoronaLayeredMtl gives its base material. CoronaBitmap is imported like a Bitmap, CoronaColor as a
+  color, CoronaMix (mix and multiply) as nodes, CoronaNormal as a Normal Map node.
 - The import report names each texture file that was not found (its node stays, without an image) and each
   material input this Blender version lacks (Thin Wall on 4.2 and 4.5).
 
 ### Removed
 
-- io_scene_max's engine (`import_max.py`), which still made the materials: Corona, Arnold Standard Surface,
-  Raytrace and Architectural materials now arrive as a grey material with their name until MaxDrop converts them
-  (Corona next).
+- io_scene_max's engine (`import_max.py`), which still made the materials: Arnold Standard Surface, Raytrace and
+  Architectural materials now arrive as a grey material with their name until MaxDrop converts them.
 
 ### Changed
 
