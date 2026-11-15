@@ -382,7 +382,7 @@ class PackListing:
     kind: str
     backend: str
     scenes: List[str]               # archive paths of the .max entries, in archive order
-    assets: int                     # image and .ies entries with a valid name
+    assets: int                     # image and .ies names, valid and distinct: unpack() writes one file per name
     skipped: int                    # entries never written, whatever the scene
     problems: List[str]
     encrypted: List[str]
@@ -393,14 +393,14 @@ def list_pack(path, limits=DEFAULT_LIMITS):
     """The scenes of a pack and what unpacking would skip. Reads the archive's directory only."""
     k, backend = backend_for(path)
     entries = _read_entries(backend, path, limits)
-    scenes, assets, skipped = [], 0, 0
+    scenes, assets, skipped = [], set(), 0
     for e in entries:
         if e.is_dir:
             continue
         if _is_scene(e):
             scenes.append(e.name)
         elif e.regular and refused_reason(e.base) is None and extension(e.base) in ASSET_EXTENSIONS:
-            assets += 1
+            assets.add(name_key(e.base))
         else:
             skipped += 1
     encrypted = [e.name for e in entries if e.encrypted and not e.is_dir]
@@ -416,7 +416,7 @@ def list_pack(path, limits=DEFAULT_LIMITS):
     if guessed:
         problems.append("%d name%s stored without a known encoding, read as a guess"
                         % (len(guessed), "" if len(guessed) == 1 else "s"))
-    return PackListing(k, backend.name, scenes, assets, skipped, problems, encrypted, guessed)
+    return PackListing(k, backend.name, scenes, len(assets), skipped, problems, encrypted, guessed)
 
 
 @dataclasses.dataclass
@@ -597,6 +597,23 @@ def _destination(path, dest_parent, scene, several, ident, wanted):
                     % (os.path.basename(path), dest_parent))
 
 
+def _ident(path, st):
+    return {"archive": os.path.basename(path), "size": st.st_size, "mtime_ns": st.st_mtime_ns}
+
+
+def existing_folder(path, scene, several, dest_parent=None):
+    """("reused" | "in_place", .max path) when unpack() of the scene (its archive path; several: the pack holds
+    more than one) would import from a folder already on disk instead of writing one, else None. Reads the disk
+    only, for the options popup: an "in_place" folder needs no marker, any file named like the scene counts."""
+    path = os.path.abspath(path)
+    dest_parent = os.path.abspath(dest_parent or os.path.dirname(path))
+    try:
+        found = _destination(path, dest_parent, Entry(scene), several, _ident(path, os.stat(path)), None)
+    except (OSError, PackError):
+        return None
+    return found if found[0] in ("reused", "in_place") else None
+
+
 def _check_space(entries, folder, limits):
     declared = 0
     for e in entries:
@@ -659,7 +676,7 @@ def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=Non
         st = os.stat(path)
     except OSError as e:
         raise PackError("%s could not be read (%s)." % (os.path.basename(path), e)) from None
-    ident = {"archive": os.path.basename(path), "size": st.st_size, "mtime_ns": st.st_mtime_ns}
+    ident = _ident(path, st)
 
     result = UnpackResult(max_path="", folder="", mode="unpacked", backend=backend.name)
     result.guessed = [e.name for e in entries if e.guessed]

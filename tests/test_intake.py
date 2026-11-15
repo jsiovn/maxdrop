@@ -271,6 +271,7 @@ class Duplicates(Base):
         self.assertEqual(sorted(r.collided), sorted(["other/WOOD.JPG", "scene/sub/wood.jpg", "x/y/z/stone.png",
                                                      "scene/a/b/stone.png", "p/q/brick.tga", "r/brick.tga"]))
         self.assertEqual(r.written, 4)
+        self.assertEqual(archive.list_pack(path).assets, 3)
 
 
 # Each is stored as an asset name the allow-list would otherwise accept.
@@ -569,6 +570,28 @@ class Destination(Base):
         write(os.path.join(mine, "one.max"))
         r = archive.unpack(path, "one.max", dest_parent=self.out)
         self.assertEqual((r.mode, r.max_path), ("in_place", os.path.join(mine, "one.max")))
+
+    def test_existing_folder_says_what_unpack_will_use(self):
+        path = self.pack([("Pack/room.max", b"MAX"), ("Pack/wood.jpg", b"J")])
+        before = files_under(self.tmp)
+        self.assertIsNone(archive.existing_folder(path, "Pack/room.max", False, self.out))
+        self.assertEqual(files_under(self.tmp), before)
+        mine = os.path.join(self.out, "pack", "Pack")
+        os.makedirs(mine)
+        write(os.path.join(mine, "room.max"))
+        self.assertEqual(archive.existing_folder(path, "Pack/room.max", False, self.out),
+                         ("in_place", os.path.join(mine, "room.max")))
+        shutil.rmtree(os.path.join(self.out, "pack"))
+        r = archive.unpack(path, dest_parent=self.out)
+        self.assertEqual(archive.existing_folder(path, "Pack/room.max", False, self.out), ("reused", r.max_path))
+        self.assertIsNone(archive.existing_folder(os.path.join(self.tmp, "gone.zip"), "room.max", False, self.out))
+
+    def test_existing_folder_of_one_scene_among_several(self):
+        path = self.pack([("one.max", b"1"), ("two.max", b"2")])
+        self.assertIsNone(archive.existing_folder(path, "two.max", True, self.out))
+        r = archive.unpack(path, "two.max", dest_parent=self.out)
+        self.assertEqual(archive.existing_folder(path, "two.max", True, self.out), ("reused", r.max_path))
+        self.assertIsNone(archive.existing_folder(path, "one.max", True, self.out))
 
     def test_unsafe_archive_or_scene_stem_falls_back(self):
         path = self.pack([("a/CON .max", b"x"), ("good.max", b"1"), ("b/end..max", b"2")], name="pack.zip")

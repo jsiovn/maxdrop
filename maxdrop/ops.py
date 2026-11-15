@@ -9,7 +9,7 @@
 # Modified for MaxDrop, 2026-11-15 (jsiovn). Scene packs: the file browser also takes .zip, .rar and .7z, a drop
 # also .rar and .7z; an archive is listed, its scene chosen (pack_scene), unpacked by maxdrop.intake, and the
 # engine imports the .max from the pack folder, once per scene. The handler label and the menu text name the
-# formats.
+# formats. The popup says when a folder already on disk will be used instead of unpacking.
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -150,6 +150,19 @@ def _target(path, context):
         return None, str(e)
 
 
+def _existing(path, scenes, text, parent):
+    """("reused" | "in_place", .max path) when the import will use a folder already on disk, None when it will
+    unpack, or when the scene is not chosen yet."""
+    archive = _archive()
+    try:
+        scene = _choose(path, scenes, text)
+    except archive.PackError:
+        return None
+    if scene is None:
+        return None
+    return archive.existing_folder(path, scene, len(scenes) > 1, parent)
+
+
 def _scene_search(self, context, edit_text):
     try:
         archive = _archive()
@@ -177,7 +190,7 @@ def _summary(path, result):
     elif result.mode == "reused":
         done = "unpacked before, %s reused" % _plural(result.reused, "file")
     else:
-        done = "a copy extracted by hand, used in place"
+        done = "a file of that name already in that folder, used in place"
     skipped = (sum(result.skipped.values()) + len(result.refused) + len(result.not_regular) + len(result.collided)
                + result.unwanted)
     return "%s: %s from %s, %s, %d skipped" % (
@@ -297,7 +310,7 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
             return self._error("%s holds %d scenes: %s. Type one into the Scene field and import again."
                                % (os.path.basename(path), len(scenes), _scene_list(scenes)))
 
-        resolved, summaries = [], []
+        resolved, summaries, written = [], [], []
         window = context.window
         for path in paths:
             if path not in chosen:
@@ -308,10 +321,15 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
             try:
                 result = archive.unpack(path, chosen[path], prefs.pack_parent(path, context))
             except (archive.PackError, ValueError) as e:
+                if written:
+                    return self._error("%s Nothing was imported. Already unpacked, and used again by the next "
+                                       "import: %s." % (e, ", ".join(written)))
                 return self._error(str(e))
             finally:
                 if window:
                     window.cursor_set('DEFAULT')
+            if result.mode == "unpacked":
+                written.append("%s into %s" % (os.path.basename(path), result.folder))
             resolved.append(result.max_path)
             summaries.append(_summary(path, result))
             if result.guessed:
@@ -346,9 +364,12 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
                     window.cursor_set('DEFAULT')
             if len(_TARGETS) >= _CACHE_MAX:
                 _TARGETS.clear()
-            # Here, not in draw(): finding the folder probes it by creating a folder.
-            for path, _found in packs:
-                _TARGETS[_norm(path)] = _target(path, context)
+            # Here, not in draw(): finding the folder probes it by creating a folder, and an existing copy is
+            # searched for on disk.
+            for path, found in packs:
+                parent, problem = _target(path, context)
+                existing = _existing(path, found.scenes, self.pack_scene, parent) if parent else None
+                _TARGETS[_norm(path)] = (parent, problem, existing)
         return self.invoke_popup(context)
 
 
@@ -372,9 +393,16 @@ def import_pack(layout, operator, packs):
         else:
             body.label(text="Scene: " + _base(listing.scenes[0]))
         body.label(text=_plural(listing.assets, "texture file"))
-        parent, problem = _TARGETS.get(_norm(path), (None, None))
+        parent, problem, existing = _TARGETS.get(_norm(path), (None, None, None))
         if problem:
             body.label(text=problem, icon='ERROR')
+        elif existing:
+            mode, max_path = existing
+            if mode == "reused":
+                body.label(text="Unpacked before: imports from")
+            else:
+                body.label(text="Not unpacked: imports the scene already in", icon='INFO')
+            body.label(text=os.path.dirname(max_path))
         else:
             body.label(text="Unpacks into a folder named after the archive" + (" in" if parent else ""))
             if parent:

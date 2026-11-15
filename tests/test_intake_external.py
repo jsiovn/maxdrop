@@ -442,6 +442,20 @@ class MessageTests(unittest.TestCase):
         self.assertIn("older than 7.23", message)
         self.assertIn("update it", message)
 
+    def test_rar4_on_linux_does_not_suggest_bsdtar(self):
+        backend = external.ExternalBackend("rar")
+        platform = external.sys.platform
+        external.sys.platform = "linux"
+        try:
+            rar4 = backend._none_message("/p/scene.rar", "rar4", [])
+            rar5 = backend._none_message("/p/scene.rar", "rar", [])
+        finally:
+            external.sys.platform = platform
+        self.assertIn("No program to unpack RAR 4 archives", rar4)
+        self.assertIn("bsdtar does not read RAR 4", rar4)
+        self.assertNotIn("libarchive-tools", rar4)
+        self.assertIn("libarchive-tools", rar5)
+
     def test_password_and_tool_error(self):
         backend = external.ExternalBackend("rar")
         failures = [external.ToolFailed("UnRAR 7.23", "exit code 11", "Incorrect password for x.jpg")]

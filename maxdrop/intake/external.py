@@ -93,7 +93,6 @@ def _error(message):
     return _archive.PackError(message)
 
 
-
 _VERSION_RE = {
     UNRAR: re.compile(r"^\s*UNRAR (\d+)\.(\d+)", re.M),
     SEVENZIP: re.compile(r"^\s*7-Zip(?: \[\d+\]| \([a-z]+\))? (\d+)\.(\d+)", re.M),
@@ -289,7 +288,6 @@ def find_tools(order, pack_dir=None):
     return usable, old
 
 
-
 class ToolFailed(Exception):
     """A program ended without doing its job; the next program may do better."""
 
@@ -453,7 +451,6 @@ def _joined(out, err):
     return "\n".join(t for t in (err, out) if t.strip())
 
 
-
 def list_args(tool, archive):
     """The listing command(s) of a program: a list of argument lists."""
     p = tool.path
@@ -598,7 +595,6 @@ def list_entries(tool, archive):
     return entries
 
 
-
 def _vint(data, pos):
     value = shift = 0
     while pos < len(data) and shift < 64:
@@ -676,7 +672,6 @@ def _precheck(archive):
         raise _error("%s is incomplete or one part of an archive split into several (.7z.001). %s"
                      % (os.path.basename(archive), _BY_YOURSELF))
     return "rar4" if head.startswith(_RAR4_MAGIC) else None
-
 
 
 def extract_args(tool, archive, list_file, out):
@@ -860,6 +855,8 @@ class ExternalBackend:
             what = "7-Zip (7-zip.org)" if order_kind == "7z" else "WinRAR (rarlab.com) or 7-Zip (7-zip.org)"
         elif sys.platform == "darwin":
             what = "7-Zip (7zz) or unrar, for example with Homebrew"
+        elif order_kind == "rar4":
+            what = "7-Zip (7zz) or unrar (bsdtar does not read RAR 4)"
         else:
             what = "bsdtar (package libarchive-tools or libarchive), 7-Zip (7zz) or unrar"
         kind = "RAR 4" if order_kind == "rar4" else "." + self.kind
