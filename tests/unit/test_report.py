@@ -28,6 +28,7 @@ if _PKG not in sys.modules:
     sys.modules[_PKG] = _pkg
 conv = importlib.import_module(_PKG + ".convert.scene")
 report = importlib.import_module(_PKG + ".convert.report")
+textures = importlib.import_module(_PKG + ".convert.textures")
 units = importlib.import_module(_PKG + ".reader.units")
 
 IDENTITY = ((1.0, 0.0, 0.0, 0.0), (0.0, 1.0, 0.0, 0.0), (0.0, 0.0, 1.0, 0.0), (0.0, 0.0, 0.0, 1.0))
@@ -143,6 +144,145 @@ class TestSynthetic(unittest.TestCase):
         lines = rep.text().split("\n")
         self.assertEqual(lines[1], "Units: not stated in the file, 1 m per unit")
         self.assertEqual(lines[-1], "Nothing was left out.")
+
+
+def stats(**kw):
+    return types.SimpleNamespace(**kw)
+
+
+def lookup(found=(), missing=()):
+    """A real convert.textures.TextureReport with these names found (by the scene's folder) and missing."""
+    out = textures.TextureReport()
+    for name in found:
+        out.add(name, textures.Found("C:/scene/" + name, textures.SCENE))
+    for name in missing:
+        out.add(name, None)
+    return out
+
+
+def box():
+    desc = conv.SceneDescription(1.0)
+    desc.nodes = [node(1, "Box")]
+    desc.meshes = {(1, None): None}
+    return desc
+
+
+class TestMaterials(unittest.TestCase):
+    def setUp(self):
+        self.rep = report.gather(box(), source="box.max")
+        report.add_materials(
+            self.rep, 6, collections.Counter({"VRayMtl": 3, "Standard": 2}),
+            conv_stats=stats(peeled=collections.Counter({"VRay2SidedMtl": 1, "Shell Material": 1}),
+                             unknown=collections.Counter({"FooMtl": 2}), issues=[(7, "wrapper: no sub-material")]),
+            tex_stats=stats(peeled=collections.Counter({"Falloff": 3}), unsupported=collections.Counter({"BarMap": 1}),
+                            issues=[(9, "Mix 'm': its mix curve not converted")]),
+            lookup=lookup(found=("wood.jpg",), missing=("b.png", "A.png")),
+            sockets=collections.Counter({"Thin Wall": 2}), blender="4.2.23")
+
+    def test_counters(self):
+        rep = self.rep
+        self.assertEqual(rep.approximated, 1 + 1 + 3)
+        self.assertEqual(rep.textures_missing, ["A.png", "b.png"])
+        self.assertEqual(rep.left_out, 2 + 1 + 2 + 2 + 2)  # grey, unsupported, sockets, issues, missing
+
+    def test_text(self):
+        self.assertEqual(self.rep.text().split("\n")[7:], [
+            "Materials built: 6 (converted by class: VRayMtl 3, Standard 2)",
+            "Textures found: 1 (the scene's folder 1, maps or textures folders 0, texture search folders 0, "
+            "the stored path 0)",
+            "Approximated:",
+            "  Wrappers peeled to their sub-material, by class: Shell Material 1, VRay2SidedMtl 1",
+            "  Maps peeled to the map below them, by class: Falloff 3",
+            "Not converted:",
+            "  Material classes without a rule (grey material), by class: FooMtl 2",
+            "  Map classes without a map below (not used), by class: BarMap 1",
+            "  Principled inputs not on Blender 4.2.23 (not set), materials: Thin Wall 2",
+            "  Textures not found: 2",
+            "    A.png",
+            "    b.png",
+            "  Material issues: 2",
+            "    object 7: wrapper: no sub-material",
+            "    object 9: Mix 'm': its mix curve not converted",
+        ])
+
+    def test_summary_warns(self):
+        self.assertEqual(self.rep.summary(), (
+            "WARNING", "Imported box.max: 1 object, 1 mesh, 6 materials; 2 textures missing, 5 approximated, "
+                       "7 issues. See the text MaxDrop Report."))
+
+    def test_only_approximated_warns(self):
+        rep = report.gather(box(), source="box.max")
+        report.add_materials(rep, 1, {"VRayMtl": 1}, conv_stats=stats(
+            peeled=collections.Counter({"Shell Material": 1}), unknown=collections.Counter(), issues=[]))
+        self.assertEqual(rep.summary(), ("WARNING", "Imported box.max: 1 object, 1 mesh, 1 material; "
+                                                    "1 approximated. See the text MaxDrop Report."))
+        lines = rep.text().split("\n")
+        self.assertEqual(lines[-2:], ["Approximated:",
+                                      "  Wrappers peeled to their sub-material, by class: Shell Material 1"])
+        self.assertNotIn("Not converted:", lines)
+
+    def test_nothing_left_out(self):
+        rep = report.gather(box(), source="box.max")
+        report.add_materials(rep, 3, collections.Counter({"Standard": 3}), lookup=lookup())
+        self.assertEqual(rep.summary(), ("INFO", "Imported box.max: 1 object, 1 mesh, 3 materials, nothing left out."))
+        self.assertEqual(rep.text().split("\n")[7:], [
+            "Materials built: 3 (converted by class: Standard 3)",
+            "Textures found: 0 (the scene's folder 0, maps or textures folders 0, texture search folders 0, "
+            "the stored path 0)",
+            "Nothing was left out.",
+        ])
+
+    def test_no_materials_imported(self):
+        lines = report.gather(box(), source="box.max").text().split("\n")
+        self.assertFalse(any(line.startswith(("Materials", "Textures")) for line in lines))
+
+    def test_no_material_converted(self):
+        rep = report.gather(box())
+        report.add_materials(rep, 0)
+        self.assertIn("Materials built: 0", rep.text().split("\n"))
+
+    def test_search_stopped(self):
+        found = lookup()
+        found.truncated.append((textures.USER, "D:/tex/deep", 200000))
+        rep = report.gather(box())
+        report.add_materials(rep, 0, lookup=found)
+        self.assertIn("Texture search of texture search folders stopped after 200000 files and folders, in "
+                      "D:/tex/deep", rep.text().split("\n"))
+
+    def test_long_missing_list_is_cut(self):
+        rep = report.gather(box())
+        report.add_materials(rep, 0, lookup=lookup(missing=["t%03d.png" % i for i in range(report.MAX_LISTED + 3)]))
+        text = rep.text()
+        self.assertIn("  Textures not found: %d" % (report.MAX_LISTED + 3), text)
+        self.assertNotIn("t%03d.png" % report.MAX_LISTED, text)
+        self.assertIn("    ... and 3 more", text)
+
+    def test_missing_texture_in_a_pack(self):
+        pack = Pack()
+        pack.collided = ["sub/Wood.JPG"]
+        pack.refused = [("../evil.jpg", "a path outside the pack")]
+        pack.not_regular = ["maps/link.jpg"]
+        pack.skipped = {".tif": 2}
+        rep = report.gather(box(), pack=pack, pack_name="room.zip")
+        report.add_materials(rep, 1, lookup=lookup(missing=("wood.jpg", "evil.jpg", "link.jpg", "scan.tif",
+                                                            "gone.png")))
+        lines = rep.text().split("\n")
+        start = lines.index("  Textures not found: 5")
+        self.assertEqual(lines[start + 1:start + 6], [
+            "    evil.jpg: in the archive, refused: a path outside the pack",
+            "    gone.png: not in the archive",
+            "    link.jpg: in the archive, not a regular file",
+            "    scan.tif: the archive's .tif files were skipped",
+            "    wood.jpg: in the archive, lost to a duplicate (sub/Wood.JPG)",
+        ])
+
+    def test_missing_texture_in_a_reused_pack(self):
+        pack = Pack()
+        pack.mode = "reused"
+        rep = report.gather(box(), pack=pack, pack_name="room.zip")
+        report.add_materials(rep, 1, lookup=lookup(missing=("wood.jpg",)))
+        lines = rep.text().split("\n")
+        self.assertEqual(lines[lines.index("  Textures not found: 1") + 1], "    wood.jpg")
 
 
 @unittest.skipIf(numpy is None, "numpy missing")
