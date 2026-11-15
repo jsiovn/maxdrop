@@ -202,6 +202,68 @@ class DamagedInput(unittest.TestCase):
         self.assertEqual((leaf.parent, leaf.kind), (child, conv.MESH))
 
 
+    def layered(self, parents=None, broken=()):
+        """layers_flags with parent layers set by name and some layer records refused."""
+        sc = self.scene("layers_flags")
+        by_name = {sc.layer(i).name: i for i in sc.layer_indices}
+        real = sc.layer
+
+        def layer(i):
+            if i in [by_name[b] for b in broken]:
+                raise reader_scene.ChunkError("layer %d: refused" % i)
+            la = real(i)
+            parent = (parents or {}).get(la.name)
+            if parent is None:
+                return la
+            return reader_scene.Layer(la.index, la.name, la.flags, la.render_flags, by_name[parent])
+
+        sc.layer = layer
+        return sc, by_name
+
+    def test_a_parent_layer_without_nodes_is_kept_and_comes_first(self):
+        sc, by_name = self.layered({"FixtureLayerB": "0"})
+        desc = conv.describe(sc, 1.0)
+        self.assertEqual([(la.name, la.parent) for la in desc.layers],
+                         [("0", None), ("FixtureLayerA", None), ("FixtureLayerB", by_name["0"])])
+
+    def test_a_parent_listed_later_is_moved_before_its_child(self):
+        sc, by_name = self.layered({"FixtureLayerA": "FixtureLayerB"})
+        desc = conv.describe(sc, 1.0)
+        self.assertEqual([(la.name, la.parent) for la in desc.layers],
+                         [("FixtureLayerB", None), ("FixtureLayerA", by_name["FixtureLayerB"])])
+
+    def test_an_unreadable_layer_is_an_issue_and_its_nodes_have_none(self):
+        sc, _by_name = self.layered(broken=("FixtureLayerB",))
+        desc = conv.describe(sc, 1.0)
+        self.assertEqual([la.name for la in desc.layers], ["FixtureLayerA"])
+        lost = [n.name for n in desc.nodes if n.layer is None]
+        self.assertEqual(sorted(lost), ["FixtureHidden", "FixtureNoRender"])
+        self.assertEqual(len(desc.issues), 2)
+        self.assertTrue(all(r.startswith("layer: ") for _n, r in desc.issues))
+
+    def test_unknown_controllers_are_counted_by_class(self):
+        sc = self.scene("hierarchy")
+        real = conv.controllers.Transforms
+
+        class Fake(real):
+            def __init__(self, scene):
+                super().__init__(scene)
+
+            def local(self, i):
+                m = super().local(i)
+                node = self.scene.node(i)
+                if not any(issue.node == i for issue in self.issues):
+                    self.issues.append(conv.controllers.Issue(i, node.tm, None, None, conv.controllers.UNKNOWN_CLASS))
+                return m
+
+        conv.controllers.Transforms = Fake
+        try:
+            desc = conv.describe(sc, 1.0)
+        finally:
+            conv.controllers.Transforms = real
+        self.assertEqual(dict(desc.unknown_controllers), {"Position/Rotation/Scale": len(desc.nodes)})
+
+
 class Shear(unittest.TestCase):
     def test_rotation_and_axis_scale_are_not_shear(self):
         c, s = 0.6, 0.8
@@ -361,12 +423,40 @@ class Fixtures(unittest.TestCase):
 
     def test_placeholders(self):
         for name, desc, _o in self.cases:
-            expected = {"Dummy": 1} if name == "layers_flags" else {}
-            self.assertEqual(dict(desc.placeholders), expected, name)
+            self.assertEqual(dict(desc.placeholders), {}, name)  # the group head is a Dummy: converted, an empty
             self.assertEqual(desc.issues, [], name)
+            self.assertEqual(dict(desc.unknown_controllers), {}, name)
         desc = dict((n, d) for n, d, _o in self.cases)["layers_flags"]
         head = next(n for n in desc.nodes if n.kind == conv.EMPTY)
         self.assertEqual((head.name, head.class_name, head.mesh), ("FixtureGroup", "Dummy", None))
+
+    def test_flags_and_layers_equal_the_oracle(self):
+        for name, desc, oracle in self.cases:
+            names = {la.index: la.name for la in desc.layers}
+            used = []
+            for node, o in zip(desc.nodes, oracle["nodes"]):
+                self.assertEqual((node.hidden, node.frozen, node.renderable, names[node.layer]),
+                                 (o["hidden"], o["frozen"], o["renderable"], o["layer"]), o["name"])
+                if o["layer"] not in used:
+                    used.append(o["layer"])
+            order = [la["name"] for la in oracle["layers"]]
+            self.assertEqual([la.name for la in desc.layers], sorted(used, key=order.index), name)
+            flags = {la["name"]: (la["hidden"], la["frozen"], la["renderable"]) for la in oracle["layers"]}
+            for la in desc.layers:
+                self.assertEqual((la.hidden, la.frozen, la.renderable), flags[la.name])
+                self.assertIsNone(la.parent)
+
+    def test_layers_flags_organisation(self):
+        desc = dict((n, d) for n, d, _o in self.cases)["layers_flags"]
+        self.assertEqual([la.name for la in desc.layers], ["FixtureLayerA", "FixtureLayerB"])
+        by_name = {n.name: n for n in desc.nodes}
+        self.assertEqual([k for k, n in by_name.items() if n.hidden], ["FixtureHidden"])
+        self.assertEqual([k for k, n in by_name.items() if not n.renderable], ["FixtureNoRender"])
+        self.assertEqual([k for k, n in by_name.items() if n.group_head], ["FixtureGroup"])
+        head = by_name["FixtureGroup"].index
+        self.assertEqual(sorted(k for k, n in by_name.items() if n.group_member),
+                         sorted(k for k, n in by_name.items() if n.parent == head))
+        self.assertEqual(len([n for n in desc.nodes if n.parent == head]), 2)
 
     def test_material_indices_from_the_reader(self):
         desc = dict((n, d) for n, d, _o in self.cases)["box_poly_standard"]

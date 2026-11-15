@@ -8,6 +8,8 @@
     desc.nodes                          # NodeDescription per node, pre-order: a parent before its children
     desc.meshes[node.mesh]              # MeshDescription, shared by the nodes of one base object
     desc.placeholders                   # Counter: class name -> nodes built as an empty
+    desc.layers                         # LayerDescription per layer that holds a node, a parent before its children
+    desc.unknown_controllers            # Counter: controller class name -> times met
     desc.issues                         # [(node object index, reason)] for the report
 
 Matrices are Blender's convention: 4x4 tuples of rows, a column vector p becomes M @ p, the translation is the
@@ -30,7 +32,13 @@ vertex used twice, the vertex set of an earlier face) are left out and reported.
 
 A node becomes an EMPTY placeholder when its base object is not an Editable Mesh or Editable Poly, when it has no
 object, or when the reader refuses its geometry or its record; placeholders counts them by the class name of the
-file's class directory ("" when there is none). Modifiers are listed, not evaluated: the base mesh is built.
+file's class directory ("" when there is none). A Dummy helper (a group head is one) is an EMPTY too, but that is
+its conversion, not a placeholder. A group head keeps its members as children: that is how 3ds Max stores a group.
+
+Layers: each node names its layer's object index (None without one, or when the layer record cannot be read, which
+is an issue); desc.layers holds the layers that hold a node and their parent layers, in the Layer Manager's order
+with every parent before its children. A node's hidden, frozen and renderable flags are its own: a hidden layer
+hides its nodes in 3ds Max without setting their flag, so build/ applies the layer's flags to its collection. Modifiers are listed, not evaluated: the base mesh is built.
 A local matrix with shear (a scale along a rotated axis) is reported: Blender's matrix_basis cannot hold it. A
 base object's reader arrays are dropped once its last node is described.
 Nothing here imports bpy; numpy is imported when a scene is described.
@@ -38,7 +46,7 @@ Nothing here imports bpy; numpy is imported when a scene is described.
 import collections
 import math
 
-from ..reader import cfb, chunks, controllers, geometry, units
+from ..reader import cfb, chunks, classids, controllers, geometry, units
 from ..reader import scene as reader_scene
 
 MESH, EMPTY = "MESH", "EMPTY"
@@ -54,14 +62,18 @@ ChunkError = chunks.ChunkError
 class NodeDescription:
     """One node: index is its object index, parent the parent's (None at the top level); kind MESH or EMPTY; mesh
     the key into SceneDescription.meshes (None for an empty); class_name the base object's class ("" without
-    one); modifiers the class names of its modifier stack, top first."""
+    one); modifiers the class names of its modifier stack, top first; layer the layer's object index (None without
+    one); hidden, frozen, renderable, group_head and group_member the node's own flags."""
     __slots__ = ("index", "name", "parent", "matrix", "world", "kind", "mesh", "class_name", "mirrored",
-                 "modifiers")
+                 "modifiers", "layer", "hidden", "frozen", "renderable", "group_head", "group_member")
 
-    def __init__(self, index, name, parent, matrix, world, kind, mesh, class_name, mirrored, modifiers):
+    def __init__(self, index, name, parent, matrix, world, kind, mesh, class_name, mirrored, modifiers, layer=None,
+                 hidden=False, frozen=False, renderable=True, group_head=False, group_member=False):
         self.index, self.name, self.parent, self.matrix, self.world = index, name, parent, matrix, world
         self.kind, self.mesh, self.class_name, self.mirrored, self.modifiers = kind, mesh, class_name, mirrored, \
             modifiers
+        self.layer, self.hidden, self.frozen, self.renderable = layer, hidden, frozen, renderable
+        self.group_head, self.group_member = group_head, group_member
 
     def __repr__(self):
         return "NodeDescription(%d, %r, %s, parent=%r)" % (self.index, self.name, self.kind, self.parent)
@@ -88,14 +100,27 @@ class MeshDescription:
             self.name, len(self.positions), len(self.loop_starts), len(self.uv_layers))
 
 
+class LayerDescription:
+    """One layer: index its object index, parent the parent layer's (None at the top level)."""
+    __slots__ = ("index", "name", "parent", "hidden", "frozen", "renderable")
+
+    def __init__(self, index, name, parent=None, hidden=False, frozen=False, renderable=True):
+        self.index, self.name, self.parent = index, name, parent
+        self.hidden, self.frozen, self.renderable = hidden, frozen, renderable
+
+    def __repr__(self):
+        return "LayerDescription(%d, %r, parent=%r)" % (self.index, self.name, self.parent)
+
+
 class SceneDescription:
     """nodes in walk order, meshes {key: MeshDescription} in order of first use, meters per file unit, unit the
-    reader's SystemUnit (None when the file does not say), placeholders and issues."""
-    __slots__ = ("nodes", "meshes", "meters", "unit", "placeholders", "issues")
+    reader's SystemUnit (None when the file does not say), layers, placeholders, unknown_controllers and issues."""
+    __slots__ = ("nodes", "meshes", "meters", "unit", "layers", "placeholders", "unknown_controllers", "issues")
 
     def __init__(self, meters, unit=None):
-        self.nodes, self.meshes, self.meters, self.unit = [], {}, meters, unit
+        self.nodes, self.meshes, self.meters, self.unit, self.layers = [], {}, meters, unit, []
         self.placeholders = collections.Counter()
+        self.unknown_controllers = collections.Counter()
         self.issues = []
 
     def __repr__(self):
@@ -247,25 +272,28 @@ def describe(scene, meters=1.0, unit=None):
     t = controllers.Transforms(scene)
     desc = SceneDescription(meters, unit)
     order = scene.walk()
-    found = {}  # node -> (name, Stack or None), or the ChunkError its record or object stack raised
+    found = {}  # node -> (reader Node, Stack or None), or the ChunkError its record or object stack raised
     remaining = collections.Counter()  # base object -> nodes still to build: its MeshData goes with the last
     for i in order:
         try:
             node = scene.node(i)
             stack = scene.object_stack(node.object) if node.object is not None else None
-            found[i] = (node.name, stack)
+            found[i] = (node, stack)
             if stack is not None and stack.base is not None:
                 remaining[stack.base] += 1
         except ChunkError as exc:
             found[i] = exc
     data_of = {}  # base object index -> MeshData, or None when the reader refused or does not read it
+    layers = {}  # layer object index -> reader Layer, or None when its record cannot be read
     for i in order:
         local, world = t.local(i), t.world(i)
-        kind, key, class_name, modifiers, name = EMPTY, None, "", (), ""
+        kind, key, class_name, modifiers, name, node, layer, base = EMPTY, None, "", (), "", None, None, None
         if isinstance(found[i], ChunkError):  # a damaged node record or object stack: an empty, children placed
             desc.issues.append((i, "node: %s" % found[i]))
         else:
-            name, stack = found[i]
+            node, stack = found[i]
+            name = node.name
+            layer = _layer(scene, node.layer, layers, desc.issues, i)
             base = stack.base if stack is not None else None
             if stack is not None:
                 modifiers = tuple(_class_name(scene, m) for m in stack.modifiers)
@@ -293,15 +321,69 @@ def describe(scene, meters=1.0, unit=None):
                 remaining[base] -= 1
                 if not remaining[base]:
                     del data_of[base]
-        if kind == EMPTY:
+        if kind == EMPTY and not (base is not None and scene.is_a(base, classids.SC_HELPER, classids.DUMMY)):
             desc.placeholders[class_name] += 1
         if sheared(local):
             desc.issues.append((i, "transform: %s" % SHEARED))
+        flags = {} if node is None else dict(hidden=node.hidden, frozen=node.frozen, renderable=node.renderable,
+                                             group_head=node.group_head, group_member=node.group_member)
         desc.nodes.append(NodeDescription(i, name, scene.parent(i), blender_matrix(local, meters),
                                           blender_matrix(world, meters), kind, key, class_name,
-                                          determinant3(world) < 0, modifiers))
+                                          determinant3(world) < 0, modifiers, layer, **flags))
     desc.issues.extend((issue.node, "transform: %s" % issue.reason) for issue in t.issues)
+    desc.unknown_controllers.update(
+        _class_name(scene, issue.controller) if issue.controller is not None else ""
+        for issue in t.issues if issue.reason == controllers.UNKNOWN_CLASS)
+    desc.layers = _layer_descriptions(scene, layers)
     return desc
+
+
+def _layer(scene, i, layers, issues, node):
+    """The object index of node's layer i, or None (no layer, or a record that cannot be read: an issue, once per
+    node); layers caches the reader records."""
+    if i is None:
+        return None
+    if i not in layers:
+        try:
+            layers[i] = scene.layer(i)
+        except ChunkError as exc:
+            layers[i] = exc
+    if isinstance(layers[i], ChunkError):
+        issues.append((node, "layer: %s" % layers[i]))
+        return None
+    return i
+
+
+def _layer_descriptions(scene, used):
+    """The layers that hold a node and their parent layers, in the Layer Manager's order, every parent first."""
+    records = {i: la for i, la in used.items() if not isinstance(la, ChunkError)}
+    wanted = set()
+    for la in list(records.values()):
+        seen = set()
+        while la is not None and la.index not in seen:  # parents are cycle-free; seen only bounds the walk
+            seen.add(la.index)
+            wanted.add(la.index)
+            if la.parent is None:
+                break
+            try:
+                la = records[la.parent] if la.parent in records else scene.layer(la.parent)
+            except ChunkError:
+                break
+            records[la.index] = la
+    out, done = [], set()
+    for i in scene.layer_order():
+        if i not in wanted or i in done:
+            continue
+        chain, j = [], i
+        while j is not None and j in wanted and j not in done:
+            chain.append(j)
+            done.add(j)
+            j = records[j].parent
+        for j in reversed(chain):
+            la = records[j]
+            parent = la.parent if la.parent in wanted else None
+            out.append(LayerDescription(j, la.name, parent, la.hidden, la.frozen, la.renderable))
+    return out
 
 
 def _class_name(scene, i):
