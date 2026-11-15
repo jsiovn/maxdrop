@@ -148,6 +148,47 @@ this order:
 
 A field whose value is zero is left out: the top of every box has mask `0x30`, the other faces `0x38`.
 
+## System unit
+
+`maxdrop/reader/units.py` reads it; `tests/unit/test_units.py` checks every fixture against the oracle's
+`units.system_type`. Found with `tools/maxdiff.py` on units_mm, units_cm and units_in, which differ only in the
+system unit: of the Scene stream, only one leaf holds the setting itself.
+
+- The Scene stream has one object of class Scene `(0x2222, 0)`, superclass `0x100`. Its `0x8520` chunk is an
+  `i32` unit type and an `f32` scale: units_mm `3`, units_cm `4`, units_in `0`, every other fixture `3`; the
+  scale is `1.0` in all of them (the oracle's `system_scale`). 1 system unit = scale x the unit type.
+- The unit types are those of the 3ds Max SDK: 0 inches, 1 feet, 2 miles, 3 millimeters, 4 centimeters,
+  5 meters, 6 kilometers. Inches, millimeters and centimeters are what the fixtures show.
+- What also changes with the unit, and is not the setting: grid and snap values in `Config`
+  (`0x21A0/0x1A02/0x100E` entries), two `0x100E` parameter entries of another object of the Scene stream, and the viewports (`0x0015`):
+  values measured in system units.
+- Corpus scenes A and B (Max 2015 and 2020): `3`, scale `1.0` (millimeters).
+
+## Summary properties
+
+`maxdrop/reader/metadata.py` reads them; `tests/unit/test_metadata.py` checks every fixture against its oracle.
+
+- `\x05DocumentSummaryInformation` is an OLE property set ([MS-OLEPS]) of code page 65001 in every fixture. Its
+  section `D5CDD502-2E9C-101B-9397-08002B2CF9AE` holds the heading pairs (property 12: a vector of variants, a
+  heading string then an `i4` count) that cut the document parts (property 13: a vector of strings) into groups:
+
+  | Group | Parts (box_poly_standard) |
+  |---|---|
+  | General | `3ds Max Version: 22.00`, `Uncompressed`, `Build: 22.2.0.2176`, `Saved As Version: 22.00` |
+  | Mesh Totals | `Vertices: 8`, `Faces: 6` (the sum of the oracle's `base_verts` in every fixture) |
+  | Scene Totals | `Objects`, `Shapes`, `Lights`, `Cameras`, `Helpers`, `Space Warps`, `Total` (`Total` = the oracle's `node_count`: layers_flags has 5 objects and 1 helper, its group head) |
+  | External Dependencies | file paths (none in the fixtures) |
+  | Objects, Materials | node and material names (Materials: as many as the oracle's materials) |
+  | Used Plug-Ins | DLL file names (`epoly.dlo`, `ctrl.dlc`, ...) |
+  | Render Data | `User Name=`, `Computer Name=`, render size and aspect, `Renderer ClassIDA=1`, `Renderer ClassIDB=0` (the oracle's renderer class), `Renderer Name=Scanline Renderer`, animation range, flags |
+
+- `3ds Max Version` 22 is 3ds Max 2020 (the oracle's `max_version`); the release year is the major version + 1998
+  from version 10 (3ds Max 2008) on. Corpus scene A: `17.00` saved as `14.00`, scene B: `22.00` saved as `20.00`.
+- `\x05SummaryInformation` holds the thumbnail (property 17), the dates, the last author (8) and property 34,
+  both the user name, and a revision. The reader takes nothing from it.
+- The user and computer name (Render Data, the author fields), the names and the paths are never returned by the
+  reader; the fixtures hold them blanked (`tools/sanitize_fixture.py`).
+
 ## Open
 
 Not shown by any fixture yet, so not stated above:
@@ -159,7 +200,9 @@ Not shown by any fixture yet, so not stated above:
   modifier.
 - The sign convention of the offset rotation: every fixture's is the identity.
 - The meaning of the flag bits in `0x0960` and of the first `u32` of `0x2035`.
-- The system unit.
+- System unit types 1, 2, 5, 6 (feet, miles, meters, kilometers) and a scale other than 1: taken from the 3ds Max
+  SDK, no fixture has them. A `Compressed` part in General (instead of `Uncompressed`) is assumed for a compressed
+  file.
 - Geometry seen only in the corpus (scenes A and B, every Editable Mesh and Poly decoded, vertex and face counts
   equal to the oracle on every node; `geometry.py` relies on them):
   - dead Editable Poly records: a vertex or edge whose flags have bit `0x2` is stored as its flags alone (4 bytes);
