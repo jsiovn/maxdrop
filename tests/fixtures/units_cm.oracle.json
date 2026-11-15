@@ -1,0 +1,44 @@
+{
+  "file": "units_cm.max",
+  "file_version": [22000, 22000],
+  "layers": [
+    {"frozen": false, "hidden": false, "name": "0", "renderable": true}
+  ],
+  "materials": [
+    {"class_id": ["0x00000002", "0x00000000"], "class_name": "Standardmaterial", "index": 0, "name": "FixtureRed", "sub_count": 0}
+  ],
+  "max_version": [22000, 2020],
+  "node_count": 1,
+  "nodes": [
+    {
+      "base_class_id": ["0x1bf8338d", "0x192f6098"],
+      "base_class_name": "Editable_Poly",
+      "base_faces": 6,
+      "base_superclass": 16,
+      "base_verts": 8,
+      "bbox_max": [10, 10, 30],
+      "bbox_min": [0, -10, 0],
+      "eval_faces": 12,
+      "eval_verts": 8,
+      "frozen": false,
+      "handle": 1,
+      "hidden": false,
+      "index": 0,
+      "instances": [1],
+      "layer": "0",
+      "material": 0,
+      "modifiers": [],
+      "name": "FixtureUnitBox",
+      "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 5, 0, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "renderable": true,
+      "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 5, 0, 0]
+    }
+  ],
+  "oracle_version": 1,
+  "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
+  "units": {"display_metric": "millimeters", "display_type": "metric", "display_us": "ft_Frac_In", "system_scale": 1, "system_type": "centimeters"}
+}

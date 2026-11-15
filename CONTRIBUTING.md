@@ -59,7 +59,8 @@ the same extension enabled from two repositories clashes.
 | `tools/baseline.py`, `tools/baseline_import.py` | Measure one import: time, peak memory, counts ([docs/BASELINE.md](docs/BASELINE.md)). |
 | `LICENSE`, `maxdrop/LICENSE` | The GPL v3 text, and the same file again so that it is in every zip. `tools/check_zip.py` checks a built zip for it. |
 | `tools/fixtures/*.ms`, `tools/sanitize_fixture.py`, `tools/check_fixture.py`, `tools/cfb.py` | The test files: the MAXScript that authors each one, the tool that blanks the user and computer name 3ds Max writes into a file, the check that refuses names and paths, and the compound-file reader both use. |
-| `tests/` | `test_site.py`, `test_license.py`, `test_intake*.py`, `test_fixtures.py` (plain Python), `smoke_register.py`, `smoke_import.py` (inside Blender); `fixtures/` holds the test `.max` files and `fixtures/packs/` the test scene packs. |
+| `tools/oracle/dump_scene.ms` | Writes what 3ds Max itself says about a scene as JSON: the `tests/fixtures/*.oracle.json` files the reader is checked against ([docs/ORACLE.md](docs/ORACLE.md)). |
+| `tests/` | `test_site.py`, `test_license.py`, `test_intake*.py`, `test_fixtures.py`, `test_oracle.py` (plain Python), `smoke_register.py`, `smoke_import.py` (inside Blender); `fixtures/` holds the test `.max` files with their 3ds Max oracle (`.oracle.json`) and `fixtures/packs/` the test scene packs. |
 
 ## Test files
 
@@ -74,10 +75,11 @@ python -I tools/sanitize_fixture.py C:\maxdrop_fixtures\<name>.max   # blanks th
 python -I tools/check_fixture.py C:\maxdrop_fixtures\<name>.max      # must print "clean"
 ```
 
-Copy it into `tests/fixtures/` only then. `tests/test_fixtures.py` runs the same check over every committed
-fixture. Keep each file under 1 MB and give every object and material a neutral name. The tools know how 3ds Max
-2020 stores the two names; a file from another version that they cannot read is refused (`identity slots not
-found`) and needs the tools taught first.
+Copy it into `tests/fixtures/` only then, regenerate its oracle (`MaxDropOracle.dumpFolder`, see
+[docs/ORACLE.md](docs/ORACLE.md)) and commit both files together. `tests/test_fixtures.py` runs the same check
+over every committed fixture. Keep each file under 1 MB and give every object and material a neutral name. The
+tools know how 3ds Max 2020 stores the two names; a file from another version that they cannot read is refused
+(`identity slots not found`) and needs the tools taught first.
 
 ## Conventions
 

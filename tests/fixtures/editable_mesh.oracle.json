@@ -1,0 +1,44 @@
+{
+  "file": "editable_mesh.max",
+  "file_version": [22000, 22000],
+  "layers": [
+    {"frozen": false, "hidden": false, "name": "0", "renderable": true}
+  ],
+  "materials": [
+    {"class_id": ["0x00000200", "0x00000000"], "class_name": "Multimaterial", "index": 0, "name": "FixtureMulti", "sub_count": 3}
+  ],
+  "max_version": [22000, 2020],
+  "node_count": 1,
+  "nodes": [
+    {
+      "base_class_id": ["0xe44f10b3", "0x00000000"],
+      "base_class_name": "Editable_mesh",
+      "base_faces": 12,
+      "base_superclass": 16,
+      "base_verts": 8,
+      "bbox_max": [10, 10, 20],
+      "bbox_min": [-10, -10, 0],
+      "eval_faces": 12,
+      "eval_verts": 8,
+      "frozen": false,
+      "handle": 1,
+      "hidden": false,
+      "index": 0,
+      "instances": [1],
+      "layer": "0",
+      "material": 0,
+      "modifiers": [],
+      "name": "FixtureMesh",
+      "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "renderable": true,
+      "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]
+    }
+  ],
+  "oracle_version": 1,
+  "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
+  "units": {"display_metric": "meters", "display_type": "Generic", "display_us": "ft_Frac_In", "system_scale": 1, "system_type": "millimeters"}
+}

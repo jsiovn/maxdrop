@@ -35,8 +35,9 @@ Bead: `maxdrop-too.2`.
   object: polygons for Editable Poly (`polyop`), triangles for Editable Mesh, `null` for any other class.
 - **Instances**: sorted handles of every node whose `baseObject` is this node's base object (self included), found
   through `refs.dependentNodes`.
-- **Bounding box**: `node.min` / `node.max` (world-aligned, as Max reports it). Checked against the snapshot vertices
-  on the rotated hierarchy fixture; the finding goes into docs/ORACLE.md.
+- **Bounding box**: `nodeGetBoundingBox node (matrix3 1)`, the tight world box of the evaluated points. Measured
+  during implementation: `node.min` / `node.max` transform the local box and were 7 units too large per side on a
+  rotated sphere of radius 10; `nodeGetBoundingBox` equalled the vertex extremes (rotated, bent, parented sphere).
 - **Floats**: `%.6g`; `-0` -> `0`; inf / nan -> `null`. Matrices are 12 floats, rows 1-4 (row 4 = translation).
 - **File identity**: `file` = base name only, never a path. Corpus dumps: `C:\maxdrop_fixtures\oracle\` (local,
   outside the repo; named "scene A" / "scene B" in anything committed).
