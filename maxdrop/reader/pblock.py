@@ -13,22 +13,24 @@ ParamBlock).
     old = ParamBlock.from_chunk(chunk)  # old.get(6): by index
 
 A ParamBlock2 object holds a 0x0009 header (u32 unknown, u16 block id, u32 descriptor version, u16 number of
-entries, u32 the owner's object index; 0x000B is the same after the descriptor's ClassID, 8 bytes) and one 0x100E chunk per stored parameter: u16 id, u32 type (the SDK's
-ParamType2, bit 0x800 = table), u32 the definition's flags, u32 unknown, then a scalar (u8 tag, value) or a table
-(u8 0, u32 count, then a tag and a value per element). Tag 0x40 = a stored value, 0xC0 = the stored value of an
-animatable parameter, 0x80 = a controller and no value. Transient parameters are not stored; every other one is.
+entries, u32 the owner's object index; 0x000B is the same after the descriptor's ClassID, 8 bytes) and one 0x100E
+chunk per stored parameter (0x000E in a file saved as 3ds Max 2012): u16 id, u32 type (the SDK's ParamType2, bit
+0x800 = table), u32 the definition's flags, u32 unknown, then a scalar (u8 tag, value) or a table (u8 0, u32
+count, then a tag and a value per element). Tag 0x40 = a stored value, 0xC0 = the stored value of an animatable
+parameter, 0x80 = a controller and no value. Transient parameters are mostly not stored (an alias sometimes is,
+with a stale value); a block may store nothing at all (the header says how many entries it holds).
 
 Values by type: float, angle (radians), fraction, world and color channel f32; int, bool, time, radio button and
 index i32; color, hsv and point3 3 x f32; point4 and float color with alpha 4 x f32; point2 2 x f32; string u32
-byte count (0xFFFFFFFF: none) then UTF-16LE (with a NUL); file name i32, -2 when the asset follows as the next sibling chunk
-0x000F{0x0002: 16-byte asset id}; bitmap u8, its data following as the next sibling 0x0003 (asset id in
-0x1260{0x0002}). Reference types (material, map, node, reference target, ParamBlock2) with P_OWNERS_REF (0x200)
-or P_NO_REF (0x100) store an i32 object index (-1: none). With P_OWNERS_REF the owner holds the reference and the
-index is often -1 although it is set: the owner's slot of each such parameter is in 0x0013 (u32 count, then u16
-param id, u16 slot, u16 unknown; a table's element k is at slot + k), which wins. Without either flag there is
-no value: the elements take the block's own reference slots 0, 1, 2 ... in entry order, tables and transient
-entries included. Controllers take the slots after those, in entry order (one probe, no fixture: unverified).
-docs/FORMAT.md says which fixture shows what.
+byte count (0xFFFFFFFF: none) then UTF-16LE (with a NUL); file name i32, -2 when the asset follows as the next
+sibling chunk 0x000F{0x0002: 16-byte asset id}; bitmap u8, its data following as the next sibling 0x0003 (asset
+id in 0x1260{0x0002}). Reference types (material, map, node, reference target, ParamBlock2) with P_OWNERS_REF
+(0x200) or P_NO_REF (0x100) store an i32 object index (-1: none). With P_OWNERS_REF the owner holds the reference
+and the index is often -1 although it is set: the owner's slot of each such parameter is in 0x0013 (u32 count,
+then u16 param id, u16 slot, u16 unknown; a table's element k is at slot + k), which wins. Without either flag
+there is no value: the elements take the block's own reference slots 0, 1, 2 ... in entry order, tables and
+transient entries included. Controllers take the slots after those, in entry order (one probe, no fixture:
+unverified). docs/FORMAT.md says which fixture shows what.
 
 The old ParamBlock: 0x0001 u32 count, then per parameter a 0x0002 container: 0x0003 u32 index, optionally 0x0004,
 and the value in chunk 0x0100 + ParamType (0 float, 1 int, 2 color, 3 point3, 4 bool).
@@ -55,7 +57,8 @@ STRING, FILENAME, BITMAP = 8, 9, 16
 REFERENCE_TYPES = frozenset((14, 15, 17, 18, 21))  # mtl, texmap, inode, reftarg, pblock2
 MATERIAL, TEXMAP = 14, 15
 
-_HEADER, _CLASS_HEADER, _ENTRY, _OWNER_REFS = 0x0009, 0x000B, 0x100E, 0x0013
+_HEADER, _CLASS_HEADER, _OWNER_REFS = 0x0009, 0x000B, 0x0013
+_ENTRIES = (0x100E, 0x000E)
 _ASSET, _BITMAP_DATA, _ASSET_ID, _ASSET_HOLDER = 0x000F, 0x0003, 0x0002, 0x1260
 _ENTRY_HEAD = struct.Struct("<HIII")  # id, type, flags, unknown: 14 bytes
 _HEAD = struct.Struct("<IHIHI")  # unknown, block id, version, count, owner: 16 bytes
@@ -146,7 +149,7 @@ def _unpack(buf, pos, fmt):
 
 
 def _entry(buf):
-    """(id, type, flags, elements, error) of one 0x100E payload; elements None when damaged."""
+    """(id, type, flags, elements) of one entry payload; _Damaged when it cannot be read."""
     if len(buf) < _ENTRY_HEAD.size + 1:
         raise _Damaged("entry of %d bytes" % len(buf))
     pid, ptype, flags, _unknown = _ENTRY_HEAD.unpack_from(buf)
@@ -214,7 +217,7 @@ class ParamBlock2:
                 slots = {}
         raw, pending = [], []
         for child in chunk.children:
-            if child.id == _ENTRY:
+            if child.id in _ENTRIES:
                 buf = child.view()
                 try:
                     pid, ptype, flags, values = _entry(buf)
