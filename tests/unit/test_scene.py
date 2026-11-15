@@ -334,6 +334,88 @@ def _oracle(path):
         return json.load(f)
 
 
+L_NODE, L_LAYER, L_MANAGER = range(3)
+LAYER_CLASSES = classdir.ClassDirectory.parse(
+    class_entry(1, 0, 1, "Node") + class_entry(0x7E9858FE, 0x1DBA1DF0, 0x10F0, "Base Layer") +
+    class_entry(0x0D7374FC, 0x51FF028E, 0x200, "Layer Manager"))
+
+
+def layer_obj(name, flags=0, render=0x0B00D600, parent=None, raw_name=None):
+    parts = [leaf(0x1000, b"\1\0\0\0"), leaf(0x1010, raw_name if raw_name is not None else name.encode("utf-8")),
+             leaf(0x1020, struct.pack("<I", flags)), leaf(0x1050, struct.pack("<I", render))]
+    if parent is None:
+        parts.append(leaf(0x1090, b"\0"))
+    else:
+        parts += [leaf(0x1090, b"\1"), leaf(0x10A0, utf16("parent")), leaf(0x10B0, struct.pack("<i", parent))]
+    return node(L_LAYER, *parts)
+
+
+def layer_node(name, layer, flags=0x800, render=0x0F00D600):
+    return node(L_NODE, refs35((6, layer)), leaf(0x0960, struct.pack("<iI", -1, flags)), leaf(0x0962, utf16(name)),
+                leaf(0x099C, struct.pack("<I", render)))
+
+
+class TestLayers(unittest.TestCase):
+    def make(self, *objects):
+        return scene.Scene(stream(*objects), LAYER_CLASSES)
+
+    def test_records_flags_and_manager_order(self):
+        s = self.make(layer_obj("0"), layer_obj("B", flags=0x100000), layer_obj("A", flags=0x200000, render=0x0B005600),
+                      node(L_MANAGER, refs34(0, 2, 1)), layer_node("n", 1, flags=0x300940, render=0x0F005600))
+        self.assertEqual(s.layer_indices, (0, 1, 2))
+        self.assertEqual(s.layer_order(), [0, 2, 1])
+        self.assertEqual([la.name for la in s.layers()], ["0", "A", "B"])
+        b, a = s.layer(1), s.layer(2)
+        self.assertEqual((b.hidden, b.frozen, b.renderable, b.parent), (True, False, True, None))
+        self.assertEqual((a.hidden, a.frozen, a.renderable), (False, True, False))
+        n = s.node(4)
+        self.assertEqual(n.layer, 1)
+        self.assertEqual((n.hidden, n.frozen, n.renderable, n.group_head, n.group_member), (True, True, False, True,
+                                                                                          True))
+
+    def test_unlisted_layers_follow_the_manager_order(self):
+        s = self.make(layer_obj("x"), layer_obj("y"), node(L_MANAGER, refs34(1)))
+        self.assertEqual(s.layer_order(), [1, 0])
+        s = self.make(layer_obj("x"), layer_obj("y"))  # no manager at all
+        self.assertEqual(s.layer_order(), [0, 1])
+
+    def test_utf8_name(self):
+        s = self.make(layer_obj("", raw_name=b"L\xc3\xa4\xe4\xb8\xad"), layer_obj("", raw_name=b"bad\xff\0"))
+        self.assertEqual(s.layer(0).name, "Lä中")
+        self.assertEqual(s.layer(1).name, "bad�")
+
+    def test_parents_and_cycles(self):
+        s = self.make(layer_obj("top"), layer_obj("child", parent=0), layer_obj("loop1", parent=3),
+                      layer_obj("loop2", parent=2), layer_obj("not a layer", parent=5), layer_node("n", 0),
+                      layer_obj("self", parent=6), layer_obj("outside", parent=-1))
+        self.assertEqual([s.layer(i).parent for i in s.layer_indices], [None, 0, None, 2, None, None, None])
+
+    def test_defaults_without_chunks(self):
+        s = self.make(node(L_LAYER, leaf(0x1000, b"\0\0\0\0")),
+                      node(L_NODE, leaf(0x0960, struct.pack("<iI", -1, 0)), leaf(0x0962, utf16("n"))))
+        la = s.layer(0)
+        self.assertEqual((la.name, la.hidden, la.frozen, la.renderable, la.parent), ("", False, False, True, None))
+        n = s.node(1)
+        self.assertEqual((n.renderable, n.hidden, n.layer), (True, False, None))
+
+    def test_damaged_records(self):
+        s = self.make(node(L_LAYER, leaf(0x1020, b"\1")), node(L_LAYER, leaf(0x1050, b"")), leaf(L_LAYER),
+                      node(L_NODE, leaf(0x0960, struct.pack("<iI", -1, 0)), leaf(0x099C, b"\0\0")))
+        for i in (0, 1, 2):
+            with self.assertRaises(ChunkError):
+                s.layer(i)
+        with self.assertRaises(ChunkError):
+            s.layer(3)  # a node, not a layer
+        with self.assertRaises(ChunkError):
+            s.node(3)
+        self.assertEqual(s.layers(), [])
+
+    def test_short_parent_is_top_level(self):
+        body = [leaf(0x1010, b"p"), leaf(0x1090, b"\1"), leaf(0x10B0, b"\0\0")]
+        s = self.make(layer_obj("top"), node(L_LAYER, *body))
+        self.assertIsNone(s.layer(1).parent)
+
+
 def _scene(cf):
     return scene.Scene.from_file(cf)
 
@@ -375,7 +457,23 @@ class TestFixtures(unittest.TestCase):
                     self.assertEqual(n.material is not None, e["material"] is not None, e["name"])
                     self.assertEqual(s.entry(n.layer).superclass, classids.SC_LAYER)
                     self.assertTrue(s.is_a(n.tm, classids.SC_CTRL_MATRIX3, classids.PRS))
+                    flags = (n.hidden, n.frozen, n.renderable, s.layer(n.layer).name)
+                    self.assertEqual(flags, (e["hidden"], e["frozen"], e["renderable"], e["layer"]), e["name"])
+                layers = [(la.name, la.hidden, la.frozen, la.renderable) for la in s.layers()]
+                self.assertEqual(layers, [(e["name"], e["hidden"], e["frozen"], e["renderable"])
+                                          for e in oracle["layers"]])
+                self.assertTrue(all(la.parent is None for la in s.layers()))
                 del nodes
+
+    def test_groups(self):
+        with cfb.CompoundFile(os.path.join(ROOT, "tests", "fixtures", "layers_flags.max")) as cf:
+            s = _scene(cf)
+            by_name = {n.name: n for n in s.nodes()}
+            self.assertEqual([k for k, n in by_name.items() if n.group_head], ["FixtureGroup"])
+            self.assertEqual(sorted(k for k, n in by_name.items() if n.group_member),
+                             ["FixtureGroupA", "FixtureGroupB"])
+            members = sorted(by_name[k].index for k in ("FixtureGroupA", "FixtureGroupB"))
+            self.assertEqual(sorted(s.children(by_name["FixtureGroup"].index)), members)
 
     def test_flags_and_pair_heads(self):
         """The values docs/FORMAT.md quotes: 0x0960 flags per node, the first u32 of 0x2035 per class."""

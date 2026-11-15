@@ -52,6 +52,7 @@ fixture.
 |---|---|---|
 | `0x0962` | node name | every fixture; hierarchy has two nodes named `FixtureTwin` |
 | `0x0960` | `i32` parent object index, `u32` flags | every fixture; a top-level node's parent is the RootNode |
+| `0x099C` | `u32`, bit `0x8000` = renderable | layers_flags, below |
 | `0x096A` | 3 x `f32` object offset position | hierarchy: `[5, 5, 0]` for FixtureRoot and FixtureChild = oracle `offset_pos` |
 | `0x096B` | 4 x `f32` object offset rotation | every fixture: `[0, 0, 0, 1]` = oracle `offset_rot` |
 | `0x096C` | 7 x `f32`: object offset scale (3), then a scale axis rotation (4) | every fixture: `[1, 1, 1]`, `[0, 0, 0, 1]` |
@@ -67,11 +68,36 @@ Reference slots of a node, checked on every node of every fixture (`test_scene.p
   material and three pairs instead of four);
 - slot 6: the layer, a Base Layer (superclass `0x10F0`).
 
-Flags in `0x0960` seen so far (their bits are not decoded yet): `0x800` on most nodes, `0` on the three
-instances and the copy in instances (the source has `0x800`), `0x100800` on the hidden node of layers_flags,
-`0x40` on its group head and `0x900` on the two group members (`test_scene.py`, `test_flags_and_pair_heads`,
-which also checks the first `0x2035` values above). The oracle's `renderable` flag does not show in this
-field (FixtureNoRender has `0x800`).
+Flags in `0x0960` seen so far: `0x800` on most nodes, `0` on the three instances and the copy in instances (the
+source has `0x800`), `0x100800` on the hidden node of layers_flags, `0x40` on its group head and `0x900` on the
+two group members (`test_scene.py`, `test_flags_and_pair_heads`, which also checks the first `0x2035` values
+above). Decoded from layers_flags:
+
+| Bit | Meaning |
+|---|---|
+| `0x100000` | hidden (FixtureHidden; that node also has an empty `0x0975` chunk) |
+| `0x40` | group head (FixtureGroup, a Dummy whose children are the members) |
+| `0x100` | group member (FixtureGroupA and FixtureGroupB) |
+
+`0x800` is not decoded. Renderable is not in `0x0960` (FixtureNoRender has `0x800`) but in `0x099C`, a `u32` on
+every node of every fixture: `0x0F00D600` on each node, `0x0F005600` on FixtureNoRender, so bit `0x8000` is
+renderable. `test_scene.py` checks every node's hidden, frozen and renderable flags against the oracle.
+
+## Layers
+
+A layer is an object of class Base Layer `(0x7E9858FE, 0x1DBA1DF0)`, superclass `0x10F0`; a node's slot 6 points
+to it. layers_flags has three (`0`, FixtureLayerA, FixtureLayerB), the other fixtures one (`0`):
+
+| Chunk | Content | Shown by |
+|---|---|---|
+| `0x1010` | the layer name, 8-bit, no terminator | layers_flags: `46 69 78 ...` (`FixtureLayerA`), `30` (`0`) |
+| `0x1020` | `u32` flags | `0` on every layer of every fixture (none is hidden or frozen) |
+| `0x1050` | `u32` | `0x0B00D600` on every layer (all render): the layout of a node's `0x099C` |
+| `0x1090` | `u8` | `0` on every layer (none has a parent layer) |
+
+The one Layer Manager `(0x0D7374FC, 0x51FF028E)`, superclass `0x200`, references the layers in `0x2034`: slot 0
+is layer `0`, then FixtureLayerA and FixtureLayerB, the order of the oracle's `layers` (`test_scene.py` checks
+names, order and flags of every fixture's layers against the oracle).
 
 ## Hierarchy
 
@@ -199,7 +225,16 @@ Not shown by any fixture yet, so not stated above:
   modifiers and then its base object. The reader follows them (`Scene.object_stack`), but no fixture has a
   modifier.
 - The sign convention of the offset rotation: every fixture's is the identity.
-- The meaning of the flag bits in `0x0960` and of the first `u32` of `0x2035`.
+- The meaning of bit `0x800` and the other flag bits in `0x0960`, and of the first `u32` of `0x2035`.
+- Layer and node flags no fixture has, found with `tools/maxdiff.py` on scratch files saved by 3ds Max 2020 (three
+  boxes on two layers; the same scene saved again; then one change per file). `reader/scene.py` relies on them:
+  - node frozen: `0x0960` bit `0x200000`, plus an empty `0x0976` chunk; node not renderable: `0x099C` bit
+    `0x8000` cleared (as in layers_flags);
+  - layer hidden: `0x1020` bit `0x100000`, layer frozen: bit `0x200000` (the node's bits); layer not
+    renderable: `0x1050` bit `0x8000` cleared;
+  - a nested layer: `0x1090` = `1`, `0x10A0` = the parent layer's name (UTF-16), `0x10B0` = `i32` the parent
+    layer's object index;
+  - the layer name `0x1010` is UTF-8 (a name with U+00E4 and U+4E2D is stored `4c c3 a4 e4 b8 ad`).
 - System unit types 1, 2, 5, 6 (feet, miles, meters, kilometers) and a scale other than 1: taken from the 3ds Max
   SDK, no fixture has them. A `Compressed` part in General (instead of `Uncompressed`) is assumed for a compressed
   file.
