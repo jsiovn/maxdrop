@@ -18,6 +18,8 @@
 # text "MaxDrop Report", its summary as the status line); a scene from a pack also reports the unpack.
 # Modified for MaxDrop, 2026-11-15 (jsiovn). The axis conversion also turns the helper empty that carries the
 # shear of top-level objects (build.objects.Built.roots).
+# Modified for MaxDrop, 2026-11-15 (jsiovn). A file the reader cannot read reports "Not imported" also when it
+# fails with an IndexError or struct.error, and a failed build also removes the meshes it made.
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -25,6 +27,7 @@ __author__ = "Sebastian Sille <nrgsille@gmail.com>"
 
 import os
 import re
+import struct
 
 import bpy
 from bpy_extras.io_utils import (
@@ -54,6 +57,9 @@ _SHOWN_SCENES = 10
 # Pre-flight lines of the .max files a drop or a script named, by normalized path.
 _PREFLIGHT = {}
 _SHOWN_FILES = 5
+# A .max that cannot be read. The reader raises CfbError / ChunkError (ValueErrors); IndexError and struct.error are
+# caught too, so that a gap in its checks still reports the file as not imported instead of stopping the run.
+_UNREADABLE = (OSError, ValueError, IndexError, struct.error)
 
 # Saved in presets by identifier; the numbers keep each item's value stable.
 UNITS = (
@@ -230,7 +236,7 @@ def _preflight(path):
             sc = reader_scene.Scene.from_file(cf)
             unit = units.system_unit(sc)
             nodes = len(sc.node_indices)
-    except (OSError, ValueError) as e:
+    except _UNREADABLE as e:
         return "Not readable as a .max file (%s)" % e
     release = info.get("max_release")
     parts = ["3ds Max %s" % release if release else "3ds Max version not stated"]
@@ -283,12 +289,15 @@ def _materials(max_path, first_nodes, built, search):
     return len({m.name for mesh in built.meshes.values() for m in mesh.materials if m is not None}), problems
 
 
-def _remove(cols):
-    """Remove what a failed build left: the objects of the file's collection tree and the collections."""
+def _remove(cols, meshes_before):
+    """Remove what a failed build left: the objects of the file's collection tree, the collections and the meshes
+    made since meshes_before (the as_pointer() of every mesh before the build) that nothing uses."""
     for ob in list(cols.root.all_objects):
         bpy.data.objects.remove(ob)
     for col in list(cols.layers.values()) + [cols.root]:
         bpy.data.collections.remove(col)
+    for mesh in [m for m in bpy.data.meshes if m.as_pointer() not in meshes_before and not m.users]:
+        bpy.data.meshes.remove(mesh)
 
 
 def _join_reports(reports, failed):
@@ -463,7 +472,7 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
                 pack_name = os.path.basename(pack_path) if pack_path else ""
                 try:
                     lines, rep = self._import_scene(context, max_path, result, pack_name)
-                except (OSError, ValueError) as e:
+                except _UNREADABLE as e:
                     failed.append("%s: %s" % (os.path.basename(max_path), e))
                     continue
                 reports.append(rep)
@@ -487,7 +496,8 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
         materials through import_max, then publish its import report (console and the text "MaxDrop Report").
         pack: archive.unpack()'s result when the scene came from a scene pack, pack_name the archive's file name.
         ([(report level, line)], the convert.report.Report), the report's summary last but for material problems;
-        OSError or ValueError when the file cannot be read. A build that fails is removed again before the exception goes on."""
+        one of _UNREADABLE when the file cannot be read. A build that fails is removed again (objects, collections,
+        meshes) before the exception goes on."""
         from .build import collections as build_collections
         from .build import objects as build_objects
         from .build import report as build_report
@@ -506,12 +516,13 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
             for md in desc.meshes.values():
                 md.uv_layers = []
         view_layer = context.view_layer
+        meshes_before = {m.as_pointer() for m in bpy.data.meshes}
         cols = build_collections.make(desc, view_layer.active_layer_collection.collection, os.path.splitext(name)[0])
         try:
             built = build_objects.build(desc, cols.root, cols, view_layer)
             build_collections.finish(cols, view_layer)
         except BaseException:
-            _remove(cols)
+            _remove(cols, meshes_before)
             raise
         first_nodes = [md.users[0] for md in desc.meshes.values() if md.users]
         rep = convert_report.gather(desc, source=name, objects_built=len(built.objects),

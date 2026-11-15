@@ -184,8 +184,9 @@ class CompoundFile:
         self.sector_size = ss = 1 << shift
         if self.size < ss:
             raise CfbError("compound file shorter than its header")
-        # A last sector may be cut short; a stream that needs its missing part fails in _runs.
-        self._nsect = (self.size - ss + ss - 1) // ss
+        # The sectors after the header, rounded up: ceil((size - ss) / ss). A last sector may be cut short; a stream
+        # that needs its missing part fails in _runs.
+        self._nsect = (self.size - 1) // ss
         self._per_sector = ss // 4
         if nfat > self._nsect:
             raise CfbError("FAT larger than the file")

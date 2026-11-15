@@ -38,6 +38,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - **Scale** is now an extra factor on top of **Units**: a preset or script that set it to `0.001` for a
   millimeter scene now shrinks the scene a thousand times more; set it back to `1`.
 - Every import makes a collection named after the file in the active collection, with one collection per layer.
+- A damaged or hostile `.max` reports "Not imported" and the other files of the run still import; an import that
+  fails while building removes the objects, collections and meshes it made.
 - Box, Sphere, Cylinder, Cone, Torus and Plane primitives, Boolean objects and Bipeds arrive as empties until a
   later version converts them (0.0.2 rebuilt the primitives as Blender primitives).
 - Each mesh gets the material of its first object: instances share one mesh, so they share its material.

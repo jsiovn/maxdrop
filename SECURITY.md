@@ -59,3 +59,10 @@ been hardened against malformed or hostile files: such a file can make Blender u
 long or stop with a Python error. Memory safety is Python's, so the realistic risk is a hang or a crash of that
 Blender session, not code execution, but treat files from unknown sources with the usual care and save your work
 before importing. The inherited parser goes away as the material conversion moves to MaxDrop's reader.
+
+MaxDrop's reader maps the `.max` file into memory read-only instead of copying it. If the file is truncated or
+rewritten in place while an import reads it (another program writing it, a network share that drops), the
+operating system can end the Blender process (SIGBUS on Linux and macOS, an in-page error on Windows) instead of
+raising an error MaxDrop could report. This is an accepted risk: the mapping lives only while one import reads the
+file and builds its objects. Copy a scene to a local disk before importing it if something else may change it
+meanwhile.
