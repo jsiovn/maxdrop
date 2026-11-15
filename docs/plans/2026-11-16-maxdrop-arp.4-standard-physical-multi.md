@@ -104,9 +104,7 @@ once per Max material object (`built.materials`).
 1. `python -I -m unittest discover tests` → `OK` (standard_physical IR equals the expectations; box_poly_standard
    base color = linear(200/255, 40/255, 30/255) = (0.577580, 0.021219, 0.012983)).
 2. `powershell -ExecutionPolicy Bypass -File build.ps1` → dist zip, index.json, index.html.
-3. For each of `C:\Program Files\Blender Foundation\Blender 5.2\blender.exe`,
-   `D:\tools\blender\blender-4.2.23-windows-x64\blender.exe`, `D:\tools\blender\blender-4.5.16-windows-x64\blender.exe`,
-   with `BLENDER_USER_RESOURCES=<scratch>\profile-<v>`: `--background --factory-startup --python-exit-code 1
+3. For each of Blender 5.2, 4.2.23 and 4.5.16 (paths in the bead notes' environment block), with `BLENDER_USER_RESOURCES=<scratch>\profile-<v>`: `--background --factory-startup --python-exit-code 1
    --python tests/blender/run.py` → `FIXTURES PASSED` (includes `material slots: ...` checks),
    `tests/smoke_register.py` → `SMOKE PASSED`, `tests/smoke_import.py` → `IMPORT PASSED`.
 

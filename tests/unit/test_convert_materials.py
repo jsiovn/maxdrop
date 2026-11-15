@@ -636,6 +636,18 @@ class Physical(unittest.TestCase, Close):
         self.assertEqual(ir.bump, mat.MapRef(6, 0.7, False))
         self.assertEqual(ir.alpha.map, mat.MapRef(7, 1.0, False))
 
+    def test_emission_maps(self):
+        conv, ir = _convert(FakeMtl(0, classids.PHYSICAL_MTL, "ColorOnly", {0: {50: 0.0, 117: Ref(1)}}), _map(1))
+        self.close(ir.emission_strength, 0.0, "weight 0 with a color map: no emission")
+        self.assertIsNone(ir.emission_color.map)
+        conv, ir = _convert(FakeMtl(0, classids.PHYSICAL_MTL, "Both",
+                                    {0: {50: 0.2, 52: 683.0, 116: Ref(1), 117: Ref(2)}}), _map(1), _map(2))
+        self.assertEqual(ir.emission_color.map, mat.MapRef(2, 1.0, False))
+        self.close(ir.emission_strength, 1.0, "the weight map stands for the weight")
+        self.assertIn("weight map 1 not used", ir.issues[0])
+        conv, ir = _convert(FakeMtl(0, classids.PHYSICAL_MTL, "Lit", {0: {50: 0.5, 52: 3000.0}}))
+        self.close(ir.emission_strength, 0.5 * 3000.0 / 683.0)
+
     def test_defaults(self):
         conv, ir = _convert(FakeMtl(0, classids.PHYSICAL_MTL, "Empty", {0: {}}))
         self.close(ir.base_color.value, (0.214041,) * 3)
@@ -698,9 +710,15 @@ class MultiSub(unittest.TestCase):
         self.assertEqual(dict(conv.stats.unknown), {})
 
     def test_cycle_and_depth(self):
-        conv = mat.MaterialConverter(FakeGraph(_multi(0, [(1, Ref(1), 1)]), _multi(1, [(1, Ref(0), 1)])))
+        conv = mat.MaterialConverter(FakeGraph(_multi(0, [(1, Ref(1), 1), (2, Ref(1), 1)]),
+                                               _multi(1, [(1, Ref(0), 1), (2, Ref(0), 1)])))
         self.assertIsNone(conv.material_for(0, 1))
+        self.assertIsNone(conv.material_for(0, 2))
+        self.assertEqual(len(conv.stats.issues), 1)  # once, whatever the number of face IDs
         self.assertIn("cycle", conv.stats.issues[0][1])
+        conv = mat.MaterialConverter(FakeGraph(_multi(0, [(1, Ref(5), 1)]), _map(5)))
+        self.assertIsNone(conv.material_for(0, 1))
+        self.assertEqual(conv.stats.issues, [(0, "Multi/Sub-Object 0: sub-material 5 is not a material")])
         objs = [_multi(i, [(0, Ref(i + 1), 1)]) for i in range(mat.MAX_PEEL + 1)] + [_vray(mat.MAX_PEEL + 1, "Deep")]
         conv = mat.MaterialConverter(FakeGraph(*objs))
         self.assertIsNone(conv.material_for(0, 0))

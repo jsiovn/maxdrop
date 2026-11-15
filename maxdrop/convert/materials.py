@@ -10,7 +10,7 @@
     conv.material_for(index, mat_id)    # the MaterialIR a face with that zero-based material ID renders with
                                         # (Multi/Sub-Objects resolved), None for an empty slot
     slots = assign(desc, node_materials(scene, desc), conv)   # {mesh key: MeshSlots}, for build/objects.py
-    conv.peel(index)                   # (object index of the renderable material or None, reason)
+    conv.peel(index)                    # (object index of the renderable material or None, reason)
     conv.stats.peeled, conv.stats.unknown, conv.stats.issues
 
 Each input of a MaterialIR is an Input: a value (a linear RGB tuple or a float) and, when a map drives it, a
@@ -34,12 +34,14 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
 - Standard: the colors come from its shader (ids per shader class in SHADERS; Metal is a metal, Strauss has a
   metalness); base = diffuse; roughness = 1 - glossiness; specular = specular level times the mean of the linear
   specular color; alpha = opacity; self-illumination: its color at strength 1, or the diffuse at the amount;
-  two-sided flag; map slots with their amounts where switched on (a glossiness map inverted); a map in the
+  two-sided flag; map slots with their amounts where switched on (a glossiness map inverted; the specular level
+  map drives the specular, else the specular color map); a map in the
   reflection slot makes the specular at least that slot's amount (the map is an environment: not used).
 - Physical Material: base = base color times base weight; roughness (1 - it with roughness_inv); metalness;
   specular = reflectivity times the mean of the linear reflection color; transparency is the transmission and
   mixes the transparency color into the base, as for VRayMtl; IOR, thin-walled; emission color at emission
-  weight times luminance / LUMENS_PER_WATT (cd/m2 to Blender's W/(m2 sr)); coating; map slots where on.
+  weight times luminance / LUMENS_PER_WATT (cd/m2 to Blender's W/(m2 sr)), a weight map standing for the
+  weight; coating; map slots where on.
 - Wrappers (VRay2SidedMtl, VRayBlendMtl, VRayOverrideMtl, VRayMtlWrapper, DoubleSided, Shellac) -> the first set
   sub-material in 3ds Max's getSubMtl order; Shell Material -> its render sub-material. Peeling stops at any other
   class (a Multi/Sub-Object included), at most MAX_PEEL wrappers deep; each wrapper object peeled counts once.
@@ -265,12 +267,18 @@ class MaterialConverter:
         self.graph = graph
         self.stats = ConvertStats()
         self._done, self._peels, self._counted = {}, {}, set()
-        self._multis, self._for = {}, {}
+        self._multis, self._for, self._reported = {}, {}, set()
 
     def issue(self, index, reason, ir=None):
         self.stats.issues.append((index, reason))
         if ir is not None:
             ir.issues.append(reason)
+
+    def _issue_once(self, index, reason):
+        """An issue material_for finds again for every face ID: reported once."""
+        if (index, reason) not in self._reported:
+            self._reported.add((index, reason))
+            self.issue(index, reason)
 
     def to_map(self, m, ref, what, amount, invert=False, ir=None):
         """The MapRef of a reference found in material m's slot `what`: None for no reference or one that is not a
@@ -431,16 +439,19 @@ class MaterialConverter:
         chain, i, out = [], index, None
         while True:
             if not isinstance(i, int) or isinstance(i, bool) or self.graph.superclass(i) != classids.SC_MATERIAL:
+                if chain and isinstance(i, int) and not isinstance(i, bool):
+                    self._issue_once(chain[-1], "Multi/Sub-Object %d: sub-material %d is not a material"
+                                     % (chain[-1], i))
                 break
             base, _reason = self.peel(i)
             if base is None or not self.is_class(base, classids.SC_MATERIAL, classids.MULTI_SUB_MTL):
                 out = self.convert(i)
                 break
             if base in chain:
-                self.issue(index, "Multi/Sub-Object cycle through object %d" % base)
+                self._issue_once(index, "Multi/Sub-Object cycle through object %d" % base)
                 break
             if len(chain) == MAX_PEEL:
-                self.issue(index, "more than %d nested Multi/Sub-Objects below object %d" % (MAX_PEEL, index))
+                self._issue_once(index, "more than %d nested Multi/Sub-Objects below object %d" % (MAX_PEEL, index))
                 break
             chain.append(base)
             i = self._multi(base)[0].get(material_id)
@@ -567,7 +578,6 @@ class _PartParams:
     """The parameters of a material's part (its blocks), read like a MtlBase's: param(pid, block_id)."""
 
     def __init__(self, part):
-        self.index = None
         self._blocks = [b for _slot, b in sorted(part.blocks.items())] if part is not None else []
 
     def param(self, pid, block_id=None, tab=0, default=None):
@@ -655,12 +665,18 @@ def physical_mtl(conv, m, ir):
     ir.transmission = Input(t, conv.map_ref(m, 109, 159, None, 0, ir=ir))
     ir.ior = _ior(_num(m, 33, 0, 1.52))
     ir.thin_walled = _flag(m, 37, 0, False)
-    emit_map = conv.map_ref(m, 117, 167, None, 0, ir=ir) or conv.map_ref(m, 116, 166, None, 0, ir=ir)
+    # A map in a weight slot stands for the weight, one in a color slot only for the color: weight 0 and a color
+    # map is no emission. The IR has no strength map, so the weight map drives the color when no color map does.
+    color_map = conv.map_ref(m, 117, 167, None, 0, ir=ir)
+    weight_map = conv.map_ref(m, 116, 166, None, 0, ir=ir)
     emission = max(0.0, _num(m, 50, 0, 0.0))
-    if emission > 0 or emit_map is not None:
-        ir.emission_color = Input(_rgb(m, 51, 0, (1.0, 1.0, 1.0)), emit_map)
+    if emission > 0 or weight_map is not None:
+        if color_map is not None and weight_map is not None:
+            conv.issue(m.index, "Physical Material: emission weight map %d not used beside the color map"
+                       % weight_map.index, ir)
+        ir.emission_color = Input(_rgb(m, 51, 0, (1.0, 1.0, 1.0)), color_map or weight_map)
         luminance = max(0.0, _num(m, 52, 0, 1500.0))
-        ir.emission_strength = (emission if emission > 0 else 1.0) * luminance / LUMENS_PER_WATT
+        ir.emission_strength = (1.0 if weight_map is not None else emission) * luminance / LUMENS_PER_WATT
     ir.coat_weight = _clamp01(_num(m, 60, 0, 0.0))
     ir.coat_color = _rgb(m, 61, 0, (1.0, 1.0, 1.0))
     c = _clamp01(_num(m, 62, 0, 0.0))
