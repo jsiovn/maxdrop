@@ -40,5 +40,6 @@
   ],
   "oracle_version": 1,
   "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
+  "time": 0,
   "units": {"display_metric": "millimeters", "display_type": "metric", "display_us": "ft_Frac_In", "system_scale": 1, "system_type": "millimeters"}
 }

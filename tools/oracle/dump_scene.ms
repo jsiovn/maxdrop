@@ -80,7 +80,7 @@ struct MaxDropOracleStruct
 
 	fn cid c = list #(str ("0x" + (formattedPrint c.classID[1] format:"08x")), str ("0x" + (formattedPrint c.classID[2] format:"08x"))),
 
-	-- "key": value lines of one object, in the order given (callers pass keys sorted), at the given indent
+	-- callers pass the keys sorted: nothing here sorts them
 	fn obj pairs indent =
 	(
 		local pad = ""
@@ -253,7 +253,8 @@ struct MaxDropOracleStruct
 		local mats = #()
 		for n in nodes where n.material != undefined and (findItem mats n.material) == 0 do append mats n.material
 		local nodeItems = #()
-		for i = 1 to nodes.count do
+		-- a file opens at the frame it was saved at; frame 0 is what a reader evaluates by default
+		at time 0f for i = 1 to nodes.count do
 		(
 			append nodeItems (nodeJson nodes[i] (i - 1) mats)
 			if (mod i 100) == 0 do gc light:true
@@ -280,6 +281,7 @@ struct MaxDropOracleStruct
 			#("nodes", block nodeItems 2), \
 			#("oracle_version", version as string), \
 			#("renderer", rend), \
+			#("time", "0"), \
 			#("units", units_) \
 		) 0) + "\n"
 	),
@@ -309,9 +311,10 @@ struct MaxDropOracleStruct
 
 	fn dumpFile maxPath outPath =
 	(
-		local sysType = units.SystemType
-		local sysScale = units.SystemScale
+		-- loading with the file's units changes these session preferences, not only the scene
+		local before = #(units.SystemType, units.SystemScale, units.DisplayType, units.MetricType, units.USType, units.USFrac)
 		local result
+		if doesFileExist outPath do deleteFile outPath
 		try
 		(
 			resetMaxFile #noPrompt
@@ -325,8 +328,12 @@ struct MaxDropOracleStruct
 			result = "MaxDrop oracle: failed: " + getCurrentException()
 		)
 		resetMaxFile #noPrompt
-		units.SystemType = sysType
-		units.SystemScale = sysScale
+		units.SystemType = before[1]
+		units.SystemScale = before[2]
+		units.DisplayType = before[3]
+		units.MetricType = before[4]
+		units.USType = before[5]
+		units.USFrac = before[6]
 		result
 	),
 
@@ -335,8 +342,14 @@ struct MaxDropOracleStruct
 		local files = getFiles (dir + "\\*.max")
 		sort files
 		local lines = for f in files collect dumpFile f (outDir + "\\" + (getFilenameFile f) + ".oracle.json")
+		local failed = 0
 		local ss = stringStream ""
-		for l in lines do format "%\n" l to:ss
+		for l in lines do
+		(
+			if (findString l ": failed: ") != undefined do failed += 1
+			format "%\n" l to:ss
+		)
+		format "MaxDrop oracle: % file(s), % failed\n" lines.count failed to:ss
 		ss as string
 	)
 )

@@ -12,12 +12,13 @@ import glob
 import importlib.util
 import json
 import os
+import re
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FIXTURE_DIR = os.path.join(ROOT, "tests", "fixtures")
 TOP_KEYS = ["file", "file_version", "layers", "materials", "max_version", "node_count", "nodes", "oracle_version",
-            "renderer", "units"]
+            "renderer", "time", "units"]
 NODE_KEYS = ["base_class_id", "base_class_name", "base_faces", "base_superclass", "base_verts", "bbox_max",
              "bbox_min", "eval_faces", "eval_verts", "frozen", "handle", "hidden", "index", "instances", "layer",
              "material", "modifiers", "name", "object_transform", "offset_pos", "offset_rot", "offset_scale",
@@ -33,6 +34,29 @@ def _load(name):
 
 def _stem(path, suffix):
     return os.path.basename(path)[:-len(suffix)]
+
+
+CLASS_ID = re.compile(r"^0x[0-9a-f]{8}$")
+check_fixture = _load("check_fixture")
+
+
+def _strings(value):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for k, v in value.items():
+            yield k
+            yield from _strings(v)
+    elif isinstance(value, list):
+        for v in value:
+            yield from _strings(v)
+
+
+def private_problems(data, names=None):
+    """check_fixture's findings on the raw bytes and on every decoded string: JSON doubles each backslash of a path
+    and turns a non-ASCII name into a \\u escape, so the raw scan alone sees neither."""
+    decoded = "\n".join(_strings(json.loads(data))).encode("utf-8")
+    return check_fixture.problems(data, names) + check_fixture.problems(decoded, names)
 
 
 def _sorted_pairs(pairs):
@@ -80,8 +104,14 @@ class OracleFiles(unittest.TestCase):
                 self.assertEqual(o["node_count"], len(o["nodes"]))
                 handles = {n["handle"] for n in o["nodes"]}
                 self.assertEqual(len(handles), len(o["nodes"]))
+                groups = {n["handle"]: n["instances"] for n in o["nodes"]}
                 for i, n in enumerate(o["nodes"]):
                     self.assertEqual(list(n), NODE_KEYS)
+                    for cid in [n["base_class_id"]] + [m["class_id"] for m in n["modifiers"]]:
+                        self.assertEqual(len(cid), 2)
+                        self.assertTrue(all(CLASS_ID.match(c) for c in cid), cid)
+                    for h in n["instances"]:
+                        self.assertEqual(groups[h], n["instances"])
                     self.assertEqual(n["index"], i)
                     self.assertEqual(len(n["transform"]), 12)
                     self.assertEqual(len(n["object_transform"]), 12)
@@ -110,11 +140,55 @@ class OracleFiles(unittest.TestCase):
         self.assertEqual((box["base_verts"], box["base_faces"]), (8, 6))
         self.assertEqual(box["base_class_id"], ["0x1bf8338d", "0x192f6098"])
 
+    def test_units(self):
+        for name, unit in (("units_mm", "millimeters"), ("units_cm", "centimeters"), ("units_in", "inches")):
+            o = _oracle(name)
+            self.assertEqual((o["units"]["system_type"], o["units"]["system_scale"]), (unit, 1))
+            self.assertEqual(o["nodes"][0]["bbox_min"], [0, -10, 0])
+            self.assertEqual(o["nodes"][0]["bbox_max"], [10, 10, 30])
+
+    def test_instances(self):
+        o = _oracle("instances")
+        groups = sorted({tuple(n["instances"]) for n in o["nodes"]})
+        self.assertEqual(groups, [(1, 2, 3, 4), (5,)])
+
+    def test_hierarchy(self):
+        o = _oracle("hierarchy")
+        by_name = {}
+        for n in o["nodes"]:
+            by_name.setdefault(n["name"], []).append(n)
+        self.assertEqual(len(by_name["FixtureTwin"]), 2)
+        root, child, leaf = by_name["FixtureRoot"][0], by_name["FixtureChild"][0], by_name["FixtureLeaf"][0]
+        self.assertIsNone(root["parent"])
+        self.assertEqual((child["parent"], leaf["parent"]), (root["handle"], child["handle"]))
+        self.assertEqual(sorted(t["parent"] is None for t in by_name["FixtureTwin"]), [False, True])
+        t = leaf["transform"]  # negative scale: the rotation part has determinant -1
+        det = (t[0] * (t[4] * t[8] - t[5] * t[7]) - t[1] * (t[3] * t[8] - t[5] * t[6])
+               + t[2] * (t[3] * t[7] - t[4] * t[6]))
+        self.assertAlmostEqual(det, -1, places=4)
+
+    def test_layers_flags(self):
+        o = _oracle("layers_flags")
+        flags = {n["name"]: (n["hidden"], n["renderable"], n["layer"]) for n in o["nodes"]}
+        self.assertEqual(flags["FixtureHidden"][:2], (True, True))
+        self.assertEqual(flags["FixtureNoRender"][:2], (False, False))
+        self.assertEqual(flags["FixtureVisible"][:2], (False, True))
+        self.assertEqual({layer["name"] for layer in o["layers"]}, {"0", "FixtureLayerA", "FixtureLayerB"})
+        head = next(n for n in o["nodes"] if n["name"] == "FixtureGroup")
+        self.assertEqual(sorted(n["name"] for n in o["nodes"] if n["parent"] == head["handle"]),
+                         ["FixtureGroupA", "FixtureGroupB"])
+
     def test_no_private_strings(self):
-        check_fixture = _load("check_fixture")
         for path in self.oracles:
             with self.subTest(os.path.basename(path)):
-                self.assertEqual(check_fixture.problems(_read(path)), [])
+                self.assertEqual(private_problems(_read(path)), [])
+
+    def test_private_scan_sees_escaped_text(self):
+        names = {"user name": ["caf\u00e9name"], "computer name": ["box-7731"]}
+        for value in ("C:\\Users\\someone\\scene.max", "D:\\projects\\maps\\wood.png", "x caf\u00e9name y"):
+            data = json.dumps({"name": value}).encode("ascii")
+            self.assertEqual(check_fixture.problems(data, names), [], value)  # what the raw scan misses
+            self.assertTrue(private_problems(data, names), value)
 
 
 if __name__ == "__main__":

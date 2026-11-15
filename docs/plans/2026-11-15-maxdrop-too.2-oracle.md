@@ -42,11 +42,12 @@ Bead: `maxdrop-too.2`.
 - **File identity**: `file` = base name only, never a path. Corpus dumps: `C:\maxdrop_fixtures\oracle\` (local,
   outside the repo; named "scene A" / "scene B" in anything committed).
 - **Units on load**: `loadMaxFile ... useFileUnits:true quiet:true`, so values are in the file's own units; the
-  session's system unit type and scale are restored afterwards (the Max here runs in millimeters).
+  session's system unit, scale and display units are restored afterwards (the Max here runs in millimeters).
+- **Time** (after review): every node is evaluated `at time 0f`; top-level `time` = 0.
 
 ## JSON layout (oracle_version 1)
 
-Top level: `file`, `file_version` (`getMaxFileVersionData`: file version, saved-as version), `layers` (layer
+Top level: `file`, `file_version` (`getMaxFileVersionData`: format version, version of the Max that saved it), `layers` (layer
 manager order: `frozen`, `hidden`, `name`, `renderable`), `materials` (`class_id`, `class_name`, `index`, `name`,
 `sub_count`), `max_version` (running Max: release, year), `node_count`, `nodes`, `oracle_version`, `renderer`
 (`class_id`, `class_name`), `units` (`display_metric`, `display_type`, `display_us`, `system_scale`,

@@ -21,9 +21,12 @@ MaxDropOracle.dumpFile @"<scene>.max" @"<out>.json"    -- reset, load, dump, res
 MaxDropOracle.dumpFolder @"<repo>\tests\fixtures" @"<repo>\tests\fixtures"   -- every fixture
 ```
 
-Each call returns one line: node count, dump time, load time. `dumpFile` loads with `quiet:true` and
-`useFileUnits:true`, so every value is in the file's own units, and puts the session's system unit back
-afterwards. A file that fails to load returns `MaxDrop oracle: failed: ...` and writes nothing.
+Each call returns one line: node count, dump time, load time (`dumpFolder` adds a last line with the number of
+files and failures). `dumpFile` loads with `quiet:true` and `useFileUnits:true`, so every value is in the file's
+own units, and afterwards puts back the session's unit setup (system unit and scale, display units), which
+loading a file changes. A file that fails to load returns `MaxDrop oracle: failed: ...` and leaves no output file:
+an older dump at that path is deleted first. Every node is evaluated at frame 0 (`time`), whatever frame the file
+was saved at.
 
 After a fixture changes (`tools/fixtures/<name>.ms`, then sanitize and check, see CONTRIBUTING.md), run
 `dumpFolder` again and commit the `.max` and its `.oracle.json` together. The dump reads the committed, sanitized
@@ -37,7 +40,8 @@ material and layer names of commercial assets and is never committed or quoted.
 The same file gives the same bytes: keys in sorted order at every level, floats printed with 6 significant digits
 (`%.6g`, the precision of Max's single-precision floats; `-0` is written `0`, inf and nan `null`), every character
 outside printable ASCII escaped as `\uXXXX`, two-space indent, LF line ends, a final newline. Node handles are the
-same after a reset and reload. Only the base name of the file is written, never a path.
+same after a reset and reload: they are kept in the file, not numbered at load (a node deleted before saving
+leaves a gap that is still there after loading). Only the base name of the file is written, never a path.
 
 ## Fields
 
@@ -46,7 +50,7 @@ Top level:
 | Key | Value |
 |---|---|
 | `file` | Base name of the scene file (`null` for an unsaved scene). |
-| `file_version` | `getMaxFileVersionData`: `[format version, version of the Max that saved it]`, e.g. `[20000, 22000]` = saved by 3ds Max 2020 as a 2018 file. |
+| `file_version` | `getMaxFileVersionData`: `[format version, version of the Max that saved it]`, e.g. `[20000, 22000]` = saved by 3ds Max 2020 as a 2018 file (checked by saving with `saveAsVersion:2018`). |
 | `layers` | Every layer in layer-manager order: `name`, `hidden`, `frozen`, `renderable`. |
 | `materials` | The materials assigned to nodes, in order of first use in the node walk: `index`, `name`, `class_id`, `class_name`, `sub_count` (sub-materials, e.g. of a Multi/Sub-Object). |
 | `max_version` | The Max that made the dump: `[release, year]`, e.g. `[22000, 2020]`. |
@@ -54,6 +58,7 @@ Top level:
 | `nodes` | Every node of the scene, see below. |
 | `oracle_version` | Version of this layout (1). |
 | `renderer` | The current renderer: `class_id`, `class_name`. |
+| `time` | The frame every node was evaluated at: always 0. |
 | `units` | `system_type` (e.g. `millimeters`), `system_scale`, `display_type` (`Generic`, `Metric`, `US`, `Custom`), `display_metric`, `display_us`. |
 
 Each node (scene order = a pre-order walk from the root: a node, then its children in Max's child order, so a
@@ -73,7 +78,7 @@ parent always comes before its children):
 | `modifiers` | The modifier stack from top to bottom: `class_id`, `class_name`. |
 | `instances` | Sorted handles of every node that shares this node's base object, itself included (a one-element list when not instanced). Instances and references both count. |
 | `transform` | World node transform (`node.transform`, the pivot), 12 floats: rows 1 to 4, row 4 = translation. |
-| `offset_pos`, `offset_rot`, `offset_scale` | Object offset: where the object sits relative to the pivot. `offset_rot` is a quaternion `[x, y, z, w]` as MAXScript gives it. |
+| `offset_pos`, `offset_rot`, `offset_scale` | Object offset: where the object sits relative to the pivot. `offset_rot` is a quaternion `[x, y, z, w]` as MAXScript gives it, which is the conjugate of the usual right-handed one: a rotation of +30° about Z (row 1 = `[0.866, 0.5, 0]`) prints as `[0, 0, -0.258819, 0.965926]`. Negate x, y and z before using it as a standard quaternion. |
 | `object_transform` | World transform of the object (`node.objectTransform` = offset times node transform), 12 floats. Mesh vertices in object space times this matrix are world positions. |
 | `bbox_min`, `bbox_max` | World-aligned bounding box of the evaluated object: `nodeGetBoundingBox node (matrix3 1)`. This is the tight box of the evaluated points (checked against the vertex extremes of a rotated, bent, parented sphere); `node.min` / `node.max` would instead transform the object's local box and be larger under rotation. |
 | `layer` | Name of the node's layer. |
@@ -83,6 +88,6 @@ parent always comes before its children):
 ## Measured
 
 - The nine fixtures: under 0.5 s each to load, under 0.01 s to dump.
-- Scene A (746 nodes) and scene B (2,251 nodes), 3ds Max 2020, 2026-11-15: A loaded in 10 s and dumped in 5 s,
-  B loaded in 6 s and dumped in 17 s; the Max process peaked at 3.0 GB. Their dumps are kept outside the
+- Scene A (746 nodes) and scene B (2,251 nodes), 3ds Max 2020, 2026-11-15: A loaded in 10 to 50 s (warm or cold
+  disk cache) and dumped in 5 s, B loaded in 5 s and dumped in 17 s; the Max process peaked at 3.1 GB. Their dumps are kept outside the
   repository.
