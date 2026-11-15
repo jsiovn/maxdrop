@@ -27,17 +27,17 @@
 
 	local p = PhysicalMaterial name:"FixturePhysical"
 	p.base_weight = 0.91
-	p.base_color = color 0.71 0.31 0.11 1.0
+	p.base_color = color 181 79 28
 	p.reflectivity = 0.81
 	p.roughness = 0.27
 	p.metalness = 0.43
-	p.refl_color = color 0.9 0.8 0.7 1.0
+	p.refl_color = color 230 204 179
 	p.diff_roughness = 0.17
 	p.trans_ior = 1.47
 	p.transparency = 0.12
-	p.trans_color = color 0.2 0.4 0.6 1.0
+	p.trans_color = color 51 102 153
 	p.emission = 0.05
-	p.emit_color = color 0.6 0.5 0.4 1.0
+	p.emit_color = color 153 128 102
 	p.coating = 0.33
 	p.coat_roughness = 0.21
 	p.coat_ior = 1.61
