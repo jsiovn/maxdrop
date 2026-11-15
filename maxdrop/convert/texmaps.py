@@ -518,7 +518,7 @@ class TexmapConverter:
         return self._peel_to_image(m, kind, walk, depth, chain, "no bitmap below")
 
     def _peel_to_image(self, m, kind, walk, depth, chain, why):
-        """The first Bitmap below map m, counted as a peel; None (unsupported, an issue) without one."""
+        """The first image below map m, counted as a peel; None (unsupported, an issue) without one."""
         image = self._first_image(m, kind, walk, depth, chain)
         if image is None:
             self._count(self.stats.unsupported, m)
@@ -529,7 +529,7 @@ class TexmapConverter:
         return image
 
     def _first_image(self, m, kind, walk, depth, chain):
-        """The first Bitmap below map m, depth first in reference order, None without one; looked for once per
+        """The first image below map m, depth first in reference order, None without one; looked for once per
         (map, kind, depth)."""
         key = (m.index, kind, depth)
         if key not in self._firsts:
@@ -851,7 +851,8 @@ def _hex_rgb(text):
 
 def _corona_color(conv, m, kind, walk, depth, chain):
     """50 method (0 color 52, 1 HDR color 58, 2 temperature 51, 3 hex 59), 57 multiplier. Color, hex and temperature
-    are swatches, decoded from sRGB like every swatch after the multiplier; the HDR color is linear already."""
+    are swatches, decoded from sRGB like every swatch after the multiplier (a renderMap render in 3ds Max showed
+    the multiplier scaling the swatch value: 2 x 128 = 255); the HDR color is linear already."""
     method, mult = m.param(CC_METHOD, 0), max(0.0, _num(m, CC_MULTIPLIER, 1.0))
     if method == 1:
         rgb = tuple(max(0.0, c) * mult for c in _vec(m, CC_HDR, (1.0, 1.0, 1.0)))
@@ -876,19 +877,20 @@ def _corona_color(conv, m, kind, walk, depth, chain):
 def _corona_mix(conv, m, kind, walk, depth, chain):
     """Operation mix -> Mix(bottom, top, amount, mask), multiply -> Multiply (under a Mix when the amount is below 1
     or a mask is set); any other operation is peeled to its first bitmap. A layer without a map (or with its map
-    switched off) is its color."""
-    bottom = conv._sub(m, CM_MAP_BOTTOM, CM_BOTTOM_ON, kind, walk, depth, chain) or \
-        conv._constant(m, CM_COLOR_BOTTOM, kind, (0.0, 0.0, 0.0))
-    top = conv._sub(m, CM_MAP_TOP, CM_TOP_ON, kind, walk, depth, chain) or \
-        conv._constant(m, CM_COLOR_TOP, kind, (1.0, 1.0, 1.0))
-    mask = conv._sub(m, CM_MASK, CM_MASK_ON, DATA, walk, depth, chain)
-    amount = min(1.0, max(0.0, _num(m, CM_AMOUNT, 1.0)))
+    switched off) is its color. mixInSRgb (214, on by default) changed nothing in renderMap renders of a 50 % mix
+    of black and white in 3ds Max (the Corona render itself was not measured): not read."""
     op = m.param(CM_OPERATION, 0)
     if op not in (CM_MIX, CM_MULTIPLY):
         image = conv._peel_to_image(m, kind, walk, depth, chain, "operation %r and no bitmap below" % (op,))
         if image is not None:
             conv._issue(walk, m.index, "CoronaMix %r: operation %r drawn as its first bitmap" % (m.name, op))
         return image
+    bottom = conv._sub(m, CM_MAP_BOTTOM, CM_BOTTOM_ON, kind, walk, depth, chain) or \
+        conv._constant(m, CM_COLOR_BOTTOM, kind, (0.0, 0.0, 0.0))
+    top = conv._sub(m, CM_MAP_TOP, CM_TOP_ON, kind, walk, depth, chain) or \
+        conv._constant(m, CM_COLOR_TOP, kind, (1.0, 1.0, 1.0))
+    mask = conv._sub(m, CM_MASK, CM_MASK_ON, DATA, walk, depth, chain)
+    amount = min(1.0, max(0.0, _num(m, CM_AMOUNT, 1.0)))
     if (_num(m, CM_MULT_TOP, 1.0), _num(m, CM_MULT_BOTTOM, 1.0), _num(m, CM_OFFSET_TOP, 0.0),
             _num(m, CM_OFFSET_BOTTOM, 0.0)) != (1.0, 1.0, 0.0, 0.0):
         walk.approximated = True

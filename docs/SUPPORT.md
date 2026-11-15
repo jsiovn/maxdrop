@@ -75,7 +75,7 @@ nodes. Colors are converted from 3ds Max's swatches (sRGB) to Blender's linear c
 | CoronaPhysicalMtl | **Imported**: base color and level, roughness or glossiness mode, metalness, IOR, refraction (transmission, thin mode with its tint), opacity, self-illumination, clearcoat, bump. Verified on scenes made with Corona 12 |
 | CoronaMtl (CoronaLegacyMtl) | **Imported**: diffuse, reflection (level, glossiness, Fresnel IOR), refraction (transmission, IOR, thin), opacity, self-illumination, bump; a Fresnel IOR of 10 or more with a bright reflection becomes a metal. Roughness is 1 - glossiness also with PBR mode off. Verified on Corona 12 scenes; one older Corona scene checked as well |
 | CoronaLightMtl | **Imported**: emission (color, intensity, texture) and its opacity map |
-| CoronaLayeredMtl | **The base material** (its first layer when it has no base): the layers are not mixed in |
+| CoronaLayeredMtl | **The base material** (its first layer that is on when it has no base): the layers are not mixed in |
 | Corona Skin and Hair, Arnold Standard Surface, Raytrace, Architectural and every other material | Not yet: a grey material that keeps its name |
 
 | Channel | This version |
@@ -83,8 +83,8 @@ nodes. Colors are converted from 3ds Max's swatches (sRGB) to Blender's linear c
 | Base color, metallic, roughness, IOR, opacity (alpha), specular, transmission, emission color and strength, coat, subsurface | **Imported**, by input name. **Thin Wall** exists from Blender 5.0: on 4.2 and 4.5 a thin-walled material is listed in the report instead |
 | Bitmap | **Imported** as an Image Texture: tiling, offset, the U, V and W angles (about the map's center, as 3ds Max turns it), tile and mirror (one setting for both directions in Blender), cropping and placing, the map channel (a UV Map node), the Output's invert, level, offset and amount, its alpha. Color maps in sRGB, data maps (roughness, metallic, opacity, normal, bump) Non-Color; a gamma override on a color map is applied |
 | CoronaBitmap | **Imported** like a Bitmap: UVW scale and offset, W angle, tiling or mirror per direction, cropping and placing, the map channel, gamma, alpha output |
-| CoronaColor | **Imported** as a color: RGB, HDR, temperature or hex, times its multiplier |
-| CoronaMix | **Imported** as nodes for the Mix and Multiply operations (with the mix map as mask); the other operations are **simplified** to the first bitmap below; layer multipliers and offsets are not converted |
+| CoronaColor | **Imported** as a color: RGB, HDR, temperature (an approximate curve) or hex, times its multiplier |
+| CoronaMix | **Imported** as nodes for the Mix and Multiply operations (with the mix map as mask); the other operations are **simplified** to the first bitmap below; layer multipliers and offsets are not converted; the blend is linear (Corona's "mix in sRGB" is not read) |
 | Mix, RGB Multiply, Color Correction, Composite (normal blend mode, no masks) | **Imported** as nodes (Mix, Hue/Saturation, Bright/Contrast, Gamma). A Mix curve, the rewiring, tint, pivot and lift of Color Correction are not converted |
 | VRayNormalMap, Normal Bump, CoronaNormal | **Imported**: a Normal Map node with its strength and flips, its additional bump map as a Bump node |
 | Bump (height) maps | **Imported** as a Bump node |

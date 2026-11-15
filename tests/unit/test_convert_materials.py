@@ -911,6 +911,17 @@ class CoronaSynthetic(unittest.TestCase, Close):
         self.close(ir.emission_color.value, (1.0, 1.0, 1.0))
         self.close(ir.emission_strength, 1.0)
 
+    def test_layered_skips_layers_switched_off(self):
+        layered = _corona(0, classids.CORONA_LAYERED_MTL, p1000=Ref(None), p1001=[Ref(1), Ref(2)], p1004=[0, 1])
+        conv, ir = _convert(layered, _corona(1, classids.CORONA_LIGHT_MTL), _corona(2, classids.CORONA_LEGACY_MTL))
+        self.assertEqual(conv.peel(0), (2, None))
+        self.assertEqual(ir.source, "CoronaLegacyMtl")
+
+    def test_physical_ior_mode_is_an_issue(self):
+        conv, ir = _convert(_corona(0, classids.CORONA_PHYSICAL_MTL, p461=1, p171=2.0))
+        self.close(ir.ior, 2.0)
+        self.assertIn("IOR mode 1", ir.issues[0])
+
     def test_layered_with_nothing_set_is_grey(self):
         conv, ir = _convert(_corona(0, classids.CORONA_LAYERED_MTL, p1000=Ref(None), p1001=[Ref(None)] * 3))
         self.assertTrue(ir.unknown)

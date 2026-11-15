@@ -712,6 +712,12 @@ class CoronaSynthetic(Checks):
         self.assertTrue(g.approximated)
         self.assertIn("multipliers", g.issues[0])
 
+    def test_corona_mix_peeled_does_not_convert_its_layers_first(self):
+        tex = _tex(_cmix(1, [2, 3], p200=0, p206=Ref(2), p207=Ref(3)), _cbitmap(2), FakeMap(3, (0x1234, 0), cls="Noise"))
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertEqual(g.root.name, "a.png")
+        self.assertEqual(tex.stats.unsupported, collections.Counter(), "the bottom Noise is never drawn")
+
     def test_corona_mix_other_operation_without_a_bitmap(self):
         tex = _tex(_cmix(1, p200=4))
         self.assertIsNone(tex.convert(mat.MapRef(1), tx.COLOR))

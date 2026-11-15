@@ -128,7 +128,7 @@ change anything are an issue (approximated). class_name() strips the class-direc
   under Invert, the placed opacity Crop with alpha, the NormalMap (0.8 x 0.9, flip green, bump 0.3 x 0.9), the
   CoronaColor Constant, the CoronaMix Mix with its mask, the Multiply, the Add peeled with an issue, the HDR
   Constant, the switched-off slot absent, the light's emission and opacity images.
-- [ ] Synthetic: CoronaColor methods (Kelvin 3000 K, hex, multiplier), CoronaMix multiplier issue, uAngle issue,
+- [ ] Synthetic: CoronaColor methods (Kelvin 3000 K, hex, multiplier), CoronaMix multiplier issue,
   real-world issue, gamma -1 -> None, a CoronaBitmap below a Falloff found by the first-image search.
 - [ ] Implement `_corona_image`, `_corona_color`, `_corona_mix`, `kelvin_rgb`; generalize the first-image search.
 

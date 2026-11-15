@@ -56,7 +56,7 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   of CORONA_METAL_IOR or more with a bright reflection (as METAL_REFLECTION) is a metal in the reflection color.
 - CoronaLightMtl -> emission (color, intensity, map) and its opacity map.
 - Wrappers (VRay2SidedMtl, VRayBlendMtl, VRayOverrideMtl, VRayMtlWrapper, DoubleSided, Shellac, CoronaLayeredMtl:
-  base, then its layers) -> the first set sub-material in 3ds Max's getSubMtl order; Shell Material -> its render
+  base, then its layers that are on) -> the first set sub-material in 3ds Max's getSubMtl order; Shell Material -> its render
   sub-material. Peeling stops at any other
   class (a Multi/Sub-Object included), at most MAX_PEEL wrappers deep; each wrapper object peeled counts once.
 - Multi/Sub-Object: entry k has the material ID materialIDList[k] (zero-based, as the faces store it), the
@@ -121,6 +121,7 @@ WRAPPERS = {
     classids.CORONA_LAYERED_MTL: (1000, 1001),  # baseMtl, layers (table)
 }
 SHELL_RENDER_INDEX, SHELL_SUBS = 1, (2, 3)  # renderMtlIndex; originalMaterial, bakedMaterial
+CORONA_LAYERS, CORONA_LAYERS_ON = 1001, 1004  # CoronaLayeredMtl: a layer switched off is not a sub-material
 
 GAMMA_NOTE = "the scene's gamma is not read from the file: colors are decoded as sRGB (display gamma 2.2)"
 LUMENS_PER_WATT = 683.0  # luminous efficacy at 555 nm: cd/m2 -> W/(m2 sr)
@@ -346,7 +347,11 @@ class MaterialConverter:
         block = m.block(0)
         for pid in pids:
             values = block.value(pid) if block is not None else None
-            for v in values if isinstance(values, list) else [values]:
+            for k, v in enumerate(values if isinstance(values, list) else [values]):
+                if key == classids.CORONA_LAYERED_MTL and pid == CORONA_LAYERS:
+                    on = m.param(CORONA_LAYERS_ON, 0, tab=k)
+                    if _finite(on) and not on:
+                        continue
                 if isinstance(v, pblock.Reference) and v.index is not None:
                     if self.graph.superclass(v.index) != classids.SC_MATERIAL:
                         return None, "%s: sub-material %d is not a material" % (m.name or "wrapper", v.index)
@@ -734,6 +739,8 @@ def corona_physical_mtl(conv, m, ir):
     ir.metallic = Input(1.0 if m.param(111, 0) == 1 else 0.0, conv.map_ref(m, 411, 412, None, 0, ir=ir))
     ir.transmission = Input(t, _corona_amount_map(conv, m, 192, ir))
     ir.ior = _ior(_num(m, 171, 0, 1.5))
+    if m.param(461, 0) not in (None, 0):  # iorMode: only the default (baseIor is the IOR) has been measured
+        conv.issue(m.index, "CoronaPhysicalMtl %r: IOR mode %r read as an IOR" % (m.name, m.param(461, 0)), ir)
     ir.thin_walled = thin
     opacity = _clamp01(mean(_rgb(m, 121, 0, (1.0, 1.0, 1.0))) * max(0.0, _num(m, 122, 0, 1.0)))
     ir.alpha = Input(opacity, _corona_amount_map(conv, m, 123, ir))
