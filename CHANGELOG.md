@@ -19,6 +19,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Smoothing groups (sharp edges, flat faces), instances as shared meshes, every UV channel, the whole parent chain
   matched by the file's object references, layers as nested collections, and the hidden, frozen and renderable
   flags of objects and layers.
+- An **import report** after every import: the unit, the objects and meshes built, layers, hidden and frozen
+  objects, groups, and what was not converted (placeholders by class, modifiers not applied, unknown controllers,
+  geometry errors), plus the unpack of a scene pack. It is printed to the system console and kept in the text
+  **MaxDrop Report** (Text Editor); importing several files at once keeps all their reports there. The status
+  line says whether anything was left out.
 
 ### Changed
 

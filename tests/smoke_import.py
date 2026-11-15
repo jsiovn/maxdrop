@@ -26,6 +26,9 @@ it; Up Y turns it; a file that does not state its unit takes Scale as meters per
 line of a fixture names its 3ds Max version, its object count and its unit. Object Filter without UV Maps leaves
 no UV layer, without Material no material slot. A file that is not a .max beside a fixture: the fixture is imported
 and the other named in a warning; that file alone: cancelled with its name in the message.
+After every import the text "MaxDrop Report" exists and its first line names the .max (and the archive of a pack);
+for the fixtures the operator reported INFO with the report's summary, nothing left out. Two scenes in one run: the
+text holds both reports.
 Prints `IMPORT PASSED` (exit 0) or `IMPORT FAILED` (exit 1).
 """
 import glob
@@ -43,7 +46,9 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 ARCHIVES = (".zip", ".rar", ".7z")
 SECOND = "second.max"
+TEXT_NAME = "MaxDrop Report"
 failures = []
+REPORTS = []  # (level, message) of each scene the operator imported, while record_reports() wraps it
 
 
 def check(name, cond, detail=""):
@@ -62,18 +67,57 @@ def fixtures():
 def empty_scene():
     for ob in list(bpy.data.objects):
         bpy.data.objects.remove(ob)
-    for block in (bpy.data.meshes, bpy.data.materials, bpy.data.images):
+    for block in (bpy.data.meshes, bpy.data.materials, bpy.data.images, bpy.data.texts):
         for item in list(block):
             block.remove(item)
 
 
-def import_one(path, label=None, **options):
-    """Import into an emptied scene and check it; the number of images."""
+def record_reports(cls):
+    """Wrap the operator's _import_scene so that the (level, line) pairs execute() reports for each scene land in
+    REPORTS. Operator.report itself is an RNA function, which a Python attribute of the class cannot shadow. The
+    original, to put back."""
+    original = cls._import_scene
+
+    def import_scene(self, *args, **kwargs):
+        lines, rep = original(self, *args, **kwargs)
+        REPORTS.extend(lines)
+        return lines, rep
+
+    cls._import_scene = import_scene
+    return original
+
+
+def check_report(name, max_name, pack_name=None):
+    """The text MaxDrop Report after an import: it names the .max (and the archive of a pack); for the fixtures the
+    operator reported INFO with the report's summary, nothing left out."""
+    text = bpy.data.texts.get(TEXT_NAME)
+    body = text.as_string() if text is not None else ""
+    check("%s: the text %s exists" % (name, TEXT_NAME), text is not None)
+    if max_name is not None:
+        first = body.split("\n", 1)[0]
+        check("%s: the report's first line names the file" % name, first == "MaxDrop import report: " + max_name,
+              first)
+    if pack_name is not None:
+        check("%s: the report names the scene pack" % name, ("\nScene pack: %s\n" % pack_name) in body)
+    if not argv:
+        summaries = [(kind, m) for kind, m in REPORTS if m.startswith("Imported ")]
+        check("%s: the operator reported INFO, nothing left out" % name,
+              summaries and all(kind == 'INFO' and m.endswith("nothing left out.") for kind, m in summaries)
+              and "\nNothing was left out." in body, str(summaries))
+
+
+def import_one(path, label=None, max_name=None, pack_name=None, **options):
+    """Import into an emptied scene and check it; the number of images. max_name: the .max the report must name,
+    the file's own name by default when it is a .max; pack_name: the archive the report must name."""
     name = label or os.path.basename(path)
+    if max_name is None and path.lower().endswith(".max"):
+        max_name = os.path.basename(path)
     empty_scene()
+    REPORTS.clear()
     result = bpy.ops.import_scene.maxdrop(filepath=path, **options)
     meshes = [ob for ob in bpy.data.objects if ob.type == 'MESH']
     check("%s: the operator finishes" % name, result == {'FINISHED'}, str(result))
+    check_report(name, max_name, pack_name)
     check("%s: a mesh with faces arrives" % name, any(len(ob.data.polygons) for ob in meshes))
     check("%s: a material arrives on a mesh" % name, any(slot.material for ob in meshes for slot in ob.material_slots))
     print("COUNTS %s: objects=%d meshes=%d vertices=%d polygons=%d materials=%d images=%d" % (
@@ -125,7 +169,8 @@ def as_pack(max_path, scratch, images_of_max, archive):
     entries = [(stem + "/" + name, max_path)]
     entries += [(stem + "/" + arc, full) for arc, full in maps_of(max_path, archive.ASSET_EXTENSIONS)]
     zip_path = make_zip(os.path.join(folder, stem + ".zip"), entries)
-    images = import_one(zip_path, "%s in a .zip (%d map files)" % (name, len(entries) - 1))
+    images = import_one(zip_path, "%s in a .zip (%d map files)" % (name, len(entries) - 1), max_name=name,
+                        pack_name=os.path.basename(zip_path))
     check("%s in a .zip: no fewer images than from the .max" % name, images >= images_of_max,
           "%d from the .zip, %d from the .max" % (images, images_of_max))
     pack = os.path.join(folder, stem)
@@ -154,7 +199,8 @@ def two_scenes(max_path, scratch):
     check("two scenes in a .zip, none named: the message names both",
           ("a/" + name) in message and ("b/" + SECOND) in message, message.strip())
     check("two scenes in a .zip, none named: nothing unpacked", not os.path.exists(os.path.join(folder, "two")))
-    import_one(zip_path, "two scenes in a .zip, %s named" % SECOND, pack_scene=SECOND)
+    import_one(zip_path, "two scenes in a .zip, %s named" % SECOND, max_name=SECOND, pack_name="two.zip",
+               pack_scene=SECOND)
     check("two scenes in a .zip: the named scene is unpacked into its own folder",
           os.path.isfile(os.path.join(folder, "two", "second", SECOND)))
 
@@ -176,6 +222,11 @@ def selections(max_path, scratch):
           "%s, %d meshes %s" % (result, len(meshes), message.strip()))
     check("a .max and a one-scene .zip chosen together: the pack is unpacked",
           os.path.isfile(os.path.join(folder, "one", SECOND)))
+    text = bpy.data.texts.get(TEXT_NAME)
+    body = text.as_string() if text is not None else ""
+    check("a .max and a one-scene .zip chosen together: the text holds both reports, in import order",
+          body.startswith("MaxDrop import report: %s\n" % name) and body.count("MaxDrop import report: ") == 2
+          and ("\n\nMaxDrop import report: %s\nScene pack: one.zip\n" % SECOND) in body, body[:200])
 
     result, message = attempt(directory=folder, files=[{"name": "two.zip"}, {"name": "one.zip"}])
     check("a two-scene .zip chosen with another pack: cancelled, import it alone",
@@ -314,6 +365,8 @@ def run():
     sys.path.insert(0, ROOT)
     import maxdrop
     maxdrop.register()
+    ops = sys.modules[maxdrop.__name__ + ".ops"]
+    import_scene = record_reports(ops.IMPORT_SCENE_OT_maxdrop)
     scratch = tempfile.mkdtemp(prefix="maxdrop-smoke-")
     try:
         from maxdrop.intake import archive
@@ -322,7 +375,7 @@ def run():
             if not os.path.isfile(path):
                 continue
             if path.lower().endswith(ARCHIVES):
-                import_one(path)
+                import_one(path, pack_name=os.path.basename(path))
                 continue
             images = import_one(path)
             work = os.path.join(scratch, str(n))
@@ -330,9 +383,10 @@ def run():
             two_scenes(path, work)
             selections(path, work)
         if not argv:
-            units_and_preflight(sys.modules[maxdrop.__name__ + ".ops"])
+            units_and_preflight(ops)
             filters_and_failures(scratch)
     finally:
+        ops.IMPORT_SCENE_OT_maxdrop._import_scene = import_scene
         maxdrop.unregister()
         shutil.rmtree(scratch, ignore_errors=True)
     return True

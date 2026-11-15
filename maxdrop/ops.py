@@ -14,6 +14,8 @@
 # meshes, transforms, hierarchy, instances, layers); only the materials still come from import_max. New options:
 # Units, with Scale as an extra factor. Removed: Apply Matrix, Collection and the Primitive, Empty and Armature
 # items of Object Filter. The popup shows a pre-flight line per .max (3ds Max version, renderer, objects, unit).
+# Modified for MaxDrop, 2026-11-15 (jsiovn). Every imported scene publishes MaxDrop's import report (console, the
+# text "MaxDrop Report", its summary as the status line); a scene from a pack also reports the unpack.
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -287,6 +289,18 @@ def _remove(cols):
         bpy.data.collections.remove(col)
 
 
+def _join_reports(reports):
+    """Several scenes in one run: each was published on its own (console, status line), which leaves the text
+    "MaxDrop Report" with the last one; it then holds every report of the run, in import order, a blank line
+    between them."""
+    from .build import report as build_report
+    block = bpy.data.texts.get(build_report.TEXT_NAME)
+    if block is None:
+        block = bpy.data.texts.new(build_report.TEXT_NAME)
+    block.clear()
+    block.write("\n\n".join(rep.text() for rep in reports) + "\n")
+
+
 def _summary(path, result):
     if result.mode == "unpacked":
         done = _plural(result.written, "file") + " written"
@@ -408,11 +422,11 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
             return self._error("%s holds %d scenes: %s. Type one into the Scene field and import again."
                                % (os.path.basename(path), len(scenes), _scene_list(scenes)))
 
-        resolved, summaries, written = [], [], []
+        resolved, summaries, written = [], [], []  # resolved: [(.max path, unpack result, archive path)]
         window = context.window
         for path in paths:
             if path not in chosen:
-                resolved.append(path)
+                resolved.append((path, None, None))
                 continue
             if window:
                 window.cursor_set('WAIT')
@@ -428,45 +442,53 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
                     window.cursor_set('DEFAULT')
             if result.mode == "unpacked":
                 written.append("%s into %s" % (os.path.basename(path), result.folder))
-            resolved.append(result.max_path)
+            resolved.append((result.max_path, result, path))
             summaries.append(_summary(path, result))
             if result.guessed:
                 print("MaxDrop: %s: %s stored without a known encoding, read as a guess"
                       % (os.path.basename(path), _plural(len(result.guessed), "name")))
 
-        imported, failed = 0, []
+        # Before the scenes: the status bar shows the last report, which is to be a scene's summary (or a failure).
+        for line in summaries:
+            self.report({'INFO'}, line)
+            print("MaxDrop: " + line)
+        reports, failed = [], []
         if window:
             window.cursor_set('WAIT')
         try:
-            for max_path in resolved:
+            for max_path, result, pack_path in resolved:
+                pack_name = os.path.basename(pack_path) if pack_path else ""
                 try:
-                    lines = self._import_scene(context, max_path)
+                    lines, rep = self._import_scene(context, max_path, result, pack_name)
                 except (OSError, ValueError) as e:
                     failed.append("%s: %s" % (os.path.basename(max_path), e))
                     continue
-                imported += 1
+                reports.append(rep)
                 for level, line in lines:
                     self.report({level}, line)
                     print("MaxDrop: " + line)
         finally:
             if window:
                 window.cursor_set('DEFAULT')
-        if not imported:
+        if not reports:
             return self._error("Nothing imported. " + "; ".join(failed))
+        if len(reports) > 1:
+            _join_reports(reports)
         for line in failed:
             self.report({'WARNING'}, "Not imported: " + line)
             print("MaxDrop: not imported: " + line)
-        for line in summaries:
-            self.report({'INFO'}, line)
-            print("MaxDrop: " + line)
         return {'FINISHED'}
 
-    def _import_scene(self, context, max_path):
+    def _import_scene(self, context, max_path, pack=None, pack_name=""):
         """Read, describe and build one .max into a collection named after it in the active collection, then its
-        materials through import_max. [(report level, line)]; OSError or ValueError when the file cannot be read.
-        A build that fails is removed again before the exception goes on."""
+        materials through import_max, then publish its import report (console and the text "MaxDrop Report").
+        pack: archive.unpack()'s result when the scene came from a scene pack, pack_name the archive's file name.
+        ([(report level, line)], the convert.report.Report), the report's summary last; OSError or ValueError when
+        the file cannot be read. A build that fails is removed again before the exception goes on."""
         from .build import collections as build_collections
         from .build import objects as build_objects
+        from .build import report as build_report
+        from .convert import report as convert_report
         from .convert import scene as convert_scene
         from .reader import cfb, units
         from .reader import scene as reader_scene
@@ -489,7 +511,9 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
             _remove(cols)
             raise
         first_nodes = [md.users[0] for md in desc.meshes.values() if md.users]
-        placeholders = sum(desc.placeholders.values())
+        rep = convert_report.gather(desc, source=name, objects_built=len(built.objects),
+                                    meshes_built=len(built.meshes), dropped_uv_layers=built.dropped_uv_layers,
+                                    pack=pack, pack_name=pack_name)
         del desc  # its mesh arrays are in Blender now: not held while the old engine parses the file again
         axis = axis_conversion(from_forward=self.axis_forward, from_up=self.axis_up).to_4x4()
         if axis != Matrix.Identity(4):
@@ -505,10 +529,10 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
                 print("MaxDrop: %s: %s" % (name, problem))
             lines.append(('WARNING', "%s: %s, see the system console" % (
                 name, _plural(len(problems), "material problem"))))
-        lines.append(('INFO', "Imported %s: %s (%s), %s, %s" % (
-            name, _plural(len(built.objects), "object"), _plural(placeholders, "placeholder"),
-            _plural(len(built.meshes), "mesh", "meshes"), _plural(materials, "material"))))
-        return lines
+        if 'MATERIAL' in self.object_filter:
+            lines.append(('INFO', "%s: %s" % (name, _plural(materials, "material"))))
+        lines.append(build_report.publish(rep))
+        return lines, rep
 
     def invoke(self, context, event):
         # A filepath remembered from an earlier run is not "set": only a drop's or a caller's own path is listed.
