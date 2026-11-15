@@ -295,31 +295,91 @@ def _images_of(ir):
     return out
 
 
-def check_principled(label, material, ir):
-    """A Blender material against its MaterialIR: every Principled input (value, or linked when a texture graph
-    drives it), the render method, the Image Texture nodes by file name."""
+MAP, LOST = "map", "lost"  # what _fold gives for a graph a node drives, and for one whose images are all missing
+
+
+def _fold(n, present):
+    """What build.materials makes of a texture graph: MAP when a node drives the input, LOST when the missing images
+    leave nothing, else the constant it folds to. present: whether the graph's image files were found. Written from
+    the builder's rules (a missing side of a Mix or Multiply gives the other, a Composite drops missing layers)."""
     from maxdrop.convert import texmaps as tx
+    if isinstance(n, tx.Constant):
+        return n.value
+    if isinstance(n, tx.Image):
+        return MAP if present else LOST
+    if isinstance(n, tx.Invert):
+        v = _fold(n.input, present)
+        if v in (MAP, LOST):
+            return v
+        return tuple(1.0 - c for c in v) if isinstance(v, tuple) else 1.0 - v
+    if isinstance(n, tx.Mix):
+        a, b = _fold(n.a, present), _fold(n.b, present)
+        return (b if a is LOST else a) if LOST in (a, b) else MAP
+    if isinstance(n, tx.Multiply):
+        a, b = _fold(n.a, present), _fold(n.b, present)
+        if LOST in (a, b):
+            other = b if a is LOST else a
+            return MAP if other is MAP else LOST
+        if MAP in (a, b):
+            return MAP
+        return tuple(x * y for x, y in zip(a, b)) if isinstance(a, tuple) else a * b
+    if isinstance(n, tx.ColorCorrect):
+        v = _fold(n.input, present)
+        changes = n.hue % 1.0 != 0.0 or n.saturation != 1.0 or n.brightness or n.contrast or n.gain != 1.0 \
+            or n.gamma != 1.0
+        return v if v is LOST or not changes else MAP
+    if isinstance(n, tx.Composite):
+        layers = [(v, o) for v, o in ((_fold(layer, present), o) for layer, o in n.layers) if v is not LOST]
+        if not layers:
+            return LOST
+        return layers[0][0] if len(layers) == 1 and layers[0][1] >= 1.0 else MAP
+    image = tx.first_image(n)
+    return _fold(image, present) if image is not None else LOST
+
+
+def _normal_linked(tex, present):
+    from maxdrop.convert import texmaps as tx
+    linked = False
+    for key in ("normal", "bump"):
+        if key in tex:
+            r = tex[key].root
+            if isinstance(r, tx.NormalMap):
+                linked = linked or _fold(r.input, present) is MAP or (
+                    r.bump is not None and _fold(r.bump.input, present) is MAP)
+            else:
+                linked = linked or _fold(r.input if isinstance(r, tx.Bump) else r, present) is MAP
+    return linked
+
+
+def check_principled(label, material, ir, present=False):
+    """A Blender material against its MaterialIR: every Principled input (linked when a node drives it, else the
+    value the graph folds to, or the IR's when its images are missing), the render method, one Image Texture node
+    per file. present: whether the texture files were found."""
     p = _principled(material) if material is not None and material.node_tree else None
     check(label + ": one Principled BSDF", p is not None)
     if p is None:
         return
     tex = ir.textures
     wants = [
-        ("Base Color", "base_color", ir.base_color.value),
-        ("Metallic", "metallic", _mean(ir.metallic.value)),
-        ("Roughness", "roughness", _mean(ir.roughness.value)),
-        ("Specular IOR Level", "specular", _mean(ir.specular.value) * SPECULAR_LEVEL),
-        ("Transmission Weight", "transmission", _mean(ir.transmission.value)),
-        ("Emission Color", "emission_color", ir.emission_color.value),
-        ("Alpha", "alpha", _mean(ir.alpha.value)),
+        ("Base Color", "base_color", ir.base_color.value, None),
+        ("Metallic", "metallic", ir.metallic.value, 1.0),
+        ("Roughness", "roughness", ir.roughness.value, 1.0),
+        ("Specular IOR Level", "specular", ir.specular.value, SPECULAR_LEVEL),
+        ("Transmission Weight", "transmission", ir.transmission.value, 1.0),
+        ("Emission Color", "emission_color", ir.emission_color.value, None),
+        ("Alpha", "alpha", ir.alpha.value, 1.0),
     ]
-    for socket, key, want in wants:
+    alpha = None
+    for socket, key, want, scale in wants:
         s = p.inputs[socket]
-        constant = tex[key].root if key in tex and isinstance(tex[key].root, tx.Constant) else None
-        linked = key in tex and constant is None
-        if constant is not None:  # a graph that is a swatch (a Falloff without a map): its value on the input
-            want = constant.value if socket in ("Base Color", "Emission Color") else _mean(constant.value) * (
-                SPECULAR_LEVEL if key == "specular" else 1.0)
+        folded = _fold(tex[key].root, present) if key in tex else LOST
+        linked = folded is MAP
+        if folded not in (MAP, LOST):
+            want = folded
+        if scale is not None:
+            want = _mean(want) * scale
+        if socket == "Alpha":
+            alpha = None if linked else want
         check("%s: %s %s" % (label, socket, "linked" if linked else "value"),
               s.is_linked == linked and (linked or _value_ok(s, want)),
               "linked %s, %r vs %r" % (s.is_linked, tuple(s.default_value) if hasattr(s.default_value, "__len__")
@@ -330,18 +390,21 @@ def check_principled(label, material, ir):
     for socket, want in values:
         check("%s: %s" % (label, socket), _value_ok(p.inputs[socket], want),
               "%r vs %r" % (p.inputs[socket].default_value, want))
-    normal = "normal" in tex or "bump" in tex
-    check(label + ": Normal linked iff a normal or bump map", p.inputs["Normal"].is_linked == normal)
+    normal = _normal_linked(tex, present)
+    check(label + ": Normal linked iff a normal or bump map with its image", p.inputs["Normal"].is_linked == normal)
     thin = p.inputs.get("Thin Wall")
     check(label + ": Thin Wall", (thin is None and bpy.app.version < (5, 0, 0)) or
           (thin is not None and bool(thin.default_value) == ir.thin_walled))
-    method = 'DITHERED' if "alpha" in tex or _mean(ir.alpha.value) >= 1.0 else 'BLENDED'
+    method = 'BLENDED' if alpha is not None and alpha < 1.0 else 'DITHERED'
     check(label + ": surface_render_method", material.surface_render_method == method,
           "%s vs %s" % (material.surface_render_method, method))
     want_images = sorted({img.name for img in _images_of(ir)})
     got_images = sorted({n.label for n in material.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage"})
     check(label + ": one Image Texture node per file", got_images == want_images, "%s vs %s" % (got_images,
                                                                                                want_images))
+    loose = [n.label for n in material.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage" and n.image is None
+             and any(o.is_linked for o in n.outputs)]
+    check(label + ": an Image Texture node without an image feeds nothing", loose == [], str(loose))
 
 
 def check_fixture_materials(name, plan, desc, obs):
@@ -365,7 +428,7 @@ def check_fixture_materials(name, plan, desc, obs):
                       material.name.split(".")[0] == (ir.name or "Material").split(".")[0], ir.name)
                 check_principled("%s/%s" % (name, material.name), material, ir)
     if name == "vray_maps":
-        check_vray_maps_nodes()
+        check_vray_maps_nodes(textured=False)
         text = bpy.data.texts.get("MaxDrop Report")
         body = text.as_string() if text else ""
         check("vray_maps: the report names each texture not found",
@@ -394,9 +457,20 @@ def _mapping_of(material, label):
     return tuple(tuple(m.inputs[k].default_value) for k in ("Location", "Rotation", "Scale")), tex
 
 
-def check_vray_maps_nodes():
+def _from(socket):
+    """The node feeding an input, None when it is not linked."""
+    return socket.links[0].from_node if socket.is_linked else None
+
+
+def _input(node, identifier):
+    return next(s for s in node.inputs if s.identifier == identifier)
+
+
+def check_vray_maps_nodes(textured):
     """FixtureVRayMaps' bitmaps: tiling, offset and W angle as Mapping values (the authoring script's numbers),
-    extension REPEAT; the gloss map inverted; the normal map through a Normal Map node with its green flipped."""
+    extension REPEAT. With its textures: the gloss map inverted (1 - x) into the Mix of the roughness, the bump map a
+    Bump node, FixtureVRayNormal's Normal Map node (strength 0.85, its green flipped) under its bump map's Bump node.
+    Without them: no Normal Map node and the Normal input free."""
     m = bpy.data.materials.get("FixtureVRayMaps")
     for file, tile, offset, angle in (("fixture_diffuse.png", 2.0, 0.1, 15.0), ("fixture_reflect.png", 3.0, 0.2, 25.0),
                                       ("fixture_gloss.png", 4.0, 0.3, 35.0), ("fixture_bump.png", 5.0, 0.4, 45.0),
@@ -406,15 +480,69 @@ def check_vray_maps_nodes():
         ok = got is not None and all(close(g, w, VALUE_TOLERANCE) for g, w in zip(got, want))
         check("vray_maps/%s: Mapping location, rotation, scale" % file, ok, "%s vs %s" % (got, want))
         check("vray_maps/%s: extension REPEAT" % file, tex.extension == 'REPEAT', tex.extension)
-    nodes = {n.bl_idname for n in m.node_tree.nodes}
-    check("vray_maps: the gloss map inverted, the bump map a Bump node",
-          {"ShaderNodeMath", "ShaderNodeBump", "ShaderNodeMix"} <= nodes, str(sorted(nodes)))
     n = bpy.data.materials.get("FixtureVRayNormal")
-    nm = [x for x in n.node_tree.nodes if x.bl_idname == "ShaderNodeNormalMap"]
-    check("vray_maps: FixtureVRayNormal's Normal Map node, strength 0.85, its green flipped, its bump map on top",
-          len(nm) == 1 and abs(nm[0].inputs["Strength"].default_value - 0.85) < 1e-5
-          and any(x.bl_idname == "ShaderNodeSeparateColor" for x in n.node_tree.nodes)
-          and _principled(n).inputs["Normal"].links[0].from_node.bl_idname == "ShaderNodeBump")
+    if not textured:
+        check("vray_maps without textures: no Normal Map node, the Normal input free",
+              not any(x.bl_idname == "ShaderNodeNormalMap" for x in n.node_tree.nodes)
+              and not _principled(n).inputs["Normal"].is_linked)
+        return
+    mix = _from(_principled(m).inputs["Roughness"])
+    inv = _from(_input(mix, "B_Float")) if mix is not None and mix.bl_idname == "ShaderNodeMix" else None
+    gloss = _from(inv.inputs[1]) if inv is not None and inv.bl_idname == "ShaderNodeMath" else None
+    check("vray_maps: the gloss map as 1 - x into the roughness Mix at 73 %, glossiness 1 beside it",
+          gloss is not None and gloss.label == "fixture_gloss.png" and inv.operation == 'SUBTRACT'
+          and abs(inv.inputs[0].default_value - 1.0) < 1e-6 and abs(_input(mix, "Factor_Float").default_value - 0.73)
+          < 1e-5 and abs(_input(mix, "A_Float").default_value) < 1e-6)
+    bump = _from(_principled(m).inputs["Normal"])
+    check("vray_maps: the bump map through a Bump node of strength 0.64",
+          bump is not None and bump.bl_idname == "ShaderNodeBump" and not bump.invert
+          and abs(bump.inputs["Strength"].default_value - 0.64) < 1e-5
+          and _from(bump.inputs["Height"]).label == "fixture_bump.png")
+    top = _from(_principled(n).inputs["Normal"])
+    nm = _from(top.inputs["Normal"]) if top is not None and top.bl_idname == "ShaderNodeBump" else None
+    comb = _from(nm.inputs["Color"]) if nm is not None and nm.bl_idname == "ShaderNodeNormalMap" else None
+    green = _from(comb.inputs["Green"]) if comb is not None and comb.bl_idname == "ShaderNodeCombineColor" else None
+    sep = _from(green.inputs[1]) if green is not None and green.bl_idname == "ShaderNodeMath" else None
+    check("vray_maps: FixtureVRayNormal: Bump (its bump map) over a Normal Map node of strength 0.85, green 1 - G",
+          sep is not None and sep.bl_idname == "ShaderNodeSeparateColor"
+          and green.inputs[1].links[0].from_socket.identifier == "Green"
+          and _from(comb.inputs["Red"]) == sep and abs(nm.inputs["Strength"].default_value - 0.85) < 1e-5
+          and _from(top.inputs["Height"]).label == "fixture_normal_bump.png"
+          and _from(sep.inputs["Color"]).label == "fixture_normal.png")
+
+
+def check_failed_build_cleanup(max_path):
+    """A build that fails after its materials were made: the operator removes the materials and images it made and
+    leaves a material and an image that were there before."""
+    from maxdrop.build import objects as build_objects
+    keep_material = bpy.data.materials.new("UserMaterial")
+    keep_image = bpy.data.images.new("UserImage", 2, 2)
+    before = ({m.as_pointer() for m in bpy.data.materials}, {i.as_pointer() for i in bpy.data.images})
+    original, made = build_objects.build, []
+
+    def failing(*args, **kwargs):
+        built = original(*args, **kwargs)
+        made.append((len(built.materials), len(bpy.data.images)))
+        raise RuntimeError("maxdrop test: build fails")
+
+    build_objects.build = failing
+    try:
+        try:
+            bpy.ops.import_scene.maxdrop(filepath=max_path)
+            raised = False
+        except RuntimeError:
+            raised = True
+    finally:
+        build_objects.build = original
+    after = ({m.as_pointer() for m in bpy.data.materials}, {i.as_pointer() for i in bpy.data.images})
+    check("failed build: materials and images were made before it failed",
+          raised and made and made[0][0] > 0 and made[0][1] > len(before[1]), str(made))
+    check("failed build: the materials and images it made are removed, the user's stay",
+          after == before and keep_material.name in bpy.data.materials and keep_image.name in bpy.data.images
+          and not bpy.data.objects, "%d / %d materials, %d / %d images" % (
+              len(after[0]), len(before[0]), len(after[1]), len(before[1])))
+    bpy.data.materials.remove(keep_material)
+    bpy.data.images.remove(keep_image)
 
 
 def _write_png(path):
@@ -470,6 +598,15 @@ def check_found_textures():
             text = bpy.data.texts.get("MaxDrop Report")
             check("%s with its textures: no texture reported missing" % name,
                   text is not None and "texture not found" not in text.as_string())
+            for ir in irs.values():
+                check_principled("%s with its textures/%s" % (name, ir.name), bpy.data.materials.get(ir.name), ir,
+                                 present=True)
+            if name == "vray_maps":
+                check_vray_maps_nodes(textured=True)
+                empty_scene()
+                for img in list(bpy.data.images):
+                    bpy.data.images.remove(img)
+                check_failed_build_cleanup(dst)
             if name == "texmap_rules":
                 m = bpy.data.materials["FixtureTexPlace"]
                 cropped = next(n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage"
@@ -578,11 +715,105 @@ def check_builder():
               dot is not None and dot.operation == 'DOT_PRODUCT'
               and close(list(dot.inputs[1].default_value), [1 / 6.0] * 3, 1e-6))
         check("builder: the viewport color is the base color", close(list(ma.diffuse_color)[:3], [0.5] * 3, 1e-6))
+        check_builder_wiring(ma, mb, builder, cm, tx, srgb, data, lost, gamma)
     finally:
         empty_scene()
         for img in list(bpy.data.images):
             bpy.data.images.remove(img)
         shutil.rmtree(scratch, ignore_errors=True)
+
+
+def check_builder_wiring(ma, mb, builder, cm, tx, srgb, data, lost, gamma):
+    """The links and values of the hand-made IRs' nodes, against numbers worked out by hand."""
+    pa, pb = _principled(ma), _principled(mb)
+    mix = _from(pa.inputs["Base Color"])
+    check("wiring: base color Mix: A the swatch, B the sRGB image, the mask image on the factor",
+          mix.bl_idname == "ShaderNodeMix" and mix.blend_type == 'MIX' and not _input(mix, "A_Color").is_linked
+          and close(list(_input(mix, "A_Color").default_value)[:3], [0.5] * 3, 1e-6)
+          and _from(_input(mix, "B_Color")).image.colorspace_settings.name == "sRGB"
+          and _from(_input(mix, "Factor_Float")).image.colorspace_settings.name == "Non-Color")
+    inv = _from(pa.inputs["Roughness"])
+    check("wiring: roughness 1 - the data image", inv.bl_idname == "ShaderNodeMath" and inv.operation == 'SUBTRACT'
+          and inv.inputs[0].default_value == 1.0 and _from(inv.inputs[1]).bl_idname == "ShaderNodeTexImage")
+    dot = _from(pa.inputs["Specular IOR Level"])
+    mul = _from(dot.inputs[0])
+    check("wiring: specular map times 2 through a Multiply Mix", mul.bl_idname == "ShaderNodeMix"
+          and mul.blend_type == 'MULTIPLY' and _input(mul, "Factor_Float").default_value == 1.0
+          and close(list(_input(mul, "B_Color").default_value)[:3], [2.0] * 3, 1e-6))
+    gam = _from(pb.inputs["Emission Color"])
+    gain = _from(gam.inputs["Color"])
+    bc = _from(gain.inputs[0])
+    hue = _from(bc.inputs["Color"])
+    comp = _from(hue.inputs["Color"])
+    check("wiring: Color Correction: Hue 0.75, Saturation 1.5, Bright 0.1, Contrast 0.2, gain 1.2, Gamma 1 / 1.1",
+          gam.bl_idname == "ShaderNodeGamma" and abs(gam.inputs["Gamma"].default_value - 1 / 1.1) < 1e-6
+          and gain.bl_idname == "ShaderNodeVectorMath" and gain.operation == 'SCALE'
+          and abs(_input(gain, "Scale").default_value - 1.2) < 1e-6
+          and bc.bl_idname == "ShaderNodeBrightContrast" and abs(_input(bc, "Bright").default_value - 0.1) < 1e-6
+          and abs(_input(bc, "Contrast").default_value - 0.2) < 1e-6
+          and hue.bl_idname == "ShaderNodeHueSaturation" and abs(hue.inputs["Hue"].default_value - 0.75) < 1e-6
+          and abs(hue.inputs["Saturation"].default_value - 1.5) < 1e-6)
+    factor = _from(_input(comp, "Factor_Float"))
+    top = _from(_input(comp, "B_Color"))
+    check("wiring: Composite: the top layer over the bottom by its alpha times 0.5, its gamma override 1.8 applied",
+          comp.bl_idname == "ShaderNodeMix" and factor.bl_idname == "ShaderNodeMath" and factor.operation == 'MULTIPLY'
+          and abs(factor.inputs[1].default_value - 0.5) < 1e-6 and factor.inputs[0].links[0].from_socket.name == "Alpha"
+          and top.bl_idname == "ShaderNodeGamma" and abs(top.inputs["Gamma"].default_value - 1.8) < 1e-6)
+    amount = _from(_input(comp, "A_Color"))
+    level = _from(amount.inputs[0])
+    out_inv = _from(level.inputs[0])
+    tex = _from(out_inv.inputs["Color"])
+    crop = _from(tex.inputs["Vector"])
+    frac = _from(crop.inputs["Vector"])
+    place = _from(frac.inputs[0])
+    uv = _from(place.inputs["Vector"])
+    from maxdrop.build import materials as build_materials
+    want = build_materials.uv_transform(tx.Mapping(tiling=(2.0, 1.0), angle=(0.0, 0.0, 0.5)))
+    check("wiring: Output: inverted, times 2 plus 0.1, times 0.5",
+          amount.operation == 'SCALE' and abs(_input(amount, "Scale").default_value - 0.5) < 1e-6
+          and level.operation == 'MULTIPLY_ADD' and close(list(_input(level, "Vector_001").default_value), [2.0] * 3,
+                                                          1e-6)
+          and close(list(_input(level, "Vector_002").default_value), [0.1] * 3, 1e-6)
+          and out_inv.bl_idname == "ShaderNodeInvert")
+    check("wiring: a placed crop: UVChannel_2 -> placement -> fraction -> Mapping TEXTURE at (0.1, 0.3) x 0.5",
+          crop.bl_idname == "ShaderNodeMapping" and crop.vector_type == 'TEXTURE'
+          and close(list(crop.inputs["Location"].default_value), [0.1, 0.3, 0.0], 1e-6)
+          and close(list(crop.inputs["Scale"].default_value), [0.5, 0.5, 1.0], 1e-6)
+          and frac.operation == 'FRACTION' and place.bl_idname == "ShaderNodeMapping" and place.vector_type == 'POINT'
+          and close(list(place.inputs["Location"].default_value), list(want[0]), 1e-6)
+          and close(list(place.inputs["Rotation"].default_value), [0.0, 0.0, 0.5], 1e-6)
+          and uv.bl_idname == "ShaderNodeUVMap" and uv.uv_map == "UVChannel_2")
+    bump = _from(pb.inputs["Normal"])
+    nm = _from(bump.inputs["Normal"])
+    comb = _from(nm.inputs["Color"])
+    red, green = _from(comb.inputs["Red"]), _from(comb.inputs["Green"])
+    check("wiring: normal map swapped then flipped: Red = 1 - G, Green = 1 - R, Blue = B; its bump at 2 (1, distance 2)",
+          bump.bl_idname == "ShaderNodeBump" and bump.inputs["Strength"].default_value == 1.0
+          and bump.inputs["Distance"].default_value == 2.0 and abs(nm.inputs["Strength"].default_value - 0.7) < 1e-6
+          and red.operation == 'SUBTRACT' and red.inputs[1].links[0].from_socket.identifier == "Green"
+          and green.operation == 'SUBTRACT' and green.inputs[1].links[0].from_socket.identifier == "Red"
+          and comb.inputs["Blue"].links[0].from_socket.identifier == "Blue")
+    c = cm.MaterialIR(12, "Inverted", "test", base_color=cm.Input((0.2, 0.3, 0.4), cm.MapRef(5)))
+    c.textures = {"bump": tx.TextureGraphIR(tx.Bump(data, -0.5), tx.BUMP),
+                  "base_color": tx.TextureGraphIR(tx.Mix(tx.Constant((0.2, 0.3, 0.4)), srgb, 0.5, gamma), tx.COLOR)}
+    d = cm.MaterialIR(13, "Lost", "test", alpha=cm.Input(0.8, cm.MapRef(6)), base_color=cm.Input((0.1, 0.2, 0.3),
+                                                                                                  cm.MapRef(7)))
+    d.textures = {"normal": tx.TextureGraphIR(tx.NormalMap(lost, 1.0, bump=tx.Bump(lost, 0.5)), tx.NORMAL),
+                  "alpha": tx.TextureGraphIR(tx.Mix(tx.Constant(0.8), lost, 0.6), tx.DATA),
+                  "base_color": tx.TextureGraphIR(tx.ColorCorrect(lost, hue=0.1), tx.COLOR)}
+    mc, md = builder.make(c), builder.make(d)
+    b = _from(_principled(mc).inputs["Normal"])
+    check("wiring: a negative bump amount inverts the Bump node", b.invert and b.inputs["Strength"].default_value == 0.5)
+    mask = _from(_input(_from(_principled(mc).inputs["Base Color"]), "Factor_Float"))
+    check("wiring: a mask with a gamma override gets no Gamma node", mask.bl_idname == "ShaderNodeTexImage")
+    pd = _principled(md)
+    check("wiring: missing images leave the IR's values: Normal free, alpha 0.8 (BLENDED), base color the swatch",
+          not pd.inputs["Normal"].is_linked and not pd.inputs["Alpha"].is_linked
+          and abs(pd.inputs["Alpha"].default_value - 0.8) < 1e-6 and md.surface_render_method == 'BLENDED'
+          and not pd.inputs["Base Color"].is_linked
+          and close(list(pd.inputs["Base Color"].default_value)[:3], [0.1, 0.2, 0.3], 1e-6)
+          and not any(o.is_linked for n in md.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage" for o in n.outputs)
+          and len([n for n in md.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage"]) == 1)
 
 
 def check_layer_flags(modules):

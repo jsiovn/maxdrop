@@ -497,7 +497,8 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
         collection, then publish its import report (console and the text "MaxDrop Report"). pack: archive.unpack()'s
         result when the scene came from a scene pack, pack_name the archive's file name. ([(report level, line)],
         the convert.report.Report), the report's summary last; one of _UNREADABLE when the file cannot be read. A
-        build that fails is removed again (objects, collections, meshes, materials) before the exception goes on."""
+        build that fails is removed again (objects, collections, meshes, materials, images) before the exception goes
+        on."""
         from .build import collections as build_collections
         from .build import materials as build_materials
         from .build import objects as build_objects

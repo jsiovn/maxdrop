@@ -9,7 +9,7 @@
     builder.issues()                    # [(label, reason)]: textures not found or not loaded, sockets skipped
 
 The Principled BSDF's inputs are looked up by name with an existence check: Thin Wall exists from Blender 5.0 and
-Diffuse Roughness from 4.3, so on an older Blender a value the IR asks for there is skipped and reported. Other
+Diffuse Roughness from 4.5, so on an older Blender a value the IR asks for there is skipped and reported. Other
 nodes' inputs are looked up by identifier (Fac, Bright, A_Color...), which stays the same while their names change
 between versions.
 
@@ -24,7 +24,10 @@ Image -> Image Texture (its image datablock reused per file and color space: one
 two datablocks), with its placement as a Mapping node and a UV Map node for a map channel other than 1; Invert,
 Mix, Multiply, ColorCorrect (Hue/Saturation/Value, Bright/Contrast, gain, Gamma), Composite (Mix per layer),
 NormalMap (Normal Map node, flips through Separate / Combine Color), Bump (Bump node). A texture file that was not
-found leaves its Image Texture node without an image and is reported by name: never a magenta surprise.
+found (or does not load) keeps its Image Texture node, without an image and not connected, and is reported by name:
+the graph above it carries on without it (a Mix gives its other side, a normal map without its image nothing) and
+an input left without a map keeps the IR's value. An empty image node renders black in EEVEE and magenta in Cycles,
+and in a normal or alpha input it would wreck the shading or hide the object.
 
 Placement, the 3ds Max convention (StdUVGen: scaled and turned about the map's center, offset in UV fractions):
 sample = R(u, v, w angles) S(tiling) (uv - 0.5 - offset) + 0.5, one Mapping node (POINT): uv_transform(). Crop:
@@ -44,6 +47,7 @@ SPECULAR_LEVEL = 0.5
 X_STEP, Y_STEP = 300, 280
 COLOR, FLOAT = "color", "float"
 _EPS = 1e-6
+MISSING = object()  # what a graph gives where its image is missing
 
 
 def uv_transform(mapping):
@@ -213,36 +217,33 @@ class _Tree:
     def color_input(self, name, inp, graph):
         s = self.bsdf_input(name)
         self.start_row()
-        self.feed(s, self.graph(graph.root, COLOR, 0) if graph is not None else inp.value)
+        v = self.graph(graph.root, COLOR, 0) if graph is not None else MISSING
+        self.feed(s, inp.value if v is MISSING else v)
 
     def float_input(self, name, inp, graph, scale=1.0):
-        """A float input; a color graph on it goes through the mean of its channels, times scale."""
+        """A float input; a color graph on it goes through the mean of its channels, times scale. True when a
+        node drives it."""
         s = self.bsdf_input(name)
-        if graph is None:
-            _default(s, _mean(inp.value) * scale)
-            return
         self.start_row()
-        if graph.kind == tx.COLOR:
-            v = self.graph(graph.root, COLOR, 1)
-            if isinstance(v, bpy.types.NodeSocket):
-                dot = self.node("ShaderNodeVectorMath", 0)
-                dot.operation = 'DOT_PRODUCT'
-                self.links.new(v, _in(dot, "Vector"))
-                _in(dot, "Vector_001").default_value = (scale / 3.0,) * 3
-                self.links.new(_out(dot, "Value"), s)
-            else:
-                _default(s, _mean(v) * scale)
-        else:
-            v = self.graph(graph.root, FLOAT, 0)
-            if scale != 1.0 and isinstance(v, bpy.types.NodeSocket):
-                mul = self.node("ShaderNodeMath", 0)
-                mul.operation = 'MULTIPLY'
-                self.links.new(v, mul.inputs[0])
-                mul.inputs[1].default_value = scale
-                v = mul.outputs[0]
-            elif scale != 1.0:
-                v = _mean(v) * scale
-            self.feed(s, v)
+        color = graph is not None and graph.kind == tx.COLOR
+        v = MISSING if graph is None else self.graph(graph.root, COLOR, 1) if color else             self.graph(graph.root, FLOAT, 0)
+        if not isinstance(v, bpy.types.NodeSocket):
+            _default(s, _mean(inp.value if v is MISSING else v) * scale)
+            return False
+        if color:
+            dot = self.node("ShaderNodeVectorMath", 0)
+            dot.operation = 'DOT_PRODUCT'
+            self.links.new(v, _in(dot, "Vector"))
+            _in(dot, "Vector_001").default_value = (scale / 3.0,) * 3
+            v = _out(dot, "Value")
+        elif scale != 1.0:
+            mul = self.node("ShaderNodeMath", 0)
+            mul.operation = 'MULTIPLY'
+            self.links.new(v, mul.inputs[0])
+            mul.inputs[1].default_value = scale
+            v = mul.outputs[0]
+        self.links.new(v, s)
+        return True
 
     def build(self):
         """Fill the material from its IR."""
@@ -255,18 +256,14 @@ class _Tree:
         self.float_input("Transmission Weight", ir.transmission, tex.get("transmission"))
         self.color_input("Emission Color", ir.emission_color, tex.get("emission_color"))
         self.value("Emission Strength", ir.emission_strength)
-        self.float_input("Alpha", ir.alpha, tex.get("alpha"))
-        normal = tex.get("normal")
-        bump = tex.get("bump")
+        alpha_map = self.float_input("Alpha", ir.alpha, tex.get("alpha"))
         out = None
-        if normal is not None or bump is not None:
-            self.start_row()
-            if normal is not None:
-                out = self.normal_root(normal.root, 0, None)
-            if bump is not None:
-                out = self.normal_root(bump.root, 0, out)
-            if out is not None:
-                self.links.new(out, self.bsdf_input("Normal"))
+        for key in ("normal", "bump"):  # a bump on top of the normal map, when both are there
+            if key in tex:
+                self.start_row()
+                out = self.normal_root(tex[key].root, 0, out)
+        if out is not None:
+            self.links.new(out, self.bsdf_input("Normal"))
         self.value("Coat Weight", ir.coat_weight)
         self.value("Coat Roughness", ir.coat_roughness)
         self.value("Coat IOR", ir.coat_ior)
@@ -278,9 +275,9 @@ class _Tree:
         if ir.thin_walled:
             self.value("Thin Wall", True)
         m = self.material
-        if "alpha" in tex:
+        if alpha_map:
             m.surface_render_method = 'DITHERED'
-        elif _mean(ir.alpha.value) < 1.0:
+        elif self.bsdf_input("Alpha").default_value < 1.0:
             m.surface_render_method = 'BLENDED'
         m.diffuse_color = _as(ir.base_color.value, COLOR) + (1.0,)
         m.metallic = min(1.0, max(0.0, _mean(ir.metallic.value)))
@@ -297,7 +294,7 @@ class _Tree:
         if isinstance(n, tx.Constant):
             return _as(n.value, space)
         if isinstance(n, tx.Image):
-            return self.image(n, depth)
+            return self.image(n, space, depth)
         if isinstance(n, tx.Invert):
             return self.invert(self.graph(n.input, space, depth + 1), space, depth)
         if isinstance(n, tx.Mix):
@@ -310,36 +307,46 @@ class _Tree:
             return self.composite(n, space, depth)
         if isinstance(n, (tx.NormalMap, tx.Bump)):  # texmaps puts these at a normal or bump root only: its image
             image = tx.first_image(n)
-            return self.graph(image, space, depth) if image is not None else _as(0.0, space)
-        return _as(0.0, space)
+            return self.graph(image, space, depth) if image is not None else MISSING
+        return MISSING
 
     def normal_root(self, n, depth, normal):
-        """The Normal output of a normal or bump graph's root; normal: a normal to bump further, or None."""
+        """The Normal output of a normal or bump graph's root (normal when its images are missing); normal: a
+        normal to bump further, or None."""
         if isinstance(n, tx.NormalMap):
             out = self.normal_map(n, depth + (1 if n.bump is not None else 0))
+            out = normal if out is None else out
             return self.bump(n.bump, depth, out) if n.bump is not None else out
         if not isinstance(n, tx.Bump):
             n = tx.Bump(n)
         return self.bump(n, depth, normal)
 
     def bump(self, n, depth, normal):
+        """A Bump node over normal (None: the surface's); normal itself when the height map is missing."""
+        height = self.graph(n.input, FLOAT, depth + 1)
+        if not isinstance(height, bpy.types.NodeSocket):
+            return normal
         b = self.node("ShaderNodeBump", depth)
-        self.feed(_in(b, "Height"), self.graph(n.input, FLOAT, depth + 1))
-        _in(b, "Strength").default_value = min(1.0, max(0.0, n.strength))
-        _in(b, "Distance").default_value = max(1.0, n.strength)
+        self.links.new(height, _in(b, "Height"))
+        b.invert = n.strength < 0  # a negative bump amount inverts the height
+        _in(b, "Strength").default_value = min(1.0, abs(n.strength))
+        _in(b, "Distance").default_value = max(1.0, abs(n.strength))
         if normal is not None:
             self.links.new(normal, _in(b, "Normal"))
         return _out(b, "Normal")
 
     def normal_map(self, n, depth):
+        """A Normal Map node, None when its image is missing."""
+        flips = n.flip_red or n.flip_green or n.swap
+        color = self.graph(n.input, COLOR, depth + (3 if flips else 1))
+        if not isinstance(color, bpy.types.NodeSocket):
+            return None
         nm = self.node("ShaderNodeNormalMap", depth)
         nm.space = 'TANGENT'
         if n.channel != 1:
             nm.uv_map = uv_layer_name(n.channel)
         _in(nm, "Strength").default_value = max(0.0, n.strength)
-        flips = n.flip_red or n.flip_green or n.swap
-        color = self.graph(n.input, COLOR, depth + (3 if flips else 1))
-        if flips and isinstance(color, bpy.types.NodeSocket):
+        if flips:
             sep = self.node("ShaderNodeSeparateColor", depth + 2)
             comb = self.node("ShaderNodeCombineColor", depth + 1)
             self.links.new(color, _in(sep, "Color"))
@@ -353,10 +360,10 @@ class _Tree:
                     inv.inputs[0].default_value = 1.0
                     self.links.new(out, inv.inputs[1])
                     out = inv.outputs[0]
-                self.links.new(out, comb.inputs[target])
+                self.links.new(out, _in(comb, target))
             self.links.new(_out(sep, "Blue"), _in(comb, "Blue"))
             color = _out(comb, "Color")
-        self.feed(_in(nm, "Color"), color)
+        self.links.new(color, _in(nm, "Color"))
         return _out(nm, "Normal")
 
     def uv(self, channel, depth):
@@ -369,23 +376,23 @@ class _Tree:
             self.uvs[channel] = _out(n, "UV")
         return self.uvs[channel]
 
-    def image(self, img, depth):
+    def image(self, img, space, depth):
+        """The output of an Image's Texture node (made once per material), MISSING when it has no image."""
         tex = self.texture_nodes.get(id(img))
         if tex is None:
             tex = self.texture_nodes[id(img)] = self.texture_node(img, depth)
+        if tex.image is None:
+            return MISSING
         out = tex.outputs["Alpha" if img.alpha else "Color"]
-        # texmaps made a color input's image Non-Color for its gamma override: decode it with that gamma
-        if not img.alpha and img.gamma is not None and abs(img.gamma - 1.0) > _EPS \
-                and img.colorspace == tx.NON_COLOR == tx.colorspace(tx.COLOR, img.gamma) and self.in_color(img):
+        # texmaps made a color input's image Non-Color for its gamma override: decode it with that gamma. A mask is
+        # built in FLOAT, so it never gets it, nor does a data input.
+        if space == COLOR and not img.alpha and img.gamma is not None and abs(img.gamma - 1.0) > _EPS \
+                and img.colorspace == tx.NON_COLOR == tx.colorspace(tx.COLOR, img.gamma):
             g = self.node("ShaderNodeGamma", depth)
             self.links.new(out, _in(g, "Color"))
             _in(g, "Gamma").default_value = img.gamma
             out = _out(g, "Color")
         return self.output(img.output, out, depth) if img.output is not None else out
-
-    def in_color(self, img):
-        """True when img is under a color input of this material (its gamma override then applies)."""
-        return any(g.kind == tx.COLOR and _contains(g.root, img) for g in self.ir.textures.values())
 
     def texture_node(self, img, depth):
         tex = self.node("ShaderNodeTexImage", depth)
@@ -442,6 +449,8 @@ class _Tree:
         return _out(n, "Vector")
 
     def invert(self, v, space, depth):
+        if v is MISSING:
+            return MISSING
         if not isinstance(v, bpy.types.NodeSocket):
             return tuple(1.0 - c for c in v) if space == COLOR else 1.0 - v
         if space == COLOR:
@@ -463,17 +472,23 @@ class _Tree:
         return n, _in(n, "A_" + kind), _in(n, "B_" + kind), _out(n, "Result_" + kind)
 
     def mix(self, n, space, depth):
+        """A missing side gives the other one; a missing mask the mix amount."""
+        va, vb = self.graph(n.a, space, depth + 1), self.graph(n.b, space, depth + 1)
+        mask = self.graph(n.mask, FLOAT, depth + 1) if n.mask is not None else MISSING  # its node even when unused
+        if va is MISSING or vb is MISSING:
+            return vb if va is MISSING else va
         node, a, b, result = self.mix_node(space, depth)
-        self.feed(a, self.graph(n.a, space, depth + 1))
-        self.feed(b, self.graph(n.b, space, depth + 1))
-        if n.mask is not None:
-            self.feed(_in(node, "Factor_Float"), self.graph(n.mask, FLOAT, depth + 1))
-        else:
-            _in(node, "Factor_Float").default_value = n.factor
+        self.feed(a, va)
+        self.feed(b, vb)
+        self.feed(_in(node, "Factor_Float"), n.factor if mask is MISSING else mask)
         return result
 
     def multiply(self, n, space, depth):
+        """A missing side gives the other one when that is a map, else MISSING (a slot amount times a lost map)."""
         va, vb = self.graph(n.a, space, depth + 1), self.graph(n.b, space, depth + 1)
+        if va is MISSING or vb is MISSING:
+            other = vb if va is MISSING else va
+            return other if isinstance(other, bpy.types.NodeSocket) else MISSING
         if not isinstance(va, bpy.types.NodeSocket) and not isinstance(vb, bpy.types.NodeSocket):
             return tuple(x * y for x, y in zip(va, vb)) if space == COLOR else va * vb
         if space == COLOR:
@@ -492,6 +507,8 @@ class _Tree:
                  n.gain != 1.0, n.gamma != 1.0]
         d = depth + sum(steps) - 1  # the first step's column; the input one further left
         v = self.graph(n.input, COLOR, d + 1)
+        if v is MISSING:
+            return MISSING
         if not any(steps):
             return v if space == COLOR or isinstance(v, bpy.types.NodeSocket) else _mean(v)
         v = self.socket(v, COLOR, d + 1)
@@ -517,19 +534,22 @@ class _Tree:
         return v
 
     def composite(self, n, space, depth):
-        """Each layer over the ones below in the normal mode: a Mix by its opacity (times an image's alpha)."""
-        result = None
-        for k, (layer, opacity) in enumerate(n.layers):
+        """Each layer over the ones below in the normal mode: a Mix by its opacity (times an image's alpha). A
+        layer whose image is missing is left out."""
+        result = MISSING
+        for layer, opacity in n.layers:
             v = self.graph(layer, space, depth + 1)
-            if k == 0 and opacity >= 1.0:
+            if v is MISSING:
+                continue
+            if result is MISSING and opacity >= 1.0:
                 result = v
                 continue
             node, a, b, out = self.mix_node(space, depth)
-            self.feed(a, result if result is not None else _as(0.0, space))
+            self.feed(a, _as(0.0, space) if result is MISSING else result)
             self.feed(b, v)
             factor = _in(node, "Factor_Float")
             tex = self.texture_nodes.get(id(layer)) if isinstance(layer, tx.Image) and not layer.alpha else None
-            if tex is not None and k > 0:
+            if tex is not None and result is not MISSING:
                 mul = self.node("ShaderNodeMath", depth + 1)
                 mul.operation = 'MULTIPLY'
                 self.links.new(_out(tex, "Alpha"), mul.inputs[0])
@@ -538,18 +558,4 @@ class _Tree:
             else:
                 factor.default_value = opacity
             result = out
-        return result if result is not None else _as(0.0, space)
-
-
-def _contains(root, target):
-    """True when target is a node of the graph below root (by identity)."""
-    seen, stack = set(), [root]
-    while stack:
-        n = stack.pop()
-        if n is target:
-            return True
-        if id(n) not in seen:
-            seen.add(id(n))
-            stack.extend(tx._children(n))
-    return False
-
+        return result

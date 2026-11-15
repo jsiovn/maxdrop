@@ -119,8 +119,9 @@ def only_known_gaps(body):
     rest = lines[lines.index("Not converted:") + 1:]
     items = [line for line in rest if line.startswith("    ")]
     heads = [line for line in rest if line.startswith("  ") and not line.startswith("    ")]
+    blender4 = bpy.app.version < (5, 0, 0)
     return bool(items) and heads == ["  Other issues: %d" % len(items)] \
-        and all(": texture not found: " in line or " is not on Blender " in line for line in items)
+        and all(": texture not found: " in line or (blender4 and " is not on Blender " in line) for line in items)
 
 
 def import_one(path, label=None, max_name=None, pack_name=None, **options):

@@ -99,8 +99,9 @@ images. MaxDrop takes the **file name** of each path and looks for it, without r
 The first place that has the file wins. A path stored as a network share (`\\server\share\...`), a device path,
 a relative path or one that climbs with `..` is never opened; its file name is still looked for in places 1 to 3.
 Each place is searched once per import, at most 8 folders deep and 200,000 files and folders; links and
-junctions are not followed. A file that is not found leaves its Image Texture node without an image (it renders
-black, never magenta) and is named in the import report. Each file is loaded once per color space.
+junctions are not followed. A file that is not found keeps its Image Texture node, without an image and not
+connected, so the channel keeps its plain value (no black or magenta surface, in EEVEE or Cycles), and is named in
+the import report. Each file is loaded once per color space.
 
 From a scene pack, the image and `.ies` files of the pack are unpacked flat into the folder of the `.max`, so the
 lookup above finds them wherever they were in the archive. Of two maps with the same file name, the one nearest to

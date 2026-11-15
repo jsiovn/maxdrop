@@ -6,8 +6,9 @@
 
 
 def material_node_tree(material):
-    """The node tree of a material: 4.x makes a new material with use_nodes off, 5.x always uses nodes."""
-    if not material.use_nodes:
+    """The node tree of a material: 4.x makes a new material with use_nodes off, 5.x always uses nodes (and
+    deprecates the property, so a later version may drop it)."""
+    if not getattr(material, "use_nodes", True):
         material.use_nodes = True
     return material.node_tree
 
