@@ -81,6 +81,29 @@ field (FixtureNoRender has `0x800`).
   pre-order walk with each node's children sorted by object index. In layers_flags the group head has a higher
   node handle (6) than its members (4, 5) but a lower object index, and comes first in both orders.
 
+## Transform controllers
+
+`maxdrop/reader/controllers.py` turns a node's slot-0 controller into matrices at frame 0;
+`tests/unit/test_controllers.py` checks every node of every fixture against the oracle's `transform` and
+`object_transform` (within 1e-4, per element).
+
+- Matrices are in Max's row-vector convention: a point times the matrix, row 4 = translation, `A * B` applies `A`
+  first; this is the oracle's 12-float layout.
+- Every fixture node's controller is a Position/Rotation/Scale `(0x2005, 0)` with reference slots 0 = Position XYZ
+  `(0x118F7E02, 0xFFEE238A)`, 1 = Euler XYZ `(0x2012, 0)`, 2 = Bezier Scale `(0x2010, 0)`. Position XYZ and Euler
+  XYZ reference three Bezier Float `(0x2007, 0)` in slots 0, 1, 2 (x, y, z).
+- A Bezier Float's value is an `f32` in `0x2501`, inside a `0x7127` container in every fixture.
+- Euler angles are radians. Euler XYZ has `0x1003` = `i32` 0 in every fixture (the axis order; 0 = XYZ).
+  hierarchy: FixtureRoot's Z angle `0.5236` gives row 1 = `[0.866025, 0.5, 0]`, a standard row-vector rotation.
+- Bezier Scale holds `0x2505`: 3 x `f32` scale, then the scale axis as a 4 x `f32` quaternion. hierarchy:
+  FixtureLeaf (`scale = [-1,1,1]` in the script) stores `[-1, -1, -1]`; with that, the oracle's rotation rows
+  (`[-0.866025, -0.5, 0]`, ..., `[0, 0, -1]`) come out exactly.
+- Local = scale * rotation * position; world = local * parent world, up the whole chain. hierarchy: FixtureLeaf
+  (position `[25, 5, 0]` under FixtureChild under the rotated FixtureRoot) lands on `[40.1314, 26.8301, 0]`.
+- Object offset = scale (`0x096C`, along its axis) * rotation (`0x096B`) * position (`0x096A`); the object's world
+  transform = offset * world. hierarchy: FixtureRoot and FixtureChild (offset `[5, 5, 0]`) match the oracle's
+  `object_transform`.
+
 ## Open
 
 Not shown by any fixture yet, so not stated above:
@@ -92,4 +115,22 @@ Not shown by any fixture yet, so not stated above:
   modifier.
 - The sign convention of the offset rotation: every fixture's is the identity.
 - The meaning of the flag bits in `0x0960` and of the first `u32` of `0x2035`.
-- The system unit, the optional fields of Editable Poly faces, the LookAt controller.
+- The system unit, the optional fields of Editable Poly faces.
+- Controllers seen only in the corpus (scenes A and B, compared with their oracle; `controllers.py` relies on
+  them):
+  - a Bezier Float with its `0x2501` directly in the object, not in `0x7127` (under ScaleXYZ, list weights);
+  - keys: `0x2525` in a Bezier Float (28 bytes per key: `i32` time, `u32` flags, `f32` value, four `f32`), `0x2528`
+    in a Bezier Scale (148 bytes, the 7-float value at byte 8). Every key chunk holds one key (at time 0, 200 or
+    16000). Where the key's value differs from the saved value chunk (1 float, 3 scales), the oracle at frame 0
+    agrees with the saved value;
+  - the scale axis of Bezier Scale (`Q^-1 * S * Q` with the stored quaternion; the other order misses 10 nodes of
+    scene B) and the Euler order XYZ = X applied first (ZYX misses over half of scene B);
+  - ScaleXYZ `(0x118F7C01, 0xFEEE238B)`: three Bezier Float, x, y, z;
+  - Position List `(0x4B4B1002, 0)` and Rotation List `(0x4B4B1003, 0)`: `0x1010` = entry count, `0x1020` = active
+    entry, entries at reference slots 0..n-1, a ParamBlock2 at a later slot whose reference slots 0..n-1 are the
+    weights (Bezier Float); only weights 1 and 0 occur, so how entries combine is not pinned down;
+  - Look At `(0x2006, 0)` on the camera nodes: not evaluated (identity and an issue) until M4.
+- Controllers taken from the 3ds Max SDK without any file showing them: Linear Position, Rotation and Scale
+  (`0x2002`, `0x2003`, `0x2004`), Bezier Position and Rotation (`0x2008`, `0x2009`), TCB Position, Rotation and
+  Scale (`0x442312`, `0x442313`, `0x442315`), Scale List (`0x4B4B1004`), their value chunks (`0x2503` point,
+  `0x2504` quaternion, `0x2505` scale), and the Euler orders 1 to 5.
