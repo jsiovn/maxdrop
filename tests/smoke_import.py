@@ -16,13 +16,15 @@ Every .max is then packed into a .zip in a scratch folder (the scene with the im
 tree) and imported from it: same checks, no fewer images, unpacked beside the zip. A zip holding it twice under two
 names must be refused in EXEC mode with both names in the message, then import once the scene is named. The same
 files are also chosen through directory + files, as the file browser and a drop pass them: a .max with a
-one-scene zip, a two-scene zip with another pack (refused), a file named .zip that is not one (refused). A .zip,
-.rar or .7z given as argument is imported through the operator as it is.
+one-scene zip, a two-scene zip with another pack (refused), a good zip then one with a damaged scene (refused,
+nothing imported, the message names the good one, which stays unpacked), a file named .zip that is not one
+(refused). A .zip, .rar or .7z given as argument is imported through the operator as it is.
 Prints `IMPORT PASSED` (exit 0) or `IMPORT FAILED` (exit 1).
 """
 import glob
 import os
 import shutil
+import struct
 import sys
 import tempfile
 import traceback
@@ -96,6 +98,19 @@ def make_zip(path, entries):
     return path
 
 
+def damage(zip_path):
+    """Flip one byte of the first member's stored data: the directory still lists it, unpacking fails its CRC."""
+    with zipfile.ZipFile(zip_path) as zf:
+        info = zf.infolist()[0]
+    with open(zip_path, "r+b") as f:
+        f.seek(info.header_offset + 26)
+        name_len, extra_len = struct.unpack("<HH", f.read(4))
+        f.seek(info.header_offset + 30 + name_len + extra_len + info.file_size // 2)
+        byte = f.read(1)[0]
+        f.seek(-1, os.SEEK_CUR)
+        f.write(bytes([byte ^ 0xFF]))
+
+
 def as_pack(max_path, scratch, images_of_max, archive):
     name = os.path.basename(max_path)
     stem = os.path.splitext(name)[0]
@@ -160,6 +175,15 @@ def selections(max_path, scratch):
           result == {'CANCELLED'} and "import that pack alone" in message, message.strip())
     check("a two-scene .zip chosen with another pack: nothing of it unpacked",
           not os.path.exists(os.path.join(folder, "two")))
+
+    make_zip(os.path.join(folder, "first.zip"), [("x/" + SECOND, max_path)])
+    damage(make_zip(os.path.join(folder, "broken.zip"), [("y/" + name, max_path)]))
+    result, message = attempt(directory=folder, files=[{"name": "first.zip"}, {"name": "broken.zip"}])
+    check("a good pack, then a damaged one: cancelled, nothing imported, the unpacked pack named",
+          result == {'CANCELLED'} and "Nothing was imported" in message and "first.zip into " in message
+          and not bpy.data.objects, "%s, %d objects %s" % (result, len(bpy.data.objects), message.strip()))
+    check("a good pack, then a damaged one: the good pack stays unpacked, the damaged one leaves nothing",
+          os.path.isfile(os.path.join(folder, "first", SECOND)) and not os.path.exists(os.path.join(folder, "broken")))
 
     result, message = attempt(directory=folder, files=[{"name": "fake.zip"}])
     check("a file named .zip that is not an archive: cancelled with a message",

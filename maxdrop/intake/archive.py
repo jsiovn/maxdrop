@@ -605,6 +605,8 @@ def existing_folder(path, scene, several, dest_parent=None):
     """("reused" | "in_place", .max path) when unpack() of the scene (its archive path; several: the pack holds
     more than one) would import from a folder already on disk instead of writing one, else None. Reads the disk
     only, for the options popup: an "in_place" folder needs no marker, any file named like the scene counts."""
+    # wanted=None, as ops.py calls unpack(): a caller that passes wanted to unpack() must pass it here too, or the
+    # marker test can refuse a folder the popup announced as reused.
     path = os.path.abspath(path)
     dest_parent = os.path.abspath(dest_parent or os.path.dirname(path))
     try:
