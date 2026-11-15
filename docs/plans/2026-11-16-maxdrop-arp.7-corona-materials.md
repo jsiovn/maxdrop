@@ -43,8 +43,10 @@ Parameter ids (map amounts are fractions, not percent):
 - CoronaBitmap: 101 filename (asset id), 103 uvwChannel, 105 uvwScale, 106 uvwOffset (point3), 107 filteringBlur,
   108 / 109 tilingU / V (0 none, 1 repeat, 2 mirror), 114 realWorldScale, 117 monoChannelOutput, 118
   rgbChannelOutput (1 alpha as gray), 119 clippingOn, 120 clippingMode (0 crop, 1 place), 121-124 clipping u, v,
-  width, height, 125 gamma (-1 automatic, else the override), 129 wAngle, 130 uAngle (degrees, plain floats); an
-  Output part (TexOutput) at slot 1.
+  width, height, 125 gamma (-1 automatic, else the override), 129 wAngle (radians), 130 uAngle (the U offset times
+  2 pi, kept in step by Corona: not read); an Output part (TexOutput) at slot 1. Percent parameters
+  (CoronaPhysicalMtl's base and roughness map amounts, CoronaLayeredMtl's amounts) are set in percent from MAXScript
+  and stored as fractions (revised after the first fixture run).
 - CoronaColor: 50 method (0 color, 1 HDR color, 2 temperature, 3 hex), 51 temperature (K), 52 color, 57 multiplier,
   58 colorHdr, 59 hexColor.
 - CoronaMix: 200 mixOperation (0 add, 1 subtract, 2 multiply, 3 divide, 4 min, 5 max, 6 mix, 7 gamma,
@@ -53,8 +55,8 @@ Parameter ids (map amounts are fractions, not percent):
 - CoronaNormal: the ids already in `texmaps.NORMAL_MAPS` (confirmed).
 
 Behaviour measured with `renderMap` (8 x 8 renders of known images): CoronaBitmap tiling, U / V offset and W angle
-place the image exactly as a Bitmap's U / V tiling, offset and W angle do; uAngle does not (it shifts U: not
-converted, an issue); tiling mode 0 leaves black outside, 2 mirrors; clipping mode 0 crops, 1 places; gamma 1.0
+place the image exactly as a Bitmap's U / V tiling, offset and W angle do; uAngle shifts U because it is the U
+offset again; tiling mode 0 leaves black outside, 2 mirrors; clipping mode 0 crops, 1 places; gamma 1.0
 makes an 8-bit image linear data, 2.2 and -1 sRGB (as Bitmap's override); rgbChannelOutput 1 = alpha as gray;
 enviroMapping has no effect on a UV-mapped map. CoronaMix result = mix(bottom, op(bottom, top), amount), the mask
 map replacing the amount when on. CoronaColor's multiplier scales the color before display; temperature gives
