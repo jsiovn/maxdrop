@@ -56,8 +56,6 @@ def _walk(value):
         yield str(value)
 
 
-# A property-set stream builder.
-
 def _pad(raw):
     return raw + b"\0" * (-len(raw) % 4)
 
@@ -302,6 +300,58 @@ class TestDamaged(unittest.TestCase):
                 metadata.property_sets(good[:n])
             except MetadataError:
                 pass
+
+    def test_flipped_bytes_raise_only_metadata_error(self):
+        good = doc_summary(GROUPS)
+        for at in range(len(good)):
+            for value in (0x00, 0xFF, 0x41):
+                data = bytearray(good)
+                data[at] = value
+                try:
+                    props = metadata.property_sets(bytes(data), metadata.WANTED).get(metadata.FMTID_DOC_SUMMARY)
+                    if props is not None:
+                        metadata.summarize(metadata.groups(props))
+                except MetadataError:
+                    pass
+
+    def test_one_value_shared_by_many_ids_is_bounded(self):
+        # 4096 property ids on one 1 MB vector would decode it 4096 times: the decode budget stops it at once.
+        big = vector_lpstr(["x" * 1000] * 1000)
+        head = 8 + 8 * 4096
+        table = b"".join(struct.pack("<II", metadata.PID_DOC_PARTS if j % 2 else 2 + j, head) for j in range(4096))
+        sec = struct.pack("<II", head + len(big), 4096) + table + big
+        data = stream((metadata.FMTID_DOC_SUMMARY, sec))
+        for wanted in (None, metadata.WANTED):
+            with self.subTest(wanted=wanted), self.assertRaises(MetadataError):
+                metadata.property_sets(data, wanted)
+
+    def test_parts_that_are_not_strings(self):
+        data = stream((metadata.FMTID_DOC_SUMMARY, section([(12, vector_variant(["Used Plug-Ins", 1])),
+                                                            (13, vector_variant([5]))])))
+        props = metadata.property_sets(data, metadata.WANTED)[metadata.FMTID_DOC_SUMMARY]
+        with self.assertRaises(MetadataError):
+            metadata.groups(props)
+
+
+class TestOddValues(unittest.TestCase):
+    def test_plugin_entries_must_be_file_names(self):
+        info = _summary(doc_summary([("Used Plug-Ins", ["epoly.dlo", "C:\\tools\\x.dlo", "a/b.dlu", "", "y" * 300])]))
+        self.assertEqual(info["plugins"], ["epoly.dlo"])
+
+    def test_counts_and_years_must_be_plausible(self):
+        info = _summary(doc_summary([("General", ["3ds Max Version: 999999.00"]),
+                                     ("Scene Totals", ["Objects: -5", "Lights: \u00b2", "Cameras: 2"])]))
+        self.assertEqual(info, {"max_version": "999999.00", "counts": {"cameras": 2}})
+
+    def test_long_text_is_cut(self):
+        info = _summary(doc_summary([("General", ["Build: " + "9" * 5000])]))
+        self.assertEqual(len(info["build"]), metadata.MAX_TEXT)
+
+    def test_negative_class_id_half(self):
+        info = _summary(doc_summary([("Render Data", ["Renderer ClassIDA=-1", "Renderer ClassIDB=12"])]))
+        self.assertEqual(info["renderer"]["class_id"], (0xFFFFFFFF, 12))
+        info = _summary(doc_summary([("Render Data", ["Renderer ClassIDA=99999999999", "Renderer ClassIDB=1"])]))
+        self.assertNotIn("renderer", info)
 
 
 if __name__ == "__main__":

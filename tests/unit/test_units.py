@@ -125,8 +125,8 @@ class TestSyntheticScene(unittest.TestCase):
 
     def test_found_in_the_scene_object(self):
         classes = _classes((1, 0, 1), SCENE_CLASS)
-        self.assertEqual(self._unit(classes, node(0, leaf(0x0962, b"")), node(1, leaf(0x8520, struct.pack("<if", 5, 1.0)))),
-                         ("meters", 1.0))
+        unit = self._unit(classes, node(0, leaf(0x0962, b"")), node(1, leaf(0x8520, struct.pack("<if", 5, 1.0))))
+        self.assertEqual(unit, ("meters", 1.0))
 
     def test_no_scene_class(self):
         classes = _classes((1, 0, 1))
@@ -144,6 +144,18 @@ class TestSyntheticScene(unittest.TestCase):
     def test_damaged_payload(self):
         classes = _classes(SCENE_CLASS)
         self.assertIsNone(self._unit(classes, node(0, leaf(0x8520, b"\x05\0"))))
+
+    def test_damaged_scene_object(self):
+        classes = _classes(SCENE_CLASS)
+        cut = struct.pack("<HI", 0, 6 + 4 | 0x80000000) + b"\x20\x85\0\0"  # its child header is cut short
+        self.assertIsNone(self._unit(classes, cut))
+
+    def test_file_without_a_scene_stream(self):
+        class NoScene:
+            def exists(self, name):
+                return False
+
+        self.assertIsNone(units.system_unit(NoScene()))
 
 
 if __name__ == "__main__":

@@ -47,6 +47,7 @@ cfb = _load("maxdrop_reader.cfb", os.path.join(_READER, "cfb.py"))
 chunks = _load("maxdrop_reader.chunks", os.path.join(_READER, "chunks.py"))
 
 _GAP = 8  # differing byte ranges closer than this are reported as one
+_BLOCK = 4096
 
 
 def _printable(name):
@@ -82,6 +83,9 @@ def byte_ranges(a, b):
     ranges, n = [], min(len(a), len(b))
     i = 0
     while i < n:
+        if a[i:i + _BLOCK] == b[i:i + _BLOCK]:  # equal stretches go by in blocks, not byte by byte
+            i += _BLOCK
+            continue
         if a[i] != b[i]:
             j = i + 1
             while j < n and (a[j] != b[j] or any(a[k] != b[k] for k in range(j, min(j + _GAP, n)))):
@@ -145,14 +149,14 @@ def diff(path_a, path_b, path_a2=None):
     out = []
     for name in sorted(set(sa) | set(sb)):
         a, b = sa.get(name), sb.get(name)
+        if sa2 is not None and (a is None) != (name not in sa2):
+            continue  # the stream itself comes and goes between saves
         if a is None or b is None:
             out.append(Difference(name, "", None, None, "stream only in %s" % ("B" if a is None else "A")))
             continue
         if a == b:
             continue
         a2 = sa2.get(name) if sa2 is not None else None
-        if sa2 is not None and a2 is None:
-            continue  # the stream itself comes and goes between saves
         la, lb = leaves(a), leaves(b)
         la2 = leaves(a2) if a2 is not None else None
         if la is not None and lb is not None and (a2 is None or la2 is not None):

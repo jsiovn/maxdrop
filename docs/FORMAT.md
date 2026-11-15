@@ -160,8 +160,8 @@ system unit: of the Scene stream, only one leaf holds the setting itself.
 - The unit types are those of the 3ds Max SDK: 0 inches, 1 feet, 2 miles, 3 millimeters, 4 centimeters,
   5 meters, 6 kilometers. Inches, millimeters and centimeters are what the fixtures show.
 - What also changes with the unit, and is not the setting: grid and snap values in `Config`
-  (`0x21A0/0x1A02/0x100E` entries), two `0x100E` parameter entries of another object of the Scene stream, and the viewports (`0x0015`):
-  values measured in system units.
+  (`0x21A0/0x1A02/0x100E` entries), two `0x100E` parameter entries of another object of the Scene stream, and
+  the viewports (`0x0015`): values measured in system units.
 - Corpus scenes A and B (Max 2015 and 2020): `3`, scale `1.0` (millimeters).
 
 ## Summary properties

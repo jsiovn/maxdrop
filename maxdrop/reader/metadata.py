@@ -23,8 +23,11 @@ read() returns a dict with, each only when the file has it:
     renderer {"name": ..., "class_id": (a, b)}, counts {objects, shapes, lights, cameras, helpers, space_warps,
     total, vertices, faces, materials}, plugins [dll names]
 and {} for a file without the stream. The stream comes from anywhere: every offset and count is checked against
-its section, the property and vector counts are capped, and a malformed property set raises MetadataError (a
-ValueError). No bpy.
+its section, the property and vector counts are capped, only the properties asked for are decoded, and the bytes
+decoded in all are capped at twice the stream (property ids or sections that share one large value would
+otherwise decode it thousands of times). A returned string is at most MAX_TEXT characters, a plug-in entry that
+is not a bare file name is dropped. A malformed property set raises MetadataError (a ValueError), never another
+exception. No bpy.
 """
 import struct
 import uuid
@@ -37,6 +40,8 @@ MAX_STREAM = 16 << 20
 MAX_SECTIONS = 16
 MAX_PROPERTIES = 4096
 MAX_VECTOR = 1 << 16
+MAX_TEXT = 256
+WANTED = {FMTID_DOC_SUMMARY: (PID_HEADING_PAIRS, PID_DOC_PARTS)}
 
 VT_I2, VT_I4, VT_BOOL, VT_VARIANT, VT_UI4, VT_LPSTR, VT_LPWSTR = 0x02, 0x03, 0x0B, 0x0C, 0x13, 0x1E, 0x1F
 VT_VECTOR = 0x1000
@@ -55,9 +60,15 @@ class MetadataError(ValueError):
 class _Section:
     """One section of a property set: bounds-checked reads relative to its start."""
 
-    def __init__(self, data, base, end):
+    def __init__(self, data, base, end, budget):
         self.data, self.base, self.end = data, base, end
         self.codec = "cp1252"
+        self.budget = budget  # a one-item list shared by every section of the stream: bytes left to decode
+
+    def spend(self, n):
+        self.budget[0] -= n
+        if self.budget[0] < 0:
+            raise MetadataError("property set: values decoded more than twice the stream")
 
     def u32(self, at):
         if at < self.base or at + 4 > self.end:
@@ -71,6 +82,7 @@ class _Section:
         start = at + 4
         if size > self.end - start:
             raise MetadataError("property set: string runs past its section")
+        self.spend(4 + size)
         raw = bytes(self.data[start:start + size])
         codec = "utf-16-le" if wide else self.codec
         text = raw.decode(codec, "replace").split("\0", 1)[0]
@@ -81,6 +93,7 @@ class _Section:
         (nested) cannot be a vector itself, so a hostile stream cannot nest them as deep as it is long."""
         vt = self.u32(at) & 0xFFFF
         p = at + 4
+        self.spend(4)
         if vt == VT_I2:
             return struct.unpack("<h", self._bytes(p, 2))[0], p + 4
         if vt in (VT_I4, VT_UI4, VT_BOOL):
@@ -113,9 +126,10 @@ class _Section:
         return bytes(self.data[at:at + n])
 
 
-def property_sets(data):
+def property_sets(data, wanted=None):
     """{FMTID (uuid.UUID): {property id: value}} of a property-set stream; values of types not read are left
-    out."""
+    out. wanted = {FMTID: property ids}: only those sections and properties are decoded (all of them when
+    None); the code page of a wanted section is always read."""
     data = memoryview(data).cast("B")
     total = len(data)
     if total > MAX_STREAM:
@@ -125,7 +139,7 @@ def property_sets(data):
     count = struct.unpack_from("<I", data, 24)[0]
     if count > MAX_SECTIONS or 28 + 20 * count > total:
         raise MetadataError("property set: %d sections do not fit" % count)
-    out = {}
+    out, budget = {}, [2 * total]
     for k in range(count):
         head = 28 + 20 * k
         fmtid = uuid.UUID(bytes_le=bytes(data[head:head + 16]))
@@ -137,7 +151,10 @@ def property_sets(data):
             raise MetadataError("property set: section %d of %d bytes does not fit" % (k, size))
         if nprops > MAX_PROPERTIES or 8 + 8 * nprops > size:
             raise MetadataError("property set: section %d lists %d properties" % (k, nprops))
-        section = _Section(data, base, base + size)
+        if wanted is not None and (fmtid not in wanted or fmtid in out):
+            continue
+        pids = None if wanted is None else frozenset(wanted[fmtid])
+        section = _Section(data, base, base + size, budget)
         offsets = [struct.unpack_from("<II", data, base + 8 + 8 * j) for j in range(nprops)]
         for pid, rel in offsets:
             if pid == PID_CODEPAGE:
@@ -147,6 +164,8 @@ def property_sets(data):
         props = {}
         for pid, rel in offsets:
             if pid == 0 or pid & 0x80000000:  # the dictionary and the locale / behavior properties
+                continue
+            if pids is not None and pid not in pids:
                 continue
             value, _ = section.value(base + rel)
             if value is not None:
@@ -160,6 +179,8 @@ def groups(props):
     pairs, parts = props.get(PID_HEADING_PAIRS), props.get(PID_DOC_PARTS)
     if not isinstance(pairs, list) or not isinstance(parts, list):
         return {}
+    if not all(isinstance(p, str) for p in parts):
+        raise MetadataError("document summary: a document part is not a string")
     out, at = {}, 0
     for i in range(0, len(pairs) - 1, 2):
         heading, n = pairs[i], pairs[i + 1]
@@ -180,16 +201,34 @@ def _fields(lines, sep):
 
 
 def _int(text):
-    try:
-        return int(text)
-    except (TypeError, ValueError):
+    """A non-negative decimal of at most 20 digits, else None."""
+    if not isinstance(text, str) or not (text.isascii() and text.isdigit()) or len(text) > 20:
         return None
+    return int(text)
+
+
+def _text(value):
+    return value[:MAX_TEXT]
+
+
+def _is_file_name(name):
+    return 0 < len(name) <= MAX_TEXT and not any(c in name for c in "\\/:")
 
 
 def release(version):
-    """The 3ds Max release year of a version string ("22.00" -> 2020); None before 3ds Max 2008 (10)."""
+    """The 3ds Max release year of a version string ("22.00" -> 2020); None outside versions 10 (3ds Max 2008)
+    to 99."""
     major = _int((version or "").split(".", 1)[0])
-    return major + 1998 if major is not None and major >= 10 else None
+    return major + 1998 if major is not None and 10 <= major <= 99 else None
+
+
+def _class_part(text):
+    """One half of a ClassID as 3ds Max writes it: a decimal u32, negative when the high bit is set."""
+    if isinstance(text, str) and text.startswith("-"):
+        value = _int(text[1:])
+        return None if value is None or value > 0x80000000 else -value & 0xFFFFFFFF
+    value = _int(text)
+    return None if value is None or value > 0xFFFFFFFF else value
 
 
 def summarize(group_map):
@@ -198,14 +237,14 @@ def summarize(group_map):
     general = group_map.get("General", [])
     fields = _fields(general, ":")
     if "3ds Max Version" in fields:
-        info["max_version"] = fields["3ds Max Version"]
+        info["max_version"] = _text(fields["3ds Max Version"])
         year = release(fields["3ds Max Version"])
         if year is not None:
             info["max_release"] = year
     if "Saved As Version" in fields:
-        info["saved_as_version"] = fields["Saved As Version"]
+        info["saved_as_version"] = _text(fields["Saved As Version"])
     if "Build" in fields:
-        info["build"] = fields["Build"]
+        info["build"] = _text(fields["Build"])
     flags = {line.strip() for line in general}
     if "Compressed" in flags or "Uncompressed" in flags:
         info["compressed"] = "Compressed" in flags
@@ -223,15 +262,15 @@ def summarize(group_map):
     render = _fields(group_map.get("Render Data", []), "=")
     renderer = {}
     if "Renderer Name" in render:
-        renderer["name"] = render["Renderer Name"]
-    a, b = _int(render.get("Renderer ClassIDA")), _int(render.get("Renderer ClassIDB"))
+        renderer["name"] = _text(render["Renderer Name"])
+    a, b = _class_part(render.get("Renderer ClassIDA")), _class_part(render.get("Renderer ClassIDB"))
     if a is not None and b is not None:
-        renderer["class_id"] = (a & 0xFFFFFFFF, b & 0xFFFFFFFF)
+        renderer["class_id"] = (a, b)
     if renderer:
         info["renderer"] = renderer
 
     if "Used Plug-Ins" in group_map:
-        info["plugins"] = [p for p in group_map["Used Plug-Ins"] if p]
+        info["plugins"] = [p for p in group_map["Used Plug-Ins"] if _is_file_name(p)]
     return info
 
 
@@ -242,7 +281,7 @@ def read(cf):
     stream = cf.open(DOC_SUMMARY, decompress=False)
     if stream.size > MAX_STREAM:
         raise MetadataError("property set stream of %d bytes" % stream.size)
-    props = property_sets(stream.read()).get(FMTID_DOC_SUMMARY)
+    props = property_sets(stream.read(), WANTED).get(FMTID_DOC_SUMMARY)
     if props is None:
         return {}
     return summarize(groups(props))

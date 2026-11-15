@@ -68,8 +68,10 @@ def system_unit(source) -> SystemUnit | None   # source: cfb.CompoundFile or sce
 
 **Files:** Create `maxdrop/reader/metadata.py`, test `tests/unit/test_metadata.py`.
 
-- `property_sets(data)` -> `{fmtid: {pid: value}}` for VT_I2/I4/UI4/LPSTR/LPWSTR/BOOL/FILETIME and vectors of
-  LPSTR/LPWSTR/VARIANT; others skipped. Bounded: section offsets/sizes inside the stream, property count capped,
+- `property_sets(data)` -> `{fmtid: {pid: value}}` for VT_I2/I4/UI4/LPSTR/LPWSTR/BOOL and vectors of
+  LPSTR/LPWSTR/VARIANT; others skipped (FILETIME too: no fact read() returns needs a date).
+  After review: `wanted` limits decoding to the section and properties read() needs, a decode budget of twice the
+  stream stops shared offsets, parts must be strings, returned text is capped, plug-ins must be bare file names. Bounded: section offsets/sizes inside the stream, property count capped,
   every value inside its section; malformed -> `MetadataError` (ValueError).
 - `read(cf)` -> dict: `max_version` (`"22.00"`), `max_release` (2020 = major + 1998 for major >= 10),
   `saved_as_version`, `build`, `compressed` (bool), `renderer` `{name, class_id: (a, b)}`, `counts`

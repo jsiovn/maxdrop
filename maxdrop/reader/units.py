@@ -13,14 +13,15 @@ type and an f32 scale: 1 unit = scale x the unit type. The types are those of th
 FEET, MILES, MILLIMETERS, CENTIMETERS, METERS, KILOMETERS = 6); docs/FORMAT.md says which fixture shows which.
 
 A scale other than 1 (a custom unit, "1 unit = 2.5 centimeters") is named "2.5 centimeters" and folded into
-meters. An unknown type, a scale that is not a positive finite number, a payload too short or a file without the
-chunk give None: the caller then asks the user. No bpy.
+meters. An unknown type, a scale that is not a positive finite number, a payload too short, a file without the
+chunk and a Scene stream or class directory that cannot be read give None: the caller then asks the user. A
+positive scale is taken as stored, however odd; judging it is the caller's part. No bpy.
 """
 import collections
 import math
 import struct
 
-from . import classids, scene as scene_mod
+from . import cfb, chunks, classids, scene as scene_mod
 
 SYSTEM_UNIT_CHUNK = 0x8520
 
@@ -59,7 +60,13 @@ def decode(payload):
 
 def system_unit(source):
     """The SystemUnit of an open cfb.CompoundFile or a scene.Scene; None when the file does not say."""
-    scene = source if isinstance(source, scene_mod.Scene) else scene_mod.Scene.from_file(source)
+    try:
+        return _find(source if isinstance(source, scene_mod.Scene) else scene_mod.Scene.from_file(source))
+    except (cfb.CfbError, chunks.ChunkError):
+        return None
+
+
+def _find(scene):
     holders = {e.index for e in scene.classes
                if e.superclass == classids.SC_REF_MAKER and e.class_id == classids.SCENE}
     if not holders:
