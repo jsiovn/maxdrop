@@ -4,7 +4,8 @@
 
 """Material rules: a 3ds Max material's parameters turned into a renderer-neutral MaterialIR in linear color.
 
-    conv = MaterialConverter(graph)     # graph: reader.materials.MaterialGraph
+    conv = MaterialConverter(graph, texmaps=tex)   # graph: reader.materials.MaterialGraph; tex: an optional
+                                        # texmaps.TexmapConverter, which fills ir.textures
     ir = conv.convert(node.material)    # MaterialIR (wrappers peeled); None for no material or not a material
     ir.base_color.value, ir.base_color.map        # linear RGB, MapRef(index, amount, invert) or None
     conv.material_for(index, mat_id)    # the MaterialIR a face with that zero-based material ID renders with
@@ -15,7 +16,8 @@
 
 Each input of a MaterialIR is an Input: a value (a linear RGB tuple or a float) and, when a map drives it, a
 MapRef to the map object (the texture-map rules of a later bead turn that into a texture graph; the value is what
-the slot shows without it). One MaterialIR per Max material object index; a wrapper converts to the IR of the material it peels
+the slot shows without it); with a TexmapConverter, ir.textures holds the TextureGraphIR of each input a usable map
+drives (convert/texmaps.py), its issues added to ir.issues. One MaterialIR per Max material object index; a wrapper converts to the IR of the material it peels
 to, so every node using either shares it.
 
 Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX workarounds):
@@ -24,7 +26,8 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   glossiness map is then inverted); metallic = reflection_metalness; specular = the mean of the linear reflection
   color; emission = self-illumination color times its multiplier; transmission = the mean of the refraction color,
   ior and thin-walled from the refraction parameters; maps where their slot is on, with their multiplier as the
-  amount; a VRayNormalMap in the bump slot is the normal input, any other map the bump input. Added here: a
+  amount; a normal map (VRayNormalMap, Normal Bump, CoronaNormal) in a bump slot is the normal input, any other
+  map the bump input. Added here: a
   refracting material takes its base color from the refraction color (mixed by the transmission), and with
   Fresnel off a bright reflection (mean >= METAL_REFLECTION) makes the material a metal in the reflection color.
   The Fresnel IOR is the refraction IOR when the material refracts or locks the IOR, else the reflection IOR.
@@ -71,6 +74,7 @@ import math
 
 from ..reader import chunks, classids, pblock
 from ..reader.classdir import ClassId
+from . import texmaps as _texmaps
 
 ChunkError = chunks.ChunkError
 
@@ -183,6 +187,7 @@ class MaterialIR:
     coat_ior: float = 1.5
     two_sided: bool = False  # Standard's twoSided: 3ds Max renders the back faces too
     unknown: bool = False
+    textures: dict = dataclasses.field(default_factory=dict)  # {input name: texmaps.TextureGraphIR}
     issues: list = dataclasses.field(default_factory=list)
 
 
@@ -263,8 +268,8 @@ def _roughness(gloss, use_roughness):
 class MaterialConverter:
     """Converts the materials of one MaterialGraph, each object once."""
 
-    def __init__(self, graph):
-        self.graph = graph
+    def __init__(self, graph, texmaps=None):
+        self.graph, self.texmaps = graph, texmaps
         self.stats = ConvertStats()
         self._done, self._peels, self._counted = {}, {}, set()
         self._multis, self._for, self._reported = {}, {}, set()
@@ -307,10 +312,10 @@ class MaterialConverter:
         return m.superclass == superclass and ClassId(*m.class_id) == class_id
 
     def bump_slot(self, ir, ref):
-        """A map in a bump slot: a VRayNormalMap is the normal input, anything else a height map."""
+        """A map in a bump slot: a normal map class is the normal input, anything else a height map."""
         if ref is None:
             return
-        if self.is_class(ref.index, classids.SC_TEXMAP, classids.VRAY_NORMAL_MAP):
+        if any(self.is_class(ref.index, classids.SC_TEXMAP, k) for k in _texmaps.NORMAL_MAPS):
             ir.normal = ref
         else:
             ir.bump = ref
@@ -483,6 +488,10 @@ class MaterialConverter:
             return self._grey(index, "")
         ir = MaterialIR(index, m.name, source)
         rule(self, m, ir)
+        if self.texmaps is not None:
+            ir.textures = _texmaps.texture_graphs(ir, self.texmaps)
+            for g in ir.textures.values():
+                ir.issues.extend(g.issues)
         return ir
 
 
