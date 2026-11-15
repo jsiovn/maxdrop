@@ -140,9 +140,17 @@ class Page(unittest.TestCase):
                 "early release",                                   # not a finished product
                 "io_scene_max", "Sebastian Schrand", "Jens M. Plonka", "Philippe Lagadec",
                 "not affiliated with, endorsed by or supported by Autodesk or Chaos",
-                "Not imported yet", "Lights and cameras", "Modifiers", "Scene units",
-                "Editable Mesh and Editable Poly"):
+                "Not imported yet", "Lights and cameras", "Modifiers", "Editable Mesh and Editable Poly",
+                "<strong>Scene units</strong>: a scene saved in millimeters, centimeters, inches or feet arrives at its "
+                "real size.",
+                "<strong>Units: Auto</strong> takes the unit the scene was saved with",
+                "<strong>Primitives</strong> (Box, Sphere, Cylinder…): they arrive as empties"):
             self.assertTrue(needle in page, needle)
+
+    def test_the_page_names_no_option_the_importer_lost(self):
+        page = self.page()
+        for gone in ("Apply Matrix", "<strong>Collection</strong>", "one 3ds Max unit becomes one meter"):
+            self.assertFalse(gone in page, gone)
 
     def test_the_page_says_how_scene_packs_are_imported(self):
         page = self.page()

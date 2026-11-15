@@ -1,53 +1,61 @@
 # What MaxDrop imports
 
-**This page describes version 0.0.2.** It converts exactly what [io_scene_max](https://github.com/nrgsille76/io_scene_max)
-1.9.2 converts: the engine (`maxdrop/import_max.py`) is that importer's, unchanged. What 0.0.2 adds is in front of
-it: a scene pack (`.zip`, `.rar`, `.7z`) is unpacked and its `.max` imported as before (see [Files](#files)), and
-several `.max` files chosen at once are imported one after the other.
+**This page describes the version in development after 0.0.2** (the next release). Nodes, meshes, transforms,
+hierarchy, instances, layers and scene units are read by MaxDrop's own reader; the materials still come from the
+engine of [io_scene_max](https://github.com/nrgsille76/io_scene_max) 1.9.2 (`maxdrop/import_max.py`), which reads
+the file a second time for them. A scene pack (`.zip`, `.rar`, `.7z`) is unpacked and its `.max` imported (see
+[Files](#files)), and several `.max` files chosen at once are imported one after the other.
 
-How far to trust the list: it says what the code does. Checked against 3ds Max so far, on MaxDrop's own test
-file, are an Editable Poly object, its first UV channel, its transform and a Standard material. Everything else
-is read from the code and has not been compared with 3ds Max yet. The page is updated with every version.
+How far to trust the list: MaxDrop's test files (`tests/fixtures/`, saved by 3ds Max 2020) are compared with what
+3ds Max itself reports for every node: world matrix, bounding box, vertex and face counts, parents, instances,
+layers and the hidden, frozen and renderable flags. Two commercial interior scenes (3ds Max 2015 and 2020) import
+without an error. Materials are checked on the test files' Standard materials only. The page is updated with
+every version.
 
-"Not yet" means the importer skips it. Part of what is skipped is named in the system console (on Windows:
-*Window › Toggle System Console*).
+"Not yet" means the importer does not convert it: the node arrives as an empty (a *placeholder*) at its place in
+the hierarchy, with its 3ds Max class name in the custom property `maxdrop_class`.
 
 ## Objects
 
-| In the `.max` file | Version 0.0.2 |
+| In the `.max` file | This version |
 |---|---|
-| Editable Poly, Editable Mesh | **Imported**: vertices, faces (polygons stay polygons), material IDs |
-| UV channels of those meshes | **Imported**, one UV layer per channel found (`UVMap`, `UVMap_1`, …) |
-| Box, Sphere, Cylinder, Cone, Torus, Plane | **Imported** as Blender primitives of the same size, not as the 3ds Max mesh: segments and UVs are Blender's |
-| Dummy helper | **Imported** as an empty |
-| Biped object | **Imported** as an empty; no armature |
+| Editable Poly, Editable Mesh | **Imported**: vertices, faces (polygons stay polygons), material IDs. A face that uses a vertex twice or repeats another face is left out |
+| UV channels of those meshes | **Imported**, every channel from 1 up: `UVMap` for channel 1, `UVChannel_<n>` for channel n; at most 8 per mesh (Blender's limit) |
+| Smoothing groups | **Imported**: an edge between two faces that share no group is sharp, a face without a group is flat |
+| Instances | **Imported** as one mesh shared by the objects |
 | Object with modifiers | **Base object only**: the stack is not evaluated, so Extrude, UVW Map, TurboSmooth, Shell, Symmetry, Edit Poly and the others have no effect |
-| Boolean compound object | Its operands |
-| Line, Rectangle, Ellipse, Circle, NURBS surface | Not yet (named in the console) |
-| Standard lights, V-Ray lights, sky | Not yet (named in the console) |
-| Cameras and their targets | Not yet (named in the console) |
-| Bones, particle systems, point helpers | Not yet (named in the console) |
-| Everything else: other lights, hair, proxies (`.vrmesh`, Corona proxy), XRefs… | Not yet, skipped without a message |
+| Dummy helper, group head | **Imported** as an empty (the group's members are its children, as in 3ds Max) |
+| Box, Sphere, Cylinder, Cone, Torus, Plane | Not yet: placeholder (version 0.0.2 rebuilt them as Blender primitives) |
+| Boolean compound object, Biped | Not yet: placeholder |
+| Line, Rectangle, Ellipse, Circle, NURBS surface | Not yet: placeholder |
+| Standard lights, V-Ray lights, sky | Not yet: placeholder |
+| Cameras and their targets | Not yet: placeholder |
+| Everything else: other lights, hair, proxies (`.vrmesh`, Corona proxy), XRefs, particles, bones… | Not yet: placeholder |
 
 ## Scene structure
 
-| | Version 0.0.2 |
+| | This version |
 |---|---|
-| Position, rotation, scale | **Imported** as static values of a Position / Rotation / Scale controller (Position XYZ, Bezier, TCB, Euler XYZ, the first entry of a list controller). Pivot offsets are applied to meshes. An object driven by another controller (LookAt, constraints…) arrives untransformed |
-| Parent and child | **Imported**, matched by object name within one file: two objects with the same name can end up under the wrong parent |
-| Scene units | Not yet: one 3ds Max unit becomes one Blender unit, a meter. Set **Scale** when importing (`0.001` for millimeters, `0.01` for centimeters, `0.0254` for inches) |
-| Instances | Imported as separate copies of the mesh, not as shared mesh data |
-| Smoothing groups | Not yet: every mesh arrives flat-shaded |
-| Layers, groups, selection sets | Not yet (the **Collection** option puts everything into one new collection) |
-| Hidden and renderable flags | Not yet |
-| Animation | Not yet |
+| Position, rotation, scale | **Imported** as 3ds Max computes them at frame 0: Position / Rotation / Scale controllers (Bezier, TCB, Euler XYZ and the other Tait-Bryan orders, Position XYZ, list controllers with their weights), negative scale, pivot offsets. An unknown controller (Look At, constraints…) counts as no transform for that node |
+| Parent and child | **Imported** through the whole chain, by the file's object references: objects with the same name stay apart |
+| Scene units | **Imported**: **Units: Auto** takes the system unit the file was saved with (inches, feet, miles, millimeters, centimeters, meters, kilometers, and a custom scale of those), so the scene arrives in meters. **Units** can name the unit instead, and **Scale** multiplies every length. A file that does not state its unit is imported at one meter per unit, times Scale, with a warning |
+| Layers | **Imported** as collections below a collection named after the file, nested like the layers. A hidden layer is excluded from the view layer, a frozen one is not selectable, one that does not render has rendering off |
+| Hidden, frozen and renderable flags of objects | **Imported** |
+| Groups | Their head is an empty with the members as children |
+| Selection sets | Not yet |
+| A shear inside one object's transform (a scale along a rotated axis) | Not kept: Blender cannot store it in an object's transform |
+| Animation | Not yet: objects arrive as they stand at frame 0 |
 
 ## Materials
+
+Materials still come from io_scene_max's engine, unchanged. Each mesh gets the material of its first object:
+instances that carry different materials in 3ds Max share the first one's. A material the engine cannot read is
+named in the system console; the mesh keeps its geometry. Turn materials off with **Object Filter**.
 
 A material becomes a Principled BSDF through Blender's `PrincipledBSDFWrapper`. Values are copied as they are
 stored in the file: colors are not converted between 3ds Max's and Blender's color spaces.
 
-| Material | Version 0.0.2 |
+| Material | This version |
 |---|---|
 | Standard, Physical Material | **Imported** |
 | VRayMtl | **Imported** |
@@ -58,7 +66,7 @@ stored in the file: colors are not converted between 3ds Max's and Blender's col
 | VRay2SidedMtl, Shellac, CoronaLayeredMtl | Their sub-materials, as slots |
 | VRayLightMtl, VRayFastSSS2, VRayCarPaintMtl, VRayBlendMtl, other wrappers and every other material | Not yet: the object gets no material from it |
 
-| Channel | Version 0.0.2 |
+| Channel | This version |
 |---|---|
 | Base color, roughness, metallic, IOR, opacity (alpha), specular level and tint | **Imported** as plain values |
 | Emission | The color only; its strength stays at Blender's default |
@@ -69,7 +77,7 @@ stored in the file: colors are not converted between 3ds Max's and Blender's col
 
 ## Textures
 
-A `.max` file stores the paths of its texture files, not the images. Version 0.0.2 takes only the **file name**
+A `.max` file stores the paths of its texture files, not the images. This version takes only the **file name**
 of each path and looks for it in the folder of the `.max` file, and with **Image Search** on in its subfolders.
 A file that is not found is skipped; the material keeps its plain color. The texture search folders of the
 add-on preferences are stored but not used by this version.
@@ -80,11 +88,14 @@ the scene in the archive is kept.
 
 ## Files
 
-- `.max` files as 3ds Max writes them (OLE compound files). A scene whose streams 3ds Max compressed is only
-  partly supported.
-- MaxDrop's own test file comes from 3ds Max 2020. The reader inherited from io_scene_max is written for many
-  versions, which this project has not verified one by one yet.
-- A very large scene works but needs time and memory: see [BASELINE.md](BASELINE.md).
+- `.max` files as 3ds Max writes them (OLE compound files). MaxDrop's reader also reads streams 3ds Max
+  compressed; the material engine reads them only partly, so such a scene may arrive without materials.
+- MaxDrop's test files come from 3ds Max 2020; scenes of 3ds Max 2015 and 2020 have been imported. Other versions
+  are not verified one by one yet.
+- When a `.max` is dropped, the options popup shows a **File** line: the 3ds Max version, the renderer, the
+  number of objects and the unit, read in a fraction of a second even from a large scene.
+- A very large scene works but needs time and memory: see [BASELINE.md](BASELINE.md) (measured with version
+  0.0.2's engine; the new reader is measured for the next release).
 - **Scene packs**: a `.zip`, `.rar` or `.7z` holding the scene, chosen in *File › Import*; a `.rar` or `.7z` can
   also be dropped (a dropped `.zip` goes to Blender's extension installer). The format is recognised by the file's
   content. The chosen `.max` and the pack's image and `.ies` files are unpacked into a folder named after the
@@ -101,6 +112,5 @@ the scene in the archive is kept.
 
 ## What comes next
 
-In this order: a reader that loads whole scenes (units, instances, smoothing groups, layers, every node), the
-material and texture-map conversion for V-Ray, Corona, Standard and Physical materials, room shells (splines,
-Extrude, UVW Map), then lights and cameras.
+In this order: an import report naming everything left out, the material and texture-map conversion for V-Ray,
+Corona, Standard and Physical materials, room shells (splines, Extrude, UVW Map), then lights and cameras.

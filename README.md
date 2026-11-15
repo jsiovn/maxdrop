@@ -4,26 +4,30 @@ A free Blender extension that imports 3ds Max `.max` scenes, meshes and material
 file onto Blender, or use *File › Import › MaxDrop*. It also takes the `.zip`, `.rar` or `.7z` scene pack the
 scene was downloaded as. Blender 4.2 or newer; tested on 4.2 LTS, 4.5 LTS and 5.2 LTS.
 
-> **Early release.** MaxDrop is a new fork of [io_scene_max](https://github.com/nrgsille76/io_scene_max), and
-> version 0.0.2 imports exactly what that importer imports: editable meshes with their UVs and simple materials.
-> Lights, cameras, modifiers and scene units are not read yet, so a whole interior scene arrives incomplete.
+> **Early release.** MaxDrop is a new fork of [io_scene_max](https://github.com/nrgsille76/io_scene_max). It
+> imports editable meshes with their UVs, smoothing, instances, hierarchy, layers and scene units, and simple
+> materials. Lights, cameras, splines and modifiers are not read yet, so a whole interior scene arrives incomplete.
 > [docs/SUPPORT.md](docs/SUPPORT.md) is the honest list.
 
 > **Independent.** Not affiliated with, endorsed by or supported by Autodesk or Chaos. Autodesk and 3ds Max are
 > trademarks of Autodesk, Inc.; V-Ray and Corona are trademarks of Chaos.
 
-## What version 0.0.2 imports
+## What it imports
 
-- **Editable Mesh and Editable Poly** objects: vertices, faces, material IDs, UV channels.
-- **Primitives**: Box, Sphere, Cylinder, Cone, Torus, Plane, rebuilt as Blender primitives.
-- **Position, rotation, scale and parenting**; Dummy helpers become empties.
+- **Editable Mesh and Editable Poly** objects: vertices, faces, material IDs, UV channels, smoothing groups (as
+  sharp edges), instances as shared meshes.
+- **Position, rotation, scale and the whole hierarchy**, matched by the file's own object references (two objects
+  with the same name stay apart); groups and Dummy helpers become empties.
+- **Scene units**: a scene saved in millimeters, centimeters, inches or feet arrives at its real size in meters.
+- **Layers** as collections, nested like the layers; hidden, frozen and non-rendering layers and objects keep
+  those flags.
 - **Materials** as a Principled BSDF with color, roughness, metallic, opacity and one image per channel: Standard,
   Physical, Multi/Sub-Object, VRayMtl, VRay2SidedMtl, CoronaMtl, CoronaPhysicalMtl, CoronaLayeredMtl, Arnold
   Standard Surface and a few more.
 - **Textures** that are plain image files stored next to the `.max` file.
 
-Not yet: lights and cameras, modifiers (the object arrives as it was before them), splines and shapes, scene
-units, smoothing groups, instances, layers, animation, procedural and nested maps. See
+Not yet: lights and cameras, modifiers (the object arrives as it was before them), splines and shapes,
+primitives (Box, Sphere… arrive as empties), animation, procedural and nested maps. See
 [docs/SUPPORT.md](docs/SUPPORT.md).
 
 ## Install
@@ -55,12 +59,14 @@ above.
 2. Check the options:
    - **Scene**: only for a pack that holds several `.max` files. Pick the one to import; the popup also says how
      many texture files come with it and where it will be unpacked.
-   - **Scale**: scene units are not read yet, so one 3ds Max unit becomes one meter. Use `0.001` for a scene in
-     millimeters, `0.01` for centimeters, `0.0254` for inches.
+   - The **File** panel of a dropped `.max` says which 3ds Max saved it, its renderer, how many objects it holds
+     and its unit.
+   - **Units**: **Auto** takes the unit the scene was saved with; pick Millimeters, Centimeters, Meters, Inches or
+     Feet to override it. A file that does not state its unit is imported at one meter per unit, times Scale.
+   - **Scale**: an extra factor on top of Units; leave it at `1`.
    - **Image Search** also looks for the textures in the subfolders of the scene's folder.
-   - **Object Filter** picks what to bring in (materials, UV maps, primitives, empties); **Collection** puts the
-     scene into a new collection named after the file; **Apply Matrix**, **Forward** and **Up** set the
-     orientation.
+   - **Object Filter** picks whether materials and UV maps come along; **Forward** and **Up** turn the scene.
+   - Every import makes a collection named after the file, with one collection per 3ds Max layer below it.
 3. Click **Import**. A large scene takes a while and Blender does not respond until it is done
    ([docs/BASELINE.md](docs/BASELINE.md) has measured times).
 
@@ -99,13 +105,15 @@ or drop a `.rar` or `.7z` onto the 3D Viewport (see *Scene packs* above). A drop
 extension installer instead, because Blender takes every dropped `.zip` for an extension to install before it asks
 any importer; it then complains about a missing manifest. Import a `.zip` through *File › Import*.
 
-**The scene arrives huge.** Import again with the **Scale** of its units (see *Use*).
+**The scene arrives at the wrong size.** The file states its unit and **Units: Auto** uses it. If the scene was
+modelled in another unit than it was saved with, pick that unit in **Units**; **Scale** is an extra factor.
 
-**Objects are missing.** Lights, cameras, splines and everything a modifier builds are not imported yet. The
-system console lists what was skipped (on Windows: *Window › Toggle System Console*).
+**Objects are missing.** Lights, cameras, splines and everything a modifier builds are not imported yet; an
+object MaxDrop cannot convert arrives as an empty with its 3ds Max class in the custom property `maxdrop_class`.
+The system console lists material problems (on Windows: *Window › Toggle System Console*).
 
-**Which 3ds Max versions?** The reader comes from io_scene_max, which opens files of many 3ds Max versions.
-MaxDrop's own test file is saved by 3ds Max 2020. Tell us in an issue when a file does not open.
+**Which 3ds Max versions?** MaxDrop's own test files are saved by 3ds Max 2020, and scenes of 3ds Max 2015 to
+2020 have been imported. Tell us in an issue when a file does not open.
 
 **Can it export `.max`?** No, and that is not planned.
 

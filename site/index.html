@@ -191,7 +191,7 @@ footer p { margin: 0; }
     <div class="status" role="note" aria-labelledby="status-title">
       <h2 id="status-title">Version {{version}} is an early release</h2>
       <p>MaxDrop is a new fork of the free <a href="https://github.com/nrgsille76/io_scene_max">io_scene_max</a> importer. This version imports exactly what that importer imports, also from the scene pack it came in; nothing more yet.</p>
-      <p>It brings in editable meshes with their UVs and simple materials. Lights, cameras, modifiers and scene units are not read yet, so a whole interior scene will arrive incomplete. <a href="#support">See the full list</a>.</p>
+      <p>It brings in editable meshes with their UVs, smoothing, instances, hierarchy, layers and scene units, and simple materials. Lights, cameras, splines and modifiers are not read yet, so a whole interior scene will arrive incomplete. <a href="#support">See the full list</a>.</p>
       <p>Whole scenes are what the next versions are for, and updates arrive inside Blender.</p>
     </div>
   </div>
@@ -241,9 +241,10 @@ footer p { margin: 0; }
         <div class="card">
           <h3>Arrives in Blender</h3>
           <ul class="marks yes">
-            <li><strong>Editable Mesh and Editable Poly</strong> objects: vertices, faces, material IDs and UV channels.</li>
-            <li><strong>Primitives</strong>: Box, Sphere, Cylinder, Cone, Torus and Plane, rebuilt as Blender primitives.</li>
-            <li><strong>Position, rotation, scale and parenting</strong> of the objects; Dummy helpers become empties.</li>
+            <li><strong>Editable Mesh and Editable Poly</strong> objects: vertices, faces, material IDs, UV channels, smoothing groups, and instances as shared meshes.</li>
+            <li><strong>Position, rotation, scale and the whole hierarchy</strong> of the objects; groups and Dummy helpers become empties.</li>
+            <li><strong>Scene units</strong>: a scene saved in millimeters, centimeters, inches or feet arrives at its real size.</li>
+            <li><strong>Layers</strong> as collections, with their hidden, frozen and non-rendering flags.</li>
             <li><strong>Materials</strong>, as a Principled BSDF with color, roughness, metallic, opacity and one image per channel: Standard, Physical, Multi/Sub-Object, V-Ray (VRayMtl, VRay2SidedMtl), Corona (CoronaMtl, CoronaPhysicalMtl, CoronaLayeredMtl), Arnold Standard Surface.</li>
             <li><strong>Textures</strong> that are plain image files stored next to the <code>.max</code> file.</li>
           </ul>
@@ -254,8 +255,8 @@ footer p { margin: 0; }
             <li><strong>Lights and cameras</strong>, V-Ray lights included.</li>
             <li><strong>Modifiers</strong> (Extrude, UVW Map, TurboSmooth, Shell…): the object arrives as it was before its modifiers.</li>
             <li><strong>Splines and shapes</strong>, so walls and floors made from an extruded outline are missing.</li>
-            <li><strong>Scene units</strong>: one 3ds Max unit becomes one meter until you set <em>Scale</em>.</li>
-            <li><strong>Smoothing groups</strong>, instances as shared meshes, layers, groups, animation.</li>
+            <li><strong>Primitives</strong> (Box, Sphere, Cylinder…): they arrive as empties until a later version.</li>
+            <li><strong>Animation</strong>: objects arrive as they stand at frame 0.</li>
             <li><strong>Procedural and nested maps</strong> (Color Correction, Falloff, Mix, Composite): that channel keeps its plain color.</li>
             <li>Proxies, particles, hair and bones.</li>
           </ul>
@@ -273,7 +274,7 @@ footer p { margin: 0; }
           <h3>Import a scene</h3>
           <ol class="steps">
             <li>Drag a <code>.max</code> file from your file manager onto Blender's 3D Viewport, or choose <em>File › Import › MaxDrop (.max, .zip, .rar, .7z)</em>.</li>
-            <li>Check the options. For a scene modelled in millimeters set <strong>Scale</strong> to <code>0.001</code>, in centimeters <code>0.01</code>, in inches <code>0.0254</code>.</li>
+            <li>Check the options. <strong>Units: Auto</strong> takes the unit the scene was saved with, so it arrives at its real size.</li>
             <li>Click <strong>Import</strong>. A large scene takes a while; Blender does not respond until it is done.</li>
           </ol>
           <p>Scene packs work too: choose the <code>.zip</code>, <code>.rar</code> or <code>.7z</code> in <em>File › Import</em>, or drop the <code>.rar</code> or <code>.7z</code>. MaxDrop unpacks the scene with its maps into a folder named after the archive, next to it, and imports it from there. Nothing else in the pack is written or run.</p>
@@ -283,9 +284,9 @@ footer p { margin: 0; }
           <ul>
             <li><strong>Scene</strong> picks the <code>.max</code> to import from a pack that holds several.</li>
             <li><strong>Image Search</strong> also looks for the textures in the subfolders of the scene's folder.</li>
-            <li><strong>Object Filter</strong> picks what to bring in: materials, UV maps, primitives, empties.</li>
-            <li><strong>Collection</strong> puts the scene into a new collection named after the file.</li>
-            <li><strong>Scale</strong>, <strong>Apply Matrix</strong>, <strong>Forward</strong> and <strong>Up</strong> set the size and orientation.</li>
+            <li><strong>Object Filter</strong> picks whether materials and UV maps come along.</li>
+            <li><strong>Units</strong> overrides the unit of the file (millimeters, centimeters, meters, inches, feet); <strong>Scale</strong> is an extra factor; <strong>Forward</strong> and <strong>Up</strong> turn the scene.</li>
+            <li>Every import makes a collection named after the file, with one collection per 3ds Max layer.</li>
           </ul>
         </div>
       </div>
@@ -319,11 +320,11 @@ footer p { margin: 0; }
       </details>
       <details>
         <summary>The scene arrives huge, or tiny</summary>
-        <p>Scene units are not read yet: one 3ds Max unit becomes one meter. Import again with <strong>Scale</strong> set to <code>0.001</code> for millimeters, <code>0.01</code> for centimeters or <code>0.0254</code> for inches.</p>
+        <p>With <strong>Units: Auto</strong> MaxDrop uses the unit the file was saved with. If the scene was modelled in another unit than that, import again with that unit picked in <strong>Units</strong>; <strong>Scale</strong> is an extra factor and should stay at <code>1</code>.</p>
       </details>
       <details>
         <summary>Objects are missing, or the room has no walls</summary>
-        <p>Lights, cameras, splines and everything built by a modifier are not imported yet; see <a href="#support">what this version imports</a>. The system console lists what was skipped (on Windows: <em>Window › Toggle System Console</em>).</p>
+        <p>Lights, cameras, splines and everything built by a modifier are not imported yet; see <a href="#support">what this version imports</a>. An object MaxDrop cannot convert arrives as an empty that keeps its place in the hierarchy.</p>
       </details>
       <details>
         <summary>Materials arrive without textures</summary>
