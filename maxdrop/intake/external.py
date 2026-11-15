@@ -798,7 +798,8 @@ def _watcher(out, budget):
     size_text = _archive._size_text
 
     def watch():
-        files = total = 0
+        # From what earlier extract() calls of the same unpack wrote: the scene goes first, its maps after it.
+        files, total = budget.files, budget.total
         for root, _dirs, names in os.walk(out):
             for n in names:
                 files += 1

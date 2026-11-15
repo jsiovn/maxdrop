@@ -196,14 +196,19 @@ def _referenced_maps(max_path):
     file of the pack is unpacked) when the file has no asset list, a damaged one, or cannot be read. Every texture
     the import looks up comes from that list (convert.texmaps)."""
     from .reader import assets, cfb
+    why = None
     try:
         with cfb.CompoundFile(max_path) as cf:
             table = assets.AssetTable.from_file(cf)
-    except _UNREADABLE as e:
-        print("MaxDrop: %s: asset list not read (%s), every map of the pack is unpacked"
-              % (os.path.basename(max_path), e))
-        return None
-    if table.stream is None or table.issues:
+    except Exception as e:  # any reader failure only costs the filter, never the unpack
+        why = "asset list not read (%s)" % e
+    else:
+        if table.stream is None:
+            why = "no asset list"
+        elif table.issues:
+            why = "asset list damaged (%s)" % table.issues[0]
+    if why is not None:
+        print("MaxDrop: %s: %s, every map of the pack is unpacked" % (os.path.basename(max_path), why))
         return None
     return {e.name for e in table if e.name}
 

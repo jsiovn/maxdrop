@@ -316,6 +316,29 @@ class References(Base):
                            limits=archive.Limits(total_bytes=4, free_margin=0))
         self.assert_clean(before)
 
+    def test_one_scene_of_several(self):
+        path = self.pack([("one/one.max", b"1"), ("one/a.jpg", b"A"), ("two/two.max", b"2"), ("two/b.jpg", b"B")])
+        references, calls = self.asker(["b.jpg"])
+        r = archive.unpack(path, "two/two.max", dest_parent=self.out, references=references)
+        self.assertEqual(r.folder, os.path.join(self.out, "pack", "two"))
+        self.assertEqual(os.path.dirname(os.path.dirname(calls[0][0])), os.path.join(self.out, "pack"))
+        self.assertEqual(self.listing(r.folder), sorted([archive.MARKER, "two.max", "b.jpg"]))
+        self.assertEqual(self.listing(os.path.join(self.out, "pack")), sorted([archive.MARKER, "two"]))
+        self.assertEqual(archive.existing_folder(path, "two/two.max", True, self.out, references=references),
+                         ("reused", r.max_path))
+
+    def test_the_marker_keeps_only_names_of_files_a_pack_writes(self):
+        path = self.pack([("room.max", b"MAX"), ("a.jpg", b"A")])
+        names = ["a.jpg", "proxy.vrmesh", "xref.max", "noext"] + ["木纹%04d.jpg" % i for i in range(3000)]
+        references, _ = self.asker(names)
+        first = archive.unpack(path, dest_parent=self.out, references=references)
+        marker = json.loads(read(os.path.join(first.folder, archive.MARKER)))
+        self.assertEqual(len(marker["wanted"]), 3001)
+        self.assertNotIn("xref.max", marker["wanted"])
+        self.assertGreater(os.path.getsize(os.path.join(first.folder, archive.MARKER)), 64 * 1024)
+        again = archive.unpack(path, dest_parent=self.out, references=references)
+        self.assertEqual((again.mode, again.folder), ("reused", first.folder))
+
     def test_wanted_and_references_together_are_refused(self):
         path = self.pack([("room.max", b"MAX")])
         with self.assertRaises(ValueError):

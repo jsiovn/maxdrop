@@ -73,7 +73,8 @@ _COPY_DEPTH = 3
 _COPY_VISIT_MAX = 20000
 _CANDIDATES = 99
 _CHUNK = 1 << 20
-_MARKER_READ_MAX = 64 * 1024
+# A marker lists the asset names a filtered unpack wrote for: thousands of escaped CJK names fit.
+_MARKER_READ_MAX = 4 << 20
 
 _BY_HAND = "%s: MaxDrop cannot read it. Extract the archive by hand and import the .max from that folder."
 
@@ -491,7 +492,8 @@ def _wanted_at(wanted, max_path):
     if not callable(wanted):
         return wanted
     names = wanted(max_path)
-    return None if names is None else {name_key(n) for n in names}
+    # A scene also names proxies, xrefs and the like, which are never written: they would only swell the marker.
+    return None if names is None else {name_key(n) for n in names if extension(n) in ASSET_EXTENSIONS}
 
 
 def _marker_matches(marker, ident, scene_name, wanted=None, max_path=None):
@@ -725,18 +727,22 @@ def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=Non
     scene_plan = [(chosen, chosen.base)]
     _refuse_unreadable([chosen])
 
-    def asset_plan(want, written):
-        """(entry, target) of the maps to write; written: the bytes of the scene when it is on disk already."""
+    def asset_plan(want, scene_written=None):
+        """(entry, target) of the maps to write; scene_written: the bytes of the scene when it is on disk
+        already, None when it is written with the maps."""
         assets = _select(entries, chosen, want, result)
         _refuse_unreadable(assets)
         if len(assets) + 1 > limits.files:
             raise PackError("The scene needs %d files, more than the %d MaxDrop writes from one pack. Extract it "
                             "by hand." % (len(assets) + 1, limits.files))
-        _check_space(assets if written else [chosen] + assets, space_at, limits, written)
+        if scene_written is None:
+            _check_space([chosen] + assets, space_at, limits)
+        else:
+            _check_space(assets, space_at, limits, scene_written)
         return [(e, e.base) for e in assets]
 
     if references is None:
-        plan = scene_plan + asset_plan(wanted, 0)
+        plan = scene_plan + asset_plan(wanted)
     else:
         _check_space([chosen], space_at, limits)
 
@@ -752,11 +758,12 @@ def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=Non
             if references is None:
                 backend.extract(path, plan, staging, budget)
             else:
-                # The scene alone first: only its own asset table says which maps it needs.
+                # The scene alone first: only its own asset table says which maps it needs. A solid .rar or .7z
+                # is then decompressed twice, within the one time limit.
                 backend.extract(path, scene_plan, staging, budget)
                 _check_staging(staging, [chosen.base], path)
                 wanted = _wanted_at(references, os.path.join(staging, chosen.base))
-                maps = asset_plan(wanted, budget.total)
+                maps = asset_plan(wanted, scene_written=budget.total)
                 if maps:
                     backend.extract(path, maps, staging, budget)
                 plan = scene_plan + maps
