@@ -13,16 +13,18 @@
 # ImportMAX is copyright Jens M. Plonka.
 # (https://www.github.com/jmplonka/Importer3D)
 
+# Modified for MaxDrop, 2026-11-15 (jsiovn). Only the material code is left: MaxDrop's own reader builds the nodes,
+# meshes and transforms, and calls open_materials / assign_material / close_materials (added) for the materials
+# until its own material conversion replaces them. The mesh, primitive, node, transform and scene building and
+# load() are deleted, with the helpers and constants only they used.
+
 import io
 import os
-import re
 import sys
 import bpy
-import math
 import zlib
 import array
 import struct
-import mathutils
 from pathlib import Path
 from bpy_extras.image_utils import load_image
 from bpy_extras.node_shader_utils import PrincipledBSDFWrapper
@@ -37,7 +39,6 @@ MAGIC = b'\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1'
 MIN_FILE_SIZE = 1536
 UNKNOWN_SIZE = 0x7FFFFFFF
 MAXFILE_SIZE = 0x7FFFFFFFFFFFFFFF
-MAXREGSECT = 0xFFFFFFFA  # (-6) maximum SECT
 DIFSECT = 0xFFFFFFFC  # (-4) denotes a DIFAT sector in a FAT
 FATSECT = 0xFFFFFFFD  # (-3) denotes a FAT sector in a FAT
 ENDOFCHAIN = 0xFFFFFFFE  # (-2) end of a virtual stream chain
@@ -50,18 +51,7 @@ TYP_SHORT = {0x103, 0x105, 0x99C, 0x2500, 0x3005}
 TYP_LINK = {0x1020, 0x1030, 0x1050, 0x1080, 0x3002, 0x4003}
 TYP_NAME = {0x340, 0x456, 0x962, 0x10A0, 0x1010, 0x1230, 0x4001}
 TYP_ARRAY = {0x102, 0x96A, 0x96B, 0x96C, 0x9ED, 0x2501, 0x2503, 0x2504, 0x2505, 0x2511}
-UNPACK_BOX_DATA = struct.Struct('<HIHHBff').unpack_from  # Index, int, 2short, byte, 2float
-INVALID_NAME = re.compile('^[0-9].*')
 
-FLOAT_POINT = 0x71F11549498702E7  # Float Wire
-MATRIX_POS = 0xFFEE238A118F7E02  # Position XYZ
-MATRIX_ROT = 0x3A90416731381913  # Rotation Wire
-MATRIX_SCL = 0xFEEE238B118F7C01  # Scale XYZ
-BIPED_OBJ = 0x0000000000009125  # Biped Object
-BIPED_ANIM = 0x78C6B2A6B147369  # Biped SubAnim
-EDIT_MESH = 0x00000000E44F10B3  # Editable Mesh
-EDIT_POLY = 0x192F60981BF8338D  # Editable Poly
-POLY_MESH = 0x000000005D21369A  # PolyMeshObject
 LAYER_MTL = 0x8425554E65486584  # CoronaLayeredMtl
 COPHY_MTL = 0x871517206912AB89  # CoronaPhysicalMtl
 SURF_MTL = 0x62F74B4C7E73161F  # Standard Surface
@@ -74,47 +64,12 @@ ARCH_MTL = 0x4A16365470B05735  # ArchMtl
 VRAY_MTL = 0x7034695C37BF3F2F  # VRayMtl
 VTWO_MTL = 0x11731B4B6066686A  # VRay2SidedMtl
 SHEL_MTL = 0x0000000046EE536A  # Shellac
-BOOLEAN = 0x1BBAC5F7BC209AF  # Boolean
-DUMMY = 0x0000000000876234  # Dummy
-PLANE = 0x77566F65081F1DFC  # Plane
-CONE = 0x00000000A86C23DD  # Cone
 
-SKIPPABLE = {
-    0x0000000000001002: 'Camera',
-    0x0000000000001011: 'Omni',
-    0x0000000000001013: 'Free Direct',
-    0x0000000000001020: 'Camera Target',
-    0x0000000000001040: 'Line',
-    0x0000000000001065: 'Rectangle',
-    0x0000000000001097: 'Ellipse',
-    0x0000000000001999: 'Circle',
-    0x0000000000002013: 'Point',
-    0x05622B0D69011E82: 'Compass',
-    0x12A822FB76A11646: 'CV Surface',
-    0x1EB3430074F93B07: 'Particle View',
-    0x2ECCA84028BF6E8D: 'Bone',
-    0x3BDB0E0C628140F6: 'VRayPlane',
-    0x4E9B599047DB14EF: 'Slider',
-    0x522E47057BF61478: 'Sky',
-    0x5FD602DF3C5575A1: 'VRayLight',
-}
 
-CONFIG = []
-CLS_DATA = []
 DLL_DIR_LIST = []
 CLS_DIR3_LIST = []
-VID_PST_QUE = []
 SCENE_LIST = []
-
-object_list = []
-parent_dict = {}
-matrix_dict = {}
-
-
-def get_valid_name(name):
-    if (INVALID_NAME.match(name)):
-        return "_%s" % (name.encode('utf8'))
-    return "%s" % (name.encode('utf8'))
+META_DATA = []
 
 
 def i8(data):
@@ -127,12 +82,6 @@ def i16(data, offset=0):
 
 def i32(data, offset=0):
     return struct.unpack("<I", data[offset:offset + 4])[0]
-
-
-def get_byte(data, offset=0):
-    size = offset + 1
-    value = struct.unpack('<B', data[offset:size])[0]
-    return value, size
 
 
 def get_short(data, offset=0):
@@ -151,18 +100,6 @@ def get_float(data, offset=0):
     size = offset + 4
     value = struct.unpack('<f', data[offset:size])[0]
     return value, size
-
-
-def get_bytes(data, offset=0, count=1):
-    size = offset + count
-    values = struct.unpack('<' + 'B' * count, data[offset:size])
-    return values, size
-
-
-def get_shorts(data, offset=0, count=1):
-    size = offset + count * 2
-    values = struct.unpack('<' + 'H' * count, data[offset:size])
-    return values, size
 
 
 def get_longs(data, offset=0, count=1):
@@ -754,51 +691,6 @@ class ChunkReader(object):
         return offset + chunksize, chunk
 
 
-class Mesh3d(object):
-    """Class representing a editable poly mesh object."""
-    def __init__(self):
-        self.verts = []
-        self.faces = []
-        self.polys = []
-        self.cords = []
-        self.uvids = []
-        self.maps = []
-        self.mats = []
-        self.points = None
-        self.tris = None
-
-    def __str__(self):
-        coordsize = [len(crds) // 3 for crds in self.cords]
-        return "[%d-%s][%d][%d-%s]" % (len(self.verts) // 3,
-                                       '/'.join("%d" % c for c in coordsize),
-                                       len(self.polys) // 2, len(self.faces),
-                                       '/'.join("%d" % len(u) for u in self.uvids))
-
-    def set(self, indices):
-        for point in indices:
-            ply = point.points
-            key = point.group
-            self.mats.append(key)
-            self.faces.append(ply)
-
-
-class Point3d(object):
-    """Class representing a three dimensional vector plus pointflag."""
-    def __init__(self):
-        self.points = None
-        self.flags = 0
-        self.group = 0
-        self.flag1 = 0
-        self.flag2 = 0
-        self.flag3 = 0
-        self.fbits = []
-
-    def __str__(self):
-        return "[%s]:'%X'%x,%x,%x[%s]" % ('/'.join("%d" % p for p in self.points),
-                                         self.group, self.flag1, self.flag2, self.flag3,
-                                         ','.join("%x" % f for f in self.fbits))
-
-
 class Material(object):
     """Representing a material chunk of a scene chunk."""
     def __init__(self):
@@ -823,24 +715,6 @@ def get_node(index):
     if (index < len(SCENE_LIST[0].children)):
         return SCENE_LIST[0].children[index]
     return None
-
-
-def get_node_parent(node):
-    parent = None
-    if (node):
-        chunk = node.get_first(0x0960)
-        if (chunk and len(chunk.data) > 3):
-            idx, offset = get_long(chunk.data, 0)
-            parent = get_node(idx)
-    return parent
-
-
-def get_node_name(node):
-    if (node):
-        name = node.get_first(0x0962)
-        if (name):
-            return name.data
-    return node.__class__.__name__
 
 
 def get_class(chunk):
@@ -881,15 +755,6 @@ def get_guid(chunk):
         if guid is not None:
             return guid.data[1]
     return chunk.types if chunk else 0
-
-
-def get_super_id(chunk):
-    clid = get_class(chunk)
-    if (clid):
-        suid = clid.get_first(0x2060)
-        if suid is not None:
-            return suid.data[2]
-    return 0x0
 
 
 def get_cls_name(chunk):
@@ -934,11 +799,6 @@ def read_chunks(maxfile, name, conReader=ContainerChunk, primReader=ByteArrayChu
         return reader.get_chunks(superId, scene, 0, conReader, primReader)
 
 
-def read_class_data(maxfile, filename):
-    global CLS_DATA
-    CLS_DATA = read_chunks(maxfile, 'ClassData', superId=6)
-
-
 def read_class_directory(maxfile, filename):
     global CLS_DIR3_LIST
     try:
@@ -949,172 +809,9 @@ def read_class_directory(maxfile, filename):
         clsdir.dll = get_dll(clsdir)
 
 
-def read_config(maxfile, filename):
-    global CONFIG
-    CONFIG = read_chunks(maxfile, 'Config', superId=7)
-
-
 def read_directory(maxfile, filename):
     global DLL_DIR_LIST
     DLL_DIR_LIST = read_chunks(maxfile, 'DllDirectory', ContainerChunk, DirectoryChunk)
-
-
-def read_video_postqueue(maxfile, filename):
-    global VID_PST_QUE
-    VID_PST_QUE = read_chunks(maxfile, 'VideoPostQueue', superId=8)
-
-
-def calc_point(data):
-    points = []
-    long, offset = get_long(data, 0)
-    while (offset < len(data)):
-        val, offset = get_long(data, offset)
-        flt, offset = get_floats(data, offset, 3)
-        points.extend(flt)
-    return points
-
-
-def calc_point_float(data):
-    points = []
-    long, offset = get_long(data, 0)
-    while (offset < len(data)):
-        flt, offset = get_floats(data, offset, 3)
-        points.extend(flt)
-    return points
-
-
-def calc_point_3d(chunk):
-    data = chunk.data
-    count, offset = get_long(data, 0)
-    pointlist = []
-    while (offset < len(data)):
-        pt = Point3d()
-        long, offset = get_long(data, offset)
-        pt.points, offset = get_longs(data, offset, long)
-        pt.flags, offset = get_short(data, offset)
-        if ((pt.flags & 0x01) != 0):
-            (pt.flag1, pt.flag2), offset = get_shorts(data, offset, 2)
-        if ((pt.flags & 0x08) != 0):
-            pt.group, offset = get_short(data, offset)
-        if ((pt.flags & 0x10) != 0):
-            pt.flag3, offset = get_long(data, offset)
-        if ((pt.flags & 0x20) != 0):
-            pt.fbits, offset = get_longs(data, offset, 2 * (long - 3))
-        if (len(pt.points) > 0):
-            pointlist.append(pt)
-    return pointlist
-
-
-def get_point(floatval, default=0.0):
-    uid = get_guid(floatval)
-    if (uid == 0x2007):  # Bezier-Float
-        flv = floatval.get_first(0x7127)
-        if (flv):
-            try:
-                return flv.get_first(0x2501).data[0]
-            except:
-                print("SyntaxError: %s - assuming 0.0!\n" % (floatval))
-        return default
-    if (uid == FLOAT_POINT):  # Float Wire
-        flv = get_references(floatval)[0]
-        return get_point(flv)
-    else:
-        return default
-
-
-def get_point_3d(chunk, default=0.0):
-    floats = []
-    if (chunk):
-        refs = get_references(chunk)
-        for fl in refs:
-            flt = get_point(fl, default)
-            if (fl is not None):
-                floats.append(flt)
-    return floats
-
-
-def get_point_array(values):
-    verts = []
-    if len(values) >= 4:
-        count, offset = get_long(values, 0)
-        while (count > 0):
-            floats, offset = get_floats(values, offset, 3)
-            verts.extend(floats)
-            count -= 1
-    return verts
-
-
-def get_mesh_polys(data):
-    count, offset = get_long(data, 0)
-    polygons = []
-    mats = []
-    while count > 0:
-        poly, offset = get_longs(data, offset, 3)
-        edge, offset = get_long(data, offset)
-        (flag, mat), offset = get_shorts(data, offset, 2)
-        polygons.append(poly)
-        mats.append(mat)
-        count -= 1
-    return polygons, mats
-
-
-def get_face_chunks(chunk):
-    faceflags = get_long(chunk.data)
-    facechunk = chunk.get_first(0x0110)
-    matlchunk = chunk.get_first(0x0130)
-    size, step = get_long(facechunk.data)
-    face, step = get_longs(facechunk.data, step, size)
-    matid = get_short(matlchunk.data)[0] if matlchunk else 0
-    return face, matid
-
-
-def get_poly_data(chunk):
-    offset = 0
-    polylist = []
-    data = chunk.data
-    while (offset < len(data)):
-        count, offset = get_long(data, offset)
-        points, offset = get_longs(data, offset, count)
-        polylist.append(points)
-    return polylist
-
-
-def get_poly_loops(chunk):
-    looplist = []
-    data = chunk.data
-    counts, offset = get_long(data)
-    while (offset < len(data)):
-        count, offset = get_long(data, offset)
-        point, offset = get_longs(data, offset, 2)
-        (lp, sp), offset = get_longs(data, offset, 2)
-        flags, offset = get_long(data, offset)
-        loops = (*point, lp) if sp == FREESECT else point + (lp, sp)
-        looplist.append(loops)
-    return looplist
-
-
-def get_uvw_coords(chunk):
-    offset = 0
-    uvindex = []
-    data = chunk.data
-    while (offset < len(data)):
-        idx, offset = get_long(data, offset)
-        uvindex.append(idx)
-    cnt = uvindex.pop(0)
-    facelist = list(zip(*[iter(uvindex)]*3))
-    uvindex.clear()
-    return facelist
-
-
-def get_tri_data(chunk):
-    vindex = []
-    data = chunk.data
-    head, offset = get_long(data)
-    while (offset < head):
-        idx, offset = get_long(data, offset)
-        vindex.append(idx)
-    triangles = list(zip(*[iter(vindex)]*3))
-    return triangles
 
 
 def get_property(properties, idx):
@@ -1712,97 +1409,6 @@ def adjust_material(filename, search, obj, mat):
                 shader.material.blend_method = 'HASHED'
 
 
-def get_bezier_floats(pos):
-    refs = get_references(pos)
-    floats = get_point_3d(pos)
-    if any(rf.get_first(0x2501) for rf in refs):
-        floats.clear()
-        for ref in refs:
-            floats.append(ref.get_first(0x2501).data[0])
-    return floats
-
-
-def get_position(pos):
-    position = mathutils.Vector()
-    if (pos):
-        uid = get_guid(pos)
-        if (uid == MATRIX_POS):  # Position XYZ
-            position = mathutils.Vector(get_bezier_floats(pos))
-        elif (uid == 0x2008):  # Bezier Position
-            position = mathutils.Vector(pos.get_first(0x2503).data)
-        elif (uid == 0x442312):  # TCB Position
-            position = mathutils.Vector(pos.get_first(0x2503).data)
-        elif (uid == 0x4B4B1002):  # Position List
-            refs = get_references(pos)
-            if (len(refs) >= 3):
-                return get_position(refs[0])
-    return position
-
-
-def get_rotation(pos):
-    rotation = mathutils.Quaternion()
-    if (pos):
-        uid = get_guid(pos)
-        if (uid == 0x2012):  # Euler XYZ
-            rot = get_bezier_floats(pos)
-            rotation = mathutils.Euler((rot[0], rot[1], rot[2])).to_quaternion()
-        elif (uid == 0x442313):  # TCB Rotation
-            rot = pos.get_first(0x2504).data
-            rotation = mathutils.Quaternion((rot[3], rot[2], rot[1], rot[0]))
-        elif (uid == MATRIX_ROT):  # Rotation Wire
-            return get_rotation(get_references(pos)[0])
-        elif (uid == 0x4B4B1003):  # Rotation List
-            refs = get_references(pos)
-            if (len(refs) > 3):
-                return get_rotation(refs[0])
-    return rotation
-
-
-def get_scale(pos):
-    scale = mathutils.Vector((1.0, 1.0, 1.0))
-    if (pos):
-        uid = get_guid(pos)
-        if (uid == MATRIX_SCL):  # ScaleXYZ
-            pos = get_bezier_floats(pos)
-        elif (uid == 0x2010):  # Bezier Scale
-            scl = pos.get_first(0x2501)
-            if (scl is None):
-                scl = pos.get_first(0x2505)
-            pos = scl.data
-        elif (uid == 0x442315):  # TCB Zoom
-            scl = pos.get_first(0x2501)
-            if (scl is None):
-                scl = pos.get_first(0x2505)
-            pos = scl.data
-        elif (uid == 0x4B4B1002):  # Scale List
-            refs = get_references(pos)
-            if (len(refs) >= 3):
-                return get_scale(refs[0])
-        else:
-            pos = (1.0, 1.0, 1.0)
-        scale = mathutils.Vector(pos[:3])
-    return scale
-
-
-def create_matrix(prc):
-    uid = get_guid(prc)
-    mtx = mathutils.Matrix.Identity(4)
-    if (uid == 0x2005):  # Position/Rotation/Scale
-        pos = get_position(get_references(prc)[0])
-        rot = get_rotation(get_references(prc)[1])
-        scl = get_scale(get_references(prc)[2])
-        mtx = mathutils.Matrix.LocRotScale(pos, rot, scl)
-    elif (uid == 0x9154):  # BipSlave Control
-        biped = get_references(prc)[-1]
-        if biped and (get_guid(biped) == BIPED_ANIM):
-            ref = get_references(biped)
-            scl = get_scale(get_references(ref[1])[0])
-            rot = get_rotation(get_references(ref[2])[0])
-            pos = get_position(get_references(ref[3])[0])
-            mtx = mathutils.Matrix.LocRotScale(pos, rot, scl)
-    return mtx
-
-
 def get_matrix_mesh_material(node):
     refs = get_reference(node)
     if (refs):
@@ -1819,493 +1425,32 @@ def get_matrix_mesh_material(node):
     return prs, msh, mat, lyr
 
 
-def adjust_matrix(obj, node):
-    mtx = create_matrix(node)
-    obj.matrix_world = mtx @ obj.matrix_world.copy()
-    return mtx
-
-
-def draw_shape(name, mesh, faces):
-    data = []
-    loopstart = []
-    looplines = loop = 0
-    nb_faces = len(faces)
-    for fid in range(nb_faces):
-        polyface = faces[fid]
-        looplines += len(polyface)
-    shape = bpy.data.meshes.new(name)
-    shape.vertices.add(len(mesh.verts) // 3)
-    shape.loops.add(looplines)
-    shape.polygons.add(nb_faces)
-    shape.vertices.foreach_set("co", mesh.verts)
-    for vtx in faces:
-        loopstart.append(loop)
-        data.extend(vtx)
-        loop += len(vtx)
-    shape.polygons.foreach_set("loop_start", loopstart)
-    shape.loops.foreach_set("vertex_index", data)
-    return shape
-
-
-def draw_map(shape, uvmap, uvcoords, uvwids):
-    uvlayer = shape.uv_layers.new(do_init=True)
-    if (uvlayer):
-        if (uvmap > 0):
-            uvlayer.name = 'UVMap_%d' % uvmap
-        coords = [co for i, co in enumerate(uvcoords) if i % 3 in (0, 1)]
-        uvcord = list(zip(coords[0::2], coords[1::2]))
-        uvloops = tuple(uv for uvws in uvwids for uvid in uvws for uv in uvcord[uvid])
-        try:
-            shape.uv_layers.active.data.foreach_set("uv", uvloops)
-        except Exception as exc:
-            print('\tArrayLengthMismatchError: %s' % exc)
-    return shape
-
-
-def create_shape(context, settings, node, mesh, mat):
-    meshname = ""
-    filename, obtypes, search = settings
-    name = node.get_first(0x0962)
-    if name is not None:
-        meshname = name.data
-    meshobject = draw_shape(meshname, mesh, mesh.faces)
-    if ('UV' in obtypes and mesh.maps):
-        for idx, uvm in enumerate(mesh.maps[:len(mesh.cords)]):
-            meshobject = draw_map(meshobject, idx, mesh.cords[idx], mesh.uvids[idx])
-    meshobject.validate()
-    meshobject.update()
-    obj = bpy.data.objects.new(meshname, meshobject)
-    context.view_layer.active_layer_collection.collection.objects.link(obj)
-    if ('MATERIAL' in obtypes):
-        adjust_material(filename, search, obj, mat)
-        if (len(mesh.mats) > 0):
-            try:
-                obj.data.polygons.foreach_set("material_index", mesh.mats)
-            except Exception as exc:
-                print('\tArrayLengthMismatchError: %s' % exc)
-    object_list.append(obj)
-    return object_list
-
-
-def create_dummy_object(context, node, uid):
-    dummy = bpy.data.objects.new(get_node_name(node), None)
-    dummy.empty_display_type = 'SINGLE_ARROW' if uid == BIPED_OBJ else 'PLAIN_AXES'
-    context.view_layer.active_layer_collection.collection.objects.link(dummy)
-    return dummy
-
-
-def create_editable_poly(context, settings, node, msh, mat):
-    polychunk = msh.get_first(0x08FE)
-    created = []
-    if (polychunk):
-        mesh = Mesh3d()
-        for child in polychunk.children:
-            if isinstance(child.data, tuple):
-                created = create_shape(context, settings, node, mesh, mat)
-            elif (child.types == 0x0100):
-                mesh.verts = calc_point(child.data)
-            elif (child.types == 0x0108):
-                mesh.polys = get_poly_loops(child)
-            elif (child.types == 0x010A):
-                mesh.tris = get_tri_data(child)
-            elif (child.types == 0x011A):
-                mesh.points = calc_point_3d(child)
-            elif (child.types == 0x0118):
-                face, matid = get_face_chunks(child) 
-                mesh.faces.append(face)
-                mesh.mats.append(matid)
-            elif (child.types == 0x0124):
-                mesh.maps.append(get_long(child.data, 0)[0])
-            elif (child.types == 0x0128):
-                mesh.cords.append(calc_point_float(child.data))
-            elif (child.types == 0x012B):
-                mesh.uvids.append(get_poly_data(child))
-            elif (child.types == 0x0310):
-                mesh.polys = get_poly_data(child)
-        if (mesh.points is not None):
-            mesh.set(mesh.points)
-            created += create_shape(context, settings, node, mesh, mat)
-        elif (mesh.faces is not None):
-            created += create_shape(context, settings, node, mesh, mat)
-        elif (mesh.tris is not None) and 'UV' not in obtypes:
-            created += create_shape(context, settings, node, mesh, mat)
-    return created
-
-
-def create_editable_mesh(context, settings, node, msh, mat):
-    meshchunk = msh.get_first(0x08FE)
-    created = []
-    if (meshchunk):
-        editmesh = Mesh3d()
-        cnt = 0x0916 if (get_guid(msh) == 0x019) else 0x2394
-        uvm = 0x0918 if (get_guid(msh) == 0x019) else 0x2396 
-        vertex_chunk = meshchunk.get_first(0x0914)
-        faceid_chunk = meshchunk.get_first(0x0912)
-        if (vertex_chunk and faceid_chunk):
-            editmesh.verts = get_point_array(vertex_chunk.data)
-            editmesh.faces, editmesh.mats = get_mesh_polys(faceid_chunk.data)
-            for chunk in meshchunk.children:
-                if (chunk.types in {0x0924, 0x0959}):
-                    editmesh.maps.append(get_long(chunk.data, 0)[0])
-                elif (chunk.types == cnt):
-                    editmesh.cords.append(get_point_array(chunk.data))
-                elif (chunk.types == uvm):
-                    editmesh.uvids.append(get_uvw_coords(chunk))
-            created += create_shape(context, settings, node, editmesh, mat)
-    return created
-
-
-def create_shell(context, settings, node, shell, mat, mtx):
-    refs = get_references(shell)
-    created = []
-    if refs:
-        msh = refs[-1]
-        created, uid = create_mesh(context, settings, node, msh, mat, mtx)
-    return created
-
-
-def create_plane(context, settings, node, plane, mat, mtx):
-    created = []
-    name = node.get_first(0x0962)
-    filename, obtypes, search = settings
-    parablock = get_references(plane)[0]
-    if len(parablock.children[1].data) > 11:
-        values = parablock.children
-        length = get_float(values[1].data, len(values[1].data)-4)[0]
-        width = get_float(values[2].data, len(values[2].data)-4)[0]
-    else:
-        try:
-            length = get_float(parablock.children[2].get_first(0x100).data)[0]
-            width = get_float(parablock.children[3].get_first(0x100).data)[0]    
-        except:
-            length = UNPACK_BOX_DATA(parablock.children[1].data)[6]
-            width = UNPACK_BOX_DATA(parablock.children[2].data)[6]
-    bpy.ops.mesh.primitive_plane_add(size=1.0, scale=(width, length, 0.0))
-    obj = context.selected_objects[0]
-    if name is not None:
-        obj.name = name.data
-    if ('MATERIAL' in obtypes):
-        adjust_material(filename, search, obj, mat)
-    adjust_matrix(obj, mtx)
-    created.append(obj)
-    return created
-
-
-def create_box(context, settings, node, box, mat, mtx):
-    created = []
-    name = node.get_first(0x0962)
-    filename, obtypes, search = settings
-    parablock = get_references(box)
-    if parablock:
-        values = parablock[0].children
-        if len(parablock[0].children[1].data) > 11:
-            length = get_float(values[1].data, len(values[1].data)-4)[0]
-            width = get_float(values[2].data, len(values[2].data)-4)[0]
-            depth = get_float(values[3].data, len(values[3].data)-4)[0]
-        else:
-            try:
-                length = get_float(values[2].get_first(0x100).data)[0]
-                width = get_float(values[3].get_first(0x100).data)[0]
-                depth = get_float(values[4].get_first(0x100).data)[0]
-            except:
-                length = UNPACK_BOX_DATA(values[1].data)[6]
-                width  = UNPACK_BOX_DATA(values[2].data)[6]
-                depth = UNPACK_BOX_DATA(values[3].data)[6]
-        height = -depth if (depth < 0) else depth
-        bpy.ops.mesh.primitive_cube_add(size=1.0, scale=(width, length, height))
-        obj = context.selected_objects[0]
-        if name is not None:
-            obj.name = name.data
-        if ('MATERIAL' in obtypes):
-            adjust_material(filename, search, obj, mat)
-    else:
-        obj = bpy.data.objects.new(name.data, None)
-        context.view_layer.active_layer_collection.collection.objects.link(obj)
-        obj.empty_display_type = 'CUBE'
-    adjust_matrix(obj, mtx)
-    created.append(obj)
-    return created
-
-
-def create_sphere(context, settings, node, sphere, mat, mtx):
-    created = []
-    name = node.get_first(0x0962)
-    filename, obtypes, search = settings
-    parablock = get_references(sphere)[0]
-    if len(parablock.children[1].data) > 11:
-        values = parablock.children[1]
-        rd = get_float(values.data, len(values.data)-4)[0]
-    else:
-        value = parablock.children[2].get_first(0x100)
-        if value is None:
-           value = parablock.children[3].get_first(0x100) 
-        try:
-            rd = get_float(value.data)[0]
-        except:
-            rd = UNPACK_BOX_DATA(parablock.children[1].data)[6]
-    bpy.ops.mesh.primitive_uv_sphere_add(radius=rd)
-    obj = context.selected_objects[0]
-    if name is not None:
-        obj.name = name.data
-    if ('MATERIAL' in obtypes):
-        adjust_material(filename, search, obj, mat)
-    adjust_matrix(obj, mtx)
-    created.append(obj)
-    return created
-
-
-def create_torus(context, settings, node, torus, mat, mtx):
-    created = []
-    name = node.get_first(0x0962)
-    filename, obtypes, search = settings
-    parablock = get_references(torus)[0]
-    if len(parablock.children[1].data) > 11:
-        values = parablock.children
-        rd1 = get_float(values[1].data, len(values[1].data)-4)[0]
-        rd2 = get_float(values[2].data, len(values[2].data)-4)[0]
-    else:
-        try:
-            rd1 = get_float(parablock.children[2].get_first(0x100).data)[0]
-            rd2 = get_float(parablock.children[3].get_first(0x100).data)[0]
-        except:
-            rd1 = UNPACK_BOX_DATA(parablock.children[1].data)[6]
-            rd2 = UNPACK_BOX_DATA(parablock.children[2].data)[6]
-    bpy.ops.mesh.primitive_torus_add(major_radius=rd1, minor_radius=rd2)
-    obj = context.selected_objects[0]
-    if name is not None:
-        obj.name = name.data
-    if ('MATERIAL' in obtypes):
-        adjust_material(filename, search, obj, mat)
-    adjust_matrix(obj, mtx)
-    created.append(obj)
-    return created
-
-
-def create_cylinder(context, settings, node, cylinder, mat, mtx):
-    created = []
-    name = node.get_first(0x0962)
-    filename, obtypes, search = settings
-    parablock = get_references(cylinder)
-    if parablock:
-        values = parablock[0].children
-        if len(values[1].data) > 11:
-            rd = get_float(values[1].data, len(values[1].data)-4)[0]
-            hg = get_float(values[2].data, len(values[2].data)-4)[0]
-        else:
-            try:
-                rd = get_float(values[2].get_first(0x100).data)[0]
-                hg = get_float(values[3].get_first(0x100).data)[0]
-            except:
-                rd = UNPACK_BOX_DATA(values[1].data)[6]
-                hg = UNPACK_BOX_DATA(values[2].data)[6]
-        rad = -rd if (rd < 0) else rd
-        height = -hg if (hg < 0) else hg
-        bpy.ops.mesh.primitive_cylinder_add(radius=rad, depth=height)
-        obj = context.selected_objects[0]
-        if name is not None:
-            obj.name = name.data
-        if ('MATERIAL' in obtypes):
-            adjust_material(filename, search, obj, mat)
-    else:
-        obj = bpy.data.objects.new(name.data, None)
-        context.view_layer.active_layer_collection.collection.objects.link(obj)
-    adjust_matrix(obj, mtx)
-    created.append(obj)
-    return created
-
-
-def create_cone(context, settings, node, cone, mat, mtx):
-    created = []
-    name = node.get_first(0x0962)
-    filename, obtypes, search = settings
-    parablock = get_references(cone)[0]
-    if len(parablock.children[1].data) > 11:
-        values = parablock.children
-        rd1 = get_float(values[1].data, len(values[1].data)-4)[0]
-        rd2 = get_float(values[2].data, len(values[2].data)-4)[0]
-        hgt = get_float(values[3].data, len(values[3].data)-4)[0]
-    else:
-        try:
-            rd1 = get_float(parablock.children[2].get_first(0x100).data)[0]
-            rd2 = get_float(parablock.children[3].get_first(0x100).data)[0]
-            hgt = get_float(parablock.children[4].get_first(0x100).data)[0] 
-        except:
-            rd1 = UNPACK_BOX_DATA(parablock.children[1].data)[6]
-            rd2 = UNPACK_BOX_DATA(parablock.children[2].data)[6]
-            hgt = UNPACK_BOX_DATA(parablock.children[3].data)[6]
-    height = -hgt if (hgt < 0) else hgt
-    bpy.ops.mesh.primitive_cone_add(radius1=rd1, radius2=rd2, depth=height)
-    obj = context.selected_objects[0]
-    if name is not None:
-        obj.name = name.data
-    if ('MATERIAL' in obtypes):
-        adjust_material(filename, search, obj, mat)
-    adjust_matrix(obj, mtx)
-    created.append(obj)
-    return created
-
-
-def create_skipable(context, node, skip):
-    name = node.get_first(0x0962)
-    if name is not None:
-        name = name.data
-        print("\tskipping %s '%s'... " % (skip, name))
-    return []
-
-
-def create_mesh(context, settings, node, msh, mat, mtx):
-    created = []
-    uid = get_guid(msh)
-    if msh is not None:
-        object_list.clear()
-        if (uid in {POLY_MESH, EDIT_POLY}):
-            created = create_editable_poly(context, settings, node, msh, mat)
-        elif msh.get_first(0x08FE) and (uid in {0x10, 0x11, 0x12, 0x16, 0x19, EDIT_MESH}):
-            created = create_editable_mesh(context, settings, node, msh, mat)
-        elif (uid in {0x10, 0x14, 0x19} and 'PRIMITIVE' in settings[1]):
-            created = create_box(context, settings, node, msh, mat, mtx)
-        elif (uid == 0x011 and 'PRIMITIVE' in settings[1]):
-            created = create_sphere(context, settings, node, msh, mat, mtx)
-        elif (uid == 0x012 and 'PRIMITIVE' in settings[1]):
-            created = create_cylinder(context, settings, node, msh, mat, mtx)
-        elif (uid == 0x020 and 'PRIMITIVE' in settings[1]):
-            created = create_torus(context, settings, node, msh, mat, mtx)
-        elif (uid == CONE and 'PRIMITIVE' in settings[1]):
-            created = create_cone(context, settings, node, msh, mat, mtx)
-        elif (uid == PLANE and 'PRIMITIVE' in settings[1]):
-            created = create_plane(context, settings, node, msh, mat, mtx)
-        elif (uid in {0x2032, 0x2033}):
-            created = create_shell(context, settings, node, msh, mat, mtx)
-        elif (uid == DUMMY and 'EMPTY' in settings[1]):
-            created = [create_dummy_object(context, node, uid)]
-        elif (uid == BIPED_OBJ and 'ARMATURE' in settings[1]):
-            created = [create_dummy_object(context, node, uid)]
-        elif (uid == BOOLEAN):
-            boolrefs = get_references(get_references(msh)[0])
-            for ref in boolrefs:
-                created, uid = create_mesh(context, settings, node, ref, mat, mtx)  
-        else:
-            skip = SKIPPABLE.get(uid)
-            if (skip is not None):
-                created = create_skipable(context, node, skip)
-    return created, uid
-
-
-def create_object(context, settings, node, transform):
-    parent = get_node_parent(node)
-    nodename = get_node_name(node)
-    parentname = get_node_name(parent)
-    prs, msh, mat, lyr = get_matrix_mesh_material(node)
-    created, uid = create_mesh(context, settings, node, msh, mat, prs)
-    created = [idx for ob, idx in enumerate(created) if idx not in created[:ob]]
-    for obj in created:
-        if obj.name != nodename:
-            parent_dict[obj.name] = parentname
-        if (transform and obj.type == 'MESH'):
-            nodeloca = node.get_first(0x96A)
-            noderota = node.get_first(0x96B)
-            nodesize = node.get_first(0x96C)
-            quats = noderota.data if noderota else (0.0, 0.0, 0.0, 1.0)
-            pivot = mathutils.Vector(nodeloca.data if nodeloca else (0.0, 0.0, 0.0))
-            angle = mathutils.Quaternion((quats[3], quats[2], quats[1], quats[0]))
-            scale = mathutils.Vector(nodesize.data[:3] if nodesize else (1.0, 1.0, 1.0))
-            p_mtx = mathutils.Matrix.LocRotScale(pivot, angle, scale)
-            obj.data.transform(p_mtx)
-    matrix_dict[nodename] = create_matrix(prs)
-    parent_dict[nodename] = parentname
-    return nodename, created
-
-
-def make_scene(context, settings, mscale, transform, parent):
-    imported = []
-    for chunk in parent.children:
-        if isinstance(chunk, SceneChunk) and (get_guid(chunk) == 0x1 and get_super_id(chunk) == 0x1) or get_node_parent(chunk):
-            try:
-                imported.append(create_object(context, settings, chunk, transform))
-            except Exception as exc:
-                print("\tImportError: %s %s" % (exc, chunk), get_node_name(chunk))
-
-    # Apply matrix and assign parents to objects
-    objects = dict(imported)
-    for idx, objs in objects.items():
-        pt_name = parent_dict.get(idx)
-        parents = objects.get(pt_name)
-        obj_mtx = matrix_dict.get(idx, mathutils.Matrix())
-        prt_mtx = matrix_dict.get(pt_name, mathutils.Matrix())
-        for obj in objs:
-            if parents:
-                try:
-                    obj.parent = parents[0]
-                except TypeError as te:
-                    print("\tTypeError: %s '%s'" % (te, pt_name))
-            if obj_mtx:
-                if obj.parent and obj.parent.empty_display_type != 'SINGLE_ARROW':
-                    trans_mtx = obj.parent.matrix_world @ obj_mtx
-                else:
-                    trans_mtx = prt_mtx @ obj_mtx
-                if transform:
-                    obj.matrix_world = trans_mtx
-                obj.matrix_world = mscale @ obj.matrix_world
-
-
-def read_scene(context, maxfile, settings, mscale, transform):
+def open_materials(filename):
+    """Parse filename the old way for adjust_material: the DLL and class directories, the Scene stream and the
+    metadata stream, into this module's globals. close_materials() drops them."""
     global SCENE_LIST, META_DATA
-    metasid = min(max(entry.sid for entry in maxfile.direntries if entry is not None), 11)
-    SCENE_LIST = read_chunks(maxfile, 'Scene', SceneChunk)
-    META_DATA = read_chunks(maxfile, maxfile.direntries[metasid].name, superId=metasid) if metasid >= 0xA else []
-    make_scene(context, settings, mscale, transform, SCENE_LIST[0])
-    # For debug: Print directory
-    # print('Directory', maxfile.direntries[0].kids_dict.keys())
-
-
-def read(context, filename, mscale, obtypes, search, transform):
-    if (is_maxfile(filename)):
-        settings = filename, obtypes, search
-        maxfile = ImportMaxFile(filename)
-        read_class_data(maxfile, filename)
-        read_config(maxfile, filename)
+    close_materials()
+    if not is_maxfile(filename):
+        raise ValueError("not a 3ds Max file")
+    maxfile = ImportMaxFile(filename)
+    try:
         read_directory(maxfile, filename)
         read_class_directory(maxfile, filename)
-        read_video_postqueue(maxfile, filename)
-        read_scene(context, maxfile, settings, mscale, transform)
-    else:
-        print("File seems to be no 3D Studio Max file!")
+        metasid = min(max(entry.sid for entry in maxfile.direntries if entry is not None), 11)
+        SCENE_LIST = read_chunks(maxfile, 'Scene', SceneChunk)
+        META_DATA = read_chunks(maxfile, maxfile.direntries[metasid].name, superId=metasid) if metasid >= 0xA else []
+    finally:
+        maxfile.close()
 
 
-def load(operator, context, files=[], directory="", filepath="", scale_objects=1.0, use_collection=False,
-         use_image_search=True, object_filter=None, use_apply_matrix=True, global_matrix=None):
+def assign_material(filename, search, obj, index):
+    """adjust_material on obj with the material of the node at object index `index` (its position in the Scene
+    stream, the same in MaxDrop's reader)."""
+    node = get_node(index)
+    if node is not None:
+        adjust_material(filename, search, obj, get_matrix_mesh_material(node)[2])
 
-    parent_dict.clear()
-    matrix_dict.clear()
 
-    context.window.cursor_set('WAIT')
-    mscale = mathutils.Matrix.Scale(scale_objects, 4)
-    if global_matrix is not None:
-        mscale = global_matrix @ mscale
-
-    if not object_filter:
-        object_filter = {'MATERIAL', 'UV', 'PRIMITIVE', 'EMPTY'}
-
-    default_layer = context.view_layer.active_layer_collection.collection
-
-    if not len(files):
-        files = [Path(filepath)]
-        directory = Path(filepath).parent
-
-    for fl in files:
-        if use_collection:
-            collection = bpy.data.collections.new(Path(fl.name).stem)
-            context.scene.collection.children.link(collection)
-            context.view_layer.active_layer_collection = context.view_layer.layer_collection.children[collection.name]
-        read(context, os.path.join(directory, fl.name), mscale, obtypes=object_filter, search=use_image_search, transform=use_apply_matrix)
-
-    parent_dict.clear()
-    matrix_dict.clear()
-
-    active = context.view_layer.layer_collection.children.get(default_layer.name)
-    if active is not None:
-        context.view_layer.active_layer_collection = active
-
-    context.window.cursor_set('DEFAULT')
-
-    return {'FINISHED'}
+def close_materials():
+    global SCENE_LIST, META_DATA, CLS_DIR3_LIST, DLL_DIR_LIST
+    SCENE_LIST, META_DATA, CLS_DIR3_LIST, DLL_DIR_LIST = [], [], [], []

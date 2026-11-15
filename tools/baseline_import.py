@@ -21,20 +21,21 @@ import maxdrop  # noqa: E402  (the path above comes first)
 
 
 def scene_nodes():
-    """The nodes the engine walked, by its own test (make_scene). None once the engine no longer keeps them."""
-    engine = sys.modules.get(maxdrop.__name__ + ".import_max")
+    """The nodes of the file, as MaxDrop's reader walks them (the importer builds one object per node). None when
+    the reader cannot index the file."""
+    from maxdrop.reader import cfb
+    from maxdrop.reader import scene as reader_scene
     try:
-        chunks = engine.SCENE_LIST[0].children
-        return sum(1 for c in chunks if isinstance(c, engine.SceneChunk)
-                   and (engine.get_guid(c) == 0x1 and engine.get_super_id(c) == 0x1) or engine.get_node_parent(c))
-    except Exception:
+        with cfb.CompoundFile(PATH) as cf:
+            return len(reader_scene.Scene.from_file(cf).walk())
+    except (OSError, ValueError):
         return None
 
 
 maxdrop.register()
 for ob in list(bpy.data.objects):
     bpy.data.objects.remove(ob)
-for block in (bpy.data.meshes, bpy.data.materials, bpy.data.images):
+for block in (bpy.data.meshes, bpy.data.materials, bpy.data.images, bpy.data.collections):
     for item in list(block):
         block.remove(item)
 

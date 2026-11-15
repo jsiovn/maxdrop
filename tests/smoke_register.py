@@ -10,7 +10,8 @@ Run headless with an isolated profile so your own preferences are never touched:
 
 Imports `maxdrop` from the repo root (default: one level above this file), registers it, checks every class in each
 module's `_classes`, the operators, the file handler and the File > Import entry, reloads the package the way
-Reload Scripts does, registers again, then unregisters and checks everything is gone.
+Reload Scripts does, registers again, then unregisters and checks everything is gone. The operator's options: Units
+with its six numbered items, Scale, Object Filter with Material and UV Maps, no Apply Matrix or Collection.
 Prints `SMOKE PASSED` (exit 0) or `SMOKE FAILED` (exit 1).
 """
 import importlib
@@ -73,6 +74,14 @@ def run():
         check("%s: the operator has the Scene field of a pack" % round_, "pack_scene" in props.keys())
         check("%s: the file browser shows .max, .zip, .rar and .7z" % round_,
               props["filter_glob"].default == "*.max;*.zip;*.rar;*.7z")
+        units = [(item.identifier, item.value) for item in props["units"].enum_items] if "units" in props else []
+        check("%s: Units: Auto, mm, cm, m, in, ft with fixed numbers" % round_,
+              units == [("AUTO", 0), ("MILLIMETERS", 1), ("CENTIMETERS", 2), ("METERS", 3), ("INCHES", 4),
+                        ("FEET", 5)] and props["units"].default == "AUTO", str(units))
+        filters = [(item.identifier, item.value) for item in props["object_filter"].enum_items]
+        check("%s: Object Filter: Material and UV Maps" % round_, filters == [("MATERIAL", 1), ("UV", 2)], str(filters))
+        check("%s: Scale stays, Apply Matrix and Collection are gone" % round_,
+              "scale_objects" in props and not {"use_apply_matrix", "use_collection"} & set(props.keys()))
         check("%s: File > Import has the entry" % round_, in_import_menu(pkg))
         check("%s: the preferences belong to the package" % round_,
               sys.modules[pkg.__name__ + ".prefs"].MaxDropPreferences.bl_idname == pkg.__name__)
@@ -87,7 +96,9 @@ def run():
         if round_ == "register":
             # What an import leaves behind must not survive a reload: the files may be a newer version's.
             engine = importlib.import_module(ENGINE)
-            check("the engine loads", hasattr(engine, "load") and getattr(pkg, "import_max", None) is engine)
+            check("the engine's material code loads", all(hasattr(engine, n) for n in (
+                "open_materials", "assign_material", "close_materials")) and not hasattr(engine, "load")
+                and getattr(pkg, "import_max", None) is engine)
             intake = importlib.import_module(INTAKE + ".archive")
             check("the scene pack intake loads", hasattr(intake, "unpack") and hasattr(pkg, "intake"))
             pkg = importlib.reload(pkg)

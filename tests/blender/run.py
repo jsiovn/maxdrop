@@ -2,15 +2,17 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Fixture tests of the new pipeline inside Blender: every tests/fixtures/*.max through convert.scene.read and
-build.objects.build, compared with its 3ds Max oracle (tests/fixtures/<name>.oracle.json).
+"""Fixture tests of the new pipeline inside Blender: every tests/fixtures/*.max imported through the operator
+(import_scene.maxdrop, default options: Units Auto), compared with its 3ds Max oracle
+(tests/fixtures/<name>.oracle.json) and with convert.scene.read of the same file.
 
 Run headless with an isolated profile so your own preferences are never touched:
   $env:BLENDER_USER_RESOURCES="<scratch>\\profile"
   & blender --background --factory-startup --python-exit-code 1 --python tests\\blender\\run.py [-- <file.max> ...]
 
 Per fixture, into an emptied scene, below a collection named after the file with one collection per layer
-(build.collections): node order and names, parents, each object in its layer's collection, the oracle's hidden,
+(build.collections), objects found by node name (objects are made in walk order, so the second node of a name is
+"<name>.001" in the emptied scene): node order and names, parents, each object in its layer's collection, the oracle's hidden,
 renderable and frozen flags, world matrices (1e-4, in file units), world
 bounding boxes of the meshes (1e-3), vertex and face counts, UV layers, sharp edges and flat faces, material
 indices, which objects share a mesh (the oracle's instances), outward normals as rendered (the inverse transpose
@@ -22,6 +24,7 @@ published (build.report) and must say nothing was left out. A changed layers_fla
 a frozen, a non-rendering and a nested layer, which no fixture has.
 Prints `FIXTURES PASSED` (exit 0) or `FIXTURES FAILED` (exit 1).
 """
+import collections
 import glob
 import json
 import os
@@ -66,6 +69,8 @@ def empty_scene():
         bpy.data.collections.remove(col)
     for text in list(bpy.data.texts):
         bpy.data.texts.remove(text)
+    for material in list(bpy.data.materials):
+        bpy.data.materials.remove(material)
 
 
 def close(a, b, tolerance):
@@ -93,6 +98,17 @@ def max_rows(m, meters):
     return out + [m[c][3] / meters for c in range(3)]
 
 
+def objects_of(desc):
+    """The object of each node of desc after an import into an emptied scene."""
+    seen = collections.Counter()
+    out = []
+    for node in desc.nodes:
+        k = seen[node.name]
+        seen[node.name] += 1
+        out.append(bpy.data.objects[node.name if not k else "%s.%03d" % (node.name, k)])
+    return out
+
+
 def build_scene(desc, name, modules):
     _cs, _cr, build_objects, build_collections, _br = modules
     view_layer = bpy.context.view_layer
@@ -110,13 +126,18 @@ def run_fixture(path, modules):
         oracle = json.load(f)
     empty_scene()
     desc = convert_scene.read(path)
-    cols, built, view_layer = build_scene(desc, name, modules)
+    result = bpy.ops.import_scene.maxdrop(filepath=path)
+    check("%s: the operator finishes" % name, result == {'FINISHED'}, str(result))
+    view_layer = bpy.context.view_layer
+    view_layer.update()
+    root = bpy.data.collections.get(name)
     meters = desc.meters
     nodes = oracle["nodes"]
-    check("%s: one object per node" % name, len(built.objects) == len(nodes) == len(bpy.data.objects),
+    check("%s: one object per node" % name, len(desc.nodes) == len(nodes) == len(bpy.data.objects),
           "%d objects, %d nodes" % (len(bpy.data.objects), len(nodes)))
     check("%s: nodes in oracle order" % name, [n.name for n in desc.nodes] == [n["name"] for n in nodes])
-    obs = [built.objects[n.index] for n in desc.nodes]
+    obs = objects_of(desc)
+    meshes = {ob.data.name: ob.data for ob in obs if ob.type == 'MESH'}
     handle_of = {ob.as_pointer(): o["handle"] for ob, o in zip(obs, nodes)}
     for ob, node, o in zip(obs, desc.nodes, nodes):
         label = "%s/%s" % (name, o["name"])
@@ -172,11 +193,11 @@ def run_fixture(path, modules):
     if name == "hierarchy":
         mirrored = [n.name for n in desc.nodes if n.mirrored]
         check("hierarchy: FixtureLeaf is the mirrored node", mirrored == ["FixtureLeaf"], str(mirrored))
-    layer_names = [c.name for c in cols.root.children]
+    layer_names = [c.name for c in root.children] if root else []
     expected = [la["name"] for la in oracle["layers"] if any(o["layer"] == la["name"] for o in nodes)]
     check("%s: one collection per layer below the file's collection" % name,
-          cols.root.name == name and layer_names == expected
-          and cols.root.name in bpy.context.scene.collection.children, "%s: %s" % (cols.root.name, layer_names))
+          root is not None and layer_names == expected and root.name in bpy.context.scene.collection.children,
+          "%s: %s" % (root and root.name, layer_names))
     if name == "layers_flags":
         check("layers_flags: two layer collections", layer_names == ["FixtureLayerA", "FixtureLayerB"])
         hidden = [ob.name for ob in obs if ob.hide_viewport and ob.hide_get(view_layer=view_layer)]
@@ -189,8 +210,10 @@ def run_fixture(path, modules):
               group.type == 'EMPTY' and members == ["FixtureGroupA", "FixtureGroupB"], "%s %s" % (group.type, members))
         excluded = [lc.name for lc in view_layer.layer_collection.children[name].children if lc.exclude]
         check("layers_flags: no layer excluded (none is hidden in 3ds Max)", excluded == [], str(excluded))
-    rep = convert_report.gather(desc, source=os.path.basename(path), objects_built=len(built.objects),
-                                meshes_built=len(built.meshes), dropped_uv_layers=built.dropped_uv_layers)
+    check("%s: a material on every mesh" % name, all(mesh.materials and mesh.materials[0] for mesh in meshes.values()),
+          str(sorted(m.name for m in meshes.values() if not (m.materials and m.materials[0]))))
+    rep = convert_report.gather(desc, source=os.path.basename(path), objects_built=len(obs),
+                                meshes_built=len(meshes))
     level, line = build_report.publish(rep)
     text = bpy.data.texts.get(build_report.TEXT_NAME)
     check("%s: report published, nothing left out" % name,
@@ -236,6 +259,7 @@ def main():
     print("Blender " + bpy.app.version_string)
     sys.path.insert(0, ROOT)
     import maxdrop
+    maxdrop.register()
     check("package imported from the repo root",
           os.path.normcase(os.path.dirname(os.path.dirname(maxdrop.__file__))) == os.path.normcase(ROOT))
     from maxdrop.build import collections as build_collections

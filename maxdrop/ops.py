@@ -10,6 +10,10 @@
 # also .rar and .7z; an archive is listed, its scene chosen (pack_scene), unpacked by maxdrop.intake, and the
 # engine imports the .max from the pack folder, once per scene. The handler label and the menu text name the
 # formats. The popup says when a folder already on disk will be used instead of unpacking.
+# Modified for MaxDrop, 2026-11-15 (jsiovn). The import runs MaxDrop's reader, scene description and build (nodes,
+# meshes, transforms, hierarchy, instances, layers); only the materials still come from import_max. New options:
+# Units, with Scale as an extra factor. Removed: Apply Matrix, Collection and the Primitive, Empty and Armature
+# items of Object Filter. The popup shows a pre-flight line per .max (3ds Max version, renderer, nodes, unit).
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -17,7 +21,6 @@ __author__ = "Sebastian Sille <nrgsille@gmail.com>"
 
 import os
 import re
-from pathlib import Path
 
 import bpy
 from bpy_extras.io_utils import (
@@ -25,6 +28,7 @@ from bpy_extras.io_utils import (
     orientation_helper,
     axis_conversion,
 )
+from mathutils import Matrix
 from bpy.props import (
     BoolProperty,
     EnumProperty,
@@ -43,6 +47,20 @@ _LISTINGS = {}
 _TARGETS = {}
 _CACHE_MAX = 16
 _SHOWN_SCENES = 10
+# Pre-flight lines of the .max files a drop or a script named, by normalized path.
+_PREFLIGHT = {}
+_SHOWN_FILES = 5
+
+# Saved in presets by identifier; the numbers keep each item's value stable.
+UNITS = (
+    ('AUTO', "Auto", "The unit the file was saved with. A file that does not say: 1 unit = Scale meters", 0),
+    ('MILLIMETERS', "Millimeters", "One unit of the file is a millimeter", 1),
+    ('CENTIMETERS', "Centimeters", "One unit of the file is a centimeter", 2),
+    ('METERS', "Meters", "One unit of the file is a meter", 3),
+    ('INCHES', "Inches", "One unit of the file is an inch", 4),
+    ('FEET', "Feet", "One unit of the file is a foot", 5),
+)
+UNIT_METERS = {'MILLIMETERS': 0.001, 'CENTIMETERS': 0.01, 'METERS': 1.0, 'INCHES': 0.0254, 'FEET': 0.3048}
 _SEP = re.compile(r"[\\/]")
 
 
@@ -180,8 +198,50 @@ def _scene_search(self, context, edit_text):
     return [s for s in scenes if text in s.casefold()] or scenes
 
 
-def _plural(n, word):
-    return "%d %s%s" % (n, word, "" if n == 1 else "s")
+def _plural(n, word, many=None):
+    return "%d %s" % (n, word if n == 1 else many or word + "s")
+
+
+def _meters(choice, unit, scale):
+    """(meters per file unit, a note for the user or "") for a Units choice, the file's reader.units.SystemUnit
+    (None when the file does not say) and the Scale factor."""
+    if choice != 'AUTO':
+        return UNIT_METERS[choice] * scale, ""
+    if unit is not None:
+        return unit.meters * scale, ""
+    return scale, "does not state its unit: 1 unit = %g m (Scale)" % scale
+
+
+def _preflight(path):
+    """One line about a .max before it is imported: 3ds Max version, renderer, nodes, system unit. Reads the
+    summary stream and the index of the Scene stream, not the objects (0.1 s on a scene of 800 MB)."""
+    from .reader import cfb, metadata, units
+    from .reader import scene as reader_scene
+    try:
+        with cfb.CompoundFile(path) as cf:
+            try:
+                info = metadata.read(cf)
+            except metadata.MetadataError:
+                info = {}
+            sc = reader_scene.Scene.from_file(cf)
+            unit = units.system_unit(sc)
+            nodes = len(sc.node_indices)
+    except (OSError, ValueError) as e:
+        return "Not readable as a .max file (%s)" % e
+    release = info.get("max_release")
+    parts = ["3ds Max %s" % release if release else "3ds Max version not stated"]
+    renderer = (info.get("renderer") or {}).get("name")
+    if renderer:
+        parts.append(renderer)
+    parts.append(_plural(nodes, "node"))
+    parts.append(unit.name if unit is not None else "unit not stated")
+    return ", ".join(parts)
+
+
+def _remember_preflight(path):
+    if len(_PREFLIGHT) >= _CACHE_MAX:
+        _PREFLIGHT.clear()
+    _PREFLIGHT[_norm(path)] = _preflight(path)
 
 
 def _summary(path, result):
@@ -209,11 +269,17 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
     files: CollectionProperty(type=bpy.types.OperatorFileListElement, options={'HIDDEN', 'SKIP_SAVE'})
     directory: StringProperty(subtype='DIR_PATH')
 
+    units: EnumProperty(
+        name="Units",
+        description="What one unit of the file measures",
+        items=UNITS,
+        default='AUTO',
+    )
     scale_objects: FloatProperty(
         name="Scale",
-        description="Scale factor for all objects",
-        min=0.0, max=10000.0,
-        soft_min=0.0, soft_max=10000.0,
+        description="Extra factor on every length, after Units",
+        min=0.0001, max=10000.0,
+        soft_min=0.001, soft_max=10000.0,
         default=1.0,
     )
     use_image_search: BoolProperty(
@@ -224,24 +290,11 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
     )
     object_filter: EnumProperty(
         name="Object Filter", options={'ENUM_FLAG'},
-        items=(('MATERIAL', "Material".rjust(12), "", 'MATERIAL_DATA', 0x1),
-               ('UV', "UV Maps".rjust(11), "", 'UV_DATA', 0x2),
-               ('PRIMITIVE', "Primitive".rjust(13), "", 'CUBE', 0x4),
-               ('EMPTY', "Empty".rjust(11), "", 'EMPTY_AXIS', 0x8),
-               ('ARMATURE', "Armature".rjust(11), "", 'ARMATURE_DATA', 0x10),
+        items=(('MATERIAL', "Material".rjust(12), "Materials of the meshes", 'MATERIAL_DATA', 0x1),
+               ('UV', "UV Maps".rjust(11), "UV layers of the meshes", 'UV_DATA', 0x2),
                ),
-        description="Object types to import",
-        default={'MATERIAL', 'UV', 'PRIMITIVE', 'EMPTY', 'ARMATURE'},
-    )
-    use_collection: BoolProperty(
-        name="Collection",
-        description="Create a new collection",
-        default=False,
-    )
-    use_apply_matrix: BoolProperty(
-        name="Apply Matrix",
-        description="Use matrix to transform the objects",
-        default=True,
+        description="What to bring in with the objects",
+        default={'MATERIAL', 'UV'},
     )
     # SKIP_PRESET as well as SKIP_SAVE: the operator has presets, and a scene name belongs to one pack.
     pack_scene: StringProperty(
@@ -263,6 +316,7 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
             import_pack(layout, self, packs)
         elif space is not None and space.type == 'FILE_BROWSER':
             import_pack(layout, self, None)
+        import_files(layout, self)
         import_include(layout, self)
         import_transform(layout, self)
 
@@ -336,17 +390,73 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
                 print("MaxDrop: %s: %s stored without a known encoding, read as a guess"
                       % (os.path.basename(path), _plural(len(result.guessed), "name")))
 
-        from . import import_max
-        keywords = self.as_keywords(ignore=("axis_forward", "axis_up", "filter_glob", "files", "directory",
-                                            "filepath", "pack_scene"))
-        keywords["global_matrix"] = axis_conversion(from_forward=self.axis_forward, from_up=self.axis_up,).to_4x4()
-        for max_path in resolved:
-            import_max.load(self, context, files=[Path(os.path.basename(max_path))],
-                            directory=os.path.dirname(max_path), **keywords)
+        imported, failed = 0, []
+        if window:
+            window.cursor_set('WAIT')
+        try:
+            for max_path in resolved:
+                try:
+                    lines = self._import_scene(context, max_path)
+                except (OSError, ValueError) as e:
+                    failed.append("%s: %s" % (os.path.basename(max_path), e))
+                    continue
+                imported += 1
+                for level, line in lines:
+                    self.report({level}, line)
+                    print("MaxDrop: " + line)
+        finally:
+            if window:
+                window.cursor_set('DEFAULT')
+        if not imported:
+            return self._error("Nothing imported. " + "; ".join(failed))
+        for line in failed:
+            self.report({'WARNING'}, "Not imported: " + line)
+            print("MaxDrop: not imported: " + line)
         for line in summaries:
             self.report({'INFO'}, line)
             print("MaxDrop: " + line)
         return {'FINISHED'}
+
+    def _import_scene(self, context, max_path):
+        """Read, describe and build one .max into a collection named after it in the active collection, then its
+        materials through import_max. [(report level, line)]; OSError or ValueError when the file cannot be read."""
+        from .build import collections as build_collections
+        from .build import objects as build_objects
+        from .convert import scene as convert_scene
+        from .reader import cfb, units
+        from .reader import scene as reader_scene
+        name = os.path.basename(max_path)
+        with cfb.CompoundFile(max_path) as cf:
+            sc = reader_scene.Scene.from_file(cf)
+            unit = units.system_unit(sc)
+            meters, note = _meters(self.units, unit, self.scale_objects)
+            desc = convert_scene.describe(sc, meters, unit)
+        if 'UV' not in self.object_filter:
+            for md in desc.meshes.values():
+                md.uv_layers = []
+        view_layer = context.view_layer
+        cols = build_collections.make(desc, view_layer.active_layer_collection.collection, os.path.splitext(name)[0])
+        built = build_objects.build(desc, cols.root, cols, view_layer)
+        build_collections.finish(cols, view_layer)
+        axis = axis_conversion(from_forward=self.axis_forward, from_up=self.axis_up).to_4x4()
+        if axis != Matrix.Identity(4):
+            for ob in built.objects.values():
+                if ob.parent is None:
+                    ob.matrix_basis = axis @ ob.matrix_basis
+        lines = [('WARNING', "%s %s" % (name, note))] if note else []
+        materials, problems = 0, []
+        if 'MATERIAL' in self.object_filter and desc.meshes:
+            materials, problems = _materials(max_path, desc, built, self.use_image_search)
+        if problems:
+            for problem in problems:
+                print("MaxDrop: %s: %s" % (name, problem))
+            lines.append(('WARNING', "%s: %s, see the system console" % (
+                name, _plural(len(problems), "material problem"))))
+        placeholders = sum(desc.placeholders.values())
+        lines.append(('INFO', "Imported %s: %s (%d placeholders), %s, %s" % (
+            name, _plural(len(built.objects), "object"), placeholders,
+            _plural(len(built.meshes), "mesh", "meshes"), _plural(materials, "material"))))
+        return lines
 
     def invoke(self, context, event):
         # A filepath remembered from an earlier run is not "set": only a drop's or a caller's own path is listed.
@@ -370,6 +480,12 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
                 parent, problem = _target(path, context)
                 existing = _existing(path, found.scenes, self.pack_scene, parent) if parent else None
                 _TARGETS[_norm(path)] = (parent, problem, existing)
+                if existing:  # a pack is never unpacked here: only a folder already on disk is read
+                    _remember_preflight(existing[1])
+            listed = {_norm(path) for path, _found in packs}
+            for path in _paths(self)[:_SHOWN_FILES]:
+                if _norm(path) not in listed and os.path.isfile(path):
+                    _remember_preflight(path)
         return self.invoke_popup(context)
 
 
@@ -409,6 +525,51 @@ def import_pack(layout, operator, packs):
                 body.label(text=parent)
 
 
+def _materials(max_path, desc, built, search):
+    """The old engine's materials on the built meshes: one call per mesh, with the material of its first node
+    (adjust_material appends slots to the mesh, which instances share). (materials on the meshes, [problem])."""
+    from . import import_max
+    problems = []
+    try:
+        import_max.open_materials(max_path)
+    except Exception as e:  # the old reader fails on files the new one reads: geometry stays
+        return 0, ["materials not read (%s: %s)" % (type(e).__name__, e)]
+    try:
+        for md in desc.meshes.values():
+            ob = built.objects.get(md.users[0]) if md.users else None
+            if ob is None:
+                continue
+            try:
+                import_max.assign_material(max_path, search, ob, md.users[0])
+            except Exception as e:
+                problems.append("material of %s not made (%s: %s)" % (ob.name, type(e).__name__, e))
+    finally:
+        import_max.close_materials()
+    return len({m.name for mesh in built.meshes.values() for m in mesh.materials if m is not None}), problems
+
+
+def import_files(layout, operator):
+    """The pre-flight line of each .max invoke() read: a drop's or a script's, or a pack's folder on disk."""
+    rows = []
+    for path in _paths(operator):
+        found = _TARGETS.get(_norm(path))
+        target = found[2][1] if found and found[2] else path
+        line = _PREFLIGHT.get(_norm(target))
+        if line is not None:
+            rows.append((os.path.basename(target), line))
+    if not rows:
+        return
+    header, body = layout.panel("MAXDROP_import_files", default_closed=False)
+    header.label(text="File")
+    if not body:
+        return
+    for name, line in rows[:_SHOWN_FILES]:
+        body.label(text=name, icon='FILE_3D')
+        body.label(text=line)
+    if len(rows) > _SHOWN_FILES:
+        body.label(text="and %d more" % (len(rows) - _SHOWN_FILES))
+
+
 def import_include(layout, operator):
     header, body = layout.panel("MAXDROP_import_include", default_closed=False)
     header.label(text="Include")
@@ -417,19 +578,14 @@ def import_include(layout, operator):
         layrow.prop(operator, "use_image_search")
         layrow.label(text="", icon='OUTLINER_OB_IMAGE' if operator.use_image_search else 'IMAGE_DATA')
         layout.column().prop(operator, "object_filter")
-        layrow = layout.row(align=True)
-        layrow.prop(operator, "use_collection")
-        layrow.label(text="", icon='OUTLINER_COLLECTION' if operator.use_collection else 'GROUP')
 
 
 def import_transform(layout, operator):
     header, body = layout.panel("MAXDROP_import_transform", default_closed=False)
     header.label(text="Transform")
     if body:
+        layout.prop(operator, "units")
         layout.prop(operator, "scale_objects")
-        layrow = layout.row(align=True)
-        layrow.prop(operator, "use_apply_matrix")
-        layrow.label(text="", icon='VIEW_ORTHO' if operator.use_apply_matrix else 'MESH_GRID')
         layout.prop(operator, "axis_forward")
         layout.prop(operator, "axis_up")
 

@@ -19,6 +19,11 @@ files are also chosen through directory + files, as the file browser and a drop 
 one-scene zip, a two-scene zip with another pack (refused), a good zip then one with a damaged scene (refused,
 nothing imported, the message names the good one, which stays unpacked), a file named .zip that is not one
 (refused). A .zip, .rar or .7z given as argument is imported through the operator as it is.
+
+Without arguments, the units fixtures: with Units = Auto the box (10 x 20 x 30 system units in each file) measures
+that many millimeters, centimeters and inches; with Units = Millimeters all three measure the same; Scale 2 doubles
+it; Up Y turns it; a file that does not state its unit takes Scale as meters per unit, with a note. The pre-flight line of a
+fixture names its 3ds Max version, its node count and its unit.
 Prints `IMPORT PASSED` (exit 0) or `IMPORT FAILED` (exit 1).
 """
 import glob
@@ -190,6 +195,90 @@ def selections(max_path, scratch):
           result == {'CANCELLED'} and "is not a .zip, .rar or .7z archive" in message, message.strip())
 
 
+def box_size():
+    """The world bounding box size of the only mesh object after an import of units_*.max."""
+    ob = next(ob for ob in bpy.data.objects if ob.type == 'MESH')
+    world = [ob.matrix_world @ v.co for v in ob.data.vertices]
+    return [max(p[k] for p in world) - min(p[k] for p in world) for k in range(3)]
+
+
+def close(a, b, tolerance=1e-6):
+    return all(abs(x - y) <= tolerance * max(1.0, abs(y)) for x, y in zip(a, b))
+
+
+class FakeLayout:
+    """Records the labels a draw function puts into a panel (no window in the background)."""
+
+    def __init__(self):
+        self.labels = []
+
+    def panel(self, idname, default_closed=False):
+        return self, self
+
+    def label(self, text="", icon='NONE'):
+        self.labels.append(text)
+
+
+class FakeOperator:
+    def __init__(self, path):
+        self.files, self.directory, self.filepath = [], "", path
+
+
+def preflight_panel(ops, path):
+    """The File panel of the popup: invoke() remembers the line of a dropped .max, draw shows it."""
+    ops._PREFLIGHT.clear()
+    layout = FakeLayout()
+    ops.import_files(layout, FakeOperator(path))
+    check("File panel: nothing before invoke() read the file", layout.labels == [], str(layout.labels))
+    ops._remember_preflight(path)
+    ops.import_files(layout, FakeOperator(path))
+    check("File panel: the file name, then its pre-flight line",
+          layout.labels == ["File", os.path.basename(path), ops._preflight(path)], str(layout.labels))
+
+
+def units_and_preflight(ops):
+    fixtures_dir = os.path.join(ROOT, "tests", "fixtures")
+    box = (10.0, 20.0, 30.0)
+    sizes = {}
+    for name, meters in (("units_mm", 0.001), ("units_cm", 0.01), ("units_in", 0.0254)):
+        path = os.path.join(fixtures_dir, name + ".max")
+        import_one(path, "%s, Units Auto" % name)
+        got = box_size()
+        check("%s, Units Auto: the box measures 10 x 20 x 30 of its unit" % name,
+              close(got, [v * meters for v in box]), str(got))
+        import_one(path, "%s, Units Millimeters" % name, units='MILLIMETERS')
+        sizes[name] = box_size()
+    check("units_mm, units_cm, units_in with Units Millimeters: the same box size in meters",
+          close(sizes["units_cm"], sizes["units_mm"]) and close(sizes["units_in"], sizes["units_mm"])
+          and close(sizes["units_mm"], [v * 0.001 for v in box]), str(sizes))
+    import_one(os.path.join(fixtures_dir, "units_cm.max"), "units_cm, Units Auto, Scale 2", scale_objects=2.0)
+    got = box_size()
+    check("units_cm, Scale 2: twice the size", close(got, [v * 0.02 for v in box]), str(got))
+    import_one(os.path.join(fixtures_dir, "units_mm.max"), "units_mm, Up Y, Forward -Z", axis_up='Y',
+               axis_forward='-Z')
+    got = box_size()
+    check("units_mm, Up Y: the top-level object is turned, Y up becomes Z up",
+          close(got, [0.01, 0.03, 0.02]), str(got))
+    meters, note = ops._meters('AUTO', None, 0.5)
+    check("a file without a unit: Scale is the meters per unit, with a note", meters == 0.5 and "0.5" in note, note)
+    check("Units Feet ignores the file's unit", ops._meters('FEET', None, 1.0) == (0.3048, ""))
+    line = ops._preflight(os.path.join(fixtures_dir, "hierarchy.max"))
+    check("pre-flight line: 3ds Max version, node count, unit",
+          line.startswith("3ds Max 2020, ") and ", 5 nodes, millimeters" in line, line)
+    line = ops._preflight(os.path.join(fixtures_dir, "units_in.max"))
+    check("pre-flight line of units_in: 1 node, inches", line.endswith(", 1 node, inches"), line)
+    preflight_panel(ops, os.path.join(fixtures_dir, "hierarchy.max"))
+    with open(os.path.join(tempfile.gettempdir(), "maxdrop-not-a-max.max"), "wb") as f:
+        f.write(b"not a 3ds Max file")
+        bad = f.name
+    try:
+        line = ops._preflight(bad)
+    finally:
+        os.remove(bad)
+    check("pre-flight line of a file that is not a .max: says so", line.startswith("Not readable as a .max file"),
+          line)
+
+
 def run():
     files = fixtures()
     if not files:
@@ -212,6 +301,8 @@ def run():
             as_pack(path, work, images, archive)
             two_scenes(path, work)
             selections(path, work)
+        if not argv:
+            units_and_preflight(sys.modules[maxdrop.__name__ + ".ops"])
     finally:
         maxdrop.unregister()
         shutil.rmtree(scratch, ignore_errors=True)
