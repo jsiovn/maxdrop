@@ -77,7 +77,7 @@ the inherited engine, which reads the file a second time for them.
 
 How it was measured: as above (`tools/baseline.py`, Blender 5.2.0 LTS, Python 3.13.13, the same machine, default
 options: Units Auto, materials and UV maps on), MaxDrop 0.0.3, measured once on 2026-11-15. The 0.0.1 column is
-the table above.
+the table above; 0.0.2 has the same engine (it added scene packs in front of it).
 
 | | Scene A 0.0.1 | Scene A 0.0.3 | Scene B 0.0.1 | Scene B 0.0.3 |
 |---|---:|---:|---:|---:|
@@ -105,12 +105,12 @@ the table above.
 - Placeholders, scene A: 282 V-Ray lights, 20 spline shapes, 6 free lights, 5 rectangles, 4 lines and 6 others
   (a camera, a directional light, their targets, link composites). Scene B: 416 Particle Flow operators and events,
   24 V-Ray lights, 4 boxes, 2 targets, a camera and a sun.
-- Time dropped by a third. Peak memory barely moved: the inherited material engine still parses the whole file,
-  and it is the larger share. It goes away with the material conversion.
+- Time dropped by a third. Peak memory dropped little (scene A 0.2 GB, scene B 1.4 GB): the inherited material
+  engine still parses the whole file for the materials. That goes away with the material conversion.
 
 ### Accuracy against 3ds Max
 
-Every node of both scenes was compared with the dump of 3ds Max 2020 itself (`tools/oracle/dump_scene.ms`, see
+Both scenes were compared node by node with the dump of 3ds Max 2020 itself (`tools/oracle/dump_scene.ms`, see
 [ORACLE.md](ORACLE.md)), by position in the node walk (the order and names are equal). Nodes with modifiers are
 left out: MaxDrop does not apply modifiers yet. A world matrix matches when each of its 12 numbers is within 1e-4
 (translation in the file's own unit), or within 1e-5 of its value when that is larger: the dump prints 6
@@ -126,7 +126,7 @@ significant digits, so a position of 1234.56 mm is only known to 0.01. A boundin
 | Bounding box matches (meshes) | 280 of 280 (100 %) | 1,416 of 1,416 (100 %) |
 | Both | 660 (99.7 %) | 2,040 (99.9 %) |
 
-The four nodes that miss, two per scene, are a camera and lights aimed by a Look At controller, which this version
+The four nodes that miss are a camera and a light in each scene, aimed by a Look At controller, which this version
 does not evaluate. The milestone's target was 99 % in both scenes.
 
 ## Reproduce

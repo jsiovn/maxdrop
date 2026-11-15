@@ -1,17 +1,18 @@
 # What MaxDrop imports
 
-**This page describes version 0.0.3.** Nodes, meshes, transforms,
-hierarchy, instances, layers and scene units are read by MaxDrop's own reader; the materials still come from the
-engine of [io_scene_max](https://github.com/nrgsille76/io_scene_max) 1.9.2 (`maxdrop/import_max.py`), which reads
-the file a second time for them. A scene pack (`.zip`, `.rar`, `.7z`) is unpacked and its `.max` imported (see
+**This page describes version 0.0.3.** Nodes, meshes, transforms, hierarchy, instances, layers and scene units are
+read by MaxDrop's own reader; the materials still come from the engine of
+[io_scene_max](https://github.com/nrgsille76/io_scene_max) 1.9.2 (`maxdrop/import_max.py`), which reads the file a
+second time for them. A scene pack (`.zip`, `.rar`, `.7z`) is unpacked and its `.max` imported (see
 [Files](#files)), and several `.max` files chosen at once are imported one after the other.
 
 How far to trust the list: MaxDrop's test files (`tests/fixtures/`, saved by 3ds Max 2020) are compared with what
 3ds Max itself reports for every node: world matrix, bounding box, vertex and face counts, parents, instances,
 layers and the hidden, frozen and renderable flags. Two commercial interior scenes (3ds Max 2015 and 2020) import
 without an error, and 99.7 % and 99.9 % of their objects without modifiers get the world matrix and bounding box
-3ds Max reports (the rest are cameras and lights aimed by a Look At controller; see [BASELINE.md](BASELINE.md)). Materials are checked on the test files' Standard materials only. The page is updated with
-every version.
+3ds Max reports (the rest are a camera and a light per scene aimed by a Look At controller; see
+[BASELINE.md](BASELINE.md)). Materials are checked on the test files' Standard materials only. The page is updated
+with every version.
 
 "Not yet" means the importer does not convert it: the node arrives as an empty (a *placeholder*) at its place in
 the hierarchy, with its 3ds Max class name in the custom property `maxdrop_class`.
@@ -19,7 +20,8 @@ the hierarchy, with its 3ds Max class name in the custom property `maxdrop_class
 After every import the **import report** says what arrived and what did not: the unit, the objects and meshes
 built, layers, hidden and frozen objects, groups, the placeholders by class, the modifiers not applied, unknown
 controllers and geometry errors, and the unpack of a scene pack. It is printed to the system console and kept in
-the text **MaxDrop Report** (Text Editor); the status line says whether anything was left out.
+the text **MaxDrop Report** (Text Editor). Material problems, such as a texture that is not found, are
+printed to the system console only.
 
 ## Objects
 
