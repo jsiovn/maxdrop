@@ -115,8 +115,9 @@ junctions are not followed. A file that is not found keeps its Image Texture nod
 connected, so the channel keeps its plain value (no black or magenta surface, in EEVEE or Cycles), and is named in
 the import report. Each file is loaded once per color space.
 
-From a scene pack, the image and `.ies` files of the pack are unpacked flat into the folder of the `.max`, so the
-lookup above finds them wherever they were in the archive. Of two maps with the same file name, the one nearest to
+From a scene pack, the image and `.ies` files the scene names are unpacked flat into the folder of the `.max`, so
+the lookup above finds them wherever they were in the archive; the pack's other images are left out (all of them
+are unpacked when the scene's asset list cannot be read). Of two maps with the same file name, the one nearest to
 the scene in the archive is kept.
 
 ## Files
@@ -130,7 +131,7 @@ the scene in the archive is kept.
   the engine it replaces).
 - **Scene packs**: a `.zip`, `.rar` or `.7z` holding the scene, chosen in *File › Import*; a `.rar` or `.7z` can
   also be dropped (a dropped `.zip` goes to Blender's extension installer). The format is recognised by the file's
-  content. The chosen `.max` and the pack's image and `.ies` files are unpacked into a folder named after the
+  content. The chosen `.max` and the image and `.ies` files it names are unpacked into a folder named after the
   archive, next to it or in the folder set in the preferences, and the scene is imported from there; a pack with
   several scenes asks which one. Everything else in the pack is skipped.
 - `.zip` is read by Python's own `zipfile`: stored, Deflate, bzip2 and LZMA entries; not encrypted entries,

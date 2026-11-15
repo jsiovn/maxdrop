@@ -40,6 +40,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   then the **Texture Search Folders** of the preferences (now searched, with their subfolders), and last the path
   stored in the scene, only when it is on a local drive. Network and device paths stored in a scene are never
   opened. Texture paths are read from the scene's asset list, where 3ds Max keeps them.
+- **Scene packs unpack only the maps the scene uses**: of a pack's image and `.ies` files, only those the chosen
+  scene's asset list names are written (every one when that list cannot be read); the import report counts the
+  files left out. A map the scene does not use no longer stops the unpack for being encrypted or unreadable.
 
 ## [0.0.3] - 2026-11-15
 

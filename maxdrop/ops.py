@@ -28,6 +28,8 @@
 # (convert.report.add_materials): converted by class, wrappers and maps peeled, classes without a rule, textures
 # found per lookup rule and missing by name, Principled inputs this Blender lacks. The materials count is part of the
 # summary line instead of a line of its own.
+# Modified for MaxDrop, 2026-11-16 (jsiovn). A scene pack unpacks only the image and .ies files the chosen scene's
+# asset list names (_referenced_maps), and the popup asks the same of an earlier unpack.
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -189,6 +191,23 @@ def _target(path, context):
         return None, str(e)
 
 
+def _referenced_maps(max_path):
+    """The file names a .max's asset list holds, for archive.unpack(references=...); None (every image and .ies
+    file of the pack is unpacked) when the file has no asset list, a damaged one, or cannot be read. Every texture
+    the import looks up comes from that list (convert.texmaps)."""
+    from .reader import assets, cfb
+    try:
+        with cfb.CompoundFile(max_path) as cf:
+            table = assets.AssetTable.from_file(cf)
+    except _UNREADABLE as e:
+        print("MaxDrop: %s: asset list not read (%s), every map of the pack is unpacked"
+              % (os.path.basename(max_path), e))
+        return None
+    if table.stream is None or table.issues:
+        return None
+    return {e.name for e in table if e.name}
+
+
 def _existing(path, scenes, text, parent):
     """("reused" | "in_place", .max path) when the import will use a folder already on disk, None when it will
     unpack, or when the scene is not chosen yet."""
@@ -199,7 +218,7 @@ def _existing(path, scenes, text, parent):
         return None
     if scene is None:
         return None
-    return archive.existing_folder(path, scene, len(scenes) > 1, parent)
+    return archive.existing_folder(path, scene, len(scenes) > 1, parent, references=_referenced_maps)
 
 
 def _scene_search(self, context, edit_text):
@@ -451,7 +470,8 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
             if window:
                 window.cursor_set('WAIT')
             try:
-                result = archive.unpack(path, chosen[path], prefs.pack_parent(path, context))
+                result = archive.unpack(path, chosen[path], prefs.pack_parent(path, context),
+                                        references=_referenced_maps)
             except (archive.PackError, ValueError) as e:
                 if written:
                     return self._error("%s Nothing was imported. Already unpacked, and used again by the next "
