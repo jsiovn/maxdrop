@@ -20,8 +20,20 @@ Check [docs/SUPPORT.md](docs/SUPPORT.md) first: much of what a scene holds is si
 You need Blender 4.2 or newer and any Python 3 for the plain tests. There is nothing to install.
 
 ```powershell
-python -I -m unittest discover tests                  # the tools, the landing page, the license files: no Blender
+python -I -m unittest discover tests                  # the unit tests, the tools, the landing page: no Blender
 powershell -ExecutionPolicy Bypass -File build.ps1    # dist\: the zip, index.json and the landing page
+```
+
+The plain tests include a guard: `maxdrop/reader`, `maxdrop/convert` and `maxdrop/intake` must run without
+Blender, so no module there may import `bpy`, `mathutils` or another module of the add-on outside these three
+packages. The code is linted with [ruff](https://docs.astral.sh/ruff/), configured in `pyproject.toml`
+(`import_max.py` is left out while it is replaced). Install it in a virtual environment of its own, at the
+version the `test` workflow pins:
+
+```powershell
+python -m venv $env:TEMP\maxdrop-ruff
+& $env:TEMP\maxdrop-ruff\Scripts\python.exe -m pip install ruff==0.17.5
+& $env:TEMP\maxdrop-ruff\Scripts\ruff.exe check .
 ```
 
 Run the Blender tests headless with a profile of their own, so your preferences are never touched:
@@ -60,7 +72,7 @@ the same extension enabled from two repositories clashes.
 | `LICENSE`, `maxdrop/LICENSE` | The GPL v3 text, and the same file again so that it is in every zip. `tools/check_zip.py` checks a built zip for it. |
 | `tools/fixtures/*.ms`, `tools/sanitize_fixture.py`, `tools/check_fixture.py`, `tools/cfb.py` | The test files: the MAXScript that authors each one, the tool that blanks the user and computer name 3ds Max writes into a file, the check that refuses names and paths, and the compound-file reader both use. |
 | `tools/oracle/dump_scene.ms` | Writes what 3ds Max itself says about a scene as JSON: the `tests/fixtures/*.oracle.json` files the reader is checked against ([docs/ORACLE.md](docs/ORACLE.md)). |
-| `tests/` | `test_site.py`, `test_license.py`, `test_intake*.py`, `test_fixtures.py`, `test_oracle.py` (plain Python), `smoke_register.py`, `smoke_import.py` (inside Blender); `fixtures/` holds the test `.max` files with their 3ds Max oracle (`.oracle.json`) and `fixtures/packs/` the test scene packs. |
+| `tests/` | `test_site.py`, `test_license.py`, `test_intake*.py`, `test_fixtures.py`, `test_oracle.py` and `unit/` (the reader and the no-bpy guard) in plain Python, `smoke_register.py`, `smoke_import.py` (inside Blender); `fixtures/` holds the test `.max` files with their 3ds Max oracle (`.oracle.json`) and `fixtures/packs/` the test scene packs. |
 
 ## Test files
 
@@ -104,8 +116,10 @@ tools know how 3ds Max 2020 stores the two names; a file from another version th
 
 ## Pull requests
 
-Keep them small and say what you tested and on which Blender version. The `test` workflow runs the plain tests
-and, on Blender 4.2 LTS, 4.5 LTS and 5.2 LTS, the build and the register smoke test.
+Keep them small and say what you tested and on which Blender version. The `test` workflow runs the plain tests,
+the fixture scan on Linux and Windows and ruff, then, on Blender 4.2 LTS, 4.5 LTS and 5.2 LTS, the build, the
+register smoke test, the import smoke test and the fixture tests. Dependabot proposes updates of the actions it
+uses once a week.
 
 By contributing you agree that your work is released under the [GNU General Public License](LICENSE), either
 version 3 of the License, or (at your option) any later version (GPL-3.0-or-later).
