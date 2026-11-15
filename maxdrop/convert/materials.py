@@ -4,15 +4,15 @@
 
 """Material rules: a 3ds Max material's parameters turned into a renderer-neutral MaterialIR in linear color.
 
-    conv = MaterialConverter(graph, meters=desc.meters)   # graph: reader.materials.MaterialGraph
-    ir = conv.convert(node.material)    # MaterialIR (wrappers peeled), None when the object is not a material
+    conv = MaterialConverter(graph)     # graph: reader.materials.MaterialGraph
+    ir = conv.convert(node.material)    # MaterialIR (wrappers peeled); None for no material or not a material
     ir.base_color.value, ir.base_color.map        # linear RGB, MapRef(index, amount, invert) or None
     conv.peel(index)                    # (object index of the renderable material or None, reason)
     conv.stats.peeled, conv.stats.unknown, conv.stats.issues
 
 Each input of a MaterialIR is an Input: a value (a linear RGB tuple or a float) and, when a map drives it, a
-MapRef to the map object (convert/texmaps.py turns that into a texture graph; the value is what the slot shows
-without it). One MaterialIR per Max material object index; a wrapper converts to the IR of the material it peels
+MapRef to the map object (the texture-map rules of a later bead turn that into a texture graph; the value is what
+the slot shows without it). One MaterialIR per Max material object index; a wrapper converts to the IR of the material it peels
 to, so every node using either shares it.
 
 Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX workarounds):
@@ -26,14 +26,16 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   Fresnel off a bright reflection (mean >= METAL_REFLECTION) makes the material a metal in the reflection color.
   The Fresnel IOR is the refraction IOR when the material refracts or locks the IOR, else the reflection IOR.
 - VRayLightMtl -> emission only; VRayFastSSS2 -> base + subsurface; VRayCarPaintMtl / VRayCarPaintMtl2 -> a metal
-  base + coat.
+  base + coat (VRayCarPaintMtl's coat_strength is the coat's reflectance at normal incidence: a full coat whose
+  IOR gives that reflectance; VRayCarPaintMtl2's coat_amount is the coat weight).
 - Wrappers (VRay2SidedMtl, VRayBlendMtl, VRayOverrideMtl, VRayMtlWrapper, DoubleSided, Shellac) -> the first set
   sub-material in 3ds Max's getSubMtl order; Shell Material -> its render sub-material. Peeling stops at any other
   class (a Multi/Sub-Object included), at most MAX_PEEL wrappers deep; each wrapper object peeled counts once.
 - Any other class -> a grey material that keeps its name, counted by class name.
 
 Colors are 3ds Max swatches (display-referred), clamped to 0..1 and decoded with the sRGB transfer function.
-A missing, animated or non-finite parameter takes V-Ray's default. Lengths (the SSS radius) are in meters.
+A missing, animated or non-finite parameter takes V-Ray's default; an IOR is clamped to 1..100. The SSS radius is
+in meters (VRayFastSSS2 stores it in centimeters whatever the system unit).
 Parameter ids: docs/FORMAT.md for the classes of the fixtures; the others (named beside each rule) were read from
 3ds Max 2020 + V-Ray 5.2 through the SDK, not from a file. No bpy, no mathutils.
 """
@@ -184,6 +186,16 @@ def _mix(a, b, t):
     return tuple(x * (1.0 - t) + y * t for x, y in zip(a, b))
 
 
+def _ior(v):
+    return min(100.0, max(1.0, v))
+
+
+def ior_from_reflectance(f0):
+    """The IOR whose Fresnel reflectance at normal incidence is f0: ((n - 1) / (n + 1)) ** 2 = f0."""
+    r = math.sqrt(min(0.99, max(0.0, f0)))
+    return (1.0 + r) / (1.0 - r)
+
+
 def _roughness(gloss, use_roughness):
     return _clamp01(gloss if use_roughness else 1.0 - gloss)
 
@@ -191,10 +203,8 @@ def _roughness(gloss, use_roughness):
 class MaterialConverter:
     """Converts the materials of one MaterialGraph, each object once."""
 
-    def __init__(self, graph, meters=1.0):
-        if not (_finite(meters) and meters > 0):
-            raise ValueError("meters per unit must be a positive number, not %r" % (meters,))
-        self.graph, self.meters = graph, meters
+    def __init__(self, graph):
+        self.graph = graph
         self.stats = ConvertStats()
         self._done, self._peels, self._counted = {}, {}, set()
 
@@ -202,10 +212,6 @@ class MaterialConverter:
         self.stats.issues.append((index, reason))
         if ir is not None:
             ir.issues.append(reason)
-
-    def _get(self, index):
-        """The MtlBase of a material or map object; ChunkError when it cannot be read."""
-        return self.graph.get(index)
 
     def map_ref(self, m, map_pid, on_pid, amount_pid, block, invert=False, ir=None):
         """The MapRef of a map slot: None when it holds no map, is switched off or holds something else."""
@@ -222,7 +228,7 @@ class MaterialConverter:
 
     def is_class(self, index, superclass, class_id):
         try:
-            m = self._get(index)
+            m = self.graph.get(index)
         except ChunkError:
             return False
         return m.superclass == superclass and ClassId(*m.class_id) == class_id
@@ -256,14 +262,16 @@ class MaterialConverter:
         return None, "%s: no sub-material" % (m.name or "wrapper")
 
     def peel(self, index):
-        """(object index of the material a wrapper stands for, None), the index itself for a material that is no
-        wrapper; (None, reason) when the peel ends without a material."""
+        """(object index of the material a wrapper stands for, None), the index itself for an object that is no
+        wrapper; (None, reason) when the peel ends without a material. The depth guard counts from index, so the
+        same chain can fail from its top and succeed from lower down; the wrappers a failed peel walked through are
+        counted in stats.peeled all the same."""
         if index in self._peels:
             return self._peels[index]
         chain, i, out = [], index, None
         while out is None:
             try:
-                m = self._get(i)
+                m = self.graph.get(i)
             except ChunkError as e:
                 out = (None, "object %d: %s" % (i, e))
                 break
@@ -288,7 +296,10 @@ class MaterialConverter:
         return out
 
     def convert(self, index):
-        """The MaterialIR of material object index, None when the object is not a material."""
+        """The MaterialIR of material object index, None for no index (a node without a material) or an object
+        that is not a material."""
+        if not isinstance(index, int) or isinstance(index, bool):
+            return None
         if index in self._done:
             return self._done[index]
         if self.graph.superclass(index) != classids.SC_MATERIAL:
@@ -306,7 +317,7 @@ class MaterialConverter:
     def _grey(self, index, reason):
         """The grey material for an object no rule converts, named after it."""
         try:
-            m = self._get(index)
+            m = self.graph.get(index)
             name, source = m.name, class_name(m.superclass, m.class_id)
         except ChunkError:
             name, source = "", ""
@@ -318,7 +329,7 @@ class MaterialConverter:
 
     def _rule(self, index):
         try:
-            m = self._get(index)
+            m = self.graph.get(index)
         except ChunkError as e:
             return self._grey(index, "object %d: %s" % (index, e))
         source = class_name(m.superclass, m.class_id)
@@ -358,7 +369,7 @@ def vray_mtl(conv, m, ir):
 
     ir.transmission = Input(t, conv.map_ref(m, 102, 152, 202, 4, ir=ir))  # texmap_refraction
     refraction_ior, reflection_ior = _num(m, 9, 1, 1.6), _num(m, 63, 1, 1.6)
-    ir.ior = refraction_ior if t > 0 or _flag(m, 65, 1, True) else reflection_ior  # reflection_lockIOR
+    ir.ior = _ior(refraction_ior if t > 0 or _flag(m, 65, 1, True) else reflection_ior)  # reflection_lockIOR
     ir.thin_walled = _flag(m, 107, 1, False)  # refraction_thinWalled
     conv.bump_slot(ir, conv.map_ref(m, 103, 153, 203, 4, ir=ir))  # texmap_bump
     ir.alpha = Input(1.0, conv.map_ref(m, 112, 162, 212, 4, ir=ir))  # texmap_opacity
@@ -366,7 +377,7 @@ def vray_mtl(conv, m, ir):
     ir.coat_weight = _clamp01(_num(m, 96, 1, 0.0))  # coat_amount
     ir.coat_color = _rgb(m, 97, 1, (1.0, 1.0, 1.0))
     ir.coat_roughness = _roughness(_num(m, 98, 1, 1.0), use_roughness)  # coat_glossiness
-    ir.coat_ior = _num(m, 99, 1, 1.6)
+    ir.coat_ior = _ior(_num(m, 99, 1, 1.6))
 
 
 def vray_light_mtl(conv, m, ir):
@@ -379,40 +390,44 @@ def vray_light_mtl(conv, m, ir):
 
 def vray_fast_sss2(conv, m, ir):
     """VRayFastSSS2, block 0: 26 diffuse_color, 27 / 28 its map (on), 36 diffuse_amount, 2 sub_surface_color,
-    0 scatter_radius, 22 scale, 31 IOR, 40 specular_color, 51 specular_glossiness, 3 / 4 texmap_bump (on),
+    0 scatter_radius (cm, a plain float: not in system units), 22 scale, 31 IOR, 40 specular_color, 51 specular_glossiness, 3 / 4 texmap_bump (on),
     85 / 86 texmap_opacity (on)."""
     ir.base_color = Input(_rgb(m, 26, 0, (0.5, 0.5, 0.5)), conv.map_ref(m, 27, 28, None, 0, ir=ir))
     ir.roughness = Input(_roughness(_num(m, 51, 0, 0.6), False))
     ir.specular = Input(_clamp01(mean(_rgb(m, 40, 0, (1.0, 1.0, 1.0)))))
-    ir.ior = _num(m, 31, 0, 1.3)
+    ir.ior = _ior(_num(m, 31, 0, 1.3))
     ir.subsurface_weight = _clamp01(1.0 - _num(m, 36, 0, 0.0))
     ir.subsurface_color = _rgb(m, 2, 0, (1.0, 1.0, 1.0))
-    ir.subsurface_radius = max(0.0, _num(m, 0, 0, 2.0) * _num(m, 22, 0, 1.0)) * conv.meters
+    ir.subsurface_radius = max(0.0, _num(m, 0, 0, 1.0) * _num(m, 22, 0, 1.0)) * 0.01
     conv.bump_slot(ir, conv.map_ref(m, 3, 4, None, 0, ir=ir))
     ir.alpha = Input(1.0, conv.map_ref(m, 85, 86, None, 0, ir=ir))
 
 
-def _car_paint(conv, m, ir, coat_ior, bump_pid):
+def _car_paint(conv, m, ir, base_gloss, bump_pid):
     """Both car paints, block 0: 0 base_color, 1 / 2 its map (on), 4 base_reflection, 8 base_glossiness,
-    27 coat_color, 31 coat_strength (CarPaint) or coat_amount (CarPaint2), 39 coat_glossiness, then the base bump
-    map and its on switch at bump_pid, bump_pid + 1."""
-    ir.base_color = Input(_rgb(m, 0, 0, (0.5, 0.5, 0.5)), conv.map_ref(m, 1, 2, None, 0, ir=ir))
-    ir.roughness = Input(_roughness(_num(m, 8, 0, 0.6), False))
+    27 coat_color, 39 coat_glossiness, then the base bump map and its on switch at bump_pid, bump_pid + 1."""
+    ir.base_color = Input(_rgb(m, 0, 0, (0.3, 0.4, 0.5)), conv.map_ref(m, 1, 2, None, 0, ir=ir))
+    ir.roughness = Input(_roughness(_num(m, 8, 0, base_gloss), False))
     ir.metallic = Input(1.0)
     ir.specular = Input(_clamp01(_num(m, 4, 0, 0.5)))
-    ir.coat_weight = _clamp01(_num(m, 31, 0, 0.0))
     ir.coat_color = _rgb(m, 27, 0, (1.0, 1.0, 1.0))
     ir.coat_roughness = _roughness(_num(m, 39, 0, 1.0), False)
-    ir.coat_ior = coat_ior
     conv.bump_slot(ir, conv.map_ref(m, bump_pid, bump_pid + 1, None, 0, ir=ir))
 
 
 def vray_car_paint_mtl(conv, m, ir):
-    _car_paint(conv, m, ir, 1.5, 55)  # texmap_base_bump 55, on 56; no coat IOR parameter
+    """31 coat_strength: the coat's reflectance at normal incidence (default 0.05), not a weight; 55 / 56 bump."""
+    _car_paint(conv, m, ir, 0.6, 55)
+    f0 = _clamp01(_num(m, 31, 0, 0.05))
+    ir.coat_weight = 1.0 if f0 > 0 else 0.0
+    ir.coat_ior = ior_from_reflectance(f0)
 
 
 def vray_car_paint_mtl2(conv, m, ir):
-    _car_paint(conv, m, ir, _num(m, 81, 0, 1.5), 54)  # coat_ior 81; texmap_base_bump 54, on 55
+    """31 coat_amount (weight), 81 coat_ior; 54 / 55 bump."""
+    _car_paint(conv, m, ir, 0.4, 54)
+    ir.coat_weight = _clamp01(_num(m, 31, 0, 1.0))
+    ir.coat_ior = _ior(_num(m, 81, 0, 1.5))
 
 
 # (superclass, ClassId) -> rule(converter, MtlBase, MaterialIR): fills the IR in place

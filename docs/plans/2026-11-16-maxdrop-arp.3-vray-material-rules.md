@@ -6,7 +6,7 @@
 renderer-neutral `MaterialIR` in linear color, for VRayMtl, the wrappers, VRayLightMtl, VRayFastSSS2 and the two
 car-paint classes; an unknown class gives a grey material that keeps its name.
 
-**Architecture:** A `MaterialConverter(graph, meters)` over a `reader.materials.MaterialGraph` peels wrappers
+**Architecture:** A `MaterialConverter(graph)` over a `reader.materials.MaterialGraph` peels wrappers
 (`peel(index)`), dispatches on `(superclass, ClassId)` to one rule per class (`RULES`, a dict later beads extend:
 Standard, Physical, Multi/Sub in maxdrop-arp.4) and caches one `MaterialIR` per Max material object index. Each
 input of the IR is an `Input(value, map)`: a value (linear color or float) and an optional `MapRef(index, amount,
@@ -48,34 +48,40 @@ unknown classes for the report (maxdrop-arp.8). No bpy, no mathutils.
 ## The rules
 
 Colors: every swatch goes through the sRGB transfer function to linear (3ds Max swatches are display-referred;
-maxdrop-arp.4 may refine with the scene's gamma). `lum(c)` = mean of the linear channels (the source's mean,
-taken in linear). Floats from the file are checked finite; a non-finite or missing value takes V-Ray's default.
+maxdrop-arp.4 may refine with the scene's gamma). `mean(c)` = mean of the linear channels (the source's mean,
+taken in linear). Floats from the file are checked finite; a non-finite or missing value takes V-Ray's default;
+an IOR is clamped to 1..100. `convert(None)` (a node without a material) is None.
 
 VRayMtl (ported):
 - base color = diffuse (1); map 100 if 150, amount 200 / 100.
 - g = reflection_glossiness (3); roughness = g if brdf_useRoughness (89, block 2) else 1 - g; map 104 if 154,
   amount 204 / 100, invert = not useRoughness. texmap_roughness (113) is the diffuse roughness: not used.
 - metallic = reflection_metalness (91); map 119 if 169.
-- specular = lum(reflection (2)); map 101 if 151.
+- specular = mean(reflection (2)); map 101 if 151.
 - emission color = selfIllumination (81); map 117 if 167; strength = selfIllumination_multiplier (83) when the
   color is not black or the map is set, else 0.
-- transmission = lum(refraction (5)); map 102 if 152; ior = refraction_ior (9); thin_walled = refraction_thinWalled
+- transmission = mean(refraction (5)); map 102 if 152; ior = refraction_ior (9); thin_walled = refraction_thinWalled
   (107).
 - bump slot 103 if 153, amount 203 / 100: a VRayNormalMap there goes to `normal`, anything else to `bump`.
 - alpha = 1 with opacity map 112 if 162, amount 212 / 100.
 - coat: weight coat_amount (96), color coat_color (97), roughness from coat_glossiness (98) as for reflection,
   ior coat_ior (99).
 - Added (native): glass base color: when transmission > 0, base color = diffuse * (1 - t) + refraction * t.
-  Fresnel off (8 = 0) with a bright reflection (lum >= `METAL_REFLECTION` = 0.25 linear, about sRGB 137 grey):
+  Fresnel off (8 = 0) with a bright reflection (mean >= `METAL_REFLECTION` = 0.25 linear, about sRGB 137 grey):
   metallic = 1, base color = the reflection color (and its map).
 - ior: refraction_ior when transmission > 0 or reflection_lockIOR (65) is on, else reflection_ior (63).
 - DROPPED: gamma-1.0 copies, alpha flattening, zeroed map angles, specular < 0.05 -> roughness 1.
 
-VRayLightMtl: base black, roughness 1, specular 0, emission color 0, strength 1, map 2 if 3; alpha map 5 if 6.
-VRayFastSSS2: base 26 (map 27 if 28); roughness 1 - 51; specular lum(40); subsurface weight 1 - diffuse_amount
-(36), color 2, radius scatter_radius (0) * scale (22) * meters; ior 31; bump 3 if 4; alpha map 85 if 86.
+VRayLightMtl: base black, roughness 1, specular 0, emission color = parameter 0, strength = parameter 1, map 2
+if 3; alpha map 5 if 6.
+VRayFastSSS2: base 26 (map 27 if 28); roughness 1 - 51; specular mean(40); subsurface weight 1 - diffuse_amount
+(36), color 2, radius scatter_radius (0, centimeters: a plain float, not system units) * scale (22) / 100 m;
+ior 31; bump 3 if 4; alpha map 85 if 86.
 Car paint (both): base 0 (map 1 if 2); roughness 1 - 8; metallic 1 (ported); specular base_reflection (4); coat
-weight 31, color 27, roughness 1 - 39, ior 81 (CarPaint2) or 1.5; bump 55 if 56 (CarPaint) / 54 if 55 (CarPaint2).
+color 27, roughness 1 - 39; bump 55 if 56 (CarPaint) / 54 if 55 (CarPaint2). CarPaint2: coat weight coat_amount
+(31, default 1), ior 81. CarPaint: 31 is coat_strength, the coat's reflectance at normal incidence (default 0.05,
+read from 3ds Max), not a weight: coat weight 1 (0 when it is 0), ior = (1 + sqrt f0) / (1 - sqrt f0).
+(Changed after code review; the source only ported CarPaint2.)
 
 Wrappers (ported): peel to the first set sub-material in getSubMtl order (table above), Shell to the sub at
 renderMtlIndex (0 original, 1 baked). Stop at Multi/Sub-Object (maxdrop-arp.4 converts it) and at any non-wrapper.
@@ -92,10 +98,10 @@ Unknown class: grey (128/255 sRGB -> linear) with the material's name, `unknown=
 
 **Files:** Create `maxdrop/convert/materials.py`; test `tests/unit/test_convert_materials.py`.
 
-- [ ] Write tests: `srgb_to_linear` (0, 1, 0.5 -> 0.214041, below the 0.04045 knee), `lum`, `Input` defaults, a
+- [ ] Write tests: `srgb_to_linear` (0, 1, 0.5 -> 0.214041, below the 0.04045 knee), `mean`, `Input` defaults, a
   NaN parameter takes the default.
 - [ ] Implement `MapRef`, `Input`, `MaterialIR` (dataclasses), `ConvertStats`, `srgb_to_linear`, `linear_color`,
-  `lum`, and the parameter readers (`_num`, `_color`, `_flag`, `_map`).
+  `mean`, and the parameter readers (`_num`, `_rgb`, `_flag`, `MaterialConverter.map_ref`).
 - [ ] Run `python -I -m unittest tests.unit.test_convert_materials -v` -> PASS.
 
 ### Task 2: VRayMtl rule
@@ -104,7 +110,7 @@ Unknown class: grey (128/255 sRGB -> linear) with the material's name, `unknown=
   roughness with useRoughness on, metallic = 1 and base = reflection by the Fresnel-off rule, specular, emission,
   transmission, IOR, thin-walled, alpha, coat); synthetic parameters for each rule alone (useRoughness off,
   Fresnel on, dark reflection, maps on / off, normal map in the bump slot).
-- [ ] Implement `vray_mtl(m, conv)`; register in `RULES`.
+- [ ] Implement `vray_mtl(conv, m, ir)`; register in `RULES`.
 
 ## Chunk 2: wrappers, other classes, unknown
 

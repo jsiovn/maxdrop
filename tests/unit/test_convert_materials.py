@@ -82,6 +82,8 @@ class FakeGraph:
         return self.objects[i]
 
     def superclass(self, i):
+        if not 0 <= i:  # as MaterialGraph.superclass: an int index, TypeError for None
+            return None
         o = self.objects.get(i)
         return None if o is None else o.superclass
 
@@ -94,8 +96,8 @@ def _vray(index, name="V", **blocks):
     return FakeMtl(index, classids.VRAY_MTL, name, {int(k[1:]): v for k, v in blocks.items()})
 
 
-def _convert(*objects, index=0, meters=1.0):
-    conv = mat.MaterialConverter(FakeGraph(*objects), meters)
+def _convert(*objects, index=0):
+    conv = mat.MaterialConverter(FakeGraph(*objects))
     return conv, conv.convert(index)
 
 
@@ -119,10 +121,10 @@ class Helpers(unittest.TestCase, Close):
     def test_linear_color_clamps(self):
         self.close(mat.linear_color((-1.0, 2.0, 0.5)), (0.0, 1.0, 0.214041))
 
-    def test_meters_must_be_positive(self):
-        for bad in (0, -1.0, float("nan"), float("inf")):
-            with self.assertRaises(ValueError):
-                mat.MaterialConverter(FakeGraph(), bad)
+    def test_ior_from_reflectance(self):
+        self.close(mat.ior_from_reflectance(0.04), 1.5)
+        self.close(mat.ior_from_reflectance(0.0), 1.0)
+        self.assertTrue(math.isfinite(mat.ior_from_reflectance(1.0)))
 
     def test_class_name(self):
         self.assertEqual(mat.class_name(classids.SC_MATERIAL, classids.VRAY_MTL), "VRayMtl")
@@ -133,6 +135,7 @@ class Helpers(unittest.TestCase, Close):
         conv, ir = _convert(_map(0))
         self.assertIsNone(ir)
         self.assertIsNone(mat.MaterialConverter(FakeGraph()).convert(5))
+        self.assertIsNone(mat.MaterialConverter(FakeGraph()).convert(None))  # a node without a material
 
 
 class VRayMtlRules(unittest.TestCase, Close):
@@ -224,6 +227,11 @@ class VRayMtlRules(unittest.TestCase, Close):
         self.close(ir.ior, 1.6)
         self.assertEqual(ir.base_color.map, mat.MapRef(1, 1.0, False))
 
+    def test_ior_is_clamped(self):
+        conv, ir = _convert(_vray(0, b1={5: (1.0, 1.0, 1.0), 9: 0.0, 99: 1e30}))
+        self.close(ir.ior, 1.0)
+        self.close(ir.coat_ior, 100.0)
+
     def test_animated_parameter_takes_default(self):
         conv, ir = _convert(_vray(0, b1={3: pblock.Animated(4), 1: pblock.Animated(5)}))
         self.close(ir.roughness.value, 0.0)
@@ -248,7 +256,7 @@ class OtherRules(unittest.TestCase, Close):
         sss = FakeMtl(0, mat.VRAY_FAST_SSS2, "Skin", {0: {
             26: (0.5, 0.5, 0.5), 27: Ref(1), 28: 1, 36: 0.25, 2: (1.0, 0.5, 0.5), 0: 4.0, 22: 2.0, 31: 1.4,
             40: (1.0, 1.0, 1.0), 51: 0.7, 3: Ref(2), 4: 1, 85: Ref(3), 86: 1}})
-        conv, ir = _convert(sss, _map(1), _map(2), _map(3), meters=0.001)
+        conv, ir = _convert(sss, _map(1), _map(2), _map(3))
         self.close(ir.base_color.value, (0.214041,) * 3)
         self.assertEqual(ir.base_color.map, mat.MapRef(1, 1.0, False))
         self.close(ir.roughness.value, 0.3)
@@ -256,30 +264,37 @@ class OtherRules(unittest.TestCase, Close):
         self.close(ir.ior, 1.4)
         self.close(ir.subsurface_weight, 0.75)
         self.close(ir.subsurface_color, (1.0, 0.214041, 0.214041))
-        self.close(ir.subsurface_radius, 0.008)  # 4 x 2 mm
+        self.close(ir.subsurface_radius, 0.08)  # 4 cm x scale 2, in meters
         self.assertEqual(ir.bump, mat.MapRef(2, 1.0, False))
         self.assertEqual(ir.alpha.map, mat.MapRef(3, 1.0, False))
 
     def test_car_paints(self):
-        common = {0: (0.5, 0.0, 0.0), 1: Ref(1), 2: 1, 4: 0.4, 8: 0.9, 27: (1.0, 1.0, 1.0), 31: 0.8, 39: 0.95}
-        conv, ir = _convert(FakeMtl(0, mat.VRAY_CAR_PAINT_MTL, "Paint", {0: {**common, 55: Ref(2), 56: 1}}),
-                            _map(1), _map(2))
+        common = {0: (0.5, 0.0, 0.0), 1: Ref(1), 2: 1, 4: 0.4, 8: 0.9, 27: (1.0, 1.0, 1.0), 39: 0.95}
+        paint = {**common, 31: 0.05, 55: Ref(2), 56: 1}  # coat_strength: reflectance at normal incidence
+        conv, ir = _convert(FakeMtl(0, mat.VRAY_CAR_PAINT_MTL, "Paint", {0: paint}), _map(1), _map(2))
         self.close(ir.base_color.value, (0.214041, 0.0, 0.0))
         self.assertEqual(ir.base_color.map, mat.MapRef(1, 1.0, False))
         self.close(ir.roughness.value, 0.1)
         self.close(ir.metallic.value, 1.0)
         self.close(ir.specular.value, 0.4)
-        self.close(ir.coat_weight, 0.8)
+        self.close(ir.coat_weight, 1.0)
+        self.close(ir.coat_ior, 1.576014)  # (1 + sqrt 0.05) / (1 - sqrt 0.05)
         self.close(ir.coat_roughness, 0.05)
         self.close(ir.coat_color, (1.0, 1.0, 1.0))
-        self.close(ir.coat_ior, 1.5)
         self.assertEqual(ir.bump, mat.MapRef(2, 1.0, False))
+        conv, ir = _convert(FakeMtl(0, mat.VRAY_CAR_PAINT_MTL, "Bare", {0: {**common, 31: 0.0}}), _map(1))
+        self.close(ir.coat_weight, 0.0)
+        conv, ir = _convert(FakeMtl(0, mat.VRAY_CAR_PAINT_MTL, "Default", {0: {}}))
+        self.close((ir.coat_weight, ir.roughness.value), (1.0, 0.4))  # coat_strength 0.05, base_glossiness 0.6
         conv, ir = _convert(FakeMtl(0, mat.VRAY_CAR_PAINT_MTL2, "Paint2",
-                                    {0: {**common, 81: 1.7, 54: Ref(2), 55: 1}}), _map(1), _map(2))
-        self.close(ir.coat_ior, 1.7)
+                                    {0: {**common, 31: 0.8, 81: 1.7, 54: Ref(2), 55: 1}}), _map(1), _map(2))
         self.close(ir.coat_weight, 0.8)
+        self.close(ir.coat_ior, 1.7)
+        self.close(ir.roughness.value, 0.1)
         self.assertEqual(ir.bump, mat.MapRef(2, 1.0, False))
         self.assertEqual(ir.source, "VRayCarPaintMtl2")
+        conv, ir = _convert(FakeMtl(0, mat.VRAY_CAR_PAINT_MTL2, "Default2", {0: {}}))
+        self.close((ir.coat_weight, ir.coat_ior, ir.roughness.value), (1.0, 1.5, 0.6))
 
     def test_unknown_class_is_grey_and_counted(self):
         odd = FakeMtl(0, (0x1234, 0x5678), "Odd")
@@ -393,8 +408,9 @@ class VRayBasic(unittest.TestCase, Close):
     def test_every_channel(self):
         cf, graph, by_name = _fixture("vray_basic")
         with cf:
-            conv = mat.MaterialConverter(graph, 0.001)
+            conv = mat.MaterialConverter(graph)
             ir = conv.convert(by_name["FixtureVRay"])
+            self.assertIsNone(conv.convert(None))  # the real graph: a node without a material
         reflection = (0.309469, 0.361307, 0.417885)  # 151 162 173; mean 0.362887 >= 0.25, Fresnel off: metal
         self.assertEqual((ir.name, ir.source, ir.unknown), ("FixtureVRay", "VRayMtl", False))
         self.close(ir.base_color.value, reflection, "base color = reflection (metal rule)")
