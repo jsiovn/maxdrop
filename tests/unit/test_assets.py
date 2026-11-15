@@ -19,7 +19,7 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 FIXTURE_DIR = os.path.join(ROOT, "tests", "fixtures")
 FIXTURES = sorted(glob.glob(os.path.join(FIXTURE_DIR, "*.max")))
-ASSET_COUNTS = {"vray_maps": 7, "standard_physical": 1}  # every other fixture names no file
+ASSET_COUNTS = {"vray_maps": 7, "standard_physical": 1, "texmap_rules": 22}  # every other fixture names no file
 
 
 def _load(name, path, package_dir=None):

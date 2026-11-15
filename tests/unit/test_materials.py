@@ -110,8 +110,10 @@ class Parity:
                 for p in b["params"]:
                     what = "%s block %d param %d %s" % (where, b["block_id"], p["id"], p["name"])
                     rp = ours.param(p["id"])
-                    if rp is None:  # transient (mostly), or a block that saves nothing (Standard's dynamics)
-                        self.case.assertTrue(p["transient"] or len(ours) == 0, what + ": not stored")
+                    if rp is None:  # transient (mostly), a block that saves nothing (Standard's dynamics) or an
+                        # empty table (Composite's unnamed parameters 0, 2 and 4)
+                        empty = p["type"] & pblock.TABLE and p["value"] == []
+                        self.case.assertTrue(p["transient"] or len(ours) == 0 or empty, what + ": not stored")
                         self.not_stored += 1
                         continue
                     if p["transient"]:  # an alias saved anyway (VRayBlendMtl coatMtl_0, blend_0): Max computes it

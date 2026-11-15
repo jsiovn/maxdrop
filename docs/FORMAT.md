@@ -40,7 +40,8 @@ An object points to others by object index.
   the Editable Mesh of editable_mesh one.
 - `0x2035`: a `u32`, then `(u32 slot, i32 index)` pairs. The first value is the number of reference slots: 16
   for Node and RootNode, 48 for Texmaps and 2 for Bezier Float, Bezier Scale, Bezier Color, Boolean Controller and
-  Grid Reference in every fixture, 34 for VRayMtl (vray_basic, vray_maps, vray_wrappers: what the SDK's
+  Grid Reference in every fixture (and for the point class of Custom Curve Control, nameless in the class directory:
+  texmap_rules' Falloff curves), 34 for VRayMtl (vray_basic, vray_maps, vray_wrappers: what the SDK's
   `NumRefs` reports for a VRayMtl), and for a ParamBlock2 the number of its reference slots (25 and 37 in
   standard_physical and vray_wrappers; 37 for the VRayBlendMtl block, see [Parameter blocks](#parameter-blocks)).
   Every pair's slot is below it (`test_scene.py`). The reader does not need it. RootNode and the controllers have

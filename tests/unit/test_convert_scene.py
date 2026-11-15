@@ -49,6 +49,7 @@ UV_LAYERS = {
     "layers_flags": [],
     "multi_uv": ["UVMap", "UVChannel_2", "UVChannel_3"],
     "standard_physical": ["UVMap"],
+    "texmap_rules": ["UVMap"],
     "units_cm": ["UVMap"],
     "units_in": ["UVMap"],
     "units_mm": ["UVMap"],
