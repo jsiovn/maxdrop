@@ -16,13 +16,15 @@ unless you prefer otherwise.
 
 ## What MaxDrop does with a file
 
-- It **reads** the `.max` file you choose and the image files beside it. It never runs anything from a file: no
-  MAXScript, no embedded code.
+- It **reads** the `.max` file you choose and the texture files it names, found as below. It never runs anything
+  from a file: no MAXScript, no embedded code.
 - It sends nothing anywhere. The only network request of the add-on is the **Check for Updates** button, which
   reads `https://jsiovn.github.io/maxdrop/index.json`.
-- Texture paths stored in a scene are reduced to their file name before the lookup, which starts in the scene's
-  own folder: the importer does not follow a path stored in the file to another place on your disk or on the
-  network.
+- Texture paths stored in a scene are untrusted. Only their file name is looked up: in the scene's folder, in
+  `maps` or `textures` folders beside it, and in the texture search folders you set in the preferences. The stored
+  path itself is opened only when it is a full path on a local drive and names a plain file; a network path
+  (`\\server\share`), a device path, a relative path or one that climbs with `..` is never opened, and the search
+  does not follow links or junctions.
 - Importing a `.max` writes nothing. Importing a scene pack writes the unpacked scene, as below.
 
 ### Scene packs (`.zip`, `.rar`, `.7z`)

@@ -85,10 +85,18 @@ stored in the file: colors are not converted between 3ds Max's and Blender's col
 
 ## Textures
 
-A `.max` file stores the paths of its texture files, not the images. This version takes only the **file name**
-of each path and looks for it in the folder of the `.max` file, and with **Image Search** on in its subfolders.
-A file that is not found is skipped; the material keeps its plain color. The texture search folders of the
-add-on preferences are stored but not used by this version.
+A `.max` file stores the path of each texture file as it was on the computer that saved the scene, not the
+images. MaxDrop takes the **file name** of each path and looks for it, without regard to case, in this order:
+
+1. the folder of the `.max` file (with **Image Search** on, its subfolders too);
+2. folders named `maps` or `textures` beside the `.max` file or beside its folder, with their subfolders;
+3. the **Texture Search Folders** of the add-on preferences, in their order, with their subfolders;
+4. the stored path itself, only when it is a full path on a local drive of this computer (Windows only).
+
+The first place that has the file wins. A path stored as a network share (`\\server\share\...`), a device path,
+a relative path or one that climbs with `..` is never opened; its file name is still looked for in places 1 to 3.
+Each place is searched once per import, at most 8 folders deep and 200,000 files; links and junctions are not
+followed. A file that is not found is skipped; the material keeps its plain color.
 
 From a scene pack, the image and `.ies` files of the pack are unpacked flat into the folder of the `.max`, so the
 lookup above finds them wherever they were in the archive. Of two maps with the same file name, the one nearest to

@@ -8,6 +8,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ## [Unreleased]
 
+### Changed
+
+- **Textures are found in more places**: the scene's folder, then `maps` or `textures` folders beside the scene,
+  then the **Texture Search Folders** of the preferences (now searched, with their subfolders), and last the path
+  stored in the scene, only when it is on a local drive. Network and device paths stored in a scene are never
+  opened. Texture paths are read from the scene's asset list, where 3ds Max keeps them.
+
 ## [0.0.3] - 2026-11-15
 
 ### Added

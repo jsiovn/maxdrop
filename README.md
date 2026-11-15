@@ -24,7 +24,8 @@ scene was downloaded as. Blender 4.2 or newer; tested on 4.2 LTS, 4.5 LTS and 5.
 - **Materials** as a Principled BSDF with color, roughness, metallic, opacity and one image per channel: Standard,
   Physical, Multi/Sub-Object, VRayMtl, VRay2SidedMtl, CoronaMtl, CoronaPhysicalMtl, CoronaLayeredMtl, Arnold
   Standard Surface and a few more.
-- **Textures** that are plain image files stored next to the `.max` file.
+- **Textures** that are plain image files, next to the `.max` file, in a `maps` or `textures` folder beside it, or
+  in folders you add in the preferences.
 
 Not yet: lights and cameras, modifiers (the object arrives as it was before them), splines and shapes,
 primitives (Box, Sphere… arrive as empties), animation, procedural and nested maps. See
@@ -73,8 +74,11 @@ above.
    not, such as lights kept as empties. Material problems, such as a texture that is not found, are printed
    to the system console only.
 
-A `.max` file names its texture files but does not contain them: keep the maps in the folder of the scene or in a
-subfolder. A texture that is not found is skipped and the material keeps its color.
+A `.max` file names its texture files but does not contain them. MaxDrop looks for each file name in the scene's
+folder, then in `maps` or `textures` folders beside it, then in the **Texture Search Folders** of the add-on
+preferences, and last at the path stored in the scene, only when that is on a local drive (never a network path).
+A texture that is not found is skipped and the material keeps its color. See
+[docs/SUPPORT.md](docs/SUPPORT.md#textures).
 
 ### Scene packs
 

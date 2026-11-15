@@ -246,7 +246,7 @@ footer p { margin: 0; }
             <li><strong>Scene units</strong>: a scene saved in millimeters, centimeters, inches or feet arrives at its real size.</li>
             <li><strong>Layers</strong> as collections, with their hidden, frozen and non-rendering flags.</li>
             <li><strong>Materials</strong>, as a Principled BSDF with color, roughness, metallic, opacity and one image per channel: Standard, Physical, Multi/Sub-Object, V-Ray (VRayMtl, VRay2SidedMtl), Corona (CoronaMtl, CoronaPhysicalMtl, CoronaLayeredMtl), Arnold Standard Surface.</li>
-            <li><strong>Textures</strong> that are plain image files stored next to the <code>.max</code> file.</li>
+            <li><strong>Textures</strong> that are plain image files, next to the <code>.max</code> file, in a <code>maps</code> or <code>textures</code> folder beside it, or in folders you add in the preferences.</li>
           </ul>
         </div>
         <div class="card">
@@ -295,8 +295,8 @@ footer p { margin: 0; }
       <div class="cards three" style="margin-top: 1.25rem">
         <div class="card" id="textures">
           <h3>Textures</h3>
-          <p>A <code>.max</code> file names its texture files but does not contain them. MaxDrop looks for each file name in the folder of the scene, so keep the maps there or in a subfolder.</p>
-          <p>A texture that is not found is skipped: the material keeps its color.</p>
+          <p>A <code>.max</code> file names its texture files but does not contain them. MaxDrop looks for each file name in the folder of the scene, then in <code>maps</code> or <code>textures</code> folders beside it, then in the <strong>Texture Search Folders</strong> of the preferences, and last at the path stored in the scene, only when it is on a local drive.</p>
+          <p>A network or device path stored in a scene is never opened. A texture that is not found is skipped: the material keeps its color.</p>
         </div>
         <div class="card" id="side-by-side">
           <h3>Next to io_scene_max</h3>
@@ -329,7 +329,7 @@ footer p { margin: 0; }
       </details>
       <details>
         <summary>Materials arrive without textures</summary>
-        <p>Put the texture files in the folder of the <code>.max</code> file or in a subfolder and keep <strong>Image Search</strong> ticked. A channel driven by a procedural or nested map keeps its plain color in this version.</p>
+        <p>Put the texture files in the folder of the <code>.max</code> file, in a <code>maps</code> or <code>textures</code> folder beside it, or add their folder under <strong>Texture Search Folders</strong> in the MaxDrop preferences. <strong>Image Search</strong> also searches the subfolders of the scene's folder. A channel driven by a procedural or nested map keeps its plain color in this version.</p>
       </details>
       <details>
         <summary>Dropping a <code>.zip</code> opens Blender's extension installer</summary>

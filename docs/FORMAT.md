@@ -329,10 +329,26 @@ values by the fixture scripts or read by the tests):
 | Bitmap `(0x240, 0)` | 0 | 0-3 clip u, v, w, h, 7 cropPlace, 8 filtering, 12 preMultAlpha, 13 bitmap (asset), 14 coords, 15 output |
 | VRayNormalMap `(0x71FA6E51, 0x72057C2F)` | 0 | 0 normal_map, 2 normal_map_on, 3 normal_map_multiplier, 4 bump_map, 5 bump_map_on, 6 bump_map_multiplier, 1 map_channel, 8 flip_green |
 
+## Asset metadata
+
+- The files a scene names are listed in the stream `FileAssetMetaData3` (every fixture; empty, 0 bytes, when the
+  scene names no file). Records follow each other with no header and no count; a string is a `u32` count of
+  UTF-16 units (the NUL not counted), the units, then a UTF-16 NUL, present also for count 0. A record: the
+  16-byte asset id, the asset type (`Bitmap`), the path as stored, and a third string, empty in every fixture.
+  vray_maps: 7 records, standard_physical: 1 (`reader/assets.py`, `tests/unit/test_assets.py`).
+- A Bitmap's file is the asset id in its parameter 13 (`bitmap`, type 16, block 0, see the ParamBlock2 value
+  types above); its `fileName` (16) is transient and not stored. The id's record holds the file name 3ds Max
+  reports as `fileName` (oracle) for every Bitmap of vray_maps and standard_physical.
+
 ## Open
 
 Not shown by any fixture yet, so not stated above:
 
+- Asset metadata seen only in the corpus (`assets.py` relies on it): scene A (saved as 3ds Max 2012) has
+  `FileAssetMetaData2` instead, its records without the third string (155 records: `Bitmap` and `Photometric`);
+  in scene B's `FileAssetMetaData3` the third string is the absolute path 3ds Max found the file at when saving
+  (167 of 168 records, the same file name as the stored path, which is a bare file name there; empty for the one
+  stored as an absolute path).
 - Parameter blocks seen only elsewhere (`pblock.py` relies on them):
   - entries in `0x000E` instead of `0x100E`, same layout, in corpus scene A (saved as 3ds Max 2012); scenes A and
     B walk without an issue: 726 and 560 materials and maps, 33,543 and 41,274 stored parameters;

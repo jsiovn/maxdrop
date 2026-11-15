@@ -63,10 +63,16 @@ def pack_parent(archive_path, context=None):
     raise ValueError("Cannot write into %s. %s" % (beside, _CHOOSE))
 
 
+_LOOKUP = ("A folder that holds textures of your .max scenes, searched with its subfolders. A texture is looked "
+           "for by its file name: in the scene's folder, then in folders named maps or textures beside the scene, "
+           "then in these folders in their order, and last at the path stored in the scene, only when it is on a "
+           "local drive. Network and device paths stored in a scene are never opened")
+
+
 class MaxDropTextureDir(bpy.types.PropertyGroup):
     path: StringProperty(
         name="Folder",
-        description="A folder that holds textures of your .max scenes",
+        description=_LOOKUP,
         subtype='DIR_PATH',
     )
 
@@ -74,7 +80,8 @@ class MaxDropTextureDir(bpy.types.PropertyGroup):
 class MAXDROP_OT_texture_dir_add(bpy.types.Operator):
     bl_idname = "maxdrop.texture_dir_add"
     bl_label = "Add Folder"
-    bl_description = "Add a row to the texture search folders"
+    bl_description = ("Add a folder to search for textures, after the scene's folder and its maps or textures "
+                      "folders")
     bl_options = {'INTERNAL'}
 
     @classmethod
@@ -139,10 +146,6 @@ class MaxDropPreferences(bpy.types.AddonPreferences):
             row.prop(item, "path", text="")
             row.operator(MAXDROP_OT_texture_dir_remove.bl_idname, text="", icon='X').index = i
         col.operator(MAXDROP_OT_texture_dir_add.bl_idname, icon='ADD')
-        # The list is stored from the first release so that it survives updates; the importer starts using it
-        # with the material rework.
-        col.label(text="Not searched yet in this version: textures are looked up next to the .max file",
-                  icon='INFO')
         col.separator()
         row = col.row(align=True)
         row.operator("wm.url_open", text="Install Page", icon='URL').url = update.INSTALL_PAGE
