@@ -25,8 +25,9 @@ powershell -ExecutionPolicy Bypass -File build.ps1    # dist\: the zip, index.js
 ```
 
 The plain tests include a guard: `maxdrop/reader`, `maxdrop/convert` and `maxdrop/intake` must run without
-Blender, so no module there may import `bpy`, `mathutils` or another module of the add-on outside these three
-packages. The code is linted with [ruff](https://docs.astral.sh/ruff/), configured in `pyproject.toml`
+Blender, so no module there may import `bpy`, `mathutils`, another module of the add-on outside these three
+packages, or the add-on by its absolute name (`import maxdrop...` runs `maxdrop/__init__.py`, and inside Blender
+the add-on has another name): import within them relatively. The code is linted with [ruff](https://docs.astral.sh/ruff/), configured in `pyproject.toml`
 (`import_max.py` is left out while it is replaced). Install it in a virtual environment of its own, at the
 version the `test` workflow pins:
 
@@ -116,9 +117,10 @@ tools know how 3ds Max 2020 stores the two names; a file from another version th
 
 ## Pull requests
 
-Keep them small and say what you tested and on which Blender version. The `test` workflow runs the plain tests,
-the fixture scan on Linux and Windows and ruff, then, on Blender 4.2 LTS, 4.5 LTS and 5.2 LTS, the build, the
-register smoke test, the import smoke test and the fixture tests. Dependabot proposes updates of the actions it
+Keep them small and say what you tested and on which Blender version. The `test` workflow runs the plain tests
+and the fixture scan on Linux and Windows, ruff on Linux, then, on Blender 4.2 LTS, 4.5 LTS and 5.2 LTS, the
+build, the register smoke test, the import smoke test, and the fixture tests once `tests/blender/run.py`
+exists. Dependabot proposes updates of the actions it
 uses once a week.
 
 By contributing you agree that your work is released under the [GNU General Public License](LICENSE), either

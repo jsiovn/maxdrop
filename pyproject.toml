@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
+# Modified for MaxDrop, 2026-11-15 (jsiovn). Adds the ruff configuration; the autopep8 block is unchanged.
+
 [tool.autopep8]
 # Configuration for `autopep8`, allowing the command: autopep8 .
 # to reformat all source files.

@@ -135,8 +135,7 @@ jobs:
           BLENDER_USER_RESOURCES="$RUNNER_TEMP/blender-profile" ~/blender/blender --background --factory-startup \
             --python-exit-code 1 --python tests/smoke_import.py
 
-      # The fixtures through the new pipeline, compared with their 3ds Max oracle; added by bead maxdrop-too.9,
-      # this step runs from the commit that brings the file.
+      # The fixtures through the new pipeline, compared with their 3ds Max oracle; runs once the file exists.
       - name: Fixture tests
         if: hashFiles('tests/blender/run.py') != ''
         run: |

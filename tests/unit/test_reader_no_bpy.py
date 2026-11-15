@@ -3,7 +3,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """maxdrop/reader, maxdrop/convert and maxdrop/intake run under plain Python: no module there imports bpy or
-mathutils, nor another module of the add-on outside these packages (those may import bpy)."""
+mathutils, nor another module of the add-on outside these packages (those may import bpy), nor the add-on by
+its absolute name (that runs maxdrop/__init__.py)."""
 import ast
 import os
 import unittest
@@ -29,30 +30,50 @@ def _package_of(path, root):
     return [p for p in rel.replace("\\", "/").split("/") if p not in ("", ".")]
 
 
+def _relative(level, module, names, package):
+    """Absolute names of a relative import of `level` dots from `package`; None when it climbs above it."""
+    if level > len(package):
+        return None
+    base = package[:len(package) - level + 1]
+    if module:
+        return [".".join(base + module.split("."))]
+    return [".".join(base + [n]) for n in names]
+
+
 def _targets(node, package):
-    """The absolute module names an import statement loads; None for a relative import above the top package."""
+    """(module name, relative) for each module an import statement loads; None for a relative import above the
+    top package."""
     if isinstance(node, ast.Import):
-        return [a.name for a in node.names]
+        return [(a.name, False) for a in node.names]
     if isinstance(node, ast.ImportFrom):
         if node.level == 0:
-            return [node.module] if node.module else []
-        if node.level > len(package):
-            return None
-        base = package[:len(package) - node.level + 1]
-        if node.module:
-            return [".".join(base + node.module.split("."))]
-        return [".".join(base + [a.name]) for a in node.names]
+            return [(node.module, False)] if node.module else []
+        names = _relative(node.level, node.module, [a.name for a in node.names], package)
+        return None if names is None else [(n, True) for n in names]
     if (isinstance(node, ast.Call) and getattr(node.func, "attr", getattr(node.func, "id", ""))
             in ("import_module", "__import__") and node.args and isinstance(node.args[0], ast.Constant)):
-        return [str(node.args[0].value)]
+        name = str(node.args[0].value)
+        if not name.startswith("."):
+            return [(name, False)]
+        anchor = package
+        if len(node.args) > 1 and isinstance(node.args[1], ast.Constant) and isinstance(node.args[1].value, str):
+            anchor = node.args[1].value.split(".")
+        rest = name.lstrip(".")
+        names = _relative(len(name) - len(rest), rest, [], anchor)
+        return None if names is None else [(n, True) for n in names]
     return []
 
 
-def _refused(name):
+def _refused(name, relative):
+    """bpy and mathutils always. An absolute `maxdrop...` import always: it runs maxdrop/__init__.py, which imports
+    bpy, and inside Blender the add-on is not named maxdrop (bl_ext.<repo>.maxdrop). A relative one when it leaves
+    the bpy-free packages."""
     parts = name.split(".")
     if parts[0] in FORBIDDEN:
         return True
-    return parts[0] == ADDON and (len(parts) < 2 or parts[1] not in PACKAGES)
+    if parts[0] != ADDON:
+        return False
+    return not relative or len(parts) < 2 or parts[1] not in PACKAGES
 
 
 def forbidden_imports(path, root=ROOT):
@@ -65,7 +86,7 @@ def forbidden_imports(path, root=ROOT):
         if names is None:
             found.append("%s:%d relative import above %s" % (path, node.lineno, ".".join(package)))
             continue
-        found += ["%s:%d %s" % (path, node.lineno, n) for n in names if _refused(n)]
+        found += ["%s:%d %s" % (path, node.lineno, n) for n, relative in names if _refused(n, relative)]
     return found
 
 
@@ -97,11 +118,15 @@ class NoBpy(unittest.TestCase):
                 f.write("from .. import compat\nfrom ..ops import x\nimport maxdrop.update\nimport maxdrop\n"
                         "from .... import y\n"
                         "from . import sibling\nfrom ..reader import cfb\nfrom .. import convert\n"
-                        "import maxdrop.reader.cfb\n")
+                        "import maxdrop.reader.cfb\nfrom maxdrop.reader import cfb\n"
+                        "importlib.import_module('..compat', 'maxdrop.reader')\n"
+                        "importlib.import_module('..reader.cfb', __package__)\n"
+                        "importlib.import_module('.cfb', 'maxdrop.reader')\n")
             found = forbidden_imports(path, tmp)
             self.assertEqual([hit.split(":")[-1] for hit in found],
                              ["1 maxdrop.compat", "2 maxdrop.ops", "3 maxdrop.update", "4 maxdrop",
-                              "5 relative import above maxdrop.intake"], found)
+                              "5 relative import above maxdrop.intake", "9 maxdrop.reader.cfb",
+                              "10 maxdrop.reader", "11 maxdrop.compat"], found)
 
 
 if __name__ == "__main__":
