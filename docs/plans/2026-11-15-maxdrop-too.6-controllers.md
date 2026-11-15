@@ -24,7 +24,7 @@ either: Python floats are float64 and the plain CI job has no numpy, so the orac
   28 bytes each (i32 time, u32 flags, f32 value, 4 x f32 tangents/lengths). Bezier Scale keys: `0x2528`, 148
   bytes each, value (3 + 4 floats) at byte 8.
 - Corpus: only single keys (time 0, 200, 16000); 1 Bezier Float and 3 Bezier Scale have a key value that differs
-  from the plain value chunk: the oracle decides which is right at frame 0 (expectation: the key).
+  from the plain value chunk: the oracle decides which is right at frame 0 (expectation: the key; outcome: the saved value matches the oracle in all of them, so it wins).
 - hierarchy fixture: local = S * R * T, world = local * parent world (checked by hand: leaf with scale -1,-1,-1
   matches the oracle including the mirrored rotation rows).
 - Rotations: a +30 degree Z Euler value gives row 1 = [cos, sin, 0] (standard row-vector rotation). A Max

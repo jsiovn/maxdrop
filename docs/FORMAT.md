@@ -132,5 +132,6 @@ Not shown by any fixture yet, so not stated above:
   - Look At `(0x2006, 0)` on the camera nodes: not evaluated (identity and an issue) until M4.
 - Controllers taken from the 3ds Max SDK without any file showing them: Linear Position, Rotation and Scale
   (`0x2002`, `0x2003`, `0x2004`), Bezier Position and Rotation (`0x2008`, `0x2009`), TCB Position, Rotation and
-  Scale (`0x442312`, `0x442313`, `0x442315`), Scale List (`0x4B4B1004`), their value chunks (`0x2503` point,
-  `0x2504` quaternion, `0x2505` scale), and the Euler orders 1 to 5.
+  Scale (`0x442312`, `0x442313`, `0x442315`), their value chunks (`0x2503` point, `0x2504` quaternion, `0x2505`
+  scale), and the Euler orders 1 to 5. Scale List `(0x4B4B1004, 0)` is in a fixture's class directory, but no
+  file has one on a node: how its entries and weights combine is taken from the other lists.
