@@ -307,6 +307,18 @@ reader's children.
 - Sub-materials and maps are referenced by the material (P_OWNERS_REF parameters), by one of its blocks
   (VRayBlendMtl, VRayNormalMap) or, for a Standard material, by its Texmaps object (class `(0x1200, 0)`,
   superclass `0x1080`, slot 1).
+- A Bitmap's Placement object (superclass UVGen, class `(0x100, 0)`) also has leaf chunks of its own, each a `u32`
+  (texmap_rules and probe scenes saved by 3ds Max 2020, one setting changed per Bitmap): `0x9002` flags (bit 0 U
+  tile, 1 V tile, 2 U mirror, 3 V mirror, 27 real-world scale; bit 30 set in every file), `0x9003` axis (0 UV, 1 VW,
+  2 WU), `0x9005` mapping type (0 texture, 1 environment), `0x9006` coordinate source (0 explicit map channel, 1
+  planar from object XYZ, 2 vertex color channel, 3 planar from world XYZ), `0x900B` the map channel. Its old
+  ParamBlock adds 4 U angle and 5 V angle (radians). A mirrored axis has its tile bit clear.
+- The Output part (superclass TexOutput, class `(0x100, 0)`): an old ParamBlock, 0 RGB level, 1 RGB offset, 2 output
+  amount, 3 bump amount, and a leaf `0x0002` `u32` flags, bit 1 (`2`) invert.
+- A Bitmap's gamma: the `0x0003` sibling of its `bitmap` entry holds the BitmapInfo in `0x1201` (70 bytes in every
+  file seen). Its last 14 bytes start with an `f32` gamma and a `u32` flags: bit 0 set (`5` seen) is an override
+  and the gamma its value (texmap_rules: 1.0 and 2.2); `20` is automatic, the default, with gamma 1.0. The override
+  survives renaming the file after loading it (that is how the fixture names a bare file with an override).
 - 3ds Max's own `getSubMtl` of a Multi/Sub-Object answers by material ID and skipped ID 3 of 1, 3, 7: the IDs are
   `materialIDList` (stored zero-based: `[0, 2, 6]`), the materials `materialList` in the same order.
 
@@ -328,7 +340,24 @@ values by the fixture scripts or read by the tests):
 | | 3 maps | 0 mapEnables, 1 maps, 2 mapAmounts (fractions; slot 1 = diffuse) |
 | Physical Material `(0x3D6B1CEC, 0xDEADC001)` | 0 | 1 base_weight, 2 base_color (float color with alpha), 3 reflectivity, 4 roughness, 6 metalness, 10 refl_color, 11 diff_roughness, 30 transparency, 31 trans_color, 33 trans_ior, 50 emission, 51 emit_color, 60 coating, 62 coat_roughness |
 | Bitmap `(0x240, 0)` | 0 | 0-3 clip u, v, w, h, 7 cropPlace, 8 filtering, 12 preMultAlpha, 13 bitmap (asset), 14 coords, 15 output |
-| VRayNormalMap `(0x71FA6E51, 0x72057C2F)` | 0 | 0 normal_map, 2 normal_map_on, 3 normal_map_multiplier, 4 bump_map, 5 bump_map_on, 6 bump_map_multiplier, 1 map_channel, 8 flip_green |
+| VRayNormalMap `(0x71FA6E51, 0x72057C2F)` | 0 | 0 normal_map, 2 normal_map_on, 3 normal_map_multiplier, 4 bump_map, 5 bump_map_on, 6 bump_map_multiplier, 1 map_channel, 7 flip_red, 8 flip_green, 9 swap_red_and_green |
+
+The maps of texmap_rules (block 0 each; `convert/texmaps.py`):
+
+| Class (ClassID) | Parameters |
+|---|---|
+| Bitmap `(0x240, 0)` | 6 apply (cropping / placement on), 9 monoOutput (1 alpha), 10 rgbOutput (1 alpha as gray), 11 alphaSource |
+| Falloff `(0x6EC3730C, 0)` | 0 color1, 1 map1Amount, 2 map1, 3 map1On, 4 color2, 5 map2Amount, 6 map2, 7 map2On, 8 type, 9 direction |
+| VRayDirt `(0x2F567899, 0x090D5EA4)` | 12 occluded_color, 13 unoccluded_color, 17 texmap_unoccluded_color, 18 its on, 19 its multiplier |
+| VRayColor2Bump `(0x31E15D1D, 0x7D7E2810)` | 0 map, 1 height (world units), 2 bump delta scale |
+| Output `(0x2B0, 0)` | 0 map1, 1 map1Enabled, 2 output (its Output part) |
+| RGB Tint `(0x224, 0)` | 0 red, 1 green, 2 blue, 3 map1, 4 map1Enabled |
+| Mix `(0x230, 0)` | 0 mixAmount (fraction), 1 lower, 2 upper, 3 useCurve, 4 color1, 5 color2, 6 map1, 7 map2, 8 mask, 9 / 10 / 11 their switches |
+| RGB Multiply `(0x290, 0)` | 0 color1, 1 color2, 2 map1, 3 map2, 4 / 5 their switches, 6 alphaFrom |
+| Color Correction `(0x2D0, 0)` | 0 color, 1 map, 2 rewireMode, 7 hueShift (degrees), 8 saturation (%), 10 tintStrength, 11 lightnessMode (1 advanced), 12 brightness, 13 contrast, 18 gainRGB (%), 22 gammaRGB |
+| Composite `(0x280, 0)` | tables: 1 mapEnabled, 3 maskEnabled, 5 blendMode (0 normal), 6 layerName, 8 opacity (%), 9 mapList, 10 mask; 0, 2 and 4 have no name and are empty tables, not saved. Its `name` is the layer names: the fixture's Composite keeps its default name |
+| Normal Bump `(0x243E22C6, 0x63F6A014)` | 0 mult_spin, 1 bump_spin, 2 normal_map, 3 bump_map, 4 / 5 their switches, 6 method (0 tangent), 7 flipred, 8 flipgreen, 9 swap_rg |
+| CoronaNormal `(0x2870CEAA, 0xCC18437C)` | 500 normalMap, 501 multiplier, 502 addGamma, 503 flipRed, 504 flipGreen, 505 swapRedGreen, 507 additionalBump, 508 additionalBumpStrength, 509 additionalBumpOn |
 
 ## Asset metadata
 
@@ -336,7 +365,7 @@ values by the fixture scripts or read by the tests):
   scene names no file). Records follow each other with no header and no count; a string is a `u32` count of
   UTF-16 units (the NUL not counted), the units, then a UTF-16 NUL, present also for count 0. A record: the
   16-byte asset id, the asset type (`Bitmap`), the path as stored, and a third string, empty in every fixture.
-  vray_maps: 7 records, standard_physical: 1 (`reader/assets.py`, `tests/unit/test_assets.py`).
+  vray_maps: 7 records, standard_physical: 1, texmap_rules: 22 (`reader/assets.py`, `tests/unit/test_assets.py`).
 - A Bitmap's file is the asset id in its parameter 13 (`bitmap`, type 16, block 0, see the ParamBlock2 value
   types above); its `fileName` (16) is transient and not stored. The id's record holds the file name 3ds Max
   reports as `fileName` (oracle) for every Bitmap of vray_maps and standard_physical.
