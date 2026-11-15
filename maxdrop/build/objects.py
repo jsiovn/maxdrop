@@ -7,6 +7,7 @@
     built = build(desc, collection)
     built.objects[node.index]           # the Object of each node
     built.meshes[node.mesh]             # the Mesh, one per MeshDescription: instances share it
+    built.roots()                       # every object without a parent, the shear helper included
 
 Meshes are made with vertices.add / loops.add / polygons.add and foreach_set, then the edges are computed from the
 polygons. Flat faces and sharp edges go to the sharp_face and sharp_edge attributes, which Blender 4.1 and later
@@ -16,8 +17,12 @@ in dropped_uv_layers. Material indices are set without material slots (those com
 
 Objects are made in walk order, so a parent exists before its children. The parent is set by node index with an
 identity matrix_parent_inverse and matrix_basis = the node's local matrix, so Blender's world matrix is 3ds Max's
-node transform. A shear inside one local matrix (a scale along a rotated axis) is not kept, since Blender
-decomposes matrix_basis; convert reports it.
+node transform. Blender decomposes matrix_basis into location, rotation and scale, which drops a shear (a scale
+along a rotated axis, node.sheared): for such a node the rest, local @ basis^-1, goes into matrix_parent_inverse,
+so world = parent world @ local again and the children inherit the shear. Blender ignores matrix_parent_inverse
+without a parent, so a sheared top-level node gets one: the empty SHEAR_HELPER at the identity, one per build,
+made only when needed and listed in built.helpers. It is not baked into the mesh instead because most such nodes
+are empties (placeholders) and the object's own world matrix would stay off.
 An EMPTY node becomes a plain-axes empty with the custom property maxdrop_class.
 
 With collections (build.collections.make), each object goes into its layer's collection, else into collection.
@@ -31,15 +36,48 @@ from ..convert import scene as convert_scene
 
 MAX_UV_LAYERS = 8
 CLASS_PROPERTY = "maxdrop_class"
+HELPER_PROPERTY = "maxdrop_helper"
+SHEAR_HELPER = "MaxDrop Shear"
 
 
 class Built:
     """objects {node index: Object}, meshes {mesh key: Mesh}, dropped_uv_layers (channels Blender had no room
-    for)."""
-    __slots__ = ("objects", "meshes", "dropped_uv_layers")
+    for), helpers (objects that are no node: the shear helper)."""
+    __slots__ = ("objects", "meshes", "dropped_uv_layers", "helpers")
 
     def __init__(self):
-        self.objects, self.meshes, self.dropped_uv_layers = {}, {}, 0
+        self.objects, self.meshes, self.dropped_uv_layers, self.helpers = {}, {}, 0, []
+
+    def roots(self):
+        """The objects without a parent, helpers included: what a change of axes turns."""
+        return [ob for ob in list(self.objects.values()) + self.helpers if ob.parent is None]
+
+
+def _keep_shear(ob, local):
+    """Give ob (parented, matrix_basis already set to local) the shear Blender's decomposition of matrix_basis
+    dropped: matrix_parent_inverse = local @ basis^-1, in doubles. A basis that cannot be inverted (a zero scale)
+    becomes the identity, and local all of the parent inverse."""
+    import numpy
+    m = numpy.array(local, dtype=numpy.float64)
+    basis = numpy.array(ob.matrix_basis, dtype=numpy.float64)
+    try:
+        if abs(numpy.linalg.det(basis[:3, :3])) < 1e-12:
+            raise numpy.linalg.LinAlgError
+        rest = m @ numpy.linalg.inv(basis)
+    except numpy.linalg.LinAlgError:
+        ob.matrix_basis = Matrix.Identity(4)
+        rest = m
+    ob.matrix_parent_inverse = Matrix(rest.tolist())
+
+
+def _shear_helper(built, collection):
+    if not built.helpers:
+        helper = bpy.data.objects.new(SHEAR_HELPER, None)
+        helper.empty_display_type = 'PLAIN_AXES'
+        helper[HELPER_PROPERTY] = "shear"
+        collection.objects.link(helper)
+        built.helpers.append(helper)
+    return built.helpers[0]
 
 
 def _attribute(mesh, name, domain):
@@ -103,10 +141,14 @@ def build(desc, collection, collections=None, view_layer=None):
             ob.empty_display_type = 'PLAIN_AXES'
             ob[CLASS_PROPERTY] = node.class_name
         parent = built.objects.get(node.parent) if node.parent is not None else None
+        if parent is None and node.sheared:
+            parent = _shear_helper(built, collection)
         if parent is not None:
             ob.parent = parent
             ob.matrix_parent_inverse = identity
         ob.matrix_basis = Matrix(node.matrix)
+        if parent is not None and node.sheared:
+            _keep_shear(ob, node.matrix)
         ob.hide_render = not node.renderable
         ob.hide_select = node.frozen
         if node.hidden:

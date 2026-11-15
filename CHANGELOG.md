@@ -24,6 +24,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   geometry errors), plus the unpack of a scene pack. It is printed to the system console and kept in the text
   **MaxDrop Report** (Text Editor); importing several files at once keeps all their reports there. The status
   line says whether anything was left out.
+- A shear inside an object's transform (a scale along a rotated axis) is kept: Blender's world matrix is the one
+  3ds Max computes. The rest of the transform goes into the object's parent inverse; an object without a parent
+  that needs it gets the empty **MaxDrop Shear** (at the origin, custom property `maxdrop_helper`) as its parent.
 
 ### Changed
 

@@ -268,6 +268,28 @@ class Shear(unittest.TestCase):
     def test_shear_is_found(self):
         self.assertTrue(conv.sheared(((1, 0, 0, 0), (0.5, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1))))
 
+    @unittest.skipIf(numpy is None, "numpy missing")
+    def test_a_sheared_node_is_flagged_not_reported(self):
+        sc = DamagedInput.scene(self, "hierarchy")
+        real = conv.controllers.Transforms
+        target = sc.walk()[1]
+
+        class Fake(real):
+            def local(self, i):
+                m = super().local(i)
+                if i != target:
+                    return m
+                return ((m[0][0], m[0][1], m[0][2], 0.0), (m[1][0] + 0.5 * m[0][0], m[1][1] + 0.5 * m[0][1],
+                                                           m[1][2] + 0.5 * m[0][2], 0.0), m[2], m[3])
+
+        conv.controllers.Transforms = Fake
+        try:
+            desc = conv.describe(sc, 1.0)
+        finally:
+            conv.controllers.Transforms = real
+        self.assertEqual([n.index for n in desc.nodes if n.sheared], [target])
+        self.assertFalse([r for _n, r in desc.issues if "shear" in r], desc.issues)
+
 
 @unittest.skipIf(numpy is None, "numpy missing")
 class MirroredOffset(unittest.TestCase):

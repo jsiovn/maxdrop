@@ -41,8 +41,9 @@ is an issue); desc.layers holds the layers that hold a node and their parent lay
 with every parent before its children. A node's hidden, frozen and renderable flags are its own: a hidden layer
 hides its nodes in 3ds Max without setting their flag, so build/ applies the layer's flags to its collection.
 
-A local matrix with shear (a scale along a rotated axis) is reported: Blender's matrix_basis cannot hold it. A
-base object's reader arrays are dropped once its last node is described.
+A local matrix with shear (a scale along a rotated axis) sets node.sheared: Blender's matrix_basis cannot hold
+it, so build/ puts the rest into matrix_parent_inverse. A base object's reader arrays are dropped once its last
+node is described.
 Nothing here imports bpy; numpy is imported when a scene is described.
 """
 import collections
@@ -56,7 +57,6 @@ UV_FIRST = "UVMap"
 UV_NAME = "UVChannel_%d"
 MAX_EDGE_MASKS = 64  # distinct smoothing-group masks paired on one non-manifold edge
 SHEAR_TOLERANCE = 1e-5  # |cos| between two rows of a local matrix
-SHEARED = "shear in the local matrix, not kept"
 
 ChunkError = chunks.ChunkError
 
@@ -65,17 +65,18 @@ class NodeDescription:
     """One node: index is its object index, parent the parent's (None at the top level); kind MESH or EMPTY; mesh
     the key into SceneDescription.meshes (None for an empty); class_name the base object's class ("" without
     one); modifiers the class names of its modifier stack, top first; layer the layer's object index (None without
-    one); hidden, frozen, renderable, group_head and group_member the node's own flags."""
+    one); hidden, frozen, renderable, group_head and group_member the node's own flags; sheared whether matrix has
+    shear (see sheared())."""
     __slots__ = ("index", "name", "parent", "matrix", "world", "kind", "mesh", "class_name", "mirrored",
-                 "modifiers", "layer", "hidden", "frozen", "renderable", "group_head", "group_member")
+                 "modifiers", "layer", "hidden", "frozen", "renderable", "group_head", "group_member", "sheared")
 
     def __init__(self, index, name, parent, matrix, world, kind, mesh, class_name, mirrored, modifiers, layer=None,
-                 hidden=False, frozen=False, renderable=True, group_head=False, group_member=False):
+                 hidden=False, frozen=False, renderable=True, group_head=False, group_member=False, sheared=False):
         self.index, self.name, self.parent, self.matrix, self.world = index, name, parent, matrix, world
         self.kind, self.mesh, self.class_name, self.mirrored, self.modifiers = kind, mesh, class_name, mirrored, \
             modifiers
         self.layer, self.hidden, self.frozen, self.renderable = layer, hidden, frozen, renderable
-        self.group_head, self.group_member = group_head, group_member
+        self.group_head, self.group_member, self.sheared = group_head, group_member, sheared
 
     def __repr__(self):
         return "NodeDescription(%d, %r, %s, parent=%r)" % (self.index, self.name, self.kind, self.parent)
@@ -325,13 +326,12 @@ def describe(scene, meters=1.0, unit=None):
                     del data_of[base]
         if kind == EMPTY and not (base is not None and scene.is_a(base, classids.SC_HELPER, classids.DUMMY)):
             desc.placeholders[class_name] += 1
-        if sheared(local):
-            desc.issues.append((i, "transform: %s" % SHEARED))
         flags = {} if node is None else dict(hidden=node.hidden, frozen=node.frozen, renderable=node.renderable,
                                              group_head=node.group_head, group_member=node.group_member)
         desc.nodes.append(NodeDescription(i, name, scene.parent(i), blender_matrix(local, meters),
                                           blender_matrix(world, meters), kind, key, class_name,
-                                          determinant3(world) < 0, modifiers, layer, **flags))
+                                          determinant3(world) < 0, modifiers, layer, sheared=sheared(local),
+                                          **flags))
     desc.issues.extend((issue.node, "transform: %s" % issue.reason) for issue in t.issues)
     desc.unknown_controllers.update(
         _class_name(scene, issue.controller) if issue.controller is not None else ""

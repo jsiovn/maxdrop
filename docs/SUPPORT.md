@@ -43,7 +43,7 @@ the hierarchy, with its 3ds Max class name in the custom property `maxdrop_class
 | Hidden, frozen and renderable flags of objects | **Imported** |
 | Groups | Their head is an empty with the members as children |
 | Selection sets | Not yet |
-| A shear inside one object's transform (a scale along a rotated axis) | Not kept: Blender cannot store it in an object's transform |
+| A shear inside one object's transform (a scale along a rotated axis) | **Imported**: what Blender's location, rotation and scale cannot hold goes into the parent inverse. An object without a parent gets the empty **MaxDrop Shear** at the origin as its parent, one per imported file |
 | Animation | Not yet: objects arrive as they stand at frame 0 |
 
 ## Materials

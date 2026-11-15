@@ -20,7 +20,9 @@ points away from the oracle's bounding box center, also on the mirrored object) 
 oracle has no map channels or smoothing groups: those expectations come from the fixture scripts (tools/fixtures/*.ms).
 layers_flags: two layer collections, one hidden object, one with hide_render, the group head as the parent of its two
 members. Each fixture's import report is published (build.report) and must say nothing was left out. A changed
-layers_flags description checks a hidden, a frozen, a non-rendering and a nested layer, which no fixture has.
+layers_flags description checks a hidden, a frozen, a non-rendering and a nested layer, which no fixture has. A
+hand-made description with sheared local matrices (top-level and parented, hidden, a zero scale) checks that
+Blender's world matrices equal the products of the locals, through the helper empty for top-level ones.
 Prints `FIXTURES PASSED` (exit 0) or `FIXTURES FAILED` (exit 1).
 """
 import collections
@@ -254,6 +256,80 @@ def check_layer_flags(modules):
           col_a.hide_select and col_a.hide_render and not cols.layers[b.index].hide_render)
 
 
+def _local(a, t):
+    """A Blender 4x4 (rows) of a 3x3 and a translation."""
+    return tuple(tuple(a[r]) + (t[r],) for r in range(3)) + ((0.0, 0.0, 0.0, 1.0),)
+
+
+def check_shear(modules):
+    """A hand-made description with sheared local matrices (a scale along a rotated axis), with and without a
+    parent, one with a zero scale: Blender's world matrices equal the products of the locals."""
+    import numpy
+    convert_scene, build_objects = modules[0], modules[2]
+    empty_scene()
+    desc = convert_scene.SceneDescription(1.0)
+    md = convert_scene.MeshDescription(
+        "tri", "ShearTri", numpy.array([(0, 0, 0), (1, 0, 0), (0, 1, 0)], dtype=numpy.float32),
+        numpy.array([0, 1, 2], dtype=numpy.int32), numpy.array([0], dtype=numpy.int32),
+        numpy.array([3], dtype=numpy.int32), numpy.zeros(1, dtype=numpy.int32), numpy.zeros(1, dtype=bool),
+        numpy.zeros((0, 2), dtype=numpy.int32), [])
+    desc.meshes["tri"] = md
+    c, s = 0.8, 0.6
+    plain = _local(((c, -s, 0), (s, c, 0), (0, 0, 1)), (0.5, -1.0, 2.0))
+    nodes = [  # index, name, parent, local, kind, sheared, hidden
+        (1, "ShearTop", None, _local(((1, 0.4, 0), (0.1, 1.2, 0.3), (0, 0, 0.8)), (1, 2, 3)), "EMPTY", True, False),
+        (2, "ShearChild", 1, _local(((0.9, 0, 0.5), (0.2, 1.1, 0), (0, -0.3, 1.4)), (-2, 0.5, 1)), "MESH", True,
+         False),
+        (3, "ShearGrandchild", 2, plain, "MESH", False, False),
+        (4, "ShearHiddenTop", None, _local(((2, 0.7, 0), (0, 1, 0), (0.2, 0, 1)), (3, -1, 0)), "MESH", True, True),
+        (5, "PlainTop", None, plain, "EMPTY", False, False),
+        (6, "ShearZeroScale", 5, _local(((0, 0.5, 0), (0, 1, 0), (0, 0.3, 1)), (1, 1, 1)), "EMPTY", True, False),
+    ]
+    expected = {}
+    for index, name, parent, local, kind, sheared, hidden in nodes:
+        m = numpy.array(local, dtype=numpy.float64)
+        expected[name] = (expected[nodes[parent - 1][1]] @ m) if parent else m
+        mesh = "tri" if kind == "MESH" else None
+        if mesh:
+            md.users.append(index)
+        desc.nodes.append(convert_scene.NodeDescription(
+            index, name, parent, local, tuple(map(tuple, expected[name].tolist())), kind, mesh, "", False, (),
+            hidden=hidden, sheared=sheared))
+    cols, built, view_layer = build_scene(desc, "shear", modules)
+    helpers = built.helpers
+    check("shear: one helper empty, at the identity, in the file's collection",
+          len(helpers) == 1 and helpers[0].type == 'EMPTY' and helpers[0].parent is None
+          and helpers[0].matrix_world == helpers[0].matrix_world.Identity(4)
+          and [col.name for col in helpers[0].users_collection] == [cols.root.name],
+          str([(h.name, [col.name for col in h.users_collection]) for h in helpers]))
+    for index, name, parent, _local_m, _kind, sheared, _hidden in nodes:
+        ob = built.objects[index]
+        want = built.objects[parent] if parent else (helpers[0] if sheared and helpers else None)
+        check("shear/%s: parent" % name, ob.parent == want, "%r" % (ob.parent and ob.parent.name))
+        got = numpy.array(world_of(ob), dtype=numpy.float64)
+        error = float(numpy.abs(got - expected[name]).max())
+        check("shear/%s: world matrix = the product of the locals" % name, error <= 1e-6, "%.3g" % error)
+    roots = sorted(ob.name for ob in built.roots())
+    check("shear: roots are the plain top-level object and the helper",
+          roots == sorted(["PlainTop"] + [h.name for h in helpers]), str(roots))
+    axis = numpy.array([(1, 0, 0, 0), (0, 0, -1, 0), (0, 1, 0, 0), (0, 0, 0, 1)], dtype=numpy.float64)
+    from mathutils import Matrix
+    for ob in built.roots():
+        ob.matrix_basis = Matrix(axis.tolist()) @ ob.matrix_basis
+    view_layer.update()
+    errors = {name: float(numpy.abs(numpy.array(world_of(built.objects[index]), dtype=numpy.float64)
+                                    - axis @ expected[name]).max()) for index, name, *_rest in nodes}
+    check("shear: an axis change on the roots turns every object", max(errors.values()) <= 1e-6, str(errors))
+    plain_only = convert_scene.SceneDescription(1.0)
+    plain_only.nodes.append(convert_scene.NodeDescription(1, "PlainOnly", None, plain, plain, "EMPTY", None, "",
+                                                          False, ()))
+    empty_scene()
+    _cols, built, _vl = build_scene(plain_only, "no_shear", modules)
+    check("shear: no helper without a sheared top-level node", built.helpers == [] and len(bpy.data.objects) == 1)
+    if build_objects.SHEAR_HELPER in bpy.data.objects:
+        failures.append("shear: helper left over")
+
+
 def main():
     print("Blender " + bpy.app.version_string)
     sys.path.insert(0, ROOT)
@@ -281,6 +357,11 @@ def main():
         except Exception:
             traceback.print_exc()
             check("layer flags: no exception", False)
+        try:
+            check_shear(modules)
+        except Exception:
+            traceback.print_exc()
+            check("shear: no exception", False)
 
 
 try:

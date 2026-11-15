@@ -16,6 +16,8 @@
 # items of Object Filter. The popup shows a pre-flight line per .max (3ds Max version, renderer, objects, unit).
 # Modified for MaxDrop, 2026-11-15 (jsiovn). Every imported scene publishes MaxDrop's import report (console, the
 # text "MaxDrop Report", its summary as the status line); a scene from a pack also reports the unpack.
+# Modified for MaxDrop, 2026-11-15 (jsiovn). The axis conversion also turns the helper empty that carries the
+# shear of top-level objects (build.objects.Built.roots).
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -518,9 +520,8 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
         del desc  # its mesh arrays are in Blender now: not held while the old engine parses the file again
         axis = axis_conversion(from_forward=self.axis_forward, from_up=self.axis_up).to_4x4()
         if axis != Matrix.Identity(4):
-            for ob in built.objects.values():
-                if ob.parent is None:
-                    ob.matrix_basis = axis @ ob.matrix_basis
+            for ob in built.roots():
+                ob.matrix_basis = axis @ ob.matrix_basis
         lines = [('WARNING', "%s %s" % (name, note))] if note else []
         materials, problems = 0, []
         if 'MATERIAL' in self.object_filter and first_nodes:
