@@ -180,12 +180,13 @@ def _in_pack(pack):
     if pack is None or getattr(pack, "mode", "") != "unpacked":
         return lambda name: ""
     held = {}  # name key -> note; the first kind that names the file wins
-    for path in getattr(pack, "collided", None) or ():
-        held.setdefault(_key(path), ": in the archive, lost to a duplicate (%s)" % path)
     for path, reason in getattr(pack, "refused", None) or ():
         held.setdefault(_key(path), ": in the archive, refused: %s" % reason)
     for path in getattr(pack, "not_regular", None) or ():
         held.setdefault(_key(path), ": in the archive, not a regular file")
+    # a collided name had another copy written beside the scene: only a lookup fault leaves it missing
+    for path in getattr(pack, "collided", None) or ():
+        held.setdefault(_key(path), ": in the archive more than once, a copy written (not written: %s)" % path)
     skipped = {k.casefold() for k in (getattr(pack, "skipped", None) or {})}
 
     def where(name):

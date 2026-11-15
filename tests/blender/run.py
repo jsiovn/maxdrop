@@ -20,9 +20,8 @@ points away from the oracle's bounding box center, also on the mirrored object) 
 oracle has no map channels or smoothing groups: those expectations come from the fixture scripts (tools/fixtures/*.ms).
 layers_flags: two layer collections, one hidden object, one with hide_render, the group head as the parent of its two
 members. Each fixture's import report is published (build.report) and must say nothing was left out; the one the
-operator published for vray_wrappers lists its three peeled wrappers by class. A changed
-layers_flags description checks a hidden, a frozen, a non-rendering and a nested layer, which no fixture has. A
-hand-made description with sheared local matrices (top-level and parented, hidden, a zero scale) checks that
+operator published for vray_wrappers lists its three peeled wrappers by class. A changed layers_flags description
+checks a hidden, a frozen, a non-rendering and a nested layer, which no fixture has. A hand-made description with sheared local matrices (top-level and parented, hidden, a zero scale) checks that
 Blender's world matrices equal the products of the locals, through the helper empty for top-level ones. Material
 slots (build with convert.materials.assign): vray_wrappers' Multi/Sub-Object box with its faces set to IDs 1, 3
 and 7 lands them on the slots of FixtureSubOne, an empty one (ID 3 is switched off) and FixtureSubSeven; the same
@@ -32,8 +31,9 @@ the 3ds Max material, its Principled inputs equal to the MaterialIR the same fil
 a texture graph drives them), the render method, one Image Texture node per file; vray_maps' Mapping values by hand
 from its authoring script, texture nodes without an image and each missing file listed once by name; vray_maps,
 texmap_rules, corona_maps and corona_light copied beside generated PNGs load every image in its color space, one
-datablock per file and color space, the report counts every file as found; hand-made IRs check
-shared images, a missing file, the materials counted by class, Thin Wall (set on 5.x, counted on 4.x), a name clash, BLENDED / DITHERED and every node kind.
+datablock per file and color space, the report counts every file as found; hand-made IRs check shared images, a
+missing file, the materials counted by class, Thin Wall (set on 5.x, counted on 4.x), a name clash, BLENDED /
+DITHERED and every node kind.
 Prints `FIXTURES PASSED` (exit 0) or `FIXTURES FAILED` (exit 1).
 """
 import collections

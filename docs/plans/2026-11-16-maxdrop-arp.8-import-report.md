@@ -36,7 +36,7 @@ Not converted:                                                                  
   Principled inputs not on Blender 4.2.23 (not set), materials: Thin Wall 1
   Textures not found: 2
     a.png
-    b.png: in the archive, lost to a duplicate (sub/b.png)                          (unpacked pack only)
+    b.png: in the archive more than once, a copy written (not written: sub/b.png)                          (unpacked pack only)
   Geometry errors: n (listed)                                                        (unchanged)
   Material issues: n
     object 422: CoronaMix 'X': operation 0 drawn as its first bitmap
@@ -50,8 +50,9 @@ Summary: `Imported room.max: 6 objects, 2 meshes, 6 materials, nothing left out.
 emits the separate `name: N materials` INFO line: the summary holds it, one line in the status bar.
 
 Pack annotation of a missing name (only when `pack.mode == "unpacked"`, i.e. the unpack listed the archive now),
-first match by case-folded base name: collided -> `in the archive, lost to a duplicate (<archive path>)`; refused
--> `in the archive, refused: <reason>`; not_regular -> `in the archive, not a regular file`; extension key in
+first match by case-folded base name: refused -> `in the archive, refused: <reason>`; not_regular -> `in the
+archive, not a regular file`; collided -> `in the archive more than once, a copy written (not written: <path>)`
+(another copy was written beside the scene, so only a lookup fault leaves it missing); extension key in
 `skipped` -> `the archive's <ext> files were skipped`; else `not in the archive`.
 
 Counting: `approximated` = wrappers peeled + maps peeled. `_problems` adds grey materials, unsupported maps,
@@ -68,7 +69,7 @@ skipped sockets (material-socket pairs), material issues. `left_out` adds missin
   wording; empty stats + materials built -> INFO "..., 3 materials, nothing left out." and "Nothing was left out.";
   a materials-free report keeps today's text (no "Materials built" line); pack annotations for each case (collided,
   refused, not_regular, skipped ext, absent) and none when mode is "reused"; long missing list cut after MAX_LISTED.
-- [ ] Run `python -I -m unittest tests.unit.test_report` -> FAIL (no add_materials).
+- [ ] Run `python -I -m unittest discover tests -p test_report.py` -> FAIL (no add_materials).
 - [ ] Implement: new slots, `approximated`, `_problems`, `left_out`, `summary`, `text`, `add_materials(rep,
   materials_built, classes=(), conv_stats=None, tex_stats=None, lookup=None, sockets=(), blender="")`.
 - [ ] Run tests -> OK; commit `Report materials, maps and textures in the import report`.

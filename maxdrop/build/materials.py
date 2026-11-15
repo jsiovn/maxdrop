@@ -26,9 +26,10 @@ Image -> Image Texture (its image datablock reused per file and color space: one
 two datablocks), with its placement as a Mapping node and a UV Map node for a map channel other than 1; Invert,
 Mix, Multiply, ColorCorrect (Hue/Saturation/Value, Bright/Contrast, gain, Gamma), Composite (Mix per layer),
 NormalMap (Normal Map node, flips through Separate / Combine Color), Bump (Bump node). A texture file that was not
-found (or does not load) keeps its Image Texture node, without an image and not connected (a file not found is
-reported by name by the texture lookup, convert.textures, a file that does not load here): the graph above it carries on without it (a Mix gives its other side, a normal map without its image nothing) and
-an input left without a map keeps the IR's value. An empty image node renders black in EEVEE and magenta in Cycles,
+found (or does not load) keeps its Image Texture node, without an image and not connected. The texture lookup
+(convert.textures) reports a file not found by name; the builder reports a file that does not load. The graph
+above the node carries on without it (a Mix gives its other side, a normal map without its image nothing) and an
+input left without a map keeps the IR's value. An empty image node renders black in EEVEE and magenta in Cycles,
 and in a normal or alpha input it would wreck the shading or hide the object.
 
 Placement, the 3ds Max convention (StdUVGen: scaled and turned about the map's center, offset in UV fractions):

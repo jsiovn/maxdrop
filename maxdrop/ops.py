@@ -544,8 +544,10 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
                                     pack=pack, pack_name=pack_name)
         rep.issues.extend(builder.issues())
         if materials:
-            convert_report.add_materials(rep, len(built.materials), builder.classes, *counts,
-                                         sockets=builder.sockets_skipped, blender=bpy.app.version_string)
+            conv_stats, tex_stats, lookup = counts
+            convert_report.add_materials(rep, len(built.materials), builder.classes, conv_stats=conv_stats,
+                                         tex_stats=tex_stats, lookup=lookup, sockets=builder.sockets_skipped,
+                                         blender=bpy.app.version_string)
         del desc
         axis = axis_conversion(from_forward=self.axis_forward, from_up=self.axis_up).to_4x4()
         if axis != Matrix.Identity(4):

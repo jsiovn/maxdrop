@@ -273,7 +273,7 @@ class TestMaterials(unittest.TestCase):
             "    gone.png: not in the archive",
             "    link.jpg: in the archive, not a regular file",
             "    scan.tif: the archive's .tif files were skipped",
-            "    wood.jpg: in the archive, lost to a duplicate (sub/Wood.JPG)",
+            "    wood.jpg: in the archive more than once, a copy written (not written: sub/Wood.JPG)",
         ])
 
     def test_missing_texture_in_a_reused_pack(self):
