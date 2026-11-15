@@ -485,16 +485,29 @@ def _read_marker(folder):
     return data if isinstance(data, dict) else None
 
 
-def _marker_matches(marker, ident, scene_name, wanted=None):
-    """wanted: the name_key() set asked for now, None for every asset. A folder unpacked with a filter serves
-    only a request it covers."""
+def _wanted_at(wanted, max_path):
+    """The name_key() set of the assets to write, None for every asset. wanted: such a set (or None), or a
+    references callable, asked about the .max at max_path."""
+    if not callable(wanted):
+        return wanted
+    names = wanted(max_path)
+    return None if names is None else {name_key(n) for n in names}
+
+
+def _marker_matches(marker, ident, scene_name, wanted=None, max_path=None):
+    """wanted: the name_key() set asked for now, None for every asset, or a references callable (asked about
+    max_path, the folder's .max, only when the folder was unpacked with a filter). A folder unpacked with a filter
+    serves only a request it covers."""
     if not (marker is not None and marker.get("format") == MARKER_FORMAT and marker.get("scene") == scene_name
             and all(marker.get(k) == v for k, v in ident.items())):
         return False
     stored = marker.get("wanted")
     if stored is None:
         return True
-    return wanted is not None and isinstance(stored, list) and wanted <= set(stored)
+    if not isinstance(stored, list):
+        return False
+    wanted = _wanted_at(wanted, max_path)
+    return wanted is not None and wanted <= set(stored)
 
 
 def _write_marker(folder, ident, scene_name, files, wanted=None):
@@ -548,7 +561,7 @@ def _probe(folder, scene, ident, wanted):
     marker = _read_marker(folder)
     if marker is not None:
         max_path = os.path.join(folder, scene.base)
-        if _marker_matches(marker, ident, scene.name, wanted) and os.path.isfile(max_path):
+        if os.path.isfile(max_path) and _marker_matches(marker, ident, scene.name, wanted, max_path):
             return ("reused", max_path)
         return None
     found = _find_copy(folder, scene.base)
@@ -600,22 +613,23 @@ def _ident(path, st):
     return {"archive": os.path.basename(path), "size": st.st_size, "mtime_ns": st.st_mtime_ns}
 
 
-def existing_folder(path, scene, several, dest_parent=None):
+def existing_folder(path, scene, several, dest_parent=None, references=None):
     """("reused" | "in_place", .max path) when unpack() of the scene (its archive path; several: the pack holds
     more than one) would import from a folder already on disk instead of writing one, else None. Reads the disk
-    only, for the options popup: an "in_place" folder needs no marker, any file named like the scene counts."""
-    # wanted=None, as ops.py calls unpack(): a caller that passes wanted to unpack() must pass it here too, or the
-    # marker test can refuse a folder the popup announced as reused.
+    only, for the options popup: an "in_place" folder needs no marker, any file named like the scene counts.
+    references: what the caller passes to unpack(); it decides whether a folder unpacked with a filter serves."""
     path = os.path.abspath(path)
     dest_parent = os.path.abspath(dest_parent or os.path.dirname(path))
     try:
-        found = _destination(path, dest_parent, Entry(scene), several, _ident(path, os.stat(path)), None)
+        found = _destination(path, dest_parent, Entry(scene), several, _ident(path, os.stat(path)), references)
     except (OSError, PackError):
         return None
     return found if found[0] in ("reused", "in_place") else None
 
 
-def _check_space(entries, folder, limits):
+def _check_space(entries, folder, limits, written=0):
+    """written: bytes this unpack has written already: they count against the pack's limit, and are no longer
+    free space."""
     declared = 0
     for e in entries:
         size = e.size or 0
@@ -623,7 +637,7 @@ def _check_space(entries, folder, limits):
             raise PackError("%s is larger than %s, the most MaxDrop unpacks for one file. Extract the archive by "
                             "hand." % (e.name, _size_text(limits.file_bytes)))
         declared += size
-    if declared > limits.total_bytes:
+    if declared + written > limits.total_bytes:
         raise PackError("The pack unpacks to more than %s, the most MaxDrop writes from one pack. Extract it by "
                         "hand." % _size_text(limits.total_bytes))
     try:
@@ -651,13 +665,26 @@ def _check_staging(staging, targets, path):
                         % os.path.basename(path))
 
 
-def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=None):
+def _refuse_unreadable(entries):
+    for e in entries:
+        if e.encrypted:
+            raise PackError(_BY_HAND % ("%s is encrypted" % e.name))
+        if e.unsupported:
+            raise PackError(_BY_HAND % ("%s %s" % (e.name, e.unsupported)))
+
+
+def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=None, references=None):
     """Unpack the scene (its archive path, as list_pack gives it; may be None when the pack holds one) with its
-    maps. wanted: optional set of name_key() base names; when given, only those assets are written.
+    maps. wanted: optional set of name_key() base names; when given, only those assets are written. references:
+    instead of wanted, a callable asked about a .max path that returns the base names of the files that scene
+    uses, or None for every asset. It is asked about the scene once written into the staging folder (the maps
+    follow), or about the .max of an earlier unpack that may be used again; it must leave no file open.
 
     The destination is <dest_parent>/<archive stem>/, or <dest_parent>/<archive stem>/<scene stem>/ when the pack
     holds several scenes; dest_parent defaults to the archive's folder.
     """
+    if wanted is not None and references is not None:
+        raise ValueError("pass wanted or references, not both")
     path = os.path.abspath(path)
     _k, backend = backend_for(path)
     entries = _read_entries(backend, path, limits)
@@ -682,7 +709,8 @@ def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=Non
     result = UnpackResult(max_path="", folder="", mode="unpacked", backend=backend.name)
     result.guessed = [e.name for e in entries if e.guessed]
     wanted = None if wanted is None else {name_key(w) for w in wanted}
-    found = _destination(path, dest_parent, chosen, len(scenes) > 1, ident, wanted)
+    found = _destination(path, dest_parent, chosen, len(scenes) > 1, ident,
+                         wanted if references is None else references)
     if found[0] in ("reused", "in_place"):
         result.mode, result.max_path = found
         result.folder = os.path.dirname(result.max_path)
@@ -692,18 +720,25 @@ def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=Non
         return result
 
     _free, folder, container = found
-    assets = _select(entries, chosen, wanted, result)
-    plan = [(chosen, chosen.base)] + [(e, e.base) for e in assets]
-    for e, _target in plan:
-        if e.encrypted:
-            raise PackError(_BY_HAND % ("%s is encrypted" % e.name))
-        if e.unsupported:
-            raise PackError(_BY_HAND % ("%s %s" % (e.name, e.unsupported)))
-    if len(plan) > limits.files:
-        raise PackError("The scene needs %d files, more than the %d MaxDrop writes from one pack. Extract it by "
-                        "hand." % (len(plan), limits.files))
     parent = os.path.dirname(folder)
-    _check_space([e for e, _t in plan], container and os.path.dirname(container) or parent, limits)
+    space_at = container and os.path.dirname(container) or parent
+    scene_plan = [(chosen, chosen.base)]
+    _refuse_unreadable([chosen])
+
+    def asset_plan(want, written):
+        """(entry, target) of the maps to write; written: the bytes of the scene when it is on disk already."""
+        assets = _select(entries, chosen, want, result)
+        _refuse_unreadable(assets)
+        if len(assets) + 1 > limits.files:
+            raise PackError("The scene needs %d files, more than the %d MaxDrop writes from one pack. Extract it "
+                            "by hand." % (len(assets) + 1, limits.files))
+        _check_space(assets if written else [chosen] + assets, space_at, limits, written)
+        return [(e, e.base) for e in assets]
+
+    if references is None:
+        plan = scene_plan + asset_plan(wanted, 0)
+    else:
+        _check_space([chosen], space_at, limits)
 
     created = None
     try:
@@ -713,7 +748,18 @@ def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=Non
             _write_marker(container, ident, None, 0)
         staging = tempfile.mkdtemp(prefix=STAGING_PREFIX, dir=parent)
         try:
-            backend.extract(path, plan, staging, _Budget(limits))
+            budget = _Budget(limits)
+            if references is None:
+                backend.extract(path, plan, staging, budget)
+            else:
+                # The scene alone first: only its own asset table says which maps it needs.
+                backend.extract(path, scene_plan, staging, budget)
+                _check_staging(staging, [chosen.base], path)
+                wanted = _wanted_at(references, os.path.join(staging, chosen.base))
+                maps = asset_plan(wanted, budget.total)
+                if maps:
+                    backend.extract(path, maps, staging, budget)
+                plan = scene_plan + maps
             _check_staging(staging, [t for _e, t in plan], path)
             _write_marker(staging, ident, chosen.name, len(plan), wanted)
             os.rename(staging, folder)

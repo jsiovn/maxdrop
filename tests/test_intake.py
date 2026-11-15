@@ -212,6 +212,116 @@ class FlatAndFolders(Base):
         self.assertEqual(sorted(os.listdir(first.folder)), sorted([archive.MARKER, "room.max", "a.jpg"]))
 
 
+class References(Base):
+    """unpack(references=...): the scene is written first and asked which maps it uses."""
+
+    def asker(self, names):
+        calls = []
+
+        def references(max_path):
+            calls.append((max_path, os.path.isfile(max_path), read(max_path)))
+            return names
+        return references, calls
+
+    def test_only_the_maps_the_scene_names_are_written(self):
+        path = self.pack([("Pack/room.max", b"MAX"), ("Pack/maps/wood.jpg", b"J"), ("Pack/Stone.PNG", b"P"),
+                          ("Pack/light.ies", b"I"), ("Pack/unused.tga", b"U")])
+        references, calls = self.asker(["WOOD.JPG", "stone.png", "light.IES", "absent.tif"])
+        r = archive.unpack(path, dest_parent=self.out, references=references)
+        self.assertEqual(len(calls), 1)
+        staged, existed, data = calls[0]
+        self.assertTrue(existed)
+        self.assertEqual(data, b"MAX")
+        self.assertEqual(os.path.basename(staged), "room.max")
+        self.assertTrue(os.path.basename(os.path.dirname(staged)).startswith(archive.STAGING_PREFIX))
+        self.assertEqual(os.path.dirname(os.path.dirname(staged)), self.out)
+        self.assertEqual(self.listing(r.folder), sorted([archive.MARKER, "room.max", "wood.jpg", "Stone.PNG",
+                                                         "light.ies"]))
+        self.assertEqual((r.mode, r.written, r.unwanted), ("unpacked", 4, 1))
+        marker = json.loads(read(os.path.join(r.folder, archive.MARKER)))
+        self.assertEqual((marker["files"], marker["wanted"]), (4, ["absent.tif", "light.ies", "stone.png",
+                                                                   "wood.jpg"]))
+
+    def test_none_writes_every_map(self):
+        path = self.pack([("room.max", b"MAX"), ("a.jpg", b"A"), ("b.jpg", b"B")])
+        references, calls = self.asker(None)
+        r = archive.unpack(path, dest_parent=self.out, references=references)
+        self.assertEqual((len(calls), r.written, r.unwanted), (1, 3, 0))
+        self.assertIsNone(json.loads(read(os.path.join(r.folder, archive.MARKER)))["wanted"])
+
+    def test_a_scene_that_names_no_file_is_written_alone(self):
+        path = self.pack([("room.max", b"MAX"), ("a.jpg", b"A")])
+        references, _calls = self.asker([])
+        r = archive.unpack(path, dest_parent=self.out, references=references)
+        self.assertEqual(self.listing(r.folder), sorted([archive.MARKER, "room.max"]))
+        self.assertEqual((r.written, r.unwanted), (1, 1))
+
+    def test_reuse_asks_the_unpacked_scene(self):
+        path = self.pack([("room.max", b"MAX"), ("a.jpg", b"A"), ("b.jpg", b"B")])
+        narrow, _ = self.asker(["a.jpg"])
+        first = archive.unpack(path, dest_parent=self.out, references=narrow)
+        asked, calls = self.asker(["A.JPG"])
+        self.assertEqual(archive.existing_folder(path, "room.max", False, self.out, references=asked),
+                         ("reused", first.max_path))
+        again = archive.unpack(path, dest_parent=self.out, references=asked)
+        self.assertEqual((again.mode, again.folder, again.reused), ("reused", first.folder, 2))
+        self.assertEqual([c[0] for c in calls], [first.max_path, first.max_path])
+        wide, _ = self.asker(["a.jpg", "b.jpg"])
+        self.assertIsNone(archive.existing_folder(path, "room.max", False, self.out, references=wide))
+        wider = archive.unpack(path, dest_parent=self.out, references=wide)
+        self.assertEqual((wider.mode, wider.folder), ("unpacked", os.path.join(self.out, "pack (2)")))
+        unreadable, _ = self.asker(None)
+        self.assertEqual(archive.unpack(path, dest_parent=self.out, references=unreadable).folder,
+                         os.path.join(self.out, "pack (3)"))
+        # A folder unpacked with every map serves without asking the scene.
+        other = os.path.join(self.tmp, "other")
+        os.mkdir(other)
+        every = archive.unpack(path, dest_parent=other, references=unreadable)
+        silent, calls = self.asker(["b.jpg"])
+        self.assertEqual(archive.unpack(path, dest_parent=other, references=silent).folder, every.folder)
+        self.assertEqual(calls, [])
+
+    def test_an_encrypted_map_the_scene_does_not_name_is_left_out(self):
+        path = self.pack([("room.max", b"MAX"), ("a.jpg", b"A"), ("secret.jpg", b"S")])
+        patch_entry(path, "secret.jpg", flags=0x1)
+        references, _ = self.asker(["a.jpg"])
+        r = archive.unpack(path, dest_parent=self.out, references=references)
+        self.assertEqual((r.written, r.unwanted), (2, 1))
+        before = files_under(self.tmp)
+        named, _ = self.asker(["secret.jpg"])
+        with self.assertRaisesRegex(PackError, "secret.jpg is encrypted"):
+            archive.unpack(path, dest_parent=self.tmp, references=named)
+        self.assert_clean(before)
+
+    def test_a_failing_question_leaves_nothing(self):
+        path = self.pack([("room.max", b"MAX"), ("a.jpg", b"A")])
+
+        def broken(_max_path):
+            raise RuntimeError("boom")
+        before = files_under(self.tmp)
+        with self.assertRaisesRegex(RuntimeError, "boom"):
+            archive.unpack(path, dest_parent=self.out, references=broken)
+        self.assert_clean(before)
+        self.assertEqual(os.listdir(self.out), [])
+
+    def test_the_maps_count_against_the_limits(self):
+        path = self.pack([("room.max", b"MAX"), ("a.jpg", b"A"), ("b.jpg", b"B")])
+        references, _ = self.asker(["a.jpg", "b.jpg"])
+        before = files_under(self.tmp)
+        with self.assertRaisesRegex(PackError, "needs 3 files, more than the 2"):
+            archive.unpack(path, dest_parent=self.out, references=references, limits=archive.Limits(files=2))
+        self.assert_clean(before)
+        with self.assertRaisesRegex(PackError, "more than 4 bytes"):
+            archive.unpack(path, dest_parent=self.out, references=references,
+                           limits=archive.Limits(total_bytes=4, free_margin=0))
+        self.assert_clean(before)
+
+    def test_wanted_and_references_together_are_refused(self):
+        path = self.pack([("room.max", b"MAX")])
+        with self.assertRaises(ValueError):
+            archive.unpack(path, dest_parent=self.out, wanted={"a.jpg"}, references=lambda p: None)
+
+
 class TwoScenes(Base):
     def test_each_scene_in_its_own_folder_of_the_pack(self):
         path = self.pack([("a/one.max", b"1"), ("b/two.max", b"2"), ("a/wood.jpg", b"A"), ("b/wood.jpg", b"B")])
