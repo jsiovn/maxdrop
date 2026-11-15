@@ -22,7 +22,10 @@ layers_flags: two layer collections, one hidden object, one with hide_render, th
 members. Each fixture's import report is published (build.report) and must say nothing was left out. A changed
 layers_flags description checks a hidden, a frozen, a non-rendering and a nested layer, which no fixture has. A
 hand-made description with sheared local matrices (top-level and parented, hidden, a zero scale) checks that
-Blender's world matrices equal the products of the locals, through the helper empty for top-level ones.
+Blender's world matrices equal the products of the locals, through the helper empty for top-level ones. Material
+slots (build with convert.materials.assign): vray_wrappers' Multi/Sub-Object box with its faces set to IDs 1, 3
+and 7 lands them on the slots of FixtureSubOne, an empty one (ID 3 is switched off) and FixtureSubSeven; the same
+mesh shared with the Shell box gets slots linked to each object; standard_physical's boxes one slot each.
 Prints `FIXTURES PASSED` (exit 0) or `FIXTURES FAILED` (exit 1).
 """
 import collections
@@ -46,12 +49,19 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1
     "instances": ["UVMap"],
     "layers_flags": [],
     "multi_uv": ["UVMap", "UVChannel_2", "UVChannel_3"],
+    "standard_physical": ["UVMap"],
     "units_cm": ["UVMap"],
     "units_in": ["UVMap"],
     "units_mm": ["UVMap"],
+    "vray_basic": ["UVMap"],
+    "vray_maps": ["UVMap"],
+    "vray_wrappers": ["UVMap"],
 }
 SHARP_EDGES = {"editable_mesh": 8}  # group 1 on top and bottom, 2 on the sides; a box with a group per side: 12
 SHARP_EDGES_DEFAULT = 12
+# Meshes the operator leaves without a material: its materials still come from the old engine (import_max), which
+# has no VRayBlendMtl or Shell Material rule. maxdrop-arp.6 replaces it with the new rules.
+NO_OLD_MATERIAL = {"vray_wrappers": ["FixtureBlendBox", "FixtureShellBox"]}
 failures = []
 
 
@@ -110,11 +120,11 @@ def objects_of(desc):
     return out
 
 
-def build_scene(desc, name, modules):
+def build_scene(desc, name, modules, **slots):
     _cs, _cr, build_objects, build_collections, _br = modules
     view_layer = bpy.context.view_layer
     cols = build_collections.make(desc, bpy.context.scene.collection, name)
-    built = build_objects.build(desc, cols.root, cols, view_layer)
+    built = build_objects.build(desc, cols.root, cols, view_layer, **slots)
     build_collections.finish(cols, view_layer)
     view_layer.update()
     return cols, built, view_layer
@@ -211,8 +221,9 @@ def run_fixture(path, modules):
               group.type == 'EMPTY' and members == ["FixtureGroupA", "FixtureGroupB"], "%s %s" % (group.type, members))
         excluded = [lc.name for lc in view_layer.layer_collection.children[name].children if lc.exclude]
         check("layers_flags: no layer excluded (none is hidden in 3ds Max)", excluded == [], str(excluded))
-    check("%s: a material on every mesh" % name, all(mesh.materials and mesh.materials[0] for mesh in meshes.values()),
-          str(sorted(m.name for m in meshes.values() if not (m.materials and m.materials[0]))))
+    bare = sorted(m.name for m in meshes.values() if not (m.materials and m.materials[0]))
+    check("%s: a material on every mesh but the old engine's gaps" % name, bare == NO_OLD_MATERIAL.get(name, []),
+          str(bare))
     rep = convert_report.gather(desc, source=os.path.basename(path), objects_built=len(obs),
                                 meshes_built=len(meshes))
     level, line = build_report.publish(rep)
@@ -329,6 +340,75 @@ def check_shear(modules):
         failures.append("shear: helper left over")
 
 
+def _plan(path, edit=None):
+    """convert.scene.read of path, edit(desc) applied, then its slot plan."""
+    from maxdrop.convert import materials as convert_materials
+    from maxdrop.convert import scene as convert_scene
+    from maxdrop.reader import cfb, materials as reader_materials, scene as reader_scene
+    desc = convert_scene.read(path)
+    if edit is not None:
+        edit(desc)
+    with cfb.CompoundFile(path) as cf:
+        sc = reader_scene.Scene.from_file(cf)
+        conv = convert_materials.MaterialConverter(reader_materials.MaterialGraph(sc))
+        slots = convert_materials.assign(desc, convert_materials.node_materials(sc, desc), conv)
+    return desc, slots
+
+
+def _faces(ob):
+    """The material name each face of ob renders with (None: an empty slot)."""
+    return [(lambda m: m and m.name)(ob.material_slots[p.material_index].material) for p in ob.data.polygons]
+
+
+def check_material_slots(modules):
+    """Multi/Sub-Object by material ID, slots shared by objects or linked to each, one slot per plain material."""
+    import numpy
+    fixtures = os.path.join(ROOT, "tests", "fixtures")
+
+    def make(ir):
+        return bpy.data.materials.new(ir.name)
+
+    def share(desc):
+        nodes = {n.name: n for n in desc.nodes}
+        multi, shell = nodes["FixtureMultiBox"], nodes["FixtureShellBox"]
+        md = desc.meshes[multi.mesh]
+        md.material_indices = numpy.array([0, 2, 6, 0, 2, 6], dtype=numpy.int32)  # IDs 1, 3, 7 (stored zero-based)
+        del desc.meshes[shell.mesh]
+        shell.mesh = multi.mesh
+        md.users = sorted([shell.index, multi.index])
+
+    empty_scene()
+    desc, slots = _plan(os.path.join(fixtures, "vray_wrappers.max"), share)
+    _cols, built, _vl = build_scene(desc, "material_slots", modules, slots=slots, material=make)
+    obs = {n.name: built.objects[n.index] for n in desc.nodes}
+    multi, shell = obs["FixtureMultiBox"], obs["FixtureShellBox"]
+    check("material slots: faces with IDs 1, 3, 7 on the slots of their sub-materials",
+          _faces(multi) == ["FixtureSubOne", None, "FixtureSubSeven"] * 2, str(_faces(multi)))
+    check("material slots: three slots on the shared mesh, linked to each object",
+          len(multi.data.materials) == 3 and multi.data is shell.data
+          and all(s.link == 'OBJECT' for ob in (multi, shell) for s in ob.material_slots),
+          str([(s.link, s.material and s.material.name) for s in multi.material_slots]))
+    check("material slots: the Shell box renders its original material on every face",
+          _faces(shell) == ["FixtureShellOriginal"] * 6, str(_faces(shell)))
+    two = obs["FixtureTwoSidedBox"]
+    check("material slots: a wrapper gives one slot on the mesh",
+          [m.name for m in two.data.materials] == ["FixtureFront"] and two.material_slots[0].link == 'DATA'
+          and _faces(two) == ["FixtureFront"] * 6, str(_faces(two)))
+    names = sorted(m.name for m in bpy.data.materials)
+    check("material slots: one Blender material per Max material",
+          names == sorted(["FixtureFront", "FixtureBlendBase", "FixtureShellOriginal", "FixtureSubOne",
+                           "FixtureSubSeven"]) and len(built.materials) == 5, str(names))
+
+    empty_scene()
+    desc, slots = _plan(os.path.join(fixtures, "standard_physical.max"))
+    _cols, built, _vl = build_scene(desc, "standard_physical_slots", modules, slots=slots, material=make)
+    got = {n.name: [m.name for m in built.objects[n.index].data.materials] for n in desc.nodes}
+    faces = {n.name: [p.material_index for p in built.objects[n.index].data.polygons] for n in desc.nodes}
+    check("material slots: Standard and Physical boxes, one slot each",
+          got == {"FixtureStandardBox": ["FixtureStandard"], "FixturePhysicalBox": ["FixturePhysical"]}
+          and all(v == [0] * 6 for v in faces.values()), "%s %s" % (got, faces))
+
+
 def main():
     print("Blender " + bpy.app.version_string)
     sys.path.insert(0, ROOT)
@@ -361,6 +441,11 @@ def main():
         except Exception:
             traceback.print_exc()
             check("shear: no exception", False)
+        try:
+            check_material_slots(modules)
+        except Exception:
+            traceback.print_exc()
+            check("material slots: no exception", False)
 
 
 try:

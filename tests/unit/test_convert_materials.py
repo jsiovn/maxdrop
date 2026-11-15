@@ -5,7 +5,9 @@
 """Tests of maxdrop/convert/materials.py, the material rules: no Blender. vray_basic's IR against values computed by
 hand from its authoring script (tools/fixtures/vray_basic.ms), vray_maps' map slots, vray_wrappers' peels, and each
 rule on synthetic parameters (the classes no fixture has: VRayLightMtl, VRayFastSSS2, the car paints, the other
-wrappers).
+wrappers, the Standard shaders but Blinn). standard_physical's Standard and Physical Material and box_poly_standard's
+Standard against values computed by hand from their scripts; vray_wrappers' Multi/Sub-Object by material ID and the
+slot plan of its box.
 
     python -I -m unittest discover tests
 """
@@ -58,9 +60,10 @@ class FakeBlock:
 class FakeMtl:
     """A MtlBase stand-in: blocks {block id: {param id: value}}, a list for a table."""
 
-    def __init__(self, index, class_id, name="", blocks=None, superclass=classids.SC_MATERIAL):
+    def __init__(self, index, class_id, name="", blocks=None, superclass=classids.SC_MATERIAL, parts=None):
         self.index, self.class_id, self.name, self.superclass = index, class_id, name, superclass
         self._blocks = [FakeBlock(b, p) for b, p in sorted((blocks or {}).items())]
+        self.parts = parts or {}
 
     def block(self, block_id):
         return next((b for b in self._blocks if b.block_id == block_id), None)
@@ -485,6 +488,273 @@ class VRayWrappers(unittest.TestCase, Close):
             self.close(front.roughness.value, 1.0 - 0.61, "glossiness 0.61")
         self.assertEqual(dict(conv.stats.peeled), {"VRay2SidedMtl": 1, "VRayBlendMtl": 1, "Shell Material": 1})
         self.assertEqual(conv.stats.issues, [])
+
+
+def _standard(index, shader_class, shader, blocks=None, maps=None, name="S"):
+    """A Standard material with its shader part (block 0 of the part = shader) and maps {slot: (ref, on, amount)}."""
+    blocks = {k: dict(v) for k, v in (blocks or {}).items()}
+    if maps:
+        enables, refs, amounts = [0] * 24, [Ref(None)] * 24, [1.0] * 24
+        for slot, (ref, on, amount) in maps.items():
+            refs[slot], enables[slot], amounts[slot] = ref, on, amount
+        blocks[3] = {0: enables, 1: refs, 2: amounts}
+    parts = {}
+    if shader_class is not None:
+        parts[2] = reader_materials.Part(50, shader_class, classids.SC_SHADER, {0: FakeBlock(0, shader)}, {})
+    return FakeMtl(index, classids.STANDARD_MTL, name, blocks, parts=parts)
+
+
+def _srgb(*rgb):
+    return tuple(mat.srgb_to_linear(c / 255.0) for c in rgb)
+
+
+class Standard(unittest.TestCase, Close):
+    """tools/fixtures/standard_physical.ms and box_poly_standard.ms, by hand (sRGB s/255 -> linear)."""
+
+    def test_fixture(self):
+        cf, graph, by_name = _fixture("standard_physical")
+        with cf:
+            conv = mat.MaterialConverter(graph)
+            ir = conv.convert(by_name["FixtureStandard"])
+        self.assertEqual((ir.name, ir.source, ir.unknown), ("FixtureStandard", "Standard", False))
+        self.close(ir.base_color.value, (0.40724, 0.082283, 0.022174), "diffuse 171 81 41")
+        self.assertEqual(ir.base_color.map.index, by_name["FixtureStandardMap"])
+        self.close(ir.base_color.map.amount, 0.71, "diffuseMapAmount 71")
+        self.close(ir.roughness.value, 0.77, "1 - glossiness 0.23")
+        self.close(ir.specular.value, 0.268073, "level 0.37 x mean of 231 221 211")
+        self.close(ir.metallic.value, 0.0, "Blinn")
+        self.close(ir.alpha.value, 0.83, "opacity 83")
+        self.close(ir.ior, 1.33)
+        self.assertTrue(ir.two_sided)
+        self.close(ir.emission_color.value, (0.40724, 0.082283, 0.022174), "self-illumination: the diffuse")
+        self.close(ir.emission_strength, 0.13, "selfIllumAmount 13")
+        for name in ("roughness", "specular", "alpha", "emission_color", "metallic"):
+            self.assertIsNone(getattr(ir, name).map, name)
+        self.assertIsNone(ir.bump)
+        self.assertEqual(conv.stats.issues, [])
+
+    def test_box_poly_standard(self):
+        cf, graph, by_name = _fixture("box_poly_standard")
+        with cf:
+            ir = mat.MaterialConverter(graph).convert(by_name["FixtureRed"])
+        self.close(ir.base_color.value, (0.57758, 0.021219, 0.012983), "diffuse 200 40 30")
+
+    def test_each_shader_reads_its_own_ids(self):
+        diffuse = (0.5, 0.25, 0.75)
+        for sid, ids in mat.SHADERS.items():
+            with self.subTest(sid):
+                shader = {ids.diffuse: diffuse, ids.specular: (1.0, 1.0, 1.0), ids.level: 0.4, ids.glossiness: 0.3,
+                          ids.si_amount: 0.0, ids.use_si_color: 1, ids.si_color: (0.0, 1.0, 0.0)}
+                conv, ir = _convert(_standard(0, sid, shader))
+                self.close(ir.base_color.value, mat.linear_color(diffuse))
+                self.close(ir.roughness.value, 0.7)
+                self.close(ir.specular.value, 0.4)
+                self.close(ir.emission_color.value, (0.0, 1.0, 0.0), "self-illumination color")
+                self.close(ir.emission_strength, 1.0)
+                self.close(ir.metallic.value, 1.0 if sid == mat.METAL_SHADER else 0.0)
+                self.assertEqual(conv.stats.issues, [])
+
+    def test_strauss(self):
+        conv, ir = _convert(_standard(0, mat.STRAUSS_SHADER, {0: (1.0, 0.0, 0.0), 1: 0.8, 2: 0.6}))
+        self.close(ir.base_color.value, (1.0, 0.0, 0.0))
+        self.close(ir.roughness.value, 0.2)
+        self.close(ir.metallic.value, 0.6)
+
+    def test_unknown_or_missing_shader_takes_the_defaults(self):
+        for sid in ((0x1234, 0), None):
+            with self.subTest(sid):
+                conv, ir = _convert(_standard(0, sid, {1: (1.0, 0.0, 0.0)}))
+                self.close(ir.base_color.value, _srgb(150, 150, 150))
+                self.assertFalse(ir.unknown)
+                self.assertIn("Standard: shader", ir.issues[0])
+
+    def test_map_slots(self):
+        maps = {
+            mat.STD_DIFFUSE: (Ref(1), 1, 0.5), mat.STD_GLOSSINESS: (Ref(2), 1, 0.8), mat.STD_LEVEL: (Ref(3), 1, 1.0),
+            mat.STD_OPACITY: (Ref(4), 1, 0.9), mat.STD_SELF_ILLUM: (Ref(5), 1, 1.0), mat.STD_BUMP: (Ref(6), 1, 0.3),
+            mat.STD_REFLECTION: (Ref(7), 1, 0.6),
+        }
+        objs = [_map(i) for i in range(1, 8)]
+        conv, ir = _convert(_standard(0, classids.BLINN_SHADER, {1: (1.0, 1.0, 1.0), 9: 0.1}, maps=maps), *objs)
+        self.assertEqual(ir.base_color.map, mat.MapRef(1, 0.5, False))
+        self.assertEqual(ir.roughness.map, mat.MapRef(2, 0.8, True))  # a glossiness map: inverted
+        self.assertEqual(ir.specular.map, mat.MapRef(3, 1.0, False))
+        self.close(ir.specular.value, 0.6, "reflection amount 0.6 over level 0.1")
+        self.assertEqual(ir.alpha.map, mat.MapRef(4, 0.9, False))
+        self.assertEqual(ir.emission_color.map, mat.MapRef(5, 1.0, False))
+        self.close(ir.emission_strength, 1.0, "a self-illumination map drives the emission")
+        self.assertEqual(ir.bump, mat.MapRef(6, 0.3, False))
+        self.assertEqual(conv.stats.issues, [])
+
+    def test_switched_off_slots_and_the_specular_color_map(self):
+        maps = {mat.STD_DIFFUSE: (Ref(1), 0, 1.0), mat.STD_SPECULAR: (Ref(2), 1, 0.4),
+                mat.STD_REFLECTION: (Ref(3), 0, 1.0), mat.STD_BUMP: (Ref(9), 1, 1.0)}
+        conv, ir = _convert(_standard(0, classids.BLINN_SHADER, {9: 0.2, 2: (1.0, 1.0, 1.0)}, maps=maps),
+                            _map(1), _map(2), _map(3), _vray(9))
+        self.assertIsNone(ir.base_color.map)
+        self.assertEqual(ir.specular.map, mat.MapRef(2, 0.4, False))  # no level map: the specular color's
+        self.close(ir.specular.value, 0.2, "reflection slot off")
+        self.assertIsNone(ir.bump)
+        self.assertIn("map slot 8: object 9 is not a map", ir.issues[0])
+
+
+class Physical(unittest.TestCase, Close):
+    def test_fixture(self):
+        cf, graph, by_name = _fixture("standard_physical")
+        with cf:
+            conv = mat.MaterialConverter(graph)
+            ir = conv.convert(by_name["FixturePhysical"])
+        self.assertEqual((ir.name, ir.source, ir.unknown), ("FixturePhysical", "Physical Material", False))
+        # base 181 79 28 x weight 0.91, mixed with transparency color 51 102 153 by transparency 0.12
+        self.close(ir.base_color.value, (0.374004, 0.078557, 0.047525), "base color")
+        self.close(ir.roughness.value, 0.27)
+        self.close(ir.metallic.value, 0.43)
+        self.close(ir.specular.value, 0.498396, "reflectivity 0.81 x mean of 230 204 179")
+        self.close(ir.transmission.value, 0.12)
+        self.close(ir.ior, 1.47)
+        self.assertFalse(ir.thin_walled)
+        self.close(ir.emission_color.value, (0.318547, 0.215861, 0.132868), "emit color 153 128 102")
+        self.close(ir.emission_strength, 0.05 * 1500.0 / 683.0, "weight x luminance / 683")
+        self.close((ir.coat_weight, ir.coat_roughness, ir.coat_ior), (0.33, 0.21, 1.61))
+        self.close(ir.coat_color, (1.0, 1.0, 1.0))
+        for name in ("base_color", "roughness", "metallic", "specular", "transmission", "emission_color", "alpha"):
+            self.assertIsNone(getattr(ir, name).map, name)
+        self.assertEqual((ir.bump, ir.normal, conv.stats.issues), (None, None, []))
+
+    def test_inverted_roughness_and_maps(self):
+        params = {4: 0.3, 5: 1, 63: 1, 62: 0.25, 50: 0.0, 101: Ref(1), 104: Ref(2), 105: Ref(3), 154: 1,
+                  109: Ref(4), 159: 0, 116: Ref(5), 130: Ref(6), 230: 0.7, 133: Ref(7)}
+        conv, ir = _convert(FakeMtl(0, classids.PHYSICAL_MTL, "P", {0: params}), *[_map(i) for i in range(1, 8)])
+        self.close(ir.roughness.value, 0.7, "roughness_inv: 1 - 0.3")
+        self.assertEqual(ir.roughness.map, mat.MapRef(2, 1.0, True))
+        self.close(ir.coat_roughness, 0.75)
+        self.assertEqual(ir.base_color.map, mat.MapRef(1, 1.0, False))
+        self.assertEqual(ir.metallic.map, mat.MapRef(3, 1.0, False))
+        self.assertIsNone(ir.transmission.map)  # switched off
+        self.assertEqual(ir.emission_color.map, mat.MapRef(5, 1.0, False))  # the weight map, no color map
+        self.close(ir.emission_strength, 1500.0 / 683.0, "a map with weight 0: full weight")
+        self.assertEqual(ir.bump, mat.MapRef(6, 0.7, False))
+        self.assertEqual(ir.alpha.map, mat.MapRef(7, 1.0, False))
+
+    def test_defaults(self):
+        conv, ir = _convert(FakeMtl(0, classids.PHYSICAL_MTL, "Empty", {0: {}}))
+        self.close(ir.base_color.value, (0.214041,) * 3)
+        self.close((ir.roughness.value, ir.metallic.value, ir.specular.value, ir.ior), (0.0, 0.0, 1.0, 1.52))
+        self.close(ir.emission_strength, 0.0)
+
+
+def _multi(index, entries, name="Multi", ids=True):
+    """A Multi/Sub-Object of entries [(material id, ref, on)]."""
+    block = {0: [r for _i, r, _on in entries], 1: [on for _i, _r, on in entries]}
+    if ids:
+        block[3] = [i for i, _r, _on in entries]
+    return FakeMtl(index, classids.MULTI_SUB_MTL, name, {0: block})
+
+
+class MultiSub(unittest.TestCase):
+    def test_fixture_by_material_id(self):
+        cf, graph, by_name = _fixture("vray_wrappers")
+        with cf:
+            conv = mat.MaterialConverter(graph)
+            multi = by_name["FixtureMulti"]
+            got = {mid: (lambda ir: ir and ir.name)(conv.material_for(multi, mid)) for mid in range(8)}
+            default = conv.convert(multi)
+        # IDs 1, 3, 7 (zero-based 0, 2, 6); 3 is switched off
+        self.assertEqual(got, {0: "FixtureSubOne", 1: None, 2: None, 3: None, 4: None, 5: None, 6: "FixtureSubSeven",
+                               7: None})
+        self.assertEqual(default.name, "FixtureSubOne")
+        self.assertEqual((dict(conv.stats.unknown), conv.stats.issues), ({}, []))
+
+    def test_wrappers_around_and_inside(self):
+        objs = (
+            _wrapper(0, mat.VRAY_MTL_WRAPPER, {0: Ref(1)}),  # wrapper -> Multi
+            _multi(1, [(4, Ref(2), 1), (5, Ref(3), 1), (6, Ref(4), 1)]),
+            _wrapper(2, classids.VRAY_2SIDED_MTL, {0: Ref(5)}),  # Multi -> wrapper
+            _multi(3, [(5, Ref(6), 1)]),  # nested Multi: the same ID
+            _multi(4, [(0, Ref(6), 1)]),  # nested Multi without ID 6
+            _vray(5, "Front"), _vray(6, "Deep"),
+        )
+        conv = mat.MaterialConverter(FakeGraph(*objs))
+        self.assertEqual(conv.material_for(0, 4).name, "Front")
+        self.assertEqual(conv.material_for(0, 5).name, "Deep")
+        self.assertIsNone(conv.material_for(0, 6))
+        self.assertIsNone(conv.material_for(0, 9))
+        self.assertIsNone(conv.material_for(None, 0))
+        self.assertEqual(conv.material_for(5, 3).name, "Front")  # not a Multi: whatever the ID
+        self.assertEqual(conv.convert(0).name, "Front")
+
+    def test_missing_ids_list_duplicates_and_bad_entries(self):
+        objs = (_multi(0, [(None, Ref(1), 1), (None, Ref(2), 1)], ids=False), _vray(1, "A"), _vray(2, "B"),
+                _multi(3, [(2, Ref(1), 1), (2, Ref(2), 1), (-1, Ref(2), 1), (True, Ref(2), 1)]),
+                _multi(4, [(0, Ref(None), 1), (1, Ref(1), 0)]))
+        conv = mat.MaterialConverter(FakeGraph(*objs))
+        self.assertEqual((conv.material_for(0, 0).name, conv.material_for(0, 1).name), ("A", "B"))  # IDs = k
+        self.assertEqual(conv.material_for(3, 2).name, "A")  # the first entry of an ID wins
+        self.assertIsNone(conv.material_for(3, 1))
+        default = conv.convert(4)  # every entry empty or off
+        self.assertTrue(default.unknown)
+        self.assertEqual(default.name, "Multi")
+        self.assertIn("no sub-material", default.issues[0])
+        self.assertEqual(dict(conv.stats.unknown), {})
+
+    def test_cycle_and_depth(self):
+        conv = mat.MaterialConverter(FakeGraph(_multi(0, [(1, Ref(1), 1)]), _multi(1, [(1, Ref(0), 1)])))
+        self.assertIsNone(conv.material_for(0, 1))
+        self.assertIn("cycle", conv.stats.issues[0][1])
+        objs = [_multi(i, [(0, Ref(i + 1), 1)]) for i in range(mat.MAX_PEEL + 1)] + [_vray(mat.MAX_PEEL + 1, "Deep")]
+        conv = mat.MaterialConverter(FakeGraph(*objs))
+        self.assertIsNone(conv.material_for(0, 0))
+        self.assertIn("nested", conv.stats.issues[0][1])
+        self.assertEqual(conv.material_for(1, 0).name, "Deep")
+
+
+def _desc(**meshes):
+    """A SceneDescription stand-in: meshes {key: (users, face material IDs)}."""
+    import numpy
+    return types.SimpleNamespace(meshes={k: types.SimpleNamespace(users=u, material_indices=numpy.array(f,
+                                                                                                      dtype=numpy.int32))
+                                         for k, (u, f) in meshes.items()})
+
+
+class Assign(unittest.TestCase):
+    def names(self, slots):
+        return [[ir and ir.name for ir in s] for s in slots]
+
+    def test_fixture_multi_box(self):
+        cf, graph, by_name = _fixture("vray_wrappers")
+        with cf:
+            s = reader_scene.Scene.from_file(cf)
+            desc = importlib.import_module(_PKG + ".convert.scene").describe(s, 0.001, None)
+            conv = mat.MaterialConverter(graph)
+            materials = mat.node_materials(s, desc)
+            plan = mat.assign(desc, materials, conv)
+        box = next(n for n in desc.nodes if n.name == "FixtureMultiBox")
+        ms = plan[box.mesh]
+        self.assertEqual(ms.users, [box.index])
+        self.assertEqual(self.names(ms.slots), [["FixtureSubOne"], [None]])
+        self.assertEqual(ms.indices.tolist(), [1, 0, 1, 1, 1, 1])  # face IDs 2 1 5 4 6 3: only ID 1 has a material
+        two = next(n for n in desc.nodes if n.name == "FixtureTwoSidedBox")
+        self.assertEqual(self.names(plan[two.mesh].slots), [["FixtureFront"]])
+        self.assertEqual(plan[two.mesh].indices.tolist(), [0] * 6)
+        self.assertEqual(plan[two.mesh].indices.dtype.name, "int32")
+
+    def test_users_with_different_materials(self):
+        objs = (_multi(0, [(0, Ref(1), 1), (2, Ref(2), 1), (6, Ref(3), 1)]), _vray(1, "One"), _vray(2, "Three"),
+                _vray(3, "Seven"), _vray(4, "Plain"))
+        conv = mat.MaterialConverter(FakeGraph(*objs))
+        plan = mat.assign(_desc(m=([10, 11], [6, 0, 2, 0, 5])), {10: 0, 11: 4}, conv)["m"]
+        self.assertEqual(plan.users, [10, 11])
+        self.assertEqual(self.names(plan.slots), [["One", "Plain"], ["Three", "Plain"], [None, "Plain"],
+                                                  ["Seven", "Plain"]])
+        self.assertEqual(plan.indices.tolist(), [3, 0, 1, 0, 2])
+
+    def test_one_material_and_no_material(self):
+        conv = mat.MaterialConverter(FakeGraph(_vray(4, "Plain")))
+        plan = mat.assign(_desc(a=([1, 2], [3, 1, 2]), b=([3], [0, 5]), c=([5], [])), {1: 4, 2: 4, 3: None, 5: 4},
+                          conv)
+        self.assertEqual((self.names(plan["a"].slots), plan["a"].indices.tolist()), ([["Plain", "Plain"]], [0, 0, 0]))
+        self.assertEqual((plan["b"].slots, plan["b"].indices.tolist()), ([], [0, 0]))
+        self.assertEqual((self.names(plan["c"].slots), plan["c"].indices.tolist()), ([], []))
 
 
 if __name__ == "__main__":

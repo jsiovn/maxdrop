@@ -7,7 +7,10 @@
     conv = MaterialConverter(graph)     # graph: reader.materials.MaterialGraph
     ir = conv.convert(node.material)    # MaterialIR (wrappers peeled); None for no material or not a material
     ir.base_color.value, ir.base_color.map        # linear RGB, MapRef(index, amount, invert) or None
-    conv.peel(index)                    # (object index of the renderable material or None, reason)
+    conv.material_for(index, mat_id)    # the MaterialIR a face with that zero-based material ID renders with
+                                        # (Multi/Sub-Objects resolved), None for an empty slot
+    slots = assign(desc, node_materials(scene, desc), conv)   # {mesh key: MeshSlots}, for build/objects.py
+    conv.peel(index)                   # (object index of the renderable material or None, reason)
     conv.stats.peeled, conv.stats.unknown, conv.stats.issues
 
 Each input of a MaterialIR is an Input: a value (a linear RGB tuple or a float) and, when a map drives it, a
@@ -28,16 +31,37 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
 - VRayLightMtl -> emission only; VRayFastSSS2 -> base + subsurface; VRayCarPaintMtl / VRayCarPaintMtl2 -> a metal
   base + coat (VRayCarPaintMtl's coat_strength is the coat's reflectance at normal incidence: a full coat whose
   IOR gives that reflectance; VRayCarPaintMtl2's coat_amount is the coat weight).
+- Standard: the colors come from its shader (ids per shader class in SHADERS; Metal is a metal, Strauss has a
+  metalness); base = diffuse; roughness = 1 - glossiness; specular = specular level times the mean of the linear
+  specular color; alpha = opacity; self-illumination: its color at strength 1, or the diffuse at the amount;
+  two-sided flag; map slots with their amounts where switched on (a glossiness map inverted); a map in the
+  reflection slot makes the specular at least that slot's amount (the map is an environment: not used).
+- Physical Material: base = base color times base weight; roughness (1 - it with roughness_inv); metalness;
+  specular = reflectivity times the mean of the linear reflection color; transparency is the transmission and
+  mixes the transparency color into the base, as for VRayMtl; IOR, thin-walled; emission color at emission
+  weight times luminance / LUMENS_PER_WATT (cd/m2 to Blender's W/(m2 sr)); coating; map slots where on.
 - Wrappers (VRay2SidedMtl, VRayBlendMtl, VRayOverrideMtl, VRayMtlWrapper, DoubleSided, Shellac) -> the first set
   sub-material in 3ds Max's getSubMtl order; Shell Material -> its render sub-material. Peeling stops at any other
   class (a Multi/Sub-Object included), at most MAX_PEEL wrappers deep; each wrapper object peeled counts once.
+- Multi/Sub-Object: entry k has the material ID materialIDList[k] (zero-based, as the faces store it), the
+  material materialList[k] and the switch mapEnabled[k]; the first entry with an ID wins. A face ID without an
+  entry, or whose entry is switched off or empty, gets no material (an empty slot). A Multi/Sub-Object inside a
+  wrapper or inside another Multi/Sub-Object (which looks up the same ID) resolves the same way, at most MAX_PEEL
+  deep. convert() of one (a caller without face IDs) gives the material of its first entry that is on and set.
 - Any other class -> a grey material that keeps its name, counted by class name.
 
-Colors are 3ds Max swatches (display-referred), clamped to 0..1 and decoded with the sRGB transfer function.
-A missing, animated or non-finite parameter takes V-Ray's default; an IOR is clamped to 1..100. The SSS radius is
+The slots of a mesh (assign): its distinct face IDs, each keyed by the materials its users (the nodes sharing the
+mesh) get for that ID; one slot per key, in ID order, faces remapped to their slot. A material that is not a
+Multi/Sub-Object gives one slot; an empty key (no material) is a slot only beside others.
+
+Colors are 3ds Max swatches (display-referred), clamped to 0..1 and decoded with the sRGB transfer function: the
+scene's gamma setting is not read from the file (GAMMA_NOTE), and the sRGB curve is the standard form of display
+gamma 2.2, the one Blender applies to sRGB textures as well.
+A missing, animated or non-finite parameter takes the class's default; an IOR is clamped to 1..100. The SSS radius is
 in meters (VRayFastSSS2 stores it in centimeters whatever the system unit).
 Parameter ids: docs/FORMAT.md for the classes of the fixtures; the others (named beside each rule) were read from
-3ds Max 2020 + V-Ray 5.2 through the SDK, not from a file. No bpy, no mathutils.
+3ds Max 2020 + V-Ray 5.2 through the SDK or from probe scenes it saved, not from a fixture. No bpy, no
+mathutils.
 """
 import collections
 import dataclasses
@@ -78,6 +102,39 @@ WRAPPERS = {
     SHELLAC_MTL: (0, 1),  # shellacMtl1 (base), shellacMtl2
 }
 SHELL_RENDER_INDEX, SHELL_SUBS = 1, (2, 3)  # renderMtlIndex; originalMaterial, bakedMaterial
+
+GAMMA_NOTE = "the scene's gamma is not read from the file: colors are decoded as sRGB (display gamma 2.2)"
+LUMENS_PER_WATT = 683.0  # luminous efficacy at 555 nm: cd/m2 -> W/(m2 sr)
+
+# Multi/Sub-Object, block 0: materialList, mapEnabled, materialIDList (zero-based)
+MULTI_MATERIALS, MULTI_ENABLED, MULTI_IDS = 0, 1, 3
+
+# Standard: the shader is a part (superclass Shader); its block 0 holds the colors, with ids per shader class
+# (probe scenes saved by 3ds Max 2020 with each shader; only Blinn is in a fixture).
+PHONG_SHADER = ClassId(0x00000037, 0)
+METAL_SHADER = ClassId(0x00000039, 0)
+ANISOTROPIC_SHADER = ClassId(0x2857F460, 0)
+OREN_NAYAR_BLINN_SHADER = ClassId(0x2857F421, 0)
+MULTI_LAYER_SHADER = ClassId(0x2857F470, 0)
+TRANSLUCENT_SHADER = ClassId(0x2857F480, 0)
+STRAUSS_SHADER = ClassId(0x2857F450, 0)  # 0 color, 1 glossiness, 2 metalness
+
+ShaderIds = collections.namedtuple("ShaderIds", "diffuse specular level glossiness si_amount si_color use_si_color")
+_BLINN_IDS = ShaderIds(1, 2, 9, 10, 7, 8, 6)
+SHADERS = {
+    PHONG_SHADER: _BLINN_IDS,
+    classids.BLINN_SHADER: _BLINN_IDS,
+    METAL_SHADER: _BLINN_IDS,
+    ANISOTROPIC_SHADER: ShaderIds(1, 2, 5, 7, 6, 3, 14),
+    OREN_NAYAR_BLINN_SHADER: ShaderIds(1, 2, 6, 5, 4, 3, 13),
+    MULTI_LAYER_SHADER: ShaderIds(1, 6, 7, 8, 3, 2, 19),  # the first specular layer
+    TRANSLUCENT_SHADER: ShaderIds(1, 2, 6, 5, 4, 3, 14),
+}
+# Standard map slots: index into block 3's tables (mapEnables 0, maps 1, mapAmounts 2)
+STD_DIFFUSE, STD_SPECULAR, STD_LEVEL, STD_GLOSSINESS, STD_SELF_ILLUM, STD_OPACITY, STD_BUMP, STD_REFLECTION = (
+    1, 2, 3, 4, 5, 6, 8, 9)
+STD_DIFFUSE_DEFAULT = (150 / 255,) * 3
+STD_SPECULAR_DEFAULT = (0.9, 0.9, 0.9)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -122,6 +179,7 @@ class MaterialIR:
     coat_color: tuple = (1.0, 1.0, 1.0)
     coat_roughness: float = 0.0
     coat_ior: float = 1.5
+    two_sided: bool = False  # Standard's twoSided: 3ds Max renders the back faces too
     unknown: bool = False
     issues: list = dataclasses.field(default_factory=list)
 
@@ -207,24 +265,31 @@ class MaterialConverter:
         self.graph = graph
         self.stats = ConvertStats()
         self._done, self._peels, self._counted = {}, {}, set()
+        self._multis, self._for = {}, {}
 
     def issue(self, index, reason, ir=None):
         self.stats.issues.append((index, reason))
         if ir is not None:
             ir.issues.append(reason)
 
-    def map_ref(self, m, map_pid, on_pid, amount_pid, block, invert=False, ir=None):
-        """The MapRef of a map slot: None when it holds no map, is switched off or holds something else."""
-        ref = m.param(map_pid, block)
+    def to_map(self, m, ref, what, amount, invert=False, ir=None):
+        """The MapRef of a reference found in material m's slot `what`: None for no reference or one that is not a
+        map (an issue)."""
         if not isinstance(ref, pblock.Reference) or ref.index is None:
             return None
+        if self.graph.superclass(ref.index) != classids.SC_TEXMAP:
+            self.issue(m.index, "%s: object %d is not a map" % (what, ref.index), ir)
+            return None
+        return MapRef(ref.index, amount, invert)
+
+    def map_ref(self, m, map_pid, on_pid, amount_pid, block, invert=False, ir=None, percent=True):
+        """The MapRef of a map slot: None when it holds no map, is switched off or holds something else. The amount
+        parameter is in percent, or a plain factor when not percent."""
         if on_pid is not None and not _flag(m, on_pid, block, True):
             return None
-        if self.graph.superclass(ref.index) != classids.SC_TEXMAP:
-            self.issue(m.index, "parameter %d: object %d is not a map" % (map_pid, ref.index), ir)
-            return None
-        amount = 1.0 if amount_pid is None else max(0.0, _num(m, amount_pid, block, 100.0) / 100.0)
-        return MapRef(ref.index, amount, invert)
+        scale = 100.0 if percent else 1.0
+        amount = 1.0 if amount_pid is None else max(0.0, _num(m, amount_pid, block, scale) / scale)
+        return self.to_map(m, m.param(map_pid, block), "parameter %d" % map_pid, amount, invert, ir)
 
     def is_class(self, index, superclass, class_id):
         try:
@@ -309,10 +374,78 @@ class MaterialConverter:
             ir = self._grey(index, reason)
         elif base != index:
             ir = self.convert(base)
+        elif self.is_class(index, classids.SC_MATERIAL, classids.MULTI_SUB_MTL):
+            ir = self._multi_default(index)
         else:
             ir = self._rule(index)
         self._done[index] = ir
         return ir
+
+    def _multi(self, index):
+        """(entries {zero-based material ID: sub-material object index or None (off or empty)} of a Multi/Sub-Object,
+        the IDs in list order)."""
+        if index in self._multis:
+            return self._multis[index]
+        block = self.graph.get(index).block(0)
+        values = (lambda pid: block.value(pid)) if block is not None else (lambda pid: None)
+        materials, enabled, ids = values(MULTI_MATERIALS), values(MULTI_ENABLED), values(MULTI_IDS)
+        materials = materials if isinstance(materials, list) else []
+        enabled = enabled if isinstance(enabled, list) else []
+        if not isinstance(ids, list):
+            ids = list(range(len(materials)))
+        entries, order = {}, []
+        for k, mid in enumerate(ids):
+            if not isinstance(mid, int) or isinstance(mid, bool) or mid < 0 or mid in entries:
+                continue
+            ref = materials[k] if k < len(materials) else None
+            on = enabled[k] if k < len(enabled) else 1
+            off = _finite(on) and not on
+            sub = None if off or not isinstance(ref, pblock.Reference) else ref.index
+            entries[mid] = sub
+            order.append(mid)
+        self._multis[index] = entries, order
+        return entries, order
+
+    def _multi_default(self, index):
+        """The IR of a Multi/Sub-Object for a caller without face IDs: its first entry that is on and set."""
+        entries, order = self._multi(index)
+        for mid in order:
+            if entries[mid] is not None:
+                ir = self.material_for(index, mid)
+                if ir is not None:
+                    return ir
+        try:
+            name = self.graph.get(index).name or "Multi/Sub-Object"
+        except ChunkError:
+            name = "Multi/Sub-Object"
+        return self._grey(index, "%s: no sub-material" % name)
+
+    def material_for(self, index, material_id):
+        """The MaterialIR a face with that zero-based material ID renders with under material object index: wrappers
+        peeled, Multi/Sub-Objects looked up by the ID (nested ones with the same ID); None for no material, an ID
+        without an entry, an entry switched off or empty, or a Multi/Sub-Object cycle or chain deeper than
+        MAX_PEEL (an issue)."""
+        key = (index, material_id)
+        if key in self._for:
+            return self._for[key]
+        chain, i, out = [], index, None
+        while True:
+            if not isinstance(i, int) or isinstance(i, bool) or self.graph.superclass(i) != classids.SC_MATERIAL:
+                break
+            base, _reason = self.peel(i)
+            if base is None or not self.is_class(base, classids.SC_MATERIAL, classids.MULTI_SUB_MTL):
+                out = self.convert(i)
+                break
+            if base in chain:
+                self.issue(index, "Multi/Sub-Object cycle through object %d" % base)
+                break
+            if len(chain) == MAX_PEEL:
+                self.issue(index, "more than %d nested Multi/Sub-Objects below object %d" % (MAX_PEEL, index))
+                break
+            chain.append(base)
+            i = self._multi(base)[0].get(material_id)
+        self._for[key] = out
+        return out
 
     def _grey(self, index, reason):
         """The grey material for an object no rule converts, named after it."""
@@ -430,11 +563,171 @@ def vray_car_paint_mtl2(conv, m, ir):
     ir.coat_ior = _ior(_num(m, 81, 0, 1.5))
 
 
+class _PartParams:
+    """The parameters of a material's part (its blocks), read like a MtlBase's: param(pid, block_id)."""
+
+    def __init__(self, part):
+        self.index = None
+        self._blocks = [b for _slot, b in sorted(part.blocks.items())] if part is not None else []
+
+    def param(self, pid, block_id=None, tab=0, default=None):
+        for b in self._blocks:
+            if (block_id is None or b.block_id == block_id) and pid in b:
+                return b.get(pid, tab, default)
+        return default
+
+
+def _std_map(conv, m, slot, ir, invert=False):
+    """Standard's map slot (block 3: mapEnables 0, maps 1, mapAmounts 2, one table element per slot): None when
+    empty or switched off; its amount is a fraction."""
+    on = m.param(0, 3, tab=slot)
+    if _finite(on) and not on:
+        return None
+    amount = m.param(2, 3, tab=slot)
+    amount = max(0.0, float(amount)) if _finite(amount) else 1.0
+    return conv.to_map(m, m.param(1, 3, tab=slot), "map slot %d" % slot, amount, invert, ir)
+
+
+def standard_mtl(conv, m, ir):
+    """Standard: block 0 shader (2 twoSided), block 1 extended (1 opacity, 6 ior), block 3 maps; the colors in the
+    shader part's block 0 (SHADERS, STRAUSS_SHADER)."""
+    ir.two_sided = _flag(m, 2, 0, False)
+    ir.ior = _ior(_num(m, 6, 1, 1.5))
+    ir.alpha = Input(_clamp01(_num(m, 1, 1, 1.0)), _std_map(conv, m, STD_OPACITY, ir))
+    shader = next((p for _slot, p in sorted(m.parts.items()) if p.superclass == classids.SC_SHADER), None)
+    sid = ClassId(*shader.class_id) if shader is not None else None
+    s = _PartParams(shader)
+    gloss_map = _std_map(conv, m, STD_GLOSSINESS, ir, invert=True)
+    level_map = _std_map(conv, m, STD_LEVEL, ir) or _std_map(conv, m, STD_SPECULAR, ir)
+    emit_map = _std_map(conv, m, STD_SELF_ILLUM, ir)
+    specular, amount, emit = 0.0, 0.0, None
+    if sid == STRAUSS_SHADER:
+        diffuse, gloss = _rgb(s, 0, 0, STD_DIFFUSE_DEFAULT), _num(s, 1, 0, 0.1)
+        ir.metallic = Input(_clamp01(_num(s, 2, 0, 0.0)))
+        specular = 0.5
+    elif sid in SHADERS:
+        ids = SHADERS[sid]
+        diffuse, gloss = _rgb(s, ids.diffuse, 0, STD_DIFFUSE_DEFAULT), _num(s, ids.glossiness, 0, 0.1)
+        specular = max(0.0, _num(s, ids.level, 0, 0.0)) * mean(_rgb(s, ids.specular, 0, STD_SPECULAR_DEFAULT))
+        if _flag(s, ids.use_si_color, 0, False):
+            emit = _rgb(s, ids.si_color, 0, (0.0, 0.0, 0.0))
+        else:
+            amount = max(0.0, _num(s, ids.si_amount, 0, 0.0))
+        if sid == METAL_SHADER:
+            ir.metallic = Input(1.0)
+    else:
+        diffuse, gloss = linear_color(STD_DIFFUSE_DEFAULT), 0.1
+        conv.issue(m.index, "Standard: shader %s has no rule: its defaults" % (
+            "missing" if sid is None else "ClassID%s" % (sid,)), ir)
+    ir.base_color = Input(diffuse, _std_map(conv, m, STD_DIFFUSE, ir))
+    ir.roughness = Input(_roughness(gloss, False), gloss_map)
+    reflection = _std_map(conv, m, STD_REFLECTION, ir)
+    if reflection is not None:
+        specular = max(specular, min(1.0, reflection.amount))
+    ir.specular = Input(_clamp01(specular), level_map)
+    if emit is not None:  # its own color, at full strength
+        ir.emission_color = Input(emit, emit_map)
+        ir.emission_strength = 1.0 if max(emit) > 0 or emit_map is not None else 0.0
+    elif amount > 0 or emit_map is not None:  # the diffuse lights itself by the amount; a map overrides it
+        ir.emission_color = Input(diffuse, emit_map)
+        ir.emission_strength = 1.0 if emit_map is not None else amount
+    conv.bump_slot(ir, _std_map(conv, m, STD_BUMP, ir))
+
+
+def physical_mtl(conv, m, ir):
+    """Physical Material, block 0: 1 base_weight, 2 base_color, 3 reflectivity, 4 roughness, 5 roughness_inv,
+    6 metalness, 10 refl_color, 30 transparency, 31 trans_color, 33 trans_ior, 37 thin_walled, 50 emission,
+    51 emit_color, 52 emit_luminance, 60 coating, 61 coat_color, 62 coat_roughness, 63 coat_roughness_inv,
+    66 coat_ior; maps 101 base_color, 102 reflectivity, 104 roughness, 105 metalness, 109 transparency,
+    116 emission, 117 emit_color, 130 bump (amount 230, a factor), 133 cutout, each switched on by id + 50."""
+    weight = _clamp01(_num(m, 1, 0, 1.0))
+    base = tuple(c * weight for c in _rgb(m, 2, 0, (0.5, 0.5, 0.5)))
+    t = _clamp01(_num(m, 30, 0, 0.0))
+    if t > 0:
+        base = _mix(base, _rgb(m, 31, 0, (1.0, 1.0, 1.0)), t)
+    ir.base_color = Input(base, conv.map_ref(m, 101, 151, None, 0, ir=ir))
+    inverted = _flag(m, 5, 0, False)
+    r = _clamp01(_num(m, 4, 0, 0.0))
+    ir.roughness = Input(1.0 - r if inverted else r, conv.map_ref(m, 104, 154, None, 0, invert=inverted, ir=ir))
+    ir.metallic = Input(_clamp01(_num(m, 6, 0, 0.0)), conv.map_ref(m, 105, 155, None, 0, ir=ir))
+    ir.specular = Input(_clamp01(max(0.0, _num(m, 3, 0, 1.0)) * mean(_rgb(m, 10, 0, (1.0, 1.0, 1.0)))),
+                        conv.map_ref(m, 102, 152, None, 0, ir=ir))
+    ir.transmission = Input(t, conv.map_ref(m, 109, 159, None, 0, ir=ir))
+    ir.ior = _ior(_num(m, 33, 0, 1.52))
+    ir.thin_walled = _flag(m, 37, 0, False)
+    emit_map = conv.map_ref(m, 117, 167, None, 0, ir=ir) or conv.map_ref(m, 116, 166, None, 0, ir=ir)
+    emission = max(0.0, _num(m, 50, 0, 0.0))
+    if emission > 0 or emit_map is not None:
+        ir.emission_color = Input(_rgb(m, 51, 0, (1.0, 1.0, 1.0)), emit_map)
+        luminance = max(0.0, _num(m, 52, 0, 1500.0))
+        ir.emission_strength = (emission if emission > 0 else 1.0) * luminance / LUMENS_PER_WATT
+    ir.coat_weight = _clamp01(_num(m, 60, 0, 0.0))
+    ir.coat_color = _rgb(m, 61, 0, (1.0, 1.0, 1.0))
+    c = _clamp01(_num(m, 62, 0, 0.0))
+    ir.coat_roughness = 1.0 - c if _flag(m, 63, 0, False) else c
+    ir.coat_ior = _ior(_num(m, 66, 0, 1.52))
+    conv.bump_slot(ir, conv.map_ref(m, 130, 180, 230, 0, ir=ir, percent=False))
+    ir.alpha = Input(1.0, conv.map_ref(m, 133, 183, None, 0, ir=ir))
+
+
 # (superclass, ClassId) -> rule(converter, MtlBase, MaterialIR): fills the IR in place
 RULES = {
+    (classids.SC_MATERIAL, classids.STANDARD_MTL): standard_mtl,
+    (classids.SC_MATERIAL, classids.PHYSICAL_MTL): physical_mtl,
     (classids.SC_MATERIAL, classids.VRAY_MTL): vray_mtl,
     (classids.SC_MATERIAL, VRAY_LIGHT_MTL): vray_light_mtl,
     (classids.SC_MATERIAL, VRAY_FAST_SSS2): vray_fast_sss2,
     (classids.SC_MATERIAL, VRAY_CAR_PAINT_MTL): vray_car_paint_mtl,
     (classids.SC_MATERIAL, VRAY_CAR_PAINT_MTL2): vray_car_paint_mtl2,
 }
+
+
+class MeshSlots:
+    """The material slots of one mesh: users the object indices of the nodes sharing it (MeshDescription.users);
+    slots [[MaterialIR or None per user]] per slot (None: an empty slot); indices int32 per face, its slot."""
+    __slots__ = ("users", "slots", "indices")
+
+    def __init__(self, users, slots, indices):
+        self.users, self.slots, self.indices = users, slots, indices
+
+    def __repr__(self):
+        return "MeshSlots(%d users, %d slots)" % (len(self.users), len(self.slots))
+
+
+def node_materials(scene, desc):
+    """{node object index: its material's object index, None without one} for the nodes of desc (a reader Scene
+    and the SceneDescription made from it)."""
+    out = {}
+    for node in desc.nodes:
+        try:
+            out[node.index] = scene.node(node.index).material
+        except (ChunkError, IndexError):
+            out[node.index] = None
+    return out
+
+
+def assign(desc, materials, conv):
+    """{mesh key: MeshSlots} for the meshes of desc. materials: {node object index: material object index or None}
+    (node_materials). A mesh's distinct face IDs, ascending, are grouped by the materials its users get for them
+    (material_for, by identity): one slot per group in order of first appearance. A mesh whose only group has no
+    material gets no slot."""
+    import numpy
+    out = {}
+    for key, md in desc.meshes.items():
+        users = list(md.users)
+        faces = numpy.asarray(md.material_indices, dtype=numpy.int64).ravel()
+        ids, inverse = numpy.unique(faces, return_inverse=True)
+        groups, slots, slot_of_id = {}, [], []
+        for mid in ids.tolist():
+            irs = [conv.material_for(materials.get(u), mid) for u in users]
+            k = tuple(id(ir) for ir in irs)  # the IRs stay referenced by slots: their ids are not reused
+            if k not in groups:
+                groups[k] = len(slots)
+                slots.append(irs)
+            slot_of_id.append(groups[k])
+        if len(slots) == 1 and all(ir is None for ir in slots[0]):
+            slots, slot_of_id = [], [0] * len(slot_of_id)
+        indices = numpy.asarray(slot_of_id, dtype=numpy.int32)[inverse.ravel()] if len(faces) else \
+            numpy.zeros(0, dtype=numpy.int32)
+        out[key] = MeshSlots(users, slots, numpy.ascontiguousarray(indices, dtype=numpy.int32))
+    return out

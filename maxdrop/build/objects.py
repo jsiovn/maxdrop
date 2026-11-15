@@ -8,12 +8,16 @@
     built.objects[node.index]           # the Object of each node
     built.meshes[node.mesh]             # the Mesh, one per MeshDescription: instances share it
     built.roots()                       # every object without a parent, the shear helper included
+    built = build(desc, collection, slots=assign(...), material=make)   # with material slots
+    built.materials[ir.index]           # the Material make(ir) returned, once per Max material
 
 Meshes are made with vertices.add / loops.add / polygons.add and foreach_set, then the edges are computed from the
 polygons. Flat faces and sharp edges go to the sharp_face and sharp_edge attributes, which Blender 4.1 and later
 use in place of auto smooth: the same result on 4.2, 4.5 and 5.2 without a modifier. Each UV layer is written
 through its own layer, not the active one; Blender keeps at most MAX_UV_LAYERS, the channels past it are counted
-in dropped_uv_layers. Material indices are set without material slots (those come with the materials).
+in dropped_uv_layers. Without slots, the faces keep 3ds Max's material IDs and get no material slot. With slots
+(convert.materials.assign: {mesh key: MeshSlots}), each face goes to its slot; a slot holds the same material for
+every object sharing the mesh, or each object's own (the slot linked to the object); an empty slot holds none.
 
 Objects are made in walk order, so a parent exists before its children. The parent is set by node index with an
 identity matrix_parent_inverse and matrix_basis = the node's local matrix, so Blender's world matrix is 3ds Max's
@@ -42,11 +46,12 @@ SHEAR_HELPER = "MaxDrop Shear"
 
 class Built:
     """objects {node index: Object}, meshes {mesh key: Mesh}, dropped_uv_layers (channels Blender had no room
-    for), helpers (objects that are no node: the shear helper)."""
-    __slots__ = ("objects", "meshes", "dropped_uv_layers", "helpers")
+    for), helpers (objects that are no node: the shear helper), materials {Max material object index: Material}."""
+    __slots__ = ("objects", "meshes", "dropped_uv_layers", "helpers", "materials")
 
     def __init__(self):
         self.objects, self.meshes, self.dropped_uv_layers, self.helpers = {}, {}, 0, []
+        self.materials = {}
 
     def roots(self):
         """The objects without a parent, helpers included: what a change of axes turns."""
@@ -97,8 +102,9 @@ def _sharp_edge_flags(mesh, pairs):
     return numpy.isin(keys, pairs[:, 0] * n + pairs[:, 1])
 
 
-def make_mesh(md):
-    """A Mesh of a MeshDescription; the number of UV layers that did not fit."""
+def make_mesh(md, indices=None):
+    """A Mesh of a MeshDescription; the number of UV layers that did not fit. indices: each face's material index,
+    md.material_indices when None."""
     import numpy
     mesh = bpy.data.meshes.new(md.name)
     mesh.vertices.add(len(md.positions))
@@ -107,7 +113,8 @@ def make_mesh(md):
     mesh.vertices.foreach_set("co", numpy.ascontiguousarray(md.positions, dtype=numpy.float32).ravel())
     mesh.loops.foreach_set("vertex_index", numpy.ascontiguousarray(md.loop_vertices, dtype=numpy.int32))
     mesh.polygons.foreach_set("loop_start", numpy.ascontiguousarray(md.loop_starts, dtype=numpy.int32))
-    mesh.polygons.foreach_set("material_index", numpy.ascontiguousarray(md.material_indices, dtype=numpy.int32))
+    mesh.polygons.foreach_set("material_index", numpy.ascontiguousarray(
+        md.material_indices if indices is None else indices, dtype=numpy.int32))
     mesh.update(calc_edges=True)
     _attribute(mesh, "sharp_face", 'FACE').data.foreach_set("value", numpy.asarray(md.sharp_faces, dtype=bool))
     _attribute(mesh, "sharp_edge", 'EDGE').data.foreach_set("value", _sharp_edge_flags(mesh, md.sharp_edges))
@@ -122,12 +129,45 @@ def make_mesh(md):
     return mesh, dropped
 
 
-def build(desc, collection, collections=None, view_layer=None):
+def _material(built, ir, make):
+    """The Material of a MaterialIR (None for an empty slot or without make), made once per Max material."""
+    if ir is None or make is None:
+        return None
+    if ir.index not in built.materials:
+        built.materials[ir.index] = make(ir)
+    return built.materials[ir.index]
+
+
+def _slots(built, slots, make):
+    """The material slots of each mesh: on the mesh when every user has the same material there, else empty on
+    the mesh and linked to each object with its own."""
+    for key, plan in slots.items():
+        mesh = built.meshes.get(key)
+        if mesh is None:
+            continue
+        for s, irs in enumerate(plan.slots):
+            if all(ir is irs[0] for ir in irs):
+                mesh.materials.append(_material(built, irs[0], make))
+                continue
+            mesh.materials.append(None)
+            for node, ir in zip(plan.users, irs):
+                ob = built.objects.get(node)
+                if ob is not None:
+                    slot = ob.material_slots[s]
+                    slot.link = 'OBJECT'
+                    slot.material = _material(built, ir, make)
+
+
+def build(desc, collection, collections=None, view_layer=None, slots=None, material=None):
     """Every node of desc as an Object linked to collection, or to its layer's collection of collections; the
-    Built result. view_layer: where a hidden node is hidden (hide_set), the context's when None."""
+    Built result. view_layer: where a hidden node is hidden (hide_set), the context's when None. slots: {mesh key:
+    convert.materials.MeshSlots}, each face's slot and each slot's materials; material: make(MaterialIR) -> a
+    Material, called once per Max material (no material in the slots without it)."""
     built = Built()
+    slots = slots or {}
     for key, md in desc.meshes.items():
-        built.meshes[key], dropped = make_mesh(md)
+        plan = slots.get(key)
+        built.meshes[key], dropped = make_mesh(md, plan.indices if plan is not None else None)
         built.dropped_uv_layers += dropped
     identity = Matrix.Identity(4)
     hidden = []
@@ -153,6 +193,7 @@ def build(desc, collection, collections=None, view_layer=None):
             ob.hide_viewport = True
             hidden.append(ob)
         built.objects[node.index] = ob
+    _slots(built, slots, material)
     view_layer = view_layer or bpy.context.view_layer
     for ob in hidden:
         try:
