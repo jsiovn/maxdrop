@@ -122,3 +122,22 @@ Each Blender run: `BLENDER_USER_RESOURCES=<scratch>\profile-<tag>` + `--backgrou
 
 **Success criteria:** every command above reports its pass line with exit 0. A missed number fails the bead: say which
 and by how much.
+
+## Gate result 2026-11-16: blocked before Chunk 2
+
+- Raw-param parity: `tests/unit/test_materials.py` OK on every fixture.
+- Per-material IR parity (Task 2, scratch tool kept outside the repository, location in the bead notes): fixtures
+  49 of 49 materials match (a 10 % perturbation of the oracle's floats makes all 49 fail: the check compares);
+  scene B 220 of 220 (100 %); **scene A 175 of 214 (81.8 %), below the 95 % target.**
+- Cause (scene A only): it is a file of format 14000 (saved by 3ds Max 2015 in the 2012 format). None of its
+  ParamBlock2 objects has the 0x0013 owner-reference table, and for some P_OWNERS_REF map parameters the stored
+  object index is -1 although 3ds Max reports the map set: the reader reads an empty reference. 126 references
+  in 39 materials: Color Correction `map` (44), Mix `map1` / `map2` / `mask` (49), Falloff `map1` / `map2` (18),
+  VRayMtl `texmap_diffuse` / `texmap_reflection` / `texmap_bump` (13), Output `map1` (2). Failing classes:
+  VRayMtl 32, Multi/Sub-Object 6, VRayBlendMtl 1.
+- The owner slot of each is a constant of its class (the parameter definition's reference number), equal in every
+  object of scene A and to what the 0x0013 tables of scene B (format 20000) say, e.g. Mix 6 -> 1, 7 -> 2, 8 -> 3;
+  Color Correction 1 -> 1; Falloff 2 -> 4, 6 -> 5; VRayMtl block 4: param 100 + k -> slot 7 + k. A projection
+  that fills the empty references from such a per-ClassID table gives scene A 213 of 214 (99.5 %).
+- The fix is in `maxdrop/reader/pblock.py` (outside this bead's Files): stopped, bead blocked for the owner's
+  decision. Chunk 2 (bump, docs, baseline, upgrade test) waits for the rerun.
