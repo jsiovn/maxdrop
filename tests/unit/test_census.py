@@ -13,6 +13,7 @@ import importlib.util
 import io
 import json
 import os
+import struct
 import sys
 import unittest
 
@@ -65,7 +66,9 @@ class TestFixtures(unittest.TestCase):
                 self.assertEqual(got, want)
                 node_rows = [r for r in result["classes"] if r["name"] == "Node"]
                 self.assertEqual([r["count"] for r in node_rows], [oracle["node_count"]])
-                self.assertEqual(result["modifiers"], {"stacks": 0, "stack_depths": {}, "by_class": []})
+                self.assertEqual(result["modifiers"], {"stacks": 0, "stack_depths": {}, "derived_objects": 0,
+                                                       "unreadable": 0, "by_class": []})
+                self.assertEqual(nodes["bad_parents"], 0)
                 self.assertEqual(result["root_id"], "0x2025")
 
     def test_box(self):
@@ -92,6 +95,61 @@ class TestFixtures(unittest.TestCase):
                         self.assertNotIn(name, output)
                     self.assertNotIn(os.path.basename(path), output)
                     self.assertNotIn(ROOT, output)
+
+
+def leaf(cid, payload=b""):
+    return struct.pack("<HI", cid, 6 + len(payload)) + payload
+
+
+def node(cid, *children):
+    body = b"".join(children)
+    return struct.pack("<HI", cid, (6 + len(body)) | 0x80000000) + body
+
+
+def _entry(a, b, superclass, name):
+    return node(0x2040, leaf(0x2060, struct.pack("<iIII", -1, a, b, superclass)),
+                leaf(0x2042, name.encode("utf-16-le")))
+
+
+def _refs(*values):
+    return leaf(0x2034, struct.pack("<%di" % len(values), *values))
+
+
+def _node(parent, *pairs):
+    flat = [v for pair in pairs for v in pair]
+    return node(1, leaf(0x2035, struct.pack("<I" + "Ii" * len(pairs), 16, *flat)),
+                leaf(0x0960, struct.pack("<iI", parent, 0)))
+
+
+def _synthetic():
+    """Class indices: 0 Editable Poly, 1 Node, 2 RootNode, 3 UVW Map, 4 Edit Mesh. Objects: 0 root, 1 poly, 2 uvw,
+    3 edit mesh, 4 derived [uvw, poly], 5 derived [edit mesh, 4] (nested), 6 node on 5, 7 node on 5 (an instance,
+    child of 6), 8 node on the poly, 9 node on nothing, 10 node with an unreadable 0x0960."""
+    classes = census.scene.classdir.ClassDirectory.parse(
+        _entry(0x1BF8338D, 0x192F6098, 0x10, "Editable Poly") + _entry(1, 0, 1, "Node") + _entry(2, 0, 1, "RootNode") +
+        _entry(0xF72B1, 0, 0x810, "UVW Map") + _entry(0x50, 0, 0x810, "Edit Mesh"))
+    objects = [node(2), node(0), node(3), node(4), node(0x2032, _refs(2, 1)), node(0x2032, _refs(3, 4)),
+               _node(0, (1, 5)), _node(6, (1, 5)), _node(0, (1, 1)), _node(0), node(1, leaf(0x0960, b"\x00"))]
+    return census.scene.Scene(node(0x2025, *objects), classes)
+
+
+class TestSynthetic(unittest.TestCase):
+    def test_counts(self):
+        r = census.census_scene(_synthetic())
+        nodes = r["nodes"]
+        self.assertEqual((nodes["total"], nodes["unreadable"], nodes["bad_parents"], nodes["with_modifiers"]),
+                         (5, 1, 1, 2))
+        self.assertEqual(nodes["top_level"], 4)  # 6, 8, 9 and the unreadable one; 7 is under 6
+        self.assertEqual({row["name"]: row["count"] for row in nodes["by_base_class"]},
+                         {"Editable Poly": 3, "(none)": 1})
+        mods = r["modifiers"]
+        self.assertEqual((mods["stacks"], mods["stack_depths"], mods["derived_objects"], mods["unreadable"]),
+                         (1, {"2": 1}, 2, 0))
+        self.assertEqual({row["name"]: (row["count"], row["derived_objects"]) for row in mods["by_class"]},
+                         {"UVW Map": (1, 1), "Edit Mesh": (1, 1)})
+        derived = [row for row in r["classes"] if row["name"] == "(derived object)"]
+        self.assertEqual([(row["count"], row["special_id"]) for row in derived], [(2, "0x2032")])
+        self.assertIn("Derived objects: 2", census.format_text(dict(r, seconds=0)))
 
 
 class TestUsage(unittest.TestCase):

@@ -70,73 +70,91 @@ def census(path):
     """The census of one .max file as a dict (see format_text for what each part means)."""
     start = time.perf_counter()
     with cfb.CompoundFile(path) as cf:
-        s = scene.Scene.from_file(cf)
-        class_counts, firsts = collections.Counter(), {}
-        for i in range(len(s)):
-            cid = s.class_index(i)
-            class_counts[cid] += 1
-            firsts.setdefault(cid, i)
-        classes, descs = collections.Counter(), {}
-        for cid, n in class_counts.items():
-            desc = _describe(s, firsts[cid])
-            descs[_key(desc)] = desc
-            classes[_key(desc)] += n
-
-        base, base_descs = collections.Counter(), {}
-        modifiers, modifier_descs = collections.Counter(), {}
-        holders = collections.Counter()
-        depths = collections.Counter()
-        derived_seen = set()
-        unreadable = with_modifiers = 0
-        for i in s.node_indices:
-            try:
-                node = s.node(i)
-                stack = s.object_stack(node.object) if node.object is not None else None
-            except (chunks.ChunkError, IndexError):
-                unreadable += 1
-                continue
-            desc = NONE if stack is None or stack.base is None else _describe(s, stack.base)
-            base_descs[_key(desc)] = desc
-            base[_key(desc)] += 1
-            if stack is None:
-                continue
-            if stack.modifiers:
-                with_modifiers += 1
-            if stack.derived and stack.derived[0] not in derived_seen:  # an instanced stack counts once
-                derived_seen.add(stack.derived[0])
-                depths[len(stack.modifiers)] += 1
-                held = set()
-                for m in stack.modifiers:
-                    mdesc = _describe(s, m)
-                    modifier_descs[_key(mdesc)] = mdesc
-                    modifiers[_key(mdesc)] += 1
-                    held.add(_key(mdesc))
-                for k in held:
-                    holders[k] += 1
-        top_level = len(s.children()) if s.node_indices else 0
-        cut = len(s.cut_cycles)
-        result = {
-            "root_id": "0x%04X" % s.root_id,
-            "objects": len(s),
-            "classes_listed": len(s.classes),
-            "classes": _rows(classes, descs),
-            "nodes": {
-                "total": len(s.node_indices),
-                "top_level": top_level,
-                "cycles_cut": cut,
-                "unreadable": unreadable,
-                "with_modifiers": with_modifiers,
-                "by_base_class": _rows(base, base_descs),
-            },
-            "modifiers": {
-                "stacks": len(derived_seen),
-                "stack_depths": {str(k): v for k, v in sorted(depths.items())},
-                "by_class": [dict(row, stacks=holders[_key(row)]) for row in _rows(modifiers, modifier_descs)],
-            },
-        }
-        del s
+        result = census_scene(scene.Scene.from_file(cf))
     result["seconds"] = round(time.perf_counter() - start, 3)
     return result
+
+
+def _count(counter, descs, desc):
+    descs[_key(desc)] = desc
+    counter[_key(desc)] += 1
+
+
+def census_scene(s):
+    """The census of a scene.Scene, without the time. A damaged node or derived object counts as unreadable."""
+    class_counts, firsts = collections.Counter(), {}
+    for i in range(len(s)):
+        cid = s.class_index(i)
+        class_counts[cid] += 1
+        firsts.setdefault(cid, i)
+    classes, descs = collections.Counter(), {}
+    for cid, n in class_counts.items():
+        desc = _describe(s, firsts[cid])
+        descs[_key(desc)] = desc
+        classes[_key(desc)] += n
+
+    base, base_descs = collections.Counter(), {}
+    depths, outermost = collections.Counter(), set()
+    unreadable = with_modifiers = 0
+    for i in s.node_indices:
+        try:
+            node = s.node(i)
+            stack = s.object_stack(node.object) if node.object is not None else None
+        except (chunks.ChunkError, IndexError):
+            unreadable += 1
+            continue
+        _count(base, base_descs, NONE if stack is None or stack.base is None else _describe(s, stack.base))
+        if stack is None:
+            continue
+        if stack.modifiers:
+            with_modifiers += 1
+        if stack.derived and stack.derived[0] not in outermost:  # an instanced stack counts once
+            outermost.add(stack.derived[0])
+            depths[len(stack.modifiers)] += 1
+
+    # Every derived object once, nested ones included: its own modifiers are all but its last reference.
+    modifiers, modifier_descs, holders = collections.Counter(), {}, collections.Counter()
+    derived = bad_derived = 0
+    for i in range(len(s)):
+        if not s.is_derived(i):
+            continue
+        derived += 1
+        try:
+            refs = s.ref_list(i)
+        except chunks.ChunkError:
+            bad_derived += 1
+            continue
+        held = set()
+        for m in refs[:-1]:
+            if m is not None:
+                desc = _describe(s, m)
+                _count(modifiers, modifier_descs, desc)
+                held.add(_key(desc))
+        for k in held:
+            holders[k] += 1
+
+    return {
+        "root_id": "0x%04X" % s.root_id,
+        "objects": len(s),
+        "classes_listed": len(s.classes),
+        "classes": _rows(classes, descs),
+        "nodes": {
+            "total": len(s.node_indices),
+            "top_level": len(s.children()),
+            "cycles_cut": len(s.cut_cycles),
+            "bad_parents": len(s.bad_parents),
+            "unreadable": unreadable,
+            "with_modifiers": with_modifiers,
+            "by_base_class": _rows(base, base_descs),
+        },
+        "modifiers": {
+            "stacks": len(outermost),
+            "stack_depths": {str(k): v for k, v in sorted(depths.items())},
+            "derived_objects": derived,
+            "unreadable": bad_derived,
+            "by_class": [dict(row, derived_objects=holders[_key(row)]) for row in _rows(modifiers, modifier_descs)],
+        },
+    }
 
 
 def _class_line(row, extra=""):
@@ -150,15 +168,17 @@ def format_text(result):
            "Objects per class:"]
     out += [_class_line(row) for row in result["classes"]]
     nodes = result["nodes"]
-    out += ["", "Nodes: %d (top level %d, with modifiers %d, unreadable %d, parent cycles cut %d)" %
-            (nodes["total"], nodes["top_level"], nodes["with_modifiers"], nodes["unreadable"], nodes["cycles_cut"]),
+    out += ["", "Nodes: %d (top level %d, with modifiers %d, unreadable %d, parent cycles cut %d, parents unreadable "
+            "%d)" % (nodes["total"], nodes["top_level"], nodes["with_modifiers"], nodes["unreadable"],
+                     nodes["cycles_cut"], nodes["bad_parents"]),
             "Nodes per base-object class:"]
     out += [_class_line(row) for row in nodes["by_base_class"]]
     mods = result["modifiers"]
     depths = ", ".join("%s: %d" % kv for kv in mods["stack_depths"].items()) or "none"
-    out += ["", "Modifier stacks: %d (modifiers per stack -> stacks: %s)" % (mods["stacks"], depths),
-            "Modifiers per class (count, then the number of stacks holding it):"]
-    out += [_class_line(row, "  in %d" % row["stacks"]) for row in mods["by_class"]]
+    out += ["", "Modifier stacks of nodes: %d (modifiers per stack -> stacks: %s)" % (mods["stacks"], depths),
+            "Derived objects: %d (unreadable %d)" % (mods["derived_objects"], mods["unreadable"]),
+            "Modifiers per class (count, then the number of derived objects holding it):"]
+    out += [_class_line(row, "  in %d" % row["derived_objects"]) for row in mods["by_class"]]
     return "\n".join(out) + "\n"
 
 

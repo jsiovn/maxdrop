@@ -2,7 +2,7 @@
 
 What MaxDrop's reader (`maxdrop/reader/`) relies on, written down only once a committed fixture shows it. Each fact
 names the fixture (`tests/fixtures/<name>.max`, whose 3ds Max oracle is `<name>.oracle.json`, see
-[ORACLE.md](ORACLE.md)) and the test that keeps it true. All nine fixtures were saved by 3ds Max 2020 (file
+[ORACLE.md](ORACLE.md)); the tests named here keep the facts true. All nine fixtures were saved by 3ds Max 2020 (file
 version 22000). What only other files have shown is listed under [Open](#open), not here.
 
 ## Chunks
@@ -69,7 +69,9 @@ Reference slots of a node, checked on every node of every fixture (`test_scene.p
 
 Flags in `0x0960` seen so far (their bits are not decoded yet): `0x800` on most nodes, `0` on the three
 instances and the copy in instances (the source has `0x800`), `0x100800` on the hidden node of layers_flags,
-`0x40` on its group head and `0x900` on the two group members. The oracle's `renderable` flag does not show in this field (FixtureNoRender has `0x800`).
+`0x40` on its group head and `0x900` on the two group members (`test_scene.py`, `test_flags_and_pair_heads`,
+which also checks the first `0x2035` values above). The oracle's `renderable` flag does not show in this
+field (FixtureNoRender has `0x800`).
 
 ## Hierarchy
 

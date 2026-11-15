@@ -14,6 +14,7 @@ import json
 import os
 import struct
 import sys
+import time
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -260,6 +261,55 @@ class TestNodes(unittest.TestCase):
         self.assertEqual(len(s.walk()), n)
 
 
+class TestDamagedRecords(unittest.TestCase):
+    def test_one_bad_parent_poisons_only_itself(self):
+        n = 3000
+        objects = [node(C_ROOT)] + [node_obj("n%d" % k, 0, pivot=False) for k in range(n)]
+        objects[1500] = node(C_NODE, leaf(0x0960, b"\0\0"), leaf(0x0962, utf16("bad")))
+        objects[1501] = node_obj("child of bad", 1500, pivot=False)
+        s = make(*objects)
+        start = time.perf_counter()
+        good = [s.node(i) for i in s.node_indices if i != 1500]
+        self.assertLess(time.perf_counter() - start, 5)  # one hierarchy pass, not one per node
+        self.assertEqual(len(good), n - 1)
+        self.assertEqual(s.bad_parents, (1500,))
+        self.assertIsNone(s.parent(1500))
+        self.assertEqual(s.node(1501).parent, 1500)
+        with self.assertRaises(ChunkError):
+            s.node(1500)
+        self.assertEqual(len(s.walk()), n)
+
+    def test_reference_cap(self):
+        saved = scene.MAX_REFS
+        scene.MAX_REFS = 3
+        try:
+            s = make(node(C_POLY, refs34(0, 0, 0)), node(C_POLY, refs34(0, 0, 0, 0)),
+                     node(C_NODE, refs35((0, 0), (1, 0), (2, 0))),
+                     node(C_NODE, refs35((0, 0), (1, 0), (2, 0), (3, 0))))
+            self.assertEqual(s.ref_list(0), [0, 0, 0])
+            self.assertEqual(s.refs(2), {0: 0, 1: 0, 2: 0})
+            for i in (1, 3):
+                with self.subTest(i=i), self.assertRaises(ChunkError):
+                    s.refs(i)
+        finally:
+            scene.MAX_REFS = saved
+
+    def test_file_without_scene_stream(self):
+        class NoScene:
+            def exists(self, name):
+                return False
+
+        with self.assertRaises(ChunkError):
+            scene.Scene.from_file(NoScene(), CLASSES)
+
+    def test_0x2032_is_a_class_when_the_directory_reaches_it(self):
+        big = classdir.ClassDirectory.parse(class_entry(1, 0, 1, "Node") * (DERIVED + 1))
+        s = scene.Scene(stream(node(C_POLY), node(DERIVED, refs34(0))), big)
+        self.assertFalse(s.is_derived(1))
+        self.assertEqual(s.object_stack(1), (1, (), ()))
+        self.assertTrue(make(node(C_POLY), node(DERIVED, refs34(0))).is_derived(1))
+
+
 class TestObjectStack(unittest.TestCase):
     def test_stacks(self):
         # 0 poly, 1 mod, 2 mod, 3 derived [2, 1, 0], 4 derived [1, 3] (nested), 5 derived [1, -1] (empty base),
@@ -326,6 +376,27 @@ class TestFixtures(unittest.TestCase):
                     self.assertEqual(s.entry(n.layer).superclass, classids.SC_LAYER)
                     self.assertTrue(s.is_a(n.tm, classids.SC_CTRL_MATRIX3, classids.PRS))
                 del nodes
+
+    def test_flags_and_pair_heads(self):
+        """The values docs/FORMAT.md quotes: 0x0960 flags per node, the first u32 of 0x2035 per class."""
+        flags = {"FixtureHidden": 0x100800, "FixtureGroup": 0x40, "FixtureGroupA": 0x900, "FixtureGroupB": 0x900,
+                 "FixtureInstance01": 0, "FixtureInstance02": 0, "FixtureInstance03": 0, "FixtureCopy": 0}
+        heads = {"Node": 16, "RootNode": 16, "Texmaps": 48, "Bezier Float": 2, "Bezier Scale": 2, "Bezier Color": 2,
+                 "Boolean Controller": 2, "Grid Reference": 2}
+        for path in FIXTURES:
+            with self.subTest(fixture=os.path.basename(path)), cfb.CompoundFile(path) as cf:
+                s = _scene(cf)
+                for n in s.nodes():
+                    self.assertEqual(n.flags, flags.get(n.name, 0x800), n.name)
+                seen = {}
+                for i in range(len(s)):
+                    chunk = s.chunk(i)
+                    pairs = chunk.first(0x2035) if chunk.container else None
+                    if pairs is not None:
+                        seen.setdefault(s.entry(i).name, set()).add(pairs.unpack("<I")[0])
+                self.assertEqual(seen, {k: {v} for k, v in heads.items() if k in seen})
+                self.assertTrue({"Node", "RootNode", "Texmaps"} <= set(seen))
+                del chunk, pairs
 
     def test_hierarchy_twins(self):
         with cfb.CompoundFile(HIERARCHY) as cf:

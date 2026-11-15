@@ -23,9 +23,11 @@ of the stack first; its base can be another derived object. docs/FORMAT.md says 
 
 Nodes are keyed by object index, never by name: two nodes with the same name are two nodes. A parent that is not
 a Node (the RootNode, another class, out of range) means top level. A parent cycle is cut at its member with the
-lowest object index, which becomes top level and is listed in cut_cycles. A reference past the object list, a
-payload of the wrong size or a derived-object cycle raises ChunkError (a ValueError). Every walk is iterative and
-bounded by the object count. No bpy.
+lowest object index, which becomes top level and is listed in cut_cycles. A reference past the object list, more
+than MAX_REFS references in one object, a payload of the wrong size, a derived-object cycle or a file without a
+Scene stream raise ChunkError (a ValueError). One damaged record poisons only itself: a node whose 0x0960 cannot
+be read is top level for the hierarchy (listed in bad_parents) while node() on it raises. Every walk is iterative
+and bounded by the object count. No bpy.
 """
 import collections
 import struct
@@ -34,14 +36,15 @@ from . import chunks, classdir, classids
 
 ChunkError = chunks.ChunkError
 
-ROOT_IDS = {0x2014: "3ds Max 2012 format", 0x2023: "3ds Max 2018 format", 0x2025: "3ds Max 2020 format"}
+ROOT_IDS = frozenset((0x2014, 0x2023, 0x2025))  # root container ids seen so far; others are read the same way
 DERIVED_OBJECT = 0x2032
+MAX_REFS = 1 << 20  # per object and chunk: a hostile payload must not become millions of Python ints
 SLOT_TM, SLOT_OBJECT, SLOT_MATERIAL, SLOT_LAYER = 0, 1, 3, 6
 
 _REFS, _REF_PAIRS = 0x2034, 0x2035
 _NODE_PARENT, _NODE_NAME = 0x0960, 0x0962
 _PIVOT_POSITION, _PIVOT_ROTATION, _PIVOT_SCALE = 0x096A, 0x096B, 0x096C
-_I32 = struct.Struct("<i")
+_PAIR = struct.Struct("<Ii")
 
 
 class Stack(collections.namedtuple("Stack", "base modifiers derived")):
@@ -108,6 +111,9 @@ class Scene:
         self._parents = None
         self._children = None
         self._cut = ()
+        self._bad_parents = ()
+        # 0x2032 stands for a derived object only past the class directory, where no class can claim it
+        self._derived = DERIVED_OBJECT if classes.get(DERIVED_OBJECT) is None else None
         node_classes, root_classes = set(), set()
         for entry in classes:
             if entry.superclass == classids.SC_BASENODE:
@@ -122,6 +128,8 @@ class Scene:
     @classmethod
     def from_file(cls, cf, classes=None):
         """From an open cfb.CompoundFile; the class directory is read from it unless given."""
+        if not cf.exists("Scene"):
+            raise ChunkError("the file has no Scene stream")
         if classes is None:
             classes = classdir.ClassDirectory.from_file(cf)
         return cls(cf.open("Scene"), classes)
@@ -157,6 +165,10 @@ class Scene:
         entry = self.entry(i)
         return entry is not None and entry.superclass == superclass and entry.class_id == class_id
 
+    def is_derived(self, i):
+        """Whether object i is a derived object (an object with its modifier stack)."""
+        return self.class_index(i) == self._derived
+
     def _target(self, i, value):
         if not 0 <= value < len(self._ids):
             raise ChunkError("object %d references %d, outside the %d objects" % (i, value, len(self._ids)))
@@ -171,7 +183,9 @@ class Scene:
         n, rest = divmod(refs.payload_size, 4)
         if rest:
             raise ChunkError("object %d: 0x2034 of %d bytes is not a whole number of i32" % (i, refs.payload_size))
-        return [None if v == -1 else self._target(i, v) for v in refs.unpack("<%di" % n)]
+        if n > MAX_REFS:
+            raise ChunkError("object %d: %d references, more than %d" % (i, n, MAX_REFS))
+        return [None if v == -1 else self._target(i, v) for v, in struct.iter_unpack("<i", refs.view())]
 
     def refs(self, i):
         """{slot: object index} of object i, from 0x2034 and 0x2035; empty slots are left out."""
@@ -183,10 +197,11 @@ class Scene:
             if pairs.payload_size < 4 or rest:
                 raise ChunkError("object %d: 0x2035 of %d bytes is not a u32 and (slot, index) pairs" %
                                  (i, pairs.payload_size))
-            values = pairs.unpack("<I" + "Ii" * n, 0)
-            for k in range(1, len(values), 2):
-                if values[k + 1] != -1:
-                    out[values[k]] = self._target(i, values[k + 1])
+            if n > MAX_REFS:
+                raise ChunkError("object %d: %d reference pairs, more than %d" % (i, n, MAX_REFS))
+            for slot, value in _PAIR.iter_unpack(pairs.view()[4:]):
+                if value != -1:
+                    out[slot] = self._target(i, value)
         return out
 
     def _raw_parent(self, i):
@@ -203,9 +218,13 @@ class Scene:
     def _hierarchy(self):
         if self._parents is not None:
             return
-        parents = {}
+        parents, bad = {}, []
         for i in self.node_indices:
-            p, _flags = self._raw_parent(i)
+            try:
+                p, _flags = self._raw_parent(i)
+            except ChunkError:
+                p = None
+                bad.append(i)
             parents[i] = p if p in self._node_set else None
         state, cut = {}, []  # state: 1 = on the current chain, 2 = settled
         for start in self.node_indices:
@@ -227,12 +246,19 @@ class Scene:
         self._parents = parents
         self._children = {k: tuple(v) for k, v in children.items()}
         self._cut = tuple(sorted(cut))
+        self._bad_parents = tuple(bad)
 
     @property
     def cut_cycles(self):
         """The nodes whose stored parent closed a cycle, now top level."""
         self._hierarchy()
         return self._cut
+
+    @property
+    def bad_parents(self):
+        """The nodes whose 0x0960 could not be read, top level in the hierarchy."""
+        self._hierarchy()
+        return self._bad_parents
 
     def parent(self, i):
         """The parent node of node i, None at the top level."""
@@ -290,7 +316,7 @@ class Scene:
         """The object behind reference i: through derived objects down to the base object."""
         self._check(i)
         modifiers, derived, seen = [], [], set()
-        while i is not None and self._ids[i] == DERIVED_OBJECT:
+        while i is not None and self._ids[i] == self._derived:
             if i in seen:
                 raise ChunkError("derived object %d references itself through its stack" % i)
             seen.add(i)

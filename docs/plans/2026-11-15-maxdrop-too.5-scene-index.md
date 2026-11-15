@@ -60,7 +60,7 @@ Seen on the corpus while planning (2026-11-15; class names and counts only, no f
 
 | File | Responsibility |
 |---|---|
-| `maxdrop/reader/scene.py` (new) | `Scene`, `Node`, `Stack`, `ROOT_IDS`, `DERIVED_OBJECT`, `NODE_SLOTS`; reads only through `chunks` / `classdir` |
+| `maxdrop/reader/scene.py` (new) | `Scene`, `Node`, `Stack`, `ROOT_IDS`, `DERIVED_OBJECT`, `MAX_REFS`, `SLOT_*`; reads only through `chunks` / `classdir` |
 | `tools/census.py` (new) | `census(path) -> dict`, `format_text(dict)`, `main(argv)`; `--json` |
 | `tests/unit/test_scene.py` (new) | synthetic streams (refs, node records, cycles, derived objects, hostile input); fixtures vs oracle |
 | `tests/unit/test_census.py` (new) | census of the fixtures (counts vs oracle, JSON and text forms, no object names) |
@@ -70,7 +70,7 @@ Seen on the corpus while planning (2026-11-15; class names and counts only, no f
 
 ```python
 # maxdrop/reader/scene.py
-ROOT_IDS = {0x2014: ..., 0x2023: ..., 0x2025: ...}   # known root container ids (others still read)
+ROOT_IDS = frozenset((0x2014, 0x2023, 0x2025))   # known root container ids (others still read)
 DERIVED_OBJECT = 0x2032
 SLOT_TM, SLOT_OBJECT, SLOT_MATERIAL, SLOT_LAYER = 0, 1, 3, 6
 
@@ -120,7 +120,7 @@ wrong size. All loops are iterative (no recursion), each bounded by the object c
       `refs` for `0x2034` (with -1) and `0x2035`, `ref_list`, out-of-range ref -> ChunkError, odd payload sizes
       -> ChunkError, leaf object -> `{}`, non-container first top-level chunk -> ChunkError, empty stream ->
       ChunkError.
-- [ ] Run `python -I -m unittest tests.unit.test_scene` -> fails (no module).
+- [ ] Run `python -I -m unittest discover tests -p test_scene.py` -> fails (no module).
 - [ ] Implement `Scene.__init__`, `from_file`, `__len__`, `class_index`, `entry`, `chunk`, `span`, `is_a`,
       `refs`, `ref_list`.
 - [ ] Run again -> pass.
@@ -195,3 +195,13 @@ wrong size. All loops are iterative (no recursion), each bounded by the object c
 5. `python -I tools/census.py --json tests/fixtures/hierarchy.max` -> JSON with `nodes.total` 5.
 
 **Success criteria:** all of the above pass; the bead notes name the classes behind the 29 and 418 nodes.
+
+## Review fixes (requesting-code-review)
+
+- One unreadable `0x0960` no longer poisons every node: `_hierarchy` makes that node top level and lists it in
+  `bad_parents`; `node()` on it still raises. The census counts it as unreadable and goes on.
+- `Scene.from_file` raises ChunkError for a file without a Scene stream (was a KeyError past the census).
+- At most `MAX_REFS` references per object and chunk, unpacked with `struct.iter_unpack`.
+- `0x2032` is a derived object only while the class directory is shorter (`is_derived`).
+- The census counts every derived object once (nested ones included) for its modifier classes; `census_scene()`
+  takes a Scene so synthetic scenes test it.
