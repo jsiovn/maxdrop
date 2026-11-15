@@ -28,7 +28,6 @@ import time
 import unicodedata
 import zipfile
 import zlib
-from collections import Counter
 from typing import Dict, List, Optional, Tuple
 
 KIND_ZIP = "zip"

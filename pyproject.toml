@@ -30,3 +30,14 @@ ignore = [
 # Use aggressive as many useful edits are disabled unless it's enabled.
 # Any edits which are overly disruptive or risky can be removed in the `ignore` list.
 aggressive = 2
+
+[tool.ruff]
+# Linter of MaxDrop's own code: ruff check .
+line-length = 120
+target-version = "py311"
+# The upstream engine is replaced step by step and deleted when empty: not linted meanwhile.
+extend-exclude = ["maxdrop/import_max.py"]
+
+[tool.ruff.lint]
+# Errors only, named explicitly so that a newer ruff does not widen the set on its own.
+select = ["E4", "E7", "E9", "F"]
