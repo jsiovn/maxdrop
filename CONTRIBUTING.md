@@ -29,8 +29,11 @@ Run the Blender tests headless with a profile of their own, so your preferences 
 ```powershell
 $env:BLENDER_USER_RESOURCES = "$env:TEMP\maxdrop-profile"
 & blender --background --factory-startup --python-exit-code 1 --python tests\smoke_register.py
-& blender --background --factory-startup --python-exit-code 1 --python tests\smoke_import.py -- <a .max file>
+& blender --background --factory-startup --python-exit-code 1 --python tests\smoke_import.py
 ```
+
+Without arguments the import test takes every `tests/fixtures/*.max`; give a `.max` file or a folder after `--`
+to import others.
 
 On Linux and macOS the same commands work with `BLENDER_USER_RESOURCES=/tmp/maxdrop-profile blender …` and
 forward slashes; `build.ps1` is three Blender commands, `python tools/check_zip.py <zip>` and
@@ -55,7 +58,24 @@ the same extension enabled from two repositories clashes.
 | `site/index.html`, `tools/make_site.py` | The landing page and the script that fills it from `dist/index.json`. |
 | `tools/baseline.py`, `tools/baseline_import.py` | Measure one import: time, peak memory, counts ([docs/BASELINE.md](docs/BASELINE.md)). |
 | `LICENSE`, `maxdrop/LICENSE` | The GPL v3 text, and the same file again so that it is in every zip. `tools/check_zip.py` checks a built zip for it. |
-| `tests/` | `test_site.py`, `test_license.py` (plain Python), `smoke_register.py`, `smoke_import.py` (inside Blender). |
+| `tools/fixtures/*.ms`, `tools/sanitize_fixture.py`, `tools/check_fixture.py`, `tools/cfb.py` | The test files: the MAXScript that authors each one, the tool that blanks the user and computer name 3ds Max writes into a file, the check that refuses names and paths, and the compound-file reader both use. |
+| `tests/` | `test_site.py`, `test_license.py`, `test_intake*.py`, `test_fixtures.py` (plain Python), `smoke_register.py`, `smoke_import.py` (inside Blender); `fixtures/` holds the test `.max` files and `fixtures/packs/` the test scene packs. |
+
+## Test files
+
+The `.max` files in `tests/fixtures/` are tiny scenes authored for MaxDrop, one MAXScript each in
+`tools/fixtures/`. 3ds Max writes the Windows user name and the computer name into every file it saves, and the
+repository is public, so a file goes in only after both tools have run on it:
+
+```powershell
+# in 3ds Max (2020 or newer), with nothing to keep in the scene: run tools\fixtures\<name>.ms, which saves
+# C:\maxdrop_fixtures\<name>.max; then
+python -I tools/sanitize_fixture.py C:\maxdrop_fixtures\<name>.max   # blanks the two names, in place
+python -I tools/check_fixture.py C:\maxdrop_fixtures\<name>.max      # must print "clean"
+```
+
+Copy it into `tests/fixtures/` only then. `tests/test_fixtures.py` runs the same check over every committed
+fixture. Keep each file under 1 MB and give every object and material a neutral name.
 
 ## Conventions
 

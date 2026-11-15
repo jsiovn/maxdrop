@@ -31,7 +31,7 @@ and the scratchpad come from the bead notes or the session.
 | `S` | this session's scratchpad dir. Profiles, logs, scratch packages and served folders go here, never into the repo |
 | `B52` | Blender 5.2, installed: `C:\Program Files\Blender Foundation\Blender 5.2\blender.exe` (`build.ps1`'s default) |
 | `B42`, `B45` | Blender 4.2 LTS and 4.5 LTS, portable (the versions CI runs are in `.github/workflows/test.yml`). Paths in the bead notes. Missing: download `blender-<x.y.z>-windows-x64.zip` from `https://download.blender.org/release/Blender<x.y>/`, check its SHA-256 against the `.sha256` file there, extract **outside the repo**. Never install them |
-| Local fixture | a `.max` saved by 3ds Max, kept **outside** the repo (3ds Max writes the Windows user and computer name into every file it saves). Path in the bead notes. `tests/fixtures/` holds no `.max` yet, so the import smoke without arguments prints `IMPORT SKIPPED` |
+| Local fixture | a `.max` saved by 3ds Max, kept **outside** the repo (3ds Max writes the Windows user and computer name into every file it saves). Path in the bead notes. The committed `tests/fixtures/*.max` are sanitized copies (`tools/sanitize_fixture.py`); the import smoke without arguments imports them all |
 | Corpus scenes | commercial, private, never in the repo or named in it: "scene A", "scene B". Paths in the bead notes |
 
 PowerShell 7 is the primary shell. Shell state (variables) does not carry between tool calls: repeat the
@@ -90,19 +90,15 @@ git diff --name-only "$base...HEAD"; git status --short
 | `.github/workflows/*.yml` | 1, 2; the workflow itself is the PR's `Test` run (Publish runs only on `main`) |
 
 Fixture scan (CLAUDE.md: a fixture is committed only when its bytes, ASCII and UTF-16LE, hold no user name,
-machine name or user path; 3ds Max writes the first two into every file it saves):
+machine name or user path; 3ds Max writes the first two into every file it saves, `tools/sanitize_fixture.py`
+blanks them):
 
-```bash
-python -I - tests/fixtures/<file> <<'EOF2'
-import os, sys
-needles = {os.environ["USERNAME"], os.environ["COMPUTERNAME"], os.environ["USERPROFILE"], chr(92) + "Users" + chr(92)}
-data = open(sys.argv[1], "rb").read().lower()
-hits = sorted({n for n in needles for enc in ("ascii", "utf-16-le") if n.lower().encode(enc, "ignore") in data})
-print("SCAN FAILED: %d hit(s)" % len(hits) if hits else "SCAN CLEAN")
-EOF2
+```powershell
+python -I tools/check_fixture.py "tests/fixtures/*.max"
 ```
 
-Pass: `SCAN CLEAN`. On `SCAN FAILED` the file is not committed (the count only: never paste the hits).
+Pass: exit 0, one `clean` line per file. Otherwise the file is not committed; the tool prints the kind of string
+(`user name`, `computer name`, `user folder`, `drive path`, `identity property not blank`), never the string.
 
 CHANGELOG check for a version bump (the Publish workflow refuses a version without its section, but only after
 the merge):
