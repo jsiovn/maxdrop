@@ -21,8 +21,9 @@ to `writing-plans`.
 
 ## Environment
 
-Check before running anything; report a missing piece as a blocker instead of guessing. **Machine paths never go
-into a committed file** (the repository is public): they come from the bead notes or the session.
+Check before running anything; report a missing piece as a blocker instead of guessing. **User- and machine-specific
+paths never go into a committed file** (the repository is public): the portable Blenders, the fixture, the corpus
+and the scratchpad come from the bead notes or the session.
 
 | What | Value |
 |---|---|
@@ -34,7 +35,7 @@ into a committed file** (the repository is public): they come from the bead note
 | Corpus scenes | commercial, private, never in the repo or named in it: "scene A", "scene B". Paths in the bead notes |
 
 PowerShell 7 is the primary shell. Shell state (variables) does not carry between tool calls: repeat the
-`$S = ...; $B = ...` line in every block. In Git Bash convert paths with `cygpath -w` and read `$?` (or
+`$S = ...; $B = ...` line in every block. In Git Bash convert paths with `cygpath -w` (to Windows) or `cygpath -u` (from Windows) and read `$?` (or
 `${PIPESTATUS[0]}` when piping) for Blender's exit code.
 
 ## Process rules
@@ -47,7 +48,7 @@ PowerShell 7 is the primary shell. Shell state (variables) does not carry betwee
   stop yours by the process id you kept, not by name.
 - **One `http.server` per port.** Check the port is free first (`Get-NetTCPConnection -LocalPort <port>` returns
   nothing). A taken port belongs to someone else, even when it looks like a leftover `python` server: pick
-  another port, never stop it. 8765 belongs to the 3ds Max bridge. After a server stops, `TimeWait` entries stay
+  another port, never stop it (the 3ds Max MCP bridge listens on 8765 when it runs). After a server stops, `TimeWait` entries stay
   on the port for a while: only a `Listen` entry means it is still serving.
 - No wildcard `Remove-Item` (`Remove-Item <dir>\*` is refused by the harness): `Get-ChildItem <dir> -File |
   Remove-Item`, or `Remove-Item -Recurse -Force <dir>` for a whole scratch folder.
@@ -63,7 +64,14 @@ PowerShell 7 is the primary shell. Shell state (variables) does not carry betwee
 
 ## Changed paths -> checks
 
-`git diff --name-only main...HEAD` plus `git status --short`. Block 1 is cheap: run it for every change.
+The base is where the branch left its parent: `origin/main`, or `origin/epic/<epic-id>` for a bead of an epic
+branch (local `main` can lag: fetch first). Block 1 is cheap: run it for every change.
+
+```powershell
+git fetch origin
+$base = git merge-base HEAD origin/main    # epic bead: origin/epic/<epic-id>
+git diff --name-only "$base...HEAD"; git status --short
+```
 
 | Changed | Run |
 |---|---|
@@ -72,13 +80,29 @@ PowerShell 7 is the primary shell. Shell state (variables) does not carry betwee
 | `maxdrop/__init__.py` (`_NAMES`, `_purge`, reload), `maxdrop/update.py` | the row above, plus 7 on 5.2 and 4.2 |
 | `maxdrop/intake/` | 1 (its tests load it by path), 2, 5, 6 for a fix |
 | `maxdrop/import_max.py` or the new `reader/`, `convert/`, `build/` | the `maxdrop/*.py` row, plus 8 when the plan measures (fixture, then the corpus scenes it names) |
-| `maxdrop/blender_manifest.toml` `version` | 1, 2, and the CHANGELOG check below; `docs/SUPPORT.md` says what that version imports |
+| `maxdrop/blender_manifest.toml` `version` | 1, 2, 3 on all three versions, and the CHANGELOG check below; `docs/SUPPORT.md` says what that version imports |
 | `maxdrop/blender_manifest.toml` other fields (permissions, `blender_version_min`, ...) | 1, 2, 5, and 7 on 5.2 and 4.2 |
 | `tests/smoke_*.py` | that script green on all three versions + 6 (a red run on a broken scratch package) |
+| `tests/fixtures/*` (a new or changed file) | the fixture scan below **before `git add`**, then 4 on all three versions with that file (and 1 for `packs/`) |
 | `tests/test_*.py`, `tools/check_zip.py`, `tools/make_site.py`, `site/` | 1, 2 |
 | `tools/baseline*.py` | 8 on the fixture |
 | `build.ps1` | 2, also with `-Blender $B42` |
 | `.github/workflows/*.yml` | 1, 2; the workflow itself is the PR's `Test` run (Publish runs only on `main`) |
+
+Fixture scan (CLAUDE.md: a fixture is committed only when its bytes, ASCII and UTF-16LE, hold no user name,
+machine name or user path; 3ds Max writes the first two into every file it saves):
+
+```bash
+python -I - tests/fixtures/<file> <<'EOF2'
+import os, sys
+needles = {os.environ["USERNAME"], os.environ["COMPUTERNAME"], os.environ["USERPROFILE"], chr(92) + "Users" + chr(92)}
+data = open(sys.argv[1], "rb").read().lower()
+hits = sorted({n for n in needles for enc in ("ascii", "utf-16-le") if n.lower().encode(enc, "ignore") in data})
+print("SCAN FAILED: %d hit(s)" % len(hits) if hits else "SCAN CLEAN")
+EOF2
+```
+
+Pass: `SCAN CLEAN`. On `SCAN FAILED` the file is not committed (the count only: never paste the hits).
 
 CHANGELOG check for a version bump (the Publish workflow refuses a version without its section, but only after
 the merge):
@@ -151,10 +175,11 @@ code. Never `git stash` or revert in the real tree: build a scratch copy of the 
 it (the smoke scripts and the plain tests find the package next to their own `tests\` folder).
 
 ```bash
-# Git Bash: byte-exact export of the whole base tree (main for a feature branch; the plain tests also read
-# LICENSE, site/, tools/), then the new tests over it.
-S=<scratch>; rm -rf "$S/red" && mkdir -p "$S/red"
-git archive main | tar -x -C "$S/red"
+# Git Bash: byte-exact export of the whole base tree (the plain tests also read LICENSE, site/, tools/), then
+# the new tests over it, with any fixture or helper under tests/ they need.
+S=$(cygpath -u '<scratch>'); base=$(git merge-base HEAD origin/main)   # epic bead: origin/epic/<epic-id>
+rm -rf "$S/red" && mkdir -p "$S/red"
+git archive "$base" | tar -x -C "$S/red"
 cp tests/<the new or changed test files> "$S/red/tests/"
 ```
 
@@ -205,7 +230,7 @@ path real users take). On 5.2 and 4.2 (add 4.5 when the plan says so).
    $S = "<scratch>"; $port = 8791
    if (Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue) { throw "port $port is taken" }
    $py = python -c "import sys; print(sys.executable)"
-   $srv = Start-Process $py -ArgumentList "-m", "http.server", $port, "--bind", "127.0.0.1", "--directory", "$S\serve" -PassThru -WindowStyle Hidden
+   $srv = Start-Process $py -ArgumentList "-m", "http.server", $port, "--bind", "127.0.0.1", "--directory", "`"$S\serve`"" -PassThru -WindowStyle Hidden
    $srv.Id | Out-File "$S\server.pid"
    Start-Sleep 1; (Invoke-WebRequest "http://127.0.0.1:$port/index.json" -UseBasicParsing).StatusCode
    "pid $($srv.Id), listener $((Get-NetTCPConnection -LocalPort $port -State Listen).OwningProcess)"
@@ -234,6 +259,7 @@ path real users take). On 5.2 and 4.2 (add 4.5 when the plan says so).
            return tomllib.load(f)["version"]
 
    def run():
+       print("Blender " + bpy.app.version_string)
        bpy.ops.preferences.extension_repo_add(type='REMOTE', name="maxdrop-local", remote_url=URL,
                                               use_sync_on_startup=False)
        repos = bpy.context.preferences.extensions.repos
@@ -256,6 +282,9 @@ path real users take). On 5.2 and 4.2 (add 4.5 when the plan says so).
        update._upgrade(index)  # timers do not run with --background
        check("still enabled after the upgrade", module in bpy.context.preferences.addons)
        check("installed version is " + NEW, version_of(module) == NEW, version_of(module))
+       # The files on disk are new either way; a stale module still answers the old version (functools.cache).
+       loaded = sys.modules[module + ".update"].installed_version()
+       check("the loaded code is " + NEW, loaded == NEW, loaded)
        check("the importer is registered after the upgrade", hasattr(bpy.types, "IMPORT_SCENE_OT_maxdrop"))
 
    try:
@@ -301,7 +330,7 @@ stops Blender (by its own process id) at `--limit-minutes` (30), `--max-memory-g
 `--min-free-gb` (6) free. For a corpus scene: `--label "scene A"` (or `"scene B"`), the result and its `.log`
 stay in `S`, and only counts and measurements are compared with `docs/BASELINE.md` (wall time, peak memory,
 objects, meshes, materials, failed and skipped nodes). `tools/baseline_import.py` counts nodes through internals
-of `import_max.py`: when the engine changes, `scene_nodes` may read `null` until it is updated.
+of `import_max.py`: when the engine changes, `counts.nodes` may read `null` until it is updated.
 
 ## Evidence and report
 
