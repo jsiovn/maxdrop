@@ -10,6 +10,7 @@
     built.roots()                       # every object without a parent, the shear helper included
     built = build(desc, collection, slots=assign(...), material=make)   # with material slots
     built.materials[ir.index]           # the Material make(ir) returned, once per Max material
+                                        # (make: build.materials.MaterialBuilder().make)
 
 Meshes are made with vertices.add / loops.add / polygons.add and foreach_set, then the edges are computed from the
 polygons. Flat faces and sharp edges go to the sharp_face and sharp_edge attributes, which Blender 4.1 and later

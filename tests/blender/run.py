@@ -26,13 +26,23 @@ Blender's world matrices equal the products of the locals, through the helper em
 slots (build with convert.materials.assign): vray_wrappers' Multi/Sub-Object box with its faces set to IDs 1, 3
 and 7 lands them on the slots of FixtureSubOne, an empty one (ID 3 is switched off) and FixtureSubSeven; the same
 mesh shared with the Shell box gets slots linked to each object; standard_physical's boxes one slot each.
+Materials (build.materials through the operator): each face on its material's slot, each slot's material named after
+the 3ds Max material, its Principled inputs equal to the MaterialIR the same file converts to (values, or linked when
+a texture graph drives them), the render method, one Image Texture node per file; vray_maps' Mapping values by hand
+from its authoring script, texture nodes without an image and a report line per missing file; vray_maps and
+texmap_rules copied beside generated PNGs load every image in its color space, one datablock per file and color
+space; hand-made IRs check shared images, a missing file, Thin Wall (set on 5.x, reported on 4.x), a name clash,
+BLENDED / DITHERED and every node kind.
 Prints `FIXTURES PASSED` (exit 0) or `FIXTURES FAILED` (exit 1).
 """
 import collections
 import glob
 import json
+import math
 import os
+import shutil
 import sys
+import tempfile
 import traceback
 
 import bpy
@@ -60,9 +70,9 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1
 }
 SHARP_EDGES = {"editable_mesh": 8}  # group 1 on top and bottom, 2 on the sides; a box with a group per side: 12
 SHARP_EDGES_DEFAULT = 12
-# Meshes the operator leaves without a material: its materials still come from the old engine (import_max), which
-# has no VRayBlendMtl or Shell Material rule. maxdrop-arp.6 replaces it with the new rules.
-NO_OLD_MATERIAL = {"vray_wrappers": ["FixtureBlendBox", "FixtureShellBox"]}
+VALUE_TOLERANCE = 1e-4
+SPECULAR_LEVEL = 0.5  # the IR's specular is a reflection weight: 1 is Blender's Specular IOR Level 0.5
+DEG = math.pi / 180.0
 failures = []
 
 
@@ -138,6 +148,7 @@ def run_fixture(path, modules):
         oracle = json.load(f)
     empty_scene()
     desc = convert_scene.read(path)
+    _same, plan = _irs(path)
     result = bpy.ops.import_scene.maxdrop(filepath=path)
     check("%s: the operator finishes" % name, result == {'FINISHED'}, str(result))
     view_layer = bpy.context.view_layer
@@ -192,7 +203,8 @@ def run_fixture(path, modules):
         flat = mesh.attributes.get("sharp_face")
         check(label + ": every face smooth", flat is None or not any(d.value for d in flat.data))
         indices = [p.material_index for p in mesh.polygons]
-        check(label + ": material indices", indices == md.material_indices.tolist(), str(indices))
+        check(label + ": each face on its material's slot", indices == plan[node.mesh].indices.tolist(),
+              str(indices))
         sharing = sorted(handle_of[other.as_pointer()] for other in obs if other.data == mesh)
         check(label + ": objects sharing the mesh = oracle instances", sharing == o["instances"], str(sharing))
         center = (Vector(o["bbox_min"]) + Vector(o["bbox_max"])) * (meters / 2.0)
@@ -222,9 +234,9 @@ def run_fixture(path, modules):
               group.type == 'EMPTY' and members == ["FixtureGroupA", "FixtureGroupB"], "%s %s" % (group.type, members))
         excluded = [lc.name for lc in view_layer.layer_collection.children[name].children if lc.exclude]
         check("layers_flags: no layer excluded (none is hidden in 3ds Max)", excluded == [], str(excluded))
-    bare = sorted(m.name for m in meshes.values() if not (m.materials and m.materials[0]))
-    check("%s: a material on every mesh but the old engine's gaps" % name, bare == NO_OLD_MATERIAL.get(name, []),
-          str(bare))
+    bare = sorted(ob.name for ob in obs if ob.type == 'MESH' and not any(sl.material for sl in ob.material_slots))
+    check("%s: a material on every mesh" % name, bare == [], str(bare))
+    check_fixture_materials(name, plan, desc, obs)
     rep = convert_report.gather(desc, source=os.path.basename(path), objects_built=len(obs),
                                 meshes_built=len(meshes))
     level, line = build_report.publish(rep)
@@ -233,6 +245,344 @@ def run_fixture(path, modules):
           level == "INFO" and text is not None and text.as_string().rstrip("\n") == rep.text(), line)
     print("COUNTS %s: objects=%d meshes=%d placeholders=%d issues=%d" % (
         name, len(bpy.data.objects), len(bpy.data.meshes), sum(desc.placeholders.values()), len(desc.issues)))
+
+
+def _irs(path):
+    """convert.scene.read of path and the slot plan of its materials, converted with the texture-map rules."""
+    from maxdrop.convert import materials as convert_materials
+    from maxdrop.convert import scene as convert_scene
+    from maxdrop.convert import texmaps as convert_texmaps
+    from maxdrop.reader import assets, cfb, materials as reader_materials, scene as reader_scene
+    desc = convert_scene.read(path)
+    with cfb.CompoundFile(path) as cf:
+        sc = reader_scene.Scene.from_file(cf)
+        graph = reader_materials.MaterialGraph(sc)
+        tex = convert_texmaps.TexmapConverter(graph, assets.AssetTable.from_file(cf))
+        conv = convert_materials.MaterialConverter(graph, texmaps=tex)
+        slots = convert_materials.assign(desc, convert_materials.node_materials(sc, desc), conv)
+    return desc, slots
+
+
+def _principled(material):
+    nodes = [n for n in material.node_tree.nodes if n.bl_idname == "ShaderNodeBsdfPrincipled"]
+    return nodes[0] if len(nodes) == 1 else None
+
+
+def _value_ok(socket, want):
+    got = socket.default_value
+    if isinstance(want, (tuple, list)):
+        return close(list(got)[:3], list(want)[:3], VALUE_TOLERANCE)
+    return abs(float(got) - float(want)) <= VALUE_TOLERANCE
+
+
+def _mean(v):
+    return sum(v[:3]) / 3.0 if isinstance(v, (tuple, list)) else v
+
+
+def _images_of(ir):
+    """The texmaps.Image nodes of every texture graph of an IR, each once."""
+    from maxdrop.convert import texmaps as tx
+    seen, out = set(), []
+    stack = [g.root for g in ir.textures.values()]
+    while stack:
+        n = stack.pop()
+        if id(n) in seen:
+            continue
+        seen.add(id(n))
+        if isinstance(n, tx.Image):
+            out.append(n)
+        stack.extend(tx._children(n))
+    return out
+
+
+def check_principled(label, material, ir):
+    """A Blender material against its MaterialIR: every Principled input (value, or linked when a texture graph
+    drives it), the render method, the Image Texture nodes by file name."""
+    from maxdrop.convert import texmaps as tx
+    p = _principled(material) if material is not None and material.node_tree else None
+    check(label + ": one Principled BSDF", p is not None)
+    if p is None:
+        return
+    tex = ir.textures
+    wants = [
+        ("Base Color", "base_color", ir.base_color.value),
+        ("Metallic", "metallic", _mean(ir.metallic.value)),
+        ("Roughness", "roughness", _mean(ir.roughness.value)),
+        ("Specular IOR Level", "specular", _mean(ir.specular.value) * SPECULAR_LEVEL),
+        ("Transmission Weight", "transmission", _mean(ir.transmission.value)),
+        ("Emission Color", "emission_color", ir.emission_color.value),
+        ("Alpha", "alpha", _mean(ir.alpha.value)),
+    ]
+    for socket, key, want in wants:
+        s = p.inputs[socket]
+        constant = tex[key].root if key in tex and isinstance(tex[key].root, tx.Constant) else None
+        linked = key in tex and constant is None
+        if constant is not None:  # a graph that is a swatch (a Falloff without a map): its value on the input
+            want = constant.value if socket in ("Base Color", "Emission Color") else _mean(constant.value) * (
+                SPECULAR_LEVEL if key == "specular" else 1.0)
+        check("%s: %s %s" % (label, socket, "linked" if linked else "value"),
+              s.is_linked == linked and (linked or _value_ok(s, want)),
+              "linked %s, %r vs %r" % (s.is_linked, tuple(s.default_value) if hasattr(s.default_value, "__len__")
+                                       else s.default_value, want))
+    values = [("IOR", ir.ior), ("Emission Strength", ir.emission_strength), ("Coat Weight", ir.coat_weight),
+              ("Coat Roughness", ir.coat_roughness), ("Coat IOR", ir.coat_ior), ("Coat Tint", ir.coat_color),
+              ("Subsurface Weight", ir.subsurface_weight)]
+    for socket, want in values:
+        check("%s: %s" % (label, socket), _value_ok(p.inputs[socket], want),
+              "%r vs %r" % (p.inputs[socket].default_value, want))
+    normal = "normal" in tex or "bump" in tex
+    check(label + ": Normal linked iff a normal or bump map", p.inputs["Normal"].is_linked == normal)
+    thin = p.inputs.get("Thin Wall")
+    check(label + ": Thin Wall", (thin is None and bpy.app.version < (5, 0, 0)) or
+          (thin is not None and bool(thin.default_value) == ir.thin_walled))
+    method = 'DITHERED' if "alpha" in tex or _mean(ir.alpha.value) >= 1.0 else 'BLENDED'
+    check(label + ": surface_render_method", material.surface_render_method == method,
+          "%s vs %s" % (material.surface_render_method, method))
+    want_images = sorted({img.name for img in _images_of(ir)})
+    got_images = sorted({n.label for n in material.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage"})
+    check(label + ": one Image Texture node per file", got_images == want_images, "%s vs %s" % (got_images,
+                                                                                               want_images))
+
+
+def check_fixture_materials(name, plan, desc, obs):
+    """Each face slot of each imported object holds a material equal to the IR the same file converts to (plan:
+    the slot plan of _irs)."""
+    by_index = {node.index: ob for node, ob in zip(desc.nodes, obs)}
+    checked = set()
+    for slots in plan.values():
+        for s, irs in enumerate(slots.slots):
+            for node, ir in zip(slots.users, irs):
+                ob = by_index[node]
+                material = ob.material_slots[s].material if s < len(ob.material_slots) else None
+                if ir is None:
+                    check("%s/%s: slot %d empty" % (name, ob.name, s), material is None)
+                    continue
+                if material is None or material.name in checked:
+                    check("%s/%s: slot %d has a material" % (name, ob.name, s), material is not None)
+                    continue
+                checked.add(material.name)
+                check("%s/%s: material named after the 3ds Max material" % (name, material.name),
+                      material.name.split(".")[0] == (ir.name or "Material").split(".")[0], ir.name)
+                check_principled("%s/%s" % (name, material.name), material, ir)
+    if name == "vray_maps":
+        check_vray_maps_nodes()
+        text = bpy.data.texts.get("MaxDrop Report")
+        body = text.as_string() if text else ""
+        check("vray_maps: the report names each texture not found",
+              all("texture not found: %s" % f in body for f in (
+                  "fixture_diffuse.png", "fixture_reflect.png", "fixture_gloss.png", "fixture_bump.png",
+                  "fixture_opacity.png", "fixture_normal.png", "fixture_normal_bump.png")), body[-400:])
+        empty = [n.label for m in bpy.data.materials for n in m.node_tree.nodes
+                 if n.bl_idname == "ShaderNodeTexImage" and n.image is not None]
+        check("vray_maps: texture nodes without an image when the files are missing", empty == [], str(empty))
+
+
+def _expected_mapping(tiling, offset, w_degrees):
+    """The Mapping node values for a W angle only: location = 0.5 - R S (0.5 + offset), by hand."""
+    c, s = math.cos(w_degrees * DEG), math.sin(w_degrees * DEG)
+    x, y = tiling[0] * (0.5 + offset[0]), tiling[1] * (0.5 + offset[1])
+    return (0.5 - (c * x - s * y), 0.5 - (s * x + c * y), 0.0), (0.0, 0.0, w_degrees * DEG), (tiling[0], tiling[1], 1.0)
+
+
+def _mapping_of(material, label):
+    """The values of the Mapping node feeding the Image Texture node labelled label."""
+    tex = next(n for n in material.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage" and n.label == label)
+    link = tex.inputs["Vector"].links[0] if tex.inputs["Vector"].is_linked else None
+    m = link.from_node if link is not None else None
+    if m is None or m.bl_idname != "ShaderNodeMapping":
+        return None, tex
+    return tuple(tuple(m.inputs[k].default_value) for k in ("Location", "Rotation", "Scale")), tex
+
+
+def check_vray_maps_nodes():
+    """FixtureVRayMaps' bitmaps: tiling, offset and W angle as Mapping values (the authoring script's numbers),
+    extension REPEAT; the gloss map inverted; the normal map through a Normal Map node with its green flipped."""
+    m = bpy.data.materials.get("FixtureVRayMaps")
+    for file, tile, offset, angle in (("fixture_diffuse.png", 2.0, 0.1, 15.0), ("fixture_reflect.png", 3.0, 0.2, 25.0),
+                                      ("fixture_gloss.png", 4.0, 0.3, 35.0), ("fixture_bump.png", 5.0, 0.4, 45.0),
+                                      ("fixture_opacity.png", 6.0, 0.5, 55.0)):
+        got, tex = _mapping_of(m, file)
+        want = _expected_mapping((tile, tile + 0.5), (offset, offset + 0.05), angle)
+        ok = got is not None and all(close(g, w, VALUE_TOLERANCE) for g, w in zip(got, want))
+        check("vray_maps/%s: Mapping location, rotation, scale" % file, ok, "%s vs %s" % (got, want))
+        check("vray_maps/%s: extension REPEAT" % file, tex.extension == 'REPEAT', tex.extension)
+    nodes = {n.bl_idname for n in m.node_tree.nodes}
+    check("vray_maps: the gloss map inverted, the bump map a Bump node",
+          {"ShaderNodeMath", "ShaderNodeBump", "ShaderNodeMix"} <= nodes, str(sorted(nodes)))
+    n = bpy.data.materials.get("FixtureVRayNormal")
+    nm = [x for x in n.node_tree.nodes if x.bl_idname == "ShaderNodeNormalMap"]
+    check("vray_maps: FixtureVRayNormal's Normal Map node, strength 0.85, its green flipped, its bump map on top",
+          len(nm) == 1 and abs(nm[0].inputs["Strength"].default_value - 0.85) < 1e-5
+          and any(x.bl_idname == "ShaderNodeSeparateColor" for x in n.node_tree.nodes)
+          and _principled(n).inputs["Normal"].links[0].from_node.bl_idname == "ShaderNodeBump")
+
+
+def _write_png(path):
+    img = bpy.data.images.new("maxdrop-probe", 4, 4)
+    img.filepath_raw = path
+    img.file_format = 'PNG'
+    img.save()
+    bpy.data.images.remove(img)
+
+
+def check_found_textures():
+    """vray_maps and texmap_rules copied beside a PNG for each texture name: every Image Texture node gets its file,
+    in the color space the IR asks for, one datablock per file and color space; the report lists no texture."""
+    fixtures = os.path.join(ROOT, "tests", "fixtures")
+    scratch = tempfile.mkdtemp(prefix="maxdrop-textures-")
+    try:
+        for name in ("vray_maps", "texmap_rules"):
+            empty_scene()
+            for ob in list(bpy.data.images):
+                bpy.data.images.remove(ob)
+            src = os.path.join(fixtures, name + ".max")
+            dst = os.path.join(scratch, name + ".max")
+            shutil.copy(src, dst)
+            _desc, plan = _irs(src)
+            irs = {ir.name: ir for s in plan.values() for irs in s.slots for ir in irs if ir is not None}
+            wants = {}
+            for ir in irs.values():
+                for img in _images_of(ir):
+                    wants.setdefault(img.name, set()).add(img.colorspace)
+            os.makedirs(os.path.join(scratch, "maps"), exist_ok=True)
+            for file in wants:  # in the maps folder beside the scene: the lookup's second rule
+                _write_png(os.path.join(scratch, "maps", file))
+            result = bpy.ops.import_scene.maxdrop(filepath=dst)
+            check("%s with its textures: imported" % name, result == {'FINISHED'})
+            got = {}
+            for m in bpy.data.materials:
+                for n in m.node_tree.nodes:
+                    if n.bl_idname == "ShaderNodeTexImage":
+                        img = n.image
+                        check("%s/%s/%s: image loaded" % (name, m.name, n.label), img is not None)
+                        if img is not None:
+                            check("%s/%s/%s: its file" % (name, m.name, n.label),
+                                  os.path.normcase(bpy.path.abspath(img.filepath)) ==
+                                  os.path.normcase(os.path.join(scratch, "maps", n.label)), img.filepath)
+                            got.setdefault(n.label, set()).add((img.colorspace_settings.name, img.name))
+            colorspaces = {k: {c for c, _n in v} for k, v in got.items()}
+            check("%s with its textures: the color space of every image as the IR asks" % name,
+                  colorspaces == wants, "%s vs %s" % (colorspaces, wants))
+            images = sum(len(v) for v in wants.values())
+            check("%s with its textures: one image datablock per file and color space" % name,
+                  len(bpy.data.images) == images and all(len(v) == len(colorspaces[k]) for k, v in got.items()),
+                  "%d images, %d wanted" % (len(bpy.data.images), images))
+            text = bpy.data.texts.get("MaxDrop Report")
+            check("%s with its textures: no texture reported missing" % name,
+                  text is not None and "texture not found" not in text.as_string())
+            if name == "texmap_rules":
+                m = bpy.data.materials["FixtureTexPlace"]
+                cropped = next(n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage"
+                               and n.label == "place_crop.png")
+                uv = [n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeUVMap"]
+                check("texmap_rules: place_crop.png mirrored, on map channel 3, cropped",
+                      cropped.extension == 'MIRROR' and any(n.uv_map == "UVChannel_3" for n in uv)
+                      and any(n.bl_idname == "ShaderNodeVectorMath" and n.operation == 'FRACTION'
+                              for n in m.node_tree.nodes), "%s %s" % (cropped.extension, [n.uv_map for n in uv]))
+                keep = bpy.data.materials["FixtureTexKeep"]
+                kinds = {n.bl_idname for n in keep.node_tree.nodes}
+                check("texmap_rules: Mix with a mask, Multiply, Color Correction as nodes",
+                      {"ShaderNodeMix", "ShaderNodeHueSaturation", "ShaderNodeGamma"} <= kinds, str(sorted(kinds)))
+    finally:
+        empty_scene()
+        for img in list(bpy.data.images):
+            bpy.data.images.remove(img)
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def check_builder():
+    """MaterialBuilder on hand-made IRs: one file in two color spaces is two images, the same twice is one; a file
+    not found leaves its node without an image and a report line; Thin Wall on 5.x, skipped with a line on 4.x;
+    two materials of one name both kept; BLENDED for a constant alpha, DITHERED for an alpha map; every node kind."""
+    from maxdrop.build import materials as build_materials
+    from maxdrop.convert import materials as cm
+    from maxdrop.convert import texmaps as tx
+    from maxdrop.convert import textures as ct
+    empty_scene()
+    for img in list(bpy.data.images):
+        bpy.data.images.remove(img)
+    scratch = tempfile.mkdtemp(prefix="maxdrop-builder-")
+    try:
+        png = os.path.join(scratch, "shared.png")
+        _write_png(png)
+        found = ct.Found(png, ct.SCENE)
+        srgb = tx.Image(1, "shared.png", "shared.png", "", found)
+        data = tx.Image(1, "shared.png", "shared.png", "", found, colorspace=tx.NON_COLOR)
+        lost = tx.Image(2, "nothere.png", "C:\\x\\nothere.png", "", None)
+        placed = tx.Image(3, "shared.png", "shared.png", "", found,
+                          mapping=tx.Mapping(channel=2, tiling=(2.0, 1.0), angle=(0.0, 0.0, 0.5),
+                                             tile=(False, False), mirror=(True, True)),
+                          crop=tx.Crop(0.1, 0.2, 0.5, 0.5, place=True),
+                          output=tx.TexOutput(invert=True, amount=0.5, level=2.0, offset=0.1))
+        gamma = tx.Image(4, "shared.png", "shared.png", "", found, colorspace=tx.NON_COLOR, gamma=1.8)
+
+        def graph(root, kind):
+            return tx.TextureGraphIR(root, kind)
+
+        a = cm.MaterialIR(10, "Clash", "test", base_color=cm.Input((0.5, 0.5, 0.5), cm.MapRef(1)),
+                          roughness=cm.Input(0.4, cm.MapRef(1)), specular=cm.Input(0.6, cm.MapRef(1)),
+                          thin_walled=True, alpha=cm.Input(0.5))
+        a.textures = {"base_color": graph(tx.Mix(tx.Constant((0.5, 0.5, 0.5)), srgb, 0.7, data), tx.COLOR),
+                      "roughness": graph(tx.Invert(data), tx.DATA),
+                      "specular": graph(tx.Multiply(srgb, tx.Constant((2.0, 2.0, 2.0))), tx.COLOR)}
+        b = cm.MaterialIR(11, "Clash", "test", alpha=cm.Input(1.0, cm.MapRef(2)),
+                          emission_color=cm.Input((1.0, 0.5, 0.0), cm.MapRef(3)), emission_strength=2.0)
+        b.textures = {"alpha": graph(lost, tx.DATA),
+                      "emission_color": graph(tx.ColorCorrect(tx.Composite(((placed, 1.0), (gamma, 0.5))),
+                                                              hue=0.25, saturation=1.5, brightness=0.1,
+                                                              contrast=0.2, gain=1.2, gamma=1.1), tx.COLOR),
+                      "normal": graph(tx.NormalMap(data, 0.7, flip_red=True, flip_green=True, swap=True,
+                                                   bump=tx.Bump(data, 2.0), channel=2), tx.NORMAL),
+                      "metallic": graph(tx.Constant(0.3), tx.DATA)}
+        builder = build_materials.MaterialBuilder()
+        ma, mb = builder.make(a), builder.make(b)
+        check("builder: two materials named Clash both kept", sorted([ma.name, mb.name]) == ["Clash", "Clash.001"],
+              "%s %s" % (ma.name, mb.name))
+        shared = sorted(i.colorspace_settings.name for i in bpy.data.images)
+        check("builder: shared.png in sRGB and Non-Color is two images, reused by every node",
+              shared == ["Non-Color", "sRGB"] and len(builder.images) == 2, str(shared))
+        lost_nodes = [n for n in mb.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage" and n.label == "nothere.png"]
+        issues = builder.issues()
+        check("builder: a file not found keeps its node, without an image, and is reported by name",
+              len(lost_nodes) == 1 and lost_nodes[0].image is None
+              and ("material Clash.001", "texture not found: nothere.png") in issues, str(issues))
+        thin = _principled(ma).inputs.get("Thin Wall")
+        thin_lines = [r for _l, r in issues if r.startswith("Thin Wall is not on Blender")]
+        if bpy.app.version >= (5, 0, 0):
+            check("builder: Thin Wall set on Blender 5", thin is not None and thin.default_value and not thin_lines)
+        else:
+            check("builder: Thin Wall skipped and reported on Blender 4", thin is None and len(thin_lines) == 1,
+                  str(issues))
+        check("builder: BLENDED for a constant alpha below 1, DITHERED for an alpha map",
+              ma.surface_render_method == 'BLENDED' and mb.surface_render_method == 'DITHERED')
+        pb = _principled(mb)
+        check("builder: emission, normal linked; metallic from a constant graph",
+              pb.inputs["Emission Color"].is_linked and pb.inputs["Normal"].is_linked
+              and not pb.inputs["Metallic"].is_linked and abs(pb.inputs["Metallic"].default_value - 0.3) < 1e-6
+              and abs(pb.inputs["Emission Strength"].default_value - 2.0) < 1e-6)
+        kinds = {n.bl_idname for n in mb.node_tree.nodes}
+        need = {"ShaderNodeHueSaturation", "ShaderNodeBrightContrast", "ShaderNodeGamma", "ShaderNodeMix",
+                "ShaderNodeNormalMap", "ShaderNodeBump", "ShaderNodeSeparateColor", "ShaderNodeCombineColor",
+                "ShaderNodeUVMap", "ShaderNodeMapping", "ShaderNodeVectorMath", "ShaderNodeInvert"}
+        check("builder: every node kind of the graphs", need <= kinds, str(sorted(need - kinds)))
+        place = next(n for n in mb.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage" and n.label == "shared.png"
+                     and n.inputs["Vector"].is_linked)
+        check("builder: a placed crop clips", place.extension == 'CLIP', place.extension)
+        uv = [n.uv_map for n in mb.node_tree.nodes if n.bl_idname == "ShaderNodeUVMap"]
+        nm = next(n for n in mb.node_tree.nodes if n.bl_idname == "ShaderNodeNormalMap")
+        check("builder: map channel 2 is UVChannel_2, for the image and the normal map's tangents",
+              uv == ["UVChannel_2"] and nm.uv_map == "UVChannel_2", "%s %s" % (uv, nm.uv_map))
+        spec = _principled(ma).inputs["Specular IOR Level"]
+        dot = spec.links[0].from_node if spec.is_linked else None
+        check("builder: a color graph on the specular goes through the mean, times 0.5",
+              dot is not None and dot.operation == 'DOT_PRODUCT'
+              and close(list(dot.inputs[1].default_value), [1 / 6.0] * 3, 1e-6))
+        check("builder: the viewport color is the base color", close(list(ma.diffuse_color)[:3], [0.5] * 3, 1e-6))
+    finally:
+        empty_scene()
+        for img in list(bpy.data.images):
+            bpy.data.images.remove(img)
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
 def check_layer_flags(modules):
@@ -442,11 +792,13 @@ def main():
         except Exception:
             traceback.print_exc()
             check("shear: no exception", False)
-        try:
-            check_material_slots(modules)
-        except Exception:
-            traceback.print_exc()
-            check("material slots: no exception", False)
+        for label, run_check in (("material slots", lambda: check_material_slots(modules)),
+                                 ("found textures", check_found_textures), ("builder", check_builder)):
+            try:
+                run_check()
+            except Exception:
+                traceback.print_exc()
+                check("%s: no exception" % label, False)
 
 
 try:

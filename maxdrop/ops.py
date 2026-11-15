@@ -20,6 +20,10 @@
 # shear of top-level objects (build.objects.Built.roots).
 # Modified for MaxDrop, 2026-11-15 (jsiovn). A file the reader cannot read reports "Not imported" also when it
 # fails with an IndexError or struct.error, and a failed build also removes the meshes it made.
+# Modified for MaxDrop, 2026-11-16 (jsiovn). The materials come from MaxDrop's material and texture-map rules
+# (convert.materials, convert.texmaps) built as node trees (build.materials), one per 3ds Max material, with
+# Multi/Sub-Object slots by material ID; import_max is gone. Missing textures and Principled inputs this Blender
+# lacks are listed in the import report. A failed build also removes the materials and images it made.
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -60,6 +64,9 @@ _SHOWN_FILES = 5
 # A .max that cannot be read. The reader raises CfbError / ChunkError (ValueErrors); IndexError and struct.error are
 # caught too, so that a gap in its checks still reports the file as not imported instead of stopping the run.
 _UNREADABLE = (OSError, ValueError, IndexError, struct.error)
+# What a build makes besides objects and collections, in the order a failed build removes them. Addresses, not
+# names: a new datablock could reuse the address of one freed meanwhile, but the build frees none.
+_MADE = ("meshes", "materials", "images")
 
 # Saved in presets by identifier; the numbers keep each item's value stable.
 UNITS = (
@@ -265,39 +272,33 @@ def _preflight_of(path):
         return None
 
 
-def _materials(max_path, first_nodes, built, search):
-    """The old engine's materials on the built meshes: one call per mesh, with the material of its first node
-    (adjust_material appends slots to the mesh, which instances share). first_nodes: the object index of each
-    mesh's first node. (materials on the meshes, [problem])."""
-    from . import import_max
-    problems = []
-    try:
-        import_max.open_materials(max_path)
-    except Exception as e:  # the old reader fails on files the new one reads: geometry stays
-        return 0, ["materials not read (%s: %s)" % (type(e).__name__, e)]
-    try:
-        for index in first_nodes:
-            ob = built.objects.get(index)
-            if ob is None:
-                continue
-            try:
-                import_max.assign_material(max_path, search, ob, index)
-            except Exception as e:
-                problems.append("material of %s not made (%s: %s)" % (ob.name, type(e).__name__, e))
-    finally:
-        import_max.close_materials()
-    return len({m.name for mesh in built.meshes.values() for m in mesh.materials if m is not None}), problems
+def _material_slots(cf, sc, desc, max_path, context, image_search):
+    """The material slots of desc's meshes ({mesh key: MeshSlots}): every material converted, its texture files
+    looked up. cf / sc: the open file and its reader Scene, which the converters read."""
+    from .convert import materials as convert_materials
+    from .convert import texmaps as convert_texmaps
+    from .convert import textures as convert_textures
+    from .reader import assets
+    from .reader import materials as reader_materials
+    graph = reader_materials.MaterialGraph(sc)
+    index = convert_textures.TextureIndex(max_path, prefs.texture_dirs(context), scene_subfolders=image_search)
+    tex = convert_texmaps.TexmapConverter(graph, assets.AssetTable.from_file(cf), textures=index)
+    conv = convert_materials.MaterialConverter(graph, texmaps=tex)
+    return convert_materials.assign(desc, convert_materials.node_materials(sc, desc), conv)
 
 
-def _remove(cols, meshes_before):
-    """Remove what a failed build left: the objects of the file's collection tree, the collections and the meshes
-    made since meshes_before (the as_pointer() of every mesh before the build) that nothing uses."""
+def _remove(cols, before):
+    """Remove what a failed build left: the objects of the file's collection tree, the collections, and the meshes,
+    materials and images made since before ({kind: the as_pointer() of each datablock before the build}) that
+    nothing uses."""
     for ob in list(cols.root.all_objects):
         bpy.data.objects.remove(ob)
     for col in list(cols.layers.values()) + [cols.root]:
         bpy.data.collections.remove(col)
-    for mesh in [m for m in bpy.data.meshes if m.as_pointer() not in meshes_before and not m.users]:
-        bpy.data.meshes.remove(mesh)
+    for kind in _MADE:  # meshes first: a removed mesh frees its materials, a removed material its images
+        blocks = getattr(bpy.data, kind)
+        for block in [b for b in blocks if b.as_pointer() not in before[kind] and not b.users]:
+            blocks.remove(block)
 
 
 def _join_reports(reports, failed):
@@ -492,13 +493,13 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
         return {'FINISHED'}
 
     def _import_scene(self, context, max_path, pack=None, pack_name=""):
-        """Read, describe and build one .max into a collection named after it in the active collection, then its
-        materials through import_max, then publish its import report (console and the text "MaxDrop Report").
-        pack: archive.unpack()'s result when the scene came from a scene pack, pack_name the archive's file name.
-        ([(report level, line)], the convert.report.Report), the report's summary last but for material problems;
-        one of _UNREADABLE when the file cannot be read. A build that fails is removed again (objects, collections,
-        meshes) before the exception goes on."""
+        """Read, describe and build one .max with its materials into a collection named after it in the active
+        collection, then publish its import report (console and the text "MaxDrop Report"). pack: archive.unpack()'s
+        result when the scene came from a scene pack, pack_name the archive's file name. ([(report level, line)],
+        the convert.report.Report), the report's summary last; one of _UNREADABLE when the file cannot be read. A
+        build that fails is removed again (objects, collections, meshes, materials) before the exception goes on."""
         from .build import collections as build_collections
+        from .build import materials as build_materials
         from .build import objects as build_objects
         from .build import report as build_report
         from .convert import report as convert_report
@@ -506,48 +507,42 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
         from .reader import cfb, units
         from .reader import scene as reader_scene
         name = os.path.basename(max_path)
+        materials = 'MATERIAL' in self.object_filter
         with cfb.CompoundFile(max_path) as cf:
             sc = reader_scene.Scene.from_file(cf)
             unit = units.system_unit(sc)
             meters, note = _meters(self.units, unit, self.scale_objects)
             desc = convert_scene.describe(sc, meters, unit)
+            slots = _material_slots(cf, sc, desc, max_path, context, self.use_image_search) if materials else None
             del sc  # the Scene holds the inflated stream of a compressed file
         if 'UV' not in self.object_filter:
             for md in desc.meshes.values():
                 md.uv_layers = []
         view_layer = context.view_layer
-        # Addresses, not names: a new mesh could reuse the address of one freed meanwhile, but the build frees none.
-        meshes_before = {m.as_pointer() for m in bpy.data.meshes}
+        before = {kind: {d.as_pointer() for d in getattr(bpy.data, kind)} for kind in _MADE}
         cols = build_collections.make(desc, view_layer.active_layer_collection.collection, os.path.splitext(name)[0])
+        builder = build_materials.MaterialBuilder()
         try:
-            built = build_objects.build(desc, cols.root, cols, view_layer)
+            built = build_objects.build(desc, cols.root, cols, view_layer, slots=slots,
+                                        material=builder.make if materials else None)
             build_collections.finish(cols, view_layer)
         except BaseException:
-            _remove(cols, meshes_before)
+            _remove(cols, before)
             raise
-        first_nodes = [md.users[0] for md in desc.meshes.values() if md.users]
+        del slots
         rep = convert_report.gather(desc, source=name, objects_built=len(built.objects),
                                     meshes_built=len(built.meshes), dropped_uv_layers=built.dropped_uv_layers,
                                     pack=pack, pack_name=pack_name)
-        del desc  # its mesh arrays are in Blender now: not held while the old engine parses the file again
+        rep.issues.extend(builder.issues())
+        del desc
         axis = axis_conversion(from_forward=self.axis_forward, from_up=self.axis_up).to_4x4()
         if axis != Matrix.Identity(4):
             for ob in built.roots():
                 ob.matrix_basis = axis @ ob.matrix_basis
         lines = [('WARNING', "%s %s" % (name, note))] if note else []
-        materials, problems = 0, []
-        if 'MATERIAL' in self.object_filter and first_nodes:
-            materials, problems = _materials(max_path, first_nodes, built, self.use_image_search)
-        if 'MATERIAL' in self.object_filter:
-            lines.append(('INFO', "%s: %s" % (name, _plural(materials, "material"))))
+        if materials:
+            lines.append(('INFO', "%s: %s" % (name, _plural(len(built.materials), "material"))))
         lines.append(build_report.publish(rep))
-        # After the summary: the report does not cover the old engine's materials, and the status bar shows the
-        # last line, which must not be a "nothing left out" that hides them.
-        if problems:
-            for problem in problems:
-                print("MaxDrop: %s: %s" % (name, problem))
-            lines.append(('WARNING', "%s: %s, see the system console" % (
-                name, _plural(len(problems), "material problem"))))
         return lines, rep
 
     def invoke(self, context, event):

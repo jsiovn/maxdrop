@@ -11,7 +11,8 @@ Run headless with an isolated profile so your own preferences are never touched:
 Imports `maxdrop` from the repo root (default: one level above this file), registers it, checks every class in each
 module's `_classes`, the operators, the file handler and the File > Import entry, reloads the package the way
 Reload Scripts does, registers again, then unregisters and checks everything is gone. The operator's options: Units
-with its six numbered items, Scale, Object Filter with Material and UV Maps, no Apply Matrix or Collection.
+with its six numbered items, Scale, Object Filter with Material and UV Maps, no Apply Matrix or Collection. The
+build package loads on demand only and a reload drops it; io_scene_max's engine (import_max.py) is gone.
 Prints `SMOKE PASSED` (exit 0) or `SMOKE FAILED` (exit 1).
 """
 import importlib
@@ -26,7 +27,7 @@ ROOT = os.path.abspath(argv[0] if argv else os.path.join(os.path.dirname(__file_
 OPERATORS = ("IMPORT_SCENE_OT_maxdrop", "MAXDROP_OT_check_updates", "MAXDROP_OT_texture_dir_add",
              "MAXDROP_OT_texture_dir_remove")
 HANDLER = "IO_FH_maxdrop"
-ENGINE = "maxdrop.import_max"
+BUILD = "maxdrop.build"
 INTAKE = "maxdrop.intake"
 failures = []
 
@@ -85,7 +86,10 @@ def run():
         check("%s: File > Import has the entry" % round_, in_import_menu(pkg))
         check("%s: the preferences belong to the package" % round_,
               sys.modules[pkg.__name__ + ".prefs"].MaxDropPreferences.bl_idname == pkg.__name__)
-        check("%s: the engine is not loaded before an import" % round_, ENGINE not in sys.modules)
+        check("%s: the build package is not loaded before an import" % round_,
+              not [m for m in sys.modules if m.startswith(BUILD)])
+        check("%s: no engine of io_scene_max left" % round_,
+              not os.path.exists(os.path.join(ROOT, "maxdrop", "import_max.py")))
         check("%s: the scene pack intake is not loaded before an import" % round_, INTAKE not in sys.modules)
         pkg.unregister()
         left = ["%s.%s" % (m, c) for m, c, ok in registered(pkg) if ok]
@@ -95,14 +99,13 @@ def run():
         check("%s: unregister removes the File > Import entry" % round_, not in_import_menu(pkg))
         if round_ == "register":
             # What an import leaves behind must not survive a reload: the files may be a newer version's.
-            engine = importlib.import_module(ENGINE)
-            check("the engine's material code loads", all(hasattr(engine, n) for n in (
-                "open_materials", "assign_material", "close_materials")) and not hasattr(engine, "load")
-                and getattr(pkg, "import_max", None) is engine)
+            materials = importlib.import_module(BUILD + ".materials")
+            check("the material builder loads", hasattr(materials, "MaterialBuilder") and hasattr(pkg, "build"))
             intake = importlib.import_module(INTAKE + ".archive")
             check("the scene pack intake loads", hasattr(intake, "unpack") and hasattr(pkg, "intake"))
             pkg = importlib.reload(pkg)
-            check("reload drops the cached engine", ENGINE not in sys.modules and not hasattr(pkg, "import_max"))
+            check("reload drops the cached build package",
+                  not [m for m in sys.modules if m.startswith(BUILD)] and not hasattr(pkg, "build"))
             check("reload drops the cached intake",
                   not [m for m in sys.modules if m.startswith(INTAKE)] and not hasattr(pkg, "intake"))
 

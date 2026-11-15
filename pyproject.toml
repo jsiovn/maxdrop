@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 # Modified for MaxDrop, 2026-11-15 (jsiovn). Adds the ruff configuration; the autopep8 block is unchanged.
+# Modified for MaxDrop, 2026-11-16 (jsiovn). The upstream engine is deleted: ruff excludes nothing.
 
 [tool.autopep8]
 # Configuration for `autopep8`, allowing the command: autopep8 .
@@ -37,8 +38,6 @@ aggressive = 2
 # Linter of MaxDrop's own code: ruff check .
 line-length = 120
 target-version = "py311"
-# The upstream engine is replaced step by step and deleted when empty: not linted meanwhile.
-extend-exclude = ["maxdrop/import_max.py"]
 
 [tool.ruff.lint]
 # Errors only, named explicitly so that a newer ruff does not widen the set on its own.
