@@ -43,12 +43,13 @@ powershell -ExecutionPolicy Bypass -File build.ps1    # dist\ (git-ignored): zip
   stay in `sys.modules`: those of `_NAMES` are reloaded, every other module of the package (imported on demand)
   is dropped by `_purge()`, its name on the package included.
 - `maxdrop/ops.py`: operator `import_scene.maxdrop` (options popup through `ImportHelper.invoke_popup`), file
-  handler `IO_FH_maxdrop`, the *File › Import* entry. Was upstream's `__init__.py`.
-- `maxdrop/import_max.py`: the upstream engine, unchanged so far. Imported lazily by the operator. It reads the
-  OLE file, parses every stream eagerly into chunk objects and builds meshes and materials in one pass; nodes
-  are keyed by name. It is to be replaced step by step (strangler) and deleted when empty.
+  handler `IO_FH_maxdrop`, the *File › Import* entry. Was upstream's `__init__.py`. An import runs reader ->
+  convert (scene description, material and texture-map rules, texture lookup) -> build (objects, collections,
+  materials) -> the report. Upstream's engine (`import_max.py`) is deleted: nothing of it is left to call.
+- `maxdrop/build/materials.py`: a MaterialIR and its texture graphs as a Principled BSDF node tree, one material
+  per 3ds Max material, images reused per file and color space.
 - `maxdrop/prefs.py`: add-on preferences: version, Check for Updates, the texture search folders
-  (`texture_dirs()`; stored, not used by the engine yet).
+  (`texture_dirs()`, read by the texture lookup).
 - `maxdrop/update.py`: reads the published `index.json`, compares with the manifest version, adds the remote
   repository on first use and runs Blender's own upgrade from a timer. The only code that goes online.
 - `maxdrop/compat.py`: the differences between Blender 4.2 and 5.2.

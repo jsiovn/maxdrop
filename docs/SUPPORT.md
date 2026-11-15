@@ -1,9 +1,9 @@
 # What MaxDrop imports
 
-**This page describes version 0.0.3.** Nodes, meshes, transforms, hierarchy, instances, layers and scene units are
-read by MaxDrop's own reader; the materials still come from the engine of
-[io_scene_max](https://github.com/nrgsille76/io_scene_max) 1.9.2 (`maxdrop/import_max.py`), which reads the file a
-second time for them. A scene pack (`.zip`, `.rar`, `.7z`) is unpacked and its `.max` imported (see
+**This page describes version 0.0.3 and the changes listed under Unreleased in the changelog.** Nodes, meshes,
+transforms, hierarchy, instances, layers, scene units and materials are read by MaxDrop's own reader; the engine of
+[io_scene_max](https://github.com/nrgsille76/io_scene_max) 1.9.2 that 0.0.3 still used for materials is gone. A
+scene pack (`.zip`, `.rar`, `.7z`) is unpacked and its `.max` imported (see
 [Files](#files)), and several `.max` files chosen at once are imported one after the other.
 
 How far to trust the list: MaxDrop's test files (`tests/fixtures/`, saved by 3ds Max 2020) are compared with what
@@ -11,17 +11,19 @@ How far to trust the list: MaxDrop's test files (`tests/fixtures/`, saved by 3ds
 layers and the hidden, frozen and renderable flags. Two commercial interior scenes (3ds Max 2015 and 2020) import
 without an error, and 99.7 % and 99.9 % of their objects without modifiers get the world matrix and bounding box
 3ds Max reports (the rest are a camera and a light per scene aimed by a Look At controller; see
-[BASELINE.md](BASELINE.md)). Materials are checked on the test files' Standard materials only. The page is updated
-with every version.
+[BASELINE.md](BASELINE.md)). Materials are checked on the test files (VRayMtl, its wrappers, Multi/Sub-Object,
+Standard, Physical Material and the texture maps below): the parameters MaxDrop reads are compared with what 3ds Max
+reports, and the Blender material with those parameters, on Blender 4.2, 4.5 and 5.2. The page is updated with
+every version.
 
 "Not yet" means the importer does not convert it: the node arrives as an empty (a *placeholder*) at its place in
 the hierarchy, with its 3ds Max class name in the custom property `maxdrop_class`.
 
 After every import the **import report** says what arrived and what did not: the unit, the objects and meshes
 built, layers, hidden and frozen objects, groups, the placeholders by class, the modifiers not applied, unknown
-controllers and geometry errors, and the unpack of a scene pack. It is printed to the system console and kept in
-the text **MaxDrop Report** (Text Editor). Material problems, such as a texture that is not found, are
-printed to the system console only.
+controllers and geometry errors, the unpack of a scene pack, each texture file that was not found and each
+material input this Blender version lacks. It is printed to the system console and kept in the text **MaxDrop
+Report** (Text Editor). Maps that were simplified (see below) are not listed yet.
 
 ## Objects
 
@@ -56,32 +58,33 @@ printed to the system console only.
 
 ## Materials
 
-Materials still come from io_scene_max's engine, unchanged. Each mesh gets the material of its first object:
-instances that carry different materials in 3ds Max share the first one's. A material the engine cannot read is
-named in the system console; the mesh keeps its geometry. Turn materials off with **Object Filter**.
-
-A material becomes a Principled BSDF through Blender's `PrincipledBSDFWrapper`. Values are copied as they are
-stored in the file: colors are not converted between 3ds Max's and Blender's color spaces.
+Each 3ds Max material becomes one Blender material with the same name (two different materials of one name both
+arrive, the second with Blender's `.001`), shared by every object that uses it: a Principled BSDF with its maps as
+nodes. Colors are converted from 3ds Max's swatches (sRGB) to Blender's linear colors. Turn materials off with
+**Object Filter**.
 
 | Material | This version |
 |---|---|
-| Standard, Physical Material | **Imported** |
-| VRayMtl | **Imported** |
-| CoronaMtl, CoronaPhysicalMtl, Corona Skin and Hair | **Imported**; parameters are read by their position in the file, so a Corona version that stores them differently gives wrong values |
-| Arnold Standard Surface | **Imported** |
-| Raytrace, Architectural | **Imported**, colors and a few values only |
-| Multi/Sub-Object | **Imported**: each sub-material becomes a material slot, faces keep their material ID |
-| VRay2SidedMtl, Shellac, CoronaLayeredMtl | Their sub-materials, as slots |
-| VRayLightMtl, VRayFastSSS2, VRayCarPaintMtl, VRayBlendMtl, other wrappers and every other material | Not yet: the object gets no material from it |
+| VRayMtl | **Imported**: diffuse, reflection (glossiness or roughness, metalness, Fresnel IOR), refraction (transmission, IOR, thin-walled), self-illumination, coat, bump, opacity. Fresnel off with a bright reflection becomes a metal; a refracting material takes its color from the refraction color |
+| VRayLightMtl, VRayFastSSS2, VRayCarPaintMtl, VRayCarPaintMtl2 | **Imported**: emission; subsurface; a metal base with a coat |
+| Standard (Blinn, Phong, Metal, Anisotropic, Oren-Nayar-Blinn, Multi-Layer, Translucent, Strauss) | **Imported**: diffuse, specular level and color, glossiness, self-illumination, opacity, IOR, bump |
+| Physical Material | **Imported**: base, reflectivity, roughness, metalness, transparency, IOR, thin-walled, emission (luminance in cd/m²), coating, bump, cutout |
+| Multi/Sub-Object | **Imported**: one material slot per material ID the faces use; nested ones too |
+| VRay2SidedMtl, VRayBlendMtl, VRayOverrideMtl, VRayMtlWrapper, Double Sided, Shellac | **The first sub-material** (the front, the base) |
+| Shell Material | **The render sub-material** |
+| CoronaMtl, CoronaPhysicalMtl, Corona Skin and Hair, Arnold Standard Surface, Raytrace, Architectural and every other material | Not yet: a grey material that keeps its name (0.0.3 read some of them through io_scene_max's engine; Corona comes back in a later version) |
 
 | Channel | This version |
 |---|---|
-| Base color, roughness, metallic, IOR, opacity (alpha), specular level and tint | **Imported** as plain values |
-| Emission | The color only; its strength stays at Blender's default |
-| Image textures | **One Bitmap per channel**, for base color, roughness, specular tint, normal (with its strength) and opacity, when the Bitmap is plugged straight into the material |
-| Tiling, offset, rotation and cropping of a Bitmap | Not yet |
-| Color Correction, Falloff, Mix, Composite, VRayColor, VRayDirt, noise and every other procedural or nested map | Not yet: the channel keeps its plain value |
-| Bump (height) maps, displacement | Not yet |
+| Base color, metallic, roughness, IOR, opacity (alpha), specular, transmission, emission color and strength, coat, subsurface | **Imported**, by input name. **Thin Wall** exists from Blender 5.0: on 4.2 and 4.5 a thin-walled material is listed in the report instead |
+| Bitmap | **Imported** as an Image Texture: tiling, offset, the U, V and W angles (about the map's center, as 3ds Max turns it), tile and mirror (one setting for both directions in Blender), cropping and placing, the map channel (a UV Map node), the Output's invert, level, offset and amount, its alpha. Color maps in sRGB, data maps (roughness, metallic, opacity, normal, bump) Non-Color; a gamma override on a color map is applied |
+| Mix, RGB Multiply, Color Correction, Composite (normal blend mode, no masks) | **Imported** as nodes (Mix, Hue/Saturation, Bright/Contrast, Gamma). A Mix curve, the rewiring, tint, pivot and lift of Color Correction are not converted |
+| VRayNormalMap, Normal Bump, CoronaNormal | **Imported**: a Normal Map node with its strength and flips, its additional bump map as a Bump node |
+| Bump (height) maps | **Imported** as a Bump node |
+| Falloff, VRayDirt, Output, RGB Tint, VRayColor2Bump | **Simplified** to the map below them (Falloff and VRayDirt without a map: their color) |
+| Every other map (noise, gradient, VRayColor, procedural maps…) | **Simplified** to the first Bitmap below it, or not converted |
+| Environment and planar (object or world XYZ) mapping, real-world scale | Drawn with the UVs |
+| Displacement | Not yet |
 
 ## Textures
 
@@ -96,7 +99,8 @@ images. MaxDrop takes the **file name** of each path and looks for it, without r
 The first place that has the file wins. A path stored as a network share (`\\server\share\...`), a device path,
 a relative path or one that climbs with `..` is never opened; its file name is still looked for in places 1 to 3.
 Each place is searched once per import, at most 8 folders deep and 200,000 files and folders; links and
-junctions are not followed. A file that is not found is skipped; the material keeps its plain color.
+junctions are not followed. A file that is not found leaves its Image Texture node without an image (it renders
+black, never magenta) and is named in the import report. Each file is loaded once per color space.
 
 From a scene pack, the image and `.ies` files of the pack are unpacked flat into the folder of the `.max`, so the
 lookup above finds them wherever they were in the archive. Of two maps with the same file name, the one nearest to
@@ -104,8 +108,7 @@ the scene in the archive is kept.
 
 ## Files
 
-- `.max` files as 3ds Max writes them (OLE compound files). MaxDrop's reader also reads streams 3ds Max
-  compressed; the material engine reads them only partly, so such a scene may arrive without materials.
+- `.max` files as 3ds Max writes them (OLE compound files), also streams 3ds Max compressed.
 - MaxDrop's test files come from 3ds Max 2020; scenes of 3ds Max 2015 and 2020 have been imported. Other versions
   are not verified one by one yet.
 - When a `.max` is dropped, the options popup shows a **File** line: the 3ds Max version, the renderer, the
@@ -128,5 +131,4 @@ the scene in the archive is kept.
 
 ## What comes next
 
-In this order: the material and texture-map conversion for V-Ray,
-Corona, Standard and Physical materials, room shells (splines, Extrude, UVW Map), then lights and cameras.
+In this order: Corona materials, the full material report, room shells (splines, Extrude, UVW Map), then lights and cameras.

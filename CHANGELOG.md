@@ -8,6 +8,26 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ## [Unreleased]
 
+### Added
+
+- **Materials by MaxDrop's own rules**: VRayMtl, VRayLightMtl, VRayFastSSS2, the V-Ray car paints, Standard (every
+  shader) and Physical Material become a Principled BSDF with their colors converted to Blender's linear colors,
+  roughness, metalness, IOR, transmission, emission with its strength, coat, subsurface, bump and normal maps.
+  Wrappers (VRay2SidedMtl, VRayBlendMtl, VRayOverrideMtl, VRayMtlWrapper, Double Sided, Shellac, Shell Material)
+  give their sub-material; Multi/Sub-Object gives one slot per material ID. Each 3ds Max material is one Blender
+  material, also when instances carry different materials.
+- **Texture maps as nodes**: a Bitmap keeps its tiling, offset, rotation, tile and mirror, cropping and map
+  channel; Mix, RGB Multiply, Color Correction and Composite become nodes; Falloff, VRayDirt and other wrappers
+  give the map below them. Color maps load as sRGB, data maps as Non-Color.
+- The import report names each texture file that was not found (its node stays, without an image) and each
+  material input this Blender version lacks (Thin Wall on 4.2 and 4.5).
+
+### Removed
+
+- io_scene_max's engine (`import_max.py`), which still made the materials: Corona, Arnold Standard Surface,
+  Raytrace and Architectural materials now arrive as a grey material with their name until MaxDrop converts them
+  (Corona next).
+
 ### Changed
 
 - **Textures are found in more places**: the scene's folder, then `maps` or `textures` folders beside the scene,

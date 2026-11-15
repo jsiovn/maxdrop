@@ -27,8 +27,7 @@ powershell -ExecutionPolicy Bypass -File build.ps1    # dist\: the zip, index.js
 The plain tests include a guard: `maxdrop/reader`, `maxdrop/convert` and `maxdrop/intake` must run without
 Blender, so no module there may import `bpy`, `mathutils`, another module of the add-on outside these three
 packages, or the add-on by its absolute name (`import maxdrop...` runs `maxdrop/__init__.py`, and inside Blender
-the add-on has another name): import within them relatively. The code is linted with [ruff](https://docs.astral.sh/ruff/), configured in `pyproject.toml`
-(`import_max.py` is left out while it is replaced). Install it in a virtual environment of its own, at the
+the add-on has another name): import within them relatively. The code is linted with [ruff](https://docs.astral.sh/ruff/), configured in `pyproject.toml`. Install it in a virtual environment of its own, at the
 version the `test` workflow pins:
 
 ```powershell
@@ -63,7 +62,8 @@ the same extension enabled from two repositories clashes.
 |------|------------|
 | `maxdrop/__init__.py` | Thin aggregator: registers the modules of `_NAMES`, reloads them, and drops the modules imported on demand. |
 | `maxdrop/ops.py` | The import operator, its options popup (with the scene of a pack), the file handler for `.max`, `.rar` and `.7z`, and the *File › Import* entry. |
-| `maxdrop/import_max.py` | The engine inherited from io_scene_max: reads the file and builds the Blender objects. Imported only when a file is imported. |
+| `maxdrop/reader/`, `maxdrop/convert/` | The `.max` file read into plain Python objects, then the scene description, the material and texture-map rules, the texture lookup and the import report. No `bpy`. |
+| `maxdrop/build/` | The only part that creates Blender data: objects and meshes, collections, materials (`materials.py`: Principled BSDF node trees), the report's text. Imported only when a file is imported. |
 | `maxdrop/prefs.py` | The add-on preferences: version, Check for Updates, where scene packs are unpacked, texture search folders. |
 | `maxdrop/update.py` | Check for Updates. The only code that goes online. |
 | `maxdrop/compat.py` | What differs between Blender 4.2 and 5.2. |

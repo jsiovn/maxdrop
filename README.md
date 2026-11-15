@@ -21,14 +21,14 @@ scene was downloaded as. Blender 4.2 or newer; tested on 4.2 LTS, 4.5 LTS and 5.
 - **Scene units**: a scene saved in millimeters, centimeters, inches or feet arrives at its real size in meters.
 - **Layers** as collections, nested like the layers; hidden, frozen and non-rendering layers and objects keep
   those flags.
-- **Materials** as a Principled BSDF with color, roughness, metallic, opacity and one image per channel: Standard,
-  Physical, Multi/Sub-Object, VRayMtl, VRay2SidedMtl, CoronaMtl, CoronaPhysicalMtl, CoronaLayeredMtl, Arnold
-  Standard Surface and a few more.
+- **Materials** as a Principled BSDF with their maps as nodes (tiling, offset, rotation, cropping, Mix, Color
+  Correction, normal and bump maps): VRayMtl and the other V-Ray materials and wrappers, Standard, Physical,
+  Multi/Sub-Object. Corona materials arrive grey with their name for now.
 - **Textures** that are plain image files, next to the `.max` file, in a `maps` or `textures` folder beside it, or
   in folders you add in the preferences.
 
 Not yet: lights and cameras, modifiers (the object arrives as it was before them), splines and shapes,
-primitives (Box, Sphere… arrive as empties), animation, procedural and nested maps. See
+primitives (Box, Sphere… arrive as empties), animation, procedural maps (simplified to the image below them). See
 [docs/SUPPORT.md](docs/SUPPORT.md).
 
 ## Install
