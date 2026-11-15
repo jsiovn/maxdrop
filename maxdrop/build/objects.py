@@ -19,6 +19,10 @@ identity matrix_parent_inverse and matrix_basis = the node's local matrix, so Bl
 node transform. A shear inside one local matrix (a scale along a rotated axis) is not kept, since Blender
 decomposes matrix_basis; convert reports it.
 An EMPTY node becomes a plain-axes empty with the custom property maxdrop_class.
+
+With collections (build.collections.make), each object goes into its layer's collection, else into collection.
+A node hidden in 3ds Max gets hide_viewport and is hidden in view_layer (hide_set), one that does not render
+hide_render, a frozen one hide_select.
 """
 import bpy
 from mathutils import Matrix
@@ -82,17 +86,19 @@ def make_mesh(md):
     return mesh, dropped
 
 
-def build(desc, collection):
-    """Every node of desc as an Object linked to collection; the Built result."""
+def build(desc, collection, collections=None, view_layer=None):
+    """Every node of desc as an Object linked to collection, or to its layer's collection of collections; the
+    Built result. view_layer: where a hidden node is hidden (hide_set), the context's when None."""
     built = Built()
     for key, md in desc.meshes.items():
         built.meshes[key], dropped = make_mesh(md)
         built.dropped_uv_layers += dropped
     identity = Matrix.Identity(4)
+    hidden = []
     for node in desc.nodes:
         data = built.meshes[node.mesh] if node.kind == convert_scene.MESH else None
         ob = bpy.data.objects.new(node.name, data)
-        collection.objects.link(ob)
+        (collections.of(node) if collections is not None else collection).objects.link(ob)
         if data is None:
             ob.empty_display_type = 'PLAIN_AXES'
             ob[CLASS_PROPERTY] = node.class_name
@@ -101,5 +107,16 @@ def build(desc, collection):
             ob.parent = parent
             ob.matrix_parent_inverse = identity
         ob.matrix_basis = Matrix(node.matrix)
+        ob.hide_render = not node.renderable
+        ob.hide_select = node.frozen
+        if node.hidden:
+            ob.hide_viewport = True
+            hidden.append(ob)
         built.objects[node.index] = ob
+    view_layer = view_layer or bpy.context.view_layer
+    for ob in hidden:
+        try:
+            ob.hide_set(True, view_layer=view_layer)
+        except RuntimeError:  # not in that view layer (collection not linked there): hide_viewport still holds
+            pass
     return built
