@@ -40,6 +40,7 @@ _MINI_SHIFT = 6
 _CUTOFF = 4096
 _ENTRY_SIZE = 128
 _INFLATE_PIECE = 1 << 20
+_INFLATE_STEP = 64 << 20
 
 STORAGE, STREAM, ROOT = 1, 2, 5
 
@@ -95,6 +96,10 @@ class Stream:
         return offset, end
 
     def _pieces(self, offset, end):
+        try:
+            self._buf[0:0]
+        except ValueError:  # the memoryview was released by CompoundFile.close()
+            raise CfbError("compound file of stream %r is closed" % self.name) from None
         i = bisect.bisect_right(self._starts, offset) - 1
         while offset < end:
             run_off, run_len = self.runs[i]
@@ -163,8 +168,6 @@ class CompoundFile:
         if self._file is not None:
             self._file.close()
             self._file = None
-
-    # Header, FAT, directory.
 
     def _parse(self, max_entries):
         data = self._view
@@ -298,15 +301,15 @@ class CompoundFile:
                 stack += [(True, right, prefix), (False, sid, prefix), (True, left, prefix)]
                 continue
             name, kind, _left, _right, child, start, size = raw[sid]
-            if kind not in (STORAGE, STREAM):
+            # CFB forbids "/" in a name, and names compare without case: an entry that breaks either would
+            # make a listed path open another entry, so it is left out.
+            if kind not in (STORAGE, STREAM) or "/" in name or (prefix + name).lower() in self._by_path:
                 continue
             entry = Entry(sid, prefix + name, kind, start, size)
             self._list.append(entry)
-            self._by_path.setdefault(entry.path.lower(), entry)
+            self._by_path[entry.path.lower()] = entry
             if kind == STORAGE:
                 stack.append((True, child, entry.path + "/"))
-
-    # Streams.
 
     def entries(self):
         return list(self._list)
@@ -325,6 +328,8 @@ class CompoundFile:
         return name.lower()
 
     def open(self, name, decompress=True, max_size=DEFAULT_MAX_DECOMPRESSED):
+        if max_size < 0:
+            raise ValueError("max_size must not be negative")
         if self._view is None:
             raise CfbError("compound file is closed")
         entry = self._by_path.get(self._key(name))
@@ -392,18 +397,23 @@ def _inflate(stream, max_size):
     padding. More than max_size bytes of output raise CfbError."""
     out = bytearray()
     pieces = (stream.view(o, _INFLATE_PIECE) for o in range(0, stream.size, _INFLATE_PIECE))
-    d, buf = zlib.decompressobj(16 + zlib.MAX_WBITS), b""
+    d, buf, pending = zlib.decompressobj(16 + zlib.MAX_WBITS), b"", False
     try:
         while True:
-            if not buf:
+            if not buf and not pending:
                 buf = next(pieces, None)
                 if buf is None:
                     break
-            out += d.decompress(buf, max_size + 1 - len(out))
+            # Bounded per call too: 1 MiB of deflate input can inflate to about 1 GiB.
+            limit = min(max_size + 1 - len(out), _INFLATE_STEP)
+            chunk = d.decompress(buf, limit)
+            out += chunk
             if len(out) > max_size:
                 raise CfbError("compressed stream %r inflates to more than %d bytes" % (stream.name, max_size))
+            pending = len(chunk) == limit  # output may be waiting inside zlib with no input left
             buf = d.unconsumed_tail
             if d.eof:
+                pending = False
                 rest = d.unused_data + bytes(buf)
                 while len(rest) < len(GZIP_MAGIC):
                     more = next(pieces, None)
@@ -415,6 +425,8 @@ def _inflate(stream, max_size):
                 d, buf = zlib.decompressobj(16 + zlib.MAX_WBITS), rest
     except zlib.error as exc:
         raise CfbError("compressed stream %r is damaged: %s" % (stream.name, exc)) from None
+    except MemoryError:
+        raise CfbError("compressed stream %r does not fit in memory" % stream.name) from None
     if not d.eof:
         raise CfbError("compressed stream %r is cut short" % stream.name)
     return out

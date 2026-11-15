@@ -99,7 +99,7 @@ class Builder:
         self._write(idx, data)
         return idx
 
-    def build(self, patch_fat=None, patch_dir=None, mini_cutoff_override=None):
+    def build(self, patch_fat=None, patch_dir=None):
         starts, sizes = {}, {}
         for path, data, layout in self.big:
             idx = self._place(data, layout)
@@ -199,7 +199,7 @@ class Builder:
         head = fat_idx[:109] + [FREE] * (109 - min(109, nfat))
         header = HEADER.pack(cfb.MAGIC, b"\0" * 16, 0x3E, self.version, 0xFFFE, 9 if self.version == 3 else 12,
                              6, b"\0" * 6, len(dir_idx) if self.version == 4 else 0, nfat, dir_idx[0], 0,
-                             mini_cutoff_override or 4096, first_minifat, nminifat,
+                             4096, first_minifat, nminifat,
                              difat_idx[0] if difat_idx else END, ndifat, *head)
         header = header.ljust(self.ss, b"\0")
         self.fat_sectors = fat_idx
@@ -353,6 +353,11 @@ class RoundTrip(unittest.TestCase):
             with self.assertRaises(CfbError):
                 cf.open("Scene")
             cf = cfb.CompoundFile(path)
+            early = cf.open("Config")
+            cf.close()
+            with self.assertRaises(CfbError):
+                early.read()
+            cf = cfb.CompoundFile(path)
             held = cf.open("Scene").view(0, 4)
             cf.close()  # a view still held: close() must not raise; the file handle is closed
             self.assertEqual(bytes(held), EXPECTED["Scene"](4096)[:4])
@@ -394,6 +399,17 @@ class Gzip(unittest.TestCase):
             with self.assertRaises(CfbError):
                 cf.open("Scene", max_size=999999)
             self.assertEqual(cf.open("Scene", max_size=1000000).size, 1000000)
+            with self.assertRaises(ValueError):
+                cf.open("Scene", max_size=-5)
+
+    def test_output_held_inside_zlib(self):
+        # 200 MiB of zeros from about 200 KB: one input piece yields more than one bounded call returns.
+        text = b"\0" * (200 << 20)
+        data, _ = self.build(text)
+        with cfb.CompoundFile(data) as cf:
+            s = cf.open("Scene")
+            self.assertEqual(s.size, len(text))
+            self.assertEqual(s.read(len(text) - 3), b"\0\0\0")
 
     def test_damaged_and_cut(self):
         body = gzip.compress(payload(100000, 4))
@@ -480,6 +496,41 @@ class Hostile(unittest.TestCase):
         struct.pack_into("<I", data, (b.chains["<minifat>"][0] + 1) * 512 + 4 * chain[2], chain[0])
         self.assertRefused(bytes(data))
 
+    def difat_file(self):
+        b = Builder(3)
+        b.add("Scene", payload(14000 * 512, 9))
+        data = bytearray(b.build())
+        difat = struct.unpack_from("<I", data, 68)[0]
+        self.assertNotEqual(difat, END)
+        return data, (difat + 1) * 512
+
+    def test_difat_cycle(self):
+        data, off = self.difat_file()
+        struct.pack_into("<I", data, off + 508, struct.unpack_from("<I", data, 68)[0])  # next DIFAT = itself
+        struct.pack_into("<I", data, 44, 0x200)  # more FAT sectors than the file lists, so the walk goes on
+        self.assertRefused(bytes(data))
+
+    def test_difat_sector_outside(self):
+        data, _ = self.difat_file()
+        struct.pack_into("<I", data, 68, 500000)
+        self.assertRefused(bytes(data))
+
+    def test_difat_hole(self):
+        data, off = self.difat_file()
+        struct.pack_into("<I", data, off, FREE)  # the first FAT sector the DIFAT lists
+        self.assertRefused(bytes(data))
+
+    def test_hostile_names_are_not_listed(self):
+        def names(entries):
+            entries[2]["name"] = "SCENE"  # the same name as entry 1 without case
+            entries[3]["name"] = "a/b"
+        with cfb.CompoundFile(sample().build(patch_dir=names)) as cf:
+            listed = cf.names()
+            self.assertNotIn("a/b", listed)
+            self.assertNotIn("SCENE", listed)
+            for name in listed:
+                cf.open(name).read()
+
     def test_not_a_compound_file(self):
         self.assertRefused(b"PK\x03\x04" + b"\0" * 1000)
         self.assertRefused(b"")
@@ -503,8 +554,8 @@ class Hostile(unittest.TestCase):
             self.assertRefused(good[:cut])
 
     def test_errors_never_leak_other_exceptions(self):
-        # Flip bytes all over a small file: every outcome is a working file or CfbError (or KeyError for a name
-        # that a damaged directory no longer holds).
+        # Flip bytes all over a small file: every outcome is a working file or CfbError, and every listed name
+        # opens.
         good = sample(3).build()
         for pos in range(0, len(good), 37):
             bad = bytearray(good)
