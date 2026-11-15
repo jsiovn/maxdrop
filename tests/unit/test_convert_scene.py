@@ -36,6 +36,8 @@ if _PKG not in sys.modules:
     sys.modules[_PKG] = _pkg
 conv = importlib.import_module(_PKG + ".convert.scene")
 geometry = importlib.import_module(_PKG + ".reader.geometry")
+cfb = importlib.import_module(_PKG + ".reader.cfb")
+reader_scene = importlib.import_module(_PKG + ".reader.scene")
 
 # From the fixture scripts (tools/fixtures/*.ms: mapcoords:true gives channel 1); the oracle has no map channels or
 # smoothing groups.
@@ -97,6 +99,116 @@ class SharpEdges(unittest.TestCase):
 
     def test_empty_mesh(self):
         self.assertEqual(conv.sharp_edges([], [], [], []).shape, (0, 2))
+
+
+@unittest.skipIf(numpy is None, "numpy missing")
+class HostileEdges(unittest.TestCase):
+    """A file can put any number of faces on one edge: the work stays linear."""
+
+    def fan(self, groups):
+        n = len(groups)
+        lv = numpy.stack((numpy.zeros(n), numpy.ones(n), numpy.arange(2, n + 2)), axis=1).astype(numpy.int32).ravel()
+        return lv, numpy.arange(0, 3 * n, 3, dtype=numpy.int32), numpy.full(n, 3, dtype=numpy.int32), groups
+
+    def test_a_fan_on_one_edge_sharing_a_group_is_fast_and_smooth(self):
+        import time
+        start = time.perf_counter()
+        edges = conv.sharp_edges(*self.fan(numpy.ones(100000, dtype=numpy.uint32)))
+        self.assertLess(time.perf_counter() - start, 5.0)
+        self.assertEqual(len(edges), 0)
+
+    def test_a_fan_with_two_disjoint_groups_is_sharp(self):
+        groups = numpy.ones(1000, dtype=numpy.uint32)
+        groups[500] = 2
+        self.assertEqual([tuple(e) for e in conv.sharp_edges(*self.fan(groups)).tolist()], [(0, 1)])
+
+    def test_too_many_distinct_masks_make_the_edge_sharp(self):
+        # all share group 1, all distinct
+        groups = (numpy.arange(1, conv.MAX_EDGE_MASKS + 2, dtype=numpy.uint32) << 1) | 1
+        self.assertGreater(len(groups), conv.MAX_EDGE_MASKS)
+        self.assertEqual([tuple(e) for e in conv.sharp_edges(*self.fan(groups)).tolist()], [(0, 1)])
+        few = groups[:conv.MAX_EDGE_MASKS]
+        self.assertEqual(len(conv.sharp_edges(*self.fan(few))), 0)
+
+
+@unittest.skipIf(numpy is None, "numpy missing")
+class InvalidFaces(unittest.TestCase):
+    def test_repeated_vertex_and_doubled_faces_are_refused(self):
+        # 0: good tri; 1: repeated vertex; 2: same vertex set as 0, other order; 3: good quad; 4: quad repeating 5
+        lv = [0, 1, 2, 3, 3, 4, 2, 0, 1, 0, 1, 5, 4, 1, 5, 6, 5]
+        keep = conv.valid_faces(lv, [0, 3, 6, 9, 13], [3, 3, 3, 4, 4])
+        self.assertEqual(keep.tolist(), [True, False, False, True, False])
+
+    def test_dropped_faces_keep_uvs_materials_and_groups_aligned(self):
+        lv = numpy.asarray([0, 1, 2, 2, 2, 3, 1, 3, 2], dtype=numpy.int32)
+        uv = geometry.MapChannel(1, numpy.arange(27, dtype=numpy.float32).reshape(9, 3),
+                                 numpy.arange(9, dtype=numpy.int32))
+        data = geometry.MeshData(numpy.zeros((4, 3), dtype=numpy.float32), lv,
+                                 numpy.asarray([0, 3, 6], dtype=numpy.int32),
+                                 numpy.asarray([1, 2, 0], dtype=numpy.uint32),
+                                 numpy.asarray([4, 5, 6], dtype=numpy.uint16), {1: uv})
+        md = conv.mesh_description((0, None), "m", data, None, 1.0)
+        self.assertEqual(md.dropped_faces, 1)
+        self.assertEqual(md.loop_vertices.tolist(), [0, 1, 2, 1, 3, 2])
+        self.assertEqual(md.loop_starts.tolist(), [0, 3])
+        self.assertEqual(md.material_indices.tolist(), [4, 6])
+        self.assertEqual(md.sharp_faces.tolist(), [False, True])
+        self.assertEqual(md.uv_layers[0][1][:, 0].tolist(), [0.0, 3.0, 6.0, 18.0, 21.0, 24.0])
+        self.assertEqual([tuple(e) for e in md.sharp_edges.tolist()], [(1, 2)])
+
+
+@unittest.skipIf(numpy is None, "numpy missing")
+class DamagedInput(unittest.TestCase):
+    def scene(self, name):
+        cf = cfb.CompoundFile(os.path.join(ROOT, "tests", "fixtures", name + ".max"))
+        self.addCleanup(cf.close)
+        return reader_scene.Scene.from_file(cf)
+
+    def test_refused_geometry_becomes_a_placeholder_with_an_issue(self):
+        sc = self.scene("instances")
+        real = conv.geometry.read_mesh
+
+        def refuse(scene, i):
+            raise geometry.GeometryError("object %d: refused" % i)
+
+        conv.geometry.read_mesh = refuse
+        try:
+            desc = conv.describe(sc, 0.001)
+        finally:
+            conv.geometry.read_mesh = real
+        self.assertEqual([n.kind for n in desc.nodes], [conv.EMPTY] * 5)
+        self.assertEqual(sum(desc.placeholders.values()), 5)
+        self.assertEqual(len(desc.meshes), 0)
+        self.assertEqual(len(desc.issues), 2)  # once per base object: the shared one and the copy's
+        self.assertTrue(all(r.startswith("geometry: ") for _n, r in desc.issues))
+
+    def test_a_damaged_node_record_is_an_empty_and_its_children_are_still_placed(self):
+        sc = self.scene("hierarchy")
+        child = next(i for i in sc.node_indices if sc.node(i).name == "FixtureChild")
+        sc._nodes.clear()
+        real = sc.node
+
+        def node(i):
+            if i == child:
+                raise reader_scene.ChunkError("damaged")
+            return real(i)
+
+        sc.node = node
+        desc = conv.describe(sc, 1.0)
+        by_index = {n.index: n for n in desc.nodes}
+        self.assertEqual((by_index[child].kind, by_index[child].name), (conv.EMPTY, ""))
+        self.assertIn((child, "node: damaged"), desc.issues)
+        leaf = next(n for n in desc.nodes if n.name == "FixtureLeaf")
+        self.assertEqual((leaf.parent, leaf.kind), (child, conv.MESH))
+
+
+class Shear(unittest.TestCase):
+    def test_rotation_and_axis_scale_are_not_shear(self):
+        c, s = 0.6, 0.8
+        self.assertFalse(conv.sheared(((2 * c, 2 * s, 0, 0), (-3 * s, 3 * c, 0, 0), (0, 0, -1, 0), (5, 6, 7, 1))))
+
+    def test_shear_is_found(self):
+        self.assertTrue(conv.sheared(((1, 0, 0, 0), (0.5, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1))))
 
 
 @unittest.skipIf(numpy is None, "numpy missing")

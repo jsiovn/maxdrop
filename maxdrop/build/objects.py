@@ -16,7 +16,8 @@ in dropped_uv_layers. Material indices are set without material slots (those com
 
 Objects are made in walk order, so a parent exists before its children. The parent is set by node index with an
 identity matrix_parent_inverse and matrix_basis = the node's local matrix, so Blender's world matrix is 3ds Max's
-node transform (a shear inside one local matrix, from a scale axis, is not kept: Blender decomposes matrix_basis).
+node transform. A shear inside one local matrix (a scale along a rotated axis) is not kept, since Blender
+decomposes matrix_basis; convert reports it.
 An EMPTY node becomes a plain-axes empty with the custom property maxdrop_class.
 """
 import bpy

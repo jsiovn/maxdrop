@@ -23,12 +23,16 @@ Max and in Blender: no axis change. mirrored flags a world matrix with a negativ
 such an object with outward normals by itself, so nothing is flipped for it.
 
 Smoothing groups become flat faces (no group) and sharp edges: an edge is sharp where two of its faces share no
-group, never on a boundary. UV layers: every map channel >= 1, ascending; channel 1 is "UVMap", channel n
+group, never on a boundary; on an edge with more than two faces any such pair decides, and past MAX_EDGE_MASKS
+distinct masks the edge is sharp (a file can put any number of faces on one edge). Faces Blender cannot hold (a
+vertex used twice, the vertex set of an earlier face) are left out and reported. UV layers: every map channel >= 1, ascending; channel 1 is "UVMap", channel n
 "UVChannel_<n>"; the w coordinate is dropped.
 
 A node becomes an EMPTY placeholder when its base object is not an Editable Mesh or Editable Poly, when it has no
 object, or when the reader refuses its geometry or its record; placeholders counts them by the class name of the
 file's class directory ("" when there is none). Modifiers are listed, not evaluated: the base mesh is built.
+A local matrix with shear (a scale along a rotated axis) is reported: Blender's matrix_basis cannot hold it. A
+base object's reader arrays are dropped once its last node is described.
 Nothing here imports bpy; numpy is imported when a scene is described.
 """
 import collections
@@ -40,6 +44,9 @@ from ..reader import scene as reader_scene
 MESH, EMPTY = "MESH", "EMPTY"
 UV_FIRST = "UVMap"
 UV_NAME = "UVChannel_%d"
+MAX_EDGE_MASKS = 64  # distinct smoothing-group masks paired on one non-manifold edge
+SHEAR_TOLERANCE = 1e-5  # |cos| between two rows of a local matrix
+SHEARED = "shear in the local matrix, not kept"
 
 ChunkError = chunks.ChunkError
 
@@ -64,16 +71,16 @@ class MeshDescription:
     """One mesh in meters, offset baked: positions float32 (N, 3); loop_vertices int32 (L,); loop_starts and
     loop_totals int32 (F,); material_indices int32 (F,), zero-based; sharp_faces bool (F,); sharp_edges int32
     (E, 2), sorted vertex pairs; uv_layers [(name, float32 (L, 2))]; users the object indices of the nodes that
-    share it, in walk order."""
+    share it, in walk order; dropped_faces the faces left out (a repeated vertex, doubled)."""
     __slots__ = ("key", "name", "positions", "loop_vertices", "loop_starts", "loop_totals", "material_indices",
-                 "sharp_faces", "sharp_edges", "uv_layers", "users")
+                 "sharp_faces", "sharp_edges", "uv_layers", "users", "dropped_faces")
 
     def __init__(self, key, name, positions, loop_vertices, loop_starts, loop_totals, material_indices,
-                 sharp_faces, sharp_edges, uv_layers):
+                 sharp_faces, sharp_edges, uv_layers, dropped_faces=0):
         self.key, self.name, self.positions = key, name, positions
         self.loop_vertices, self.loop_starts, self.loop_totals = loop_vertices, loop_starts, loop_totals
         self.material_indices, self.sharp_faces, self.sharp_edges = material_indices, sharp_faces, sharp_edges
-        self.uv_layers = uv_layers
+        self.uv_layers, self.dropped_faces = uv_layers, dropped_faces
         self.users = []
 
     def __repr__(self):
@@ -130,15 +137,46 @@ def sharp_edges(loop_vertices, loop_starts, loop_totals, groups):
     _keys, first, counts = numpy.unique(key, return_index=True, return_counts=True)
     two = first[counts == 2]
     sharp = two[(groups[face[two]] & groups[face[two + 1]]) == 0]
-    more = []
-    for start, n in zip(first[counts > 2], counts[counts > 2]):  # non-manifold: rare, any pair decides
-        g = [int(v) for v in groups[face[start:start + n]]]
-        if any(g[x] & g[y] == 0 for x in range(n) for y in range(x + 1, n)):
-            more.append(start)
+    more = [start for start, n in zip(first[counts > 2], counts[counts > 2])
+            if _disjoint(groups[face[start:start + n]])]
     if more:
         sharp = numpy.sort(numpy.concatenate((sharp, numpy.asarray(more, dtype=sharp.dtype))))
     src = order[sharp]
     return numpy.stack((lo[src], hi[src]), axis=1).astype(numpy.int32)
+
+
+def _disjoint(masks):
+    """Whether two of the smoothing-group masks of one non-manifold edge share no group. Equal non-zero masks always
+    share one, so only the distinct masks are paired, at most MAX_EDGE_MASKS of them: a file can put any number of
+    faces on one edge, and an edge past the cap is taken as sharp."""
+    distinct = {int(v) for v in masks}
+    if 0 in distinct or len(distinct) > MAX_EDGE_MASKS:
+        return True
+    distinct = sorted(distinct)
+    return any(x & y == 0 for k, x in enumerate(distinct) for y in distinct[k + 1:])
+
+
+def valid_faces(loop_vertices, loop_starts, loop_totals):
+    """bool (F,): False for a face Blender cannot hold, one that uses a vertex twice or has the vertex set of an
+    earlier face (3ds Max keeps both: degenerate and doubled triangles occur in files)."""
+    import numpy
+    lv = numpy.asarray(loop_vertices, dtype=numpy.int64)
+    starts = numpy.asarray(loop_starts, dtype=numpy.int64)
+    totals = numpy.asarray(loop_totals, dtype=numpy.int64)
+    keep = numpy.ones(len(starts), dtype=bool)
+    for total in numpy.unique(totals):  # one numpy pass per face size
+        faces = numpy.flatnonzero(totals == total)
+        rows = numpy.sort(lv[starts[faces][:, None] + numpy.arange(total)], axis=1)
+        repeated = (numpy.diff(rows, axis=1) == 0).any(axis=1)
+        keep[faces[repeated]] = False
+        good = faces[~repeated]
+        if not len(good):
+            continue
+        _rows, first = numpy.unique(rows[~repeated], axis=0, return_index=True)
+        doubled = numpy.ones(len(good), dtype=bool)
+        doubled[first] = False
+        keep[good[doubled]] = False
+    return keep
 
 
 def _reversed_loops(loop_starts, loop_totals):
@@ -151,72 +189,116 @@ def _reversed_loops(loop_starts, loop_totals):
 
 
 def mesh_description(key, name, data, offset, meters):
-    """A MeshDescription of reader MeshData: the offset (a reader matrix) applied, then meters."""
+    """A MeshDescription of reader MeshData: faces Blender cannot hold left out (counted in dropped_faces), the
+    offset (a reader matrix) applied, then meters."""
     import numpy
     p = numpy.asarray(data.positions, dtype=numpy.float64)
     if offset is not None:
         m = numpy.asarray(offset, dtype=numpy.float64)
         p = p @ m[:3, :3] + m[3, :3]
     positions = (p * meters).astype(numpy.float32)
-    starts = numpy.asarray(data.loop_starts, dtype=numpy.int32)
-    totals = data.loop_totals
+    starts = numpy.asarray(data.loop_starts, dtype=numpy.int64)
+    totals = numpy.asarray(data.loop_totals, dtype=numpy.int64)
     lv = numpy.asarray(data.loop_vertices, dtype=numpy.int32)
-    perm = None
+    groups, materials = data.smoothing_groups, data.material_ids
+    loops = None  # the loops kept, in their new order; None = all, unchanged
+    keep = valid_faces(lv, starts, totals)
+    dropped = int(len(keep) - keep.sum())
+    if dropped:
+        loops = numpy.flatnonzero(numpy.repeat(keep, totals))
+        totals, groups, materials = totals[keep], groups[keep], materials[keep]
+        starts = numpy.zeros(len(totals), dtype=numpy.int64)
+        if len(totals):
+            numpy.cumsum(totals[:-1], out=starts[1:])
     if offset is not None and determinant3(offset) < 0:
         perm = _reversed_loops(starts, totals)
-        lv = lv[perm]
+        loops = perm if loops is None else loops[perm]
+    if loops is not None:
+        lv = lv[loops]
     uv_layers = []
     for channel in sorted(c for c in data.maps if c >= 1):
         mc = data.maps[channel]
-        indices = mc.indices if perm is None else mc.indices[perm]
+        indices = mc.indices if loops is None else mc.indices[loops]
         uv = numpy.ascontiguousarray(mc.uvw[indices][:, :2], dtype=numpy.float32)
         uv_layers.append((UV_FIRST if channel == 1 else UV_NAME % channel, uv))
-    return MeshDescription(key, name, positions, lv, starts, totals.astype(numpy.int32),
-                           data.material_ids.astype(numpy.int32), data.smoothing_groups == 0,
-                           sharp_edges(lv, starts, totals, data.smoothing_groups), uv_layers)
+    return MeshDescription(key, name, positions, lv, starts.astype(numpy.int32), totals.astype(numpy.int32),
+                           materials.astype(numpy.int32), groups == 0, sharp_edges(lv, starts, totals, groups),
+                           uv_layers, dropped)
 
 
-def describe(scene, meters=1.0, unit=None, transforms=None):
+def sheared(m):
+    """Whether the 3x3 of a reader matrix is more than a rotation and a scale along its own axes (its rows are not
+    orthogonal): Blender's matrix_basis cannot hold that."""
+    rows = [m[r][:3] for r in range(3)]
+    for x in range(3):
+        for y in range(x + 1, 3):
+            a, b = rows[x], rows[y]
+            dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+            size = math.sqrt((a[0] ** 2 + a[1] ** 2 + a[2] ** 2) * (b[0] ** 2 + b[1] ** 2 + b[2] ** 2))
+            if abs(dot) > SHEAR_TOLERANCE * size:
+                return True
+    return False
+
+
+def describe(scene, meters=1.0, unit=None):
     """The SceneDescription of a reader.scene.Scene; meters is the length of one file unit."""
     if not (math.isfinite(meters) and meters > 0):
         raise ValueError("meters per unit must be a positive number, not %r" % (meters,))
-    t = transforms if transforms is not None else controllers.Transforms(scene)
+    t = controllers.Transforms(scene)
     desc = SceneDescription(meters, unit)
-    data_of = {}  # base object index -> MeshData, or None when the reader refused or does not read it
-    for i in scene.walk():
-        local, world = t.local(i), t.world(i)
-        parent = scene.parent(i)
-        kind, key, class_name, modifiers, name = EMPTY, None, "", (), ""
+    order = scene.walk()
+    found = {}  # node -> (name, Stack or None), or the ChunkError its record or object stack raised
+    remaining = collections.Counter()  # base object -> nodes still to build: its MeshData goes with the last
+    for i in order:
         try:
             node = scene.node(i)
-            name = node.name
-            if node.object is not None:
-                stack = scene.object_stack(node.object)
+            stack = scene.object_stack(node.object) if node.object is not None else None
+            found[i] = (node.name, stack)
+            if stack is not None and stack.base is not None:
+                remaining[stack.base] += 1
+        except ChunkError as exc:
+            found[i] = exc
+    data_of = {}  # base object index -> MeshData, or None when the reader refused or does not read it
+    for i in order:
+        local, world = t.local(i), t.world(i)
+        kind, key, class_name, modifiers, name = EMPTY, None, "", (), ""
+        if isinstance(found[i], ChunkError):  # a damaged node record or object stack: an empty, children placed
+            desc.issues.append((i, "node: %s" % found[i]))
+        else:
+            name, stack = found[i]
+            base = stack.base if stack is not None else None
+            if stack is not None:
                 modifiers = tuple(_class_name(scene, m) for m in stack.modifiers)
-                if stack.base is not None:
-                    class_name = _class_name(scene, stack.base)
-                    if stack.base not in data_of:
-                        try:
-                            data_of[stack.base] = geometry.read_mesh(scene, stack.base)
-                        except geometry.GeometryError as exc:
-                            data_of[stack.base] = None
-                            desc.issues.append((i, "geometry: %s" % exc))
-                    data = data_of[stack.base]
-                    if data is not None:
-                        offset = t.offset(i)
-                        offset = None if offset == controllers.IDENTITY else offset
-                        key = (stack.base, offset)
-                        md = desc.meshes.get(key)
-                        if md is None:
-                            md = desc.meshes[key] = mesh_description(key, name, data, offset, meters)
-                        md.users.append(i)
-                        kind = MESH
-        except ChunkError as exc:  # a damaged node record or object stack: an empty, its children still placed
-            desc.issues.append((i, "node: %s" % exc))
+            if base is not None:
+                class_name = _class_name(scene, base)
+                if base not in data_of:
+                    try:
+                        data_of[base] = geometry.read_mesh(scene, base)
+                    except geometry.GeometryError as exc:
+                        data_of[base] = None
+                        desc.issues.append((i, "geometry: %s" % exc))
+                data = data_of[base]
+                if data is not None:
+                    offset = t.offset(i)
+                    offset = None if offset == controllers.IDENTITY else offset
+                    key = (base, offset)
+                    md = desc.meshes.get(key)
+                    if md is None:
+                        md = desc.meshes[key] = mesh_description(key, name, data, offset, meters)
+                        if md.dropped_faces:
+                            desc.issues.append((i, "geometry: %d faces with a repeated vertex or doubled, left out"
+                                                % md.dropped_faces))
+                    md.users.append(i)
+                    kind = MESH
+                remaining[base] -= 1
+                if not remaining[base]:
+                    del data_of[base]
         if kind == EMPTY:
             desc.placeholders[class_name] += 1
-        matrix, world_b = blender_matrix(local, meters), blender_matrix(world, meters)
-        desc.nodes.append(NodeDescription(i, name, parent, matrix, world_b, kind, key, class_name,
+        if sheared(local):
+            desc.issues.append((i, "transform: %s" % SHEARED))
+        desc.nodes.append(NodeDescription(i, name, scene.parent(i), blender_matrix(local, meters),
+                                          blender_matrix(world, meters), kind, key, class_name,
                                           determinant3(world) < 0, modifiers))
     desc.issues.extend((issue.node, "transform: %s" % issue.reason) for issue in t.issues)
     return desc

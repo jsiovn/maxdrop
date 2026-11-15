@@ -42,9 +42,15 @@ on demand, as in the reader), bpy only in `maxdrop/build/`.
   with numpy and writes the `sharp_edge` attribute: same code on 4.2, 4.5 and 5.2 (no `use_auto_smooth`).
 - **UVs:** every map channel `>= 1`, ascending: `UVMap` for channel 1, `UVChannel_<n>` for the others; per loop
   `uvw[indices][:, :2]`. Each layer's data is written through its own layer object.
-- **Material IDs** go to `material_index` (no slots here: M2). `mesh.validate()` is not called (it may clamp
-  indices without slots); the reader already refuses out-of-range indices. Checked in run.py: material indices
-  survive.
+- **Material IDs** go to `material_index` (no slots here: M2); they are any u16 and survive without slots
+  (checked in run.py on all three versions). `mesh.validate()` is not called, since it may clamp indices without
+  slots and would change face counts behind convert's back. Instead convert leaves out what Blender cannot hold
+  (`valid_faces`: a face using a vertex twice, a face with the vertex set of an earlier face), keeps materials,
+  groups and UV loops aligned, and reports the count as an issue.
+- **Bounded work on untrusted geometry:** an edge with more than two faces pairs only the distinct
+  smoothing-group masks, at most `MAX_EDGE_MASKS` (64; past it the edge is sharp), so a fan of faces on one edge
+  stays linear. A sheared local matrix (scale along a rotated axis) is reported, since `matrix_basis` drops shear.
+  A base object's reader arrays are released after its last node.
 - **Placeholders:** a node whose base object is not Editable Mesh / Poly, has no object, or whose geometry the
   reader refuses becomes an EMPTY with the node's name and transform and the custom property `maxdrop_class` (the
   class name from the file's class directory, `""` when none). `SceneDescription.placeholders` counts them per
@@ -52,6 +58,8 @@ on demand, as in the reader), bpy only in `maxdrop/build/`.
   report (M1-10).
 - **Modifiers:** the base mesh is built, the stack is not evaluated; `NodeDescription.modifiers` lists their class
   names for the report.
+- **Review fixes (after the first implementation):** the bounded-work, face-filter and shear items above, a test
+  for each, and tests of the damaged-input paths of `describe`.
 - **Instances:** the bead text says "3 objects share one mesh"; the oracle says four nodes (FixtureSource and three
   instances) share the base object. The oracle is the truth: 4 share, FixtureCopy has its own.
 - **Not in scope:** materials (old engine stays as is), collections/layers/flags (M1-10), the operator switch
@@ -84,7 +92,7 @@ on demand, as in the reader), bpy only in `maxdrop/build/`.
   - sharp edges: 12 for every poly box, 8 for editable_mesh (groups 1 on top/bottom, 2 on the sides).
   - layers_flags: the Dummy group head is a placeholder `Dummy`, counted once.
   - negative-determinant offset (synthetic: patch a node's offset): loops reversed, UV loops follow.
-- [ ] Implement; run `python -I -m unittest tests.unit.test_convert_scene -v`; commit
+- [ ] Implement; run `python -I -m unittest discover tests -p test_convert_scene.py -v`; commit
   `Add the scene description of the convert package`.
 
 ## Task 2: build/objects.py and tests/blender/run.py
