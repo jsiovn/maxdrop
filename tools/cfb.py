@@ -9,9 +9,10 @@
     c.names(); c.read("\\x05SummaryInformation"); c.runs("Scene")
 
 `runs(name)` lists the (file offset, length) pieces that hold a stream, in stream order, so a tool can overwrite
-bytes of a stream in place without rewriting the container. Streams are found by scanning the directory, not by
-walking its tree: the fixture tools only need the top-level streams 3ds Max writes. Every sector chain is checked
-for range and cycles; anything malformed raises CfbError. Standard library only, no bpy.
+bytes of a stream in place without rewriting the container; `streams()` yields every stream entry put back
+together, so a scan also sees the strings that cross a sector boundary. Streams are found by scanning the
+directory, not by walking its tree: the fixture tools only need the top-level streams 3ds Max writes. Every
+sector chain is checked for range and cycles; anything malformed raises CfbError. Standard library only, no bpy.
 """
 import struct
 
@@ -59,19 +60,29 @@ class Compound:
         self._minifat = []
         for s in self._chain(first_minifat):
             self._minifat.extend(struct.unpack("<%dI" % (self._ss // 4), self._sector(s)))
+        self._all = [(name, start, size) for name, kind, start, size in self._entries if kind == _STREAM]
         self._streams = {}
-        for name, kind, start, size in self._entries:
-            if kind == _STREAM:
-                self._streams.setdefault(name, (start, size))
+        for name, start, size in self._all:
+            self._streams.setdefault(name, (start, size))
 
     def names(self):
         return list(self._streams)
 
     def read(self, name):
-        return b"".join(self._data[o:o + n] for o, n in self.runs(name))
+        return self._join(self.runs(name))
 
     def runs(self, name):
-        start, size = self._streams[name]
+        return self._runs(name, *self._streams[name])
+
+    def streams(self):
+        """(name, bytes) of every stream entry, duplicate names included, each put back together in order."""
+        for name, start, size in self._all:
+            yield name, self._join(self._runs(name, start, size))
+
+    def _join(self, runs):
+        return b"".join(self._data[o:o + n] for o, n in runs)
+
+    def _runs(self, name, start, size):
         if size == 0:
             return []
         if size < self._cutoff:

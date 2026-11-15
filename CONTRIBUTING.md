@@ -68,14 +68,16 @@ The `.max` files in `tests/fixtures/` are tiny scenes authored for MaxDrop, one 
 repository is public, so a file goes in only after both tools have run on it:
 
 ```powershell
-# in 3ds Max (2020 or newer), with nothing to keep in the scene: run tools\fixtures\<name>.ms, which saves
+# in 3ds Max 2020, with nothing to keep in the scene: run tools\fixtures\<name>.ms, which saves
 # C:\maxdrop_fixtures\<name>.max; then
 python -I tools/sanitize_fixture.py C:\maxdrop_fixtures\<name>.max   # blanks the two names, in place
 python -I tools/check_fixture.py C:\maxdrop_fixtures\<name>.max      # must print "clean"
 ```
 
 Copy it into `tests/fixtures/` only then. `tests/test_fixtures.py` runs the same check over every committed
-fixture. Keep each file under 1 MB and give every object and material a neutral name.
+fixture. Keep each file under 1 MB and give every object and material a neutral name. The tools know how 3ds Max
+2020 stores the two names; a file from another version that they cannot read is refused (`identity slots not
+found`) and needs the tools taught first.
 
 ## Conventions
 

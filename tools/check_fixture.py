@@ -7,16 +7,19 @@
     python -I tools/check_fixture.py tests/fixtures/*.max
 
 The repository is public and its history permanent, and 3ds Max writes the Windows user and computer name into
-every file it saves (tools/sanitize_fixture.py blanks them). A file fails when its bytes, or a gzip-compressed
-stream of it unpacked, hold in ASCII or UTF-16LE, ignoring case:
+every file it saves (tools/sanitize_fixture.py blanks them). A file fails when its bytes, or any of its streams
+put back together (gzip streams unpacked), hold in ASCII, UTF-8 or UTF-16LE, ignoring case:
 
 - `user name`: the name of the user running this check;
 - `computer name`: the name of this computer;
 - `user folder`: `Users\\` or `Users/` followed by a name (`C:\\Users\\...`, `/Users/...`);
-- `drive path`: a drive letter path (`X:\\` and two more path characters);
+- `drive path`: a drive letter path (`X:\\` or `X:/` and two more path characters);
+- `network path`: `\\\\server\\` and a share name;
 
 or when a value tools/sanitize_fixture.py blanks is not blank (`identity property not blank`), which catches a
-file saved under another account. Only the kind of string is printed, never the string. Exit 0 when every file
+file saved under another account, or when the file has no `User Name=` slot (`identity slots not found`): its
+3ds Max version stores the names in a way the tools do not know. Only the kind of string is printed, never the
+string. Exit 0 when every file
 is clean, 1 otherwise. Standard library only.
 """
 import getpass
@@ -39,12 +42,12 @@ GZIP_CAP = 64 << 20
 _PATH_CHAR = r'[^\x00-\x1f\\/:*?"<>|\ufffd]'
 PATTERNS = (
     ("user folder", re.compile(r"users[\\/]" + _PATH_CHAR)),
-    ("drive path", re.compile(r"(?<![a-z0-9])[a-z]:\\" + _PATH_CHAR + "{2}")),
+    ("drive path", re.compile(r"(?<![a-z0-9])[a-z]:[\\/]" + _PATH_CHAR + "{2}")),
+    ("network path", re.compile(r"(?<!\\)\\\\[a-z0-9][a-z0-9._$-]+\\" + _PATH_CHAR)),
 )
 
 
-def local_names():
-    """{kind: names} of the user and computer running the check, casefolded, without the too short ones."""
+def _local():
     users = {os.environ.get("USERNAME"), os.environ.get("USER")}
     try:
         users.add(getpass.getuser())
@@ -52,33 +55,41 @@ def local_names():
         pass
     host = socket.gethostname()
     computers = {host, host.split(".")[0], os.environ.get("COMPUTERNAME")}
-    return {kind: sorted({n.casefold() for n in names if n and len(n) >= MIN_NAME})
-            for kind, names in (("user name", users), ("computer name", computers))}
+    return (("user name", {n for n in users if n}), ("computer name", {n for n in computers if n}))
+
+
+def local_names():
+    """{kind: names} of the user and computer running the check, casefolded, without the too short ones."""
+    return {kind: sorted({n.casefold() for n in names if len(n) >= MIN_NAME}) for kind, names in _local()}
+
+
+def too_short():
+    """The kinds whose local name is too short to be searched for."""
+    return [kind for kind, names in _local() if any(len(n) < MIN_NAME for n in names)]
 
 
 def _views(data):
-    """(encoding label, text) views of bytes: ASCII-compatible, and UTF-16LE at both byte alignments."""
+    """(encoding label, text) views of bytes: one byte per character, UTF-8, UTF-16LE at both byte alignments."""
     yield "ASCII", data.decode("latin-1").casefold()
+    yield "UTF-8", data.decode("utf-8", "replace").casefold()
     for start in (0, 1):
         chunk = data[start:len(data) - (len(data) - start) % 2]
         yield "UTF-16LE", chunk.decode("utf-16-le", "replace").casefold()
 
 
 def _haystacks(data):
-    """(where, bytes): the whole file, then each gzip-compressed stream unpacked."""
+    """(where, bytes): the whole file, then every stream put back together, gzip streams unpacked. The sectors of
+    a stream need not follow each other in the file, so a string can be whole only in the stream."""
     yield None, data
     if not cfb.is_cfb(data):
         return
-    c = cfb.Compound(data)
-    for name in c.names():
-        stream = c.read(name)
-        if stream[:2] != b"\x1f\x8b":
-            continue
-        d = zlib.decompressobj(16 + zlib.MAX_WBITS)
-        out = d.decompress(stream, GZIP_CAP)
-        if d.unconsumed_tail:
-            raise cfb.CfbError("compressed stream %r is too large to scan" % name)
-        yield name, out
+    for name, stream in cfb.Compound(data).streams():
+        if stream[:2] == b"\x1f\x8b":
+            d = zlib.decompressobj(16 + zlib.MAX_WBITS)
+            stream = d.decompress(stream, GZIP_CAP)
+            if d.unconsumed_tail:
+                raise cfb.CfbError("compressed stream %r is too large to scan" % name)
+        yield name, stream
 
 
 def problems(data, names=None):
@@ -92,15 +103,19 @@ def problems(data, names=None):
         stacks = [(None, data)]
     for where, blob in stacks:
         for enc, text in _views(blob):
+            utf8 = enc == "UTF-8"  # adds only what the byte view cannot see: names with non-ASCII letters
             for kind, values in names.items():
-                if any(v in text for v in values):
+                if any(v in text for v in values if not utf8 or not v.isascii()):
                     found.add((kind, enc, where))
-            for kind, pattern in PATTERNS:
+            for kind, pattern in () if utf8 else PATTERNS:
                 if pattern.search(text):
                     found.add((kind, enc, where))
     if cfb.is_cfb(data):
         try:
-            if any(t.raw != t.fill_bytes() for t in sanitize_fixture.identity_values(data)):
+            targets = sanitize_fixture.identity_values(data)
+            if not sanitize_fixture.slots_found(targets):
+                found.add(("identity slots not found", "-", None))
+            if any(t.raw != t.fill_bytes() for t in targets):
                 found.add(("identity property not blank", "-", None))
         except ValueError as e:
             found.add(("unreadable: %s" % e, "-", None))
@@ -112,6 +127,9 @@ def main(argv):
     if not paths:
         print(__doc__)
         return 2
+    for kind in too_short():
+        print("check_fixture: the local %s is shorter than %d characters and is not searched for" % (kind, MIN_NAME),
+              file=sys.stderr)
     status = 0
     for path in paths:
         try:
@@ -126,7 +144,7 @@ def main(argv):
             continue
         status = 1
         for kind, enc, where in found:
-            detail = enc if where is None else "%s, stream %s" % (enc, where)
+            detail = enc if where is None else "%s, stream %s" % (enc, "".join(c for c in where if c.isprintable()))
             print("check_fixture: %s: %s (%s)" % (path, kind, detail), file=sys.stderr)
     return status
 
