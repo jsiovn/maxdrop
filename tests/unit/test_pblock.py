@@ -227,7 +227,67 @@ class Damaged(unittest.TestCase):
         self.assertEqual(pb.param(3).raw[:2], b"\x03\x00")  # unknown element size: kept raw
         self.assertIsNone(pb.value(3))
         self.assertIsNotNone(pb.param(5))
-        self.assertEqual(len(pb.issues), 3)
+        self.assertEqual(len(pb.issues), 4)  # three entries, and the 2-byte one may have held block references
+        self.assertIn("block references after parameter 5 unresolved", pb.issues)
+
+    def test_damaged_reference_table_leaves_later_slots_empty(self):
+        cut = leaf(0x100E, head(1, MTL | TAB, 0) + b"\x00" + struct.pack("<I", 2) + b"\x40")  # 2 elements, 1 there
+        pb = parse(block(scalar(0, MTL, 0, 0x40), cut, scalar(2, MTL, 0, 0x40), scalar(3, FLOAT, ANIM, 0x80),
+                         scalar(4, MTL, NO_REF, 0x40, i32(9))),
+                   block_refs={0: 100, 1: 101, 2: 102, 3: 103})
+        self.assertEqual(pb.get(0), Reference(100))  # before the damage: kept
+        self.assertEqual(pb.get(2), Reference(None))  # not slot 1's target
+        self.assertEqual(pb.get(3), Animated(None))
+        self.assertEqual(pb.get(4), Reference(9))  # a stored index does not depend on slots
+        self.assertIn("block references after parameter 1 unresolved", pb.issues)
+
+    def test_damaged_value_entry_keeps_slots_but_drops_controllers(self):
+        pb = parse(block(scalar(1, FLOAT, ANIM, 0xC0, b"\x00"), scalar(2, MTL, 0, 0x40),
+                         scalar(3, FLOAT, ANIM, 0x80)), block_refs={0: 100, 1: 101})
+        self.assertEqual((pb.get(2), pb.get(3)), (Reference(100), Animated(None)))
+
+    def test_stored_index_outside_the_objects(self):
+        pb = pblock.ParamBlock2.from_chunk(
+            chunks.index(block(scalar(1, MTL, NO_REF, 0x40, i32(1000000000)), scalar(2, MTL, NO_REF, 0x40, i32(4))))[0],
+            object_count=5)
+        self.assertEqual((pb.get(1), pb.get(2)), (Reference(None), Reference(4)))
+        self.assertTrue(any("outside the 5 objects" in x for x in pb.issues))
+
+    def test_asset_only_right_after_its_entry(self):
+        guid = bytes(range(16))
+        pb = parse(block(scalar(1, FILENAME, 0, 0x40, i32(-2)),  # its 0x000F is missing
+                         scalar(2, BITMAP, 0, 0x40, b"\x01"),
+                         container(0x0003, container(0x1260, leaf(0x0002, guid))),
+                         container(0x000F, leaf(0x0002, guid))))  # belongs to no entry
+        self.assertIsNone(pb.get(1))
+        self.assertEqual(pb.get(2), Asset(guid))
+        self.assertIn("parameter 1: asset chunk missing", pb.issues)
+        self.assertTrue(any("belongs to no entry" in x for x in pb.issues))
+
+    def test_asset_of_the_wrong_kind_is_not_taken(self):
+        guid = bytes(range(16))
+        pb = parse(block(scalar(1, FILENAME, 0, 0x40, i32(-2)), container(0x0003, container(0x1260, leaf(2, guid)))))
+        self.assertIsNone(pb.get(1))
+        self.assertEqual(len(pb.issues), 2)
+
+    def test_asset_table_takes_a_run_of_chunks(self):
+        a, b = bytes(range(16)), bytes(range(16, 32))
+        pb = parse(block(table(1, FILENAME, 0, (0x40, i32(-2)), (0x40, i32(-1)), (0x40, i32(-2))),
+                         container(0x000F, leaf(0x0002, a)), container(0x000F, leaf(0x0002, b))))
+        self.assertEqual(pb.value(1), [Asset(a), None, Asset(b)])
+        self.assertEqual(pb.issues, ())
+
+    def test_damaged_asset_chunk_spoils_only_its_parameter(self):
+        broken = struct.pack("<HI", 0x0003, (6 + 9) | 0x80000000) + struct.pack("<HI", 0x1260, 3) + b"\x00" * 3
+        pb = parse(block(scalar(1, BITMAP, 0, 0x40, b"\x01"), broken, scalar(2, INT, 0, 0x40, i32(7))))
+        self.assertEqual((pb.get(1), pb.get(2)), (None, 7))
+        self.assertTrue(any("asset chunk damaged" in x for x in pb.issues))
+
+    def test_values_are_read_only(self):
+        pb = parse(block(table(1, INT, 0, (0x40, i32(1)), (0x40, i32(2)))))
+        self.assertIsInstance(pb.param(1).values, tuple)
+        pb.value(1).append(3)
+        self.assertEqual(pb.value(1), [1, 2])
 
     def test_table_larger_than_its_payload(self):
         data = leaf(0x100E, head(1, INT | TAB, 0) + b"\x00" + struct.pack("<I", 0xFFFFFFF0) + b"\x40" + i32(1))
@@ -279,6 +339,11 @@ class OldParamBlock(unittest.TestCase):
         self.assertEqual(pb.get(1), 2.0)
         self.assertIsNone(pb.get(0))
         self.assertEqual(len(pb.issues), 3)
+
+    def test_declared_count(self):
+        data = container(0x08, leaf(0x0001, struct.pack("<I", 3)), self.entry(0, 0x0100, f32(1)))
+        pb = pblock.ParamBlock.from_chunk(chunks.index(data)[0])
+        self.assertEqual(pb.issues, ("0x0001 announces 3 parameters, 1 found",))
 
 
 if __name__ == "__main__":

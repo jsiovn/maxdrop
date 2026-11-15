@@ -35,9 +35,11 @@ unverified). docs/FORMAT.md says which fixture shows what.
 The old ParamBlock: 0x0001 u32 count, then per parameter a 0x0002 container: 0x0003 u32 index, optionally 0x0004,
 and the value in chunk 0x0100 + ParamType (0 float, 1 int, 2 color, 3 point3, 4 bool).
 
-The file comes from anywhere: a missing or short header raises ChunkError; a damaged entry or table poisons only
-its own parameter (values None, raw bytes and error kept) and a damaged 0x0013 only the owner references (listed
-in issues). Tables are bounded by their payload. No bpy, no numpy.
+The file comes from anywhere: a missing or short header raises ChunkError; a damaged entry or table poisons its
+own parameter (values None, raw bytes and error kept) and, when it may have held block references, leaves the
+later block references and the controllers empty instead of shifted; a damaged 0x0013 only spoils the owner
+references; an asset chunk is taken only right after its entry; a stored object index past the object count is
+an empty reference. Each of these is named in issues. Tables are bounded by their payload. No bpy, no numpy.
 """
 import collections
 import struct
@@ -82,7 +84,8 @@ class Asset(collections.namedtuple("Asset", "guid")):
 
 
 class Param(collections.namedtuple("Param", "id type flags values raw error")):
-    """One stored parameter. values: one element for a scalar, every element for a table; None when damaged."""
+    """One stored parameter. values: a tuple, one element for a scalar, every element for a table; None when
+    damaged (raw then holds the entry's bytes and error why)."""
     __slots__ = ()
 
     @property
@@ -170,11 +173,14 @@ def _entry(buf):
 
 
 def _asset_id(chunk):
-    """The 16-byte asset id of a 0x000F or 0x0003 sibling, None when it has none."""
+    """The 16-byte asset id of a 0x000F or 0x0003 sibling, None when it has none; _Damaged when it is broken."""
     if not chunk.container:
         return None
-    holder = chunk if chunk.id == _ASSET else chunk.first(_ASSET_HOLDER)
-    guid = holder.first(_ASSET_ID) if holder is not None and holder.container else None
+    try:
+        holder = chunk if chunk.id == _ASSET else chunk.first(_ASSET_HOLDER)
+        guid = holder.first(_ASSET_ID) if holder is not None and holder.container else None
+    except ChunkError as e:
+        raise _Damaged(str(e))
     return Asset(guid.tobytes()) if guid is not None and guid.payload_size == 16 else None
 
 
@@ -190,8 +196,9 @@ class ParamBlock2:
         return "ParamBlock2(block %d, %d params)" % (self.block_id, len(self._params))
 
     @classmethod
-    def from_chunk(cls, chunk, block_refs=None, owner_refs=None):
-        """From the block's chunk, its own references and its owner's ({slot: object index}, as Scene.refs)."""
+    def from_chunk(cls, chunk, block_refs=None, owner_refs=None, object_count=None):
+        """From the block's chunk, its own references and its owner's ({slot: object index}, as Scene.refs). A
+        stored object index at or past object_count (when given) becomes an empty reference and an issue."""
         block_refs, owner_refs = block_refs or {}, owner_refs or {}
         head, skip = (chunk.first(_HEADER), 0) if chunk.container else (None, 0)
         if head is None and chunk.container:
@@ -215,30 +222,68 @@ class ParamBlock2:
             except _Damaged as e:
                 issues.append("0x0013: %s" % e)
                 slots = {}
-        raw, pending = [], []
+        raw = []
+        # the elements of the entry just read that expect their asset in the chunks right after it
+        waiting, want = collections.deque(), None
+
+        def missing():
+            issues.append("parameter %d: asset chunk missing" % waiting[0][0][0])
+            waiting.clear()
+
         for child in chunk.children:
             if child.id in _ENTRIES:
+                if waiting:
+                    missing()
                 buf = child.view()
                 try:
                     pid, ptype, flags, values = _entry(buf)
                 except _Damaged as e:
                     pid = struct.unpack_from("<H", buf)[0] if len(buf) >= 2 else -1
-                    ptype, flags = struct.unpack_from("<II", buf, 2) if len(buf) >= 10 else (0, 0)
+                    ptype, flags = struct.unpack_from("<II", buf, 2) if len(buf) >= 10 else (None, 0)
                     raw.append([pid, ptype, flags, None, bytes(buf), str(e)])
                     continue
                 raw.append([pid, ptype, flags, values, None, None])
-                if ptype & ~TABLE in (FILENAME, BITMAP):
-                    pending.extend((raw[-1], k) for k, v in enumerate(values)
-                                   if (ptype & ~TABLE == BITMAP and v) or v == _NEEDS_ASSET)
-            elif child.id in (_ASSET, _BITMAP_DATA) and pending:
-                entry, k = pending.pop(0)
-                entry[3][k] = _asset_id(child)
-        params, next_slot, controllers = {}, 0, []
+                base = ptype & ~TABLE
+                if base in (FILENAME, BITMAP):
+                    want = _ASSET if base == FILENAME else _BITMAP_DATA
+                    waiting.extend((raw[-1], k) for k, v in enumerate(values)
+                                   if (base == BITMAP and v) or (base == FILENAME and v == _NEEDS_ASSET))
+            elif waiting and child.id == want:
+                entry, k = waiting.popleft()
+                try:
+                    entry[3][k] = _asset_id(child)
+                except _Damaged as e:
+                    issues.append("parameter %d: asset chunk damaged: %s" % (entry[0], e))
+            else:
+                if child.id in (_ASSET, _BITMAP_DATA):
+                    issues.append("asset chunk %04X at %d belongs to no entry" % (child.id, child.offset))
+                if waiting:
+                    missing()
+        if waiting:
+            missing()
+
+        def target(index, what):
+            if index < 0:
+                return Reference(None)
+            if object_count is not None and index >= object_count:
+                issues.append("%s: object index %d outside the %d objects" % (what, index, object_count))
+                return Reference(None)
+            return Reference(index)
+
+        # A damaged entry that may have held block references (a reference type without a stored index, or a type
+        # not readable) leaves the slots of every later one unknown: they stay empty rather than take a neighbour's
+        # target. Any damaged entry may hide controllers, whose slots follow all the block references.
+        params, next_slot, controllers, slots_lost, controllers_lost = {}, 0, [], None, False
         for pid, ptype, flags, values, data, error in raw:
-            if values is not None:
+            if values is None:
+                controllers_lost = True
+                if slots_lost is None and (ptype is None or (ptype & ~TABLE in REFERENCE_TYPES
+                                                             and not flags & (P_OWNERS_REF | P_NO_REF))):
+                    slots_lost = pid
+            else:
                 for k, v in enumerate(values):
                     if v is _BLOCK_REF:
-                        values[k] = Reference(block_refs.get(next_slot))
+                        values[k] = Reference(None if slots_lost is not None else block_refs.get(next_slot))
                         next_slot += 1
                     elif v is _CONTROLLER:
                         controllers.append((values, k))
@@ -246,22 +291,28 @@ class ParamBlock2:
                         if pid in slots and flags & P_OWNERS_REF:
                             values[k] = Reference(owner_refs.get(slots[pid] + k))
                         else:
-                            values[k] = Reference(v[1] if v[1] >= 0 else None)
+                            values[k] = target(v[1], "parameter %d" % pid)
                     elif ptype & ~TABLE in (FILENAME, BITMAP) and not isinstance(v, Asset):
                         values[k] = None  # no asset, or its chunk is missing
             if pid in params:
                 issues.append("parameter %d stored twice, the first kept" % pid)
                 continue
-            params[pid] = Param(pid, ptype, flags, values, data, error)
+            params[pid] = (ptype if ptype is not None else 0, flags, values, data, error)
+        if slots_lost is not None:
+            issues.append("block references after parameter %d unresolved" % slots_lost)
+        if controllers and controllers_lost:
+            issues.append("controllers unresolved: a damaged parameter may hold some")
         for values, k in controllers:
-            values[k] = Animated(block_refs.get(next_slot))
+            values[k] = Animated(None if controllers_lost else block_refs.get(next_slot))
             next_slot += 1
-        for p in params.values():
-            if p.error:
-                issues.append("parameter %d: %s" % (p.id, p.error))
+        out = {}
+        for pid, (ptype, flags, values, data, error) in params.items():
+            out[pid] = Param(pid, ptype, flags, None if values is None else tuple(values), data, error)
+            if error:
+                issues.append("parameter %d: %s" % (pid, error))
         if count != len(raw):
             issues.append("header announces %d entries, %d found" % (count, len(raw)))
-        return cls(block_id, version, owner, params, issues, count)
+        return cls(block_id, version, owner, out, issues, count)
 
     def __contains__(self, pid):
         return pid in self._params
@@ -329,6 +380,9 @@ class ParamBlock:
                     value = value[0] if len(value) == 1 else value
                     break
             params.setdefault(i, (ptype, value))
+        declared = chunk.first(_OLD_COUNT)
+        if declared is not None and declared.payload_size >= 4 and declared.unpack("<I")[0] != len(params):
+            issues.append("0x0001 announces %d parameters, %d found" % (declared.unpack("<I")[0], len(params)))
         return cls(params, issues)
 
     def __len__(self):

@@ -53,12 +53,13 @@ class Issue(collections.namedtuple("Issue", "index reason")):
 class MtlBase:
     """One material or map."""
     __slots__ = ("index", "class_id", "superclass", "name", "refs", "blocks", "legacy", "parts", "children",
-                 "issues")
+                 "issues", "_ordered")
 
     def __init__(self, index, class_id, superclass, name, refs, blocks, legacy, parts, children, issues):
         self.index, self.class_id, self.superclass, self.name, self.refs = index, class_id, superclass, name, refs
         self.blocks, self.legacy, self.parts, self.children = blocks, legacy, parts, children
         self.issues = tuple(issues)
+        self._ordered = [b for _slot, b in sorted(blocks.items())]
 
     def __repr__(self):
         return "MtlBase(%d, %s, %r)" % (self.index, self.class_id, self.name)
@@ -69,11 +70,11 @@ class MtlBase:
 
     def block(self, block_id):
         """The ParamBlock2 with that descriptor id (the first in reference order), None without one."""
-        return next((b for _slot, b in sorted(self.blocks.items()) if b.block_id == block_id), None)
+        return next((b for b in self._ordered if b.block_id == block_id), None)
 
     def param(self, pid, block_id=None, tab=0, default=None):
         """Parameter pid's value from the given block, or from the first block (reference order) that stores it."""
-        blocks = [self.block(block_id)] if block_id is not None else [b for _s, b in sorted(self.blocks.items())]
+        blocks = [self.block(block_id)] if block_id is not None else self._ordered
         for b in blocks:
             if b is not None and pid in b:
                 return b.get(pid, tab, default)
@@ -101,6 +102,9 @@ class MaterialGraph:
         self.issues = []
 
     def superclass(self, i):
+        """Object i's superclass; None for a special id or an index outside the objects."""
+        if not 0 <= i < len(self.scene):
+            return None
         entry = self.scene.entry(i)
         return None if entry is None else entry.superclass
 
@@ -114,7 +118,8 @@ class MaterialGraph:
             sc = self.superclass(target)
             try:
                 if sc == classids.SC_PARAMETER_BLOCK2:
-                    b = pblock.ParamBlock2.from_chunk(self.scene.chunk(target), self.scene.refs(target), refs)
+                    b = pblock.ParamBlock2.from_chunk(self.scene.chunk(target), self.scene.refs(target), refs,
+                                                      len(self.scene))
                     blocks[slot] = b
                     issues.extend("block at slot %d: %s" % (slot, x) for x in b.issues)
                 elif sc == classids.SC_PARAMETER_BLOCK:
@@ -130,7 +135,10 @@ class MaterialGraph:
         m = self._cache.get(i)
         if m is not None:
             return m
-        entry = self.scene.entry(i)
+        try:
+            entry = self.scene.entry(i)
+        except IndexError as e:
+            raise ChunkError(str(e))
         if entry is None or entry.superclass not in MTLBASE_SUPERCLASSES:
             raise ChunkError("object %d is not a material or map" % i)
         chunk = self.scene.chunk(i)
@@ -175,10 +183,12 @@ class MaterialGraph:
                 continue
             seen.add(i)
             try:
+                if not 0 <= i < len(self.scene):
+                    raise ChunkError("object index %d outside the %d objects" % (i, len(self.scene)))
                 if not self.is_mtlbase(i):
                     continue
                 m = self.get(i)
-            except (ChunkError, IndexError) as e:
+            except ChunkError as e:
                 self.issues.append(Issue(i, str(e)))
                 continue
             out.append(i)

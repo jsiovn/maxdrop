@@ -115,6 +115,16 @@ ParamBlock2 object (class `(0x82, 0)`, superclass `0x82`):
   material graph of scenes A and B from every node's material, count classes, objects that fail.
 - [ ] Commit `Document ParamBlock2 and the material graph`.
 
+## As built (differences from the tasks above)
+
+- Tables are bounded by their payload (every element has at least its tag), not by a `MAX_TABLE` constant.
+- `MtlBase.blocks` is keyed by reference slot (`{slot: ParamBlock2}`); `MtlBase.block(block_id)` finds one by its
+  descriptor id. `children` is a list of object indices (no slot or parameter attached).
+- Review fixes: a damaged entry that may have held block references leaves the later block references and the
+  controllers empty (with an issue) instead of shifted; stored object indices are checked against the object
+  count; an asset chunk is taken only right after its entry and of the matching kind; `Param.values` is a tuple;
+  the old ParamBlock's declared count is checked.
+
 ## Verification
 
 **Working directory:** `D:\www\maxdrop`. Python: `python -I` (any 3.9+; CI uses 3.11).

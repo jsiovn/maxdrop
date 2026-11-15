@@ -111,6 +111,7 @@ class Parity:
                     what = "%s block %d param %d %s" % (where, b["block_id"], p["id"], p["name"])
                     rp = ours.param(p["id"])
                     if rp is None:  # transient (mostly), or a block that saves nothing (Standard's dynamics)
+                        self.case.assertTrue(p["transient"] or len(ours) == 0, what + ": not stored")
                         self.not_stored += 1
                         continue
                     if p["transient"]:  # an alias saved anyway (VRayBlendMtl coatMtl_0, blend_0): Max computes it
@@ -307,6 +308,13 @@ class Synthetic(unittest.TestCase):
         self.assertEqual(m.children, [2])
         self.assertEqual(len(m.issues), 1)
         self.assertIn("left out", m.issues[0])
+
+    def test_index_outside_the_objects_is_a_chunk_error(self):
+        g = materials.MaterialGraph(make_scene(container(MTL)))
+        with self.assertRaises(ChunkError):
+            g.get(5)
+        self.assertEqual(g.walk([5, 0]), [0])
+        self.assertEqual([i.index for i in g.issues], [5])
 
     def test_long_chain_is_iterative(self):
         n = 5000
