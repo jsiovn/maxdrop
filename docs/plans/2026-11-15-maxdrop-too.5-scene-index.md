@@ -35,13 +35,13 @@ Verified on the committed fixtures (all nine saved by 3ds Max 2020, file version
 - `0x2035` (Node, RootNode, Texmaps, Bezier Float/Scale/Color, Boolean Controller, Grid Reference): u32 first
   value (16 for Node and RootNode, 48 for Texmaps, 2 for the controllers; meaning unknown, kept raw), then
   `(u32 slot, i32 index)` pairs. Node in hierarchy.max: slots 0 (Position/Rotation/Scale), 1 (Editable Poly),
-  3 (Standard), 6 (Base Layer). One node of layers_flags.max has three pairs.
+  3 (Standard), 6 (Base Layer). The group head of layers_flags.max (no material) has three pairs.
 - Node (class `(1, 0)`, superclass 1): `0x0962` UTF-16LE name; `0x0960` = i32 parent object index + u32 flags;
   a top-level node's parent is the RootNode (class `(2, 0)`, superclass 1). `0x096A` 3 x f32 pivot offset
   position; `0x096B` 4 x f32 offset rotation; `0x096C` 7 x f32 = offset scale (3) + scale axis quaternion (4).
   FixtureRoot of hierarchy.max: position `[5, 5, 0]`, rotation `[0, 0, 0, 1]`, scale `[1, 1, 1]`, as the
   oracle's offset_pos / offset_rot / offset_scale.
-- Flags seen in `0x0960`: `0x800` (most nodes), `0` (the four instances of instances.max), `0x100800` (the
+- Flags seen in `0x0960`: `0x800` (most nodes), `0` (the three instances and the copy of instances.max), `0x100800` (the
   hidden node of layers_flags.max), `0x40` (the group head), `0x900` (the two group members).
 - Hierarchy order: the oracle's node order (pre-order from the root) equals a pre-order walk whose children are
   sorted by object index, on every fixture. hierarchy.max holds two nodes named `FixtureTwin` with different
