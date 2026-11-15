@@ -52,11 +52,12 @@ Top level:
 | `file` | Base name of the scene file (`null` for an unsaved scene). |
 | `file_version` | `getMaxFileVersionData`: `[format version, version of the Max that saved it]`, e.g. `[20000, 22000]` = saved by 3ds Max 2020 as a 2018 file (checked by saving with `saveAsVersion:2018`). |
 | `layers` | Every layer in layer-manager order: `name`, `hidden`, `frozen`, `renderable`. |
+| `material_graph` | Every material and map reachable from a node's material, see [below](#the-material-graph). |
 | `materials` | The materials assigned to nodes, in order of first use in the node walk: `index`, `name`, `class_id`, `class_name`, `sub_count` (sub-materials, e.g. of a Multi/Sub-Object). |
 | `max_version` | The Max that made the dump: `[release, year]`, e.g. `[22000, 2020]`. |
 | `node_count` | Number of entries in `nodes`. |
 | `nodes` | Every node of the scene, see below. |
-| `oracle_version` | Version of this layout (1). |
+| `oracle_version` | Version of this layout (2: `material_graph` added; nothing else changed from 1). |
 | `renderer` | The current renderer: `class_id`, `class_name`. |
 | `time` | The frame every node was evaluated at: always 0. |
 | `units` | `system_type` (e.g. `millimeters`), `system_scale`, `display_type` (`Generic`, `Metric`, `US`, `Custom`), `display_metric`, `display_us`. |
@@ -85,9 +86,42 @@ parent always comes before its children):
 | `hidden`, `frozen`, `renderable` | The node's own flags (a layer's flags are in `layers`). |
 | `material` | Index into `materials`, `null` without a material. Max materials have no handle that survives a reload. |
 
+## The material graph
+
+`material_graph` lists every material and map reachable from a node's material, each once, depth first from the
+node materials in their order: an entry, then its sub-materials, its sub-maps, then every material or map one of
+its properties holds (`getSubMtl` of a Multi/Sub-Object answers by material ID and skips some, its
+`materialList` does not). MAXScript names parameters but never gives their ids, so the parameters are read through
+3ds Max's .NET wrapper of the SDK (`Autodesk.Max`): `IParamBlock2.IndextoID`, `GetParamDef` and the typed getters
+at time 0. Values are as stored: angles in radians, fractions as fractions, colors as floats 0..1, not the degrees,
+percentages and 0..255 colors MAXScript shows.
+
+| Key | Value |
+|---|---|
+| `index` | Position in `material_graph`. |
+| `name`, `class_id`, `class_name` | As in `materials`. |
+| `superclass` | 3072 (material) or 3088 (map). |
+| `blocks` | The parameter blocks among the entry's references, in reference order. |
+| `parts` | The references that are neither a block nor a material or map but carry blocks of their own: a map's coordinates (UVGen, XYZGen) and output, a Standard material's shader and sampler. `ref` (reference slot), `class_id`, `blocks`. |
+| `subs` | The sub-materials and sub-maps that are set: `kind` (`material` or `map`), `slot` (0-based, as `getSubMtl` / `getSubTexmap` count), `target` (index into `material_graph`). |
+
+A block: `kind` `pb2` (ParamBlock2) or `pb1` (the old ParamBlock), `ref` (its reference slot in the entry or
+part), `block_id` (the ParamBlock2's descriptor id, `null` for `pb1`), and `params`:
+
+- `pb2`: every parameter of the descriptor in its order: `id`, `name` (its internal name, may be empty), `type`
+  (the SDK's ParamType2, `0x800` added for a table), `transient` (not saved in the file), `value`. A table's value
+  is a list of its elements.
+- `pb1`: `index`, `type` (ParamType: 0 float, 1 int, 2 color, 3 point3, 4 bool), `value`.
+
+Values by type: numbers for float, angle, percentage, world and color-channel parameters and for int, bool,
+time, radio-button and index parameters; `[r, g, b]` for colors, `[r, g, b, a]` for float colors with alpha,
+`[x, y, z]`, `[x, y, z, w]`, `[x, y]` for points; text for strings; the base name for a file name; the
+`material_graph` index (or `null`) for a material or map parameter; `null` for every other type (node,
+reference target, bitmap, matrix).
+
 ## Measured
 
-- The nine fixtures: under 0.5 s each to load, under 0.01 s to dump.
+- The thirteen fixtures: under 0.5 s each to load, under 0.5 s to dump (vray_wrappers, the slowest, 0.4 s).
 - Scene A (746 nodes) and scene B (2,251 nodes), 3ds Max 2020, 2026-11-15: A loaded in 10 to 50 s (warm or cold
   disk cache) and dumped in 5 s, B loaded in 5 s and dumped in 17 s; the Max process peaked at 3.1 GB. Their dumps are kept outside the
   repository.

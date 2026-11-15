@@ -17,12 +17,17 @@ import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FIXTURE_DIR = os.path.join(ROOT, "tests", "fixtures")
-TOP_KEYS = ["file", "file_version", "layers", "materials", "max_version", "node_count", "nodes", "oracle_version",
-            "renderer", "time", "units"]
+TOP_KEYS = ["file", "file_version", "layers", "material_graph", "materials", "max_version", "node_count", "nodes",
+            "oracle_version", "renderer", "time", "units"]
 NODE_KEYS = ["base_class_id", "base_class_name", "base_faces", "base_superclass", "base_verts", "bbox_max",
              "bbox_min", "eval_faces", "eval_verts", "frozen", "handle", "hidden", "index", "instances", "layer",
              "material", "modifiers", "name", "object_transform", "offset_pos", "offset_rot", "offset_scale",
              "parent", "renderable", "transform"]
+GRAPH_KEYS = ["blocks", "class_id", "class_name", "index", "name", "parts", "subs", "superclass"]
+BLOCK_KEYS = ["block_id", "kind", "params", "ref"]
+PB2_PARAM_KEYS = ["id", "name", "transient", "type", "value"]
+PB1_PARAM_KEYS = ["index", "type", "value"]
+REF_TYPES = (14, 15)  # mtl, texmap: the value is an index into material_graph
 
 
 def _load(name):
@@ -99,7 +104,7 @@ class OracleFiles(unittest.TestCase):
             with self.subTest(name):
                 o = _oracle(name)
                 self.assertEqual(list(o), TOP_KEYS)
-                self.assertEqual(o["oracle_version"], 1)
+                self.assertEqual(o["oracle_version"], 2)
                 self.assertEqual(o["file"], name + ".max")
                 self.assertEqual(o["node_count"], len(o["nodes"]))
                 handles = {n["handle"] for n in o["nodes"]}
@@ -121,6 +126,51 @@ class OracleFiles(unittest.TestCase):
                     self.assertTrue(set(n["instances"]) <= handles)
                     self.assertIn(n["layer"], [layer["name"] for layer in o["layers"]])
                 self.assertEqual([m["index"] for m in o["materials"]], list(range(len(o["materials"]))))
+
+    def _check_block(self, b, size):
+        self.assertEqual(list(b), BLOCK_KEYS)
+        self.assertIsInstance(b["ref"], int)
+        if b["kind"] == "pb2":
+            self.assertIsInstance(b["block_id"], int)
+            ids = [p["id"] for p in b["params"]]
+            self.assertEqual(len(ids), len(set(ids)))
+            for p in b["params"]:
+                self.assertEqual(list(p), PB2_PARAM_KEYS)
+                if p["type"] & 0x7FF in REF_TYPES:
+                    values = p["value"] if p["type"] & 0x800 else [p["value"]]
+                    self.assertTrue(all(v is None or 0 <= v < size for v in values), p)
+        else:
+            self.assertEqual(b["kind"], "pb1")
+            self.assertIsNone(b["block_id"])
+            self.assertEqual([p["index"] for p in b["params"]], list(range(len(b["params"]))))
+            for p in b["params"]:
+                self.assertEqual(list(p), PB1_PARAM_KEYS)
+
+    def test_material_graph(self):
+        for path in self.oracles:
+            name = _stem(path, ".oracle.json")
+            with self.subTest(name):
+                o = _oracle(name)
+                graph = o["material_graph"]
+                self.assertEqual([e["index"] for e in graph], list(range(len(graph))))
+                # depth first from the node materials: the first entry is the first one, each one is in it
+                entries = [(e["name"], tuple(e["class_id"])) for e in graph]
+                mats = [(m["name"], tuple(m["class_id"])) for m in o["materials"]]
+                self.assertEqual(entries[:1], mats[:1])
+                self.assertTrue(set(mats) <= set(entries))
+                for e in graph:
+                    self.assertEqual(list(e), GRAPH_KEYS)
+                    self.assertIn(e["superclass"], (0xC00, 0xC10))
+                    for b in e["blocks"]:
+                        self._check_block(b, len(graph))
+                    for part in e["parts"]:
+                        self.assertEqual(list(part), ["blocks", "class_id", "ref"])
+                        for b in part["blocks"]:
+                            self._check_block(b, len(graph))
+                    for sub in e["subs"]:
+                        self.assertEqual(list(sub), ["kind", "slot", "target"])
+                        self.assertIn(sub["kind"], ("material", "map"))
+                        self.assertTrue(0 <= sub["target"] < len(graph))
 
     def test_parents_come_first(self):
         for path in self.oracles:

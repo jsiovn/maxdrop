@@ -17,7 +17,7 @@ global MaxDropOracle
 
 struct MaxDropOracleStruct
 (
-	version = 1,
+	version = 2,
 
 	fn num v =
 	(
@@ -228,6 +228,199 @@ struct MaxDropOracleStruct
 		)
 	),
 
+	-- The material graph: every material and map reachable from a node's material (sub-materials, then sub-maps,
+	-- depth first), with every parameter of its parameter blocks by id, read through the SDK's .NET wrapper because
+	-- MAXScript names parameters but never gives their ids. Values are the stored ones: radians, fractions, colors
+	-- as 0..1 floats, not the degrees and percentages MAXScript shows.
+	fn animOf v = (dotNetClass "Autodesk.Max.GlobalInterface").Instance.Animatable.GetAnimByHandle (dotNetObject "System.UIntPtr" (getHandleByAnim v)),
+
+	fn ptrOf a = if a == undefined then undefined else a.INativeObject__NativePointer,
+
+	fn isGraphValue v = v != undefined and ((superClassOf v) == material or (superClassOf v) == textureMap),
+
+	-- sub-materials and sub-maps, then every material or map a property holds: getSubMtl misses some (a
+	-- Multi/Sub-Object answers by material ID and skips one of IDs 1, 3, 7), the property lists do not
+	fn graphVisit m acc =
+	(
+		if m == undefined or (findItem acc m) > 0 do return acc
+		append acc m
+		local n = try (getNumSubMtls m) catch 0
+		for i = 1 to n do graphVisit (getSubMtl m i) acc
+		local k = try (getNumSubTexmaps m) catch 0
+		for i = 1 to k do graphVisit (getSubTexmap m i) acc
+		local vals = #()
+		for p in (getPropNames m) do append vals (try (getProperty m p) catch undefined)
+		for v in vals do
+		(
+			if isGraphValue v do graphVisit v acc
+			if classOf v == Array or classOf v == ArrayParameter do for x in v do (if isGraphValue x do graphVisit x acc)
+		)
+		acc
+	),
+
+	-- acc holds the graph's pointers (ptrOf), in graph order
+	fn graphIndex a acc =
+	(
+		local p = ptrOf a
+		local i = if p == undefined then 0 else findItem acc p
+		if i == 0 then "null" else ((i - 1) as string)
+	),
+
+	fn rgb3 c = list #(num c.r, num c.g, num c.b),
+	fn rgb4 c = list #(num c.r, num c.g, num c.b, num c.a),
+	fn xy p = list #(num p.x, num p.y),
+	fn xyzw p = list #(num p.x, num p.y, num p.z, num p.w),
+	fn strOrNull s = if s == undefined then "null" else str s,
+	fn baseOrNull s = if s == undefined then "null" else str (filenameFromPath s),
+
+	fn pbValue pb id tp tab acc =
+	(
+		local base = bit.and tp 0x7FF
+		case of
+		(
+			((findItem #(0, 5, 6, 7, 11) base) > 0): num (pb.GetFloat id 0 tab)
+			((findItem #(1, 4, 12, 13, 19) base) > 0): (pb.GetInt id 0 tab) as string
+			(base == 2 or base == 10): rgb3 (pb.GetColor id 0 tab)
+			(base == 3): vec (pb.GetPoint3 id 0 tab)
+			(base == 22): xyzw (pb.GetPoint4 id 0 tab)
+			(base == 23): rgb4 (pb.GetAColor id 0 tab)
+			(base == 30): xy (pb.GetPoint2 id 0 tab)
+			(base == 8): strOrNull (pb.GetStr id 0 tab)
+			(base == 9): baseOrNull (pb.GetStr id 0 tab)
+			(base == 14): graphIndex (pb.GetMtl id 0 tab) acc
+			(base == 15): graphIndex (pb.GetTexmap id 0 tab) acc
+			default: "null"
+		)
+	),
+
+	-- a separate function: a for-collect over a local inside an if-expression breaks MAXScript's closures
+	fn tabValue pb id tp acc =
+	(
+		local items = #()
+		for k = 0 to (pb.Count id) - 1 do append items (pbValue pb id tp k acc)
+		list items
+	),
+
+	fn pb2Json pb r acc =
+	(
+		local items = #()
+		for i = 0 to pb.NumParams - 1 do
+		(
+			local id = pb.IndextoID i
+			local d = pb.GetParamDef id
+			local tp = d.Type.value__
+			local v = if (bit.and tp 0x800) != 0 then tabValue pb id tp acc else pbValue pb id tp 0 acc
+			append items (inline #(#("id", (id as integer) as string), #("name", str d.IntName), #("transient", bool ((bit.and (d.Flags as integer) 2) != 0)), #("type", tp as string), #("value", v)))
+		)
+		obj #(#("block_id", (pb.Id as integer) as string), #("kind", str "pb2"), #("params", block items 8), #("ref", r as string)) 6
+	),
+
+	fn pb1Value pb i tp =
+	(
+		case tp of
+		(
+			0: num (pb.GetFloat i 0)
+			1: (pb.GetInt i 0) as string
+			4: (pb.GetInt i 0) as string
+			2: rgb3 (pb.GetColor i 0)
+			3: vec (pb.GetPoint3 i 0)
+			default: "null"
+		)
+	),
+
+	fn pb1Json pb r =
+	(
+		local items = #()
+		for i = 0 to pb.NumParams - 1 do
+		(
+			local tp = (pb.GetParameterType i).value__
+			append items (inline #(#("index", i as string), #("type", tp as string), #("value", pb1Value pb i tp)))
+		)
+		obj #(#("block_id", "null"), #("kind", str "pb1"), #("params", block items 8), #("ref", r as string)) 6
+	),
+
+	fn ownBlocks t acc =
+	(
+		local out = #()
+		for r = 0 to t.NumRefs - 1 do
+		(
+			local x = t.GetReference r
+			if x != undefined and x.SuperClassID.value__ == 0x82 do append out (pb2Json x r acc)
+			if x != undefined and x.SuperClassID.value__ == 0x8 do append out (pb1Json x r)
+		)
+		out
+	),
+
+	fn partJson t r acc =
+	(
+		local c = t.ClassID
+		local pcid = list #(str ("0x" + (formattedPrint c.PartA format:"08x")), str ("0x" + (formattedPrint c.PartB format:"08x")))
+		obj #(#("blocks", block (ownBlocks t acc) 6), #("class_id", pcid), #("ref", r as string)) 6
+	),
+
+	-- the parameter blocks among the references of a, and the parts that carry blocks of their own (a map's
+	-- coordinates and output, a Standard material's shader and sampler)
+	fn blocksOf a acc =
+	(
+		local blocks = #()
+		local parts = #()
+		for r = 0 to a.NumRefs - 1 do
+		(
+			local t = a.GetReference r
+			if t != undefined do
+			(
+				local sc = t.SuperClassID.value__
+				case of
+				(
+					(sc == 0x82): append blocks (pb2Json t r acc)
+					(sc == 0x8): append blocks (pb1Json t r)
+					-- UVGen, XYZGen, TexOutput, Shader, Sampler: nothing else is followed (a map can reference nodes)
+					((findItem #(0xC20, 0xC30, 0xC40, 0x10B0, 0x1110) sc) > 0): append parts (partJson t r acc)
+				)
+			)
+		)
+		#(blocks, parts)
+	),
+
+	fn graphEntryJson m index graph acc =
+	(
+		local a = animOf m
+		local bp = blocksOf a acc
+		local subs = #()
+		local n = try (getNumSubMtls m) catch 0
+		for i = 1 to n do
+		(
+			local s = getSubMtl m i
+			if s != undefined do append subs (inline #(#("kind", str "material"), #("slot", (i - 1) as string), #("target", ((findItem graph s) - 1) as string)))
+		)
+		local k = try (getNumSubTexmaps m) catch 0
+		for i = 1 to k do
+		(
+			local s = getSubTexmap m i
+			if s != undefined do append subs (inline #(#("kind", str "map"), #("slot", (i - 1) as string), #("target", ((findItem graph s) - 1) as string)))
+		)
+		obj #( \
+			#("blocks", block bp[1] 4), \
+			#("class_id", cid (classOf m)), \
+			#("class_name", str ((classOf m) as string)), \
+			#("index", index as string), \
+			#("name", str m.name), \
+			#("parts", block bp[2] 4), \
+			#("subs", block subs 4), \
+			#("superclass", ((classOf m).superclassID as integer) as string) \
+		) 4
+	),
+
+	fn graphJson mats =
+	(
+		local graph = #()
+		for m in mats do graphVisit m graph
+		local ptrs = for m in graph collect ptrOf (animOf m)
+		local items = #()
+		for i = 1 to graph.count do append items (graphEntryJson graph[i] (i - 1) graph ptrs)
+		block items 2
+	),
+
 	fn layersJson =
 	(
 		local items = #()
@@ -275,6 +468,7 @@ struct MaxDropOracleStruct
 			#("file", if maxFileName == "" then "null" else str maxFileName), \
 			#("file_version", fileVersion()), \
 			#("layers", layersJson()), \
+			#("material_graph", graphJson mats), \
 			#("materials", block matItems 2), \
 			#("max_version", list #(intOrNull mv[1], intOrNull year)), \
 			#("node_count", nodes.count as string), \

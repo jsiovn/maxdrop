@@ -48,9 +48,13 @@ UV_LAYERS = {
     "instances": ["UVMap"],
     "layers_flags": [],
     "multi_uv": ["UVMap", "UVChannel_2", "UVChannel_3"],
+    "standard_physical": ["UVMap"],
     "units_cm": ["UVMap"],
     "units_in": ["UVMap"],
     "units_mm": ["UVMap"],
+    "vray_basic": ["UVMap"],
+    "vray_maps": ["UVMap"],
+    "vray_wrappers": ["UVMap"],
 }
 SHARP_EDGES_POLY_BOX = 12  # one smoothing group per side: every edge of the box
 SHARP_EDGES_EDITABLE_MESH = 8  # group 1 on top and bottom, 2 on the sides: the rims of top and bottom
@@ -342,7 +346,7 @@ class Fixtures(unittest.TestCase):
         cls.cases = [(_name(p), conv.read(p), _oracle(p)) for p in FIXTURES]
 
     def test_every_fixture_is_described(self):
-        self.assertEqual(len(self.cases), 9)
+        self.assertEqual(sorted(name for name, _d, _o in self.cases), sorted(UV_LAYERS))
 
     def test_units_follow_the_file(self):
         meters = {name: desc.meters for name, desc, _o in self.cases}

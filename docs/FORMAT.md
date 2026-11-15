@@ -2,7 +2,7 @@
 
 What MaxDrop's reader (`maxdrop/reader/`) relies on, written down only once a committed fixture shows it. Each fact
 names the fixture (`tests/fixtures/<name>.max`, whose 3ds Max oracle is `<name>.oracle.json`, see
-[ORACLE.md](ORACLE.md)); the tests named here keep the facts true. All nine fixtures were saved by 3ds Max 2020 (file
+[ORACLE.md](ORACLE.md)); the tests named here keep the facts true. Every fixture was saved by 3ds Max 2020 (file
 version 22000). What only other files have shown is listed under [Open](#open), not here.
 
 ## Chunks
