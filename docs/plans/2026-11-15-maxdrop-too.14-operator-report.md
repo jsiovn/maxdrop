@@ -34,7 +34,12 @@ line); at the end the text holds all of them joined by a blank line, in import o
 
 - [ ] `import_one`: text "MaxDrop Report" exists, its first line names the `.max`; for a pack it also names the
   archive; for the fixtures (no arguments) the operator reported INFO (recorded by wrapping the operator class's
-  `report` during the run) and the report says nothing was left out.
+  `_import_scene` during the run: `Operator.report` is an RNA function a class attribute cannot shadow) and the
+  report says nothing was left out.
+- [ ] `filters_and_failures`: a good and a bad file in one run: the text holds the report, then a "Not imported"
+  line.
+- Review follow-up: material problems are reported after the summary (the report does not count them), so the
+  status bar never ends on "nothing left out" over them.
 - [ ] `selections`: two scenes in one run: the text holds both reports.
 
 ### Task 3: Changelog

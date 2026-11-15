@@ -28,7 +28,7 @@ no UV layer, without Material no material slot. A file that is not a .max beside
 and the other named in a warning; that file alone: cancelled with its name in the message.
 After every import the text "MaxDrop Report" exists and its first line names the .max (and the archive of a pack);
 for the fixtures the operator reported INFO with the report's summary, nothing left out. Two scenes in one run: the
-text holds both reports.
+text holds both reports; a file that was not imported is named after them.
 Prints `IMPORT PASSED` (exit 0) or `IMPORT FAILED` (exit 1).
 """
 import glob
@@ -74,8 +74,8 @@ def empty_scene():
 
 def record_reports(cls):
     """Wrap the operator's _import_scene so that the (level, line) pairs execute() reports for each scene land in
-    REPORTS. Operator.report itself is an RNA function, which a Python attribute of the class cannot shadow. The
-    original, to put back."""
+    REPORTS. Operator.report itself is an RNA function, which a Python attribute of the class cannot shadow, so
+    this checks what execute() is given to report, not the call itself. The original, to put back."""
     original = cls._import_scene
 
     def import_scene(self, *args, **kwargs):
@@ -353,6 +353,11 @@ def filters_and_failures(scratch):
           and "good" in bpy.data.collections and any(ob.type == 'MESH' for ob in bpy.data.objects),
           "%s %s" % (result, message.strip()))
     check("a good .max and a file that is not one: no collection of the bad one", "junk" not in bpy.data.collections)
+    text = bpy.data.texts.get(TEXT_NAME)
+    body = text.as_string() if text is not None else ""
+    check("a good .max and a file that is not one: the text holds the report, then the file not imported",
+          body.startswith("MaxDrop import report: good.max\n") and "\n\nNot imported: junk.max: " in body,
+          body[-200:])
     result, message = attempt(directory=folder, files=[{"name": "junk.max"}])
     check("only a file that is not a .max: cancelled, named in the message",
           result == {'CANCELLED'} and "Nothing imported" in message and "junk.max" in message, message.strip())

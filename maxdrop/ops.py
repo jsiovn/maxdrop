@@ -289,16 +289,17 @@ def _remove(cols):
         bpy.data.collections.remove(col)
 
 
-def _join_reports(reports):
-    """Several scenes in one run: each was published on its own (console, status line), which leaves the text
+def _join_reports(reports, failed):
+    """Several files in one run: each scene was published on its own (console, status line), which leaves the text
     "MaxDrop Report" with the last one; it then holds every report of the run, in import order, a blank line
-    between them."""
+    between them, and a line per file that was not imported."""
     from .build import report as build_report
+    parts = [rep.text() for rep in reports] + ["Not imported: " + line for line in failed]
     block = bpy.data.texts.get(build_report.TEXT_NAME)
     if block is None:
         block = bpy.data.texts.new(build_report.TEXT_NAME)
     block.clear()
-    block.write("\n\n".join(rep.text() for rep in reports) + "\n")
+    block.write("\n\n".join(parts) + "\n")
 
 
 def _summary(path, result):
@@ -472,8 +473,8 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
                 window.cursor_set('DEFAULT')
         if not reports:
             return self._error("Nothing imported. " + "; ".join(failed))
-        if len(reports) > 1:
-            _join_reports(reports)
+        if len(reports) > 1 or failed:
+            _join_reports(reports, failed)
         for line in failed:
             self.report({'WARNING'}, "Not imported: " + line)
             print("MaxDrop: not imported: " + line)
@@ -483,8 +484,8 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
         """Read, describe and build one .max into a collection named after it in the active collection, then its
         materials through import_max, then publish its import report (console and the text "MaxDrop Report").
         pack: archive.unpack()'s result when the scene came from a scene pack, pack_name the archive's file name.
-        ([(report level, line)], the convert.report.Report), the report's summary last; OSError or ValueError when
-        the file cannot be read. A build that fails is removed again before the exception goes on."""
+        ([(report level, line)], the convert.report.Report), the report's summary last but for material problems;
+        OSError or ValueError when the file cannot be read. A build that fails is removed again before the exception goes on."""
         from .build import collections as build_collections
         from .build import objects as build_objects
         from .build import report as build_report
@@ -524,14 +525,16 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
         materials, problems = 0, []
         if 'MATERIAL' in self.object_filter and first_nodes:
             materials, problems = _materials(max_path, first_nodes, built, self.use_image_search)
+        if 'MATERIAL' in self.object_filter:
+            lines.append(('INFO', "%s: %s" % (name, _plural(materials, "material"))))
+        lines.append(build_report.publish(rep))
+        # After the summary: the report does not cover the old engine's materials, and the status bar shows the
+        # last line, which must not be a "nothing left out" that hides them.
         if problems:
             for problem in problems:
                 print("MaxDrop: %s: %s" % (name, problem))
             lines.append(('WARNING', "%s: %s, see the system console" % (
                 name, _plural(len(problems), "material problem"))))
-        if 'MATERIAL' in self.object_filter:
-            lines.append(('INFO', "%s: %s" % (name, _plural(materials, "material"))))
-        lines.append(build_report.publish(rep))
         return lines, rep
 
     def invoke(self, context, event):
