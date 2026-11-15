@@ -15,6 +15,7 @@
 -- session with nothing to keep, then sanitize and check the saved file before it goes into tests/fixtures/.
 (
 	resetMaxFile #noPrompt
+	makeDir @"C:\maxdrop_fixtures" all:true  -- gammaBmp saves its image there
 	fn fixtureBitmap name file = Bitmaptexture name:name filename:file
 	-- A gamma override is kept by the bitmap's info only when set through a loaded image: load a tiny one, then
 	-- rename the file to a bare name (the override stays, the path goes).
@@ -146,7 +147,6 @@
 	c.material = m3
 	convertToPoly c
 
-	makeDir @"C:\maxdrop_fixtures" all:true
 	saveMaxFile @"C:\maxdrop_fixtures\texmap_rules.max" quiet:true
 	"texmap_rules: " + (objects.count as string) + " object(s)"
 )

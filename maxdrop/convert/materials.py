@@ -15,10 +15,10 @@
     conv.stats.peeled, conv.stats.unknown, conv.stats.issues
 
 Each input of a MaterialIR is an Input: a value (a linear RGB tuple or a float) and, when a map drives it, a
-MapRef to the map object (the texture-map rules of a later bead turn that into a texture graph; the value is what
-the slot shows without it); with a TexmapConverter, ir.textures holds the TextureGraphIR of each input a usable map
-drives (convert/texmaps.py), its issues added to ir.issues. One MaterialIR per Max material object index; a wrapper converts to the IR of the material it peels
-to, so every node using either shares it.
+MapRef to the map object (the value is what the slot shows without it). With a TexmapConverter, ir.textures holds
+the TextureGraphIR of each input a usable map drives (convert/texmaps.py), its issues added to ir.issues. One
+MaterialIR per Max material object index; a wrapper converts to the IR of the material it peels to, so every node
+using either shares it.
 
 Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX workarounds):
 
@@ -27,9 +27,9 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   color; emission = self-illumination color times its multiplier; transmission = the mean of the refraction color,
   ior and thin-walled from the refraction parameters; maps where their slot is on, with their multiplier as the
   amount; a normal map (VRayNormalMap, Normal Bump, CoronaNormal) in a bump slot is the normal input, any other
-  map the bump input. Added here: a
-  refracting material takes its base color from the refraction color (mixed by the transmission), and with
-  Fresnel off a bright reflection (mean >= METAL_REFLECTION) makes the material a metal in the reflection color.
+  map the bump input. Added here: a refracting material takes its base color from the refraction color (mixed by
+  the transmission), and with Fresnel off a bright reflection (mean >= METAL_REFLECTION) makes the material a metal
+  in the reflection color.
   The Fresnel IOR is the refraction IOR when the material refracts or locks the IOR, else the reflection IOR.
 - VRayLightMtl -> emission only; VRayFastSSS2 -> base + subsurface; VRayCarPaintMtl / VRayCarPaintMtl2 -> a metal
   base + coat (VRayCarPaintMtl's coat_strength is the coat's reflectance at normal incidence: a full coat whose

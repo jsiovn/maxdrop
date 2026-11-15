@@ -13,7 +13,9 @@ import collections
 import importlib
 import math
 import os
+import struct
 import sys
+import time
 import types
 import unittest
 
@@ -111,6 +113,7 @@ class VRayMaps(Checks):
     def test_reflection_is_the_specular(self):
         g = self.f.irs["FixtureVRayMaps"].textures["specular"]
         self.close(g.root.factor, 0.82)
+        self.close(g.root.a.value, (0.0, 0.0, 0.0))  # the float input's value, as RGB in a color graph
         self.image(g.root.b, "fixture_reflect.png", tx.SRGB, (3.0, 3.5), (0.2, 0.25), 25.0)
 
     def test_glossiness_is_inverted(self):
@@ -216,8 +219,8 @@ class TexmapRules(Checks):
         self.assertIsInstance(cc, tx.ColorCorrect)
         self.close(cc.hue, 30.0 / 360.0)
         self.close(cc.saturation, 1.2)
-        self.close(cc.brightness, 0.1)
-        self.close(cc.contrast, 0.05)
+        self.close(cc.brightness, 0.0)  # brightness 10 and contrast 5 are set, but lightness is advanced
+        self.close(cc.contrast, 0.0)
         self.close(cc.gain, 1.0)
         self.close(cc.gamma, 1.2)
         self.image(cc.input, "keep_cc.png", tx.SRGB)
@@ -304,15 +307,45 @@ class FakeEntry(collections.namedtuple("FakeEntry", "name")):
 
 
 class FakeScene:
-    def __init__(self, objects):
-        self.objects = objects
+    def __init__(self, objects, chunk_map=None):
+        self.objects, self.chunks = objects, chunk_map or {}
 
     def entry(self, i):
         o = self.objects.get(i)
         return FakeEntry(o.cls) if o is not None else None
 
     def chunk(self, i):
-        raise chunks.ChunkError("no chunks here")
+        if i not in self.chunks:
+            raise chunks.ChunkError("no chunks here")
+        return self.chunks[i]
+
+
+class FakeChunk:
+    """A chunk: a leaf with a payload, or a container with children."""
+
+    def __init__(self, cid, payload=None, children=None):
+        self.id, self.container = cid, children is not None
+        self.children, self._payload = list(children or ()), payload or b""
+        self.payload_size = len(self._payload)
+
+    def tobytes(self):
+        return self._payload
+
+    def unpack(self, fmt):
+        return struct.unpack_from(fmt, self._payload)
+
+    def first(self, cid):
+        return next((c for c in self.children if c.id == cid), None)
+
+
+class FakeOld:
+    """An old ParamBlock: values by index."""
+
+    def __init__(self, values):
+        self._values = values
+
+    def get(self, i, default=None):
+        return self._values.get(i, default)
 
 
 class FakeBlock:
@@ -347,9 +380,9 @@ class FakeMap:
 
 
 class FakeGraph:
-    def __init__(self, *objects):
+    def __init__(self, *objects, chunk_map=None):
         self.objects = {o.index: o for o in objects}
-        self.scene = FakeScene(self.objects)
+        self.scene = FakeScene(self.objects, chunk_map)
 
     def get(self, i):
         if i not in self.objects:
@@ -490,6 +523,126 @@ class Synthetic(Checks):
         self.assertEqual(sorted(graphs), ["base_color", "bump"])
         self.assertEqual(graphs["base_color"].root.colorspace, tx.SRGB)
         self.assertEqual(graphs["bump"].root.input.colorspace, tx.NON_COLOR)
+
+
+UVGEN_OBJECT, INFO_BLOCK = 50, 60
+
+
+def _placed(index=1, uv=None, old=None, info=None):
+    """A Bitmap with a Placement part (its chunk uv, its old ParamBlock old) and BitmapInfo bytes info; and the
+    chunk map of its scene."""
+    b = _bitmap(index)
+    b.parts = {0: reader_materials.Part(UVGEN_OBJECT, classids.STD_UVGEN, classids.SC_UVGEN, {},
+                                        {0: FakeOld(old or {})})}
+    chunk_map = {UVGEN_OBJECT: uv} if uv is not None else {}
+    if info is not None:
+        b.refs = {0: INFO_BLOCK}
+        chunk_map[INFO_BLOCK] = FakeChunk(0x82, children=[FakeChunk(0x0003, children=[FakeChunk(0x1201, info)])])
+    return b, chunk_map
+
+
+def _info(gamma, flags):
+    return bytes(56) + struct.pack("<fI", gamma, flags) + bytes(6)  # 70 bytes, the gamma tail 14 from the end
+
+
+def _image(b, chunk_map, kind=tx.COLOR):
+    tex = tx.TexmapConverter(FakeGraph(b, chunk_map=chunk_map), _table())
+    return tex, tex.convert(mat.MapRef(b.index), kind)
+
+
+class Guards(Checks):
+    def test_unreadable_placement_takes_the_defaults(self):
+        _tex_, g = _image(*_placed(old={2: float("nan"), 3: 2.0}))  # no chunk for the Placement object
+        self.assertEqual(g.root.mapping.tiling, (1.0, 2.0))
+        self.assertEqual(g.root.mapping.tile, (True, True))
+        self.assertEqual(g.root.mapping.channel, 1)
+
+    def test_short_and_out_of_range_placement_chunks(self):
+        uv = FakeChunk(0x0009, children=[FakeChunk(0x9002, b"\x01\x00"), FakeChunk(0x900B, struct.pack("<I", 1000)),
+                                         FakeChunk(0x9006, struct.pack("<I", 9)), FakeChunk(0x9003, b"\x07\0\0\0")])
+        _tex_, g = _image(*_placed(uv=uv))
+        self.assertEqual(g.root.mapping, tx.Mapping())
+
+    def test_placement_chunks(self):
+        uv = FakeChunk(0x0009, children=[FakeChunk(0x9002, struct.pack("<I", 0x48000008)),
+                                         FakeChunk(0x900B, struct.pack("<I", 4))])
+        tex, g = _image(*_placed(uv=uv))
+        self.assertEqual(g.root.mapping.tile, (False, False))
+        self.assertEqual(g.root.mapping.mirror, (False, True))
+        self.assertTrue(g.root.mapping.real_world)
+        self.assertEqual(g.root.mapping.channel, 4)
+        self.assertTrue(any("real-world" in r for r in g.issues))
+
+    def test_gamma(self):
+        cases = ((_info(1.8, 5), 1.8, tx.NON_COLOR), (_info(2.2, 5), 2.2, tx.SRGB), (_info(1.0, 20), None, tx.SRGB),
+                 (_info(float("nan"), 5), None, tx.SRGB), (_info(50.0, 5), None, tx.SRGB), (b"\x05" * 10, None, tx.SRGB))
+        for info, gamma, space in cases:
+            with self.subTest(info=info.hex()):
+                _tex_, g = _image(*_placed(info=info))
+                if gamma is None:
+                    self.assertIsNone(g.root.gamma)
+                else:
+                    self.close(g.root.gamma, gamma)
+                self.assertEqual(g.root.colorspace, space)
+
+    def test_shared_maps_do_not_blow_up(self):
+        layers, depth = 10, tx.MAX_DEPTH
+        objects = [FakeMap(k, tx.COMPOSITE, {9: [Ref(k + 1)] * layers}, [k + 1], cls="Composite")
+                   for k in range(1, depth)] + [_bitmap(depth)]
+        tex = _tex(*objects)
+        start = time.perf_counter()
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertLess(time.perf_counter() - start, 2.0)
+        self.assertIsInstance(g.root, tx.Image)  # 10 ** 7 nodes as a tree: cut down to its first image
+        self.assertTrue(g.approximated)
+        self.assertTrue(any("cut down" in r for r in g.issues))
+
+    def test_composite_with_a_blend_mode_is_peeled(self):
+        comp = FakeMap(1, tx.COMPOSITE, {5: [0, 2], 9: [Ref(2), Ref(3)]}, [2, 3], cls="Composite")
+        tex = _tex(comp, _bitmap(2), _bitmap(3))
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertIsInstance(g.root, tx.Image)
+        self.assertTrue(any("blend modes" in r for r in g.issues))
+
+    def test_color_correction_modes(self):
+        standard = FakeMap(1, tx.COLOR_CORRECTION, {1: Ref(2), 11: 0, 12: 10.0, 13: -20.0, 22: 2.0}, [2])
+        g = _tex(standard, _bitmap(2)).convert(mat.MapRef(1), tx.COLOR)
+        self.assertEqual((g.root.brightness, g.root.contrast, g.root.gamma), (0.1, -0.2, 1.0))
+        self.assertFalse(g.approximated)
+        lifted = FakeMap(1, tx.COLOR_CORRECTION, {1: Ref(2), 11: 1, 30: 0.2, 2: 1}, [2])
+        g = _tex(lifted, _bitmap(2)).convert(mat.MapRef(1), tx.COLOR)
+        self.assertTrue(g.approximated)
+        self.assertTrue(any("pivot and lift" in r for r in g.issues))
+        self.assertTrue(any("rewiring" in r for r in g.issues))
+
+    def test_mix_curve_is_an_issue(self):
+        mix = FakeMap(1, tx.MIX, {3: 1, 6: Ref(2)}, [2])
+        g = _tex(mix, _bitmap(2)).convert(mat.MapRef(1), tx.COLOR)
+        self.assertTrue(g.approximated)
+        self.assertTrue(any("mix curve" in r for r in g.issues))
+
+    def test_normal_bump_method_and_channel(self):
+        nb = FakeMap(1, tx.NORMAL_BUMP, {2: Ref(2), 6: 2}, [2])
+        g = _tex(nb, _bitmap(2)).convert(mat.MapRef(1), tx.NORMAL)
+        self.assertTrue(any("method" in r for r in g.issues))
+        vn = FakeMap(1, classids.VRAY_NORMAL_MAP, {0: Ref(2), 1: 2}, [2])
+        self.assertEqual(_tex(vn, _bitmap(2)).convert(mat.MapRef(1), tx.NORMAL).root.channel, 2)
+
+    def test_an_issue_is_reported_once(self):
+        uv = FakeChunk(0x0009, children=[FakeChunk(0x9005, struct.pack("<I", 1))])
+        b, chunk_map = _placed(uv=uv)
+        tex = tx.TexmapConverter(FakeGraph(b, chunk_map=chunk_map), _table())
+        tex.convert(mat.MapRef(1), tx.COLOR)
+        tex.convert(mat.MapRef(1, 0.5), tx.COLOR, (0.1, 0.1, 0.1))
+        tex.convert(mat.MapRef(1), tx.DATA)
+        self.assertEqual(len(tex.stats.issues), 1)
+
+    def test_normal_map_without_images_in_a_color_input(self):
+        n = FakeMap(1, classids.VRAY_NORMAL_MAP, {}, cls="VRayNormalMap")
+        tex = _tex(n)
+        self.assertIsNone(tex.convert(mat.MapRef(1), tx.COLOR))
+        self.assertEqual(tex.stats.unsupported, collections.Counter({"VRayNormalMap": 1}))
+        self.assertEqual(tex.stats.peeled, collections.Counter())
 
 
 if __name__ == "__main__":

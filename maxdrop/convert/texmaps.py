@@ -14,27 +14,32 @@ kind says what the input is: COLOR (base color, specular and transmission, which
 reflection and refraction colors, emission), DATA (roughness, metallic, opacity), NORMAL or BUMP. It sets the color
 space of every image below: sRGB for COLOR, Non-Color for the others (a Mix mask is always Non-Color). A Bitmap's
 gamma override (None: automatic, the default) is kept on its Image: on a color input, an override of 2.2 is sRGB,
-any other is Non-Color and the builder applies the override as a gamma (1.0: none). Constants are linear: a color as
-linear RGB, a value as the mean of the linear color (the measure materials.py uses).
+any other is Non-Color and the builder applies the override as a gamma (1.0: none); on the other inputs an image is
+data and the override is not applied. Constants are linear: in a COLOR graph always linear RGB (also when the input
+itself is a float, as specular and transmission are: the builder takes the mean of the graph's color there, the
+measure materials.py uses), elsewhere a float, the mean of the linear color.
 
 The graph's nodes (frozen dataclasses): Image (a Bitmap: the file as the scene stores it, the one the texture lookup
 found, Mapping, Crop, TexOutput, color space, gamma, alpha), Constant, Invert, Mix(a, b, factor, mask), Multiply,
-ColorCorrect, Composite (layers bottom first, each with its opacity), NormalMap (an image, its strength, flips, an
-additional Bump) and Bump (a height input and its strength).
+ColorCorrect, Composite (layers bottom first, each with its opacity), NormalMap (an image, its strength, flips, the
+map channel of its tangents, an additional Bump) and Bump (a height input and its strength). A map reached by
+several paths is converted once per kind and depth, so a graph is a DAG of shared nodes; a graph larger than
+MAX_NODES when drawn as a tree is cut down to its first image (an issue).
 
 Rules, by ClassID (the decisions of an earlier 3ds Max -> FBX exporter, made native: node graphs instead of baked
 files, the map angle kept, a height map in a bump slot a Bump node instead of dropped):
 
 - Bitmap -> Image. Its Placement: tiling, offset, U / V / W angles, tile and mirror per axis, the map channel (the
   vertex color channel is channel 0), the axis (UV, VW, WU) and the coordinate source; environment mapping and the
-  object or world XYZ sources are described and named as an issue (no UVs drive them). Cropping or placement when
-  applied and not the whole image; the Output (invert, amount, RGB level and offset) when it changes anything; alpha
-  when the Bitmap gives its alpha to a mono input (mono output Alpha) or as its color (RGB output Alpha). A Bitmap
-  without a file is no image (an issue).
-- Kept as nodes (the allow-list): Mix (color 1 / 2 where a map is off or missing, the mask, the mix amount), RGB
-  Multiply, Color Correction (hue shift in turns, saturation and brightness and contrast as fractions, the advanced
-  mode's gain and gamma; rewiring and tint are not converted: an issue) and a simple Composite (normal blend mode,
-  no mask; any other is peeled).
+  object or world XYZ sources are described and named as an issue (no UVs drive them), real-world scale too (its
+  tiling is in scene units). Cropping or placement when applied and not the whole image; the Output (invert,
+  amount, RGB level and offset) when it changes anything; alpha when the Bitmap gives its alpha to a mono input
+  (mono output Alpha) or as its color (RGB output Alpha). A Bitmap without a file is no image (an issue).
+- Kept as nodes (the allow-list): Mix (color 1 / 2 where a map is off or missing, the mask, the mix amount; its
+  curve is not converted: an issue), RGB Multiply, Color Correction (hue shift in turns, saturation as a factor;
+  lightness either standard, brightness and contrast as fractions, or advanced, gain and gamma, whichever is chosen;
+  rewiring, tint and the advanced pivot and lift are not converted: an issue) and a simple Composite (normal blend
+  mode, no mask; any other is peeled).
 - Peeled to the first usable map below, an approximation counted by class: Falloff (map 1 when on, else color 1),
   VRayDirt (the unoccluded map when on, else the unoccluded color), Output (map 1; its own Output's invert kept),
   RGB Tint (map 1), VRayColor2Bump (its map). Any other map class with maps below gives the first Bitmap below it
@@ -47,9 +52,10 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
   the input's value with the map (Mix(Constant(value), map, amount)), above 1 multiplies the map; in a bump input the
   amount is the Bump's strength, in a normal input it scales the NormalMap's strengths.
 
-Each map object counts once in stats.peeled or stats.unsupported. The file comes from anywhere: a reference cycle,
-a chain deeper than MAX_DEPTH, a reference to an object that is not a map or a damaged object end that branch (an
-issue), and unreadable Placement or Output chunks take the defaults. The chunks of the Placement object and the
+Each map object counts once in stats.peeled or stats.unsupported, each issue once in stats.issues. The file comes
+from anywhere: a reference cycle, a chain deeper than MAX_DEPTH, a reference to an object that is not a map or a
+damaged object end that branch (an issue), a shared map is converted once (no blow-up through repeated
+references), and unreadable Placement, Output or BitmapInfo chunks take the defaults. The chunks of the Placement object and the
 BitmapInfo are read here (3ds Max 2020 layout, docs/FORMAT.md). No bpy, no mathutils.
 """
 import collections
@@ -66,6 +72,7 @@ COLOR, DATA, NORMAL, BUMP = "color", "data", "normal", "bump"
 SRGB, NON_COLOR = "sRGB", "Non-Color"
 EXPLICIT, OBJECT_XYZ, VERTEX_COLOR, WORLD_XYZ = 0, 1, 2, 3  # Placement coordinate source
 MAX_DEPTH = 8
+MAX_NODES = 256  # nodes of one graph drawn as a tree
 SRGB_GAMMA, GAMMA_TOLERANCE = 2.2, 0.05
 
 # ClassIDs (texmap superclass), checked against the class directory of texmap_rules in the tests.
@@ -82,14 +89,13 @@ NORMAL_BUMP = ClassId(0x243E22C6, 0x63F6A014)
 CORONA_NORMAL = ClassId(0x2870CEAA, 0xCC18437C)
 
 # normal map class -> parameter ids in block 0: normal map, its switch, multiplier, bump map, its switch, multiplier,
-# flip red, flip green, swap red and green (None: the class has no such parameter)
-_NormalIds = dataclasses.make_dataclass("_NormalIds", ["normal", "normal_on", "strength", "bump", "bump_on",
-                                                        "bump_strength", "flip_red", "flip_green", "swap"],
-                                        frozen=True)
+# flip red, flip green, swap red and green, the tangents' map channel (None: the class has no such parameter)
+_NormalIds = collections.namedtuple("_NormalIds", "normal normal_on strength bump bump_on bump_strength flip_red "
+                                                  "flip_green swap channel")
 NORMAL_MAPS = {
-    classids.VRAY_NORMAL_MAP: _NormalIds(0, 2, 3, 4, 5, 6, 7, 8, 9),
-    NORMAL_BUMP: _NormalIds(2, 4, 0, 3, 5, 1, 7, 8, 9),
-    CORONA_NORMAL: _NormalIds(500, None, 501, 507, 509, 508, 503, 504, 505),
+    classids.VRAY_NORMAL_MAP: _NormalIds(0, 2, 3, 4, 5, 6, 7, 8, 9, 1),
+    NORMAL_BUMP: _NormalIds(2, 4, 0, 3, 5, 1, 7, 8, 9, None),
+    CORONA_NORMAL: _NormalIds(500, None, 501, 507, 509, 508, 503, 504, 505, None),
 }
 NORMAL_BUMP_METHOD, CORONA_ADD_GAMMA = 6, 502
 
@@ -216,23 +222,25 @@ class Bump:
 
 @dataclasses.dataclass(frozen=True)
 class NormalMap:
-    """A tangent-space normal image, its strength, its channel flips and an additional Bump (or None)."""
+    """A tangent-space normal image, its strength, its channel flips, the map channel of its tangents and an
+    additional Bump (or None)."""
     input: object
     strength: float = 1.0
     flip_red: bool = False
     flip_green: bool = False
     swap: bool = False
     bump: object = None
+    channel: int = 1
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class TextureGraphIR:
     """What drives one input: root node, the input's kind, approximated (a map was peeled below a class whose own
-    effect is lost), and the issues met on the way."""
+    effect is lost), and the issues met on the way, each once. Shared by every material using the same slot."""
     root: object
     kind: str
     approximated: bool = False
-    issues: list = dataclasses.field(default_factory=list)
+    issues: tuple = ()
 
 
 class TexmapStats:
@@ -245,11 +253,55 @@ class TexmapStats:
 
 
 class _Walk:
-    """The state of one convert(): approximated and the issues of its graph."""
+    """The state of one map's conversion: approximated and the issues of its subtree."""
     __slots__ = ("approximated", "issues")
 
     def __init__(self):
         self.approximated, self.issues = False, []
+
+    def merge(self, approximated, issues):
+        self.approximated = self.approximated or approximated
+        self.issues.extend(r for r in issues if r not in self.issues)
+
+
+def _children(node):
+    if isinstance(node, (Invert, Bump, ColorCorrect)):
+        return (node.input,)
+    if isinstance(node, Mix):
+        return tuple(n for n in (node.a, node.b, node.mask) if n is not None)
+    if isinstance(node, Multiply):
+        return (node.a, node.b)
+    if isinstance(node, Composite):
+        return tuple(n for n, _o in node.layers)
+    if isinstance(node, NormalMap):
+        return (node.input,) if node.bump is None else (node.input, node.bump)
+    return ()
+
+
+def tree_size(node):
+    """The number of nodes of a graph drawn as a tree (a shared node counted at each use), in linear time."""
+    sizes = {}
+
+    def size(n):
+        k = id(n)
+        if k not in sizes:
+            sizes[k] = 1 + sum(size(c) for c in _children(n))
+        return sizes[k]
+    return size(node)
+
+
+def first_image(node):
+    """The first Image of a graph, depth first, None without one."""
+    seen, stack = set(), [node]
+    while stack:
+        n = stack.pop()
+        if id(n) in seen:
+            continue
+        seen.add(id(n))
+        if isinstance(n, Image):
+            return n
+        stack.extend(reversed(_children(n)))
+    return None
 
 
 def _finite(v):
@@ -304,11 +356,15 @@ class TexmapConverter:
     def __init__(self, graph, assets=None, textures=None):
         self.graph, self.assets, self.textures = graph, assets, textures
         self.stats = TexmapStats()
-        self._counted, self._done = set(), {}
+        self._counted, self._done, self._reported = set(), {}, set()
+        self._nodes, self._firsts = {}, {}  # keyed (object, kind, depth)
 
     def _issue(self, walk, index, reason):
-        self.stats.issues.append((index, reason))
-        walk.issues.append(reason)
+        if (index, reason) not in self._reported:
+            self._reported.add((index, reason))
+            self.stats.issues.append((index, reason))
+        if reason not in walk.issues:
+            walk.issues.append(reason)
 
     def _class_name(self, m):
         try:
@@ -333,7 +389,15 @@ class TexmapConverter:
         root = self._node(ref.index, kind, walk, 0, ())
         out = None
         if root is not None:
-            out = TextureGraphIR(self._slot(root, ref, kind, value, walk), kind, walk.approximated, walk.issues)
+            root = self._slot(root, ref, kind, value, walk)
+            if tree_size(root) > MAX_NODES:
+                image = first_image(root)
+                self._issue(walk, ref.index, "map %d: graph of more than %d nodes cut down to its first image"
+                            % (ref.index, MAX_NODES))
+                walk.approximated = True
+                root = self._slot(image, ref, kind, value, walk) if image is not None else None
+            if root is not None:
+                out = TextureGraphIR(root, kind, walk.approximated, tuple(walk.issues))
         self._done[key] = out
         return out
 
@@ -353,6 +417,8 @@ class TexmapConverter:
             if isinstance(root, Bump):
                 return Bump(root.input, root.strength * amount)
             return NormalMap(root, amount)
+        if kind == COLOR and isinstance(value, (int, float)) and not isinstance(value, bool):
+            value = (float(value),) * 3  # a color graph is RGB throughout, also on a float input
         if amount < 1.0 and value is not None:
             return Mix(Constant(value), root, amount)
         if amount > 1.0:
@@ -377,9 +443,20 @@ class TexmapConverter:
             return None
 
     def _node(self, i, kind, walk, depth, chain):
-        """The node of map object i in an input of that kind, None when nothing usable is there."""
+        """The node of map object i in an input of that kind, None when nothing usable is there. Converted once per
+        (object, kind, depth): the same map reached again shares the node, its issues and its approximation."""
         if i is None:
             return None
+        key = (i, kind, depth)
+        hit = self._nodes.get(key)
+        if hit is None:
+            sub = _Walk()
+            node = self._convert_node(i, kind, sub, depth, chain)
+            hit = self._nodes[key] = (node, sub.approximated, tuple(sub.issues))
+        walk.merge(hit[1], hit[2])
+        return hit[0]
+
+    def _convert_node(self, i, kind, walk, depth, chain):
         m = self._get(i, walk, depth, chain)
         if m is None:
             return None
@@ -396,17 +473,29 @@ class TexmapConverter:
             walk.approximated = True
             self._count(self.stats.peeled, m)
             return rule(self, m, kind, walk, depth, chain)
+        return self._peel_to_image(m, kind, walk, depth, chain, "no bitmap below")
+
+    def _peel_to_image(self, m, kind, walk, depth, chain, why):
+        """The first Bitmap below map m, counted as a peel; None (unsupported, an issue) without one."""
         image = self._first_image(m, kind, walk, depth, chain)
         if image is None:
             self._count(self.stats.unsupported, m)
-            self._issue(walk, i, "%s: no bitmap below" % self._class_name(m))
+            self._issue(walk, m.index, "%s %r: %s" % (self._class_name(m), m.name, why))
             return None
         walk.approximated = True
         self._count(self.stats.peeled, m)
         return image
 
     def _first_image(self, m, kind, walk, depth, chain):
-        """The first Bitmap below map m, depth first in reference order, None without one."""
+        """The first Bitmap below map m, depth first in reference order, None without one; looked for once per
+        (map, kind, depth)."""
+        key = (m.index, kind, depth)
+        if key not in self._firsts:
+            self._firsts[key] = None  # a cycle back to here finds nothing
+            self._firsts[key] = self._first_image_walk(m, kind, walk, depth, chain)
+        return self._firsts[key]
+
+    def _first_image_walk(self, m, kind, walk, depth, chain):
         for c in m.children:
             if depth > MAX_DEPTH or c in chain or self.graph.superclass(c) != classids.SC_TEXMAP:
                 continue
@@ -452,13 +541,16 @@ class TexmapConverter:
         elif mapping.source in (OBJECT_XYZ, WORLD_XYZ):
             self._issue(walk, m.index, "Bitmap %r: planar %s XYZ mapping, drawn with the UVs" % (
                 m.name, "object" if mapping.source == OBJECT_XYZ else "world"))
+        if mapping.real_world:
+            self._issue(walk, m.index, "Bitmap %r: real-world scale, its tiling in scene units not converted"
+                        % (m.name,))
         crop = None
         clip = tuple(_num(m, pid, d) for pid, d in ((BM_CLIP_U, 0.0), (BM_CLIP_V, 0.0), (BM_CLIP_W, 1.0),
                                                      (BM_CLIP_H, 1.0)))
         if _flag(m, BM_APPLY, False) and clip != (0.0, 0.0, 1.0, 1.0):
             crop = Crop(*clip, place=m.param(BM_CROP_PLACE, 0) == 1)
         gamma = self._gamma(m)
-        alpha = m.param(BM_RGB if kind == COLOR else BM_MONO, 0) == 1
+        alpha = m.param(BM_MONO if kind == DATA else BM_RGB, 0) == 1
         return Image(m.index, entry.name, entry.path, entry.resolved, found, mapping, crop, self._output(out),
                      colorspace(kind, gamma), gamma, alpha)
 
@@ -533,9 +625,13 @@ class TexmapConverter:
         normal = self._sub(m, ids.normal, ids.normal_on, NORMAL, walk, depth, chain)
         bump = self._sub(m, ids.bump, ids.bump_on, BUMP, walk, depth, chain)
         if kind not in (NORMAL, BUMP):  # a normal map in a color or data input: its image only
+            image = _peeled_image(normal) or _peeled_image(bump)
+            if image is None:
+                self._count(self.stats.unsupported, m)
+                return None
             walk.approximated = True
             self._count(self.stats.peeled, m)
-            return _peeled_image(normal) or _peeled_image(bump)
+            return image
         key = ClassId(*m.class_id)
         if key == NORMAL_BUMP and m.param(NORMAL_BUMP_METHOD, 0) not in (None, 0):
             self._issue(walk, m.index, "Normal Bump %r: method %r drawn as tangent space" % (
@@ -545,8 +641,10 @@ class TexmapConverter:
         bump = Bump(_bump_input(bump), max(0.0, _num(m, ids.bump_strength, 1.0))) if bump is not None else None
         if normal is None:
             return bump
+        channel = m.param(ids.channel, 0) if ids.channel is not None else None
+        channel = channel if isinstance(channel, int) and not isinstance(channel, bool) and 0 <= channel <= 99 else 1
         return NormalMap(normal, max(0.0, _num(m, ids.strength, 1.0)), _flag(m, ids.flip_red, False),
-                         _flag(m, ids.flip_green, False), _flag(m, ids.swap, False), bump)
+                         _flag(m, ids.flip_green, False), _flag(m, ids.swap, False), bump, channel)
 
 
 def _bump_input(node):
@@ -600,7 +698,10 @@ def _color2bump(conv, m, kind, walk, depth, chain):
 
 
 def _mix(conv, m, kind, walk, depth, chain):
-    """0 mixAmount (fraction), 4 / 5 color1 / 2, 6 / 7 map1 / 2, 8 mask, 9 / 10 / 11 their switches."""
+    """0 mixAmount (fraction), 3 useCurve, 4 / 5 color1 / 2, 6 / 7 map1 / 2, 8 mask, 9 / 10 / 11 their switches."""
+    if _flag(m, 3, False):
+        walk.approximated = True
+        conv._issue(walk, m.index, "Mix %r: its mix curve not converted" % (m.name,))
     a = conv._sub(m, 6, 9, kind, walk, depth, chain) or conv._constant(m, 4, kind, (0.0, 0.0, 0.0))
     b = conv._sub(m, 7, 10, kind, walk, depth, chain) or conv._constant(m, 5, kind, (1.0, 1.0, 1.0))
     mask = conv._sub(m, 8, 11, DATA, walk, depth, chain)
@@ -616,15 +717,18 @@ def _rgb_multiply(conv, m, kind, walk, depth, chain):
 
 def _color_correction(conv, m, kind, walk, depth, chain):
     """0 color, 1 map, 2 rewireMode, 7 hueShift (degrees), 8 saturation (%), 10 tintStrength, 11 lightnessMode
-    (1 advanced), 12 brightness, 13 contrast, 18 gainRGB (%), 22 gammaRGB."""
+    (0 standard: 12 brightness, 13 contrast; 1 advanced: 18 gainRGB (%), 22 gammaRGB, 26 pivotRGB, 30 liftRGB)."""
     node = conv._sub(m, 1, None, kind, walk, depth, chain) or conv._constant(m, 0, kind, (0.0, 0.0, 0.0))
     if m.param(2, 0) not in (None, 0) or _num(m, 10, 0.0) != 0.0:
         walk.approximated = True
         conv._issue(walk, m.index, "Color Correction %r: rewiring and tint not converted" % (m.name,))
-    advanced = m.param(11, 0) == 1
-    return ColorCorrect(node, _num(m, 7, 0.0) / 360.0, 1.0 + _num(m, 8, 0.0) / 100.0, _num(m, 12, 0.0) / 100.0,
-                        _num(m, 13, 0.0) / 100.0, _num(m, 18, 100.0) / 100.0 if advanced else 1.0,
-                        max(0.01, _num(m, 22, 1.0)) if advanced else 1.0)
+    hue, saturation = _num(m, 7, 0.0) / 360.0, 1.0 + _num(m, 8, 0.0) / 100.0
+    if m.param(11, 0) != 1:
+        return ColorCorrect(node, hue, saturation, _num(m, 12, 0.0) / 100.0, _num(m, 13, 0.0) / 100.0)
+    if _num(m, 26, 1.0) != 1.0 or _num(m, 30, 0.0) != 0.0:
+        walk.approximated = True
+        conv._issue(walk, m.index, "Color Correction %r: pivot and lift not converted" % (m.name,))
+    return ColorCorrect(node, hue, saturation, gain=_num(m, 18, 100.0) / 100.0, gamma=max(0.01, _num(m, 22, 1.0)))
 
 
 def _composite(conv, m, kind, walk, depth, chain):
@@ -642,10 +746,10 @@ def _composite(conv, m, kind, walk, depth, chain):
             and at(1, k, 1)]
     simple = all(at(5, k, 0) == 0 and not (at(3, k, 1) and _ref(m, 10, k) is not None) for k in used)
     if not simple:
-        walk.approximated = True
-        conv._count(conv.stats.peeled, m)
-        conv._issue(walk, m.index, "Composite %r: blend modes or masks not converted" % (m.name,))
-        return conv._first_image(m, kind, walk, depth, chain)
+        image = conv._peel_to_image(m, kind, walk, depth, chain, "blend modes or masks, and no bitmap below")
+        if image is not None:
+            conv._issue(walk, m.index, "Composite %r: blend modes or masks not converted" % (m.name,))
+        return image
     layers = []
     for k in used:
         node = conv._node(maps[k].index, kind, walk, depth, chain)
