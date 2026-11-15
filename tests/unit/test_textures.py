@@ -116,6 +116,21 @@ class RuleTest(Tree):
         self.assertEqual(found, Found(os.path.normpath(e), ORIGINAL))
         self.assertEqual(self.calls, [e])
 
+    @unittest.skipUnless(WINDOWS, "junctions are a Windows thing")
+    def test_rule_4_refuses_a_link_anywhere_in_the_path(self):
+        self.touch("real", "sub", "e.jpg")
+        link = os.path.join(self.root, "link")
+        if not BoundsTest.junction(link, os.path.join(self.root, "real")):
+            self.skipTest("cannot create a junction here")
+        through = os.path.join(link, "sub", "e.jpg")
+        self.assertTrue(os.path.isfile(through))
+        self.assertIsNone(self.index(is_local_drive=self.spy(True)).find(through))
+        lstat = os.lstat
+        seen = []
+        with mock.patch.object(textures.os, "lstat", side_effect=lambda p: seen.append(p) or lstat(p)):
+            self.assertIsNone(self.index(is_local_drive=self.spy(True)).find(through))
+        self.assertEqual(seen[-1], link)  # nothing behind the junction was touched
+
     def test_rule_4_off_windows_never(self):
         if WINDOWS:
             self.skipTest("Windows has drive letters")
@@ -153,15 +168,27 @@ class BoundsTest(Tree):
         self.assertEqual(idx.find("one.png"), Found(one, USER))
         self.assertIsNone(idx.find("two.png"))
 
-    def test_max_files_stops_the_walk_and_is_reported(self):
-        lib = os.path.join(self.root, "lib")
+    def test_max_entries_stops_the_walk_and_is_reported_once(self):
+        lib, lib2 = os.path.join(self.root, "lib"), os.path.join(self.root, "lib2")
         for n in range(5):
             self.touch("lib", "f%d.png" % n)
-        idx = self.index(user_dirs=[lib], max_files=3)
+        self.touch("lib2", "g.png")
+        idx = self.index(user_dirs=[lib, lib2], max_entries=3)
         self.assertIsNotNone(idx.find("f0.png"))
         self.assertIsNone(idx.find("f4.png"))
-        self.assertEqual(idx.report.truncated, [(lib, 3)])
-        self.assertIn("stopped after 3 files in " + lib, "\n".join(idx.report.lines()))
+        self.assertIsNone(idx.find("g.png"))  # the budget is per rule
+        self.assertEqual(idx.report.truncated, [(USER, lib, 3)])
+        self.assertIn("Texture search of texture search folders stopped after 3 files and folders, in " + lib,
+                      idx.report.lines())
+
+    def test_folders_count_against_the_budget(self):
+        lib = os.path.join(self.root, "lib")
+        for n in range(6):
+            os.makedirs(os.path.join(lib, "d%d" % n))
+        self.touch("lib", "z", "deep.png")
+        idx = self.index(user_dirs=[lib], max_entries=4)
+        self.assertIsNone(idx.find("deep.png"))
+        self.assertEqual(idx.report.truncated, [(USER, lib, 4)])
 
     def test_each_rule_is_walked_once(self):
         self.touch("proj", "scene", "a.jpg")
@@ -220,7 +247,7 @@ class RefusalTest(Tree):
     REFUSED = (
         r"\\host\share\a.jpg", "//host/share/a.jpg", r"\\?\C:\a.jpg", r"\\.\C:\a.jpg", r"..\..\a.jpg",
         "a.jpg", r"maps\a.jpg", "C:a.jpg", r"C:\x\..\a.jpg", r"C:\a.jpg:stream", r"C:\x\CON", r"C:\x\nul.jpg",
-        "C:\\a\x00.jpg", "/home/user/a.jpg", "")
+        "C:\\a\x00.jpg", "/home/user/a.jpg", "", "C:\\x\\COM\u00b9.jpg", "C:\\x\\lpt\u00b3")
 
     def test_refused_reason(self):
         for path in self.REFUSED:
@@ -275,6 +302,13 @@ class ReportTest(Tree):
         self.assertEqual(lines[0], "Textures found: 3 (the scene's folder 1, maps or textures folders 1, "
                                    "texture search folders 1, the stored path 0)")
         self.assertEqual(lines[1], "Textures not found: 2: Gone.tif, zz.png")
+
+    def test_a_name_found_later_is_no_longer_missing(self):
+        r = textures.TextureReport()
+        r.add("x.jpg", None)
+        r.add("X.JPG", Found("/a/x.jpg", ORIGINAL))
+        r.add("x.jpg", None)
+        self.assertEqual((r.missing, r.found[ORIGINAL]), ([], 1))
 
     def test_find_is_cached(self):
         a = self.touch("proj", "scene", "a.jpg")

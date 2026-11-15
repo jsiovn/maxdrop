@@ -64,7 +64,7 @@ def pack_parent(archive_path, context=None):
 
 
 _LOOKUP = ("A folder that holds textures of your .max scenes, searched with its subfolders. A texture is looked "
-           "for by its file name: in the scene's folder, then in folders named maps or textures beside the scene, "
+           "for by its file name: in the scene's folder, then in folders named maps or textures beside the scene file or its folder, "
            "then in these folders in their order, and last at the path stored in the scene, only when it is on a "
            "local drive. Network and device paths stored in a scene are never opened")
 

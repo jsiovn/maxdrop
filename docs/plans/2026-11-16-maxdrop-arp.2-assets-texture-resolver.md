@@ -85,7 +85,7 @@ def bitmap_file(table, mtl)  # class BITMAP_TEX only: param 13 of block 0 -> ent
   - rule 2: `<root>/proj/scene/Maps/b.png` and `<root>/proj/Textures/sub/c.tga` found, rule 2 (sibling
     folders of the scene file, i.e. inside the scene's folder, and of the scene's folder, i.e. inside its parent).
   - rule 3: `<root>/lib/x/y/d.exr` found through `user_dirs=[<root>/lib]`, rule 3; not found past `max_depth`;
-    walk stops at `max_files` and the report names the truncated folder.
+    walk stops at `max_entries` (files and folders) and the report names the rule and folder once.
   - rule 4 (Windows only, skipped elsewhere): `<root>/elsewhere/e.jpg` by its absolute path with
     `is_local_drive=lambda p: True` -> rule 4; with `lambda p: False` -> None.
   - priority: same name in scene folder and maps -> rule 1; nearest (shallower) file wins inside a tier.
@@ -102,7 +102,7 @@ def bitmap_file(table, mtl)  # class BITMAP_TEX only: param 13 of block 0 -> ent
 ```python
 SCENE, SIBLING, USER, ORIGINAL = 1, 2, 3, 4
 SIBLING_NAMES = frozenset(("maps", "textures"))
-DEFAULT_MAX_DEPTH, DEFAULT_MAX_FILES = 8, 200_000      # per tier
+DEFAULT_MAX_DEPTH, DEFAULT_MAX_ENTRIES = 8, 200_000    # files and folders, per tier
 
 def base_name(path), name_key(name)                     # NFC casefold
 def name_refused(name)                                  # "", ".", "..", control chars, ':' '/' '\\'
@@ -111,11 +111,11 @@ def refused_reason(path)                                # rule 4 policy: empty/N
 def is_local_drive(path)                                # Windows GetDriveTypeW in removable/fixed/cdrom/ramdisk
 class Found(namedtuple("Found", "path rule"))
 class TextureIndex:
-    __init__(scene_path, user_dirs=(), scene_subfolders=False, max_depth=..., max_files=...,
+    __init__(scene_path, user_dirs=(), scene_subfolders=False, max_depth=..., max_entries=...,
              is_local_drive=is_local_drive)
     find(path, resolved=None) -> Found | None            # cached per (path, resolved); records into report
     report                                              # TextureReport
-class TextureReport: found {rule: n}, missing [names], truncated [folders], refused n, lines()
+class TextureReport: found {rule: n}, missing [names], truncated [(rule, folder, n)], lines()
 ```
 
   Walk: breadth first, entries sorted by name, never into a symlink or reparse-point folder, files only (no

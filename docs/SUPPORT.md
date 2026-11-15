@@ -95,8 +95,8 @@ images. MaxDrop takes the **file name** of each path and looks for it, without r
 
 The first place that has the file wins. A path stored as a network share (`\\server\share\...`), a device path,
 a relative path or one that climbs with `..` is never opened; its file name is still looked for in places 1 to 3.
-Each place is searched once per import, at most 8 folders deep and 200,000 files; links and junctions are not
-followed. A file that is not found is skipped; the material keeps its plain color.
+Each place is searched once per import, at most 8 folders deep and 200,000 files and folders; links and
+junctions are not followed. A file that is not found is skipped; the material keeps its plain color.
 
 From a scene pack, the image and `.ies` files of the pack are unpacked flat into the folder of the `.max`, so the
 lookup above finds them wherever they were in the archive. Of two maps with the same file name, the one nearest to

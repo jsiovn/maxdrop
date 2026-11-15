@@ -172,6 +172,31 @@ def _oracle_file_names(oracle):
     return out
 
 
+class FakeFile:
+    """A compound file with the given streams (bytes, or an exception that open raises)."""
+
+    def __init__(self, streams):
+        self.streams, self.read_called = streams, False
+
+    def exists(self, name):
+        return name in self.streams
+
+    def open(self, name, max_size=None):
+        value = self.streams[name]
+        if isinstance(value, Exception):
+            raise value
+        outer = self
+
+        class Stream:
+            def __len__(self):
+                return len(value)
+
+            def read(self):
+                outer.read_called = True
+                return value
+        return Stream()
+
+
 class FixtureTest(unittest.TestCase):
     def test_every_fixture(self):
         checked = 0
@@ -201,6 +226,38 @@ class FixtureTest(unittest.TestCase):
                 checked += len(found)
                 del cf
         self.assertEqual(checked, sum(ASSET_COUNTS.values()))
+
+    def test_falls_back_to_the_older_stream(self):
+        data = record(G1, "Bitmap", "a.png") + record(G2, "Photometric", "b.ies")
+        t = AssetTable.from_file(FakeFile({"FileAssetMetaData2": data}))
+        self.assertEqual((t.stream, len(t), t.issues), ("FileAssetMetaData2", 2, []))
+        both = FakeFile({"FileAssetMetaData2": data, "FileAssetMetaData3": record(G3, "Bitmap", "c.png", "")})
+        self.assertEqual([e.guid for e in AssetTable.from_file(both)], [G3])
+
+    def test_unreadable_or_oversized_stream(self):
+        t = AssetTable.from_file(FakeFile({"FileAssetMetaData3": cfb.CfbError("broken chain")}))
+        self.assertEqual((len(t), t.stream), (0, "FileAssetMetaData3"))
+        self.assertIn("broken chain", t.issues[0])
+        big = FakeFile({"FileAssetMetaData3": b"x" * 64})
+        old = assets.MAX_STREAM
+        assets.MAX_STREAM = 10
+        try:
+            t = AssetTable.from_file(big)
+        finally:
+            assets.MAX_STREAM = old
+        self.assertIn("larger than", t.issues[0])
+        self.assertFalse(big.read_called)
+
+    def test_files_of_reads_parts_too(self):
+        t = AssetTable.parse(record(G1, "Bitmap", "a.png", "") + record(G2, "Bitmap", "b.png", ""), 3)
+        own = pblock.ParamBlock2(0, 1, 0, {9: pblock.Param(9, 9, 0, (pblock.Asset(G1),), b"", None),
+                                           3: pblock.Param(3, 0, 0, (1.0,), b"", None)})
+        part_block = pblock.ParamBlock2(2, 1, 0, {4: pblock.Param(4, 9 | pblock.TABLE, 0,
+                                                                  (pblock.Asset(G3), pblock.Asset(G2)), b"", None)})
+        part = materials.Part(7, classids.BITMAP_TEX, classids.SC_UVGEN, {0: part_block}, {})
+        m = materials.MtlBase(1, (1, 2), classids.SC_TEXMAP, "m", {}, {1: own}, {}, {5: part}, [], [])
+        self.assertEqual(assets.files_of(t, m), [(0, 9, t.get(G1)), (2, 4, t.get(G2))])
+        self.assertIsNone(assets.bitmap_file(t, m))  # not a Bitmap
 
     def test_no_stream_is_an_empty_table(self):
         class NoStreams:

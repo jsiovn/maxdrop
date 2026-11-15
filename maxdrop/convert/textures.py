@@ -18,15 +18,19 @@ without regard to case, in this order:
 3. USER: the user's texture search folders, in their order, with their subfolders.
 4. ORIGINAL: the stored path itself (then the absolute path 3ds Max resolved when saving), only when it is an
    absolute path on a drive letter of a local drive (removable, fixed, CD-ROM or RAM disk; never a network
-   drive) and names a plain file, not a link. A UNC path (\\\\server\\share), a device path (\\\\?\\, \\\\.\\, a reserved
+   drive) and names a plain file. A UNC path (\\\\server\\share), a device path (\\\\?\\, \\\\.\\, a reserved
    device name such as CON), a relative path, a path that climbs with .. and a drive-relative path (C:a.jpg) are
-   never opened (refused_reason says why). Rule 4 exists on Windows only: elsewhere a 3ds Max path names nothing.
+   never opened (refused_reason says why). Each part of the path, from the drive root down, is checked with lstat
+   before the next: a symbolic link or junction anywhere in it (one may point at a network share) refuses the
+   path before anything behind it is touched. Rule 4 exists on Windows only: elsewhere a 3ds Max path names
+   nothing.
 
 The first rule that has the name wins; inside a rule the file nearest to the folder searched wins (breadth
 first, names sorted). Each rule's folders are walked once, when the rule is first needed, at most max_depth
-folders deep and max_files files per rule (the report names a folder where the walk stopped); links and
-reparse-point folders (junctions) are not entered, linked files are not taken, unreadable folders are skipped.
-No bpy, no reader import: this takes the stored strings.
+folders deep and max_entries files and folders per rule (the report says where the walk stopped). A link is a
+symbolic link or a name-surrogate reparse point (junction, mount point): never entered, never taken, in any rule;
+other reparse points (cloud placeholders, deduplicated files) are ordinary files and folders. Unreadable folders
+are skipped. No bpy, no reader import: this takes the stored strings.
 """
 import collections
 import os
@@ -39,16 +43,19 @@ RULE_NAMES = {SCENE: "the scene's folder", SIBLING: "maps or textures folders", 
               ORIGINAL: "the stored path"}
 SIBLING_NAMES = frozenset(("maps", "textures"))
 DEFAULT_MAX_DEPTH = 8
-DEFAULT_MAX_FILES = 200_000  # per rule
+DEFAULT_MAX_ENTRIES = 200_000  # files and folders, per rule
 
-_REPARSE_POINT = 0x400  # FILE_ATTRIBUTE_REPARSE_POINT
+_NAME_SURROGATE = 0x20000000  # reparse tag bit of symbolic links, junctions and mount points
 _LOCAL_DRIVE_TYPES = frozenset((2, 3, 5, 6))  # GetDriveTypeW: removable, fixed, CD-ROM, RAM disk (4 = network)
-_RESERVED = frozenset(["CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"] + ["COM%d" % i for i in range(1, 10)]
-                      + ["LPT%d" % i for i in range(1, 10)])
+# the same set as intake/archive.py: Windows also reserves COM and LPT with a superscript digit
+_RESERVED = frozenset(["CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"]
+                      + ["COM%s" % d for d in "123456789¹²³"]
+                      + ["LPT%s" % d for d in "123456789¹²³"])
 
 
 def base_name(path):
-    """The last part of a stored path, with both separators 3ds Max may write."""
+    """The last part of a stored path, with both separators 3ds Max may write. (reader/assets.py has the same:
+    convert/ takes strings and does not import the reader.)"""
     return path.replace("\\", "/").rsplit("/", 1)[-1]
 
 
@@ -104,13 +111,28 @@ def is_local_drive(path):
     return kind in _LOCAL_DRIVE_TYPES
 
 
+def _link(st):
+    return stat.S_ISLNK(st.st_mode) or bool(getattr(st, "st_reparse_tag", 0) & _NAME_SURROGATE)
+
+
 def _plain_file(path):
-    """A regular file that is neither a link nor a reparse point, checked without following either."""
+    """path (refused_reason None) names a regular file and no part of it is a link, each part checked with
+    lstat from the drive root down, so nothing behind a link is touched."""
+    current = path[:3]
+    parts = [p for p in path[3:].replace("\\", "/").split("/") if p not in ("", ".")]
+    if not parts:
+        return False
     try:
-        st = os.lstat(path)
+        for i, part in enumerate(parts):
+            current = os.path.join(current, part)
+            st = os.lstat(current)
+            if _link(st):
+                return False
+            if i < len(parts) - 1 and not stat.S_ISDIR(st.st_mode):
+                return False
     except (OSError, ValueError):
         return False
-    return stat.S_ISREG(st.st_mode) and not getattr(st, "st_file_attributes", 0) & _REPARSE_POINT
+    return stat.S_ISREG(st.st_mode)
 
 
 def _entries(folder):
@@ -121,13 +143,19 @@ def _entries(folder):
         return []
 
 
-def _plain_dir(entry):
-    """A folder, neither a link nor a junction."""
+def _kind(entry):
+    """'file', 'dir' or None (a link, anything else, or unreadable), without following links."""
     try:
-        return (entry.is_dir(follow_symlinks=False)
-                and not getattr(entry.stat(follow_symlinks=False), "st_file_attributes", 0) & _REPARSE_POINT)
+        st = entry.stat(follow_symlinks=False)
     except OSError:
-        return False
+        return None
+    if _link(st):
+        return None
+    if stat.S_ISREG(st.st_mode):
+        return "file"
+    if stat.S_ISDIR(st.st_mode):
+        return "dir"
+    return None
 
 
 class Found(collections.namedtuple("Found", "path rule")):
@@ -136,22 +164,24 @@ class Found(collections.namedtuple("Found", "path rule")):
 
 
 class TextureReport:
-    """What the lookups of one import found: files per rule and the names not found, each name counted once."""
+    """What the lookups of one import found: files per rule and the names not found, each name counted once (a
+    name found by a later lookup is no longer missing)."""
 
     def __init__(self):
         self.found = dict.fromkeys(RULES, 0)
-        self.truncated = []  # (folder, max_files) where a walk stopped
-        self._seen = set()
+        self.truncated = []  # (rule, folder, max_entries): the walk of that rule stopped in folder
+        self._found = set()
         self._missing = {}
 
     def add(self, name, found):
         key = name_key(name)
-        if key in self._seen:
+        if key in self._found:
             return
-        self._seen.add(key)
         if found is None:
-            self._missing[key] = name or "(no file name)"
+            self._missing.setdefault(key, name or "(no file name)")
         else:
+            self._found.add(key)
+            self._missing.pop(key, None)
             self.found[found.rule] += 1
 
     @property
@@ -166,7 +196,8 @@ class TextureReport:
         missing = self.missing
         if missing:
             out.append("Textures not found: %d: %s" % (len(missing), ", ".join(missing)))
-        out.extend("Texture search stopped after %d files in %s" % (n, folder) for folder, n in self.truncated)
+        out.extend("Texture search of %s stopped after %d files and folders, in %s" % (RULE_NAMES[r], n, folder)
+                   for r, folder, n in self.truncated)
         return out
 
 
@@ -174,11 +205,11 @@ class TextureIndex:
     """The texture lookup of one import: each rule's folders walked once, on first need."""
 
     def __init__(self, scene_path, user_dirs=(), scene_subfolders=False, max_depth=DEFAULT_MAX_DEPTH,
-                 max_files=DEFAULT_MAX_FILES, is_local_drive=is_local_drive):
+                 max_entries=DEFAULT_MAX_ENTRIES, is_local_drive=is_local_drive):
         self.scene_dir = os.path.dirname(os.path.abspath(scene_path))
         self.user_dirs = list(dict.fromkeys(os.path.abspath(d) for d in user_dirs))
         self.scene_subfolders = scene_subfolders
-        self.max_depth, self.max_files = max_depth, max_files
+        self.max_depth, self.max_entries = max_depth, max_entries
         self._is_local_drive = is_local_drive
         self._tiers = {}
         self._cache = {}
@@ -191,7 +222,7 @@ class TextureIndex:
             roots = []
             for folder in dict.fromkeys((self.scene_dir, os.path.dirname(self.scene_dir))):
                 roots.extend((e.path, True) for e in _entries(folder)
-                             if name_key(e.name) in SIBLING_NAMES and _plain_dir(e))
+                             if name_key(e.name) in SIBLING_NAMES and _kind(e) == "dir")
             return roots
         return [(d, True) for d in self.user_dirs]
 
@@ -199,27 +230,29 @@ class TextureIndex:
         index = self._tiers.get(rule)
         if index is None:
             index = self._tiers[rule] = {}
-            budget = [self.max_files]
+            budget = [self.max_entries]
             for root, recursive in self._roots(rule):
-                self._walk(root, recursive, index, budget)
+                stopped = self._walk(root, recursive, index, budget)
+                if stopped is not None:
+                    self.report.truncated.append((rule, stopped, self.max_entries))
+                    break
         return index
 
     def _walk(self, root, recursive, index, budget):
+        """Add root's files to index; the folder where the budget ran out, None when it did not."""
         queue = collections.deque([(root, 0)])
         while queue:
             folder, depth = queue.popleft()
             for e in _entries(folder):
-                try:
-                    if e.is_file(follow_symlinks=False):
-                        if budget[0] <= 0:
-                            self.report.truncated.append((root, self.max_files))
-                            return
-                        budget[0] -= 1
-                        index.setdefault(name_key(e.name), e.path)
-                    elif recursive and depth < self.max_depth and _plain_dir(e):
-                        queue.append((e.path, depth + 1))
-                except OSError:
-                    continue
+                if budget[0] <= 0:
+                    return folder
+                budget[0] -= 1
+                kind = _kind(e)
+                if kind == "file":
+                    index.setdefault(name_key(e.name), e.path)
+                elif kind == "dir" and recursive and depth < self.max_depth:
+                    queue.append((e.path, depth + 1))
+        return None
 
     def _find(self, path, resolved):
         name = base_name(path) or base_name(resolved)

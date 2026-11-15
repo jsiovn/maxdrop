@@ -100,11 +100,12 @@ class AssetTable:
             if not cf.exists(name):
                 continue
             try:
-                data = cf.open(name, max_size=MAX_STREAM).read()
+                stream = cf.open(name, max_size=MAX_STREAM)
+                if len(stream) > MAX_STREAM:
+                    return cls(issues=["%s is larger than %d bytes: not read" % (name, MAX_STREAM)], stream=name)
+                data = stream.read()
             except cfb.CfbError as e:
                 return cls(issues=["%s not read: %s" % (name, e)], stream=name)
-            if len(data) > MAX_STREAM:
-                return cls(issues=["%s is larger than %d bytes: not read" % (name, MAX_STREAM)], stream=name)
             return cls.parse(data, strings, name)
         return cls()
 
