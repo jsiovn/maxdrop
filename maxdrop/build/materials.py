@@ -6,10 +6,12 @@
 
     builder = MaterialBuilder()
     material = builder.make(ir)         # a new Material; build.objects calls it once per Max material
-    builder.issues()                    # [(label, reason)]: textures not found or not loaded, sockets skipped
+    builder.issues()                    # [(label, reason)]: textures that do not load
+    builder.classes                     # Counter {class name: materials made by a rule (grey ones not counted)}
+    builder.sockets_skipped             # Counter {Principled input name: materials that needed it on this Blender}
 
 The Principled BSDF's inputs are looked up by name with an existence check: Thin Wall exists from Blender 5.0 and
-Diffuse Roughness from 4.5, so on an older Blender a value the IR asks for there is skipped and reported. Other
+Diffuse Roughness from 4.5, so on an older Blender a value the IR asks for there is skipped and counted. Other
 nodes' inputs are looked up by identifier (Fac, Bright, A_Color...), which stays the same while their names change
 between versions.
 
@@ -24,8 +26,8 @@ Image -> Image Texture (its image datablock reused per file and color space: one
 two datablocks), with its placement as a Mapping node and a UV Map node for a map channel other than 1; Invert,
 Mix, Multiply, ColorCorrect (Hue/Saturation/Value, Bright/Contrast, gain, Gamma), Composite (Mix per layer),
 NormalMap (Normal Map node, flips through Separate / Combine Color), Bump (Bump node). A texture file that was not
-found (or does not load) keeps its Image Texture node, without an image and not connected, and is reported by name:
-the graph above it carries on without it (a Mix gives its other side, a normal map without its image nothing) and
+found (or does not load) keeps its Image Texture node, without an image and not connected (a file not found is
+reported by name by the texture lookup, convert.textures, a file that does not load here): the graph above it carries on without it (a Mix gives its other side, a normal map without its image nothing) and
 an input left without a map keeps the IR's value. An empty image node renders black in EEVEE and magenta in Cycles,
 and in a normal or alpha input it would wreck the shading or hide the object.
 
@@ -34,6 +36,7 @@ sample = R(u, v, w angles) S(tiling) (uv - 0.5 - offset) + 0.5, one Mapping node
 the fraction of that, then a Mapping POINT into the cropped rectangle (TEXTURE, out of it, for a placed image).
 Alpha: Material.surface_render_method only, BLENDED for a constant alpha below 1, DITHERED for an alpha map.
 """
+import collections
 import os
 
 import bpy
@@ -117,6 +120,8 @@ class MaterialBuilder:
         self.images = {}  # (normalized path, color space) -> Image or None (not loaded)
         self._issues = []
         self._seen = set()
+        self.classes = collections.Counter()
+        self.sockets_skipped = collections.Counter()
 
     def issue(self, label, reason):
         if (label, reason) not in self._seen:
@@ -130,13 +135,16 @@ class MaterialBuilder:
     def make(self, ir):
         """A new Material for a MaterialIR."""
         material = bpy.data.materials.new(ir.name or "Material")
-        _Tree(self, material, ir).build()
+        tree = _Tree(self, material, ir)
+        tree.build()
+        self.sockets_skipped.update(tree.skipped)
+        if not ir.unknown:
+            self.classes[ir.source] += 1
         return material
 
     def image(self, img, label):
         """The Image of a texmaps.Image (None when its file was not found or does not load)."""
         if img.found is None:
-            self.issue(label, "texture not found: %s" % (img.name or img.path or "(no file name)"))
             return None
         key = (os.path.normcase(os.path.abspath(img.found.path)), img.colorspace)
         if key not in self.images:
@@ -157,6 +165,7 @@ class _Tree:
     def __init__(self, builder, material, ir):
         self.builder, self.material, self.ir = builder, material, ir
         self.label = "material %s" % (material.name,)
+        self.skipped = set()  # the Principled inputs the IR needs that this Blender lacks
         tree = compat.material_node_tree(material)
         self.nodes, self.links = tree.nodes, tree.links
         self.nodes.clear()
@@ -203,10 +212,10 @@ class _Tree:
     # the Principled inputs
 
     def bsdf_input(self, name, needed=True):
-        """The Principled input of that name; None (reported when needed) on a Blender without it."""
+        """The Principled input of that name; None (counted when needed) on a Blender without it."""
         s = self.bsdf.inputs.get(name)
         if s is None and needed:
-            self.builder.issue(self.label, "%s is not on Blender %s: not converted" % (name, bpy.app.version_string))
+            self.skipped.add(name)
         return s
 
     def value(self, name, value, needed=True):

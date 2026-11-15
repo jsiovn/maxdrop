@@ -24,6 +24,10 @@
 # (convert.materials, convert.texmaps) built as node trees (build.materials), one per 3ds Max material, with
 # Multi/Sub-Object slots by material ID; import_max is gone. Missing textures and Principled inputs this Blender
 # lacks are listed in the import report. A failed build also removes the materials and images it made.
+# Modified for MaxDrop, 2026-11-16 (jsiovn). The import report also says what became of the materials and textures
+# (convert.report.add_materials): converted by class, wrappers and maps peeled, classes without a rule, textures
+# found per lookup rule and missing by name, Principled inputs this Blender lacks. The materials count is part of the
+# summary line instead of a line of its own.
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -273,8 +277,10 @@ def _preflight_of(path):
 
 
 def _material_slots(cf, sc, desc, max_path, context, image_search):
-    """The material slots of desc's meshes ({mesh key: MeshSlots}): every material converted, its texture files
-    looked up. cf / sc: the open file and its reader Scene, which the converters read."""
+    """(the material slots of desc's meshes {mesh key: MeshSlots}, (the material converter's, the texture-map
+    converter's and the texture lookup's counters) for the import report): every material converted, its texture
+    files looked up. cf / sc: the open file and its reader Scene, which the converters read; the counters hold no
+    reference to them."""
     from .convert import materials as convert_materials
     from .convert import texmaps as convert_texmaps
     from .convert import textures as convert_textures
@@ -284,7 +290,8 @@ def _material_slots(cf, sc, desc, max_path, context, image_search):
     index = convert_textures.TextureIndex(max_path, prefs.texture_dirs(context), scene_subfolders=image_search)
     tex = convert_texmaps.TexmapConverter(graph, assets.AssetTable.from_file(cf), textures=index)
     conv = convert_materials.MaterialConverter(graph, texmaps=tex)
-    return convert_materials.assign(desc, convert_materials.node_materials(sc, desc), conv)
+    slots = convert_materials.assign(desc, convert_materials.node_materials(sc, desc), conv)
+    return slots, (conv.stats, tex.stats, index.report)
 
 
 def _remove(cols, before):
@@ -514,7 +521,8 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
             unit = units.system_unit(sc)
             meters, note = _meters(self.units, unit, self.scale_objects)
             desc = convert_scene.describe(sc, meters, unit)
-            slots = _material_slots(cf, sc, desc, max_path, context, self.use_image_search) if materials else None
+            slots, counts = (_material_slots(cf, sc, desc, max_path, context, self.use_image_search) if materials
+                             else (None, None))
             del sc  # the Scene holds the inflated stream of a compressed file
         if 'UV' not in self.object_filter:
             for md in desc.meshes.values():
@@ -535,14 +543,15 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
                                     meshes_built=len(built.meshes), dropped_uv_layers=built.dropped_uv_layers,
                                     pack=pack, pack_name=pack_name)
         rep.issues.extend(builder.issues())
+        if materials:
+            convert_report.add_materials(rep, len(built.materials), builder.classes, *counts,
+                                         sockets=builder.sockets_skipped, blender=bpy.app.version_string)
         del desc
         axis = axis_conversion(from_forward=self.axis_forward, from_up=self.axis_up).to_4x4()
         if axis != Matrix.Identity(4):
             for ob in built.roots():
                 ob.matrix_basis = axis @ ob.matrix_basis
         lines = [('WARNING', "%s %s" % (name, note))] if note else []
-        if materials:
-            lines.append(('INFO', "%s: %s" % (name, _plural(len(built.materials), "material"))))
         lines.append(build_report.publish(rep))
         return lines, rep
 

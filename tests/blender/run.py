@@ -19,7 +19,8 @@ oracle's instances), outward normals as rendered (the inverse transpose of the w
 points away from the oracle's bounding box center, also on the mirrored object) and the class of each placeholder. The
 oracle has no map channels or smoothing groups: those expectations come from the fixture scripts (tools/fixtures/*.ms).
 layers_flags: two layer collections, one hidden object, one with hide_render, the group head as the parent of its two
-members. Each fixture's import report is published (build.report) and must say nothing was left out. A changed
+members. Each fixture's import report is published (build.report) and must say nothing was left out; the one the
+operator published for vray_wrappers lists its three peeled wrappers by class. A changed
 layers_flags description checks a hidden, a frozen, a non-rendering and a nested layer, which no fixture has. A
 hand-made description with sheared local matrices (top-level and parented, hidden, a zero scale) checks that
 Blender's world matrices equal the products of the locals, through the helper empty for top-level ones. Material
@@ -29,10 +30,10 @@ mesh shared with the Shell box gets slots linked to each object; standard_physic
 Materials (build.materials through the operator): each face on its material's slot, each slot's material named after
 the 3ds Max material, its Principled inputs equal to the MaterialIR the same file converts to (values, or linked when
 a texture graph drives them), the render method, one Image Texture node per file; vray_maps' Mapping values by hand
-from its authoring script, texture nodes without an image and a report line per missing file; vray_maps,
+from its authoring script, texture nodes without an image and each missing file listed once by name; vray_maps,
 texmap_rules, corona_maps and corona_light copied beside generated PNGs load every image in its color space, one
-datablock per file and color space; hand-made IRs check shared images, a missing file, Thin Wall (set on 5.x,
-reported on 4.x), a name clash, BLENDED / DITHERED and every node kind.
+datablock per file and color space, the report counts every file as found; hand-made IRs check
+shared images, a missing file, the materials counted by class, Thin Wall (set on 5.x, counted on 4.x), a name clash, BLENDED / DITHERED and every node kind.
 Prints `FIXTURES PASSED` (exit 0) or `FIXTURES FAILED` (exit 1).
 """
 import collections
@@ -156,6 +157,8 @@ def run_fixture(path, modules):
     _same, plan = _irs(path)
     result = bpy.ops.import_scene.maxdrop(filepath=path)
     check("%s: the operator finishes" % name, result == {'FINISHED'}, str(result))
+    if name == "vray_wrappers":
+        check_wrappers_report()
     view_layer = bpy.context.view_layer
     view_layer.update()
     root = bpy.data.collections.get(name)
@@ -435,14 +438,29 @@ def check_fixture_materials(name, plan, desc, obs):
     if name == "vray_maps":
         check_vray_maps_nodes(textured=False)
         text = bpy.data.texts.get("MaxDrop Report")
-        body = text.as_string() if text else ""
-        check("vray_maps: the report names each texture not found",
-              all("texture not found: %s" % f in body for f in (
-                  "fixture_diffuse.png", "fixture_reflect.png", "fixture_gloss.png", "fixture_bump.png",
-                  "fixture_opacity.png", "fixture_normal.png", "fixture_normal_bump.png")), body[-400:])
+        lines = text.as_string().split("\n") if text else []
+        names = sorted(("fixture_diffuse.png", "fixture_reflect.png", "fixture_gloss.png", "fixture_bump.png",
+                        "fixture_opacity.png", "fixture_normal.png", "fixture_normal_bump.png"), key=str.casefold)
+        at = lines.index("  Textures not found: 7") if "  Textures not found: 7" in lines else -1
+        check("vray_maps: the report names each texture not found, once, by file name",
+              at >= 0 and lines[at + 1:at + 8] == ["    " + n for n in names], "\n".join(lines[-14:]))
         empty = [n.label for m in bpy.data.materials for n in m.node_tree.nodes
                  if n.bl_idname == "ShaderNodeTexImage" and n.image is not None]
         check("vray_maps: texture nodes without an image when the files are missing", empty == [], str(empty))
+
+
+def check_wrappers_report():
+    """Right after the operator imported vray_wrappers: the text MaxDrop Report counts the materials and lists the
+    wrappers it peeled by class, and the summary warns about them."""
+    text = bpy.data.texts.get("MaxDrop Report")
+    lines = text.as_string().split("\n") if text else []
+    check("vray_wrappers: the report counts the materials built",
+          any(line.startswith("Materials built: ") for line in lines), "\n".join(lines))
+    check("vray_wrappers: the report lists the peeled wrappers by class",
+          "  Wrappers peeled to their sub-material, by class: Shell Material 1, VRay2SidedMtl 1, VRayBlendMtl 1"
+          in lines and lines.index("Approximated:") < lines.index(
+              "  Wrappers peeled to their sub-material, by class: Shell Material 1, VRay2SidedMtl 1, VRayBlendMtl 1"),
+          "\n".join(lines))
 
 
 def _expected_mapping(tiling, offset, w_degrees):
@@ -602,8 +620,10 @@ def check_found_textures():
                   len(bpy.data.images) == images and all(len(v) == len(colorspaces[k]) for k, v in got.items()),
                   "%d images, %d wanted" % (len(bpy.data.images), images))
             text = bpy.data.texts.get("MaxDrop Report")
-            check("%s with its textures: no texture reported missing" % name,
-                  text is not None and "texture not found" not in text.as_string())
+            body = text.as_string() if text is not None else ""
+            check("%s with its textures: no texture reported missing, every file counted as found" % name,
+                  text is not None and "Textures not found" not in body
+                  and "\nTextures found: %d (" % len(wants) in body, body[-600:])
             for ir in irs.values():
                 check_principled("%s with its textures/%s" % (name, ir.name), bpy.data.materials.get(ir.name), ir,
                                  present=True)
@@ -686,16 +706,17 @@ def check_builder():
               shared == ["Non-Color", "sRGB"] and len(builder.images) == 2, str(shared))
         lost_nodes = [n for n in mb.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage" and n.label == "nothere.png"]
         issues = builder.issues()
-        check("builder: a file not found keeps its node, without an image, and is reported by name",
-              len(lost_nodes) == 1 and lost_nodes[0].image is None
-              and ("material Clash.001", "texture not found: nothere.png") in issues, str(issues))
+        check("builder: a file not found keeps its node, without an image, and is no builder issue (the texture "
+              "lookup reports it by name)", len(lost_nodes) == 1 and lost_nodes[0].image is None and issues == [],
+              str(issues))
+        check("builder: materials counted by class", dict(builder.classes) == {"test": 2}, str(builder.classes))
         thin = _principled(ma).inputs.get("Thin Wall")
-        thin_lines = [r for _l, r in issues if r.startswith("Thin Wall is not on Blender")]
+        skipped = dict(builder.sockets_skipped)
         if bpy.app.version >= (5, 0, 0):
-            check("builder: Thin Wall set on Blender 5", thin is not None and thin.default_value and not thin_lines)
+            check("builder: Thin Wall set on Blender 5", thin is not None and thin.default_value and not skipped)
         else:
-            check("builder: Thin Wall skipped and reported on Blender 4", thin is None and len(thin_lines) == 1,
-                  str(issues))
+            check("builder: Thin Wall skipped and counted once on Blender 4", thin is None
+                  and skipped == {"Thin Wall": 1}, str(skipped))
         check("builder: BLENDED for a constant alpha below 1, DITHERED for an alpha map",
               ma.surface_render_method == 'BLENDED' and mb.surface_render_method == 'DITHERED')
         pb = _principled(mb)
