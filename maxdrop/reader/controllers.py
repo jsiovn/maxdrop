@@ -50,7 +50,7 @@ MAX_KEYS = 1 << 20  # per key chunk, read only without a saved value
 IDENTITY = ((1.0, 0.0, 0.0, 0.0), (0.0, 1.0, 0.0, 0.0), (0.0, 0.0, 1.0, 0.0), (0.0, 0.0, 0.0, 1.0))
 
 UNKNOWN_CLASS = "unknown controller class"
-KEYS_UNKNOWN = "keys of an unknown layout, value chunk used"
+KEYS_UNKNOWN = "keys of an unknown layout, not read"
 KEYS_INTERPOLATED = "between two keys, interpolated linearly"
 ANIMATED = "several keys, the saved value used"
 LIST_WEIGHT = "list weight without a controller, 1.0 used"
@@ -153,17 +153,37 @@ def _weighted_quat(m, weight):
     """The rotation of matrix m scaled by weight along its own axis, as a matrix."""
     if weight == 1.0:
         return m
-    # rotation axis and angle of the row-vector matrix (its transpose is the column-vector one)
-    trace = m[0][0] + m[1][1] + m[2][2]
-    angle = math.acos(max(-1.0, min(1.0, (trace - 1.0) / 2.0)))
-    ax = (m[1][2] - m[2][1], m[2][0] - m[0][2], m[0][1] - m[1][0])
-    n = math.sqrt(ax[0] * ax[0] + ax[1] * ax[1] + ax[2] * ax[2])
+    # the standard quaternion of the column-vector rotation m^T (Shepperd's method)
+    r = [[m[c][r] for c in range(3)] for r in range(3)]
+    trace = r[0][0] + r[1][1] + r[2][2]
+    if trace > 0.0:
+        t = math.sqrt(trace + 1.0) * 2.0
+        w, x, y, z = t / 4.0, (r[2][1] - r[1][2]) / t, (r[0][2] - r[2][0]) / t, (r[1][0] - r[0][1]) / t
+    elif r[0][0] >= r[1][1] and r[0][0] >= r[2][2]:
+        t = math.sqrt(1.0 + r[0][0] - r[1][1] - r[2][2]) * 2.0
+        w, x, y, z = (r[2][1] - r[1][2]) / t, t / 4.0, (r[0][1] + r[1][0]) / t, (r[0][2] + r[2][0]) / t
+    elif r[1][1] >= r[2][2]:
+        t = math.sqrt(1.0 + r[1][1] - r[0][0] - r[2][2]) * 2.0
+        w, x, y, z = (r[0][2] - r[2][0]) / t, (r[0][1] + r[1][0]) / t, t / 4.0, (r[1][2] + r[2][1]) / t
+    else:
+        t = math.sqrt(1.0 + r[2][2] - r[0][0] - r[1][1]) * 2.0
+        w, x, y, z = (r[1][0] - r[0][1]) / t, (r[0][2] + r[2][0]) / t, (r[1][2] + r[2][1]) / t, t / 4.0
+    if w < 0.0:
+        w, x, y, z = -w, -x, -y, -z
+    n = math.sqrt(x * x + y * y + z * z)
     if n < 1e-12:
-        return IDENTITY if angle < 1e-6 or weight == 0.0 else m
-    h = angle * weight / 2.0
-    s = math.sin(h) / n
-    # a row-vector matrix comes from the stored (conjugate) quaternion of its column-vector rotation
-    return quat_matrix((-ax[0] * s, -ax[1] * s, -ax[2] * s, math.cos(h)))
+        return IDENTITY
+    h = math.atan2(n, w) * weight
+    k = math.sin(h) / n
+    # stored the Max way: the conjugate of the standard quaternion
+    return quat_matrix((-x * k, -y * k, -z * k, math.cos(h)))
+
+
+def _scale_value(chunk):
+    """A 0x2505 ScaleValue: scale and axis, or a scale alone (12 bytes) with the identity axis; None without it."""
+    if chunk is None:
+        return None
+    return chunk.unpack("<7f") if chunk.payload_size >= 28 else chunk.unpack("<3f") + (0.0, 0.0, 0.0, 1.0)
 
 
 def _finite(m):
@@ -200,6 +220,7 @@ class _Eval:
         self.scene, self.node, self.issues = scene, node, issues
         self.path = []
         self.failed = None
+        self.memo = {}  # (kind, controller) -> value: a shared sub-controller is evaluated once per node
 
     def issue(self, i, reason):
         entry = self.scene.entry(i) if i is not None else None
@@ -226,13 +247,15 @@ class _Eval:
         if keys is None:
             return saved
         n, rest = divmod(keys.payload_size, size)
+        if saved is not None:
+            if rest:
+                self.issue(i, KEYS_UNKNOWN)
+            elif n > 1:
+                self.issue(i, ANIMATED)
+            return saved
         if rest:
             raise ChunkError("object %d: keys %04X of %d bytes, not a multiple of %d" %
                              (i, keys.id, keys.payload_size, size))
-        if saved is not None:
-            if n > 1:
-                self.issue(i, ANIMATED)
-            return saved
         if n == 0:
             return None
         if n > MAX_KEYS:
@@ -253,11 +276,15 @@ class _Eval:
             return a + (b - a) * f
         return tuple(x + (y - x) * f for x, y in zip(a, b))
 
-    # -- floats
-
     def scalar(self, i, default):
         if i is None:
             return default
+        key = ("scalar", i, default)
+        if key not in self.memo:
+            self.memo[key] = self._scalar(i, default)
+        return self.memo[key]
+
+    def _scalar(self, i, default):
         with self.at(i):
             sc, cid = self.kind(i)
             if sc == classids.SC_CTRL_FLOAT and cid == classids.BEZIER_FLOAT:
@@ -276,7 +303,7 @@ class _Eval:
             self._keys(i, holder, _FLOAT_KEYS)
             value = holder.first(_FLOAT_VALUE)
             if saved is None and value is not None:
-                saved = float(value.unpack("<f")[0])
+                saved = value.unpack("<f")[0]
             keys = keys or holder.first(_FLOAT_KEYS)
         view = keys.view() if keys is not None else None
         value = self._saved_or_keyed(i, saved, keys, _FLOAT_KEY_SIZE,
@@ -293,9 +320,7 @@ class _Eval:
             return None
         self._keys(i, chunk, None)
         value = chunk.first(cid)
-        return None if value is None else tuple(float(v) for v in value.unpack("<%df" % count))
-
-    # -- lists
+        return None if value is None else value.unpack("<%df" % count)
 
     def _list(self, i):
         """[(entry index, weight)] of a list controller."""
@@ -304,14 +329,15 @@ class _Eval:
         count = chunk.first(_LIST_COUNT) if chunk.container else None
         if count is not None:
             n = count.unpack("<i")[0]
+            if not 0 <= n <= len(self.scene):
+                raise ChunkError("list controller %d: %d entries" % (i, n))
+            slots = range(n)
         else:
-            n = sum(1 for slot in refs if self.kind(refs[slot])[0] != classids.SC_PARAMETER_BLOCK2)
-        if not 0 <= n <= len(self.scene):
-            raise ChunkError("list controller %d: %d entries" % (i, n))
+            slots = sorted(k for k, r in refs.items() if self.kind(r)[0] != classids.SC_PARAMETER_BLOCK2)
         block = next((r for r in refs.values() if self.kind(r)[0] == classids.SC_PARAMETER_BLOCK2), None)
         weights = self.scene.refs(block) if block is not None else {}
         out = []
-        for k in range(n):
+        for k in slots:
             entry = refs.get(k)
             if entry is None:
                 continue
@@ -325,11 +351,15 @@ class _Eval:
             out.append((entry, w))
         return out
 
-    # -- position, rotation, scale
-
     def position(self, i):
         if i is None:
             return (0.0, 0.0, 0.0)
+        key = ("position", i)
+        if key not in self.memo:
+            self.memo[key] = self._position(i)
+        return self.memo[key]
+
+    def _position(self, i):
         with self.at(i):
             sc, cid = self.kind(i)
             if sc == classids.SC_CTRL_POSITION:
@@ -350,6 +380,12 @@ class _Eval:
     def rotation(self, i):
         if i is None:
             return IDENTITY
+        key = ("rotation", i)
+        if key not in self.memo:
+            self.memo[key] = self._rotation(i)
+        return self.memo[key]
+
+    def _rotation(self, i):
         with self.at(i):
             sc, cid = self.kind(i)
             if sc == classids.SC_CTRL_ROTATION:
@@ -376,13 +412,23 @@ class _Eval:
     def scale(self, i):
         if i is None:
             return IDENTITY
+        key = ("scale", i)
+        if key not in self.memo:
+            self.memo[key] = self._scale(i)
+        return self.memo[key]
+
+    def _scale(self, i):
         with self.at(i):
             sc, cid = self.kind(i)
             if sc == classids.SC_CTRL_SCALE:
                 if cid == classids.BEZIER_SCALE:
                     return self._bezier_scale(i)
                 if cid in (TCB_SCALE, LINEAR_SCALE):
-                    v = self._value(i, _SCALE_VALUE, 7)
+                    chunk = self.scene.chunk(i)
+                    if not chunk.container:
+                        return IDENTITY
+                    self._keys(i, chunk, None)
+                    v = _scale_value(chunk.first(_SCALE_VALUE))
                     return scale_matrix(v[:3], v[3:]) if v is not None else IDENTITY
                 if cid == SCALE_XYZ:
                     return scale_matrix(self._floats3(i, 1.0))
@@ -405,15 +451,11 @@ class _Eval:
         self._keys(i, chunk, _SCALE_KEYS)
         keys = chunk.first(_SCALE_KEYS)
         value = chunk.first(_SCALE_VALUE)
-        saved = None
-        if value is not None:
-            saved = value.unpack("<7f") if value.payload_size >= 28 else value.unpack("<3f") + (0.0, 0.0, 0.0, 1.0)
+        saved = _scale_value(value)
         view = keys.view() if keys is not None else None
         v = self._saved_or_keyed(i, saved, keys, _SCALE_KEY_SIZE,
                                  lambda k: struct.unpack_from("<7f", view, k * _SCALE_KEY_SIZE + 8))
         return IDENTITY if v is None else scale_matrix(v[:3], v[3:])
-
-    # -- the node's transform controller
 
     def matrix(self, i):
         with self.at(i):
@@ -435,6 +477,7 @@ class Transforms:
         self.issues = []
         self._local = {}
         self._world = {}
+        self._offset = {}
 
     def local(self, i):
         """Node i's transform relative to its parent: scale * rotation * position."""
@@ -455,7 +498,7 @@ class Transforms:
             mark = len(self.issues)
             try:
                 m = ev.matrix(node.tm)
-            except (ChunkError, IndexError, struct.error) as exc:
+            except (ValueError, OverflowError, IndexError, struct.error) as exc:  # ChunkError is a ValueError
                 del self.issues[mark:]
                 bad = ev.failed if ev.failed is not None else node.tm
                 ev.issue(bad, "%s: %s" % (DAMAGED, exc))
@@ -485,13 +528,19 @@ class Transforms:
     def offset(self, i):
         """Node i's object offset: scale (along its axis) * rotation * position, from the node record (identity
         when that record is damaged)."""
+        m = self._offset.get(i)
+        if m is not None:
+            return m
         try:
             node = self.scene.node(i)
+            m = multiply(multiply(scale_matrix(node.pivot_scale, node.pivot_scale_axis),
+                                  quat_matrix(node.pivot_rotation)), translation(node.pivot_position))
         except ChunkError:
-            return IDENTITY
-        m = multiply(multiply(scale_matrix(node.pivot_scale, node.pivot_scale_axis),
-                              quat_matrix(node.pivot_rotation)), translation(node.pivot_position))
-        return m if _finite(m) else IDENTITY
+            m = IDENTITY
+        if not _finite(m):
+            m = IDENTITY
+        self._offset[i] = m
+        return m
 
     def object_world(self, i):
         """offset * world: where node i's object-space vertices land in the world."""

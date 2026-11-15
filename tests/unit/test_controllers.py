@@ -15,6 +15,7 @@ import math
 import os
 import struct
 import sys
+import time
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -277,6 +278,11 @@ class TestValues(MatrixCase):
                 self.assertEqual(len(issues), 1)
                 self.assertTrue(issues[0].reason.startswith(ct.DAMAGED), issues[0].reason)
 
+    def test_odd_key_chunk_beside_a_saved_value(self):
+        pos, issues = self.float_node(value=1.5, keys=leaf(0x2525, b"k" * 30))
+        self.assertEqual(pos, (1.5, 0.0, 0.0))
+        self.assertEqual([i.reason for i in issues], [ct.KEYS_UNKNOWN])
+
     def test_unknown_key_chunk(self):
         b = Build()
         f = b.add(node(C_BFLOAT, leaf(0x2501, struct.pack("<f", 1.5)), leaf(0x2521, b"\0" * 8)))
@@ -304,6 +310,9 @@ class TestValues(MatrixCase):
         expected = ct.multiply(ct.multiply(ct.scale_matrix((2, 2, 2)), ct.euler_matrix((0, 0, math.pi / 6))),
                                ct.translation((1, 2, 3)))
         self.assertMatrix(t.world(n), expected)
+        b = Build()  # a 12-byte ScaleValue: no axis
+        n = b.node(b.prs(None, None, b.add(node(C_TCBSCALE, leaf(0x2505, struct.pack("<3f", 2, 3, 4))))))
+        self.assertMatrix(b.transforms().world(n), ct.scale_matrix((2, 3, 4)))
         b = Build()
         n = b.node(b.prs(None, None, b.xyz(C_SCALEXYZ, (2, None, -1), default_wrap=False)))
         t = b.transforms()
@@ -352,6 +361,25 @@ class TestLists(MatrixCase):
                                            self.weights(b, 1.0, 1.0))))
         n = b.node(b.prs(lst))
         self.assertMatrix(b.transforms().world(n), ct.translation((1, 1, 0)))
+
+    def test_sparse_slots_without_0x1010(self):
+        b = Build()
+        p1, p2 = b.xyz(C_POSXYZ, (1, 0, 0)), b.xyz(C_POSXYZ, (0, 1, 0))
+        lst = b.add(node(C_POSLIST, refs34(p1, None, None, p2, self.weights(b, 1.0, None, None, 1.0))))
+        n = b.node(b.prs(lst))
+        t = b.transforms()
+        self.assertMatrix(t.world(n), ct.translation((1, 1, 0)))
+        self.assertEqual(t.issues, [])
+
+    def test_half_of_a_half_turn(self):
+        half_turn = ct.quat_matrix((0, 0, 1, 0))
+        quarter = ct._weighted_quat(half_turn, 0.5)  # +90 or -90 degrees about Z: both halve it
+        self.assertMatrix(ct.multiply(quarter, quarter), half_turn)
+        self.assertAlmostEqual(abs(quarter[0][1]), 1.0)
+        h = math.radians(15)
+        self.assertMatrix(ct._weighted_quat(ct.quat_matrix((math.sin(h), 0, 0, math.cos(h))), 2.0),
+                          ct.quat_matrix((math.sin(2 * h), 0, 0, math.cos(2 * h))))
+        self.assertEqual(ct._weighted_quat(ct.IDENTITY, 0.3), ct.IDENTITY)
 
     def test_rotation_list(self):
         b = Build()
@@ -460,6 +488,37 @@ class TestUnsupportedAndDamaged(MatrixCase):
         self.assertMatrix(t.world(child), ct.translation((0, 2, 0)))
         self.assertEqual([(i.node, i.controller) for i in t.issues], [(top, None)])
         self.assertTrue(t.issues[0].reason.startswith(ct.DAMAGED))
+
+    def test_infinite_angle_and_weight(self):
+        b = Build()
+        n = b.node(b.simple_prs((1, 2, 3), (float("inf"), 0, 0)))
+        sibling = b.node(b.simple_prs((7, 0, 0)))
+        t = b.transforms()
+        self.assertEqual(t.world(n), ct.IDENTITY)
+        self.assertEqual(len(t.issues), 1)
+        self.assertTrue(t.issues[0].reason.startswith(ct.DAMAGED), t.issues[0].reason)
+        self.assertMatrix(t.world(sibling), ct.translation((7, 0, 0)))
+        b = Build()
+        lst = b.add(node(C_ROTLIST, refs34(b.euler((0, 0, 1)), None, None,
+                                           b.add(node(C_PB2, refs34(b.flt(float("inf"))))))))
+        n = b.node(b.prs(None, lst))
+        t = b.transforms()
+        self.assertEqual(t.world(n), ct.IDENTITY)
+        self.assertEqual(len(t.issues), 1)
+
+    def test_shared_sub_controllers_are_evaluated_once(self):
+        b = Build()
+        inner = b.xyz(C_POSXYZ, (1, 0, 0))
+        depth = ct.MAX_DEPTH - 3
+        for _ in range(depth):  # each list holds the one below twice: 2^depth paths, no weights
+            inner = b.add(node(C_POSLIST, refs34(inner, inner)))
+        n = b.node(b.prs(inner))
+        t = b.transforms()
+        start = time.perf_counter()
+        world = t.world(n)
+        self.assertLess(time.perf_counter() - start, 2.0)
+        self.assertEqual(world[3][0], 2.0 ** depth)
+        self.assertEqual(len(t.issues), 2 * depth)  # one missing weight per entry, not per path
 
     def test_non_finite(self):
         b = Build()
