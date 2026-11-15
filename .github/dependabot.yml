@@ -1,0 +1,11 @@
+# Keeps the actions of .github/workflows/ current: one pull request a week for all of them, which runs the Test
+# workflow like any other.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
