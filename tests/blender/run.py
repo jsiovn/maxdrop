@@ -54,6 +54,11 @@ MATRIX_TOLERANCE = 1e-4
 BBOX_TOLERANCE = 1e-3
 UV_LAYERS = {  # mapcoords:true in the script gives channel 1
     "box_poly_standard": ["UVMap"],
+    "corona_layered": ["UVMap"],
+    "corona_legacy": ["UVMap"],
+    "corona_light": ["UVMap"],
+    "corona_maps": ["UVMap"],
+    "corona_physical": ["UVMap"],
     "editable_mesh": ["UVMap"],
     "hierarchy": [],
     "instances": ["UVMap"],

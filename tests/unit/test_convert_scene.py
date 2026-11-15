@@ -43,6 +43,11 @@ reader_scene = importlib.import_module(_PKG + ".reader.scene")
 # smoothing groups.
 UV_LAYERS = {
     "box_poly_standard": ["UVMap"],
+    "corona_layered": ["UVMap"],
+    "corona_legacy": ["UVMap"],
+    "corona_light": ["UVMap"],
+    "corona_maps": ["UVMap"],
+    "corona_physical": ["UVMap"],
     "editable_mesh": ["UVMap"],
     "hierarchy": [],
     "instances": ["UVMap"],

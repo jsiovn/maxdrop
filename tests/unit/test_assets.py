@@ -19,7 +19,8 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 FIXTURE_DIR = os.path.join(ROOT, "tests", "fixtures")
 FIXTURES = sorted(glob.glob(os.path.join(FIXTURE_DIR, "*.max")))
-ASSET_COUNTS = {"vray_maps": 7, "standard_physical": 1, "texmap_rules": 22}  # every other fixture names no file
+ASSET_COUNTS = {"vray_maps": 7, "standard_physical": 1, "texmap_rules": 22, "corona_maps": 13, "corona_layered": 1,
+                "corona_light": 3}  # every other fixture names no file
 
 
 def _load(name, path, package_dir=None):
@@ -42,6 +43,8 @@ pblock = _load("maxdrop_reader.pblock", os.path.join(_READER, "pblock.py"))
 materials = _load("maxdrop_reader.materials", os.path.join(_READER, "materials.py"))
 assets = _load("maxdrop_reader.assets", os.path.join(_READER, "assets.py"))
 AssetTable, AssetEntry = assets.AssetTable, assets.AssetEntry
+FILE_PARAMS = {"fileName": (classids.BITMAP_TEX, assets.BITMAP_FILE),
+               "filename": (classids.CORONA_BITMAP, assets.CORONA_BITMAP_FILE)}  # oracle name -> class, param id
 
 
 def wstr(text):
@@ -160,14 +163,13 @@ def _cid(hex_pair):
 
 
 def _oracle_file_names(oracle):
-    """{(class id, name): fileName} of every Bitmap in the oracle's material graph."""
+    """{(class id, name): file name} of every Bitmap and CoronaBitmap in the oracle's material graph."""
     out = {}
     for e in oracle["material_graph"]:
-        if _cid(e["class_id"]) != tuple(classids.BITMAP_TEX):
-            continue
         for b in e["blocks"]:
             for p in b.get("params", ()):
-                if p["name"] == "fileName":
+                cls = FILE_PARAMS.get(p["name"], (None,))[0]
+                if cls is not None and _cid(e["class_id"]) == tuple(cls):
                     out[(_cid(e["class_id"]), e["name"])] = p["value"]
     return out
 
@@ -217,9 +219,10 @@ class FixtureTest(unittest.TestCase):
                     if entry is not None:
                         found[(tuple(m.class_id), m.name)] = entry.name
                         self.assertEqual(entry.type, "Bitmap")
-                        self.assertIn((0, assets.BITMAP_FILE, entry), assets.files_of(t, m))
-                    elif tuple(m.class_id) == tuple(classids.BITMAP_TEX):
-                        self.fail("%s: Bitmap %r without a file" % (name, m.name))
+                        pid = next(p for c, p in FILE_PARAMS.values() if tuple(c) == tuple(m.class_id))
+                        self.assertIn((0, pid, entry), assets.files_of(t, m))
+                    elif tuple(m.class_id) in (tuple(classids.BITMAP_TEX), tuple(classids.CORONA_BITMAP)):
+                        self.fail("%s: bitmap %r without a file" % (name, m.name))
                     else:
                         self.assertEqual(assets.files_of(t, m), [], "%s %s" % (name, m.name))
                 self.assertEqual(found, expected)

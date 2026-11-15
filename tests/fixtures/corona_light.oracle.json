@@ -1,0 +1,392 @@
+{
+  "file": "corona_light.max",
+  "file_version": [22000, 22000],
+  "layers": [
+    {"frozen": false, "hidden": false, "name": "0", "renderable": true}
+  ],
+  "material_graph": [
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "kind": "pb2",
+        "params": [
+          {"id": 110, "name": "intensity", "transient": false, "type": 0, "value": 12.5},
+          {"id": 112, "name": "texmapOn", "transient": false, "type": 4, "value": 1},
+          {"id": 111, "name": "texmap", "transient": false, "type": 15, "value": 1},
+          {"id": 113, "name": "color", "transient": false, "type": 2, "value": [1, 0.784314, 0.588235]},
+          {"id": 100, "name": "affectAlpha", "transient": false, "type": 4, "value": 1},
+          {"id": 161, "name": "occludeOther", "transient": false, "type": 4, "value": 1},
+          {"id": 162, "name": "emitLight", "transient": false, "type": 4, "value": 1},
+          {"id": 122, "name": "visibleRefl", "transient": false, "type": 4, "value": 1},
+          {"id": 123, "name": "visibleDirect", "transient": false, "type": 4, "value": 1},
+          {"id": 124, "name": "visibleRefract", "transient": false, "type": 4, "value": 1},
+          {"id": 150, "name": "opacityTexmap", "transient": false, "type": 15, "value": 2},
+          {"id": 151, "name": "opacityTexmapOn", "transient": false, "type": 4, "value": 1},
+          {"id": 163, "name": "directionality", "transient": false, "type": 0, "value": 0},
+          {"id": 164, "name": "excludeList", "transient": false, "type": 2065, "value": []},
+          {"id": 165, "name": "excludeListIncludeMod", "transient": false, "type": 4, "value": 0},
+          {"id": 166, "name": "visibleInMasks", "transient": false, "type": 4, "value": 1},
+          {"id": 167, "name": "shadowcatcherIlluminator", "transient": false, "type": 4, "value": 0},
+          {"id": 168, "name": "twosidedEmission", "transient": false, "type": 4, "value": 0},
+          {"id": 169, "name": "legacyMode", "transient": false, "type": 4, "value": 0},
+          {"id": 171, "name": "displayWire", "transient": false, "type": 4, "value": 0},
+          {"id": 170, "name": "removedParam", "transient": false, "type": 4, "value": 0},
+          {"id": 172, "name": "gBufferOverride", "transient": false, "type": 1, "value": -1},
+          {"id": 173, "name": "nondirectionalFake", "transient": false, "type": 4, "value": 1},
+          {"id": 174, "name": "visibleCaustics", "transient": false, "type": 4, "value": 1}
+        ],
+        "ref": 0
+      }
+    ],
+      "class_id": ["0x53b7717a", "0x500d5093"],
+      "class_name": "CoronaLightMtl",
+      "index": 0,
+      "name": "FixtureCoronaLight",
+      "parts": [],
+      "subs": [
+      {"kind": "map", "slot": 0, "target": 1},
+      {"kind": "map", "slot": 1, "target": 2}
+    ],
+      "superclass": 3072
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "kind": "pb2",
+        "params": [
+          {"id": 101, "name": "filename", "transient": false, "type": 9, "value": "fixture_c_light.png"},
+          {"id": 100, "name": "output", "transient": false, "type": 18, "value": null},
+          {"id": 103, "name": "uvwChannel", "transient": false, "type": 1, "value": 1},
+          {"id": 102, "name": "enviroMapping", "transient": false, "type": 1, "value": 0},
+          {"id": 107, "name": "filteringBlur", "transient": false, "type": 0, "value": 1},
+          {"id": 105, "name": "uvwScale", "transient": false, "type": 3, "value": [1, 1, 1]},
+          {"id": 106, "name": "uvwOffset", "transient": false, "type": 3, "value": [0, 0, 0]},
+          {"id": 111, "name": "removedParam", "transient": false, "type": 3, "value": [0, 0, 0]},
+          {"id": 108, "name": "tilingU", "transient": false, "type": 1, "value": 1},
+          {"id": 109, "name": "tilingV", "transient": false, "type": 1, "value": 1},
+          {"id": 110, "name": "interpolation", "transient": false, "type": 1, "value": 0},
+          {"id": 114, "name": "realWorldScale", "transient": false, "type": 4, "value": 0},
+          {"id": 115, "name": "alphaSource", "transient": false, "type": 1, "value": 2},
+          {"id": 117, "name": "monoChannelOutput", "transient": false, "type": 1, "value": 0},
+          {"id": 118, "name": "rgbChannelOutput", "transient": false, "type": 1, "value": 0},
+          {"id": 121, "name": "clippingU", "transient": false, "type": 0, "value": 0},
+          {"id": 122, "name": "clippingV", "transient": false, "type": 0, "value": 0},
+          {"id": 123, "name": "clippingWidth", "transient": false, "type": 0, "value": 1},
+          {"id": 124, "name": "clippingHeight", "transient": false, "type": 0, "value": 1},
+          {"id": 119, "name": "clippingOn", "transient": false, "type": 4, "value": 0},
+          {"id": 120, "name": "clippingMode", "transient": false, "type": 1, "value": 0},
+          {"id": 125, "name": "gamma", "transient": false, "type": 0, "value": -1},
+          {"id": 126, "name": "domeOrigin", "transient": false, "type": 3, "value": [0, 0, 0]},
+          {"id": 127, "name": "domeRadius", "transient": false, "type": 7, "value": 200},
+          {"id": 128, "name": "domeCameraHeight", "transient": false, "type": 7, "value": 20},
+          {"id": 129, "name": "wAngle", "transient": false, "type": 0, "value": 0},
+          {"id": 130, "name": "uAngle", "transient": true, "type": 0, "value": 0},
+          {"id": 131, "name": "useObjectTransform", "transient": false, "type": 4, "value": 0},
+          {"id": 132, "name": "objectTransform", "transient": false, "type": 17, "value": null},
+          {"id": 133, "name": "colorSpace", "transient": false, "type": 1, "value": 0},
+          {"id": 134, "name": "colorSpaceStr", "transient": false, "type": 8, "value": ""}
+        ],
+        "ref": 0
+      }
+    ],
+      "class_id": ["0xabba5784", "0x65484244"],
+      "class_name": "CoronaBitmap",
+      "index": 1,
+      "name": "FixtureCLightTex",
+      "parts": [
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 0, "value": 0},
+          {"index": 1, "type": 0, "value": 0},
+          {"index": 2, "type": 0, "value": 1},
+          {"index": 3, "type": 0, "value": 1},
+          {"index": 4, "type": 0, "value": 0},
+          {"index": 5, "type": 0, "value": 0},
+          {"index": 6, "type": 0, "value": 0},
+          {"index": 7, "type": 0, "value": 1},
+          {"index": 8, "type": 0, "value": 1},
+          {"index": 9, "type": 0, "value": 1},
+          {"index": 10, "type": 1, "value": 1},
+          {"index": 11, "type": 0, "value": 0},
+          {"index": 12, "type": 0, "value": 0}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000100", "0x00000000"],
+        "ref": 1
+      }
+    ],
+      "subs": [],
+      "superclass": 3088
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "kind": "pb2",
+        "params": [
+          {"id": 101, "name": "filename", "transient": false, "type": 9, "value": "fixture_c_light_alpha.png"},
+          {"id": 100, "name": "output", "transient": false, "type": 18, "value": null},
+          {"id": 103, "name": "uvwChannel", "transient": false, "type": 1, "value": 1},
+          {"id": 102, "name": "enviroMapping", "transient": false, "type": 1, "value": 0},
+          {"id": 107, "name": "filteringBlur", "transient": false, "type": 0, "value": 1},
+          {"id": 105, "name": "uvwScale", "transient": false, "type": 3, "value": [1, 1, 1]},
+          {"id": 106, "name": "uvwOffset", "transient": false, "type": 3, "value": [0, 0, 0]},
+          {"id": 111, "name": "removedParam", "transient": false, "type": 3, "value": [0, 0, 0]},
+          {"id": 108, "name": "tilingU", "transient": false, "type": 1, "value": 1},
+          {"id": 109, "name": "tilingV", "transient": false, "type": 1, "value": 1},
+          {"id": 110, "name": "interpolation", "transient": false, "type": 1, "value": 0},
+          {"id": 114, "name": "realWorldScale", "transient": false, "type": 4, "value": 0},
+          {"id": 115, "name": "alphaSource", "transient": false, "type": 1, "value": 2},
+          {"id": 117, "name": "monoChannelOutput", "transient": false, "type": 1, "value": 0},
+          {"id": 118, "name": "rgbChannelOutput", "transient": false, "type": 1, "value": 0},
+          {"id": 121, "name": "clippingU", "transient": false, "type": 0, "value": 0},
+          {"id": 122, "name": "clippingV", "transient": false, "type": 0, "value": 0},
+          {"id": 123, "name": "clippingWidth", "transient": false, "type": 0, "value": 1},
+          {"id": 124, "name": "clippingHeight", "transient": false, "type": 0, "value": 1},
+          {"id": 119, "name": "clippingOn", "transient": false, "type": 4, "value": 0},
+          {"id": 120, "name": "clippingMode", "transient": false, "type": 1, "value": 0},
+          {"id": 125, "name": "gamma", "transient": false, "type": 0, "value": -1},
+          {"id": 126, "name": "domeOrigin", "transient": false, "type": 3, "value": [0, 0, 0]},
+          {"id": 127, "name": "domeRadius", "transient": false, "type": 7, "value": 200},
+          {"id": 128, "name": "domeCameraHeight", "transient": false, "type": 7, "value": 20},
+          {"id": 129, "name": "wAngle", "transient": false, "type": 0, "value": 0},
+          {"id": 130, "name": "uAngle", "transient": true, "type": 0, "value": 0},
+          {"id": 131, "name": "useObjectTransform", "transient": false, "type": 4, "value": 0},
+          {"id": 132, "name": "objectTransform", "transient": false, "type": 17, "value": null},
+          {"id": 133, "name": "colorSpace", "transient": false, "type": 1, "value": 0},
+          {"id": 134, "name": "colorSpaceStr", "transient": false, "type": 8, "value": ""}
+        ],
+        "ref": 0
+      }
+    ],
+      "class_id": ["0xabba5784", "0x65484244"],
+      "class_name": "CoronaBitmap",
+      "index": 2,
+      "name": "FixtureCLightAlpha",
+      "parts": [
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 0, "value": 0},
+          {"index": 1, "type": 0, "value": 0},
+          {"index": 2, "type": 0, "value": 1},
+          {"index": 3, "type": 0, "value": 1},
+          {"index": 4, "type": 0, "value": 0},
+          {"index": 5, "type": 0, "value": 0},
+          {"index": 6, "type": 0, "value": 0},
+          {"index": 7, "type": 0, "value": 1},
+          {"index": 8, "type": 0, "value": 1},
+          {"index": 9, "type": 0, "value": 1},
+          {"index": 10, "type": 1, "value": 1},
+          {"index": 11, "type": 0, "value": 0},
+          {"index": 12, "type": 0, "value": 0}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000100", "0x00000000"],
+        "ref": 1
+      }
+    ],
+      "subs": [],
+      "superclass": 3088
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "kind": "pb2",
+        "params": [
+          {"id": 110, "name": "intensity", "transient": false, "type": 0, "value": 3},
+          {"id": 112, "name": "texmapOn", "transient": false, "type": 4, "value": 0},
+          {"id": 111, "name": "texmap", "transient": false, "type": 15, "value": 4},
+          {"id": 113, "name": "color", "transient": false, "type": 2, "value": [0.392157, 0.588235, 1]},
+          {"id": 100, "name": "affectAlpha", "transient": false, "type": 4, "value": 1},
+          {"id": 161, "name": "occludeOther", "transient": false, "type": 4, "value": 1},
+          {"id": 162, "name": "emitLight", "transient": false, "type": 4, "value": 1},
+          {"id": 122, "name": "visibleRefl", "transient": false, "type": 4, "value": 1},
+          {"id": 123, "name": "visibleDirect", "transient": false, "type": 4, "value": 1},
+          {"id": 124, "name": "visibleRefract", "transient": false, "type": 4, "value": 1},
+          {"id": 150, "name": "opacityTexmap", "transient": false, "type": 15, "value": null},
+          {"id": 151, "name": "opacityTexmapOn", "transient": false, "type": 4, "value": 1},
+          {"id": 163, "name": "directionality", "transient": false, "type": 0, "value": 0},
+          {"id": 164, "name": "excludeList", "transient": false, "type": 2065, "value": []},
+          {"id": 165, "name": "excludeListIncludeMod", "transient": false, "type": 4, "value": 0},
+          {"id": 166, "name": "visibleInMasks", "transient": false, "type": 4, "value": 1},
+          {"id": 167, "name": "shadowcatcherIlluminator", "transient": false, "type": 4, "value": 0},
+          {"id": 168, "name": "twosidedEmission", "transient": false, "type": 4, "value": 1},
+          {"id": 169, "name": "legacyMode", "transient": false, "type": 4, "value": 0},
+          {"id": 171, "name": "displayWire", "transient": false, "type": 4, "value": 0},
+          {"id": 170, "name": "removedParam", "transient": false, "type": 4, "value": 0},
+          {"id": 172, "name": "gBufferOverride", "transient": false, "type": 1, "value": -1},
+          {"id": 173, "name": "nondirectionalFake", "transient": false, "type": 4, "value": 1},
+          {"id": 174, "name": "visibleCaustics", "transient": false, "type": 4, "value": 1}
+        ],
+        "ref": 0
+      }
+    ],
+      "class_id": ["0x53b7717a", "0x500d5093"],
+      "class_name": "CoronaLightMtl",
+      "index": 3,
+      "name": "FixtureCoronaLightPlain",
+      "parts": [],
+      "subs": [
+      {"kind": "map", "slot": 0, "target": 4}
+    ],
+      "superclass": 3072
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "kind": "pb2",
+        "params": [
+          {"id": 101, "name": "filename", "transient": false, "type": 9, "value": "fixture_c_light_off.png"},
+          {"id": 100, "name": "output", "transient": false, "type": 18, "value": null},
+          {"id": 103, "name": "uvwChannel", "transient": false, "type": 1, "value": 1},
+          {"id": 102, "name": "enviroMapping", "transient": false, "type": 1, "value": 0},
+          {"id": 107, "name": "filteringBlur", "transient": false, "type": 0, "value": 1},
+          {"id": 105, "name": "uvwScale", "transient": false, "type": 3, "value": [1, 1, 1]},
+          {"id": 106, "name": "uvwOffset", "transient": false, "type": 3, "value": [0, 0, 0]},
+          {"id": 111, "name": "removedParam", "transient": false, "type": 3, "value": [0, 0, 0]},
+          {"id": 108, "name": "tilingU", "transient": false, "type": 1, "value": 1},
+          {"id": 109, "name": "tilingV", "transient": false, "type": 1, "value": 1},
+          {"id": 110, "name": "interpolation", "transient": false, "type": 1, "value": 0},
+          {"id": 114, "name": "realWorldScale", "transient": false, "type": 4, "value": 0},
+          {"id": 115, "name": "alphaSource", "transient": false, "type": 1, "value": 2},
+          {"id": 117, "name": "monoChannelOutput", "transient": false, "type": 1, "value": 0},
+          {"id": 118, "name": "rgbChannelOutput", "transient": false, "type": 1, "value": 0},
+          {"id": 121, "name": "clippingU", "transient": false, "type": 0, "value": 0},
+          {"id": 122, "name": "clippingV", "transient": false, "type": 0, "value": 0},
+          {"id": 123, "name": "clippingWidth", "transient": false, "type": 0, "value": 1},
+          {"id": 124, "name": "clippingHeight", "transient": false, "type": 0, "value": 1},
+          {"id": 119, "name": "clippingOn", "transient": false, "type": 4, "value": 0},
+          {"id": 120, "name": "clippingMode", "transient": false, "type": 1, "value": 0},
+          {"id": 125, "name": "gamma", "transient": false, "type": 0, "value": -1},
+          {"id": 126, "name": "domeOrigin", "transient": false, "type": 3, "value": [0, 0, 0]},
+          {"id": 127, "name": "domeRadius", "transient": false, "type": 7, "value": 200},
+          {"id": 128, "name": "domeCameraHeight", "transient": false, "type": 7, "value": 20},
+          {"id": 129, "name": "wAngle", "transient": false, "type": 0, "value": 0},
+          {"id": 130, "name": "uAngle", "transient": true, "type": 0, "value": 0},
+          {"id": 131, "name": "useObjectTransform", "transient": false, "type": 4, "value": 0},
+          {"id": 132, "name": "objectTransform", "transient": false, "type": 17, "value": null},
+          {"id": 133, "name": "colorSpace", "transient": false, "type": 1, "value": 0},
+          {"id": 134, "name": "colorSpaceStr", "transient": false, "type": 8, "value": ""}
+        ],
+        "ref": 0
+      }
+    ],
+      "class_id": ["0xabba5784", "0x65484244"],
+      "class_name": "CoronaBitmap",
+      "index": 4,
+      "name": "FixtureCLightOff",
+      "parts": [
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 0, "value": 0},
+          {"index": 1, "type": 0, "value": 0},
+          {"index": 2, "type": 0, "value": 1},
+          {"index": 3, "type": 0, "value": 1},
+          {"index": 4, "type": 0, "value": 0},
+          {"index": 5, "type": 0, "value": 0},
+          {"index": 6, "type": 0, "value": 0},
+          {"index": 7, "type": 0, "value": 1},
+          {"index": 8, "type": 0, "value": 1},
+          {"index": 9, "type": 0, "value": 1},
+          {"index": 10, "type": 1, "value": 1},
+          {"index": 11, "type": 0, "value": 0},
+          {"index": 12, "type": 0, "value": 0}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000100", "0x00000000"],
+        "ref": 1
+      }
+    ],
+      "subs": [],
+      "superclass": 3088
+    }
+  ],
+  "materials": [
+    {"class_id": ["0x53b7717a", "0x500d5093"], "class_name": "CoronaLightMtl", "index": 0, "name": "FixtureCoronaLight", "sub_count": 0},
+    {"class_id": ["0x53b7717a", "0x500d5093"], "class_name": "CoronaLightMtl", "index": 1, "name": "FixtureCoronaLightPlain", "sub_count": 0}
+  ],
+  "max_version": [22000, 2020],
+  "node_count": 2,
+  "nodes": [
+    {
+      "base_class_id": ["0x1bf8338d", "0x192f6098"],
+      "base_class_name": "Editable_Poly",
+      "base_faces": 6,
+      "base_superclass": 16,
+      "base_verts": 8,
+      "bbox_max": [10, 10, 20],
+      "bbox_min": [-10, -10, 0],
+      "eval_faces": 12,
+      "eval_verts": 8,
+      "frozen": false,
+      "handle": 1,
+      "hidden": false,
+      "index": 0,
+      "instances": [1],
+      "layer": "0",
+      "material": 0,
+      "modifiers": [],
+      "name": "FixtureCoronaLightBox",
+      "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "renderable": true,
+      "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]
+    },
+    {
+      "base_class_id": ["0x1bf8338d", "0x192f6098"],
+      "base_class_name": "Editable_Poly",
+      "base_faces": 6,
+      "base_superclass": 16,
+      "base_verts": 8,
+      "bbox_max": [50, 10, 20],
+      "bbox_min": [30, -10, 0],
+      "eval_faces": 12,
+      "eval_verts": 8,
+      "frozen": false,
+      "handle": 2,
+      "hidden": false,
+      "index": 1,
+      "instances": [2],
+      "layer": "0",
+      "material": 1,
+      "modifiers": [],
+      "name": "FixtureCoronaLightPlainBox",
+      "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 40, 0, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "renderable": true,
+      "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 40, 0, 0]
+    }
+  ],
+  "oracle_version": 2,
+  "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
+  "time": 0,
+  "units": {"display_metric": "meters", "display_type": "Generic", "display_us": "ft_Frac_In", "system_scale": 1, "system_type": "millimeters"}
+}
