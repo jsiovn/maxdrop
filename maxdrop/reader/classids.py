@@ -2,32 +2,32 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""The 3ds Max classes the project knows, by constant name: superclass ids and ClassIds.
+"""The 3ds Max classes the project knows, by constant name: superclass ids (SC_*, ints) and ClassIds.
 
 A ClassId is unique only within its superclass (Standard material and RootNode are both (2, 0)), so dispatch
-compares both: `entry.superclass == MATERIAL and entry.class_id == STANDARD_MTL`. CLASSES maps each known pair to
-the class name 3ds Max writes; tests/unit/test_classdir.py checks every entry against the class directory of a
-committed fixture, so add a class here only together with a fixture that has it. No bpy.
+compares both: `entry.superclass == SC_MATERIAL and entry.class_id == STANDARD_MTL`. CLASSES maps each known
+pair to the class name 3ds Max writes; tests/unit/test_classdir.py checks every entry against the class directory
+of a committed fixture, so add a class here only together with a fixture that has it. No bpy.
 """
 from .classdir import ClassId
 
 # Superclass ids (SClass_ID of the 3ds Max SDK).
-BASENODE = 0x0001
-PARAMETER_BLOCK = 0x0008
-GEOMOBJECT = 0x0010
-HELPER = 0x0050
-PARAMETER_BLOCK2 = 0x0082
-REF_MAKER = 0x0100
-REF_TARGET = 0x0200
-MATERIAL = 0x0C00
-LAYER = 0x10F0
-CTRL_FLOAT = 0x9003
-CTRL_POINT3 = 0x9005
-CTRL_MATRIX3 = 0x9008
-CTRL_POSITION = 0x900B
-CTRL_ROTATION = 0x900C
-CTRL_SCALE = 0x900D
-CTRL_MASTERPOINT = 0x9010
+SC_BASENODE = 0x0001
+SC_PARAMETER_BLOCK = 0x0008
+SC_GEOMOBJECT = 0x0010
+SC_HELPER = 0x0050
+SC_PARAMETER_BLOCK2 = 0x0082
+SC_REF_MAKER = 0x0100
+SC_REF_TARGET = 0x0200
+SC_MATERIAL = 0x0C00
+SC_LAYER = 0x10F0
+SC_CTRL_FLOAT = 0x9003
+SC_CTRL_POINT3 = 0x9005
+SC_CTRL_MATRIX3 = 0x9008
+SC_CTRL_POSITION = 0x900B
+SC_CTRL_ROTATION = 0x900C
+SC_CTRL_SCALE = 0x900D
+SC_CTRL_MASTERPOINT = 0x9010
 
 # Scene structure.
 NODE = ClassId(0x00000001, 0)
@@ -60,28 +60,28 @@ SCALE_LIST = ClassId(0x4B4B1004, 0)
 MASTER_POINT = ClassId(0x0D9C20FF, 0)
 
 CLASSES = {
-    (BASENODE, NODE): "Node",
-    (BASENODE, ROOT_NODE): "RootNode",
-    (REF_MAKER, SCENE): "Scene",
-    (LAYER, BASE_LAYER): "Base Layer",
-    (REF_TARGET, LAYER_MANAGER): "Layer Manager",
-    (PARAMETER_BLOCK, PARAM_BLOCK): "ParamBlock",
-    (PARAMETER_BLOCK2, PARAM_BLOCK2): "ParamBlock2",
-    (GEOMOBJECT, EDITABLE_MESH): "Editable Mesh",
-    (GEOMOBJECT, EDITABLE_POLY): "Editable Poly",
-    (HELPER, DUMMY): "Dummy",
-    (MATERIAL, STANDARD_MTL): "Standard",
-    (MATERIAL, MULTI_SUB_MTL): "Multi/Sub-Object",
-    (CTRL_MATRIX3, PRS): "Position/Rotation/Scale",
-    (CTRL_FLOAT, BEZIER_FLOAT): "Bezier Float",
-    (CTRL_SCALE, BEZIER_SCALE): "Bezier Scale",
-    (CTRL_ROTATION, EULER_XYZ): "Euler XYZ",
-    (CTRL_POSITION, POSITION_XYZ): "Position XYZ",
-    (CTRL_FLOAT, FLOAT_LIST): "Float List",
-    (CTRL_POSITION, POSITION_LIST): "Position List",
-    (CTRL_ROTATION, ROTATION_LIST): "Rotation List",
-    (CTRL_SCALE, SCALE_LIST): "Scale List",
-    (CTRL_MASTERPOINT, MASTER_POINT): "Master Point Controller",
+    (SC_BASENODE, NODE): "Node",
+    (SC_BASENODE, ROOT_NODE): "RootNode",
+    (SC_REF_MAKER, SCENE): "Scene",
+    (SC_LAYER, BASE_LAYER): "Base Layer",
+    (SC_REF_TARGET, LAYER_MANAGER): "Layer Manager",
+    (SC_PARAMETER_BLOCK, PARAM_BLOCK): "ParamBlock",
+    (SC_PARAMETER_BLOCK2, PARAM_BLOCK2): "ParamBlock2",
+    (SC_GEOMOBJECT, EDITABLE_MESH): "Editable Mesh",
+    (SC_GEOMOBJECT, EDITABLE_POLY): "Editable Poly",
+    (SC_HELPER, DUMMY): "Dummy",
+    (SC_MATERIAL, STANDARD_MTL): "Standard",
+    (SC_MATERIAL, MULTI_SUB_MTL): "Multi/Sub-Object",
+    (SC_CTRL_MATRIX3, PRS): "Position/Rotation/Scale",
+    (SC_CTRL_FLOAT, BEZIER_FLOAT): "Bezier Float",
+    (SC_CTRL_SCALE, BEZIER_SCALE): "Bezier Scale",
+    (SC_CTRL_ROTATION, EULER_XYZ): "Euler XYZ",
+    (SC_CTRL_POSITION, POSITION_XYZ): "Position XYZ",
+    (SC_CTRL_FLOAT, FLOAT_LIST): "Float List",
+    (SC_CTRL_POSITION, POSITION_LIST): "Position List",
+    (SC_CTRL_ROTATION, ROTATION_LIST): "Rotation List",
+    (SC_CTRL_SCALE, SCALE_LIST): "Scale List",
+    (SC_CTRL_MASTERPOINT, MASTER_POINT): "Master Point Controller",
 }
 
 

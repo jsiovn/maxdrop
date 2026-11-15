@@ -7,6 +7,7 @@ the nesting and the damaged cases; every chunked stream of the committed fixture
 
     python -I -m unittest discover tests
 """
+import gc
 import glob
 import importlib.util
 import os
@@ -233,17 +234,65 @@ class TestPieces(unittest.TestCase):
             with self.assertRaises(ChunkError):
                 src.view(offset, size)
 
+    def test_views_are_read_only(self):
+        data = bytearray(leaf(1, b"abcd"))
+        c = chunks.index(data)[0]
+        self.assertTrue(c.view().readonly)
 
-def _walk(chunk_list, counts):
+    def test_run_views_are_made_when_touched(self):
+        data = leaf(1, b"a" * 20) + leaf(2, b"b" * 20) + leaf(3, b"c" * 20)
+        stream = FakeStream(data, [26, 52])
+        top = chunks.index(stream)
+        self.assertEqual(top[0].tobytes(), b"a" * 20)
+        src = top[0]._src
+        self.assertIsNotNone(src._pieces[0])
+        self.assertIsNotNone(src._pieces[1])  # its header was read by the scan
+        self.assertIsNotNone(src._pieces[2])
+        lazy = chunks.Source(FakeStream(data, [26, 52]))
+        self.assertEqual(lazy._pieces, [None, None, None])
+        self.assertEqual(lazy.view(32, 4).tobytes(), b"bbbb")
+        self.assertEqual([p is None for p in lazy._pieces], [True, False, True])
+
+
+class TestLimitsAndCache(unittest.TestCase):
+    def test_iterating_does_not_keep_chunks(self):
+        root = chunks.index(node(1, *[leaf(2, b"x")] * 1000))[0]
+        kids = root.children
+        self.assertEqual(sum(1 for _ in kids), 1000)
+        self.assertEqual(len(kids.find_all(2)), 1000)
+        gc.collect()
+        self.assertEqual(len(kids._made), 0)
+        held = kids[7]
+        self.assertIs(kids[7], held)
+        self.assertEqual(len(kids._made), 1)
+        self.assertEqual((held.offset, held.size), (6 + 7 * 7, 7))
+        self.assertEqual((kids[-1].offset, kids[-1].end), (6 + 999 * 7, root.end))
+
+    def test_children_stay_with_their_chunk(self):
+        root = chunks.index(node(1, node(2, leaf(3))))[0]
+        inner = root.children[0]
+        self.assertIs(root.children[0].children, inner.children)
+
+    def test_max_chunks(self):
+        data = node(1, *[leaf(2)] * 10)
+        self.assertEqual(len(chunks.index(data, max_chunks=10)[0].children), 10)
+        with self.assertRaises(ChunkError):
+            chunks.index(data, max_chunks=9)[0].children
+        with self.assertRaises(ChunkError):
+            chunks.index(leaf(1) * 3, max_chunks=2)
+        self.assertEqual(len(list(chunks.iter_chunks(leaf(1) * 3, max_chunks=2))), 3)  # no index, no cap
+
+
+def _walk(test, chunk_list, counts):
     for c in chunk_list:
         counts[0] += 1
         if c.container:
-            self_end = c.payload_offset
+            end = c.payload_offset
             for k in c.children:
-                assert k.offset == self_end, (k.offset, self_end)
-                self_end = k.end
-            assert self_end == c.end
-            _walk(c.children, counts)
+                test.assertEqual(k.offset, end)
+                end = k.end
+            test.assertEqual(end, c.end)
+            _walk(test, c.children, counts)
 
 
 @unittest.skipUnless(FIXTURES, "no fixtures")
@@ -260,7 +309,7 @@ class TestFixtures(unittest.TestCase):
                         self.assertGreater(len(top), 0)
                         self.assertEqual(top[-1].end, stream.size)
                         counts = [0]
-                        _walk(top, counts)
+                        _walk(self, top, counts)
                         self.assertGreater(counts[0], 0)
                         del top, stream
 

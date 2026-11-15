@@ -43,7 +43,7 @@ engine, a `ClassData` parser.
 |---|---|
 | `maxdrop/reader/chunks.py` | `ChunkError`, `Source`, `Chunk`, `ChunkList`, `iter_chunks()`, `index()`, `DEFAULT_MAX_DEPTH` |
 | `maxdrop/reader/classdir.py` | `ClassId`, `DllEntry`, `ClassEntry`, `ClassDirectory` (`from_file(cf)`, `parse(classdir, dlldir)`) |
-| `maxdrop/reader/classids.py` | ClassID constants by name, superclass id constants, `NAMES` (ClassId -> 3ds Max class name) |
+| `maxdrop/reader/classids.py` | superclass ids (`SC_*`), ClassId constants by name, `CLASSES` ((superclass, ClassId) -> 3ds Max class name; a ClassId alone is not unique), `name_of()` |
 | `tests/unit/test_chunks.py` | synthetic buffers (32/64-bit headers, nesting, hostile sizes, depth, pieces), every fixture stream |
 | `tests/unit/test_classdir.py` | `ClassId`, synthetic directories, the fixtures (Editable Poly; every `classids` constant found) |
 
@@ -53,17 +53,17 @@ Tests load the reader by path as `maxdrop_reader` (like `test_cfb.py`): `import 
 
 ```python
 # chunks.py
-DEFAULT_MAX_DEPTH = 64
+DEFAULT_MAX_DEPTH = 64; DEFAULT_MAX_CHUNKS = 1 << 22   # per level
 class ChunkError(ValueError)
 class Source:                       # Source(bytes-like | cfb.Stream | Source); .size; .view(off, n) -> memoryview
-def index(data, max_depth=DEFAULT_MAX_DEPTH) -> ChunkList        # top level, depth 0, must cover the stream
-def iter_chunks(data, max_depth=DEFAULT_MAX_DEPTH) -> Iterator[Chunk]   # same, without the arrays
+def index(data, max_depth=..., max_chunks=...) -> ChunkList        # top level, depth 0, must cover the stream
+def iter_chunks(data, max_depth=..., max_chunks=...) -> Iterator[Chunk]   # same, without the arrays
 class Chunk:
     id, offset, size, header, container, depth, end, payload_offset, payload_size
     view() -> memoryview            # zero-copy inside one piece
     tobytes(); text(); unpack(fmt, offset=0)
     as_array(dtype, offset=0, count=-1)   # numpy.frombuffer, little-endian forced, read-only
-    children -> ChunkList           # indexed once, on first read; empty for a leaf
+    children -> ChunkList           # indexed once, on first read, kept by the chunk; empty for a leaf
     first(cid) -> Chunk | None; find_all(cid) -> list[Chunk]
 class ChunkList:                    # Sequence of Chunk: len, [i], [a:b], iter
     ids -> read-only memoryview of the u16 ids; first(cid); find_all(cid)
@@ -103,7 +103,7 @@ stream), a level deeper than `max_depth`, a payload too short for `unpack`/`as_a
   skipped, missing `0x2060` -> ChunkError, missing name -> ""); `from_file` falls back to `ClassDirectory`;
   fixtures: box_poly_standard lists Editable Poly with `ClassId(0x1BF8338D, 0x192F6098)`, superclass 0x10, dll
   `epoly.dlo`; every Scene top-level child id < len(directory); every child of class `NODE` has a `0x0962` name
-  chunk; every `classids` constant appears in some fixture with its `NAMES` name.
+  chunk; every `classids` constant appears in some fixture with its `CLASSES` name.
 - [ ] Dump the union of the fixtures' class directories (scratch script) and seed `classids.py` with the
   constants of `import_max.py` and the notes that a fixture confirms; leads no fixture has stay out (listed
   in the bead notes).
@@ -128,3 +128,11 @@ committed.
 6. Class directory: a scratch run of `ClassDirectory.from_file` on box_poly_standard prints the Editable Poly
    entry -> `ClassId(0x1BF8338D, 0x192F6098)`, the id of the notes (`0x192F60981BF8338D`); also covered by the
    fixture test of step 1.
+
+## Review changes
+
+The code review asked for bounded memory on hostile input: `ChunkList` caches the Chunks it makes in a
+`WeakValueDictionary` (iterating a level no longer keeps an object per chunk), derives sizes from the next
+sibling's offset instead of storing them, and refuses a level wider than `max_chunks`. `Source` makes a run's view
+when first touched and hands out read-only views; `unpack` and `as_array` view only the bytes they read.
+Superclass constants carry an `SC_` prefix so an int superclass cannot be mistaken for a ClassId constant.

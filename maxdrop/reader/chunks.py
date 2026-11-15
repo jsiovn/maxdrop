@@ -15,19 +15,23 @@ A chunk is a u16 id and a u32 size that counts the 6-byte header; bit 31 of the 
 payload is more chunks. A size of 0 means a u64 size follows (bit 63 = container, 14-byte header).
 
 Headers are read straight from the stream's pieces: a bytes-like object, or the runs of a cfb.Stream as zero-copy
-views, so a stream of hundreds of megabytes is never joined into one copy. A ChunkList keeps a level as arrays of
-offsets, ids, sizes and header lengths.
+views made when first touched, so a stream of hundreds of megabytes is never joined into one copy. A ChunkList
+keeps a level as arrays of offsets, ids and header lengths (siblings are contiguous: a size is the distance to the
+next one). The Chunks it makes are cached weakly: the same object while someone holds it, freed after, so walking
+a whole tree does not keep an object per chunk. A Chunk keeps its children's index as long as it lives.
 
 The file comes from anywhere: a header cut short, a size smaller than its header, a chunk that ends after its
-parent or after the stream, a level deeper than max_depth and a payload too short for what is asked of it raise
-ChunkError. Views (and numpy arrays from as_array) keep the compound file's mapping alive: release them before
-closing it. No bpy; numpy only inside as_array().
+parent or after the stream, a level deeper than max_depth or wider than max_chunks, and a payload too short for
+what is asked of it raise ChunkError. Views (and numpy arrays from as_array) keep the compound file's mapping
+alive: release them before closing it. No bpy; numpy only inside as_array().
 """
 import array
 import bisect
 import struct
+import weakref
 
 DEFAULT_MAX_DEPTH = 64
+DEFAULT_MAX_CHUNKS = 1 << 22  # per level; the widest level of the 811 MB corpus scene has 35 825
 
 _H32 = struct.Struct("<HI")
 _U64 = struct.Struct("<Q")
@@ -42,25 +46,35 @@ class ChunkError(ValueError):
 
 
 class Source:
-    """The bytes of a stream as contiguous pieces: one for a bytes-like object, one per run of a cfb.Stream."""
-    __slots__ = ("size", "_starts", "_pieces")
+    """The bytes of a stream as contiguous read-only pieces: one for a bytes-like object, one per run of a
+    cfb.Stream (its view made when first touched)."""
+    __slots__ = ("size", "_starts", "_pieces", "_stream")
 
     def __init__(self, data):
         if isinstance(data, Source):
-            self.size, self._starts, self._pieces = data.size, data._starts, data._pieces
+            self.size, self._starts, self._pieces, self._stream = data.size, data._starts, data._pieces, data._stream
             return
-        if hasattr(data, "runs") and hasattr(data, "view"):  # cfb.Stream: each run is one zero-copy view
-            starts, pieces, pos = [], [], 0
+        if hasattr(data, "runs") and hasattr(data, "view"):  # cfb.Stream
+            starts, pos = array.array("q"), 0
             for _offset, n in data.runs:
                 starts.append(pos)
-                pieces.append(data.view(pos, n))
                 pos += n
             if pos != data.size:
                 raise ChunkError("stream %r: runs cover %d of %d bytes" % (getattr(data, "name", ""), pos, data.size))
+            starts.append(pos)
+            self._stream, self._pieces = data, [None] * (len(starts) - 1)
         else:
-            view = memoryview(data).cast("B")
-            starts, pieces, pos = [0], [view], len(view)
-        self.size, self._starts, self._pieces = pos, starts, pieces
+            view = memoryview(data).cast("B").toreadonly()
+            starts, pos = array.array("q", (0, len(view))), len(view)
+            self._stream, self._pieces = None, [view]
+        self.size, self._starts = pos, starts
+
+    def _piece(self, i):
+        piece = self._pieces[i]
+        if piece is None:
+            start = self._starts[i]
+            piece = self._pieces[i] = self._stream.view(start, self._starts[i + 1] - start)
+        return piece
 
     def view(self, offset, size):
         """size bytes at offset: zero-copy inside one piece, a copy across pieces."""
@@ -70,12 +84,12 @@ class Source:
             return memoryview(b"")
         i = bisect.bisect_right(self._starts, offset) - 1
         local = offset - self._starts[i]
-        piece = self._pieces[i]
+        piece = self._piece(i)
         if local + size <= len(piece):
             return piece[local:local + size]
         out = bytearray()
         while len(out) < size:
-            piece = self._pieces[i]
+            piece = self._piece(i)
             out += piece[local:local + size - len(out)]
             i, local = i + 1, 0
         return memoryview(bytes(out))
@@ -107,11 +121,12 @@ def _scan(src, offset, end):
 
 class Chunk:
     """One chunk. Its children are indexed the first time `children` is read."""
-    __slots__ = ("_src", "offset", "id", "size", "header", "container", "depth", "_max_depth", "_children")
+    __slots__ = ("_src", "offset", "id", "size", "header", "container", "depth", "_limits", "_children",
+                 "__weakref__")
 
-    def __init__(self, src, offset, cid, size, header, container, depth, max_depth):
+    def __init__(self, src, offset, cid, size, header, container, depth, limits):
         self._src, self.offset, self.id, self.size = src, offset, cid, size
-        self.header, self.container, self.depth, self._max_depth = header, container, depth, max_depth
+        self.header, self.container, self.depth, self._limits = header, container, depth, limits
         self._children = None
 
     def __repr__(self):
@@ -131,7 +146,7 @@ class Chunk:
         return self.size - self.header
 
     def view(self):
-        """The payload as a memoryview, zero-copy unless it crosses two runs of the stream."""
+        """The payload as a read-only memoryview, zero-copy unless it crosses two runs of the stream."""
         return self._src.view(self.payload_offset, self.payload_size)
 
     def tobytes(self):
@@ -142,46 +157,47 @@ class Chunk:
         view = self.view()
         return view[:len(view) & ~1].tobytes().decode("utf-16-le", "replace")
 
+    def _check(self, offset, n):
+        if offset < 0 or n < 0 or offset + n > self.payload_size:
+            raise ChunkError("chunk %04X at %d: %d bytes at %d do not fit in its %d-byte payload" %
+                             (self.id, self.offset, n, offset, self.payload_size))
+
     def unpack(self, fmt, offset=0):
         """struct.unpack_from on the payload; fmt should name its byte order ("<")."""
-        try:
-            return struct.unpack_from(fmt, self.view(), offset)
-        except struct.error as exc:
-            raise ChunkError("chunk %04X at %d: %s" % (self.id, self.offset, exc)) from None
+        n = struct.calcsize(fmt)
+        self._check(offset, n)
+        return struct.unpack(fmt, self._src.view(self.payload_offset + offset, n))
 
     def as_array(self, dtype, offset=0, count=-1):
         """The payload from offset as a read-only numpy array of dtype, little-endian, sharing the stream's memory
         (count items, or as many as the rest holds, which must be a whole number of them)."""
         import numpy
         dt = numpy.dtype(dtype).newbyteorder("<")
-        view = self.view()
-        if offset < 0 or offset > len(view):
-            raise ChunkError("chunk %04X at %d: offset %d outside its %d-byte payload" %
-                             (self.id, self.offset, offset, len(view)))
-        rest = len(view) - offset
+        self._check(offset, 0)
+        rest = self.payload_size - offset
         if count < 0:
             if rest % dt.itemsize:
                 raise ChunkError("chunk %04X at %d: %d bytes are not a whole number of %d-byte items" %
                                  (self.id, self.offset, rest, dt.itemsize))
             count = rest // dt.itemsize
-        elif count * dt.itemsize > rest:
-            raise ChunkError("chunk %04X at %d: %d items of %d bytes do not fit in %d bytes" %
-                             (self.id, self.offset, count, dt.itemsize, rest))
-        out = numpy.frombuffer(view, dtype=dt, count=count, offset=offset)
-        out.flags.writeable = False  # a bytearray source would hand out a writable array otherwise
+        else:
+            self._check(offset, count * dt.itemsize)
+        out = numpy.frombuffer(self._src.view(self.payload_offset + offset, count * dt.itemsize), dtype=dt,
+                               count=count)
+        out.flags.writeable = False
         return out
 
     @property
     def children(self):
         if self._children is None:
             if not self.container:
-                self._children = ChunkList(self._src, (), self.depth + 1, self._max_depth)
+                self._children = ChunkList(self._src, (), self.end, self.depth + 1, self._limits)
             else:
-                if self.depth + 1 > self._max_depth:
+                if self.depth + 1 > self._limits[0]:
                     raise ChunkError("chunk %04X at %d: nesting deeper than %d levels" %
-                                     (self.id, self.offset, self._max_depth))
-                self._children = ChunkList(self._src, _scan(self._src, self.payload_offset, self.end),
-                                           self.depth + 1, self._max_depth)
+                                     (self.id, self.offset, self._limits[0]))
+                self._children = ChunkList(self._src, _scan(self._src, self.payload_offset, self.end), self.end,
+                                           self.depth + 1, self._limits)
         return self._children
 
     def first(self, cid):
@@ -192,19 +208,21 @@ class Chunk:
 
 
 class ChunkList:
-    """One level of the tree as arrays; a Chunk is made, and kept, when one is asked for."""
-    __slots__ = ("_src", "_depth", "_max_depth", "_offsets", "_ids", "_sizes", "_heads", "_made")
+    """One level of the tree as arrays; a Chunk is made when one is asked for and cached only while it is held."""
+    __slots__ = ("_src", "_end", "_depth", "_limits", "_offsets", "_ids", "_heads", "_made")
 
-    def __init__(self, src, scan, depth, max_depth):
-        self._src, self._depth, self._max_depth = src, depth, max_depth
-        offsets, ids, sizes, heads = array.array("q"), array.array("H"), array.array("q"), bytearray()
-        for offset, cid, size, header, container in scan:
+    def __init__(self, src, scan, end, depth, limits):
+        self._src, self._end, self._depth, self._limits = src, end, depth, limits
+        offsets, ids, heads = array.array("q"), array.array("H"), bytearray()
+        max_chunks = limits[1]
+        for offset, cid, _size, header, container in scan:
+            if len(ids) == max_chunks:
+                raise ChunkError("more than %d chunks in one level (at %d)" % (max_chunks, offset))
             offsets.append(offset)
             ids.append(cid)
-            sizes.append(size)
             heads.append(header | (_CONTAINER if container else 0))
-        self._offsets, self._ids, self._sizes, self._heads = offsets, ids, sizes, heads
-        self._made = {}
+        self._offsets, self._ids, self._heads = offsets, ids, heads
+        self._made = weakref.WeakValueDictionary()
 
     def __len__(self):
         return len(self._ids)
@@ -222,9 +240,10 @@ class ChunkList:
             raise IndexError("chunk index out of range")
         chunk = self._made.get(i)
         if chunk is None:
-            head = self._heads[i]
-            chunk = Chunk(self._src, self._offsets[i], self._ids[i], self._sizes[i], head & ~_CONTAINER,
-                          bool(head & _CONTAINER), self._depth, self._max_depth)
+            head, offset = self._heads[i], self._offsets[i]
+            end = self._offsets[i + 1] if i + 1 < n else self._end
+            chunk = Chunk(self._src, offset, self._ids[i], end - offset, head & ~_CONTAINER, bool(head & _CONTAINER),
+                          self._depth, self._limits)
             self._made[i] = chunk
         return chunk
 
@@ -246,14 +265,14 @@ class ChunkList:
         return [self[i] for i, x in enumerate(self._ids) if x == cid]
 
 
-def index(data, max_depth=DEFAULT_MAX_DEPTH):
+def index(data, max_depth=DEFAULT_MAX_DEPTH, max_chunks=DEFAULT_MAX_CHUNKS):
     """The top level of a stream (bytes-like, cfb.Stream or Source) as a ChunkList; it must cover the stream."""
     src = Source(data)
-    return ChunkList(src, _scan(src, 0, src.size), 0, max_depth)
+    return ChunkList(src, _scan(src, 0, src.size), src.size, 0, (max_depth, max_chunks))
 
 
-def iter_chunks(data, max_depth=DEFAULT_MAX_DEPTH):
+def iter_chunks(data, max_depth=DEFAULT_MAX_DEPTH, max_chunks=DEFAULT_MAX_CHUNKS):
     """The top level of a stream, one Chunk at a time, without keeping an index."""
     src = Source(data)
     for offset, cid, size, header, container in _scan(src, 0, src.size):
-        yield Chunk(src, offset, cid, size, header, container, 0, max_depth)
+        yield Chunk(src, offset, cid, size, header, container, 0, (max_depth, max_chunks))

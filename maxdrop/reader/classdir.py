@@ -14,9 +14,13 @@ ClassDirectory3 (ClassDirectory in older files) holds one 0x2040 container per c
 u32 classA, u32 classB, u32 superclass id; 0x2042 = the class name in UTF-16LE. The class index counts the 0x2040
 entries from 0. DllDirectory holds a 0x21C0 header chunk, then one 0x2038 container per plug-in DLL, 0x2039 =
 description, 0x2037 = file name; a dll index counts the 0x2038 entries from 0, and a negative one means none
-(-1: built into 3ds Max). The class name is for people: code compares ClassIds, never names. No bpy.
+(-1: built into 3ds Max). The class name is for people: code compares ClassIds, never names.
+
+The ClassDirectory layout is assumed to be that of ClassDirectory3, as upstream reads it: no fixture has it.
+Malformed input raises ChunkError, and the compound file CfbError: both are ValueErrors. No bpy.
 """
 import collections
+import operator
 
 from . import chunks
 
@@ -32,7 +36,7 @@ class ClassId(tuple):
     __slots__ = ()
 
     def __new__(cls, a, b):
-        a, b = int(a), int(b)
+        a, b = operator.index(a), operator.index(b)
         if not (0 <= a <= _U32 and 0 <= b <= _U32):
             raise ValueError("ClassId parts must be unsigned 32-bit: %r, %r" % (a, b))
         return tuple.__new__(cls, (a, b))

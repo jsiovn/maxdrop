@@ -98,6 +98,9 @@ class TestClassId(unittest.TestCase):
         for a, b in ((-1, 0), (0, 1 << 32), (1 << 32, 0)):
             with self.assertRaises(ValueError):
                 ClassId(a, b)
+        for a in (1.5, "12"):
+            with self.assertRaises(TypeError):
+                ClassId(a, 0)
         cid = ClassId(0xFFFFFFFF, 0)
         self.assertEqual(pickle.loads(pickle.dumps(cid)), cid)
         self.assertIsInstance(pickle.loads(pickle.dumps(cid)), ClassId)
@@ -187,7 +190,7 @@ class TestFixtures(unittest.TestCase):
         poly = polys[0]
         self.assertEqual(poly.class_id, ClassId(0x1BF8338D, 0x192F6098))
         self.assertEqual(int(poly.class_id), 0x192F60981BF8338D)  # the id of the notes and of import_max.py
-        self.assertEqual(poly.superclass, classids.GEOMOBJECT)
+        self.assertEqual(poly.superclass, classids.SC_GEOMOBJECT)
         self.assertEqual(poly.dll_name, "epoly.dlo")
         self.assertEqual(d.find(classids.EDITABLE_POLY), [poly])
 
@@ -198,7 +201,7 @@ class TestFixtures(unittest.TestCase):
                 top = chunks.index(cf.open("Scene"))
                 objects = top[0].children
                 self.assertTrue(all(i < len(d) for i in objects.ids))
-                nodes = [c for c in objects if d[c.id].superclass == classids.BASENODE
+                nodes = [c for c in objects if d[c.id].superclass == classids.SC_BASENODE
                          and d[c.id].class_id == classids.NODE]
                 self.assertGreater(len(nodes), 0)
                 for c in nodes:
@@ -216,7 +219,7 @@ class TestFixtures(unittest.TestCase):
                 self.assertEqual(classids.name_of(superclass, class_id), name)
         constants = {v for k, v in vars(classids).items() if k.isupper() and isinstance(v, ClassId)}
         self.assertEqual(constants, {cid for _sup, cid in classids.CLASSES})
-        self.assertIsNone(classids.name_of(classids.GEOMOBJECT, classids.STANDARD_MTL))
+        self.assertIsNone(classids.name_of(classids.SC_GEOMOBJECT, classids.STANDARD_MTL))
 
 
 if __name__ == "__main__":
