@@ -246,12 +246,33 @@ class EditablePolyTest(unittest.TestCase):
             "map vertex count and size disagree": poly(poly_verts(QUAD), poly_faces(poly_face([0, 1, 2])),
                                                        leaf(0x0124, struct.pack("<i", 1)),
                                                        leaf(0x0128, struct.pack("<I3f", 2, 0, 0, 0))),
+            "map vertices without map faces": poly(poly_verts(QUAD), poly_faces(poly_face([0, 1, 2])),
+                                                   leaf(0x0124, struct.pack("<i", 1)),
+                                                   leaf(0x0128, struct.pack("<I3f", 1, 0, 0, 0))),
+            "map vertices without map faces, then a channel": poly(
+                poly_verts(QUAD), poly_faces(poly_face([0, 1, 2])), leaf(0x0124, struct.pack("<i", 1)),
+                leaf(0x0128, struct.pack("<I3f", 1, 0, 0, 0)), poly_map(2, [(0, 0, 0)] * 3, [[0, 1, 2]])),
+            "map vertices twice in a channel": poly(
+                poly_verts(QUAD), poly_faces(poly_face([0, 1, 2])), leaf(0x0124, struct.pack("<i", 1)),
+                leaf(0x0128, struct.pack("<I3f", 1, 0, 0, 0)), poly_map(1, [(0, 0, 0)] * 3, [[0, 1, 2]])[10:]),
             "a channel twice": poly(poly_verts(QUAD), poly_faces(poly_face([0, 1, 2])),
                                     poly_map(1, [(0, 0, 0)] * 3, [[0, 1, 2]]),
                                     poly_map(1, [(0, 0, 0)] * 3, [[0, 1, 2]])),
         }
         for name, c in cases.items():
             with self.subTest(name), self.assertRaises(GeometryError):
+                geometry.read_editable_poly(c)
+
+    def test_face_flags_alone(self):
+        m = geometry.read_editable_poly(poly(poly_verts(QUAD), poly_faces(poly_face([0, 1, 2], flags=0x40001))))
+        self.assertEqual(m.loop_vertices.tolist(), [0, 1, 2])
+        self.assertEqual((m.material_ids.tolist(), m.smoothing_groups.tolist()), ([0], [0]))
+
+    def test_huge_counts_are_refused_before_allocating(self):
+        # a 14-byte chunk must not make the reader allocate gigabytes
+        for c in (poly(leaf(0x0100, struct.pack("<II", 0xFFFFFFFF, 0)), poly_faces()),
+                  poly(poly_verts(QUAD), leaf(0x011A, struct.pack("<II", 0xFFFFFFFF, 0)))):
+            with self.subTest(c), self.assertRaisesRegex(GeometryError, "counted in"):
                 geometry.read_editable_poly(c)
 
     def test_huge_face_degree_is_refused_before_reading(self):

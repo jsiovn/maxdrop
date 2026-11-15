@@ -142,7 +142,6 @@ this order:
 
 | Mask bit | Field | Shown by |
 |---|---|---|
-| `0x01` | `u32` face flags | not by a fixture (see Open) |
 | `0x08` | `u16` material ID | every box: `1, -, 4, 3, 5, 2` = Max IDs 2, 1, 5, 4, 6, 3 (bottom, top, front, right, back, left: a Box's own IDs); absent on the top, whose ID is 1 |
 | `0x10` | `u32` smoothing groups | every box: `2, 4, 8, 16, 32, 64`, one group per side |
 | `0x20` | `2 * (degree - 3)` x `u32`: the triangulation diagonals, as vertex positions within the face | every quad: `[0, 2]`, in multi_uv `[2, 0]` |
@@ -167,8 +166,9 @@ Not shown by any fixture yet, so not stated above:
     a dead face has degree 0 and the face-flags field (mask `0x01`) with bit `0x2`. polyop.getNumVerts and
     getNumFaces count them, so `MeshData.stored_vertices` / `stored_faces` do; the arrays leave them out. The map
     face of a dead face keeps its old degree;
-  - the `0x01` face flags of live faces (values `0x1`, `0x8`, `0x20`, `0x40000`, ... ): not decoded, only bit
-    `0x2` is used. No mask bit other than `0x01`, `0x08`, `0x10`, `0x20` occurs: `geometry.py` refuses one;
+  - mask bit `0x01`: a `u32` of face flags, the first field after the mask (before `0x08`). Values on live faces
+    `0x1`, `0x8`, `0x20`, `0x40000`, ...: not decoded, only bit `0x2` is used. No mask bit other than `0x01`,
+    `0x08`, `0x10`, `0x20` occurs: `geometry.py` refuses one;
   - Editable Mesh map channels `-2`, `-1`, `0` (alpha, illumination, vertex color) besides `1` and up, `0x0956`
     before several channels and `0x23A0` after them (not map data), and triangle flags `0x0`-`0x7` and `0x40`-`0x47`
     in the low bits (edge visibility 1/2/4; not decoded);

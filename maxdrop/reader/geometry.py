@@ -31,6 +31,7 @@ alpha. Fixed-size records are read as numpy views (no Python loop); the variable
 that only collects byte slices. The file comes from anywhere: a size that does not match its count, an index past
 its array, an unknown face field, a record cut short or a map face whose degree differs from its face raise
 GeometryError (a ChunkError) for that object only. Arrays are copies: nothing keeps the file's mapping alive.
+Indices are int32: a mesh past 2**31 vertices or loops (over 8 GB of records) is out of reach.
 No bpy; numpy is imported when a mesh is read.
 """
 import array
@@ -139,6 +140,8 @@ def _channels(geo, channel_id, verts_id, faces_id, read_faces):
     maps, channel, uvw = {}, None, None
     for chunk in geo.children:
         if chunk.id == channel_id:
+            if uvw is not None:
+                raise GeometryError("map channel %d has map vertices but no map faces" % channel)
             if chunk.payload_size < 4:
                 raise GeometryError("map channel chunk %04X of %d bytes" % (chunk.id, chunk.payload_size))
             channel, = chunk.unpack("<i")
@@ -148,6 +151,8 @@ def _channels(geo, channel_id, verts_id, faces_id, read_faces):
         elif chunk.id == verts_id:
             if channel is None:
                 raise GeometryError("map vertices without a channel")
+            if uvw is not None:
+                raise GeometryError("map channel %d has its map vertices twice" % channel)
             uvw = _points(chunk)
         elif chunk.id == faces_id:
             if channel is None or uvw is None:
@@ -155,6 +160,8 @@ def _channels(geo, channel_id, verts_id, faces_id, read_faces):
             maps[channel] = MapChannel(channel, uvw, _indices(read_faces(chunk), len(uvw),
                                                               "map channel %d vertex" % channel))
             channel = uvw = None
+    if uvw is not None:
+        raise GeometryError("map channel %d has map vertices but no map faces" % channel)
     return maps
 
 
@@ -173,8 +180,9 @@ def read_editable_mesh(chunk):
     del rec
 
     def map_faces(c):
-        if _count(c, 12) != nf:
-            raise GeometryError("%d map faces for %d faces" % (_count(c, 12), nf))
+        n = _count(c, 12)
+        if n != nf:
+            raise GeometryError("%d map faces for %d faces" % (n, nf))
         return c.as_array("<u4", 4, 3 * nf)
 
     maps = _channels(geo, _M_MAP_CHANNEL, _M_MAP_VERTS, _M_MAP_FACES, map_faces)
@@ -193,6 +201,8 @@ def _poly_positions(chunk):
             raise GeometryError("a dead vertex with a position")
         return numpy.array(rec["p"], dtype=numpy.float32), None
     data = chunk.view()
+    if n > (len(data) - 4) // 4:  # a record takes at least its 4-byte flags: refuse before allocating
+        raise GeometryError("%d vertices counted in %d bytes" % (n, len(data)))
     size, off, live, points = len(data), 4, bytearray(n), bytearray()
     try:
         for i in range(n):
@@ -222,6 +232,8 @@ def _poly_faces(chunk):
     if size < 4:
         raise GeometryError("%04X of %d bytes has no count" % (chunk.id, size))
     n, = _U32.unpack_from(data, 0)
+    if n > (size - 4) // 6:  # a record takes at least its degree and mask: refuse before allocating
+        raise GeometryError("%d faces counted in %d bytes" % (n, size))
     off = 4
     loops, degrees, live = bytearray(), array.array("I"), bytearray(n)
     smooth, mats = array.array("I"), array.array("H")
@@ -310,20 +322,22 @@ def read_editable_poly(chunk):
     loop_starts = numpy.zeros(len(totals), dtype=numpy.int32)
     if len(totals):
         numpy.cumsum(totals[:-1], out=loop_starts[1:])
-    # word positions of each stored face's degree in a 0x012B payload laid out like the faces
-    heads = numpy.zeros(len(degrees), dtype=numpy.int64)
-    if len(degrees):
-        numpy.cumsum(degrees[:-1] + 1, out=heads[1:])
     words = int(degrees.sum()) + len(degrees)
-    keep = numpy.ones(words, dtype=bool)
-    keep[heads] = False
-    dead_words = numpy.repeat(~live, degrees + 1)  # a dead face's words, its degree included
+    layout = []  # built for the first map channel: (degree positions, words of the live faces' indices)
 
     def map_faces(c):
         if c.payload_size == 4 * words:  # every map face as long as its face: the layout is known
+            if not layout:
+                heads = numpy.zeros(len(degrees), dtype=numpy.int64)
+                if len(degrees):
+                    numpy.cumsum(degrees[:-1] + 1, out=heads[1:])
+                keep = numpy.repeat(live, degrees + 1)  # a dead face's words, its degree included, go
+                keep[heads] = False
+                layout[:] = heads, keep
+            heads, keep = layout
             w = c.as_array("<u4")
-            if not len(heads) or numpy.array_equal(w[heads], degrees):
-                return w[keep & ~dead_words]
+            if numpy.array_equal(w[heads], degrees):
+                return w[keep]
         return _poly_map_faces(c, stored_degrees, stored_live)
 
     maps = _channels(geo, _P_MAP_CHANNEL, _P_MAP_VERTS, _P_MAP_FACES, map_faces)
@@ -348,5 +362,5 @@ def read_mesh(scene, i):
         return None
     try:
         return reader(scene.chunk(i))
-    except (ChunkError, struct.error) as exc:
-        raise GeometryError("object %d (%s): %s" % (i, entry.name, exc)) from None
+    except (ChunkError, struct.error, MemoryError, OverflowError) as exc:
+        raise GeometryError("object %d (%s): %s" % (i, entry.name, exc or type(exc).__name__)) from None
