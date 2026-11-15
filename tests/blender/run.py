@@ -29,10 +29,10 @@ mesh shared with the Shell box gets slots linked to each object; standard_physic
 Materials (build.materials through the operator): each face on its material's slot, each slot's material named after
 the 3ds Max material, its Principled inputs equal to the MaterialIR the same file converts to (values, or linked when
 a texture graph drives them), the render method, one Image Texture node per file; vray_maps' Mapping values by hand
-from its authoring script, texture nodes without an image and a report line per missing file; vray_maps and
-texmap_rules copied beside generated PNGs load every image in its color space, one datablock per file and color
-space; hand-made IRs check shared images, a missing file, Thin Wall (set on 5.x, reported on 4.x), a name clash,
-BLENDED / DITHERED and every node kind.
+from its authoring script, texture nodes without an image and a report line per missing file; vray_maps,
+texmap_rules, corona_maps and corona_light copied beside generated PNGs load every image in its color space, one
+datablock per file and color space; hand-made IRs check shared images, a missing file, Thin Wall (set on 5.x,
+reported on 4.x), a name clash, BLENDED / DITHERED and every node kind.
 Prints `FIXTURES PASSED` (exit 0) or `FIXTURES FAILED` (exit 1).
 """
 import collections
@@ -559,12 +559,13 @@ def _write_png(path):
 
 
 def check_found_textures():
-    """vray_maps and texmap_rules copied beside a PNG for each texture name: every Image Texture node gets its file,
-    in the color space the IR asks for, one datablock per file and color space; the report lists no texture."""
+    """vray_maps, texmap_rules, corona_maps and corona_light copied beside a PNG for each texture name: every Image
+    Texture node gets its file, in the color space the IR asks for, one datablock per file and color space; the
+    report lists no texture."""
     fixtures = os.path.join(ROOT, "tests", "fixtures")
     scratch = tempfile.mkdtemp(prefix="maxdrop-textures-")
     try:
-        for name in ("vray_maps", "texmap_rules"):
+        for name in ("vray_maps", "texmap_rules", "corona_maps", "corona_light"):
             empty_scene()
             for ob in list(bpy.data.images):
                 bpy.data.images.remove(ob)
