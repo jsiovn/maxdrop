@@ -112,7 +112,7 @@ modelled in another unit than it was saved with, pick that unit in **Units**; **
 object MaxDrop cannot convert arrives as an empty with its 3ds Max class in the custom property `maxdrop_class`.
 The system console lists material problems (on Windows: *Window › Toggle System Console*).
 
-**Which 3ds Max versions?** MaxDrop's own test files are saved by 3ds Max 2020, and scenes of 3ds Max 2015 to
+**Which 3ds Max versions?** MaxDrop's own test files are saved by 3ds Max 2020, and scenes of 3ds Max 2015 and
 2020 have been imported. Tell us in an issue when a file does not open.
 
 **Can it export `.max`?** No, and that is not planned.

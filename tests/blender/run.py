@@ -12,16 +12,15 @@ Run headless with an isolated profile so your own preferences are never touched:
 
 Per fixture, into an emptied scene, below a collection named after the file with one collection per layer
 (build.collections), objects found by node name (objects are made in walk order, so the second node of a name is
-"<name>.001" in the emptied scene): node order and names, parents, each object in its layer's collection, the oracle's hidden,
-renderable and frozen flags, world matrices (1e-4, in file units), world
-bounding boxes of the meshes (1e-3), vertex and face counts, UV layers, sharp edges and flat faces, material
-indices, which objects share a mesh (the oracle's instances), outward normals as rendered (the inverse transpose
-of the world matrix times each face normal points away from the oracle's bounding box center, also on the
-mirrored object) and the class of each placeholder. The oracle has no map channels or smoothing groups: those
-expectations come from the fixture scripts (tools/fixtures/*.ms). layers_flags: two layer collections, one hidden
-object, one with hide_render, the group head as the parent of its two members. Each fixture's import report is
-published (build.report) and must say nothing was left out. A changed layers_flags description checks a hidden,
-a frozen, a non-rendering and a nested layer, which no fixture has.
+"<name>.001" in the emptied scene): node order and names, parents, each object in its layer's collection, the oracle's
+hidden, renderable and frozen flags, world matrices (1e-4, in file units), world bounding boxes of the meshes (1e-3),
+vertex and face counts, UV layers, sharp edges and flat faces, material indices, which objects share a mesh (the
+oracle's instances), outward normals as rendered (the inverse transpose of the world matrix times each face normal
+points away from the oracle's bounding box center, also on the mirrored object) and the class of each placeholder. The
+oracle has no map channels or smoothing groups: those expectations come from the fixture scripts (tools/fixtures/*.ms).
+layers_flags: two layer collections, one hidden object, one with hide_render, the group head as the parent of its two
+members. Each fixture's import report is published (build.report) and must say nothing was left out. A changed
+layers_flags description checks a hidden, a frozen, a non-rendering and a nested layer, which no fixture has.
 Prints `FIXTURES PASSED` (exit 0) or `FIXTURES FAILED` (exit 1).
 """
 import collections

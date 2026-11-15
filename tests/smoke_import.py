@@ -22,8 +22,10 @@ nothing imported, the message names the good one, which stays unpacked), a file 
 
 Without arguments, the units fixtures: with Units = Auto the box (10 x 20 x 30 system units in each file) measures
 that many millimeters, centimeters and inches; with Units = Millimeters all three measure the same; Scale 2 doubles
-it; Up Y turns it; a file that does not state its unit takes Scale as meters per unit, with a note. The pre-flight line of a
-fixture names its 3ds Max version, its node count and its unit.
+it; Up Y turns it; a file that does not state its unit takes Scale as meters per unit, with a note. The pre-flight
+line of a fixture names its 3ds Max version, its object count and its unit. Object Filter without UV Maps leaves
+no UV layer, without Material no material slot. A file that is not a .max beside a fixture: the fixture is imported
+and the other named in a warning; that file alone: cancelled with its name in the message.
 Prints `IMPORT PASSED` (exit 0) or `IMPORT FAILED` (exit 1).
 """
 import glob
@@ -263,10 +265,10 @@ def units_and_preflight(ops):
     check("a file without a unit: Scale is the meters per unit, with a note", meters == 0.5 and "0.5" in note, note)
     check("Units Feet ignores the file's unit", ops._meters('FEET', None, 1.0) == (0.3048, ""))
     line = ops._preflight(os.path.join(fixtures_dir, "hierarchy.max"))
-    check("pre-flight line: 3ds Max version, node count, unit",
-          line.startswith("3ds Max 2020, ") and ", 5 nodes, millimeters" in line, line)
+    check("pre-flight line: 3ds Max version, object count, unit",
+          line.startswith("3ds Max 2020, ") and ", 5 objects, millimeters" in line, line)
     line = ops._preflight(os.path.join(fixtures_dir, "units_in.max"))
-    check("pre-flight line of units_in: 1 node, inches", line.endswith(", 1 node, inches"), line)
+    check("pre-flight line of units_in: 1 object, inches", line.endswith(", 1 object, inches"), line)
     preflight_panel(ops, os.path.join(fixtures_dir, "hierarchy.max"))
     with open(os.path.join(tempfile.gettempdir(), "maxdrop-not-a-max.max"), "wb") as f:
         f.write(b"not a 3ds Max file")
@@ -277,6 +279,32 @@ def units_and_preflight(ops):
         os.remove(bad)
     check("pre-flight line of a file that is not a .max: says so", line.startswith("Not readable as a .max file"),
           line)
+
+
+def filters_and_failures(scratch):
+    fixtures_dir = os.path.join(ROOT, "tests", "fixtures")
+    path = os.path.join(fixtures_dir, "multi_uv.max")
+    attempt(filepath=path, object_filter={'MATERIAL'})
+    meshes = [ob.data for ob in bpy.data.objects if ob.type == 'MESH']
+    check("Object Filter without UV Maps: meshes without UV layers, with materials",
+          meshes and not any(m.uv_layers for m in meshes) and all(m.materials for m in meshes))
+    attempt(filepath=path, object_filter={'UV'})
+    meshes = [ob.data for ob in bpy.data.objects if ob.type == 'MESH']
+    check("Object Filter without Material: meshes with UV layers, without material slots",
+          meshes and all(m.uv_layers for m in meshes) and not any(m.materials for m in meshes))
+    folder = os.path.join(scratch, "failures")
+    os.makedirs(folder)
+    shutil.copy(path, os.path.join(folder, "good.max"))
+    with open(os.path.join(folder, "junk.max"), "wb") as f:
+        f.write(b"not a 3ds Max file" * 200)
+    result, message = attempt(directory=folder, files=[{"name": "good.max"}, {"name": "junk.max"}])
+    check("a good .max and a file that is not one: the good one imported", result == {'FINISHED'}
+          and "good" in bpy.data.collections and any(ob.type == 'MESH' for ob in bpy.data.objects),
+          "%s %s" % (result, message.strip()))
+    check("a good .max and a file that is not one: no collection of the bad one", "junk" not in bpy.data.collections)
+    result, message = attempt(directory=folder, files=[{"name": "junk.max"}])
+    check("only a file that is not a .max: cancelled, named in the message",
+          result == {'CANCELLED'} and "Nothing imported" in message and "junk.max" in message, message.strip())
 
 
 def run():
@@ -303,6 +331,7 @@ def run():
             selections(path, work)
         if not argv:
             units_and_preflight(sys.modules[maxdrop.__name__ + ".ops"])
+            filters_and_failures(scratch)
     finally:
         maxdrop.unregister()
         shutil.rmtree(scratch, ignore_errors=True)

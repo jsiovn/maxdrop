@@ -13,7 +13,7 @@
 # Modified for MaxDrop, 2026-11-15 (jsiovn). The import runs MaxDrop's reader, scene description and build (nodes,
 # meshes, transforms, hierarchy, instances, layers); only the materials still come from import_max. New options:
 # Units, with Scale as an extra factor. Removed: Apply Matrix, Collection and the Primitive, Empty and Armature
-# items of Object Filter. The popup shows a pre-flight line per .max (3ds Max version, renderer, nodes, unit).
+# items of Object Filter. The popup shows a pre-flight line per .max (3ds Max version, renderer, objects, unit).
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -213,7 +213,7 @@ def _meters(choice, unit, scale):
 
 
 def _preflight(path):
-    """One line about a .max before it is imported: 3ds Max version, renderer, nodes, system unit. Reads the
+    """One line about a .max before it is imported: 3ds Max version, renderer, objects (nodes), unit. Reads the
     summary stream and the index of the Scene stream, not the objects (0.1 s on a scene of 800 MB)."""
     from .reader import cfb, metadata, units
     from .reader import scene as reader_scene
@@ -233,7 +233,7 @@ def _preflight(path):
     renderer = (info.get("renderer") or {}).get("name")
     if renderer:
         parts.append(renderer)
-    parts.append(_plural(nodes, "node"))
+    parts.append(_plural(nodes, "object"))
     parts.append(unit.name if unit is not None else "unit not stated")
     return ", ".join(parts)
 
@@ -241,7 +241,50 @@ def _preflight(path):
 def _remember_preflight(path):
     if len(_PREFLIGHT) >= _CACHE_MAX:
         _PREFLIGHT.clear()
-    _PREFLIGHT[_norm(path)] = _preflight(path)
+    try:
+        _PREFLIGHT[_key(path)] = _preflight(path)
+    except OSError:
+        pass
+
+
+def _preflight_of(path):
+    """The line invoke() read for path, None when it read none or the file changed since."""
+    try:
+        return _PREFLIGHT.get(_key(path))
+    except OSError:
+        return None
+
+
+def _materials(max_path, first_nodes, built, search):
+    """The old engine's materials on the built meshes: one call per mesh, with the material of its first node
+    (adjust_material appends slots to the mesh, which instances share). first_nodes: the object index of each
+    mesh's first node. (materials on the meshes, [problem])."""
+    from . import import_max
+    problems = []
+    try:
+        import_max.open_materials(max_path)
+    except Exception as e:  # the old reader fails on files the new one reads: geometry stays
+        return 0, ["materials not read (%s: %s)" % (type(e).__name__, e)]
+    try:
+        for index in first_nodes:
+            ob = built.objects.get(index)
+            if ob is None:
+                continue
+            try:
+                import_max.assign_material(max_path, search, ob, index)
+            except Exception as e:
+                problems.append("material of %s not made (%s: %s)" % (ob.name, type(e).__name__, e))
+    finally:
+        import_max.close_materials()
+    return len({m.name for mesh in built.meshes.values() for m in mesh.materials if m is not None}), problems
+
+
+def _remove(cols):
+    """Remove what a failed build left: the objects of the file's collection tree and the collections."""
+    for ob in list(cols.root.all_objects):
+        bpy.data.objects.remove(ob)
+    for col in list(cols.layers.values()) + [cols.root]:
+        bpy.data.collections.remove(col)
 
 
 def _summary(path, result):
@@ -316,7 +359,8 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
             import_pack(layout, self, packs)
         elif space is not None and space.type == 'FILE_BROWSER':
             import_pack(layout, self, None)
-        import_files(layout, self)
+        if space is None or space.type != 'FILE_BROWSER':  # invoke() reads only what a drop or a script named
+            import_files(layout, self)
         import_include(layout, self)
         import_transform(layout, self)
 
@@ -419,7 +463,8 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
 
     def _import_scene(self, context, max_path):
         """Read, describe and build one .max into a collection named after it in the active collection, then its
-        materials through import_max. [(report level, line)]; OSError or ValueError when the file cannot be read."""
+        materials through import_max. [(report level, line)]; OSError or ValueError when the file cannot be read.
+        A build that fails is removed again before the exception goes on."""
         from .build import collections as build_collections
         from .build import objects as build_objects
         from .convert import scene as convert_scene
@@ -431,13 +476,21 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
             unit = units.system_unit(sc)
             meters, note = _meters(self.units, unit, self.scale_objects)
             desc = convert_scene.describe(sc, meters, unit)
+            del sc  # the Scene holds the inflated stream of a compressed file
         if 'UV' not in self.object_filter:
             for md in desc.meshes.values():
                 md.uv_layers = []
         view_layer = context.view_layer
         cols = build_collections.make(desc, view_layer.active_layer_collection.collection, os.path.splitext(name)[0])
-        built = build_objects.build(desc, cols.root, cols, view_layer)
-        build_collections.finish(cols, view_layer)
+        try:
+            built = build_objects.build(desc, cols.root, cols, view_layer)
+            build_collections.finish(cols, view_layer)
+        except BaseException:
+            _remove(cols)
+            raise
+        first_nodes = [md.users[0] for md in desc.meshes.values() if md.users]
+        placeholders = sum(desc.placeholders.values())
+        del desc  # its mesh arrays are in Blender now: not held while the old engine parses the file again
         axis = axis_conversion(from_forward=self.axis_forward, from_up=self.axis_up).to_4x4()
         if axis != Matrix.Identity(4):
             for ob in built.objects.values():
@@ -445,16 +498,15 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
                     ob.matrix_basis = axis @ ob.matrix_basis
         lines = [('WARNING', "%s %s" % (name, note))] if note else []
         materials, problems = 0, []
-        if 'MATERIAL' in self.object_filter and desc.meshes:
-            materials, problems = _materials(max_path, desc, built, self.use_image_search)
+        if 'MATERIAL' in self.object_filter and first_nodes:
+            materials, problems = _materials(max_path, first_nodes, built, self.use_image_search)
         if problems:
             for problem in problems:
                 print("MaxDrop: %s: %s" % (name, problem))
             lines.append(('WARNING', "%s: %s, see the system console" % (
                 name, _plural(len(problems), "material problem"))))
-        placeholders = sum(desc.placeholders.values())
-        lines.append(('INFO', "Imported %s: %s (%d placeholders), %s, %s" % (
-            name, _plural(len(built.objects), "object"), placeholders,
+        lines.append(('INFO', "Imported %s: %s (%s), %s, %s" % (
+            name, _plural(len(built.objects), "object"), _plural(placeholders, "placeholder"),
             _plural(len(built.meshes), "mesh", "meshes"), _plural(materials, "material"))))
         return lines
 
@@ -525,28 +577,6 @@ def import_pack(layout, operator, packs):
                 body.label(text=parent)
 
 
-def _materials(max_path, desc, built, search):
-    """The old engine's materials on the built meshes: one call per mesh, with the material of its first node
-    (adjust_material appends slots to the mesh, which instances share). (materials on the meshes, [problem])."""
-    from . import import_max
-    problems = []
-    try:
-        import_max.open_materials(max_path)
-    except Exception as e:  # the old reader fails on files the new one reads: geometry stays
-        return 0, ["materials not read (%s: %s)" % (type(e).__name__, e)]
-    try:
-        for md in desc.meshes.values():
-            ob = built.objects.get(md.users[0]) if md.users else None
-            if ob is None:
-                continue
-            try:
-                import_max.assign_material(max_path, search, ob, md.users[0])
-            except Exception as e:
-                problems.append("material of %s not made (%s: %s)" % (ob.name, type(e).__name__, e))
-    finally:
-        import_max.close_materials()
-    return len({m.name for mesh in built.meshes.values() for m in mesh.materials if m is not None}), problems
-
 
 def import_files(layout, operator):
     """The pre-flight line of each .max invoke() read: a drop's or a script's, or a pack's folder on disk."""
@@ -554,7 +584,7 @@ def import_files(layout, operator):
     for path in _paths(operator):
         found = _TARGETS.get(_norm(path))
         target = found[2][1] if found and found[2] else path
-        line = _PREFLIGHT.get(_norm(target))
+        line = _preflight_of(target)
         if line is not None:
             rows.append((os.path.basename(target), line))
     if not rows:

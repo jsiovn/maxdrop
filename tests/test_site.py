@@ -149,7 +149,8 @@ class Page(unittest.TestCase):
 
     def test_the_page_names_no_option_the_importer_lost(self):
         page = self.page()
-        for gone in ("Apply Matrix", "<strong>Collection</strong>", "one 3ds Max unit becomes one meter"):
+        for gone in ("Apply Matrix", "<strong>Collection</strong>", "one 3ds Max unit becomes one meter",
+                     "imports exactly what that importer imports"):
             self.assertFalse(gone in page, gone)
 
     def test_the_page_says_how_scene_packs_are_imported(self):
