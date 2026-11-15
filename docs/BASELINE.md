@@ -1,7 +1,8 @@
-# Baseline: the engine as forked
+# Baseline: import time, memory and accuracy
 
-What the importer inherited from io_scene_max 1.9.2 (`maxdrop/import_max.py`, unchanged in MaxDrop 0.0.1) does
-with two large real interior scenes. The reader rework is measured against these numbers.
+What MaxDrop does with two large real interior scenes: first the engine inherited from io_scene_max 1.9.2
+(`maxdrop/import_max.py`, unchanged in MaxDrop 0.0.1), then MaxDrop's own reader in version 0.0.3, measured the
+same way and compared with what 3ds Max itself reports.
 
 The two scenes are commercial assets and are not in this repository: they are called **scene A** and **scene B**
 here, and only counts and measurements are recorded. Both are V-Ray interior scenes.
@@ -68,6 +69,65 @@ Finishing without a traceback is not the same as a correct scene. Nothing here c
 positions, scale (scene units are not read), smoothing, instancing, material values and textures are unchecked,
 and both scenes arrive without lights, cameras and anything built by a modifier. The counts are a starting line
 for speed, memory and coverage, not a measure of quality.
+
+## Version 0.0.3: MaxDrop's reader
+
+Nodes, meshes, transforms, hierarchy, layers and units come from MaxDrop's reader; the materials still come from
+the inherited engine, which reads the file a second time for them.
+
+How it was measured: as above (`tools/baseline.py`, Blender 5.2.0 LTS, Python 3.13.13, the same machine, default
+options: Units Auto, materials and UV maps on), MaxDrop 0.0.3, measured once on 2026-11-15. The 0.0.1 column is
+the table above.
+
+| | Scene A 0.0.1 | Scene A 0.0.3 | Scene B 0.0.1 | Scene B 0.0.3 |
+|---|---:|---:|---:|---:|
+| Outcome | finished | finished, no traceback | finished | finished, no traceback |
+| Wall time | 29 s | 19 s | 102 s | 65 s |
+| Import time (operator) | 26 s | 17 s | 90 s | 63 s |
+| Peak memory | 3.9 GB (4.1 GB) | 3.7 GB (3.9 GB) | 15.8 GB (16.2 GB) | 14.4 GB (14.8 GB) |
+| Nodes in the file | 746 | 746 | 2,251 | 2,251 |
+| Blender objects created | 423 | 747 | 1,806 | 2,252 |
+| … meshes | 343 | 343 | 1,628 | 1,625 |
+| … empties | 80 | 404 | 178 | 627 |
+| … of them placeholders | | 323 | | 448 |
+| … with a parent | 302 | 472 | 1,728 | 1,743 |
+| Nodes skipped or lost | 323 | 0 | 445 | 0 |
+| Vertices | 3,116,435 | 3,116,416 | 9,027,149 | 9,027,887 |
+| Polygons | 4,828,377 | 4,828,478 | 11,858,991 | 11,859,710 |
+| Meshes with a UV layer | 271 | 271 | 1,573 | 1,570 |
+| Meshes with a material | 337 | 337 | 1,581 | 1,578 |
+| Materials created | 145 | 145 | 162 | 154 |
+| Images loaded | 111 | 111 | 110 | 109 |
+
+- Every node now becomes an object: one the reader does not convert arrives as an empty (a placeholder) in its
+  place in the hierarchy, and the import report counts them by class. Both scenes also get the helper empty that
+  carries sheared transforms (counted with the empties).
+- Placeholders, scene A: 282 V-Ray lights, 20 spline shapes, 6 free lights, 5 rectangles, 4 lines and 6 others
+  (a camera, a directional light, their targets, link composites). Scene B: 416 Particle Flow operators and events,
+  24 V-Ray lights, 4 boxes, 2 targets, a camera and a sun.
+- Time dropped by a third. Peak memory barely moved: the inherited material engine still parses the whole file,
+  and it is the larger share. It goes away with the material conversion.
+
+### Accuracy against 3ds Max
+
+Every node of both scenes was compared with the dump of 3ds Max 2020 itself (`tools/oracle/dump_scene.ms`, see
+[ORACLE.md](ORACLE.md)), by position in the node walk (the order and names are equal). Nodes with modifiers are
+left out: MaxDrop does not apply modifiers yet. A world matrix matches when each of its 12 numbers is within 1e-4
+(translation in the file's own unit), or within 1e-5 of its value when that is larger: the dump prints 6
+significant digits, so a position of 1234.56 mm is only known to 0.01. A bounding box (meshes only) matches within
+1e-3, or 1e-5 of its value.
+
+| | Scene A | Scene B |
+|---|---:|---:|
+| Nodes | 746 | 2,251 |
+| … with modifiers, left out | 84 | 209 |
+| … compared | 662 | 2,042 |
+| World matrix matches | 660 (99.7 %) | 2,040 (99.9 %) |
+| Bounding box matches (meshes) | 280 of 280 (100 %) | 1,416 of 1,416 (100 %) |
+| Both | 660 (99.7 %) | 2,040 (99.9 %) |
+
+The four nodes that miss, two per scene, are a camera and lights aimed by a Look At controller, which this version
+does not evaluate. The milestone's target was 99 % in both scenes.
 
 ## Reproduce
 

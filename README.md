@@ -69,6 +69,8 @@ above.
    - Every import makes a collection named after the file, with one collection per 3ds Max layer below it.
 3. Click **Import**. A large scene takes a while and Blender does not respond until it is done
    ([docs/BASELINE.md](docs/BASELINE.md) has measured times).
+4. The status line says whether anything was left out; the text **MaxDrop Report** in the Text Editor (and
+   the system console) lists what arrived and what did not, such as lights kept as empties.
 
 A `.max` file names its texture files but does not contain them: keep the maps in the folder of the scene or in a
 subfolder. A texture that is not found is skipped and the material keeps its color.

@@ -8,6 +8,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ## [Unreleased]
 
+## [0.0.3] - 2026-11-15
+
 ### Added
 
 - **Units** in the import options: **Auto** (default) takes the unit the scene was saved with, so a scene in
@@ -39,6 +41,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Box, Sphere, Cylinder, Cone, Torus and Plane primitives, Boolean objects and Bipeds arrive as empties until a
   later version converts them (0.0.2 rebuilt the primitives as Blender primitives).
 - Each mesh gets the material of its first object: instances share one mesh, so they share its material.
+- A large scene imports in about two thirds of the time 0.0.2 took ([docs/BASELINE.md](docs/BASELINE.md)); memory
+  stays about the same while the materials are read by the old engine.
 
 ### Removed
 
