@@ -1,8 +1,11 @@
 name: Test
 
-# The plain tests (the tools, the landing page, the license files, the scene packs and the fixture scan: no Blender;
-# the tests themselves use no network, only apt installs bsdtar), then on each Blender of the matrix: build,
-# validate, the license text in the zip, the register smoke test and the import smoke test on tests/fixtures/*.max.
+# The plain job, on Ubuntu and Windows (no Blender; the tests themselves use no network, only apt installs bsdtar
+# and pip installs ruff): the unit tests with the no-bpy guard, the tools, the landing page, the license files and
+# the scene packs; the scan of tests/fixtures/ and tests/fixtures/packs/ for user names, computer names and user
+# paths; ruff. Then on each Blender of the matrix: build, validate, the license text in the zip, the register
+# smoke test, the import smoke test on tests/fixtures/*.max and the fixture tests (tests/blender/run.py) once
+# they exist.
 #
 # Runs on pull requests and by hand. On a push to main it runs as the first job of the Publish workflow, which
 # calls this file: nothing is published unless it passes, and the tests do not run twice.
@@ -17,20 +20,58 @@ permissions:
 
 jobs:
   python:
-    name: Plain Python
-    runs-on: ubuntu-latest
+    name: Plain Python (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # A reader that only works on one operating system must not ship: the users are on both.
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
+      # 3.11: the Python of Blender 4.2 and 4.5, the oldest the add-on runs on.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
       # bsdtar for the .rar and .7z tests of the scene packs: ubuntu-latest has no bsdtar and no unrar, and its
-      # 7z is a shell wrapper or below the version MaxDrop accepts; those cases print SKIPPED.
+      # 7z is a shell wrapper or below the version MaxDrop accepts; those cases print SKIPPED. On Windows the
+      # unpacker is the tar.exe of System32.
       - name: bsdtar
+        if: runner.os == 'Linux'
         run: |
           set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y -qq libarchive-tools >/dev/null
           bsdtar --version
-      - name: The tools, the landing page, the license files, the scene packs, the fixture scan
-        run: python3 -I -m unittest discover tests
+      # The real-tool tests of the scene packs print one RAN or SKIPPED line per case.
+      - name: The unit tests and the no-bpy guard, the tools, the landing page, the license files, the scene packs
+        run: python -I -m unittest discover tests
+      - name: Fixture scan (user names, computer names, user paths)
+        run: python -I tools/check_fixture.py "tests/fixtures/*.*" "tests/fixtures/packs/*"
+      - name: Ruff
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check -q ruff==0.17.5
+          ruff check --output-format=github .
+
+  # Branch protection on main requires a check named "Plain Python": the matrix jobs above carry the operating
+  # system in their names, so this job keeps that name and passes only when every one of them passed.
+  python-gate:
+    name: Plain Python
+    needs: python
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every operating system passed
+        env:
+          RESULT: ${{ needs.python.result }}
+        run: |
+          echo "plain Python jobs: $RESULT"
+          test "$RESULT" = success
 
   blender:
     name: Blender ${{ matrix.blender }}
@@ -93,3 +134,11 @@ jobs:
         run: |
           BLENDER_USER_RESOURCES="$RUNNER_TEMP/blender-profile" ~/blender/blender --background --factory-startup \
             --python-exit-code 1 --python tests/smoke_import.py
+
+      # The fixtures through the new pipeline, compared with their 3ds Max oracle; added by bead maxdrop-too.9,
+      # this step runs from the commit that brings the file.
+      - name: Fixture tests
+        if: hashFiles('tests/blender/run.py') != ''
+        run: |
+          BLENDER_USER_RESOURCES="$RUNNER_TEMP/blender-profile" ~/blender/blender --background --factory-startup \
+            --python-exit-code 1 --python tests/blender/run.py
