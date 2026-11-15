@@ -33,7 +33,7 @@ import sys
 import traceback
 
 import bpy
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
@@ -299,7 +299,7 @@ def check_shear(modules):
     helpers = built.helpers
     check("shear: one helper empty, at the identity, in the file's collection",
           len(helpers) == 1 and helpers[0].type == 'EMPTY' and helpers[0].parent is None
-          and helpers[0].matrix_world == helpers[0].matrix_world.Identity(4)
+          and helpers[0].matrix_world == Matrix.Identity(4)
           and [col.name for col in helpers[0].users_collection] == [cols.root.name],
           str([(h.name, [col.name for col in h.users_collection]) for h in helpers]))
     for index, name, parent, _local_m, _kind, sheared, _hidden in nodes:
@@ -313,7 +313,6 @@ def check_shear(modules):
     check("shear: roots are the plain top-level object and the helper",
           roots == sorted(["PlainTop"] + [h.name for h in helpers]), str(roots))
     axis = numpy.array([(1, 0, 0, 0), (0, 0, -1, 0), (0, 1, 0, 0), (0, 0, 0, 1)], dtype=numpy.float64)
-    from mathutils import Matrix
     for ob in built.roots():
         ob.matrix_basis = Matrix(axis.tolist()) @ ob.matrix_basis
     view_layer.update()

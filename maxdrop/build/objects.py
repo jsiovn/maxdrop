@@ -60,13 +60,11 @@ def _keep_shear(ob, local):
     import numpy
     m = numpy.array(local, dtype=numpy.float64)
     basis = numpy.array(ob.matrix_basis, dtype=numpy.float64)
-    try:
-        if abs(numpy.linalg.det(basis[:3, :3])) < 1e-12:
-            raise numpy.linalg.LinAlgError
-        rest = m @ numpy.linalg.inv(basis)
-    except numpy.linalg.LinAlgError:
+    if abs(numpy.linalg.det(basis[:3, :3])) < 1e-12:
         ob.matrix_basis = Matrix.Identity(4)
         rest = m
+    else:
+        rest = m @ numpy.linalg.inv(basis)
     ob.matrix_parent_inverse = Matrix(rest.tolist())
 
 
