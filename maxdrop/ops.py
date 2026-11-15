@@ -516,6 +516,7 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
             for md in desc.meshes.values():
                 md.uv_layers = []
         view_layer = context.view_layer
+        # Addresses, not names: a new mesh could reuse the address of one freed meanwhile, but the build frees none.
         meshes_before = {m.as_pointer() for m in bpy.data.meshes}
         cols = build_collections.make(desc, view_layer.active_layer_collection.collection, os.path.splitext(name)[0])
         try:

@@ -30,18 +30,26 @@ class Collections:
 
 
 def make(desc, parent, name):
-    """The file's collection, linked to parent, with a child collection per layer of desc (parents first)."""
+    """The file's collection, linked to parent, with a child collection per layer of desc (parents first). When it
+    fails, the collections it made are removed again before the exception goes on."""
     root = bpy.data.collections.new(name)
-    parent.children.link(root)
-    cols = Collections(root)
-    for layer in desc.layers:
-        col = bpy.data.collections.new(layer.name)
-        cols.layers.get(layer.parent, root).children.link(col)
-        cols.layers[layer.index] = col
-        col.hide_render = not layer.renderable
-        col.hide_select = layer.frozen
-        if layer.hidden:
-            cols.hidden.append(col)
+    made = [root]
+    try:
+        parent.children.link(root)
+        cols = Collections(root)
+        for layer in desc.layers:
+            col = bpy.data.collections.new(layer.name)
+            made.append(col)
+            cols.layers.get(layer.parent, root).children.link(col)
+            cols.layers[layer.index] = col
+            col.hide_render = not layer.renderable
+            col.hide_select = layer.frozen
+            if layer.hidden:
+                cols.hidden.append(col)
+    except BaseException:
+        for col in reversed(made):
+            bpy.data.collections.remove(col)
+        raise
     return cols
 
 
