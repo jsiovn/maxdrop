@@ -31,9 +31,9 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # 3.11: the Python of Blender 4.2 and 4.5, the oldest the add-on runs on.
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       # bsdtar for the .rar and .7z tests of the scene packs: ubuntu-latest has no bsdtar and no unrar, and its
@@ -85,11 +85,11 @@ jobs:
     env:
       BLENDER_VERSION: ${{ matrix.blender }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Cache Blender
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/blender
           key: blender-${{ matrix.blender }}-linux-x64

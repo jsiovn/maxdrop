@@ -53,7 +53,7 @@ jobs:
       release: ${{ steps.gate.outputs.release }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Read version from the manifest
         id: meta
@@ -121,7 +121,7 @@ jobs:
       - name: Cache Blender
         if: steps.gate.outputs.deploy == 'true' || steps.gate.outputs.release == 'true'
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/blender
           key: blender-${{ env.BLENDER_VERSION }}-linux-x64
@@ -170,13 +170,13 @@ jobs:
 
       - name: Upload Pages artifact
         if: steps.gate.outputs.deploy == 'true'
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: dist
 
       - name: Upload release files
         if: steps.gate.outputs.release == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release
           path: |
@@ -201,7 +201,7 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
 
   release:
     needs: [build, deploy]
@@ -217,7 +217,7 @@ jobs:
       group: release
       cancel-in-progress: false
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: release
       - name: Create release
