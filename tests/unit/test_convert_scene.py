@@ -60,6 +60,7 @@ UV_LAYERS = {
     "units_mm": ["UVMap"],
     "vray_basic": ["UVMap"],
     "vray_maps": ["UVMap"],
+    "vray_texmaps": ["UVMap"],
     "vray_wrappers": ["UVMap"],
 }
 SHARP_EDGES_POLY_BOX = 12  # one smoothing group per side: every edge of the box

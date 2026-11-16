@@ -23,7 +23,7 @@ FIXTURE_DIR = os.path.join(ROOT, "tests", "fixtures")
 FIXTURES = sorted(glob.glob(os.path.join(FIXTURE_DIR, "*.max")))
 TOLERANCE = 1e-5  # relative above 1: the oracle prints 6 significant digits
 # compared values per V-Ray fixture: guards against a parity test that compares nothing
-FLOORS = {"vray_basic": 190, "vray_maps": 630, "vray_wrappers": 2000, "standard_physical": 290}
+FLOORS = {"vray_basic": 190, "vray_maps": 630, "vray_wrappers": 2000, "standard_physical": 290, "vray_texmaps": 2900}
 
 
 def _load(name, path, package_dir=None):

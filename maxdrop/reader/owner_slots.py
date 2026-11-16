@@ -31,8 +31,10 @@ TABLE = {
     (_MTL, classids.VRAY_2SIDED_MTL): {0: {0: 1, 1: 2}},
     (_MTL, classids.VRAY_MTL): {4: {100 + k: 7 + k for k in range(27)}},  # texmap_diffuse ... in the maps block
     (_TEX, classids.BITMAP_TEX): {0: {15: 2}},
+    (_TEX, classids.VRAY_BITMAP): {0: {31: 2}},
     (_TEX, classids.RGB_TINT): {0: {3: 1}},
     (_TEX, classids.MIX): {0: {6: 1, 7: 2, 8: 3, 12: 4}},
+    (_TEX, classids.NOISE): {0: {2: 2, 3: 3, 13: 4}},
     (_TEX, classids.RGB_MULTIPLY): {0: {2: 1, 3: 2}},
     (_TEX, classids.OUTPUT_MAP): {0: {2: 1}},
     (_TEX, classids.COLOR_CORRECTION): {0: {1: 1}},
