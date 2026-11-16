@@ -1155,10 +1155,57 @@ class LostMaps(Checks):
         self.assertEqual(g.root.name, "a.png")
         self.assertTrue(g.approximated)
         self.assertEqual(tex.stats.peeled, collections.Counter({"Mix": 1}))
+        self.assertEqual(tex.stats.unsupported, collections.Counter({"Noise": 1}))
         self.lost_issue(tex, "Mix 'mx'")
-        tex = _tex(FakeMap(1, tx.MIX, {6: Ref(None), 7: Ref(3)}, [3], cls="Mix", name="mx"), _noise(3))
+        tex = _tex(FakeMap(1, tx.MIX, {0: 0.5, 6: Ref(None), 7: Ref(3)}, [3], cls="Mix", name="mx"), _noise(3))
         self.assertIsNone(tex.convert(mat.MapRef(1), tx.COLOR), "color 1 is not the Noise's stand-in")
         self.lost_issue(tex, "Mix 'mx'")
+        tex = _tex(FakeMap(1, tx.MIX, {0: 0.5, 6: Ref(2), 7: Ref(3)}, [2, 3], cls="Mix"), _noise(2), _noise(3))
+        self.assertIsNone(tex.convert(mat.MapRef(1), tx.COLOR), "both sides lost")
+
+    def test_mix_weighs_a_lost_map_by_its_amount(self):
+        tex = _tex(FakeMap(1, tx.MIX, {0: 0.0, 6: Ref(2), 7: Ref(3)}, [2, 3], cls="Mix"), _noise(2), _bitmap(3))
+        self.assertIsNone(tex.convert(mat.MapRef(1), tx.COLOR), "amount 0: map 1 fills the result")
+        tex = _tex(FakeMap(1, tx.MIX, {0: 1.0, 5: (1.0, 0.0, 0.0), 6: Ref(2)}, [2], cls="Mix", name="mx"),
+                   _noise(2))
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertIsInstance(g.root, tx.Mix, "amount 1: map 1 does not show")
+        self.close(g.root.factor, 1.0)
+        self.close(g.root.b.value, (1.0, 0.0, 0.0))
+        self.assertFalse(g.approximated)
+        self.lost_issue(tex, "Mix 'mx'")
+        tex = _tex(FakeMap(1, tx.MIX, {0: 1.0, 3: 1, 6: Ref(2), 7: Ref(3)}, [2, 3], cls="Mix"), _noise(2),
+                   _bitmap(3))
+        self.assertEqual(tex.convert(mat.MapRef(1), tx.COLOR).root.name, "a.png", "a curve: weights unknown")
+
+    def test_lost_map_below_a_lost_wrapper(self):
+        cc = FakeMap(2, tx.COLOR_CORRECTION, {1: Ref(3)}, [3], cls="Color Correction", name="cc")
+        mix = FakeMap(1, tx.MIX, {0: 0.5, 6: Ref(2), 7: Ref(4)}, [2, 4], cls="Mix", name="mx")
+        tex = _tex(mix, cc, _noise(3), _bitmap(4))
+        first = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertEqual(first.root.name, "a.png")
+        second = tex.convert(mat.MapRef(1, 0.5), tx.COLOR, (0.0, 0.0, 0.0))  # the Mix node again, from the cache
+        self.assertIs(second.root.b, first.root)
+        for g in (first, second):
+            self.assertTrue(g.approximated)
+            self.assertTrue(any(r.startswith("Color Correction 'cc'") for r in g.issues), g.issues)
+            self.assertTrue(any(r.startswith("Mix 'mx'") for r in g.issues), g.issues)
+        self.assertEqual(len([r for _i, r in tex.stats.issues if "converts to nothing" in r]), 2)
+
+    def test_normal_map_names_its_lost_normal_map(self):
+        n = FakeMap(1, classids.VRAY_NORMAL_MAP, {0: Ref(2), 2: 1, 4: Ref(3), 5: 1}, [2, 3], cls="VRayNormalMap")
+        tex = _tex(n, _noise(2), _bitmap(3))
+        g = tex.convert(mat.MapRef(1), tx.NORMAL)
+        self.assertIsInstance(g.root, tx.Bump, "its bump map stays")
+        self.lost_issue(tex, "VRayNormalMap")
+
+    def test_composite_names_a_lost_layer(self):
+        comp = FakeMap(1, tx.COMPOSITE, {9: [Ref(2), Ref(3)]}, [2, 3], cls="Composite", name="cp")
+        tex = _tex(comp, _bitmap(2), _noise(3))
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertEqual(g.root.name, "a.png")
+        self.assertTrue(g.approximated)
+        self.lost_issue(tex, "Composite 'cp'")
 
     def test_mix_with_a_switched_off_map_is_its_color(self):
         tex = _tex(FakeMap(1, tx.MIX, {4: (1.0, 0.0, 0.0), 6: Ref(2), 9: 0, 7: Ref(3)}, [2, 3], cls="Mix"),
@@ -1185,19 +1232,31 @@ class LostMaps(Checks):
         g = tex.convert(mat.MapRef(1), tx.COLOR)
         self.assertEqual(g.root.name, "a.png")
         self.assertTrue(g.approximated)
+        self.assertEqual(tex.stats.unsupported, collections.Counter({"Noise": 1}))
         self.lost_issue(tex, "RGB Multiply 'rm'")
         tex = _tex(FakeMap(1, tx.RGB_MULTIPLY, {2: Ref(2), 3: Ref(3)}, [2, 3], cls="RGB Multiply"), _noise(2),
                    _noise(3))
         self.assertIsNone(tex.convert(mat.MapRef(1), tx.COLOR))
 
     def test_corona_mix(self):
-        tex = _tex(_cmix(1, [2, 3], p200=6, p207=Ref(2), p206=Ref(3)), _noise(2), _cbitmap(3))
+        tex = _tex(_cmix(1, [2, 3], p200=6, p201=0.5, p207=Ref(2), p206=Ref(3)), _noise(2), _cbitmap(3))
         g = tex.convert(mat.MapRef(1), tx.COLOR)
         self.assertEqual(g.root.name, "a.png")
         self.assertTrue(g.approximated)
         self.lost_issue(tex, "CoronaMix 'map'")
+        tex = _tex(_cmix(1, [2, 3], p200=6, p207=Ref(2), p206=Ref(3)), _noise(2), _cbitmap(3))
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertIsInstance(g.root, tx.Mix, "amount 1 (its default): the lost bottom does not show")
+        self.assertEqual(g.root.b.name, "a.png")
+        self.assertFalse(g.approximated)
+        tex = _tex(_cmix(1, [2, 3], p200=6, p207=Ref(2), p206=Ref(3)), _cbitmap(2), _noise(3))
+        self.assertIsNone(tex.convert(mat.MapRef(1), tx.COLOR), "amount 1: the lost top fills the result")
         tex = _tex(_cmix(1, [3], p200=2, p206=Ref(3)), _noise(3))
         self.assertIsNone(tex.convert(mat.MapRef(1), tx.COLOR), "the bottom color alone is not the product")
+        tex = _tex(_cmix(1, [2, 3], p200=2, p201=0.0, p207=Ref(2), p206=Ref(3)), _cbitmap(2), _noise(3))
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertIsInstance(g.root, tx.Mix, "multiply at amount 0: the bottom alone")
+        self.assertEqual(g.root.a.name, "a.png")
         tex = _tex(_cmix(1, [2, 3], p200=6, p201=0.4, p207=Ref(2), p210=Ref(3)), _cbitmap(2), _noise(3))
         g = tex.convert(mat.MapRef(1), tx.COLOR)
         self.assertIsInstance(g.root, tx.Mix)
@@ -1222,8 +1281,9 @@ class LostMaps(Checks):
     def test_lost_map_that_is_not_a_map(self):
         tex = _tex(FakeMap(1, tx.COLOR_CORRECTION, {1: Ref(7)}, [7], cls="Color Correction", name="cc"))
         self.assertIsNone(tex.convert(mat.MapRef(1), tx.COLOR))
-        self.assertTrue(any("its map object 7 converts to nothing" in r for _i, r in tex.stats.issues),
-                        tex.stats.issues)
+        reasons = [r for _i, r in tex.stats.issues]
+        self.assertTrue(any("object 7 is not a map" in r for r in reasons), reasons)
+        self.assertFalse(any("converts to nothing" in r for r in reasons), "named once, by the reference")
 
 
 if __name__ == "__main__":

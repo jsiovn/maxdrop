@@ -20,7 +20,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   material, also when instances carry different materials.
 - **Texture maps as nodes**: a Bitmap keeps its tiling, offset, rotation, tile and mirror, cropping and map
   channel; Mix, RGB Multiply, Color Correction and Composite become nodes; Falloff, VRayDirt and other wrappers
-  give the map below them. Color maps load as sRGB, data maps as Non-Color.
+  give the map below them. Color maps load as sRGB, data maps as Non-Color. A map MaxDrop cannot convert is named
+  in the report and never replaced by the color its wrapper holds for that slot: below a Color Correction the
+  material keeps its own color (not the Color Correction's black); a Mix, RGB Multiply or CoronaMix uses its other
+  map, or the material keeps its own color.
 - **Corona materials by MaxDrop's own rules**: CoronaPhysicalMtl, CoronaMtl (CoronaLegacyMtl) and CoronaLightMtl
   become a Principled BSDF (roughness or glossiness mode, metalness, refraction, opacity, self-illumination,
   clearcoat, bump); CoronaLayeredMtl gives its base material. CoronaBitmap is imported like a Bitmap, CoronaColor as a
@@ -36,12 +39,6 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   by file name (for a scene pack: whether the archive held the file), the material inputs this Blender version
   lacks (Thin Wall on 4.2 and 4.5) and what a rule could not convert. The status bar line counts the materials and
   warns when anything was simplified or left out. The bug report form asks for the report.
-
-### Fixed
-
-- A map MaxDrop cannot convert below a Color Correction no longer turns the material black (the Color
-  Correction's own color): the material keeps its own color. Below a Mix, RGB Multiply or CoronaMix such a map is no
-  longer replaced by that map's color either: the other map is used. The report names the map.
 
 ### Removed
 

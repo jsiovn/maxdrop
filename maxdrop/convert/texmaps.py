@@ -66,9 +66,11 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
 - A map that is set (and switched on) but converts to nothing (an unsupported class with no bitmap below, a
   Bitmap without a file, a cut branch) is an issue on its wrapper naming its class, and never stands in as the
   wrapper's own color for it (3ds Max uses that color only without a map or with the map off): a Color Correction,
-  Falloff, VRayDirt, Output or RGB Tint over it gives no graph, so the input keeps its own value; a Mix, RGB
-  Multiply or CoronaMix gives its other side's map (peeled) or no graph; a lost mask leaves the mix amount (an
-  approximation); a lost Composite layer is left out.
+  Falloff, VRayDirt, Output, RGB Tint or VRayColor2Bump over it gives no graph, so the input keeps its own value.
+  A Mix or CoronaMix weighs it by its amount: a side that does not show is drawn as its color (exact), a side that
+  fills the result gives no graph, any other weight (or a mask) peels the wrapper to its other side's map, or no
+  graph; an RGB Multiply is always peeled that way. A lost mask leaves the mix amount, a lost Composite layer is
+  left out (both approximations); a normal map class keeps its other map.
 - The slot itself: a glossiness map feeding roughness (MapRef.invert) is under an Invert; a slot amount below 1 mixes
   the input's value with the map (Mix(Constant(value), map, amount)), above 1 multiplies the map; in a bump input the
   amount is the Bump's strength, in a normal input it scales the NormalMap's strengths.
@@ -602,13 +604,16 @@ class TexmapConverter:
             return None
         return _ref(m, map_pid, tab)
 
-    def _below(self, i):
-        """A map below a wrapper as an issue names it: its class and name, or the object when it is no readable map."""
+    def _lost(self, m, i, walk):
+        """The issue of a map i that wrapper m uses and that converts to nothing, naming its class. None for an
+        object that is no readable map: _get has named it already."""
         try:
             sub = self.graph.get(i) if self.graph.superclass(i) == classids.SC_TEXMAP else None
         except ChunkError:
             sub = None
-        return "object %d" % i if sub is None else "%s %r" % (self._class_name(sub), sub.name)
+        if sub is not None:
+            self._issue(walk, m.index, "%s %r: its map %s %r converts to nothing" % (
+                self._class_name(m), m.name, self._class_name(sub), sub.name))
 
     def _sub(self, m, map_pid, on_pid, kind, walk, depth, chain, tab=0):
         """The node of the map a parameter uses (see _on), None without one. A used map that converts to nothing is
@@ -616,8 +621,7 @@ class TexmapConverter:
         i = self._on(m, map_pid, on_pid, tab)
         node = self._node(i, kind, walk, depth, chain)
         if i is not None and node is None:
-            self._issue(walk, m.index, "%s %r: its map %s converts to nothing" % (
-                self._class_name(m), m.name, self._below(i)))
+            self._lost(m, i, walk)
         return node
 
     def _image(self, m, kind, walk):
@@ -884,11 +888,21 @@ def _color2bump(conv, m, kind, walk, depth, chain):
 
 
 def _sides(conv, m, ids, kind, walk, depth, chain):
-    """The nodes of a two-map wrapper's sides ((map pid, switch pid) each), None where no map is used, and whether
-    a used map converted to nothing."""
+    """The nodes of a two-map wrapper's sides ((map pid, switch pid) each), None where no map is used, and per side
+    whether a used map converted to nothing."""
     nodes = tuple(conv._sub(m, pid, on, kind, walk, depth, chain) for pid, on in ids)
-    lost = any(n is None and conv._on(m, pid, on) is not None for n, (pid, on) in zip(nodes, ids))
+    lost = tuple(n is None and conv._on(m, pid, on) is not None for n, (pid, on) in zip(nodes, ids))
     return nodes, lost
+
+
+def _lost_weight(lost, weights):
+    """How much the lost sides show in the result, from each side's weight (0, 1, or None: partly or unknown, as
+    under a mask): 0.0 none of them shows (their colors are drawn and stay invisible, exact), 1.0 one fills it (no
+    graph), None partly (the wrapper is peeled to its other map)."""
+    ws = [w for gone, w in zip(lost, weights) if gone]
+    if any(w == 1.0 for w in ws):
+        return 1.0
+    return 0.0 if all(w == 0.0 for w in ws) else None
 
 
 def _other_side(conv, m, nodes, walk):
@@ -912,21 +926,26 @@ def _mask(conv, m, pid, on_pid, walk, depth, chain):
 def _mix(conv, m, kind, walk, depth, chain):
     """0 mixAmount (fraction), 3 useCurve, 4 / 5 color1 / 2, 6 / 7 map1 / 2, 8 mask, 9 / 10 / 11 their switches."""
     (a, b), lost = _sides(conv, m, ((6, 9), (7, 10)), kind, walk, depth, chain)
-    if lost:
-        return _other_side(conv, m, (a, b), walk)
-    if _flag(m, 3, False):
+    mask = _mask(conv, m, 8, 11, walk, depth, chain)
+    factor, curve = min(1.0, max(0.0, _num(m, 0, 0.0))), _flag(m, 3, False)
+    if any(lost):
+        w = _lost_weight(lost, (None, None) if mask is not None or curve else (1.0 - factor, factor))
+        if w == 1.0:
+            return None
+        if w is None:
+            return _other_side(conv, m, (a, b), walk)
+    if curve:
         walk.approximated = True
         conv._issue(walk, m.index, "Mix %r: its mix curve not converted" % (m.name,))
     a = a or conv._constant(m, 4, kind, (0.0, 0.0, 0.0))
     b = b or conv._constant(m, 5, kind, (1.0, 1.0, 1.0))
-    mask = _mask(conv, m, 8, 11, walk, depth, chain)
-    return Mix(a, b, min(1.0, max(0.0, _num(m, 0, 0.0))), mask)
+    return Mix(a, b, factor, mask)
 
 
 def _rgb_multiply(conv, m, kind, walk, depth, chain):
     """0 / 1 color1 / 2, 2 / 3 map1 / 2, 4 / 5 their switches."""
     (a, b), lost = _sides(conv, m, ((2, 4), (3, 5)), kind, walk, depth, chain)
-    if lost:
+    if any(lost):
         return _other_side(conv, m, (a, b), walk)
     a = a or conv._constant(m, 0, kind, (1.0, 1.0, 1.0))
     b = b or conv._constant(m, 1, kind, (1.0, 1.0, 1.0))
@@ -976,7 +995,10 @@ def _composite(conv, m, kind, walk, depth, chain):
     layers = []
     for k in used:
         node = conv._node(maps[k].index, kind, walk, depth, chain)
-        if node is not None:
+        if node is None:
+            walk.approximated = True
+            conv._lost(m, maps[k].index, walk)
+        else:
             layers.append((node, min(1.0, max(0.0, at(8, k, 100.0) / 100.0))))
     if not layers:
         return None
@@ -1074,12 +1096,22 @@ def _corona_mix(conv, m, kind, walk, depth, chain):
         return image
     (bottom, top), lost = _sides(conv, m, ((CM_MAP_BOTTOM, CM_BOTTOM_ON), (CM_MAP_TOP, CM_TOP_ON)), kind, walk,
                                  depth, chain)
-    if lost:
-        return _other_side(conv, m, (bottom, top), walk)
-    bottom = bottom or conv._constant(m, CM_COLOR_BOTTOM, kind, (0.0, 0.0, 0.0))
-    top = top or conv._constant(m, CM_COLOR_TOP, kind, (1.0, 1.0, 1.0))
     mask = _mask(conv, m, CM_MASK, CM_MASK_ON, walk, depth, chain)
     amount = min(1.0, max(0.0, _num(m, CM_AMOUNT, 1.0)))
+    if any(lost):
+        if mask is not None:
+            weights = (None, None)
+        elif op == CM_MIX:
+            weights = (1.0 - amount, amount)
+        else:  # bottom times top: either factor shows unless the amount is 0 (the bottom alone)
+            weights = (1.0, 0.0) if amount == 0.0 else (None, None)
+        w = _lost_weight(lost, weights)
+        if w == 1.0:
+            return None
+        if w is None:
+            return _other_side(conv, m, (bottom, top), walk)
+    bottom = bottom or conv._constant(m, CM_COLOR_BOTTOM, kind, (0.0, 0.0, 0.0))
+    top = top or conv._constant(m, CM_COLOR_TOP, kind, (1.0, 1.0, 1.0))
     if (_num(m, CM_MULT_TOP, 1.0), _num(m, CM_MULT_BOTTOM, 1.0), _num(m, CM_OFFSET_TOP, 0.0),
             _num(m, CM_OFFSET_BOTTOM, 0.0)) != (1.0, 1.0, 0.0, 0.0):
         walk.approximated = True
