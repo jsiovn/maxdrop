@@ -60,6 +60,14 @@ VRAY_2SIDED_MTL = ClassId(0x6066686A, 0x11731B4B)
 VRAY_BLEND_MTL = ClassId(0x3DA0041B, 0x0F436E31)
 BITMAP_TEX = ClassId(0x00000240, 0)
 VRAY_NORMAL_MAP = ClassId(0x71FA6E51, 0x72057C2F)
+RGB_TINT = ClassId(0x00000224, 0)
+MIX = ClassId(0x00000230, 0)
+COMPOSITE = ClassId(0x00000280, 0)
+RGB_MULTIPLY = ClassId(0x00000290, 0)
+OUTPUT_MAP = ClassId(0x000002B0, 0)  # the Output map (superclass Texmap), not a map's TexOutput part
+COLOR_CORRECTION = ClassId(0x000002D0, 0)
+FALLOFF = ClassId(0x6EC3730C, 0)
+NORMAL_BUMP = ClassId(0x243E22C6, 0x63F6A014)
 CORONA_PHYSICAL_MTL = ClassId(0x6912AB89, 0x87151720)
 CORONA_LEGACY_MTL = ClassId(0x70BE6506, 0x448931DD)  # MAXScript's CoronaMtl is the same class
 CORONA_LAYERED_MTL = ClassId(0x65486584, 0x8425554E)
@@ -105,6 +113,14 @@ CLASSES = {
     (SC_MATERIAL, VRAY_BLEND_MTL): "VRayBlendMtl",
     (SC_TEXMAP, BITMAP_TEX): "Bitmap",
     (SC_TEXMAP, VRAY_NORMAL_MAP): "VRayNormalMap",
+    (SC_TEXMAP, RGB_TINT): "RGB Tint",
+    (SC_TEXMAP, MIX): "Mix",
+    (SC_TEXMAP, COMPOSITE): "Composite",
+    (SC_TEXMAP, RGB_MULTIPLY): "RGB Multiply",
+    (SC_TEXMAP, OUTPUT_MAP): "Output",
+    (SC_TEXMAP, COLOR_CORRECTION): "Color Correction",
+    (SC_TEXMAP, FALLOFF): "Falloff",
+    (SC_TEXMAP, NORMAL_BUMP): "Normal Bump",
     (SC_MATERIAL, CORONA_PHYSICAL_MTL): "\rCoronaPhysicalMtl",  # the leading CR is in the class directory
     (SC_MATERIAL, CORONA_LEGACY_MTL): "CoronaLegacyMtl",
     (SC_MATERIAL, CORONA_LAYERED_MTL): "CoronaLayeredMtl",

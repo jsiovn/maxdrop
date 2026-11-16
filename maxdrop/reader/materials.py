@@ -114,12 +114,14 @@ class MaterialGraph:
     def _blocks(self, i, refs, issues):
         """{slot: ParamBlock2}, {slot: ParamBlock} among the references of object i."""
         blocks, legacy = {}, {}
+        entry = self.scene.entry(i)
+        owner_class = None if entry is None else (entry.superclass, entry.class_id)
         for slot, target in sorted(refs.items()):
             sc = self.superclass(target)
             try:
                 if sc == classids.SC_PARAMETER_BLOCK2:
                     b = pblock.ParamBlock2.from_chunk(self.scene.chunk(target), self.scene.refs(target), refs,
-                                                      len(self.scene))
+                                                      len(self.scene), owner_class)
                     blocks[slot] = b
                     issues.extend("block at slot %d: %s" % (slot, x) for x in b.issues)
                 elif sc == classids.SC_PARAMETER_BLOCK:

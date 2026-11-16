@@ -89,8 +89,8 @@ def owner_table(*triples):
     return leaf(0x0013, struct.pack("<I", len(triples)) + b"".join(struct.pack("<HHH", *t) for t in triples))
 
 
-def parse(data, block_refs=None, owner_refs=None):
-    return pblock.ParamBlock2.from_chunk(chunks.index(data)[0], block_refs, owner_refs)
+def parse(data, block_refs=None, owner_refs=None, owner_class=None):
+    return pblock.ParamBlock2.from_chunk(chunks.index(data)[0], block_refs, owner_refs, owner_class=owner_class)
 
 
 class Values(unittest.TestCase):
@@ -310,6 +310,130 @@ class Damaged(unittest.TestCase):
         pb = parse(block(scalar(1, INT, 0, 0x40, i32(1)), scalar(1, INT, 0, 0x40, i32(2)), count=5))
         self.assertEqual(pb.get(1), 1)
         self.assertEqual(len(pb.issues), 2)
+
+
+MIX_OWNER = (0x0C10, (0x230, 0))  # Mix: map1 6 -> owner slot 1, map2 7 -> 2, mask 8 -> 3
+
+
+class OwnerSlotsWithoutTable(unittest.TestCase):
+    """A block without 0x0013 (format 14000) takes owner slots from the fixed per-class table."""
+
+    def test_empty_stored_index_takes_the_class_slot(self):
+        pb = parse(block(scalar(6, TEXMAP, OWNERS, 0x40, i32(-1)), scalar(8, TEXMAP, OWNERS, 0x40, i32(-1)),
+                         block_id=0), owner_refs={1: 301, 2: 302, 3: 303}, owner_class=MIX_OWNER)
+        self.assertEqual((pb.get(6), pb.get(8)), (Reference(301), Reference(303)))
+        self.assertEqual(pb.issues, ())
+
+    def test_stored_index_wins(self):
+        pb = parse(block(scalar(6, TEXMAP, OWNERS, 0x40, i32(77)), block_id=0), owner_refs={1: 301},
+                   owner_class=MIX_OWNER)
+        self.assertEqual(pb.get(6), Reference(77))
+
+    def test_unknown_class_or_none_or_other_block_stays_empty(self):
+        data = block(scalar(6, TEXMAP, OWNERS, 0x40, i32(-1)), block_id=0)
+        for owner_class in (None, (0x0C10, (0x12345678, 0x9ABCDEF0)), (0x0C00, (0x230, 0))):
+            self.assertEqual(parse(data, owner_refs={1: 301}, owner_class=owner_class).get(6), Reference(None))
+        other_block = block(scalar(6, TEXMAP, OWNERS, 0x40, i32(-1)), block_id=1)
+        self.assertEqual(parse(other_block, owner_refs={1: 301}, owner_class=MIX_OWNER).get(6), Reference(None))
+
+    def test_only_owners_ref_parameters(self):
+        pb = parse(block(scalar(6, TEXMAP, NO_REF, 0x40, i32(-1)), block_id=0), owner_refs={1: 301},
+                   owner_class=MIX_OWNER)
+        self.assertEqual(pb.get(6), Reference(None))
+
+    def test_slot_past_the_owner_references_is_empty(self):
+        pb = parse(block(scalar(8, TEXMAP, OWNERS, 0x40, i32(-1)), block_id=0), owner_refs={0: 5, 1: 301},
+                   owner_class=MIX_OWNER)
+        self.assertEqual(pb.get(8), Reference(None))
+
+    def test_table_elements_follow_the_slot(self):
+        multi = (0x0C00, (0x200, 0))  # Multi/Sub-Object materialList 0 -> slot 1
+        pb = parse(block(table(0, MTL, OWNERS, (0x40, i32(-1)), (0x40, i32(-1)), (0x40, i32(-1))), block_id=0),
+                   owner_refs={1: 301, 3: 303}, owner_class=multi)
+        self.assertEqual(pb.value(0), [Reference(301), Reference(None), Reference(303)])
+
+    def test_a_0x0013_table_always_wins(self):
+        pb = parse(block(scalar(6, TEXMAP, OWNERS, 0x40, i32(-1)), scalar(7, TEXMAP, OWNERS, 0x40, i32(-1)),
+                         block_id=0, extra=[owner_table((6, 3, 0))]),
+                   owner_refs={1: 301, 2: 302, 3: 303}, owner_class=MIX_OWNER)
+        self.assertEqual((pb.get(6), pb.get(7)), (Reference(303), Reference(None)))
+
+    def test_a_damaged_0x0013_is_not_replaced(self):
+        pb = parse(block(scalar(6, TEXMAP, OWNERS, 0x40, i32(-1)), block_id=0,
+                         extra=[leaf(0x0013, struct.pack("<I", 3) + b"\x01\x00")]),
+                   owner_refs={1: 301}, owner_class=MIX_OWNER)
+        self.assertEqual(pb.get(6), Reference(None))
+        self.assertTrue(any("0x0013" in x for x in pb.issues))
+
+
+def _rebuild(chunk, blank):
+    """The chunk's bytes again (6-byte headers); blank(chunk) may return a replacement payload or None."""
+    if chunk.container:
+        return container(chunk.id, *(_rebuild(c, blank) for c in chunk.children if blank(c) is not False))
+    payload = blank(chunk)
+    return leaf(chunk.id, chunk.tobytes() if payload is None else payload)
+
+
+def _blank(chunk, listed):
+    """False drops 0x0013; an owner-held reference entry listed in it gets -1 in every stored index (one it does not
+    list, Bitmap coords 14, keeps its stored index, as in a file saved by 3ds Max 2020); None keeps the chunk."""
+    if chunk.id == 0x0013:
+        return False
+    if chunk.id not in (0x100E, 0x000E) or chunk.container:
+        return None
+    buf = bytearray(chunk.tobytes())
+    pid, ptype, flags, _unknown = struct.unpack_from("<HIII", buf)
+    if ptype & ~TAB not in pblock.REFERENCE_TYPES or not flags & OWNERS or pid not in listed:
+        return None
+    if not ptype & TAB:
+        if buf[14] & 0x40:
+            struct.pack_into("<i", buf, 15, -1)
+        return bytes(buf)
+    pos = 19
+    for _ in range(struct.unpack_from("<I", buf, 15)[0]):
+        tag, pos = buf[pos], pos + 1
+        if tag & 0x40:
+            struct.pack_into("<i", buf, pos, -1)
+            pos += 4
+    return bytes(buf)
+
+
+class OwnerSlotsOnFixtures(unittest.TestCase):
+    """Every fixture block with a 0x0013 table, blanked like a format-14000 block, gives the same references."""
+
+    def test_blanked_blocks_resolve_the_same(self):
+        import glob
+        cfb = _load("maxdrop_reader.cfb", os.path.join(_READER, "cfb.py"))
+        scene = _load("maxdrop_reader.scene", os.path.join(_READER, "scene.py"))
+        checked, classes = 0, set()
+        for path in sorted(glob.glob(os.path.join(ROOT, "tests", "fixtures", "*.max"))):
+            with cfb.CompoundFile(path) as cf:
+                sc = scene.Scene.from_file(cf)
+                for i in range(len(sc)):
+                    owner = sc.entry(i)
+                    if owner is None or not sc.chunk(i).container:
+                        continue
+                    refs = sc.refs(i)
+                    for slot, t in sorted(refs.items()):
+                        te = sc.entry(t)
+                        if te is None or te.superclass != 0x82 or sc.chunk(t).first(0x0013) is None:
+                            continue
+                        chunk, owner_class = sc.chunk(t), (owner.superclass, owner.class_id)
+                        with self.subTest(fixture=os.path.basename(path), owner=i, slot=slot):
+                            before = pblock.ParamBlock2.from_chunk(chunk, sc.refs(t), refs, len(sc), owner_class)
+                            buf = chunk.first(0x0013).tobytes()
+                            listed = {struct.unpack_from("<H", buf, 4 + 6 * k)[0]
+                                      for k in range(struct.unpack_from("<I", buf)[0])}
+                            data = _rebuild(chunk, lambda c: _blank(c, listed))
+                            after = pblock.ParamBlock2.from_chunk(chunks.index(data)[0], sc.refs(t), refs,
+                                                                  len(sc), owner_class)
+                            self.assertEqual({p.id: p.values for p in after}, {p.id: p.values for p in before})
+                        checked += 1
+                        classes.add(owner_class)
+        self.assertGreater(checked, 0)
+        for wanted in ((0x0C10, (0x230, 0)), (0x0C10, (0x2D0, 0)), (0x0C10, (0x6EC3730C, 0)),
+                       (0x0C10, (0x2B0, 0)), (0x0C00, (0x37BF3F2F, 0x7034695C)), (0x0C00, (0x200, 0))):
+            self.assertIn(wanted, classes)
 
 
 class OldParamBlock(unittest.TestCase):

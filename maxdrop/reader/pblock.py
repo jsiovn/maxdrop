@@ -27,7 +27,9 @@ sibling chunk 0x000F{0x0002: 16-byte asset id}; bitmap u8, its data following as
 id in 0x1260{0x0002}). Reference types (material, map, node, reference target, ParamBlock2) with P_OWNERS_REF
 (0x200) or P_NO_REF (0x100) store an i32 object index (-1: none). With P_OWNERS_REF the owner holds the reference
 and the index is often -1 although it is set: the owner's slot of each such parameter is in 0x0013 (u32 count,
-then u16 param id, u16 slot, u16 unknown; a table's element k is at slot + k), which wins. Without either flag
+then u16 param id, u16 slot, u16 unknown; a table's element k is at slot + k), which wins. A file in the 3ds Max
+2012 format has no 0x0013: an index of -1 then takes the slot of owner_slots.py for the owner's class (owner_class).
+Without either flag
 there is no value: the elements take the block's own reference slots 0, 1, 2 ... in entry order, tables and
 transient entries included. Controllers take the slots after those, in entry order (one probe, no fixture:
 unverified). docs/FORMAT.md says which fixture shows what.
@@ -44,7 +46,7 @@ an empty reference. Each of these is named in issues. Tables are bounded by thei
 import collections
 import struct
 
-from . import chunks
+from . import chunks, owner_slots
 
 ChunkError = chunks.ChunkError
 
@@ -196,9 +198,10 @@ class ParamBlock2:
         return "ParamBlock2(block %d, %d params)" % (self.block_id, len(self._params))
 
     @classmethod
-    def from_chunk(cls, chunk, block_refs=None, owner_refs=None, object_count=None):
+    def from_chunk(cls, chunk, block_refs=None, owner_refs=None, object_count=None, owner_class=None):
         """From the block's chunk, its own references and its owner's ({slot: object index}, as Scene.refs). A
-        stored object index at or past object_count (when given) becomes an empty reference and an issue."""
+        stored object index at or past object_count (when given) becomes an empty reference and an issue.
+        owner_class, the owner's (superclass, ClassId), finds the owner slots of a block without 0x0013."""
         block_refs, owner_refs = block_refs or {}, owner_refs or {}
         head, skip = (chunk.first(_HEADER), 0) if chunk.container else (None, 0)
         if head is None and chunk.container:
@@ -222,6 +225,7 @@ class ParamBlock2:
             except _Damaged as e:
                 issues.append("0x0013: %s" % e)
                 slots = {}
+        fixed = owner_slots.slots(owner_class, block_id) if table is None else {}
         raw = []
         # the elements of the entry just read that expect their asset in the chunks right after it
         waiting, want = collections.deque(), None
@@ -290,6 +294,8 @@ class ParamBlock2:
                     elif isinstance(v, tuple) and v and v[0] is _OWNER_REF:
                         if pid in slots and flags & P_OWNERS_REF:
                             values[k] = Reference(owner_refs.get(slots[pid] + k))
+                        elif pid in fixed and flags & P_OWNERS_REF and v[1] == -1:
+                            values[k] = Reference(owner_refs.get(fixed[pid] + k))
                         else:
                             values[k] = target(v[1], "parameter %d" % pid)
                     elif ptype & ~TABLE in (FILENAME, BITMAP) and not isinstance(v, Asset):

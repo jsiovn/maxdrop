@@ -270,6 +270,15 @@ Reference parameters, checked against the oracle's targets on every fixture:
   `texmap_opacity` (112) at 19; Multi/Sub-Object `materialList` (0) at 1, element k at 1 + k; VRay2SidedMtl
   `frontMtl` / `backMtl` at 1 / 2; Shell `originalMaterial` / `bakedMaterial` at 1 / 2; Bitmap `output` (15) at 2.
   A parameter missing from `0x0013` uses its stored index (Bitmap `coords`, 14: the Placement object).
+  A file saved in the 3ds Max 2012 format (format 14000, corpus scene A) has no `0x0013` in any block, and some
+  stored indices are -1 although 3ds Max reports the map set (Color Correction `map`, Mix `map1` / `map2` /
+  `mask`, Falloff `map1` / `map2`, VRayMtl `texmap_diffuse` ...). The slot is the parameter definition's reference
+  number, a constant of the class: `maxdrop/reader/owner_slots.py` keeps it per (superclass, ClassID, block id),
+  from the fixtures' `0x0013` tables and, for VRayOverrideMtl, VRayLightMtl, Composite and class `0xC90017A5`
+  (no fixture), from corpus scene B's (format 20000); every object of scene A agrees. Only a block without
+  `0x0013` uses it, and only for a stored -1; a slot past the owner's references is an empty reference.
+  `tests/unit/test_pblock.py` drops the table and the indices of every fixture block that has one and gets the
+  same references.
 - P_NO_REF: the stored index is the target (Standard `maps`: the diffuse Bitmap, which the material's Texmaps
   object references).
 - Neither flag: the elements take the block's own reference slots 0, 1, 2 ... in entry order, tables expanded
