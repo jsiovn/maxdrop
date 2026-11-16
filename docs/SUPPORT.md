@@ -2,9 +2,8 @@
 
 **This page describes version 0.0.4.** Nodes, meshes, transforms, hierarchy, instances, layers, scene units and
 materials are read by MaxDrop's own reader; the engine of [io_scene_max](https://github.com/nrgsille76/io_scene_max)
-1.9.2 that 0.0.3 still used for materials is gone. A
-scene pack (`.zip`, `.rar`, `.7z`) is unpacked and its `.max` imported (see
-[Files](#files)), and several `.max` files chosen at once are imported one after the other.
+1.9.2 that 0.0.3 still used for materials is gone. A scene pack (`.zip`, `.rar`, `.7z`) is unpacked and its `.max`
+imported (see [Files](#files)), and several `.max` files chosen at once are imported one after the other.
 
 How far to trust the list: MaxDrop's test files (`tests/fixtures/`, saved by 3ds Max 2020) are compared with what
 3ds Max itself reports for every node: world matrix, bounding box, vertex and face counts, parents, instances,

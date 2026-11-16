@@ -190,7 +190,7 @@ footer p { margin: 0; }
     </div>
     <div class="status" role="note" aria-labelledby="status-title">
       <h2 id="status-title">Version {{version}} is an early release</h2>
-      <p>MaxDrop is a new fork of the free <a href="https://github.com/nrgsille76/io_scene_max">io_scene_max</a> importer. MaxDrop reads the scene and its materials with its own reader, also from the scene pack it came in; none of io_scene_max's import code is left.</p>
+      <p>MaxDrop is a new fork of the free <a href="https://github.com/nrgsille76/io_scene_max">io_scene_max</a> importer. MaxDrop reads the scene and its materials with its own reader, also from the scene pack it came in; io_scene_max's file parser is gone.</p>
       <p>It brings in editable meshes with their UVs, smoothing, instances, hierarchy, layers and scene units, and V-Ray, Corona, Standard and Physical materials with their texture maps. Lights, cameras, splines and modifiers are not read yet, so a whole interior scene will arrive incomplete. <a href="#support">See the full list</a>.</p>
       <p>Whole scenes are what the next versions are for, and updates arrive inside Blender.</p>
     </div>
@@ -315,7 +315,7 @@ footer p { margin: 0; }
   <section id="help">
     <div class="wrap">
       <h2>Troubleshooting</h2>
-      <p class="sub">Still stuck? <a href="https://github.com/jsiovn/maxdrop/issues">Open an issue</a> with your Blender version and the text of the system console.</p>
+      <p class="sub">Still stuck? <a href="https://github.com/jsiovn/maxdrop/issues">Open an issue</a> with your Blender version and the text <strong>MaxDrop Report</strong> from the Text Editor (or the system console).</p>
       <details>
         <summary>Blender says the extension comes from an unknown repository</summary>
         <p>That is the first drop doing its job. Click <strong>Add Repository…</strong>, tick <strong>Check for Updates on Startup</strong>, click <strong>Create</strong>, then drag the button onto Blender once more to install.</p>
@@ -330,7 +330,7 @@ footer p { margin: 0; }
       </details>
       <details>
         <summary>Materials arrive without textures</summary>
-        <p>Put the texture files in the folder of the <code>.max</code> file, in a <code>maps</code> or <code>textures</code> folder beside it, or add their folder under <strong>Texture Search Folders</strong> in the MaxDrop preferences. <strong>Image Search</strong> also searches the subfolders of the scene's folder. Mix, Color Correction, Composite and normal maps arrive as nodes; Falloff and other procedural maps are simplified to the image below them, and a channel with no image below keeps its plain color.</p>
+        <p>Put the texture files in the folder of the <code>.max</code> file, in a <code>maps</code> or <code>textures</code> folder beside it, or add their folder under <strong>Texture Search Folders</strong> in the MaxDrop preferences. <strong>Image Search</strong> also searches the subfolders of the scene's folder. Mix, Color Correction, simple Composite and normal maps arrive as nodes; Falloff and other procedural maps are simplified to the image below them, and a channel with no image below keeps its plain color.</p>
       </details>
       <details>
         <summary>Dropping a <code>.zip</code> opens Blender's extension installer</summary>

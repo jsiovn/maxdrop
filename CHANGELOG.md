@@ -39,7 +39,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 ### Changed
 
 - **Faster, with far less memory**: the file is read once, by MaxDrop's reader. Two large interior scenes that
-  needed 3.7 GB and 14.4 GB of memory in 0.0.3 now need about 1.4 GB each, and import up to four times faster (see
+  needed 3.7 GB and 14.4 GB of memory in 0.0.3 now need about 1.3 and 1.4 GB, and import up to four times faster (see
   `docs/BASELINE.md`).
 - **Textures are found in more places**: the scene's folder, then `maps` or `textures` folders beside the scene,
   then the **Texture Search Folders** of the preferences (now searched, with their subfolders), and last the path
