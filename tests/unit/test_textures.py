@@ -242,6 +242,16 @@ class BoundsTest(Tree):
         idx = self.index(user_dirs=[os.path.join(self.root, "gone")])
         self.assertIsNone(idx.find("a.png"))
 
+    def test_a_folder_listing_holds_one_past_the_budget(self):
+        for n in (4, 0, 3, 1, 2):
+            self.touch("lib", "f%d.png" % n)
+        lib = os.path.join(self.root, "lib")
+        self.assertEqual([e.name for e in textures._entries(lib, 3)], ["f0.png", "f1.png", "f2.png"])
+        real = textures._entries
+        with mock.patch.object(textures, "_entries", side_effect=real) as entries:
+            self.index(user_dirs=[lib], max_entries=2).find("x.png")
+        self.assertEqual(entries.call_args.args, (lib, 3))
+
 
 class RefusalTest(Tree):
     REFUSED = (
@@ -321,6 +331,22 @@ class ReportTest(Tree):
         idx = self.index()
         self.assertIsNone(idx.find("", ""))
         self.assertEqual(idx.report.missing, ["(no file name)"])
+
+
+class CopiesTest(unittest.TestCase):
+    """convert/ does not import the reader or intake/, so these helpers are copies: they must stay equal."""
+
+    def test_base_name_matches_reader_assets(self):
+        reader = os.path.join(ROOT, "maxdrop", "reader")
+        _load("maxdrop_reader", os.path.join(reader, "__init__.py"), reader)
+        assets = _load("maxdrop_reader.assets", os.path.join(reader, "assets.py"))
+        for path in ("", "a.jpg", r"C:\x\a.jpg", "C:/x/a.jpg", r"\\host\share\a.jpg", "x/", r"mixed/x\a.jpg", "C:a"):
+            with self.subTest(path=path):
+                self.assertEqual(textures.base_name(path), assets.base_name(path))
+
+    def test_reserved_names_match_intake_archive(self):
+        archive = _load("maxdrop_intake_archive", os.path.join(ROOT, "maxdrop", "intake", "archive.py"))
+        self.assertEqual(textures._RESERVED, archive._RESERVED)
 
 
 if __name__ == "__main__":

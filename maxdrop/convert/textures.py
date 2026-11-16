@@ -33,6 +33,7 @@ other reparse points (cloud placeholders, deduplicated files) are ordinary files
 are skipped. No bpy, no reader import: this takes the stored strings.
 """
 import collections
+import heapq
 import os
 import stat
 import unicodedata
@@ -135,10 +136,20 @@ def _plain_file(path):
     return stat.S_ISREG(st.st_mode)
 
 
-def _entries(folder):
+def _entries(folder, limit):
+    """The first limit entries of folder by name; only those are held, however many the folder has."""
     try:
         with os.scandir(folder) as it:
-            return sorted(it, key=lambda e: e.name)
+            return heapq.nsmallest(limit, it, key=lambda e: e.name)
+    except (OSError, ValueError):
+        return []
+
+
+def _named(folder, keys):
+    """The entries of folder whose name_key is in keys, sorted by name; the rest of the listing is not held."""
+    try:
+        with os.scandir(folder) as it:
+            return sorted((e for e in it if name_key(e.name) in keys), key=lambda e: e.name)
     except (OSError, ValueError):
         return []
 
@@ -221,8 +232,7 @@ class TextureIndex:
         if rule == SIBLING:
             roots = []
             for folder in dict.fromkeys((self.scene_dir, os.path.dirname(self.scene_dir))):
-                roots.extend((e.path, True) for e in _entries(folder)
-                             if name_key(e.name) in SIBLING_NAMES and _kind(e) == "dir")
+                roots.extend((e.path, True) for e in _named(folder, SIBLING_NAMES) if _kind(e) == "dir")
             return roots
         return [(d, True) for d in self.user_dirs]
 
@@ -243,7 +253,7 @@ class TextureIndex:
         queue = collections.deque([(root, 0)])
         while queue:
             folder, depth = queue.popleft()
-            for e in _entries(folder):
+            for e in _entries(folder, budget[0] + 1):  # one past the budget: enough to see it run out
                 if budget[0] <= 0:
                     return folder
                 budget[0] -= 1

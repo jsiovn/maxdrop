@@ -62,6 +62,11 @@ still stop the import with a Python error. Memory safety is Python's, so the rea
 of that Blender session, not code execution: treat files from unknown sources with the usual care and save your
 work before importing.
 
+A texture file found by its stored path is checked (a local drive, a plain file, no link or junction in the path)
+when the scene is imported, and Blender opens it a moment later. Something that can already write into that
+folder could swap the file for a link in between. This is an accepted risk: it needs a program already running on
+your computer with access to that folder, and the window ends when the image is loaded.
+
 MaxDrop's reader maps the `.max` file into memory read-only instead of copying it. If the file is truncated or
 rewritten in place while an import reads it (another program writing it, a network share that drops), the
 operating system can end the Blender process (SIGBUS on Linux and macOS, an in-page error on Windows) instead of
