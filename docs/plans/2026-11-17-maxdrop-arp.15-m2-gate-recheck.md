@@ -80,3 +80,16 @@ Working directory `D:\www\maxdrop`, branch `epic/maxdrop-arp`.
 - `findings_recheck.md`: pass bar met; matparity >= 95 % on both scenes.
 - Failure of the pass bar: `bd update maxdrop-arp.15 --status blocked` with class and rule only, no scene or
   material names.
+
+## Revision 2 (after maxdrop-arp.16, swatch gamma)
+
+The first recheck blocked on the swatch rule (every swatch decoded as sRGB). maxdrop-arp.16 now reads the
+scene's gamma (`reader/gamma.py`) and takes swatches as linear when it is on, sRGB-decoded when it is off
+(`convert/colors.py`). This rerun repeats Chunk 1 and Chunk 2 unchanged except:
+
+- Output goes to `ab\recheck2\` (script copies with `AB` pointing there), so the first recheck stays as it was.
+- The verdict judges each swatch case by the scene's own gamma: the V-Ray probe of arp.16
+  (`C:\maxdrop_fixtures\probe\gamma\`) measured gamma on: swatch 128 -> byte 187, gamma off: 128 -> 128.
+  The FBX route takes every swatch as linear, so in a gamma-off scene it is the one that is too light.
+- `findings_recheck.md` gets a second section ("Rerun after arp.16") rather than a new file.
+- Expected parity: A 214/214, B 220/220, fixtures 62/62.
