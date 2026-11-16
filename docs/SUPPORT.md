@@ -13,7 +13,7 @@ without an error, and 99.7 % and 99.9 % of their objects without modifiers get t
 [BASELINE.md](BASELINE.md)). Materials are checked on the test files (VRayMtl, its wrappers, Multi/Sub-Object,
 Standard, Physical Material and the texture maps below): the parameters MaxDrop reads are compared with what 3ds Max
 reports, and the Blender material with those parameters, on Blender 4.2, 4.5 and 5.2. In the two commercial scenes,
-the conversion of 213 of 214 and 220 of 220 materials (99.5 % and 100 %) gives what the same rules give from the
+the conversion of 214 of 214 and 220 of 220 materials (100 %) gives what the same rules give from the
 parameters 3ds Max reports, textures included (see [BASELINE.md](BASELINE.md)). The page is updated with every
 version.
 

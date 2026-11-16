@@ -170,12 +170,12 @@ every test-file material fail it, so it compares.
 
 | | Test files | Scene A | Scene B |
 |---|---:|---:|---:|
-| Materials | 49 | 214 | 220 |
-| … matching | 49 (100 %) | 213 (99.5 %) | 220 (100 %) |
-| Texture file names compared | 43 | 241 | 316 |
+| Materials | 62 | 214 | 220 |
+| … matching | 62 (100 %) | 214 (100 %) | 220 (100 %) |
+| Texture file names compared | 55 | 240 | 324 |
 
-The milestone's target was 95 % in both scenes. The one VRayMtl of scene A that misses differs in the input of
-its normal map, where the comparison cannot tell two Bitmaps of the same name apart. Scene A is a 3ds Max 2015
+The milestone's target was 95 % in both scenes. The last VRayMtl of scene A to miss had a Normal Bump whose stored
+reference to its normal map is stale; 0.0.4 reads the map 3ds Max shows. Scene A is a 3ds Max 2015
 file saved in the 2012 format, whose parameter blocks do not list which reference holds each map: version 0.0.4
 reads that from a table per class (before it, 39 of scene A's materials lost maps). Separately, the raw parameter
 values of every V-Ray test file equal what 3ds Max reports (`tests/unit/test_materials.py`).
