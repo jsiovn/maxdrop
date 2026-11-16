@@ -277,7 +277,10 @@ Reference parameters, checked against the oracle's targets on every fixture:
   from the fixtures' `0x0013` tables and, for VRayOverrideMtl, VRayLightMtl, Composite and class `0xC90017A5`
   (no fixture `0x0013` entry: texmap_rules' Composite keeps its maps as block references), from corpus scene B's
   (format 20000); every object of scene A agrees. Only a block without
-  `0x0013` uses it, and only for a stored -1; a slot past the owner's references is an empty reference.
+  `0x0013` uses it: for a stored -1, and over any stored index when the owner holds a reference at that slot
+  (scene A stores 3704 such indices: 3702 equal the slot's, 2 are stale, a Normal Bump's `normal_map` naming
+  another Normal Bump's Bitmap and a Falloff's `map1` naming a controller, where 3ds Max reports the slot's map);
+  a slot past the owner's references is an empty reference.
   `tests/unit/test_pblock.py` drops the table and the indices of every fixture block that has one and gets the
   same references.
 - P_NO_REF: the stored index is the target (Standard `maps`: the diffuse Bitmap, which the material's Texmaps

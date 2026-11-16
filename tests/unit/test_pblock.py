@@ -325,8 +325,14 @@ class OwnerSlotsWithoutTable(unittest.TestCase):
         self.assertEqual((pb.get(6), pb.get(8)), (Reference(301), Reference(303)))
         self.assertEqual(pb.issues, ())
 
-    def test_stored_index_wins(self):
+    def test_the_class_slot_wins_over_a_stored_index(self):
+        # a format-14000 scene stores stale indices (another map's, a controller's) where the owner's slot is right
         pb = parse(block(scalar(6, TEXMAP, OWNERS, 0x40, i32(77)), block_id=0), owner_refs={1: 301},
+                   owner_class=MIX_OWNER)
+        self.assertEqual(pb.get(6), Reference(301))
+
+    def test_stored_index_when_the_class_slot_is_empty(self):
+        pb = parse(block(scalar(6, TEXMAP, OWNERS, 0x40, i32(77)), block_id=0), owner_refs={2: 302},
                    owner_class=MIX_OWNER)
         self.assertEqual(pb.get(6), Reference(77))
 

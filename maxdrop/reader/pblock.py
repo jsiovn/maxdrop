@@ -28,7 +28,9 @@ id in 0x1260{0x0002}). Reference types (material, map, node, reference target, P
 (0x200) or P_NO_REF (0x100) store an i32 object index (-1: none). With P_OWNERS_REF the owner holds the reference
 and the index is often -1 although it is set: the owner's slot of each such parameter is in 0x0013 (u32 count,
 then u16 param id, u16 slot, u16 unknown; a table's element k is at slot + k), which wins. A file in the 3ds Max
-2012 format has no 0x0013: an index of -1 then takes the slot of owner_slots.py for the owner's class (owner_class).
+2012 format has no 0x0013: the slot of owner_slots.py for the owner's class (owner_class) then wins when the owner
+holds a reference there (the stored index can be stale: another map's, or a controller's), and an index of -1 takes
+that slot also when it is empty.
 Without either flag there is no value: the elements take the block's own reference slots 0, 1, 2 ... in entry
 order, tables and transient entries included. Controllers take the slots after those, in entry order (one probe, no fixture:
 unverified). docs/FORMAT.md says which fixture shows what.
@@ -293,7 +295,8 @@ class ParamBlock2:
                     elif isinstance(v, tuple) and v and v[0] is _OWNER_REF:
                         if pid in slots and flags & P_OWNERS_REF:
                             values[k] = Reference(owner_refs.get(slots[pid] + k))
-                        elif pid in fixed and flags & P_OWNERS_REF and v[1] == -1:
+                        elif pid in fixed and flags & P_OWNERS_REF and (
+                                v[1] == -1 or owner_refs.get(fixed[pid] + k) is not None):
                             values[k] = Reference(owner_refs.get(fixed[pid] + k))
                         else:
                             values[k] = target(v[1], "parameter %d" % pid)

@@ -8,7 +8,8 @@ ParamBlock2 that has no 0x0013 table.
     owner_slots.slots((classids.SC_TEXMAP, classids.MIX), 0)   # {6: 1, 7: 2, 8: 3, 12: 4}
 
 A file saved in the 3ds Max 2012 format (format 14000) stores no 0x0013 table in its blocks, and for some such
-parameters the stored object index is -1 although the reference is set. The slot is the parameter definition's
+parameters the stored object index is -1 although the reference is set, or stale (another object's): the slot
+wins wherever the owner holds a reference there. The slot is the parameter definition's
 reference number, a constant of the class: the values here are the 0x0013 tables of the committed fixtures (saved
 by 3ds Max 2020) and, where no fixture has the class, of corpus scene B (format 20000), equal in every object of
 corpus scene A (format 14000). A table parameter's element k is at slot + k, as with 0x0013. Keyed by superclass
