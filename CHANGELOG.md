@@ -29,6 +29,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   Inverse gamma, sRGB, Auto) and multipliers; a Composite, Color Correction or Mix above it keeps its image.
 - **VRayColor as a color**: RGB or temperature, times its RGB multiplier, with its color gamma; a Falloff, Color
   Correction or Mix mask above it now gives its color instead of a wrong one.
+- In a scene saved in the 3ds Max 2012 format, a map whose stored reference is stale (a Falloff's map, a Normal
+  Bump's normal map) now gets the map 3ds Max shows.
 - **The import report covers the materials**: materials built and converted by class, wrappers and maps that
   were simplified, material and map classes without a rule, textures found per lookup step and the ones not found
   by file name (for a scene pack: whether the archive held the file), the material inputs this Blender version

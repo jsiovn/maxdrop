@@ -47,9 +47,9 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
 - CoronaColor -> Constant (color and hex as swatches, the HDR color linear, the temperature through kelvin_rgb, times
   the multiplier). VRayColor -> Constant: its swatch times its RGB multiplier, then to the power of its color gamma
   (that order measured), decoded as a swatch; in temperature mode its color holds V-Ray's temperature color. Its
-  alpha below 1, RGB primaries other than sRGB and unusable values are issues. CoronaMix: operation mix -> Mix(bottom, top, amount, mask), multiply -> Multiply (under a Mix for
-  an amount below 1 or a mask), any other operation peeled to its first bitmap (an issue); layer multipliers and
-  offsets are an issue.
+  alpha below 1, RGB primaries other than sRGB and unusable values are issues. CoronaMix: operation mix ->
+  Mix(bottom, top, amount, mask), multiply -> Multiply (under a Mix for an amount below 1 or a mask), any other
+  operation peeled to its first bitmap (an issue); layer multipliers and offsets are an issue.
 - Kept as nodes (the allow-list): Mix (color 1 / 2 where a map is off or missing, the mask, the mix amount; its
   curve is not converted: an issue), RGB Multiply, Color Correction (hue shift in turns, saturation as a factor;
   lightness either standard, brightness and contrast as fractions, or advanced, gain and gamma, whichever is chosen;
@@ -963,12 +963,18 @@ def _corona_color(conv, m, kind, walk, depth, chain):
 def _vray_color(conv, m, kind, walk, depth, chain):
     """VRayColor: its swatch (color, else red / green / blue) times rgb_multiplier, then to the power color_gamma
     (renderMap in 3ds Max: (100 gray, multiplier 2, gamma 2) -> 255 * (200 / 255) ^ 2), then decoded from sRGB like
-    every swatch. In temperature mode color holds V-Ray's own temperature color. A mono input takes the mean of the
-    color, not the alpha (measured with a Mix mask)."""
+    every swatch. In temperature mode color holds V-Ray's own temperature color. A mono input takes the color, not
+    the alpha (measured with a Mix mask); on a data input the Constant is the mean of the linear color, as every
+    constant's."""
+    mode = m.param(VC_MODE, 0)
     v = m.param(VC_COLOR, 0)
     if not (isinstance(v, tuple) and len(v) >= 3 and all(_finite(c) for c in v[:3])):
         v = tuple(m.param(pid, 0) for pid in (VC_RED, VC_GREEN, VC_BLUE))
-    swatch = tuple(float(c) for c in v[:3]) if all(_finite(c) for c in v[:3]) else (1.0, 1.0, 1.0)
+    swatch = tuple(float(c) for c in v[:3]) if all(_finite(c) for c in v[:3]) else None
+    if swatch is None:
+        swatch = (1.0, 1.0, 1.0)
+        if mode == 1:
+            conv._issue(walk, m.index, "VRayColor %r: temperature color not read: white" % (m.name,))
     mult = m.param(VC_MULTIPLIER, 0)
     if mult is None:
         mult = 1.0
@@ -981,7 +987,6 @@ def _vray_color(conv, m, kind, walk, depth, chain):
     elif not (_finite(gamma) and 0.01 <= gamma <= 100.0):
         conv._issue(walk, m.index, "VRayColor %r: color gamma %r not converted: 1" % (m.name, gamma))
         gamma = 1.0
-    mode = m.param(VC_MODE, 0)
     if mode not in (None, 0, 1):
         conv._issue(walk, m.index, "VRayColor %r: color mode %r not converted: its color" % (m.name, mode))
     alpha = m.param(VC_ALPHA, 0)

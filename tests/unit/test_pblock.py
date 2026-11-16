@@ -325,11 +325,26 @@ class OwnerSlotsWithoutTable(unittest.TestCase):
         self.assertEqual((pb.get(6), pb.get(8)), (Reference(301), Reference(303)))
         self.assertEqual(pb.issues, ())
 
-    def test_the_class_slot_wins_over_a_stored_index(self):
+    def test_the_class_slot_wins_over_a_stale_stored_index(self):
         # a format-14000 scene stores stale indices (another map's, a controller's) where the owner's slot is right
         pb = parse(block(scalar(6, TEXMAP, OWNERS, 0x40, i32(77)), block_id=0), owner_refs={1: 301},
                    owner_class=MIX_OWNER)
         self.assertEqual(pb.get(6), Reference(301))
+
+    def test_a_stored_index_the_owner_holds_is_kept(self):
+        pb = parse(block(scalar(6, TEXMAP, OWNERS, 0x40, i32(302)), block_id=0), owner_refs={1: 301, 2: 302},
+                   owner_class=MIX_OWNER)
+        self.assertEqual(pb.get(6), Reference(302))
+
+    def test_table_elements_with_stale_and_held_indices(self):
+        multi = (0x0C00, (0x200, 0))  # Multi/Sub-Object materialList 0 -> slot 1
+        pb = parse(block(table(0, MTL, OWNERS, (0x40, i32(77)), (0x40, i32(88)), (0x40, i32(301))), block_id=0),
+                   owner_refs={1: 301, 2: 302}, owner_class=multi)
+        # stale with its slot set: the slot; held by the owner: kept
+        self.assertEqual(pb.value(0), [Reference(301), Reference(302), Reference(301)])
+        pb = parse(block(table(0, MTL, OWNERS, (0x40, i32(77)), (0x40, i32(88))), block_id=0),
+                   owner_refs={1: 301}, owner_class=multi)
+        self.assertEqual(pb.value(0), [Reference(301), Reference(88)])  # stale, its slot empty: the stored index
 
     def test_stored_index_when_the_class_slot_is_empty(self):
         pb = parse(block(scalar(6, TEXMAP, OWNERS, 0x40, i32(77)), block_id=0), owner_refs={2: 302},

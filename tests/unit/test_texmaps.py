@@ -1103,9 +1103,10 @@ class VRayColorSynthetic(Checks):
                 ({"p10": 0.0, "p5": (0.5,) * 3}, "color gamma", (_lin(127.5),) * 3),
                 ({"p10": "x", "p5": (0.5,) * 3}, "color gamma", (_lin(127.5),) * 3),
                 ({"p9": 7}, "color mode", (1.0, 1.0, 1.0)),
+                ({"p9": 1, "p5": None}, "temperature color", (1.0, 1.0, 1.0)),
                 ({"p3": 0.5}, "alpha", (1.0, 1.0, 1.0)),
                 ({"p11": 1}, "primaries", (1.0, 1.0, 1.0))):
-            tex, g = _vc(**params)
+            _t, g = _vc(**params)
             self.close(g.root.value, want, str(params))
             self.assertEqual(len(g.issues), 1, params)
             self.assertIn(words, g.issues[0], params)
