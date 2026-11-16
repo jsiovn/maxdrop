@@ -25,6 +25,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   become a Principled BSDF (roughness or glossiness mode, metalness, refraction, opacity, self-illumination,
   clearcoat, bump); CoronaLayeredMtl gives its base material. CoronaBitmap is imported like a Bitmap, CoronaColor as a
   color, CoronaMix (mix and multiply) as nodes, CoronaNormal as a Normal Map node.
+- **VRayBitmap (VRayHDRI) as an image texture**, like a Bitmap: its coordinates, cropping, transfer function (None,
+  Inverse gamma, sRGB, Auto) and multipliers; a Composite, Color Correction or Mix above it keeps its image.
 - **The import report covers the materials**: materials built and converted by class, wrappers and maps that
   were simplified, material and map classes without a rule, textures found per lookup step and the ones not found
   by file name (for a scene pack: whether the archive held the file), the material inputs this Blender version

@@ -846,5 +846,185 @@ class Guards(Checks):
         self.assertEqual(tex.stats.peeled, collections.Counter())
 
 
+class VRayTexmaps(Checks):
+    """vray_texmaps.ms: VRayBitmap in every kind of input, with its own placement, transfer functions, multipliers
+    and alpha, below a VRayNormalMap, a Composite and a Mix."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.f = Fixture("vray_texmaps")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.f.close()
+
+    def test_class_ids_match_the_class_directory(self):
+        names = {(e.superclass, e.class_id): e.name for e in (self.f.scene.entry(i) for i in range(len(self.f.scene)))
+                 if e is not None}
+        for cid, name in ((classids.VRAY_BITMAP, "VRayBitmap"), (classids.NOISE, "Noise")):
+            self.assertEqual(names.get((classids.SC_TEXMAP, cid)), name, name)
+
+    def test_defaults_in_diffuse(self):
+        g = self.f.irs["FixtureVBDiffuse"].textures["base_color"]
+        self.image(g.root, "vtx_diffuse.png", tx.SRGB)  # transfer function Auto: sRGB for an 8-bit file
+        self.assertEqual((g.root.gamma, g.root.crop, g.root.output, g.root.alpha), (None, None, None, False))
+        self.assertEqual(g.root.path, "vtx_diffuse.png")
+        self.assertEqual((g.approximated, g.issues), (False, ()))
+
+    def test_spherical_mapping_is_an_issue(self):
+        g = self.f.irs["FixtureVBDiffuse"].textures["specular"]
+        self.image(g.root, "vtx_sphere.png", tx.SRGB)
+        self.assertTrue(g.root.mapping.environment)
+        self.assertTrue(any("environment mapping" in r for r in g.issues), g.issues)
+
+    def test_own_placement_and_multipliers(self):
+        g = self.f.irs["FixtureVBPlace"].textures["base_color"]
+        self.image(g.root, "vtx_place.png", tx.SRGB, tiling=(2.0, 3.0), offset=(0.1, 0.2), w_angle=30.0)
+        self.close(g.root.mapping.blur, 0.8)
+        self.assertFalse(g.root.mapping.environment)
+        self.close(g.root.output.amount, 3.0)  # overall 1.5 x render 2
+        self.assertEqual((g.root.output.invert, g.root.output.level, g.root.output.offset), (False, 1.0, 0.0))
+        self.assertEqual(g.issues, ())
+
+    def test_transfer_functions(self):
+        t = self.f.irs["FixtureVBPlace"].textures
+        self.image(t["specular"].root, "vtx_linear.png", tx.NON_COLOR)  # None: linear
+        self.close(t["specular"].root.gamma, 1.0)
+        self.image(t["transmission"].root, "vtx_invgamma.png", tx.NON_COLOR)  # inverse gamma 2: pixel ^ 0.5
+        self.close(t["transmission"].root.gamma, 0.5)
+        self.assertIsInstance(t["roughness"].root, tx.Invert)
+        self.image(t["roughness"].root.input, "vtx_gloss.png", tx.NON_COLOR)  # sRGB, but a data input
+        self.assertIsNone(t["roughness"].root.input.gamma)
+
+    def test_mono_output_alpha(self):
+        image = self.f.irs["FixtureVBPlace"].textures["alpha"].root
+        self.image(image, "vtx_alpha.png", tx.NON_COLOR)
+        self.assertTrue(image.alpha)
+
+    def test_bump_and_normal(self):
+        b = self.f.irs["FixtureVBBump"].textures["bump"].root
+        self.assertIsInstance(b, tx.Bump)
+        self.close(b.strength, 0.5)
+        self.image(b.input, "vtx_bump.png", tx.NON_COLOR)
+        n = self.f.irs["FixtureVBNormal"].textures["normal"].root
+        self.assertIsInstance(n, tx.NormalMap)
+        self.close(n.strength, 0.9)
+        self.image(n.input, "vtx_normal.png", tx.NON_COLOR)
+        self.close(n.input.gamma, 1.0)
+
+    def test_below_a_color_correction_composite_and_mix(self):
+        cc = self.f.irs["FixtureCCComposite"].textures["base_color"].root
+        self.assertIsInstance(cc, tx.ColorCorrect)
+        self.close(cc.brightness, 0.1)
+        self.assertIsInstance(cc.input, tx.Composite)
+        (a, oa), (b, ob) = cc.input.layers
+        self.image(a, "vtx_layer_a.png", tx.SRGB)
+        self.image(b, "vtx_layer_b.png", tx.SRGB)
+        self.close((oa, ob), (1.0, 0.5))
+        mix = self.f.irs["FixtureMixMask"].textures["base_color"].root
+        self.assertIsInstance(mix, tx.Mix)
+        self.image(mix.a, "vtx_mix_a.png", tx.SRGB)
+
+    def test_no_vraybitmap_is_peeled_or_unsupported(self):
+        self.assertNotIn("VRayBitmap", self.f.tex.stats.peeled)
+        self.assertNotIn("VRayBitmap", self.f.tex.stats.unsupported)
+
+
+def _vbitmap(index, guid=G1, **params):
+    p = {0: pblock.Asset(guid)}
+    p.update({int(k[1:]): v for k, v in params.items()})
+    return FakeMap(index, classids.VRAY_BITMAP, p, cls="VRayBitmap", name="vb")
+
+
+def _vb(kind=tx.COLOR, **params):
+    tex = _tex(_vbitmap(1, **params))
+    return tex, tex.convert(mat.MapRef(1), kind)
+
+
+class VRayBitmapSynthetic(Checks):
+    def test_defaults(self):
+        _t, g = _vb()
+        self.assertEqual(g.root.name, "a.png")
+        self.assertEqual(g.root.mapping, tx.Mapping())  # no Placement part: its defaults
+        self.assertEqual((g.root.gamma, g.root.colorspace, g.root.output, g.root.crop), (None, tx.SRGB, None, None))
+        self.assertEqual(g.issues, ())
+
+    def test_without_a_file(self):
+        tex, g = _vb(guid=G2)
+        self.assertIsNone(g)
+        self.assertEqual(tex.stats.issues, [(1, "VRayBitmap 'vb': no file")])
+        tex = tx.TexmapConverter(FakeGraph(_vbitmap(1)))  # no asset table at all
+        self.assertIsNone(tex.convert(mat.MapRef(1), tx.COLOR))
+        tex = _tex(FakeMap(1, classids.VRAY_BITMAP, {}, cls="VRayBitmap"))  # no file parameter
+        self.assertIsNone(tex.convert(mat.MapRef(1), tx.COLOR))
+
+    def test_transfer_functions(self):
+        for params, gamma, space in (({"p25": 0}, 1.0, tx.NON_COLOR), ({"p25": 1, "p8": 2.0}, 0.5, tx.NON_COLOR),
+                                     ({"p25": 1, "p8": 0.4545}, 2.2002, tx.SRGB), ({"p25": 2}, None, tx.SRGB),
+                                     ({"p25": 3}, None, tx.SRGB), ({"p25": 4}, None, tx.SRGB)):
+            _t, g = _vb(**params)
+            self.assertEqual(g.root.colorspace, space, params)
+            if gamma is None:
+                self.assertIsNone(g.root.gamma, params)
+            else:
+                self.assertAlmostEqual(g.root.gamma, gamma, delta=1e-3, msg=params)
+            self.assertEqual(g.issues, (), params)
+        _t, g = _vb(tx.DATA, p25=1, p8=0.4545)
+        self.assertEqual(g.root.colorspace, tx.NON_COLOR)
+
+    def test_unusable_transfer_function(self):
+        for params in ({"p25": 1, "p8": 0.0}, {"p25": 1, "p8": float("nan")}, {"p25": 9}, {"p25": "x"}):
+            _t, g = _vb(**params)
+            self.assertIsNone(g.root.gamma, params)
+            self.assertEqual(g.root.colorspace, tx.SRGB, params)
+            self.assertEqual(len(g.issues), 1, params)
+            self.assertIn("transfer function", g.issues[0], params)
+
+    def test_multipliers(self):
+        _t, g = _vb(p1=1.5, p9=2.0)
+        self.assertEqual(g.root.output, tx.TexOutput(amount=3.0))
+        _t, g = _vb(p1=float("nan"), p9="x")
+        self.assertIsNone(g.root.output)
+        _t, g = _vb(p1=-2.0)
+        self.assertEqual(g.root.output, tx.TexOutput(amount=0.0))
+
+    def test_environment_mapping_types(self):
+        for t in (0, 1, 2, 3):
+            _t, g = _vb(p2=t)
+            self.assertTrue(g.root.mapping.environment, t)
+            self.assertIn("environment mapping", g.issues[0])
+        _t, g = _vb(p2=4)
+        self.assertFalse(g.root.mapping.environment)
+        self.assertEqual(g.issues, ())
+
+    def test_crop_place_and_alpha(self):
+        _t, g = _vb(p16=1, p17=1, p18=0.1, p19=0.2, p20=0.5, p21=0.6, p22=1)
+        self.assertEqual(g.root.crop, tx.Crop(0.1, 0.2, 0.5, 0.6, place=True))
+        self.assertTrue(g.root.alpha)  # RGB output: alpha as gray
+        _t, g = _vb(tx.DATA, p23=1)
+        self.assertTrue(g.root.alpha)
+        _t, g = _vb(tx.DATA, p22=1)
+        self.assertFalse(g.root.alpha)  # a data input reads the mono output
+
+    def test_issues(self):
+        for params, words in (({"p22": 2}, "intensity"), ({"p38": Ref(5), "p39": 1}, "map source"),
+                              ({"p41": 2}, "ACEScg")):
+            _t, g = _vb(**params)
+            self.assertEqual(len(g.issues), 1, params)
+            self.assertIn(words, g.issues[0], params)
+        _t, g = _vb(p38=Ref(5), p39=0)
+        self.assertEqual(g.issues, ())
+
+    def test_found_below_an_unknown_class(self):
+        tex = _tex(FakeMap(1, (0x1234, 0), children=[2], cls="Noise"), _vbitmap(2, p25=0))
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertEqual(g.root.name, "a.png")
+        self.close(g.root.gamma, 1.0)
+        self.assertTrue(g.approximated)
+
+    def test_file_in_the_asset_helpers(self):
+        self.assertEqual(assets.bitmap_file(_table(), _vbitmap(1)).name, "a.png")
+
+
 if __name__ == "__main__":
     unittest.main()

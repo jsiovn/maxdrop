@@ -19,7 +19,7 @@ data and the override is not applied. Constants are linear: in a COLOR graph alw
 itself is a float, as specular and transmission are: the builder takes the mean of the graph's color there, the
 measure materials.py uses), elsewhere a float, the mean of the linear color.
 
-The graph's nodes (frozen dataclasses): Image (a Bitmap: the file as the scene stores it, the one the texture lookup
+The graph's nodes (frozen dataclasses): Image (an image map: the file as the scene stores it, the one the texture lookup
 found, Mapping, Crop, TexOutput, color space, gamma, alpha), Constant, Invert, Mix(a, b, factor, mask), Multiply,
 ColorCorrect, Composite (layers bottom first, each with its opacity), NormalMap (an image, its strength, flips, the
 map channel of its tangents, an additional Bump) and Bump (a height input and its strength). A map reached by
@@ -38,6 +38,11 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
 - CoronaBitmap -> Image the same way, from its own parameters: UVW scale and offset, W angle, tiling (none, repeat,
   mirror) per axis, map channel, blur, clipping (crop or place), gamma (-1 automatic), mono / RGB output alpha, real-
   world scale (an issue); its Output part as a Bitmap's.
+- VRayBitmap (VRayHDRI before V-Ray 5: the same class) -> Image the same way: its Placement and Output parts as a
+  Bitmap's, its own crop / place and mono / RGB output alpha; its transfer function as the gamma (none: 1.0, inverse
+  gamma g: 1 / g, sRGB, from 3ds Max and auto: automatic), its overall times render multiplier times the Output's
+  amount. An environment mapping type (angular, cubic, spherical, mirrored ball), a map source, ACEScg primaries,
+  RGB output intensity and an unusable transfer function are issues.
 - CoronaColor -> Constant (color and hex as swatches, the HDR color linear, the temperature through kelvin_rgb, times
   the multiplier). CoronaMix: operation mix -> Mix(bottom, top, amount, mask), multiply -> Multiply (under a Mix for
   an amount below 1 or a mask), any other operation peeled to its first bitmap (an issue); layer multipliers and
@@ -94,7 +99,7 @@ COLOR_CORRECTION = ClassId(0x000002D0, 0)
 COMPOSITE = ClassId(0x00000280, 0)
 NORMAL_BUMP = ClassId(0x243E22C6, 0x63F6A014)
 CORONA_NORMAL = classids.CORONA_NORMAL
-IMAGES = (classids.BITMAP_TEX, classids.CORONA_BITMAP)  # map classes that are an image file
+IMAGES = (classids.BITMAP_TEX, classids.CORONA_BITMAP, classids.VRAY_BITMAP)  # map classes that are an image file
 
 # normal map class -> parameter ids in block 0: normal map, its switch, multiplier, bump map, its switch, multiplier,
 # flip red, flip green, swap red and green, the tangents' map channel (None: the class has no such parameter)
@@ -115,6 +120,17 @@ CB_MONO, CB_RGB, CB_CLIP_ON, CB_CLIP_MODE, CB_CLIP_U, CB_CLIP_V, CB_CLIP_W, CB_C
     117, 118, 119, 120, 121, 122, 123, 124)
 CB_GAMMA, CB_W_ANGLE = 125, 129
 CB_NO_TILE, CB_MIRROR = 0, 2
+# VRayBitmap (VRayHDRI), block 0 (rgbColorSpace: block 3); its Placement is a standard UVGen, read as a Bitmap's.
+# mapType 4 is 3ds Max standard mapping (the UVGen), 0 to 3 environment projections; its own mapChannel (7) only
+# serves those: the UVGen's channel is the one used
+VB_FILE, VB_MULT, VB_MAP_TYPE, VB_GAMMA, VB_RENDER_MULT = 0, 1, 2, 8, 9
+VB_CROP_ON, VB_CROP_MODE, VB_CROP_U, VB_CROP_V, VB_CROP_W, VB_CROP_H = 16, 17, 18, 19, 20, 21
+VB_RGB, VB_MONO, VB_COLOR_SPACE, VB_SOURCE, VB_SOURCE_ON, VB_RGB_SPACE, VB_RGB_SPACE_BLOCK = (
+    22, 23, 25, 38, 39, 41, 3)
+VB_STANDARD, VB_INTENSITY, VB_ACESCG = 4, 2, 2
+# color_space (transfer function), measured with renderMap: 0 none (linear), 1 inverse gamma (pixel ^ (1 / gamma)),
+# 2 sRGB, 3 from 3ds Max (the input gamma, as a Bitmap's automatic), 4 auto (sRGB for an 8-bit file, the default)
+VB_LINEAR, VB_INVERSE_GAMMA, VB_AUTOMATIC = 0, 1, (2, 3, 4)
 # CoronaColor, block 0: method 0 color, 1 HDR color (linear), 2 temperature, 3 hex
 CC_METHOD, CC_TEMPERATURE, CC_COLOR, CC_MULTIPLIER, CC_HDR, CC_HEX = 50, 51, 52, 57, 58, 59
 # CoronaMix, block 0: result = mix(bottom, operation(bottom, top), amount), the mask map replacing the amount
@@ -569,27 +585,22 @@ class TexmapConverter:
         return self._node(_ref(m, map_pid, tab), kind, walk, depth, chain)
 
     def _image(self, m, kind, walk):
-        """The Image of a Bitmap or CoronaBitmap, None (an issue) without a file."""
-        corona = ClassId(*m.class_id) == classids.CORONA_BITMAP
-        value = m.param(CB_FILE if corona else BM_FILE, 0)
-        entry = self.assets.entry(value) if self.assets is not None else None
+        """The Image of a Bitmap, CoronaBitmap or VRayBitmap, None (an issue) without a file."""
+        key = ClassId(*m.class_id)
+        cls, pid = _IMAGE_FILES.get(key, ("Bitmap", BM_FILE))
+        entry = self.assets.entry(m.param(pid, 0)) if self.assets is not None else None
         if entry is None:
-            self._issue(walk, m.index, "%s %r: no file" % ("CoronaBitmap" if corona else "Bitmap", m.name))
+            self._issue(walk, m.index, "%s %r: no file" % (cls, m.name))
             return None
         found = self.textures.find(entry.path, entry.resolved) if self.textures is not None else None
         out = next((p for _s, p in sorted(m.parts.items()) if p.superclass == classids.SC_TEXOUTPUT), None)
-        if corona:
+        if key == classids.CORONA_BITMAP:
             return self._corona_image(m, kind, walk, entry, found, out)
         uv = next((p for _s, p in sorted(m.parts.items()) if p.superclass == classids.SC_UVGEN), None)
         mapping = self._mapping(uv)
-        if mapping.environment:
-            self._issue(walk, m.index, "Bitmap %r: environment mapping, drawn with the UVs" % (m.name,))
-        elif mapping.source in (OBJECT_XYZ, WORLD_XYZ):
-            self._issue(walk, m.index, "Bitmap %r: planar %s XYZ mapping, drawn with the UVs" % (
-                m.name, "object" if mapping.source == OBJECT_XYZ else "world"))
-        if mapping.real_world:
-            self._issue(walk, m.index, "Bitmap %r: real-world scale, its tiling in scene units not converted"
-                        % (m.name,))
+        if key == classids.VRAY_BITMAP:
+            return self._vray_image(m, kind, walk, entry, found, out, mapping)
+        self._placement_issues(m, walk, "Bitmap", mapping)
         crop = None
         clip = tuple(_num(m, pid, d) for pid, d in ((BM_CLIP_U, 0.0), (BM_CLIP_V, 0.0), (BM_CLIP_W, 1.0),
                                                      (BM_CLIP_H, 1.0)))
@@ -599,6 +610,59 @@ class TexmapConverter:
         alpha = m.param(BM_MONO if kind == DATA else BM_RGB, 0) == 1
         return Image(m.index, entry.name, entry.path, entry.resolved, found, mapping, crop, self._output(out),
                      colorspace(kind, gamma), gamma, alpha)
+
+    def _placement_issues(self, m, walk, cls, mapping):
+        """The issues of a UVGen's mapping that no UVs can draw."""
+        if mapping.environment:
+            self._issue(walk, m.index, "%s %r: environment mapping, drawn with the UVs" % (cls, m.name))
+        elif mapping.source in (OBJECT_XYZ, WORLD_XYZ):
+            self._issue(walk, m.index, "%s %r: planar %s XYZ mapping, drawn with the UVs" % (
+                cls, m.name, "object" if mapping.source == OBJECT_XYZ else "world"))
+        if mapping.real_world:
+            self._issue(walk, m.index, "%s %r: real-world scale, its tiling in scene units not converted"
+                        % (cls, m.name))
+
+    def _vray_image(self, m, kind, walk, entry, found, out, mapping):
+        """A VRayBitmap's Image: its Placement as a Bitmap's, its transfer function as a gamma (a Bitmap's
+        meaning: linear = pixel ^ gamma), overall times render multiplier times its Output's amount (renderMap
+        scales by the overall one; the render one applies when V-Ray renders)."""
+        map_type = m.param(VB_MAP_TYPE, 0)
+        if map_type not in (None, VB_STANDARD):
+            mapping = dataclasses.replace(mapping, environment=True)
+            self._issue(walk, m.index, "VRayBitmap %r: environment mapping (type %r), drawn with the UVs"
+                        % (m.name, map_type))
+        else:
+            self._placement_issues(m, walk, "VRayBitmap", mapping)
+        if _flag(m, VB_SOURCE_ON, True) and _ref(m, VB_SOURCE) is not None:
+            self._issue(walk, m.index, "VRayBitmap %r: the placement of its map source not converted" % (m.name,))
+        space, gamma = m.param(VB_COLOR_SPACE, 0), None
+        if space == VB_LINEAR:
+            gamma = 1.0
+        elif space == VB_INVERSE_GAMMA:
+            inverse = _num(m, VB_GAMMA, 0.0)
+            if 0.1 <= inverse <= 10.0:
+                gamma = 1.0 / inverse
+            else:
+                self._issue(walk, m.index, "VRayBitmap %r: transfer function inverse gamma %r not converted: "
+                            "automatic" % (m.name, m.param(VB_GAMMA, 0)))
+        elif space is not None and space not in VB_AUTOMATIC:
+            self._issue(walk, m.index, "VRayBitmap %r: transfer function %r not converted: automatic"
+                        % (m.name, space))
+        if m.param(VB_RGB_SPACE, VB_RGB_SPACE_BLOCK) == VB_ACESCG:
+            self._issue(walk, m.index, "VRayBitmap %r: ACEScg primaries drawn as sRGB" % (m.name,))
+        if kind != DATA and m.param(VB_RGB, 0) == VB_INTENSITY:
+            self._issue(walk, m.index, "VRayBitmap %r: RGB output intensity as gray drawn as its color" % (m.name,))
+        crop = None
+        clip = tuple(_num(m, pid, d) for pid, d in ((VB_CROP_U, 0.0), (VB_CROP_V, 0.0), (VB_CROP_W, 1.0),
+                                                     (VB_CROP_H, 1.0)))
+        if _flag(m, VB_CROP_ON, False) and clip != (0.0, 0.0, 1.0, 1.0):
+            crop = Crop(*clip, place=m.param(VB_CROP_MODE, 0) == 1)
+        mult = max(0.0, _num(m, VB_MULT, 1.0)) * max(0.0, _num(m, VB_RENDER_MULT, 1.0))
+        output = self._output(out) or TexOutput()
+        output = dataclasses.replace(output, amount=output.amount * mult)
+        alpha = m.param(VB_MONO if kind == DATA else VB_RGB, 0) == 1
+        return Image(m.index, entry.name, entry.path, entry.resolved, found, mapping, crop,
+                     None if output == TexOutput() else output, colorspace(kind, gamma), gamma, alpha)
 
     def _corona_image(self, m, kind, walk, entry, found, out):
         """A CoronaBitmap's Image. Its tiling, offset and W angle place the image as a Bitmap's do (measured in
@@ -721,6 +785,10 @@ class TexmapConverter:
         channel = channel if isinstance(channel, int) and not isinstance(channel, bool) and 0 <= channel <= 99 else 1
         return NormalMap(normal, max(0.0, _num(m, ids.strength, 1.0)), _flag(m, ids.flip_red, False),
                          _flag(m, ids.flip_green, False), _flag(m, ids.swap, False), bump, channel)
+
+
+# image class -> (class name in issues, its file parameter in block 0); any other image class is a Bitmap
+_IMAGE_FILES = {classids.CORONA_BITMAP: ("CoronaBitmap", CB_FILE), classids.VRAY_BITMAP: ("VRayBitmap", VB_FILE)}
 
 
 def _bump_input(node):

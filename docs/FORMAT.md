@@ -391,15 +391,28 @@ What the Corona maps do was measured with `renderMap` in 3ds Max 2020: a CoronaB
 angle place the image exactly as a Bitmap's tiling, offset and W angle; CoronaMix gives mix(bottom, operation(bottom,
 top), amount), the mix map replacing the amount when it is on (the operation numbers above come from that).
 
+VRayBitmap `(0x6769144B, 0x02C1017D)` (vray_texmaps, 3ds Max 2020 + V-Ray 5.2; the V-Ray SDK's
+`pb2vrayhdri.h`). MAXScript's `VRayHDRI`, its name before V-Ray 5, is the same class. References: 0 block 0, 1
+block 1, 2 its Placement (a standard UVGen, the same chunks as a Bitmap's), 3 block 2, 4 its Output, 5 block 3.
+Block 0: 0 HDRIMapName (file name, the asset id), 1 multiplier, 2 mapType (0 angular, 1 cubic, 2 spherical, 3
+mirrored ball, 4 3ds Max standard: the Placement), 7 mapChannel (for the environment types only; the Placement has
+its own), 8 gamma, 9 renderMultiplier, 16 cropplace_on, 17 cropplace_mode (1 place), 18-21 u, v, width, height,
+22 rgbOutput (1 alpha as gray, 2 intensity as gray), 23 monoOutput (1 alpha), 25 color_space, 31 coords (owner
+slot 2), 38 / 39 mapSource and its switch. Block 3: 41 rgbColorSpace (0 default, 1 sRGB, 2 ACEScg, 3 raw).
+Measured with `renderMap` on a mid-gray 8-bit image: color_space 0 (None) leaves the pixel as it is, 1 (Inverse
+gamma) gives pixel ^ (1 / gamma), 2 (sRGB) the sRGB curve, 3 (From 3ds Max) the scene's input gamma (2.2), 4 (Auto,
+the default) the sRGB curve; multiplier scales the color, renderMultiplier does not change renderMap (it applies
+when V-Ray renders).
+
 ## Asset metadata
 
 - The files a scene names are listed in the stream `FileAssetMetaData3` (every fixture; empty, 0 bytes, when the
   scene names no file). Records follow each other with no header and no count; a string is a `u32` count of
   UTF-16 units (the NUL not counted), the units, then a UTF-16 NUL, present also for count 0. A record: the
   16-byte asset id, the asset type (`Bitmap`), the path as stored, and a third string, empty in every fixture.
-  vray_maps: 7 records, standard_physical: 1, texmap_rules: 22, corona_maps: 13, corona_light: 3, corona_layered: 1
-  (`reader/assets.py`, `tests/unit/test_assets.py`). A CoronaBitmap's file is the asset id in its parameter 101
-  (`filename`, type 9).
+  vray_maps: 7 records, standard_physical: 1, texmap_rules: 22, corona_maps: 13, corona_light: 3, corona_layered: 1,
+  vray_texmaps: 12 (`reader/assets.py`, `tests/unit/test_assets.py`). A CoronaBitmap's file is the asset id in its
+  parameter 101 (`filename`, type 9), a VRayBitmap's in its parameter 0 (`HDRIMapName`, type 9).
 - A Bitmap's file is the asset id in its parameter 13 (`bitmap`, type 16, block 0, see the ParamBlock2 value
   types above); its `fileName` (16) is transient and not stored. The id's record holds the file name 3ds Max
   reports as `fileName` (oracle) for every Bitmap of vray_maps and standard_physical.

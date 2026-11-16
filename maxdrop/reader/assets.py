@@ -7,7 +7,7 @@
     table = AssetTable.from_file(cf)    # cf: an open cfb.CompoundFile
     e = table.get(guid)                 # AssetEntry(guid, type, path, resolved), None when the id is unknown
     e.name                              # the file name of path (of resolved when path is empty)
-    bitmap_file(table, mtl)             # the AssetEntry of a Bitmap or CoronaBitmap map (MtlBase), None without one
+    bitmap_file(table, mtl)             # the AssetEntry of a Bitmap, CoronaBitmap or VRayBitmap map (MtlBase), None
     files_of(table, mtl)                # [(block id, param id, AssetEntry)] of every asset a map or material holds
 
 The stream is FileAssetMetaData3 (files saved by 3ds Max 2018 and later, as far as the fixtures and the corpus
@@ -17,7 +17,8 @@ which is there also for an empty string. A FileAssetMetaData2 record is the 16-b
 ("Bitmap", "Photometric", ...) and the path as the scene stores it; a FileAssetMetaData3 record adds a third
 string, the absolute path 3ds Max found the file at when it saved the scene (empty when it found none, or when the
 stored path was absolute already). A parameter of type file name or bitmap holds the asset id (pblock.Asset): a
-Bitmap's file is its parameter 13 in block 0, a CoronaBitmap's its parameter 101. docs/FORMAT.md has the layout.
+Bitmap's file is its parameter 13 in block 0, a CoronaBitmap's its parameter 101, a VRayBitmap's its parameter 0.
+docs/FORMAT.md has the layout.
 
 The file comes from anywhere: a stream over MAX_STREAM is not read, a string over MAX_STRING units or one that
 leaves the stream ends the table there (the records before it are kept), a repeated asset id keeps the first
@@ -35,7 +36,9 @@ MAX_STRING = 32767  # UTF-16 units: the longest path Windows takes
 GUID_SIZE = 16
 BITMAP_FILE = 13  # Bitmap block 0, parameter "bitmap"
 CORONA_BITMAP_FILE = 101  # CoronaBitmap block 0, parameter "filename"
-_FILE_PARAMS = {classids.BITMAP_TEX: BITMAP_FILE, classids.CORONA_BITMAP: CORONA_BITMAP_FILE}
+VRAY_BITMAP_FILE = 0  # VRayBitmap block 0, parameter "HDRIMapName"
+_FILE_PARAMS = {classids.BITMAP_TEX: BITMAP_FILE, classids.CORONA_BITMAP: CORONA_BITMAP_FILE,
+                classids.VRAY_BITMAP: VRAY_BITMAP_FILE}
 
 _COUNT = struct.Struct("<I")
 
@@ -167,7 +170,7 @@ def files_of(table, mtl):
 
 
 def bitmap_file(table, mtl):
-    """The file of a Bitmap or CoronaBitmap map (superclass texmap), None for another class or a bitmap without
-    one."""
+    """The file of a Bitmap, CoronaBitmap or VRayBitmap map (superclass texmap), None for another class or a bitmap
+    without one."""
     pid = _FILE_PARAMS.get(tuple(mtl.class_id)) if mtl.superclass == classids.SC_TEXMAP else None
     return None if pid is None else table.entry(mtl.param(pid, block_id=0))

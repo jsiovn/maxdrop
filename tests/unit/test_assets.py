@@ -20,7 +20,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 FIXTURE_DIR = os.path.join(ROOT, "tests", "fixtures")
 FIXTURES = sorted(glob.glob(os.path.join(FIXTURE_DIR, "*.max")))
 ASSET_COUNTS = {"vray_maps": 7, "standard_physical": 1, "texmap_rules": 22, "corona_maps": 13, "corona_layered": 1,
-                "corona_light": 3}  # every other fixture names no file
+                "corona_light": 3, "vray_texmaps": 12}  # every other fixture names no file
 
 
 def _load(name, path, package_dir=None):
@@ -44,7 +44,8 @@ materials = _load("maxdrop_reader.materials", os.path.join(_READER, "materials.p
 assets = _load("maxdrop_reader.assets", os.path.join(_READER, "assets.py"))
 AssetTable, AssetEntry = assets.AssetTable, assets.AssetEntry
 FILE_PARAMS = {"fileName": (classids.BITMAP_TEX, assets.BITMAP_FILE),
-               "filename": (classids.CORONA_BITMAP, assets.CORONA_BITMAP_FILE)}  # oracle name -> class, param id
+               "filename": (classids.CORONA_BITMAP, assets.CORONA_BITMAP_FILE),
+               "HDRIMapName": (classids.VRAY_BITMAP, assets.VRAY_BITMAP_FILE)}  # oracle name -> class, param id
 
 
 def wstr(text):
@@ -221,7 +222,8 @@ class FixtureTest(unittest.TestCase):
                         self.assertEqual(entry.type, "Bitmap")
                         pid = next(p for c, p in FILE_PARAMS.values() if tuple(c) == tuple(m.class_id))
                         self.assertIn((0, pid, entry), assets.files_of(t, m))
-                    elif tuple(m.class_id) in (tuple(classids.BITMAP_TEX), tuple(classids.CORONA_BITMAP)):
+                    elif tuple(m.class_id) in (tuple(classids.BITMAP_TEX), tuple(classids.CORONA_BITMAP),
+                                               tuple(classids.VRAY_BITMAP)):
                         self.fail("%s: bitmap %r without a file" % (name, m.name))
                     else:
                         self.assertEqual(assets.files_of(t, m), [], "%s %s" % (name, m.name))
