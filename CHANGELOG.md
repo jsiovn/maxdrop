@@ -30,6 +30,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   color, CoronaMix (mix and multiply) as nodes, CoronaNormal as a Normal Map node.
 - **VRayBitmap (VRayHDRI) as an image texture**, like a Bitmap: its coordinates, cropping, transfer function (None,
   Inverse gamma, sRGB, Auto) and multipliers; a Composite, Color Correction or Mix above it keeps its image.
+- **Color swatches follow the scene's gamma**: a scene saved with 3ds Max's gamma on (2.2, the default) takes
+  every swatch as linear, as V-Ray renders it, instead of decoding it from sRGB, which made flat colors one display
+  gamma too dark (a 128 grey swatch 0.216 instead of 0.502); a scene saved with the gamma off keeps the sRGB decode.
+  This covers material colors and the colors of Mix, Falloff, Color Correction, VRayDirt, RGB Multiply, CoronaMix,
+  VRayColor and CoronaColor. The import report names the rule; a file without the setting is taken as gamma on.
 - **VRayColor as a color**: RGB or temperature, times its RGB multiplier, with its color gamma; a Falloff, Color
   Correction or Mix mask above it now gives its color instead of a wrong one.
 - In a scene saved in the 3ds Max 2012 format, a map whose stored reference is stale (a Falloff's map, a Normal

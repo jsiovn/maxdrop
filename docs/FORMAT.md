@@ -195,6 +195,25 @@ system unit: of the Scene stream, only one leaf holds the setting itself.
   the viewports (`0x0015`): values measured in system units.
 - Corpus scenes A and B (Max 2015 and 2020): `3`, scale `1.0` (millimeters).
 
+## Scene gamma
+
+`maxdrop/reader/gamma.py` reads it; `tests/unit/test_gamma.py` checks every fixture. Found with `tools/maxdiff.py`
+on probe scenes saved by 3ds Max 2020 (a box; the same scene saved again; then one Gamma/LUT setting changed per
+file: gamma off, display gamma 1.8 and 1.0, file input gamma 1.0, file output gamma 1.0, LUT mode, the color
+picker and Material Editor switches off).
+
+- The Scene stream has one object of class RenderEnvironment `(0xEE448B23, 0)`, superclass `0x1010`. Its `0x6010`
+  chunk is a `u32` (1: gamma on, 0: off), then two `f32`: the file input gamma and the file output gamma. Every
+  fixture: `0`, `2.2`, `2.2` (saved with the gamma off), but gamma_swatches: `1`, `2.2`, `2.2`. The probes: off
+  `0`; input gamma 1.0 changes the first `f32`, output gamma 1.0 the second.
+- The display gamma and the two switches are not in the file: those probes differ from the first save only in the
+  thumbnail. LUT mode left the Scene chunk at `1` (`Config` `0x2160/0x0100`, which otherwise repeats the 12 bytes,
+  said `0`); MaxDrop reads the Scene stream.
+- What it means for a swatch, measured with V-Ray 5.2 renders of a VRayLightMtl plane (multiplier 1) beside a
+  Bitmap of a 128 grey sRGB JPEG: gamma on, the 128 swatch renders byte 187 (0.502 linear) and the JPEG 128; gamma
+  off, both 128. The rule is in `maxdrop/convert/colors.py`.
+- Corpus scenes A (saved as 3ds Max 2012) and B: the same chunk and layout; A `0`, B `1`.
+
 ## Summary properties
 
 `maxdrop/reader/metadata.py` reads them; `tests/unit/test_metadata.py` checks every fixture against its oracle.

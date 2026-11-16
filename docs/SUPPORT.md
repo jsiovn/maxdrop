@@ -66,7 +66,11 @@ your computer.
 
 Each 3ds Max material becomes one Blender material with the same name (two different materials of one name both
 arrive, the second with Blender's `.001`), shared by every object that uses it: a Principled BSDF with its maps as
-nodes. Colors are converted from 3ds Max's swatches (sRGB) to Blender's linear colors. Turn materials off with
+nodes. Color swatches follow the gamma setting the scene was saved with (Gamma and LUT, stored in the file): with
+the gamma on (2.2, 3ds Max's default since 2014) a swatch's value is taken as linear, as 3ds Max and V-Ray render it
+(a 128 grey swatch is 0.502 in Blender); with the gamma off it is decoded from sRGB, so it shows as in 3ds Max (128
+grey is 0.216). A file that does not store the setting is taken as gamma on, and the report says so. The report
+names the rule it used. Image files are sRGB either way (or what their own gamma says). Turn materials off with
 **Object Filter**.
 
 | Material | This version |
