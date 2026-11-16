@@ -88,7 +88,9 @@ python -I tools/sanitize_fixture.py C:\maxdrop_fixtures\<name>.max   # blanks th
 python -I tools/check_fixture.py C:\maxdrop_fixtures\<name>.max      # must print "clean"
 ```
 
-Copy it into `tests/fixtures/` only then, regenerate its oracle (`MaxDropOracle.dumpFolder`, see
+The fixtures are saved with 3ds Max's gamma off (Preferences > Gamma and LUT), but gamma_swatches, whose script
+turns it on; `tests/unit/test_gamma.py` fails for a fixture saved under the other setting. Copy it into
+`tests/fixtures/` only then, regenerate its oracle (`MaxDropOracle.dumpFolder`, see
 [docs/ORACLE.md](docs/ORACLE.md)) and commit both files together. `tests/test_fixtures.py` runs the same check
 over every committed fixture. Keep each file under 1 MB and give every object and material a neutral name. The
 tools know how 3ds Max 2020 stores the two names; a file from another version that they cannot read is refused

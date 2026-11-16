@@ -6,7 +6,8 @@
 
     conv = MaterialConverter(graph, texmaps=tex, swatches=sw)   # graph: reader.materials.MaterialGraph; tex: an
                                         # optional texmaps.TexmapConverter, which fills ir.textures; sw: the
-                                        # colors.Swatches rule (default: tex's, else read from graph's scene)
+                                        # colors.Swatches rule (default: tex's, else read from graph's scene);
+                                        # pass tex's own rule, or none: the two must agree
     ir = conv.convert(node.material)    # MaterialIR (wrappers peeled); None for no material or not a material
     ir.base_color.value, ir.base_color.map        # linear RGB, MapRef(index, amount, invert) or None
     conv.material_for(index, mat_id)    # the MaterialIR a face with that zero-based material ID renders with

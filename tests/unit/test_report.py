@@ -303,7 +303,6 @@ class TestFixture(unittest.TestCase):
         ])
 
 
-
 class TestSwatches(unittest.TestCase):
     """The scene's swatch rule: a line under the materials; the note of a scene without the setting is an issue."""
 

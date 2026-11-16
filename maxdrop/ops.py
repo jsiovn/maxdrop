@@ -305,8 +305,8 @@ def _preflight_of(path):
 def _material_slots(cf, sc, desc, max_path, context, image_search):
     """(the material slots of desc's meshes {mesh key: MeshSlots}, (the material converter's, the texture-map
     converter's and the texture lookup's counters, the scene's swatch rule) for the import report): every material
-    converted, its texture files looked up. cf / sc: the open file and its reader Scene, which the converters read; the counters hold no
-    reference to them."""
+    converted, its texture files looked up. cf / sc: the open file and its reader Scene, which the converters read;
+    the counters hold no reference to them."""
     from .convert import colors as convert_colors
     from .convert import materials as convert_materials
     from .convert import texmaps as convert_texmaps

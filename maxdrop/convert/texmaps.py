@@ -1046,9 +1046,10 @@ def _corona_color(conv, m, kind, walk, depth, chain):
 def _vray_color(conv, m, kind, walk, depth, chain):
     """VRayColor: its swatch (color, else red / green / blue) times rgb_multiplier, then to the power color_gamma
     (renderMap in 3ds Max: (100 gray, multiplier 2, gamma 2) -> 255 * (200 / 255) ^ 2), then made linear by the
-    scene's rule like every swatch. In temperature mode color holds V-Ray's own temperature color. A mono input takes the color, not
-    the alpha (measured with a Mix mask); on a data input the Constant is the mean of the linear color, as every
-    constant's."""
+    scene's rule like every swatch. In temperature mode color holds V-Ray's own temperature color, taken through
+    the same rule (not measured with the gamma off, where it is decoded from sRGB unlike CoronaColor's kelvin). A
+    mono input takes the color, not the alpha (measured with a Mix mask); on a data input the Constant is the mean
+    of the linear color, as every constant's."""
     mode = m.param(VC_MODE, 0)
     v = m.param(VC_COLOR, 0)
     if not (isinstance(v, tuple) and len(v) >= 3 and all(_finite(c) for c in v[:3])):

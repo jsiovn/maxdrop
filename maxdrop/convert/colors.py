@@ -20,6 +20,7 @@ fit in sRGB (kelvin_rgb) do not go through the rule. No bpy.
 import dataclasses
 
 from ..reader import gamma as _gamma
+from ..reader import scene as _scene
 
 GAMMA_NOTE = "the scene's gamma setting was not found in the file: color swatches taken as linear (gamma on)"
 
@@ -71,4 +72,4 @@ def of_scene(source):
 def of_graph(graph):
     """The rule of a MaterialGraph's scene; UNKNOWN for a graph without a reader Scene."""
     s = getattr(graph, "scene", None)
-    return of_scene(s) if isinstance(s, _gamma.scene_mod.Scene) else UNKNOWN
+    return of_scene(s) if isinstance(s, _scene.Scene) else UNKNOWN
