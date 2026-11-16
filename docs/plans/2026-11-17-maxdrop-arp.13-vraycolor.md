@@ -78,3 +78,12 @@ rgb_primaries other than 0: an issue (drawn as sRGB). Never an exception.
   4.5.16 and 5.2 (build-and-test skill, headless, isolated `BLENDER_USER_RESOURCES`) -> `FIXTURES PASSED` /
   `IMPORT PASSED`.
 - Local only, if `matparity.py` and scenes A / B are present: A >= 213/214, B 220/220; `--fixtures` passes.
+
+## Deviation (found during verification)
+
+Corpus scene A parity fell from 213 to 212 with the rule in place: a Falloff's `map1` there stores a stale object
+index (a controller's) in a block without `0x0013` (format 14000), so the reader lost the VRayColor below it,
+which the oracle side now converts. The same defect was behind the one failing material before (a Normal Bump's
+`normal_map` naming another Normal Bump's Bitmap). `reader/pblock.py` now lets the `owner_slots.py` slot win over a
+stored index wherever the owner holds a reference there (3702 of scene A's 3704 such indices already equal it);
+`tests/unit/test_pblock.py` and `docs/FORMAT.md` follow. Result: scene A 214/214, scene B 220/220, fixtures 59/59.
