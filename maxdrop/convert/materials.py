@@ -4,8 +4,9 @@
 
 """Material rules: a 3ds Max material's parameters turned into a renderer-neutral MaterialIR in linear color.
 
-    conv = MaterialConverter(graph, texmaps=tex)   # graph: reader.materials.MaterialGraph; tex: an optional
-                                        # texmaps.TexmapConverter, which fills ir.textures
+    conv = MaterialConverter(graph, texmaps=tex, swatches=sw)   # graph: reader.materials.MaterialGraph; tex: an
+                                        # optional texmaps.TexmapConverter, which fills ir.textures; sw: the
+                                        # colors.Swatches rule (default: tex's, else read from graph's scene)
     ir = conv.convert(node.material)    # MaterialIR (wrappers peeled); None for no material or not a material
     ir.base_color.value, ir.base_color.map        # linear RGB, MapRef(index, amount, invert) or None
     conv.material_for(index, mat_id)    # the MaterialIR a face with that zero-based material ID renders with
@@ -70,9 +71,8 @@ The slots of a mesh (assign): its distinct face IDs, each keyed by the materials
 mesh) get for that ID; one slot per key, in ID order, faces remapped to their slot. A material that is not a
 Multi/Sub-Object gives one slot; an empty key (no material) is a slot only beside others.
 
-Colors are 3ds Max swatches (display-referred), clamped to 0..1 and decoded with the sRGB transfer function: the
-scene's gamma setting is not read from the file (GAMMA_NOTE), and the sRGB curve is the standard form of display
-gamma 2.2, the one Blender applies to sRGB textures as well.
+Colors are 3ds Max swatches, clamped to 0..1 and made linear by the scene's swatch rule (convert/colors.py): the
+value itself when the scene was saved with the gamma on (or does not say), the sRGB curve when it was off.
 A missing, animated or non-finite parameter takes the class's default; an IOR is clamped to 1..100. The SSS radius is
 in meters (VRayFastSSS2 stores it in centimeters whatever the system unit).
 Parameter ids: docs/FORMAT.md for the classes of the fixtures (the Corona ones: Corona 12); the others (named beside
@@ -85,6 +85,7 @@ import math
 
 from ..reader import chunks, classids, pblock
 from ..reader.classdir import ClassId
+from . import colors
 from . import texmaps as _texmaps
 
 ChunkError = chunks.ChunkError
@@ -92,7 +93,7 @@ ChunkError = chunks.ChunkError
 MAX_PEEL = 8
 METAL_REFLECTION = 0.25  # mean linear reflection (about sRGB 137 grey) above which Fresnel off means metal
 CORONA_METAL_IOR = 10.0  # a CoronaLegacyMtl Fresnel IOR from which a bright reflection is a metal (made with 999)
-GREY_SRGB = 128 / 255
+GREY_SRGB = 128 / 255  # the grey of a material without a rule: MaxDrop's own, not a swatch
 
 # The classes no fixture has: reader/classids.py takes a class only with a fixture.
 VRAY_LIGHT_MTL = ClassId(0x7CCF263E, 0x3F5B39B9)
@@ -123,7 +124,6 @@ WRAPPERS = {
 SHELL_RENDER_INDEX, SHELL_SUBS = 1, (2, 3)  # renderMtlIndex; originalMaterial, bakedMaterial
 CORONA_LAYERS, CORONA_LAYERS_ON = 1001, 1004  # CoronaLayeredMtl: a layer switched off is not a sub-material
 
-GAMMA_NOTE = "the scene's gamma is not read from the file: colors are decoded as sRGB (display gamma 2.2)"
 LUMENS_PER_WATT = 683.0  # luminous efficacy at 555 nm: cd/m2 -> W/(m2 sr)
 
 # Multi/Sub-Object, block 0: materialList, mapEnabled, materialIDList (zero-based)
@@ -214,16 +214,6 @@ class ConvertStats:
         self.peeled, self.unknown, self.issues = collections.Counter(), collections.Counter(), []
 
 
-def srgb_to_linear(c):
-    """One sRGB-encoded channel (0..1) to linear."""
-    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
-
-
-def linear_color(rgb):
-    """A 3ds Max swatch (0..1 per channel, display-referred) to linear RGB, clamped to 0..1 first."""
-    return tuple(srgb_to_linear(min(1.0, max(0.0, c))) for c in rgb[:3])
-
-
 def mean(rgb):
     """The mean of the channels: the rules' measure of how strong a reflection or refraction color is."""
     return sum(rgb[:3]) / 3.0
@@ -254,14 +244,6 @@ def _flag(m, pid, block, default):
     return bool(v) if _finite(v) else default
 
 
-def _rgb(m, pid, block, default):
-    """A swatch as linear RGB; default is the swatch value (sRGB, 0..1) used when the parameter is unusable."""
-    v = m.param(pid, block)
-    if not (isinstance(v, tuple) and len(v) >= 3 and all(_finite(c) for c in v[:3])):
-        v = default
-    return linear_color(v)
-
-
 def _mix(a, b, t):
     return tuple(x * (1.0 - t) + y * t for x, y in zip(a, b))
 
@@ -283,11 +265,22 @@ def _roughness(gloss, use_roughness):
 class MaterialConverter:
     """Converts the materials of one MaterialGraph, each object once."""
 
-    def __init__(self, graph, texmaps=None):
+    def __init__(self, graph, texmaps=None, swatches=None):
         self.graph, self.texmaps = graph, texmaps
+        if swatches is None:
+            swatches = texmaps.swatches if texmaps is not None else colors.of_graph(graph)
+        self.swatches = swatches
         self.stats = ConvertStats()
         self._done, self._peels, self._counted = {}, {}, set()
         self._multis, self._for, self._reported = {}, {}, set()
+
+    def rgb(self, m, pid, block, default):
+        """A swatch parameter as linear RGB by the scene's rule; default is the swatch value (0..1) used when the
+        parameter is unusable."""
+        v = m.param(pid, block)
+        if not (isinstance(v, tuple) and len(v) >= 3 and all(_finite(c) for c in v[:3])):
+            v = default
+        return self.swatches.color(v)
 
     def issue(self, index, reason, ir=None):
         self.stats.issues.append((index, reason))
@@ -489,7 +482,7 @@ class MaterialConverter:
             name, source = m.name, class_name(m.superclass, m.class_id)
         except ChunkError:
             name, source = "", ""
-        g = srgb_to_linear(GREY_SRGB)
+        g = colors.srgb_to_linear(GREY_SRGB)
         ir = MaterialIR(index, name, source, base_color=Input((g, g, g)), unknown=True)
         if reason:
             self.issue(index, reason, ir)
@@ -517,9 +510,9 @@ class MaterialConverter:
 def vray_mtl(conv, m, ir):
     """VRayMtl: blocks 1 basic, 2 BRDF, 3 options, 4 maps (map id, on = id + 50, multiplier in % = id + 100)."""
     use_roughness = _flag(m, 89, 2, False)  # brdf_useRoughness
-    diffuse = _rgb(m, 1, 1, (0.5, 0.5, 0.5))
-    reflection = _rgb(m, 2, 1, (0.0, 0.0, 0.0))
-    refraction = _rgb(m, 5, 1, (0.0, 0.0, 0.0))
+    diffuse = conv.rgb(m, 1, 1, (0.5, 0.5, 0.5))
+    reflection = conv.rgb(m, 2, 1, (0.0, 0.0, 0.0))
+    refraction = conv.rgb(m, 5, 1, (0.0, 0.0, 0.0))
     reflection_map = conv.map_ref(m, 101, 151, 201, 4, ir=ir)
 
     t = _clamp01(mean(refraction))
@@ -535,7 +528,7 @@ def vray_mtl(conv, m, ir):
         ir.base_color = Input(reflection, reflection_map)
 
     emit_map = conv.map_ref(m, 117, 167, 217, 4, ir=ir)  # texmap_self_illumination
-    ir.emission_color = Input(_rgb(m, 81, 1, (0.0, 0.0, 0.0)), emit_map)  # selfIllumination
+    ir.emission_color = Input(conv.rgb(m, 81, 1, (0.0, 0.0, 0.0)), emit_map)  # selfIllumination
     if max(ir.emission_color.value) > 0 or emit_map is not None:
         ir.emission_strength = max(0.0, _num(m, 83, 1, 1.0))  # selfIllumination_multiplier
 
@@ -547,7 +540,7 @@ def vray_mtl(conv, m, ir):
     ir.alpha = Input(1.0, conv.map_ref(m, 112, 162, 212, 4, ir=ir))  # texmap_opacity
 
     ir.coat_weight = _clamp01(_num(m, 96, 1, 0.0))  # coat_amount
-    ir.coat_color = _rgb(m, 97, 1, (1.0, 1.0, 1.0))
+    ir.coat_color = conv.rgb(m, 97, 1, (1.0, 1.0, 1.0))
     ir.coat_roughness = _roughness(_num(m, 98, 1, 1.0), use_roughness)  # coat_glossiness
     ir.coat_ior = _ior(_num(m, 99, 1, 1.6))
 
@@ -555,7 +548,7 @@ def vray_mtl(conv, m, ir):
 def vray_light_mtl(conv, m, ir):
     """VRayLightMtl, block 0: 0 color, 1 multiplier, 2 / 3 texmap (on), 5 / 6 opacity_texmap (on)."""
     ir.base_color, ir.roughness, ir.specular = Input((0.0, 0.0, 0.0)), Input(1.0), Input(0.0)
-    ir.emission_color = Input(_rgb(m, 0, 0, (1.0, 1.0, 1.0)), conv.map_ref(m, 2, 3, None, 0, ir=ir))
+    ir.emission_color = Input(conv.rgb(m, 0, 0, (1.0, 1.0, 1.0)), conv.map_ref(m, 2, 3, None, 0, ir=ir))
     ir.emission_strength = max(0.0, _num(m, 1, 0, 1.0))
     ir.alpha = Input(1.0, conv.map_ref(m, 5, 6, None, 0, ir=ir))
 
@@ -564,12 +557,12 @@ def vray_fast_sss2(conv, m, ir):
     """VRayFastSSS2, block 0: 26 diffuse_color, 27 / 28 its map (on), 36 diffuse_amount, 2 sub_surface_color,
     0 scatter_radius (cm, a plain float: not in system units), 22 scale, 31 IOR, 40 specular_color, 51 specular_glossiness, 3 / 4 texmap_bump (on),
     85 / 86 texmap_opacity (on)."""
-    ir.base_color = Input(_rgb(m, 26, 0, (0.5, 0.5, 0.5)), conv.map_ref(m, 27, 28, None, 0, ir=ir))
+    ir.base_color = Input(conv.rgb(m, 26, 0, (0.5, 0.5, 0.5)), conv.map_ref(m, 27, 28, None, 0, ir=ir))
     ir.roughness = Input(_roughness(_num(m, 51, 0, 0.6), False))
-    ir.specular = Input(_clamp01(mean(_rgb(m, 40, 0, (1.0, 1.0, 1.0)))))
+    ir.specular = Input(_clamp01(mean(conv.rgb(m, 40, 0, (1.0, 1.0, 1.0)))))
     ir.ior = _ior(_num(m, 31, 0, 1.3))
     ir.subsurface_weight = _clamp01(1.0 - _num(m, 36, 0, 0.0))
-    ir.subsurface_color = _rgb(m, 2, 0, (1.0, 1.0, 1.0))
+    ir.subsurface_color = conv.rgb(m, 2, 0, (1.0, 1.0, 1.0))
     ir.subsurface_radius = max(0.0, _num(m, 0, 0, 1.0) * _num(m, 22, 0, 1.0)) * 0.01
     conv.bump_slot(ir, conv.map_ref(m, 3, 4, None, 0, ir=ir))
     ir.alpha = Input(1.0, conv.map_ref(m, 85, 86, None, 0, ir=ir))
@@ -578,11 +571,11 @@ def vray_fast_sss2(conv, m, ir):
 def _car_paint(conv, m, ir, base_gloss, bump_pid):
     """Both car paints, block 0: 0 base_color, 1 / 2 its map (on), 4 base_reflection, 8 base_glossiness,
     27 coat_color, 39 coat_glossiness, then the base bump map and its on switch at bump_pid, bump_pid + 1."""
-    ir.base_color = Input(_rgb(m, 0, 0, (0.3, 0.4, 0.5)), conv.map_ref(m, 1, 2, None, 0, ir=ir))
+    ir.base_color = Input(conv.rgb(m, 0, 0, (0.3, 0.4, 0.5)), conv.map_ref(m, 1, 2, None, 0, ir=ir))
     ir.roughness = Input(_roughness(_num(m, 8, 0, base_gloss), False))
     ir.metallic = Input(1.0)
     ir.specular = Input(_clamp01(_num(m, 4, 0, 0.5)))
-    ir.coat_color = _rgb(m, 27, 0, (1.0, 1.0, 1.0))
+    ir.coat_color = conv.rgb(m, 27, 0, (1.0, 1.0, 1.0))
     ir.coat_roughness = _roughness(_num(m, 39, 0, 1.0), False)
     conv.bump_slot(ir, conv.map_ref(m, bump_pid, bump_pid + 1, None, 0, ir=ir))
 
@@ -640,21 +633,21 @@ def standard_mtl(conv, m, ir):
     emit_map = _std_map(conv, m, STD_SELF_ILLUM, ir)
     specular, amount, emit = 0.0, 0.0, None
     if sid == STRAUSS_SHADER:
-        diffuse, gloss = _rgb(s, 0, 0, STD_DIFFUSE_DEFAULT), _num(s, 1, 0, 0.1)
+        diffuse, gloss = conv.rgb(s, 0, 0, STD_DIFFUSE_DEFAULT), _num(s, 1, 0, 0.1)
         ir.metallic = Input(_clamp01(_num(s, 2, 0, 0.0)))
         specular = 0.5
     elif sid in SHADERS:
         ids = SHADERS[sid]
-        diffuse, gloss = _rgb(s, ids.diffuse, 0, STD_DIFFUSE_DEFAULT), _num(s, ids.glossiness, 0, 0.1)
-        specular = max(0.0, _num(s, ids.level, 0, 0.0)) * mean(_rgb(s, ids.specular, 0, STD_SPECULAR_DEFAULT))
+        diffuse, gloss = conv.rgb(s, ids.diffuse, 0, STD_DIFFUSE_DEFAULT), _num(s, ids.glossiness, 0, 0.1)
+        specular = max(0.0, _num(s, ids.level, 0, 0.0)) * mean(conv.rgb(s, ids.specular, 0, STD_SPECULAR_DEFAULT))
         if _flag(s, ids.use_si_color, 0, False):
-            emit = _rgb(s, ids.si_color, 0, (0.0, 0.0, 0.0))
+            emit = conv.rgb(s, ids.si_color, 0, (0.0, 0.0, 0.0))
         else:
             amount = max(0.0, _num(s, ids.si_amount, 0, 0.0))
         if sid == METAL_SHADER:
             ir.metallic = Input(1.0)
     else:
-        diffuse, gloss = linear_color(STD_DIFFUSE_DEFAULT), 0.1
+        diffuse, gloss = conv.swatches.color(STD_DIFFUSE_DEFAULT), 0.1
         conv.issue(m.index, "Standard: shader %s has no rule: its defaults" % (
             "missing" if sid is None else "ClassID%s" % (sid,)), ir)
     ir.base_color = Input(diffuse, _std_map(conv, m, STD_DIFFUSE, ir))
@@ -679,16 +672,16 @@ def physical_mtl(conv, m, ir):
     66 coat_ior; maps 101 base_color, 102 reflectivity, 104 roughness, 105 metalness, 109 transparency,
     116 emission, 117 emit_color, 130 bump (amount 230, a factor), 133 cutout, each switched on by id + 50."""
     weight = _clamp01(_num(m, 1, 0, 1.0))
-    base = tuple(c * weight for c in _rgb(m, 2, 0, (0.5, 0.5, 0.5)))
+    base = tuple(c * weight for c in conv.rgb(m, 2, 0, (0.5, 0.5, 0.5)))
     t = _clamp01(_num(m, 30, 0, 0.0))
     if t > 0:
-        base = _mix(base, _rgb(m, 31, 0, (1.0, 1.0, 1.0)), t)
+        base = _mix(base, conv.rgb(m, 31, 0, (1.0, 1.0, 1.0)), t)
     ir.base_color = Input(base, conv.map_ref(m, 101, 151, None, 0, ir=ir))
     inverted = _flag(m, 5, 0, False)
     r = _clamp01(_num(m, 4, 0, 0.0))
     ir.roughness = Input(1.0 - r if inverted else r, conv.map_ref(m, 104, 154, None, 0, invert=inverted, ir=ir))
     ir.metallic = Input(_clamp01(_num(m, 6, 0, 0.0)), conv.map_ref(m, 105, 155, None, 0, ir=ir))
-    ir.specular = Input(_clamp01(max(0.0, _num(m, 3, 0, 1.0)) * mean(_rgb(m, 10, 0, (1.0, 1.0, 1.0)))),
+    ir.specular = Input(_clamp01(max(0.0, _num(m, 3, 0, 1.0)) * mean(conv.rgb(m, 10, 0, (1.0, 1.0, 1.0)))),
                         conv.map_ref(m, 102, 152, None, 0, ir=ir))
     ir.transmission = Input(t, conv.map_ref(m, 109, 159, None, 0, ir=ir))
     ir.ior = _ior(_num(m, 33, 0, 1.52))
@@ -702,11 +695,11 @@ def physical_mtl(conv, m, ir):
         if color_map is not None and weight_map is not None:
             conv.issue(m.index, "Physical Material: emission weight map %d not used beside the color map"
                        % weight_map.index, ir)
-        ir.emission_color = Input(_rgb(m, 51, 0, (1.0, 1.0, 1.0)), color_map or weight_map)
+        ir.emission_color = Input(conv.rgb(m, 51, 0, (1.0, 1.0, 1.0)), color_map or weight_map)
         luminance = max(0.0, _num(m, 52, 0, 1500.0))
         ir.emission_strength = (1.0 if weight_map is not None else emission) * luminance / LUMENS_PER_WATT
     ir.coat_weight = _clamp01(_num(m, 60, 0, 0.0))
-    ir.coat_color = _rgb(m, 61, 0, (1.0, 1.0, 1.0))
+    ir.coat_color = conv.rgb(m, 61, 0, (1.0, 1.0, 1.0))
     c = _clamp01(_num(m, 62, 0, 0.0))
     ir.coat_roughness = 1.0 - c if _flag(m, 63, 0, False) else c
     ir.coat_ior = _ior(_num(m, 66, 0, 1.52))
@@ -728,11 +721,11 @@ def corona_physical_mtl(conv, m, ir):
     every roughness is a glossiness)."""
     gloss = m.param(421, 0) == 1
     level = max(0.0, _num(m, 102, 0, 1.0))
-    base = tuple(min(1.0, c * level) for c in _rgb(m, 101, 0, (0.5, 0.5, 0.5)))
+    base = tuple(min(1.0, c * level) for c in conv.rgb(m, 101, 0, (0.5, 0.5, 0.5)))
     t = _clamp01(_num(m, 191, 0, 0.0))
     thin = _flag(m, 203, 0, False)
     if t > 0:  # the refraction is clear unless thin mode tints it
-        base = _mix(base, _rgb(m, 381, 0, (1.0, 1.0, 1.0)) if thin else (1.0, 1.0, 1.0), t)
+        base = _mix(base, conv.rgb(m, 381, 0, (1.0, 1.0, 1.0)) if thin else (1.0, 1.0, 1.0), t)
     ir.base_color = Input(base, _corona_amount_map(conv, m, 103, ir))
     r = _clamp01(_num(m, 131, 0, 0.75))
     ir.roughness = Input(1.0 - r if gloss else r, _corona_amount_map(conv, m, 132, ir, invert=gloss))
@@ -742,15 +735,15 @@ def corona_physical_mtl(conv, m, ir):
     if m.param(461, 0) not in (None, 0):  # iorMode: only the default (baseIor is the IOR) has been measured
         conv.issue(m.index, "CoronaPhysicalMtl %r: IOR mode %r read as an IOR" % (m.name, m.param(461, 0)), ir)
     ir.thin_walled = thin
-    opacity = _clamp01(mean(_rgb(m, 121, 0, (1.0, 1.0, 1.0))) * max(0.0, _num(m, 122, 0, 1.0)))
+    opacity = _clamp01(mean(conv.rgb(m, 121, 0, (1.0, 1.0, 1.0))) * max(0.0, _num(m, 122, 0, 1.0)))
     ir.alpha = Input(opacity, _corona_amount_map(conv, m, 123, ir))
-    ir.emission_color = Input(_rgb(m, 331, 0, (1.0, 1.0, 1.0)), _corona_amount_map(conv, m, 333, ir))
+    ir.emission_color = Input(conv.rgb(m, 331, 0, (1.0, 1.0, 1.0)), _corona_amount_map(conv, m, 333, ir))
     ir.emission_strength = max(0.0, _num(m, 332, 0, 0.0))
     ir.coat_weight = _clamp01(_num(m, 211, 0, 0.0))
     ir.coat_ior = _ior(_num(m, 221, 0, 1.5))
     c = _clamp01(_num(m, 231, 0, 0.0))
     ir.coat_roughness = 1.0 - c if gloss else c
-    ir.coat_color = _rgb(m, 391, 0, (1.0, 1.0, 1.0))
+    ir.coat_color = conv.rgb(m, 391, 0, (1.0, 1.0, 1.0))
     conv.bump_slot(ir, _corona_amount_map(conv, m, 351, ir))
 
 
@@ -762,10 +755,10 @@ def corona_legacy_mtl(conv, m, ir):
     183 ior, 210 thin. 402 pbrMode only changes how Corona curves the glossiness: 1 - glossiness either way."""
     def slot(map_pid, on_pid, amount_pid, invert=False):
         return conv.map_ref(m, map_pid, on_pid, amount_pid, 0, invert=invert, ir=ir, percent=False)
-    diffuse = tuple(min(1.0, c * max(0.0, _num(m, 121, 0, 1.0))) for c in _rgb(m, 101, 0, (0.5, 0.5, 0.5)))
-    reflect_color = _rgb(m, 102, 0, (1.0, 1.0, 1.0))
+    diffuse = tuple(min(1.0, c * max(0.0, _num(m, 121, 0, 1.0))) for c in conv.rgb(m, 101, 0, (0.5, 0.5, 0.5)))
+    reflect_color = conv.rgb(m, 102, 0, (1.0, 1.0, 1.0))
     reflection = tuple(min(1.0, c * max(0.0, _num(m, 122, 0, 0.0))) for c in reflect_color)
-    refract_color = _rgb(m, 103, 0, (1.0, 1.0, 1.0))
+    refract_color = conv.rgb(m, 103, 0, (1.0, 1.0, 1.0))
     t = _clamp01(mean(refract_color) * max(0.0, _num(m, 123, 0, 0.0)))
     reflection_map = slot(142, 162, 291)
     fresnel_ior = _num(m, 182, 0, 1.52)
@@ -778,9 +771,9 @@ def corona_legacy_mtl(conv, m, ir):
     ir.transmission = Input(t, slot(144, 164, 293))
     ir.ior = _ior(_num(m, 183, 0, 1.52) if t > 0 else fresnel_ior)
     ir.thin_walled = _flag(m, 210, 0, False)
-    opacity = _clamp01(mean(_rgb(m, 105, 0, (1.0, 1.0, 1.0))) * max(0.0, _num(m, 127, 0, 1.0)))
+    opacity = _clamp01(mean(conv.rgb(m, 105, 0, (1.0, 1.0, 1.0))) * max(0.0, _num(m, 127, 0, 1.0)))
     ir.alpha = Input(opacity, slot(146, 166, 295))
-    ir.emission_color = Input(_rgb(m, 107, 0, (1.0, 1.0, 1.0)), slot(158, 178, 303))
+    ir.emission_color = Input(conv.rgb(m, 107, 0, (1.0, 1.0, 1.0)), slot(158, 178, 303))
     ir.emission_strength = max(0.0, _num(m, 128, 0, 0.0))
     conv.bump_slot(ir, slot(147, 167, 296))
 
@@ -788,7 +781,7 @@ def corona_legacy_mtl(conv, m, ir):
 def corona_light_mtl(conv, m, ir):
     """CoronaLightMtl, block 0: 110 intensity, 111 / 112 texmap (on), 113 color, 150 / 151 opacityTexmap (on)."""
     ir.base_color, ir.roughness, ir.specular = Input((0.0, 0.0, 0.0)), Input(1.0), Input(0.0)
-    ir.emission_color = Input(_rgb(m, 113, 0, (1.0, 1.0, 1.0)), conv.map_ref(m, 111, 112, None, 0, ir=ir))
+    ir.emission_color = Input(conv.rgb(m, 113, 0, (1.0, 1.0, 1.0)), conv.map_ref(m, 111, 112, None, 0, ir=ir))
     ir.emission_strength = max(0.0, _num(m, 110, 0, 1.0))
     ir.alpha = Input(1.0, conv.map_ref(m, 150, 151, None, 0, ir=ir))
 

@@ -6,7 +6,8 @@
 
     rep = gather(desc, source="scene.max", objects_built=n, meshes_built=m, dropped_uv_layers=k, pack=result)
     add_materials(rep, len(built.materials), builder.classes, conv.stats, tex.stats, index.report,
-                  sockets=builder.sockets_skipped, blender=bpy.app.version_string)   # when materials were made
+                  sockets=builder.sockets_skipped, blender=bpy.app.version_string,
+                  swatches=conv.swatches)   # when materials were made
     rep.text()                          # the whole report, lines joined with "\n"
     rep.summary()                       # (level, line): "INFO" when nothing was approximated or left out, else
                                         # "WARNING"
@@ -15,7 +16,8 @@ desc is a convert.scene.SceneDescription. The counts of what build/ made default
 the result of maxdrop.intake.archive.unpack() when the import started from a scene pack (read by attribute, so
 this module never imports the intake package), and pack_name the archive's file name: its block comes first.
 add_materials takes the counters of convert.materials (MaterialConverter.stats), convert.texmaps
-(TexmapConverter.stats), the texture lookup (convert.textures.TextureReport) and build.materials, all read by
+(TexmapConverter.stats), the texture lookup (convert.textures.TextureReport), build.materials and the scene's
+swatch rule (convert.colors.Swatches: its line, and its note as an issue when the file did not say), all read by
 attribute. The blocks follow the order of the log of the 3ds Max -> FBX exporter these rules come from: the scene,
 the materials, the textures. A texture not found in a scene just unpacked from a pack says whether the archive
 held a file of that name and why it was not written: that tells an archive at fault from the lookup.
@@ -43,7 +45,7 @@ class Report:
                  "dropped_uv_layers", "unknown_controller_nodes", "geometry_errors", "issues", "pack", "pack_name",
                  "materials_built", "materials", "wrappers", "grey_materials", "maps_peeled", "maps_unsupported",
                  "sockets_skipped", "blender", "textures_found", "textures_missing", "texture_search_stopped",
-                 "material_issues")
+                 "material_issues", "swatches")
 
     def __init__(self, source=""):
         self.source, self.unit, self.meters = source, None, 1.0
@@ -64,6 +66,7 @@ class Report:
         self.sockets_skipped = collections.Counter()  # Principled input name -> materials that needed it
         self.textures_found = []  # [(lookup rule name, files found)] in lookup order
         self.textures_missing, self.texture_search_stopped, self.material_issues = [], [], []
+        self.swatches = ""  # how color swatches were made linear (the scene's gamma)
 
     @property
     def approximated(self):
@@ -123,6 +126,8 @@ class Report:
         if self.materials_built is not None:
             lines.append("Materials built: %d" % self.materials_built
                          + (" (converted by class: %s)" % _counts(self.materials) if self.materials else ""))
+        if self.swatches:
+            lines.append(self.swatches)
         if self.textures_found:
             lines.append("Textures found: %d (%s)" % (sum(n for _r, n in self.textures_found), ", ".join(
                 "%s %d" % rn for rn in self.textures_found)))
@@ -287,13 +292,19 @@ def gather(desc, source="", objects_built=None, meshes_built=None, dropped_uv_la
 
 
 def add_materials(rep, materials_built, classes=(), conv_stats=None, tex_stats=None, lookup=None, sockets=(),
-                  blender=""):
+                  blender="", swatches=None):
     """Add what the material import did to rep: materials_built (Blender materials made), classes {class name:
     materials converted by a rule} and sockets {Principled input name: materials that needed it} from
     build.materials; conv_stats (peeled, unknown, issues), tex_stats (peeled, unsupported, issues) and lookup (a
     TextureReport: found, missing, truncated) from the converters; blender: the version the sockets are missing
-    from."""
+    from; swatches: the converters' convert.colors.Swatches (its line; its note, set when the scene's gamma was not
+    found, an issue).
+    """
     rep.materials_built, rep.blender = materials_built, blender
+    if swatches is not None:
+        rep.swatches = swatches.line()
+        if swatches.note:
+            rep.issues.append(("color swatches", swatches.note))
     rep.materials.update(classes)
     rep.sockets_skipped.update(sockets)
     if conv_stats is not None:

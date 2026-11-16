@@ -29,6 +29,7 @@ if _PKG not in sys.modules:
 conv = importlib.import_module(_PKG + ".convert.scene")
 report = importlib.import_module(_PKG + ".convert.report")
 textures = importlib.import_module(_PKG + ".convert.textures")
+colors = importlib.import_module(_PKG + ".convert.colors")
 units = importlib.import_module(_PKG + ".reader.units")
 
 IDENTITY = ((1.0, 0.0, 0.0, 0.0), (0.0, 1.0, 0.0, 0.0), (0.0, 0.0, 1.0, 0.0), (0.0, 0.0, 0.0, 1.0))
@@ -300,6 +301,35 @@ class TestFixture(unittest.TestCase):
             "Groups: 1",
             "Nothing was left out.",
         ])
+
+
+
+class TestSwatches(unittest.TestCase):
+    """The scene's swatch rule: a line under the materials; the note of a scene without the setting is an issue."""
+
+    def test_gamma_on_and_off_are_a_line(self):
+        for rule, words in ((colors.GAMMA_ON, "linear (the scene's gamma is on)"),
+                            (colors.GAMMA_OFF, "decoded from sRGB (the scene's gamma is off)")):
+            with self.subTest(rule):
+                rep = report.gather(box(), source="box.max")
+                report.add_materials(rep, 3, collections.Counter({"Standard": 3}), lookup=lookup(), swatches=rule)
+                self.assertEqual(rep.text().split("\n")[7:9], [
+                    "Materials built: 3 (converted by class: Standard 3)", "Color swatches: " + words])
+                self.assertEqual(rep.summary()[0], "INFO")
+
+    def test_unknown_is_an_issue(self):
+        rep = report.gather(box(), source="box.max")
+        report.add_materials(rep, 3, collections.Counter({"Standard": 3}), lookup=lookup(), swatches=colors.UNKNOWN)
+        lines = rep.text().split("\n")
+        self.assertIn("Color swatches: linear (the scene's gamma setting not found)", lines)
+        self.assertIn("    color swatches: " + colors.GAMMA_NOTE, lines)
+        self.assertEqual(rep.summary()[0], "WARNING")
+        self.assertEqual(rep.left_out, 1)
+
+    def test_without_a_rule_no_line(self):
+        rep = report.gather(box(), source="box.max")
+        report.add_materials(rep, 3, collections.Counter({"Standard": 3}), lookup=lookup())
+        self.assertFalse(any(line.startswith("Color swatches") for line in rep.text().split("\n")))
 
 
 if __name__ == "__main__":

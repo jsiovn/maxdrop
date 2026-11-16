@@ -35,6 +35,8 @@ if _PKG not in sys.modules:
     _pkg.__path__ = [os.path.join(ROOT, "maxdrop")]
     sys.modules[_PKG] = _pkg
 mat = importlib.import_module(_PKG + ".convert.materials")
+colors = importlib.import_module(_PKG + ".convert.colors")
+texmaps = importlib.import_module(_PKG + ".convert.texmaps")
 cfb = importlib.import_module(_PKG + ".reader.cfb")
 chunks = importlib.import_module(_PKG + ".reader.chunks")
 classids = importlib.import_module(_PKG + ".reader.classids")
@@ -120,14 +122,29 @@ class Close:
 
 
 class Helpers(unittest.TestCase, Close):
-    def test_srgb_to_linear(self):
-        self.assertEqual(mat.srgb_to_linear(0.0), 0.0)
-        self.close(mat.srgb_to_linear(1.0), 1.0)
-        self.close(mat.srgb_to_linear(0.5), 0.214041)
-        self.close(mat.srgb_to_linear(0.04), 0.04 / 12.92)  # below the knee: linear segment
+    def test_swatch_rule(self):
+        """A synthetic graph has no scene: its swatches are linear (UNKNOWN); a given rule wins, and the converter
+        takes its texmaps converter's rule."""
+        self.assertIs(mat.MaterialConverter(FakeGraph()).swatches, colors.UNKNOWN)
+        diffuse = {1: {1: (128 / 255,) * 3}}
+        for rule, want in ((colors.GAMMA_ON, 0.501961), (colors.GAMMA_OFF, 0.215861), (colors.UNKNOWN, 0.501961)):
+            with self.subTest(rule):
+                conv = mat.MaterialConverter(FakeGraph(_vray(0, **{"b%d" % k: v for k, v in diffuse.items()})),
+                                             swatches=rule)
+                self.close(conv.convert(0).base_color.value, (want,) * 3)
+        tex = texmaps.TexmapConverter(FakeGraph(), swatches=colors.GAMMA_OFF)
+        self.assertIs(mat.MaterialConverter(FakeGraph(), texmaps=tex).swatches, colors.GAMMA_OFF)
 
-    def test_linear_color_clamps(self):
-        self.close(mat.linear_color((-1.0, 2.0, 0.5)), (0.0, 1.0, 0.214041))
+    def test_rules_use_the_swatch_rule(self):
+        """Every rule's swatches go through it: a gamma-off scene decodes each one with the sRGB curve."""
+        light = FakeMtl(0, mat.VRAY_LIGHT_MTL, "Glow", {0: {0: (1.0, 0.5, 0.0)}})
+        conv = mat.MaterialConverter(FakeGraph(light), swatches=colors.GAMMA_OFF)
+        self.close(conv.convert(0).emission_color.value, (1.0, 0.214041, 0.0))
+        std = FakeMtl(0, classids.STANDARD_MTL, "Std")  # no shader: the default diffuse 150
+        conv = mat.MaterialConverter(FakeGraph(std), swatches=colors.GAMMA_OFF)
+        self.close(conv.convert(0).base_color.value, (0.304987,) * 3)
+        conv = mat.MaterialConverter(FakeGraph(std), swatches=colors.GAMMA_ON)
+        self.close(conv.convert(0).base_color.value, (150 / 255,) * 3)
 
     def test_ior_from_reflectance(self):
         self.close(mat.ior_from_reflectance(0.04), 1.5)
@@ -149,7 +166,7 @@ class Helpers(unittest.TestCase, Close):
 class VRayMtlRules(unittest.TestCase, Close):
     def test_defaults(self):
         conv, ir = _convert(_vray(0))
-        self.close(ir.base_color.value, (0.214041,) * 3)  # diffuse 0.5 sRGB
+        self.close(ir.base_color.value, (0.5,) * 3)  # diffuse 0.5, linear (a synthetic graph: no gamma, so on)
         self.close(ir.roughness.value, 0.0)  # glossiness 1, useRoughness off
         self.close(ir.metallic.value, 0.0)
         self.close(ir.transmission.value, 0.0)
@@ -186,7 +203,7 @@ class VRayMtlRules(unittest.TestCase, Close):
         self.close(ir.transmission.value, 1.0)
         self.close(ir.ior, 1.45)
         conv, ir = _convert(_vray(0, b1={1: (1.0, 0.0, 0.0), 5: (0.5, 0.5, 0.5)}))
-        t = 0.214041
+        t = 0.5
         self.close(ir.transmission.value, t)
         self.close(ir.base_color.value, (1.0 - t + t * t, t * t, t * t))
 
@@ -194,13 +211,13 @@ class VRayMtlRules(unittest.TestCase, Close):
         b1 = {1: (1.0, 0.0, 0.0), 2: (0.8, 0.8, 0.8), 8: 0, 91: 0.2}
         conv, ir = _convert(_vray(0, b1=b1, b4={101: Ref(1), 201: 50.0}), _map(1))
         self.close(ir.metallic.value, 1.0)
-        self.close(ir.base_color.value, (0.603827,) * 3)
+        self.close(ir.base_color.value, (0.8,) * 3)
         self.assertEqual(ir.base_color.map, mat.MapRef(1, 0.5, False))
         self.assertEqual(ir.specular.map, mat.MapRef(1, 0.5, False))
 
     def test_fresnel_on_or_dark_reflection_keeps_diffuse(self):
         for b1 in ({1: (1.0, 0.0, 0.0), 2: (0.8, 0.8, 0.8), 8: 1, 91: 0.2},
-                   {1: (1.0, 0.0, 0.0), 2: (0.5, 0.5, 0.5), 8: 0, 91: 0.2}):  # 0.214 < METAL_REFLECTION
+                   {1: (1.0, 0.0, 0.0), 2: (0.2, 0.2, 0.2), 8: 0, 91: 0.2}):  # 0.2 < METAL_REFLECTION
             conv, ir = _convert(_vray(0, b1=b1))
             self.close(ir.metallic.value, 0.2)
             self.close(ir.base_color.value, (1.0, 0.0, 0.0))
@@ -230,7 +247,7 @@ class VRayMtlRules(unittest.TestCase, Close):
         nan = float("nan")
         conv, ir = _convert(_vray(0, b1={1: (nan, 0.0, 0.0), 3: nan, 9: float("inf"), 83: nan},
                                   b4={200: nan, 100: Ref(1)}), _map(1))
-        self.close(ir.base_color.value, (0.214041,) * 3)
+        self.close(ir.base_color.value, (0.5,) * 3)
         self.close(ir.roughness.value, 0.0)
         self.close(ir.ior, 1.6)
         self.assertEqual(ir.base_color.map, mat.MapRef(1, 1.0, False))
@@ -243,7 +260,7 @@ class VRayMtlRules(unittest.TestCase, Close):
     def test_animated_parameter_takes_default(self):
         conv, ir = _convert(_vray(0, b1={3: pblock.Animated(4), 1: pblock.Animated(5)}))
         self.close(ir.roughness.value, 0.0)
-        self.close(ir.base_color.value, (0.214041,) * 3)
+        self.close(ir.base_color.value, (0.5,) * 3)
 
 
 class OtherRules(unittest.TestCase, Close):
@@ -254,7 +271,7 @@ class OtherRules(unittest.TestCase, Close):
         self.close(ir.base_color.value, (0.0, 0.0, 0.0))
         self.close(ir.roughness.value, 1.0)
         self.close(ir.specular.value, 0.0)
-        self.close(ir.emission_color.value, (1.0, 0.214041, 0.0))
+        self.close(ir.emission_color.value, (1.0, 0.5, 0.0))
         self.close(ir.emission_strength, 7.5)
         self.assertEqual(ir.emission_color.map, mat.MapRef(1, 1.0, False))
         self.assertIsNone(ir.alpha.map)  # opacity map switched off
@@ -265,13 +282,13 @@ class OtherRules(unittest.TestCase, Close):
             26: (0.5, 0.5, 0.5), 27: Ref(1), 28: 1, 36: 0.25, 2: (1.0, 0.5, 0.5), 0: 4.0, 22: 2.0, 31: 1.4,
             40: (1.0, 1.0, 1.0), 51: 0.7, 3: Ref(2), 4: 1, 85: Ref(3), 86: 1}})
         conv, ir = _convert(sss, _map(1), _map(2), _map(3))
-        self.close(ir.base_color.value, (0.214041,) * 3)
+        self.close(ir.base_color.value, (0.5,) * 3)
         self.assertEqual(ir.base_color.map, mat.MapRef(1, 1.0, False))
         self.close(ir.roughness.value, 0.3)
         self.close(ir.specular.value, 1.0)
         self.close(ir.ior, 1.4)
         self.close(ir.subsurface_weight, 0.75)
-        self.close(ir.subsurface_color, (1.0, 0.214041, 0.214041))
+        self.close(ir.subsurface_color, (1.0, 0.5, 0.5))
         self.close(ir.subsurface_radius, 0.08)  # 4 cm x scale 2, in meters
         self.assertEqual(ir.bump, mat.MapRef(2, 1.0, False))
         self.assertEqual(ir.alpha.map, mat.MapRef(3, 1.0, False))
@@ -280,7 +297,7 @@ class OtherRules(unittest.TestCase, Close):
         common = {0: (0.5, 0.0, 0.0), 1: Ref(1), 2: 1, 4: 0.4, 8: 0.9, 27: (1.0, 1.0, 1.0), 39: 0.95}
         paint = {**common, 31: 0.05, 55: Ref(2), 56: 1}  # coat_strength: reflectance at normal incidence
         conv, ir = _convert(FakeMtl(0, mat.VRAY_CAR_PAINT_MTL, "Paint", {0: paint}), _map(1), _map(2))
-        self.close(ir.base_color.value, (0.214041, 0.0, 0.0))
+        self.close(ir.base_color.value, (0.5, 0.0, 0.0))
         self.assertEqual(ir.base_color.map, mat.MapRef(1, 1.0, False))
         self.close(ir.roughness.value, 0.1)
         self.close(ir.metallic.value, 1.0)
@@ -510,11 +527,12 @@ def _standard(index, shader_class, shader, blocks=None, maps=None, name="S"):
 
 
 def _srgb(*rgb):
-    return tuple(mat.srgb_to_linear(c / 255.0) for c in rgb)
+    return tuple(colors.srgb_to_linear(c / 255.0) for c in rgb)
 
 
 class Standard(unittest.TestCase, Close):
-    """tools/fixtures/standard_physical.ms and box_poly_standard.ms, by hand (sRGB s/255 -> linear)."""
+    """tools/fixtures/standard_physical.ms and box_poly_standard.ms, by hand (saved with the gamma off: sRGB
+    s/255 -> linear); synthetic shaders: no gamma, linear swatches."""
 
     def test_fixture(self):
         cf, graph, by_name = _fixture("standard_physical")
@@ -551,7 +569,7 @@ class Standard(unittest.TestCase, Close):
                 shader = {ids.diffuse: diffuse, ids.specular: (1.0, 1.0, 1.0), ids.level: 0.4, ids.glossiness: 0.3,
                           ids.si_amount: 0.0, ids.use_si_color: 1, ids.si_color: (0.0, 1.0, 0.0)}
                 conv, ir = _convert(_standard(0, sid, shader))
-                self.close(ir.base_color.value, mat.linear_color(diffuse))
+                self.close(ir.base_color.value, diffuse)
                 self.close(ir.roughness.value, 0.7)
                 self.close(ir.specular.value, 0.4)
                 self.close(ir.emission_color.value, (0.0, 1.0, 0.0), "self-illumination color")
@@ -569,7 +587,7 @@ class Standard(unittest.TestCase, Close):
         for sid in ((0x1234, 0), None):
             with self.subTest(sid):
                 conv, ir = _convert(_standard(0, sid, {1: (1.0, 0.0, 0.0)}))
-                self.close(ir.base_color.value, _srgb(150, 150, 150))
+                self.close(ir.base_color.value, (150 / 255,) * 3)
                 self.assertFalse(ir.unknown)
                 self.assertIn("Standard: shader", ir.issues[0])
 
@@ -655,7 +673,7 @@ class Physical(unittest.TestCase, Close):
 
     def test_defaults(self):
         conv, ir = _convert(FakeMtl(0, classids.PHYSICAL_MTL, "Empty", {0: {}}))
-        self.close(ir.base_color.value, (0.214041,) * 3)
+        self.close(ir.base_color.value, (0.5,) * 3)
         self.close((ir.roughness.value, ir.metallic.value, ir.specular.value, ir.ior), (0.0, 0.0, 1.0, 1.52))
         self.close(ir.emission_strength, 0.0)
 
@@ -873,7 +891,7 @@ def _corona(index, class_id, **params):
 class CoronaSynthetic(unittest.TestCase, Close):
     def test_physical_defaults(self):
         _conv, ir = _convert(_corona(0, classids.CORONA_PHYSICAL_MTL))
-        self.close(ir.base_color.value, (_lin(127.5),) * 3)
+        self.close(ir.base_color.value, (0.5,) * 3)
         self.close(ir.roughness.value, 0.75)
         self.close(ir.ior, 1.5)
         self.close(ir.alpha.value, 1.0)
@@ -906,7 +924,7 @@ class CoronaSynthetic(unittest.TestCase, Close):
     def test_damaged_values_take_defaults(self):
         _conv, ir = _convert(_corona(0, classids.CORONA_PHYSICAL_MTL, p101=(float("nan"), 0, 0), p131="x",
                                      p171=float("inf")))
-        self.close(ir.base_color.value, (_lin(127.5),) * 3)
+        self.close(ir.base_color.value, (0.5,) * 3)
         self.close(ir.roughness.value, 0.75)
         self.close(ir.ior, 1.5)
 

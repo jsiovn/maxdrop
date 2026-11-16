@@ -4,7 +4,8 @@
 
 """Texture-map rules: the map that drives a material input, turned into a small renderer-neutral graph.
 
-    tex = TexmapConverter(graph, assets, textures=index)   # MaterialGraph, AssetTable, optional TextureIndex
+    tex = TexmapConverter(graph, assets, textures=index, swatches=sw)   # MaterialGraph, AssetTable, optional
+                                        # TextureIndex, colors.Swatches (default: read from graph's scene)
     g = tex.convert(map_ref, kind, value)   # TextureGraphIR, None when nothing usable drives the input
     g.root, g.kind, g.approximated, g.issues
     graphs = texture_graphs(ir, tex)        # {MaterialIR input name: TextureGraphIR}
@@ -15,9 +16,10 @@ reflection and refraction colors, emission), DATA (roughness, metallic, opacity)
 space of every image below: sRGB for COLOR, Non-Color for the others (a Mix mask is always Non-Color). A Bitmap's
 gamma override (None: automatic, the default) is kept on its Image: on a color input, an override of 2.2 is sRGB,
 any other is Non-Color and the builder applies the override as a gamma (1.0: none); on the other inputs an image is
-data and the override is not applied. Constants are linear: in a COLOR graph always linear RGB (also when the input
-itself is a float, as specular and transmission are: the builder takes the mean of the graph's color there, the
-measure materials.py uses), elsewhere a float, the mean of the linear color.
+data and the override is not applied. Constants are linear, a swatch made so by the scene's swatch rule
+(convert/colors.py: linear with the gamma on, the sRGB curve with it off): in a COLOR graph always linear RGB (also
+when the input itself is a float, as specular and transmission are: the builder takes the mean of the graph's color
+there, the measure materials.py uses), elsewhere a float, the mean of the linear color.
 
 The graph's nodes (frozen dataclasses): Image (an image map: the file as the scene stores it, the one the texture lookup
 found, Mapping, Crop, TexOutput, color space, gamma, alpha), Constant, Invert, Mix(a, b, factor, mask), Multiply,
@@ -44,9 +46,10 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
   times render multiplier times the Output's amount (the order against the Output's invert and offset is assumed,
   not measured). An environment mapping type (angular, cubic, spherical, mirrored ball), a map source, ACEScg
   primaries, RGB output intensity, an unusable transfer function or multiplier are issues.
-- CoronaColor -> Constant (color and hex as swatches, the HDR color linear, the temperature through kelvin_rgb, times
-  the multiplier). VRayColor -> Constant: its swatch times its RGB multiplier, then to the power of its color gamma
-  (that order measured), decoded as a swatch; in temperature mode its color holds V-Ray's temperature color. Its
+- CoronaColor -> Constant (color and hex as swatches, the HDR color linear, the temperature through kelvin_rgb and
+  the sRGB curve, times the multiplier). VRayColor -> Constant: its swatch times its RGB multiplier, then to the
+  power of its color gamma (that order measured), made linear as a swatch; in temperature mode its color holds
+  V-Ray's temperature color. Its
   alpha below 1, RGB primaries other than sRGB and unusable values are issues. CoronaMix: operation mix ->
   Mix(bottom, top, amount, mask), multiply -> Multiply (under a Mix for an amount below 1 or a mask), any other
   operation peeled to its first bitmap (an issue); layer multipliers and offsets are an issue.
@@ -88,6 +91,7 @@ import struct
 
 from ..reader import chunks, classids, pblock
 from ..reader.classdir import ClassId
+from . import colors
 
 ChunkError = chunks.ChunkError
 
@@ -378,14 +382,6 @@ def _flag(m, pid, default):
     return bool(v) if _finite(v) else default
 
 
-def _srgb_to_linear(c):
-    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
-
-
-def _linear(rgb):
-    return tuple(_srgb_to_linear(min(1.0, max(0.0, c))) for c in rgb[:3])
-
-
 def _vec(m, pid, default):
     """A point3 parameter as a tuple of floats, default when it is unusable."""
     v = m.param(pid, 0)
@@ -429,10 +425,12 @@ def colorspace(kind, gamma):
 
 class TexmapConverter:
     """Converts the maps of one MaterialGraph; assets: the scene's reader.assets.AssetTable (None: no file is
-    known); textures: a convert.textures.TextureIndex to look each file up (None: no lookup)."""
+    known); textures: a convert.textures.TextureIndex to look each file up (None: no lookup); swatches: the
+    colors.Swatches rule of the scene (None: read from graph's scene)."""
 
-    def __init__(self, graph, assets=None, textures=None):
+    def __init__(self, graph, assets=None, textures=None, swatches=None):
         self.graph, self.assets, self.textures = graph, assets, textures
+        self.swatches = swatches if swatches is not None else colors.of_graph(graph)
         self.stats = TexmapStats()
         self._counted, self._done, self._reported = set(), {}, set()
         self._nodes, self._firsts = {}, {}  # keyed (object, kind, depth)
@@ -595,7 +593,7 @@ class TexmapConverter:
         """A color parameter as a Constant of the input's kind."""
         v = m.param(pid, 0)
         rgb = v if isinstance(v, tuple) and len(v) >= 3 and all(_finite(c) for c in v[:3]) else default
-        lin = _linear(rgb)
+        lin = self.swatches.color(rgb)
         return Constant(lin if kind == COLOR else sum(lin) / 3.0)
 
     def _on(self, m, map_pid, on_pid, tab=0):
@@ -1019,17 +1017,19 @@ def _hex_rgb(text):
 
 
 def _corona_color(conv, m, kind, walk, depth, chain):
-    """50 method (0 color 52, 1 HDR color 58, 2 temperature 51, 3 hex 59), 57 multiplier. Color, hex and temperature
-    are swatches, decoded from sRGB like every swatch after the multiplier (a renderMap render in 3ds Max showed
-    the multiplier scaling the swatch value: 2 x 128 = 255); the HDR color is linear already."""
+    """50 method (0 color 52, 1 HDR color 58, 2 temperature 51, 3 hex 59), 57 multiplier. Color and hex are swatches,
+    made linear by the scene's rule after the multiplier (a renderMap render in 3ds Max showed the multiplier
+    scaling the swatch value: 2 x 128 = 255); the temperature is kelvin_rgb's sRGB color, decoded with the sRGB
+    curve whatever the gamma (it matched Corona's own 3000 K that way); the HDR color is linear already."""
     method, mult = m.param(CC_METHOD, 0), max(0.0, _num(m, CC_MULTIPLIER, 1.0))
     if method == 1:
         rgb = tuple(max(0.0, c) * mult for c in _vec(m, CC_HDR, (1.0, 1.0, 1.0)))
         return Constant(rgb if kind == COLOR else sum(rgb) / 3.0)
     swatch = None
     if method == 2:
-        swatch = kelvin_rgb(_num(m, CC_TEMPERATURE, 6500.0))
-    elif method == 3:
+        lin = colors.GAMMA_OFF.color(tuple(c * mult for c in kelvin_rgb(_num(m, CC_TEMPERATURE, 6500.0))))
+        return Constant(lin if kind == COLOR else sum(lin) / 3.0)
+    if method == 3:
         swatch = _hex_rgb(m.param(CC_HEX, 0))
         if swatch is None:
             conv._issue(walk, m.index, "CoronaColor %r: hex color %r not read: its color" % (
@@ -1039,14 +1039,14 @@ def _corona_color(conv, m, kind, walk, depth, chain):
     if swatch is None:
         v = m.param(CC_COLOR, 0)
         swatch = v[:3] if isinstance(v, tuple) and len(v) >= 3 and all(_finite(c) for c in v[:3]) else (1.0,) * 3
-    lin = _linear(tuple(c * mult for c in swatch))
+    lin = conv.swatches.color(tuple(c * mult for c in swatch))
     return Constant(lin if kind == COLOR else sum(lin) / 3.0)
 
 
 def _vray_color(conv, m, kind, walk, depth, chain):
     """VRayColor: its swatch (color, else red / green / blue) times rgb_multiplier, then to the power color_gamma
-    (renderMap in 3ds Max: (100 gray, multiplier 2, gamma 2) -> 255 * (200 / 255) ^ 2), then decoded from sRGB like
-    every swatch. In temperature mode color holds V-Ray's own temperature color. A mono input takes the color, not
+    (renderMap in 3ds Max: (100 gray, multiplier 2, gamma 2) -> 255 * (200 / 255) ^ 2), then made linear by the
+    scene's rule like every swatch. In temperature mode color holds V-Ray's own temperature color. A mono input takes the color, not
     the alpha (measured with a Mix mask); on a data input the Constant is the mean of the linear color, as every
     constant's."""
     mode = m.param(VC_MODE, 0)
@@ -1079,7 +1079,7 @@ def _vray_color(conv, m, kind, walk, depth, chain):
     if primaries not in (None, 0):
         conv._issue(walk, m.index, "VRayColor %r: RGB primaries %r drawn as sRGB" % (m.name, primaries))
     scaled = tuple(min(1.0, max(0.0, c * float(mult))) for c in swatch)
-    lin = _linear(tuple(c ** float(gamma) for c in scaled))
+    lin = conv.swatches.color(tuple(c ** float(gamma) for c in scaled))
     return Constant(lin if kind == COLOR else sum(lin) / 3.0)
 
 

@@ -1,0 +1,74 @@
+# SPDX-FileCopyrightText: 2026 jsiovn
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+"""Swatch colors: how a 3ds Max color swatch becomes linear RGB, by the gamma setting the scene was saved with.
+
+    sw = of_scene(scene)                # GAMMA_ON, GAMMA_OFF or UNKNOWN (a reader Scene or an open CompoundFile)
+    sw.color((0.5, 0.5, 0.5))           # linear RGB, each channel clamped to 0..1 first
+    sw.channel(0.5)                     # one channel
+    sw.line(), sw.note                  # the report's line; the issue when the file does not say
+
+With the gamma on (2.2, 3ds Max's default since 2014) 3ds Max and its renderers use a swatch's value as linear: a
+128 grey swatch renders as 0.502 linear (V-Ray 5.2 writes byte 187). With the gamma off the scene is display-
+referred: the swatch renders as stored (byte 128), which Blender's sRGB display shows only from 0.216 linear, so it
+is decoded with the sRGB curve, as image files are in both cases. A file that does not say is taken as gamma on,
+with a note. Measured in 3ds Max 2020 + V-Ray 5.2 (docs/FORMAT.md, Scene gamma); Corona's swatches are assumed to
+follow 3ds Max's rule. Inputs that are linear by definition (CoronaColor's HDR color) and colors made by a curve
+fit in sRGB (kelvin_rgb) do not go through the rule. No bpy.
+"""
+import dataclasses
+
+from ..reader import gamma as _gamma
+
+GAMMA_NOTE = "the scene's gamma setting was not found in the file: color swatches taken as linear (gamma on)"
+
+
+def srgb_to_linear(c):
+    """One sRGB-encoded channel (0..1) to linear."""
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+
+@dataclasses.dataclass(frozen=True)
+class Swatches:
+    """The swatch rule of one scene: linear (the value is linear) or not (the sRGB curve); note: the issue to report
+    when the scene did not say."""
+    linear: bool
+    note: str = ""
+
+    def channel(self, c):
+        c = min(1.0, max(0.0, c))
+        return c if self.linear else srgb_to_linear(c)
+
+    def color(self, rgb):
+        """A swatch (0..1 per channel) as linear RGB, clamped to 0..1 first."""
+        return tuple(self.channel(c) for c in rgb[:3])
+
+    def line(self):
+        if self.note:
+            return "Color swatches: linear (the scene's gamma setting not found)"
+        return "Color swatches: %s" % ("linear (the scene's gamma is on)" if self.linear else
+                                       "decoded from sRGB (the scene's gamma is off)")
+
+
+GAMMA_ON = Swatches(True)
+GAMMA_OFF = Swatches(False)
+UNKNOWN = Swatches(True, GAMMA_NOTE)
+
+
+def for_gamma(g):
+    """The rule for a reader.gamma.SceneGamma, UNKNOWN for None."""
+    if g is None:
+        return UNKNOWN
+    return GAMMA_ON if g.enabled else GAMMA_OFF
+
+
+def of_scene(source):
+    """The rule of a reader Scene or an open cfb.CompoundFile; UNKNOWN when the file does not say."""
+    return for_gamma(_gamma.scene_gamma(source))
+
+
+def of_graph(graph):
+    """The rule of a MaterialGraph's scene; UNKNOWN for a graph without a reader Scene."""
+    s = getattr(graph, "scene", None)
+    return of_scene(s) if isinstance(s, _gamma.scene_mod.Scene) else UNKNOWN

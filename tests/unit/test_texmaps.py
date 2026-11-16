@@ -30,6 +30,7 @@ if _PKG not in sys.modules:
     sys.modules[_PKG] = _pkg
 tx = importlib.import_module(_PKG + ".convert.texmaps")
 mat = importlib.import_module(_PKG + ".convert.materials")
+colors = importlib.import_module(_PKG + ".convert.colors")
 assets = importlib.import_module(_PKG + ".reader.assets")
 cfb = importlib.import_module(_PKG + ".reader.cfb")
 chunks = importlib.import_module(_PKG + ".reader.chunks")
@@ -43,6 +44,7 @@ DEG = math.pi / 180.0
 
 
 def _lin(c):
+    """A swatch 0..255 of a fixture (saved with the gamma off) as linear: the sRGB curve."""
     c = c / 255.0
     return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
 
@@ -674,7 +676,7 @@ class CoronaSynthetic(Checks):
         r, g, b = tx.kelvin_rgb(3000.0)
         self.close((r, g, b), (1.0, 177.20027 / 255, 109.91725 / 255))
         # Corona's own 3000 K, measured with renderMap: (255, 121.6, 39.2) linear
-        for ours, corona in zip(tx._linear((r, g, b)), (1.0, 121.607 / 255, 39.1868 / 255)):
+        for ours, corona in zip(colors.GAMMA_OFF.color((r, g, b)), (1.0, 121.607 / 255, 39.1868 / 255)):
             self.assertAlmostEqual(ours, corona, delta=0.04)
         self.assertEqual(tx.kelvin_rgb(100.0), tx.kelvin_rgb(1000.0))
 
@@ -682,8 +684,8 @@ class CoronaSynthetic(Checks):
         cases = (
             (dict(p50=0, p52=(0.5, 0.5, 0.5), p57=2.0), (1.0, 1.0, 1.0)),
             (dict(p50=1, p58=(2.0, 0.5, 0.25), p57=1.0), (2.0, 0.5, 0.25)),
-            (dict(p50=2, p51=3000.0), tx._linear(tx.kelvin_rgb(3000.0))),
-            (dict(p50=3, p59="#FF8000"), (1.0, _lin(128), 0.0)),
+            (dict(p50=2, p51=3000.0), colors.GAMMA_OFF.color(tx.kelvin_rgb(3000.0))),  # sRGB whatever the gamma
+            (dict(p50=3, p59="#FF8000"), (1.0, 128 / 255, 0.0)),  # a synthetic graph: no gamma, linear swatches
         )
         for params, want in cases:
             tex = _tex(_ccolor(1, **params))
@@ -1086,12 +1088,12 @@ class VRayColorSynthetic(Checks):
     def test_multiplier_before_color_gamma(self):
         # measured with renderMap: (100 gray, multiplier 2, color gamma 2) -> 156.86
         _t, g = _vc(p5=(100 / 255,) * 3, p4=2.0, p10=2.0)
-        self.close(g.root.value, (_lin(255 * (200 / 255) ** 2.0),) * 3)
+        self.close(g.root.value, ((200 / 255) ** 2.0,) * 3)  # linear: a synthetic graph has no gamma
         self.assertAlmostEqual(255 * (200 / 255) ** 2.0, 156.86, delta=0.01)  # not (100 / 255) ^ 2 x 2 = 78.4
 
     def test_channels_when_the_color_is_unreadable(self):
         _t, g = _vc(p5="x", p0=0.5, p1=0.25, p2=1.0)
-        self.close(g.root.value, (_lin(127.5), _lin(63.75), 1.0))
+        self.close(g.root.value, (0.5, 0.25, 1.0))
         _t, g = _vc(p5=(0.5, float("nan"), 0.5), p0=0.5, p1=None, p2=0.5)
         self.close(g.root.value, (1.0, 1.0, 1.0))  # neither is usable: white
 
@@ -1101,15 +1103,15 @@ class VRayColorSynthetic(Checks):
 
     def test_temperature_mode_reads_the_color(self):
         _t, g = _vc(p9=1, p8=3000.0, p5=(1.0, 123.906 / 255, 38.3965 / 255))  # V-Ray's own 3000 K
-        self.close(g.root.value, (1.0, _lin(123.906), _lin(38.3965)))
+        self.close(g.root.value, (1.0, 123.906 / 255, 38.3965 / 255))
         self.assertEqual(g.issues, ())
 
     def test_unusable_values_are_issues(self):
         for params, words, want in (
                 ({"p4": float("inf")}, "multiplier", (1.0, 1.0, 1.0)),
-                ({"p4": -1.0, "p5": (0.5,) * 3}, "multiplier", (_lin(127.5),) * 3),
-                ({"p10": 0.0, "p5": (0.5,) * 3}, "color gamma", (_lin(127.5),) * 3),
-                ({"p10": "x", "p5": (0.5,) * 3}, "color gamma", (_lin(127.5),) * 3),
+                ({"p4": -1.0, "p5": (0.5,) * 3}, "multiplier", (0.5,) * 3),
+                ({"p10": 0.0, "p5": (0.5,) * 3}, "color gamma", (0.5,) * 3),
+                ({"p10": "x", "p5": (0.5,) * 3}, "color gamma", (0.5,) * 3),
                 ({"p9": 7}, "color mode", (1.0, 1.0, 1.0)),
                 ({"p9": 1, "p5": None}, "temperature color", (1.0, 1.0, 1.0)),
                 ({"p3": 0.5}, "alpha", (1.0, 1.0, 1.0)),
@@ -1284,6 +1286,46 @@ class LostMaps(Checks):
         reasons = [r for _i, r in tex.stats.issues]
         self.assertTrue(any("object 7 is not a map" in r for r in reasons), reasons)
         self.assertFalse(any("converts to nothing" in r for r in reasons), "named once, by the reference")
+
+
+class SwatchRule(Checks):
+    """Every swatch of a map goes through the scene's rule: linear with the gamma on (or unknown), sRGB with it off;
+    the kelvin fit and the HDR color do not."""
+
+    def _root(self, swatches, *objects, kind=tx.COLOR):
+        tex = tx.TexmapConverter(FakeGraph(*objects), _table(), swatches=swatches)
+        return tex.convert(mat.MapRef(objects[0].index), kind).root
+
+    def test_default_is_unknown(self):
+        self.assertIs(_tex().swatches, colors.UNKNOWN)
+
+    def test_each_swatch_by_the_rule(self):
+        g = 128 / 255
+        mix = FakeMap(1, tx.MIX, {4: (g,) * 3, 5: (g,) * 3}, cls="Mix")
+        falloff = FakeMap(1, tx.FALLOFF, {0: (g,) * 3}, cls="Falloff")
+        dirt = FakeMap(1, tx.VRAY_DIRT, {13: (g,) * 3}, cls="VRayDirt")
+        cc = FakeMap(1, tx.COLOR_CORRECTION, {0: (g,) * 3}, cls="Color Correction")
+        vc = FakeMap(1, classids.VRAY_COLOR, {5: (g,) * 3}, cls="VRayColor")
+        cco = _ccolor(1, p52=(g,) * 3)
+        hexed = _ccolor(1, p50=3, p59="#808080")
+        for rule, want in ((colors.GAMMA_ON, 0.501961), (colors.GAMMA_OFF, 0.215861), (colors.UNKNOWN, 0.501961)):
+            with self.subTest(rule):
+                root = self._root(rule, mix)
+                self.close(root.a.value, (want,) * 3)
+                self.close(root.b.value, (want,) * 3)
+                self.close(self._root(rule, falloff).value, (want,) * 3)
+                self.close(self._root(rule, dirt).value, (want,) * 3)
+                self.close(self._root(rule, cc).input.value, (want,) * 3)
+                for m in (vc, cco, hexed):
+                    self.close(self._root(rule, m).value, (want,) * 3, m.cls)
+                self.close(self._root(rule, vc, kind=tx.DATA).value, want, "a data input: the mean")
+
+    def test_kelvin_and_hdr_whatever_the_rule(self):
+        kelvin, hdr = _ccolor(1, p50=2, p51=3000.0), _ccolor(1, p50=1, p58=(0.25, 0.5, 2.0))
+        for rule in (colors.GAMMA_ON, colors.GAMMA_OFF):
+            with self.subTest(rule):
+                self.close(self._root(rule, kelvin).value, colors.GAMMA_OFF.color(tx.kelvin_rgb(3000.0)))
+                self.close(self._root(rule, hdr).value, (0.25, 0.5, 2.0))
 
 
 if __name__ == "__main__":

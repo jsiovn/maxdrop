@@ -30,6 +30,8 @@
 # summary line instead of a line of its own.
 # Modified for MaxDrop, 2026-11-16 (jsiovn). A scene pack unpacks only the image and .ies files the chosen scene's
 # asset list names (_referenced_maps), and the popup asks the same of an earlier unpack.
+# Modified for MaxDrop, 2026-11-17 (jsiovn). Color swatches follow the gamma setting the scene was saved with
+# (convert.colors): both converters share the rule read once, and the import report states it.
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -302,9 +304,10 @@ def _preflight_of(path):
 
 def _material_slots(cf, sc, desc, max_path, context, image_search):
     """(the material slots of desc's meshes {mesh key: MeshSlots}, (the material converter's, the texture-map
-    converter's and the texture lookup's counters) for the import report): every material converted, its texture
-    files looked up. cf / sc: the open file and its reader Scene, which the converters read; the counters hold no
+    converter's and the texture lookup's counters, the scene's swatch rule) for the import report): every material
+    converted, its texture files looked up. cf / sc: the open file and its reader Scene, which the converters read; the counters hold no
     reference to them."""
+    from .convert import colors as convert_colors
     from .convert import materials as convert_materials
     from .convert import texmaps as convert_texmaps
     from .convert import textures as convert_textures
@@ -312,10 +315,11 @@ def _material_slots(cf, sc, desc, max_path, context, image_search):
     from .reader import materials as reader_materials
     graph = reader_materials.MaterialGraph(sc)
     index = convert_textures.TextureIndex(max_path, prefs.texture_dirs(context), scene_subfolders=image_search)
-    tex = convert_texmaps.TexmapConverter(graph, assets.AssetTable.from_file(cf), textures=index)
-    conv = convert_materials.MaterialConverter(graph, texmaps=tex)
+    swatches = convert_colors.of_scene(sc)
+    tex = convert_texmaps.TexmapConverter(graph, assets.AssetTable.from_file(cf), textures=index, swatches=swatches)
+    conv = convert_materials.MaterialConverter(graph, texmaps=tex, swatches=swatches)
     slots = convert_materials.assign(desc, convert_materials.node_materials(sc, desc), conv)
-    return slots, (conv.stats, tex.stats, index.report)
+    return slots, (conv.stats, tex.stats, index.report, swatches)
 
 
 def _remove(cols, before):
@@ -569,10 +573,10 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
                                     pack=pack, pack_name=pack_name)
         rep.issues.extend(builder.issues())
         if materials:
-            conv_stats, tex_stats, lookup = counts
+            conv_stats, tex_stats, lookup, swatches = counts
             convert_report.add_materials(rep, len(built.materials), builder.classes, conv_stats=conv_stats,
                                          tex_stats=tex_stats, lookup=lookup, sockets=builder.sockets_skipped,
-                                         blender=bpy.app.version_string)
+                                         blender=bpy.app.version_string, swatches=swatches)
         del desc
         axis = axis_conversion(from_forward=self.axis_forward, from_up=self.axis_up).to_4x4()
         if axis != Matrix.Identity(4):
