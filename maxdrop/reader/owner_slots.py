@@ -41,7 +41,9 @@ TABLE = {
     # no fixture: measured by the M2 gate on corpus scene B's 0x0013 tables
     (_MTL, VRAY_OVERRIDE_MTL): {0: {0: 1, 2: 2, 4: 3, 6: 4, 8: 5}},
     (_MTL, VRAY_LIGHT_MTL): {0: {2: 1, 5: 2, 9: 3}},
-    (_TEX, classids.COMPOSITE): {0: {0: 1, 2: 1}},  # texmap_rules' Composite (Max 2020) holds its maps itself
+    # Composite: texmap_rules' (Max 2020) keeps its maps as block references (pids 9, 10) and has no 0x0013; pids 0
+    # and 2 are the older parameters scene B's 0x0013 lists, both at slot 1 there
+    (_TEX, classids.COMPOSITE): {0: {0: 1, 2: 1}},
     (_TEX, LAYERED_TEXMAP): {0: {21: 1, 22: 2, 3: 3, 4: 4, 5: 5}},
 }
 

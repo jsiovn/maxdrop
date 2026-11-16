@@ -275,7 +275,8 @@ Reference parameters, checked against the oracle's targets on every fixture:
   `mask`, Falloff `map1` / `map2`, VRayMtl `texmap_diffuse` ...). The slot is the parameter definition's reference
   number, a constant of the class: `maxdrop/reader/owner_slots.py` keeps it per (superclass, ClassID, block id),
   from the fixtures' `0x0013` tables and, for VRayOverrideMtl, VRayLightMtl, Composite and class `0xC90017A5`
-  (no fixture), from corpus scene B's (format 20000); every object of scene A agrees. Only a block without
+  (no fixture `0x0013` entry: texmap_rules' Composite keeps its maps as block references), from corpus scene B's
+  (format 20000); every object of scene A agrees. Only a block without
   `0x0013` uses it, and only for a stored -1; a slot past the owner's references is an empty reference.
   `tests/unit/test_pblock.py` drops the table and the indices of every fixture block that has one and gets the
   same references.

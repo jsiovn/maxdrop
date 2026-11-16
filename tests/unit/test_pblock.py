@@ -8,6 +8,7 @@ fixtures are checked against the 3ds Max oracle in test_materials.py.
 
     python -I -m unittest discover tests
 """
+import glob
 import importlib.util
 import os
 import struct
@@ -385,14 +386,17 @@ def _blank(chunk, listed):
     pid, ptype, flags, _unknown = struct.unpack_from("<HIII", buf)
     if ptype & ~TAB not in pblock.REFERENCE_TYPES or not flags & OWNERS or pid not in listed:
         return None
+    def has_value(tag):  # as pblock._element: only a controller without a stored value has none
+        return not (tag & 0x80 and not tag & 0x40)
+
     if not ptype & TAB:
-        if buf[14] & 0x40:
+        if has_value(buf[14]):
             struct.pack_into("<i", buf, 15, -1)
         return bytes(buf)
     pos = 19
     for _ in range(struct.unpack_from("<I", buf, 15)[0]):
         tag, pos = buf[pos], pos + 1
-        if tag & 0x40:
+        if has_value(tag):
             struct.pack_into("<i", buf, pos, -1)
             pos += 4
     return bytes(buf)
@@ -402,7 +406,6 @@ class OwnerSlotsOnFixtures(unittest.TestCase):
     """Every fixture block with a 0x0013 table, blanked like a format-14000 block, gives the same references."""
 
     def test_blanked_blocks_resolve_the_same(self):
-        import glob
         cfb = _load("maxdrop_reader.cfb", os.path.join(_READER, "cfb.py"))
         scene = _load("maxdrop_reader.scene", os.path.join(_READER, "scene.py"))
         checked, classes = 0, set()

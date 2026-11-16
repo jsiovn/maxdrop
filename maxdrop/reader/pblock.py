@@ -29,9 +29,8 @@ id in 0x1260{0x0002}). Reference types (material, map, node, reference target, P
 and the index is often -1 although it is set: the owner's slot of each such parameter is in 0x0013 (u32 count,
 then u16 param id, u16 slot, u16 unknown; a table's element k is at slot + k), which wins. A file in the 3ds Max
 2012 format has no 0x0013: an index of -1 then takes the slot of owner_slots.py for the owner's class (owner_class).
-Without either flag
-there is no value: the elements take the block's own reference slots 0, 1, 2 ... in entry order, tables and
-transient entries included. Controllers take the slots after those, in entry order (one probe, no fixture:
+Without either flag there is no value: the elements take the block's own reference slots 0, 1, 2 ... in entry
+order, tables and transient entries included. Controllers take the slots after those, in entry order (one probe, no fixture:
 unverified). docs/FORMAT.md says which fixture shows what.
 
 The old ParamBlock: 0x0001 u32 count, then per parameter a 0x0002 container: 0x0003 u32 index, optionally 0x0004,
