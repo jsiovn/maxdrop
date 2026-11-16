@@ -94,6 +94,7 @@ nodes. Colors are converted from 3ds Max's swatches (sRGB) to Blender's linear c
 | VRayColor | **Imported** as a color: RGB or temperature, times its RGB multiplier, with its color gamma. Its alpha and RGB primaries are not converted |
 | CoronaMix | **Imported** as nodes for the Mix and Multiply operations (with the mix map as mask); the other operations are **simplified** to the first bitmap below; layer multipliers and offsets are not converted; the blend is linear (Corona's "mix in sRGB" is not read) |
 | Mix, RGB Multiply, Color Correction, Composite (normal blend mode, no masks) | **Imported** as nodes (Mix, Hue/Saturation, Bright/Contrast, Gamma). A Mix curve, the rewiring, tint, pivot and lift of Color Correction are not converted |
+| A map MaxDrop cannot convert below a map that wraps it | Named in the report. Never drawn as the wrapper's own color for that map: under a Color Correction, Falloff, VRayDirt, Output or RGB Tint the material keeps its own color or value; a Mix, RGB Multiply or CoronaMix is **simplified** to its other map (or the material keeps its own); a mask it cannot convert leaves the mix amount; a Composite layer it cannot convert is left out |
 | VRayNormalMap, Normal Bump, CoronaNormal | **Imported**: a Normal Map node with its strength and flips, its additional bump map as a Bump node |
 | Bump (height) maps | **Imported** as a Bump node |
 | Falloff, VRayDirt, Output, RGB Tint, VRayColor2Bump | **Simplified** to the map below them (Falloff and VRayDirt without a map: their color) |

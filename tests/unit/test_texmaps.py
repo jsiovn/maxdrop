@@ -945,8 +945,16 @@ class VRayTexmaps(Checks):
         self.assertIsInstance(mix.mask, tx.Constant)
         self.close(mix.mask.value, _lin(64))  # a mask is data: a float
 
+    def test_color_correction_over_an_unsupported_map(self):
+        ir = self.f.irs["FixtureCCNoise"]
+        self.assertNotIn("base_color", ir.textures, "the material's own diffuse, not the Color Correction's black")
+        issues = [r for i, r in self.f.tex.stats.issues if "converts to nothing" in r]
+        self.assertEqual(len(issues), 1, issues)
+        self.assertIn("Color Correction", issues[0])
+        self.assertIn("Noise", issues[0])
+
     def test_peeled_and_unsupported_classes(self):
-        # the Noise below a Color Correction (maxdrop-arp.14) converts to nothing yet
+        # the Noise below a Color Correction converts to nothing
         self.assertEqual(self.f.tex.stats.peeled, collections.Counter({"Falloff": 1}))
         self.assertEqual(self.f.tex.stats.unsupported, collections.Counter({"Noise": 1}))
 
@@ -1113,6 +1121,109 @@ class VRayColorSynthetic(Checks):
         _t, g = _vc(p4=0.0, p3=1.0, p11=0, p9=0)
         self.close(g.root.value, (0.0, 0.0, 0.0))
         self.assertEqual(g.issues, ())
+
+
+def _noise(index):
+    """An unsupported map class with no bitmap below: converts to nothing."""
+    return FakeMap(index, (0x1234, 0), cls="Noise", name="n")
+
+
+class LostMaps(Checks):
+    """A wrapper whose map is set and on but converts to nothing never draws its own color for it."""
+
+    def lost_issue(self, tex, wrapper):
+        issues = [r for _i, r in tex.stats.issues if "converts to nothing" in r]
+        self.assertEqual(len(issues), 1, tex.stats.issues)
+        self.assertTrue(issues[0].startswith(wrapper), issues[0])
+        self.assertIn("Noise 'n'", issues[0])
+
+    def test_color_correction(self):
+        tex = _tex(FakeMap(1, tx.COLOR_CORRECTION, {0: (1.0, 0.0, 0.0), 1: Ref(2)}, [2], cls="Color Correction",
+                           name="cc"), _noise(2))
+        self.assertIsNone(tex.convert(mat.MapRef(1), tx.COLOR))
+        self.lost_issue(tex, "Color Correction 'cc'")
+        self.assertEqual(tex.stats.unsupported, collections.Counter({"Noise": 1}))
+        tex = _tex(FakeMap(1, tx.COLOR_CORRECTION, {0: (1.0, 0.0, 0.0), 1: Ref(None)}, cls="Color Correction"))
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.close(g.root.input.value, (1.0, 0.0, 0.0), "no map: its color, as 3ds Max")
+        self.assertEqual(tex.stats.issues, [])
+
+    def test_mix_gives_its_other_map(self):
+        tex = _tex(FakeMap(1, tx.MIX, {0: 0.5, 6: Ref(2), 7: Ref(3)}, [2, 3], cls="Mix", name="mx"), _bitmap(2),
+                   _noise(3))
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertEqual(g.root.name, "a.png")
+        self.assertTrue(g.approximated)
+        self.assertEqual(tex.stats.peeled, collections.Counter({"Mix": 1}))
+        self.lost_issue(tex, "Mix 'mx'")
+        tex = _tex(FakeMap(1, tx.MIX, {6: Ref(None), 7: Ref(3)}, [3], cls="Mix", name="mx"), _noise(3))
+        self.assertIsNone(tex.convert(mat.MapRef(1), tx.COLOR), "color 1 is not the Noise's stand-in")
+        self.lost_issue(tex, "Mix 'mx'")
+
+    def test_mix_with_a_switched_off_map_is_its_color(self):
+        tex = _tex(FakeMap(1, tx.MIX, {4: (1.0, 0.0, 0.0), 6: Ref(2), 9: 0, 7: Ref(3)}, [2, 3], cls="Mix"),
+                   _noise(2), _bitmap(3))
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertIsInstance(g.root, tx.Mix)
+        self.close(g.root.a.value, (1.0, 0.0, 0.0))
+        self.assertEqual(g.root.b.name, "a.png")
+        self.assertEqual(tex.stats.issues, [])
+
+    def test_mix_lost_mask_keeps_the_amount(self):
+        tex = _tex(FakeMap(1, tx.MIX, {0: 0.3, 6: Ref(2), 8: Ref(3)}, [2, 3], cls="Mix", name="mx"), _bitmap(2),
+                   _noise(3))
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertIsInstance(g.root, tx.Mix)
+        self.close(g.root.factor, 0.3)
+        self.assertIsNone(g.root.mask)
+        self.assertTrue(g.approximated)
+        self.lost_issue(tex, "Mix 'mx'")
+
+    def test_rgb_multiply(self):
+        tex = _tex(FakeMap(1, tx.RGB_MULTIPLY, {2: Ref(2), 3: Ref(3)}, [2, 3], cls="RGB Multiply", name="rm"),
+                   _noise(2), _bitmap(3))
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertEqual(g.root.name, "a.png")
+        self.assertTrue(g.approximated)
+        self.lost_issue(tex, "RGB Multiply 'rm'")
+        tex = _tex(FakeMap(1, tx.RGB_MULTIPLY, {2: Ref(2), 3: Ref(3)}, [2, 3], cls="RGB Multiply"), _noise(2),
+                   _noise(3))
+        self.assertIsNone(tex.convert(mat.MapRef(1), tx.COLOR))
+
+    def test_corona_mix(self):
+        tex = _tex(_cmix(1, [2, 3], p200=6, p207=Ref(2), p206=Ref(3)), _noise(2), _cbitmap(3))
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertEqual(g.root.name, "a.png")
+        self.assertTrue(g.approximated)
+        self.lost_issue(tex, "CoronaMix 'map'")
+        tex = _tex(_cmix(1, [3], p200=2, p206=Ref(3)), _noise(3))
+        self.assertIsNone(tex.convert(mat.MapRef(1), tx.COLOR), "the bottom color alone is not the product")
+        tex = _tex(_cmix(1, [2, 3], p200=6, p201=0.4, p207=Ref(2), p210=Ref(3)), _cbitmap(2), _noise(3))
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertIsInstance(g.root, tx.Mix)
+        self.close(g.root.factor, 0.4)
+        self.assertTrue(g.approximated, "a lost mask: the amount")
+
+    def test_peeled_wrappers_give_nothing(self):
+        for wrapper, cls in ((_falloff(1, 2, color1=(1.0, 0.0, 0.0)), "Falloff"),
+                             (FakeMap(1, tx.VRAY_DIRT, {13: (1.0, 0.0, 0.0), 17: Ref(2)}, [2], cls="VRayDirt"),
+                              "VRayDirt"),
+                             (FakeMap(1, tx.OUTPUT, {0: Ref(2)}, [2], cls="Output"), "Output"),
+                             (FakeMap(1, tx.RGB_TINT, {3: Ref(2)}, [2], cls="RGB Tint"), "RGB Tint")):
+            tex = _tex(wrapper, _noise(2))
+            self.assertIsNone(tex.convert(mat.MapRef(1), tx.COLOR), cls)
+            self.lost_issue(tex, cls)
+        tex = _tex(_falloff(1, color1=(1.0, 0.0, 0.0)))
+        self.close(tex.convert(mat.MapRef(1), tx.COLOR).root.value, (1.0, 0.0, 0.0), "no map: color 1")
+        tex = _tex(FakeMap(1, tx.VRAY_DIRT, {13: (1.0, 0.0, 0.0), 17: Ref(2), 18: 0}, [2], cls="VRayDirt"),
+                   _noise(2))
+        self.close(tex.convert(mat.MapRef(1), tx.COLOR).root.value, (1.0, 0.0, 0.0), "map off: its color")
+
+    def test_lost_map_that_is_not_a_map(self):
+        tex = _tex(FakeMap(1, tx.COLOR_CORRECTION, {1: Ref(7)}, [7], cls="Color Correction", name="cc"))
+        self.assertIsNone(tex.convert(mat.MapRef(1), tx.COLOR))
+        self.assertTrue(any("its map object 7 converts to nothing" in r for _i, r in tex.stats.issues),
+                        tex.stats.issues)
 
 
 if __name__ == "__main__":

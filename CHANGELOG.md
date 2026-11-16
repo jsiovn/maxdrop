@@ -37,6 +37,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   lacks (Thin Wall on 4.2 and 4.5) and what a rule could not convert. The status bar line counts the materials and
   warns when anything was simplified or left out. The bug report form asks for the report.
 
+### Fixed
+
+- A map MaxDrop cannot convert below a Color Correction no longer turns the material black (the Color
+  Correction's own color): the material keeps its own color. Below a Mix, RGB Multiply or CoronaMix such a map is no
+  longer replaced by that map's color either: the other map is used. The report names the map.
+
 ### Removed
 
 - io_scene_max's engine (`import_max.py`), which still made the materials: Arnold Standard Surface, Raytrace and
