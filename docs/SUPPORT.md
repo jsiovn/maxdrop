@@ -1,8 +1,8 @@
 # What MaxDrop imports
 
-**This page describes version 0.0.3 and the changes listed under Unreleased in the changelog.** Nodes, meshes,
-transforms, hierarchy, instances, layers, scene units and materials are read by MaxDrop's own reader; the engine of
-[io_scene_max](https://github.com/nrgsille76/io_scene_max) 1.9.2 that 0.0.3 still used for materials is gone. A
+**This page describes version 0.0.4.** Nodes, meshes, transforms, hierarchy, instances, layers, scene units and
+materials are read by MaxDrop's own reader; the engine of [io_scene_max](https://github.com/nrgsille76/io_scene_max)
+1.9.2 that 0.0.3 still used for materials is gone. A
 scene pack (`.zip`, `.rar`, `.7z`) is unpacked and its `.max` imported (see
 [Files](#files)), and several `.max` files chosen at once are imported one after the other.
 
@@ -13,8 +13,10 @@ without an error, and 99.7 % and 99.9 % of their objects without modifiers get t
 3ds Max reports (the rest are a camera and a light per scene aimed by a Look At controller; see
 [BASELINE.md](BASELINE.md)). Materials are checked on the test files (VRayMtl, its wrappers, Multi/Sub-Object,
 Standard, Physical Material and the texture maps below): the parameters MaxDrop reads are compared with what 3ds Max
-reports, and the Blender material with those parameters, on Blender 4.2, 4.5 and 5.2. The page is updated with
-every version.
+reports, and the Blender material with those parameters, on Blender 4.2, 4.5 and 5.2. In the two commercial scenes,
+the conversion of 213 of 214 and 220 of 220 materials (99.5 % and 100 %) gives what the same rules give from the
+parameters 3ds Max reports, textures included (see [BASELINE.md](BASELINE.md)). The page is updated with every
+version.
 
 "Not yet" means the importer does not convert it: the node arrives as an empty (a *placeholder*) at its place in
 the hierarchy, with its 3ds Max class name in the custom property `maxdrop_class`.
@@ -74,7 +76,7 @@ nodes. Colors are converted from 3ds Max's swatches (sRGB) to Blender's linear c
 | VRayLightMtl, VRayFastSSS2, VRayCarPaintMtl, VRayCarPaintMtl2 | **Imported**: emission; subsurface; a metal base with a coat |
 | Standard (Blinn, Phong, Metal, Anisotropic, Oren-Nayar-Blinn, Multi-Layer, Translucent, Strauss) | **Imported**: diffuse, specular level and color, glossiness, self-illumination, opacity, IOR, bump |
 | Physical Material | **Imported**: base, reflectivity, roughness, metalness, transparency, IOR, thin-walled, emission (luminance in cd/m²), coating, bump, cutout |
-| Multi/Sub-Object | **Imported**: one material slot per material ID the faces use; nested ones too |
+| Multi/Sub-Object | **Imported**: one material slot per material ID the faces use; nested ones too. A face whose ID has no entry in the list gets no material (3ds Max repeats the list for such IDs) |
 | VRay2SidedMtl, VRayBlendMtl, VRayOverrideMtl, VRayMtlWrapper, Double Sided, Shellac | **The first sub-material** (the front, the base) |
 | Shell Material | **The render sub-material** |
 | CoronaPhysicalMtl | **Imported**: base color and level, roughness or glossiness mode, metalness, IOR, refraction (transmission, thin mode with its tint), opacity, self-illumination, clearcoat, bump. Verified on scenes made with Corona 12 |
@@ -127,8 +129,8 @@ the scene in the archive is kept.
   are not verified one by one yet.
 - When a `.max` is dropped, the options popup shows a **File** line: the 3ds Max version, the renderer, the
   number of objects and the unit, read in a fraction of a second even from a large scene.
-- A very large scene works but needs time and memory: see [BASELINE.md](BASELINE.md) (version 0.0.3 next to
-  the engine it replaces).
+- A very large scene works but needs time and memory: see [BASELINE.md](BASELINE.md) (version 0.0.4 next to
+  0.0.3 and the engine they replaced).
 - **Scene packs**: a `.zip`, `.rar` or `.7z` holding the scene, chosen in *File › Import*; a `.rar` or `.7z` can
   also be dropped (a dropped `.zip` goes to Blender's extension installer). The format is recognised by the file's
   content. The chosen `.max` and the image and `.ies` files it names are unpacked into a folder named after the

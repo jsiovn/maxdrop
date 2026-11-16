@@ -8,6 +8,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ## [Unreleased]
 
+## [0.0.4] - 2026-11-16
+
 ### Added
 
 - **Materials by MaxDrop's own rules**: VRayMtl, VRayLightMtl, VRayFastSSS2, the V-Ray car paints, Standard (every
@@ -36,6 +38,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ### Changed
 
+- **Faster, with far less memory**: the file is read once, by MaxDrop's reader. Two large interior scenes that
+  needed 3.7 GB and 14.4 GB of memory in 0.0.3 now need about 1.4 GB each, and import up to four times faster (see
+  `docs/BASELINE.md`).
 - **Textures are found in more places**: the scene's folder, then `maps` or `textures` folders beside the scene,
   then the **Texture Search Folders** of the preferences (now searched, with their subfolders), and last the path
   stored in the scene, only when it is on a local drive. Network and device paths stored in a scene are never

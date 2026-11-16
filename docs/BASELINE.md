@@ -1,8 +1,8 @@
 # Baseline: import time, memory and accuracy
 
 What MaxDrop does with two large real interior scenes: first the engine inherited from io_scene_max 1.9.2
-(`maxdrop/import_max.py`, unchanged in MaxDrop 0.0.1), then MaxDrop's own reader in version 0.0.3, measured the
-same way and compared with what 3ds Max itself reports.
+(`maxdrop/import_max.py`, unchanged in MaxDrop 0.0.1), then MaxDrop's own reader in version 0.0.3 and its
+materials in 0.0.4, measured the same way and compared with what 3ds Max itself reports.
 
 The two scenes are commercial assets and are not in this repository: they are called **scene A** and **scene B**
 here, and only counts and measurements are recorded. Both are V-Ray interior scenes.
@@ -128,6 +128,57 @@ significant digits, so a position of 1234.56 mm is only known to 0.01. A boundin
 
 The four nodes that miss are a camera and a light in each scene, aimed by a Look At controller, which this version
 does not evaluate. The milestone's target was 99 % in both scenes.
+
+## Version 0.0.4: MaxDrop's materials
+
+Materials and their texture maps now come from MaxDrop's reader too, so the file is read once. Measured as above
+(`tools/baseline.py`, Blender 5.2.0 LTS, Python 3.13.13, the same machine, default options), MaxDrop 0.0.4, once,
+on 2026-11-16.
+
+| | Scene A 0.0.3 | Scene A 0.0.4 | Scene B 0.0.3 | Scene B 0.0.4 |
+|---|---:|---:|---:|---:|
+| Outcome | finished, no traceback | finished, no traceback | finished, no traceback | finished, no traceback |
+| Wall time | 19 s | 13 s | 65 s | 17 s |
+| Import time (operator) | 17 s | 11 s | 63 s | 15 s |
+| Peak memory | 3.7 GB (3.9 GB) | 1.3 GB (1.4 GB) | 14.4 GB (14.8 GB) | 1.4 GB (1.4 GB) |
+| Blender objects created | 747 | 747 | 2,252 | 2,252 |
+| … meshes | 343 | 343 | 1,625 | 1,625 |
+| Vertices | 3,116,416 | 3,116,416 | 9,027,887 | 9,027,887 |
+| Polygons | 4,828,478 | 4,828,478 | 11,859,710 | 11,859,710 |
+| Meshes with a UV layer | 271 | 271 | 1,570 | 1,570 |
+| Meshes with a material | 337 | 336 | 1,578 | 1,625 |
+| Materials created | 145 | 141 | 154 | 141 |
+| Images loaded | 111 | 115 | 109 | 135 |
+
+- Peak memory is now about 4 and 2 times the file size instead of 10 and 20, and scene B imports four times
+  faster: the inherited engine parsed the whole file a second time for the materials.
+- Materials: one Blender material per 3ds Max material that a mesh renders with (wrappers give their
+  sub-material, a Multi/Sub-Object one slot per ID), where 0.0.3 made one per material and sub-material it met.
+  Images: maps below Mix, Color Correction, Falloff and other wrappers are now loaded too.
+- Scene B: every mesh now has its material. Scene A: 7 meshes (instances of one object) get none: their faces
+  use material IDs past the end of their two-entry Multi/Sub-Object list, which 3ds Max repeats for such IDs and
+  this version does not.
+
+### Materials against 3ds Max
+
+Each material was converted twice with the same rules: once from what MaxDrop's reader reads, once from the
+parameters 3ds Max 2020 reports for it (the dump of `tools/oracle/dump_scene.ms` with its material graph). A
+material matches when every channel of the two results agrees: numbers within 1e-3 (relative above 1), the same
+texture file name per input, the same map structure below, and for a Multi/Sub-Object the same sub-material per
+ID. The comparison script is local (it reads the commercial scenes); a 10 % change of 3ds Max's numbers makes
+every test-file material fail it, so it compares.
+
+| | Test files | Scene A | Scene B |
+|---|---:|---:|---:|
+| Materials | 49 | 214 | 220 |
+| … matching | 49 (100 %) | 213 (99.5 %) | 220 (100 %) |
+| Texture file names compared | 43 | 241 | 316 |
+
+The milestone's target was 95 % in both scenes. The one VRayMtl of scene A that misses differs in the input of
+its normal map, where the comparison cannot tell two Bitmaps of the same name apart. Scene A is a 3ds Max 2015
+file saved in the 2012 format, whose parameter blocks do not list which reference holds each map: version 0.0.4
+reads that from a table per class (before it, 39 of scene A's materials lost maps). Separately, the raw parameter
+values of every V-Ray test file equal what 3ds Max reports (`tests/unit/test_materials.py`).
 
 ## Reproduce
 

@@ -29,8 +29,8 @@ unless you prefer otherwise.
 
 ### Scene packs (`.zip`, `.rar`, `.7z`)
 
-- **What is written, and where.** Only the `.max` you import and the pack's image and `.ies` files, into one new
-  folder named after the archive: next to the archive, or inside the folder set under *Unpack Scene Packs Into* in
+- **What is written, and where.** Only the `.max` you import and the pack's image and `.ies` files it names (all
+  of them when its asset list cannot be read), into one new folder named after the archive: next to the archive, or inside the folder set under *Unpack Scene Packs Into* in
   the preferences. The folder is flat: a path stored in the archive never decides where a file goes, only its file
   name is used, and names that Windows cannot store, reserved device names and over-long names are refused. Files
   are written into a temporary folder beside the destination and renamed when complete; on any error that folder
@@ -54,13 +54,13 @@ unless you prefer otherwise.
 
 ## Known limits of this version
 
-A `.max` file is a complex binary format. In version 0.0.3 MaxDrop's own reader reads the nodes, meshes and
-transforms with bounded reads, depth and entry limits and a size cap on compressed streams. The materials still
-go through the parser inherited from io_scene_max as it is, which reads the whole file a second time and has not
-been hardened against malformed or hostile files: such a file can make Blender use a lot of memory, take very
-long or stop with a Python error. Memory safety is Python's, so the realistic risk is a hang or a crash of that
-Blender session, not code execution, but treat files from unknown sources with the usual care and save your work
-before importing. The inherited parser goes away as the material conversion moves to MaxDrop's reader.
+A `.max` file is a complex binary format. From version 0.0.4 MaxDrop's own reader reads everything it imports,
+nodes, meshes, transforms and materials, with bounded reads, depth, cycle and entry limits and a size cap on
+compressed streams; the parser inherited from io_scene_max is gone. A malformed or hostile file is meant to end in
+"Not imported" with a message, but it can still make Blender use a lot of memory or take long, and a defect can
+still stop the import with a Python error. Memory safety is Python's, so the realistic risk is a hang or a crash
+of that Blender session, not code execution: treat files from unknown sources with the usual care and save your
+work before importing.
 
 MaxDrop's reader maps the `.max` file into memory read-only instead of copying it. If the file is truncated or
 rewritten in place while an import reads it (another program writing it, a network share that drops), the
