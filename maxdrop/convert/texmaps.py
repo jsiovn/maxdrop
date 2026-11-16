@@ -40,9 +40,10 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
   world scale (an issue); its Output part as a Bitmap's.
 - VRayBitmap (VRayHDRI before V-Ray 5: the same class) -> Image the same way: its Placement and Output parts as a
   Bitmap's, its own crop / place and mono / RGB output alpha; its transfer function as the gamma (none: 1.0, inverse
-  gamma g: 1 / g, sRGB, from 3ds Max and auto: automatic), its overall times render multiplier times the Output's
-  amount. An environment mapping type (angular, cubic, spherical, mirrored ball), a map source, ACEScg primaries,
-  RGB output intensity and an unusable transfer function are issues.
+  gamma g: 1 / g, sRGB: automatic, from 3ds Max and auto: automatic, linear for an EXR or HDR file), its overall
+  times render multiplier times the Output's amount (the order against the Output's invert and offset is assumed,
+  not measured). An environment mapping type (angular, cubic, spherical, mirrored ball), a map source, ACEScg
+  primaries, RGB output intensity, an unusable transfer function or multiplier are issues.
 - CoronaColor -> Constant (color and hex as swatches, the HDR color linear, the temperature through kelvin_rgb, times
   the multiplier). CoronaMix: operation mix -> Mix(bottom, top, amount, mask), multiply -> Multiply (under a Mix for
   an amount below 1 or a mask), any other operation peeled to its first bitmap (an issue); layer multipliers and
@@ -130,7 +131,11 @@ VB_RGB, VB_MONO, VB_COLOR_SPACE, VB_SOURCE, VB_SOURCE_ON, VB_RGB_SPACE, VB_RGB_S
 VB_STANDARD, VB_INTENSITY, VB_ACESCG = 4, 2, 2
 # color_space (transfer function), measured with renderMap: 0 none (linear), 1 inverse gamma (pixel ^ (1 / gamma)),
 # 2 sRGB, 3 from 3ds Max (the input gamma, as a Bitmap's automatic), 4 auto (sRGB for an 8-bit file, the default)
-VB_LINEAR, VB_INVERSE_GAMMA, VB_AUTOMATIC = 0, 1, (2, 3, 4)
+VB_LINEAR, VB_INVERSE_GAMMA, VB_SRGB, VB_AUTOMATIC = 0, 1, 2, (2, 3, 4)
+FLOAT_IMAGES = (".exr", ".hdr")  # files auto and from-3ds-Max read as linear
+MAX_MULTIPLIER = 1e6
+# image class -> (class name in issues, its file parameter in block 0); any other image class is a Bitmap
+_IMAGE_FILES = {classids.CORONA_BITMAP: ("CoronaBitmap", CB_FILE), classids.VRAY_BITMAP: ("VRayBitmap", VB_FILE)}
 # CoronaColor, block 0: method 0 color, 1 HDR color (linear), 2 temperature, 3 hex
 CC_METHOD, CC_TEMPERATURE, CC_COLOR, CC_MULTIPLIER, CC_HDR, CC_HEX = 50, 51, 52, 57, 58, 59
 # CoronaMix, block 0: result = mix(bottom, operation(bottom, top), amount), the mask map replacing the amount
@@ -192,9 +197,10 @@ class TexOutput:
 
 @dataclasses.dataclass(frozen=True)
 class Image:
-    """A Bitmap. path / resolved: as the scene stores them (resolved: FileAssetMetaData3's); found: the
-    textures.Found of the lookup, None without a lookup or when the file was not found; gamma: the override, None
-    for automatic; alpha: the image's alpha is used, not its color."""
+    """An image map (Bitmap, CoronaBitmap, VRayBitmap). path / resolved: as the scene stores them (resolved:
+    FileAssetMetaData3's); found: the textures.Found of the lookup, None without a lookup or when the file was not
+    found; gamma: the override (linear = pixel ^ gamma), None for automatic; alpha: the image's alpha is used, not
+    its color."""
     index: int
     name: str
     path: str = ""
@@ -635,19 +641,7 @@ class TexmapConverter:
             self._placement_issues(m, walk, "VRayBitmap", mapping)
         if _flag(m, VB_SOURCE_ON, True) and _ref(m, VB_SOURCE) is not None:
             self._issue(walk, m.index, "VRayBitmap %r: the placement of its map source not converted" % (m.name,))
-        space, gamma = m.param(VB_COLOR_SPACE, 0), None
-        if space == VB_LINEAR:
-            gamma = 1.0
-        elif space == VB_INVERSE_GAMMA:
-            inverse = _num(m, VB_GAMMA, 0.0)
-            if 0.1 <= inverse <= 10.0:
-                gamma = 1.0 / inverse
-            else:
-                self._issue(walk, m.index, "VRayBitmap %r: transfer function inverse gamma %r not converted: "
-                            "automatic" % (m.name, m.param(VB_GAMMA, 0)))
-        elif space is not None and space not in VB_AUTOMATIC:
-            self._issue(walk, m.index, "VRayBitmap %r: transfer function %r not converted: automatic"
-                        % (m.name, space))
+        gamma = self._vray_gamma(m, walk, entry.name)
         if m.param(VB_RGB_SPACE, VB_RGB_SPACE_BLOCK) == VB_ACESCG:
             self._issue(walk, m.index, "VRayBitmap %r: ACEScg primaries drawn as sRGB" % (m.name,))
         if kind != DATA and m.param(VB_RGB, 0) == VB_INTENSITY:
@@ -658,11 +652,33 @@ class TexmapConverter:
         if _flag(m, VB_CROP_ON, False) and clip != (0.0, 0.0, 1.0, 1.0):
             crop = Crop(*clip, place=m.param(VB_CROP_MODE, 0) == 1)
         mult = max(0.0, _num(m, VB_MULT, 1.0)) * max(0.0, _num(m, VB_RENDER_MULT, 1.0))
+        if not mult <= MAX_MULTIPLIER:
+            self._issue(walk, m.index, "VRayBitmap %r: multiplier %r not converted: 1" % (m.name, mult))
+            mult = 1.0
         output = self._output(out) or TexOutput()
         output = dataclasses.replace(output, amount=output.amount * mult)
         alpha = m.param(VB_MONO if kind == DATA else VB_RGB, 0) == 1
         return Image(m.index, entry.name, entry.path, entry.resolved, found, mapping, crop,
                      None if output == TexOutput() else output, colorspace(kind, gamma), gamma, alpha)
+
+    def _vray_gamma(self, m, walk, name):
+        """A VRayBitmap's transfer function as a Bitmap gamma, None for automatic. Auto and From 3ds Max read a float
+        file (EXR, HDR) as linear, as V-Ray and 3ds Max do."""
+        space = m.param(VB_COLOR_SPACE, 0)
+        if space == VB_LINEAR:
+            return 1.0
+        if space == VB_INVERSE_GAMMA:
+            inverse = _num(m, VB_GAMMA, 0.0)
+            if 0.1 <= inverse <= 10.0:
+                return 1.0 / inverse
+            self._issue(walk, m.index, "VRayBitmap %r: transfer function inverse gamma %r not converted: automatic"
+                        % (m.name, m.param(VB_GAMMA, 0)))
+        elif space is not None and space not in VB_AUTOMATIC:
+            self._issue(walk, m.index, "VRayBitmap %r: transfer function %r not converted: automatic"
+                        % (m.name, space))
+        elif space != VB_SRGB and name.lower().endswith(FLOAT_IMAGES):
+            return 1.0
+        return None
 
     def _corona_image(self, m, kind, walk, entry, found, out):
         """A CoronaBitmap's Image. Its tiling, offset and W angle place the image as a Bitmap's do (measured in
@@ -785,10 +801,6 @@ class TexmapConverter:
         channel = channel if isinstance(channel, int) and not isinstance(channel, bool) and 0 <= channel <= 99 else 1
         return NormalMap(normal, max(0.0, _num(m, ids.strength, 1.0)), _flag(m, ids.flip_red, False),
                          _flag(m, ids.flip_green, False), _flag(m, ids.swap, False), bump, channel)
-
-
-# image class -> (class name in issues, its file parameter in block 0); any other image class is a Bitmap
-_IMAGE_FILES = {classids.CORONA_BITMAP: ("CoronaBitmap", CB_FILE), classids.VRAY_BITMAP: ("VRayBitmap", VB_FILE)}
 
 
 def _bump_input(node):

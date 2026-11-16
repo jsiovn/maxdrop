@@ -925,9 +925,15 @@ class VRayTexmaps(Checks):
         self.assertIsInstance(mix, tx.Mix)
         self.image(mix.a, "vtx_mix_a.png", tx.SRGB)
 
-    def test_no_vraybitmap_is_peeled_or_unsupported(self):
-        self.assertNotIn("VRayBitmap", self.f.tex.stats.peeled)
-        self.assertNotIn("VRayBitmap", self.f.tex.stats.unsupported)
+    def test_peeled_and_unsupported_classes(self):
+        # VRayColor (maxdrop-arp.13) and the Noise below a Color Correction (maxdrop-arp.14) convert to nothing yet
+        self.assertEqual(self.f.tex.stats.peeled, collections.Counter({"Falloff": 1}))
+        self.assertEqual(self.f.tex.stats.unsupported, collections.Counter({"VRayColor": 5, "Noise": 1}))
+
+    def test_rgb_color_space_is_read_from_block_3(self):
+        m = self.f.graph.get(self.f.irs["FixtureVBNormal"].textures["normal"].root.input.index)
+        self.assertEqual(m.param(tx.VB_RGB_SPACE, tx.VB_RGB_SPACE_BLOCK), 3)  # raw: no ACEScg issue
+        self.assertIsNone(m.param(tx.VB_RGB_SPACE, 0))
 
 
 def _vbitmap(index, guid=G1, **params):
@@ -972,6 +978,14 @@ class VRayBitmapSynthetic(Checks):
         _t, g = _vb(tx.DATA, p25=1, p8=0.4545)
         self.assertEqual(g.root.colorspace, tx.NON_COLOR)
 
+    def test_float_files_under_auto_are_linear(self):
+        table = assets.AssetTable([assets.AssetEntry(G1, "Bitmap", "maps\\sky.EXR", "")])
+        for params, gamma in (({}, 1.0), ({"p25": 4}, 1.0), ({"p25": 3}, 1.0), ({"p25": 2}, None),
+                              ({"p25": 1, "p8": 2.0}, 0.5)):
+            g = _tex(_vbitmap(1, **params), table=table).convert(mat.MapRef(1), tx.COLOR)
+            self.assertEqual(g.root.gamma, gamma, params)
+            self.assertEqual(g.root.colorspace, tx.SRGB if gamma is None else tx.NON_COLOR, params)
+
     def test_unusable_transfer_function(self):
         for params in ({"p25": 1, "p8": 0.0}, {"p25": 1, "p8": float("nan")}, {"p25": 9}, {"p25": "x"}):
             _t, g = _vb(**params)
@@ -987,6 +1001,9 @@ class VRayBitmapSynthetic(Checks):
         self.assertIsNone(g.root.output)
         _t, g = _vb(p1=-2.0)
         self.assertEqual(g.root.output, tx.TexOutput(amount=0.0))
+        _t, g = _vb(p1=1e200, p9=1e200)  # overflows to inf
+        self.assertIsNone(g.root.output)
+        self.assertIn("multiplier", g.issues[0])
 
     def test_environment_mapping_types(self):
         for t in (0, 1, 2, 3):

@@ -402,7 +402,9 @@ slot 2), 38 / 39 mapSource and its switch. Block 3: 41 rgbColorSpace (0 default,
 Measured with `renderMap` on a mid-gray 8-bit image: color_space 0 (None) leaves the pixel as it is, 1 (Inverse
 gamma) gives pixel ^ (1 / gamma), 2 (sRGB) the sRGB curve, 3 (From 3ds Max) the scene's input gamma (2.2), 4 (Auto,
 the default) the sRGB curve; multiplier scales the color, renderMultiplier does not change renderMap (it applies
-when V-Ray renders).
+when V-Ray renders). Not measured: whether the multipliers come before or after the Output's invert and offset
+(MaxDrop folds them into its amount), Auto on a float file (taken as linear) and V-Ray's crop origin (taken as a
+Bitmap's).
 
 ## Asset metadata
 

@@ -30,10 +30,10 @@ Materials (build.materials through the operator): each face on its material's sl
 the 3ds Max material, its Principled inputs equal to the MaterialIR the same file converts to (values, or linked when
 a texture graph drives them), the render method, one Image Texture node per file; vray_maps' Mapping values by hand
 from its authoring script, texture nodes without an image and each missing file listed once by name; vray_maps,
-texmap_rules, corona_maps, corona_light and vray_texmaps copied beside generated PNGs load every image in its color space, one
-datablock per file and color space, the report counts every file as found; hand-made IRs check shared images, a
-missing file, the materials counted by class, Thin Wall (set on 5.x, counted on 4.x), a name clash, BLENDED /
-DITHERED and every node kind.
+texmap_rules, corona_maps, corona_light and vray_texmaps copied beside generated PNGs load every image in its color
+space, one datablock per file and color space, the report counts every file as found; hand-made IRs check shared
+images, a missing file, the materials counted by class, Thin Wall (set on 5.x, counted on 4.x), a name clash,
+BLENDED / DITHERED and every node kind.
 Prints `FIXTURES PASSED` (exit 0) or `FIXTURES FAILED` (exit 1).
 """
 import collections
