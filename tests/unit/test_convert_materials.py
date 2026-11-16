@@ -18,6 +18,11 @@ import sys
 import types
 import unittest
 
+try:
+    import numpy
+except ImportError:  # the plain CI job has no numpy; Blender ships it
+    numpy = None
+
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 FIXTURE_DIR = os.path.join(ROOT, "tests", "fixtures")
 TOLERANCE = 1e-5
@@ -728,7 +733,6 @@ class MultiSub(unittest.TestCase):
 
 def _desc(**meshes):
     """A SceneDescription stand-in: meshes {key: (users, face material IDs)}."""
-    import numpy
     return types.SimpleNamespace(meshes={k: types.SimpleNamespace(users=u, material_indices=numpy.array(f,
                                                                                                       dtype=numpy.int32))
                                          for k, (u, f) in meshes.items()})
@@ -929,6 +933,7 @@ class CoronaSynthetic(unittest.TestCase, Close):
         self.assertTrue(any("no sub-material" in r for _i, r in conv.stats.issues))
 
 
+@unittest.skipIf(numpy is None, "numpy missing")  # assign() and the mesh reader need it
 class Assign(unittest.TestCase):
     def names(self, slots):
         return [[ir and ir.name for ir in s] for s in slots]
