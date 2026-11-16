@@ -49,6 +49,7 @@ UV_LAYERS = {
     "corona_maps": ["UVMap"],
     "corona_physical": ["UVMap"],
     "editable_mesh": ["UVMap"],
+    "gamma_swatches": ["UVMap"],
     "hierarchy": [],
     "instances": ["UVMap"],
     "layers_flags": [],

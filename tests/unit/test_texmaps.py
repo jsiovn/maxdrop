@@ -1328,5 +1328,40 @@ class SwatchRule(Checks):
                 self.close(self._root(rule, hdr).value, (0.25, 0.5, 2.0))
 
 
+class GammaSwatchesFixture(Checks):
+    """tools/fixtures/gamma_swatches.ms, saved with the gamma on: every swatch is its value, linear (s / 255)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.f = Fixture("gamma_swatches")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.f.close()
+
+    def test_the_rule_is_read(self):
+        self.assertIs(self.f.tex.swatches, colors.GAMMA_ON)
+        self.assertIs(self.f.conv.swatches, colors.GAMMA_ON)
+
+    def test_flat_swatches(self):
+        ir = self.f.irs["FixtureGammaFlat"]
+        self.close(ir.base_color.value, (128 / 255,) * 3, "diffuse 128 -> 0.502")
+        self.close(ir.specular.value, 64 / 255, "reflection 64: its mean")
+        self.close(ir.emission_color.value, (128 / 255,) * 3, "self-illumination 128")
+
+    def test_map_swatches(self):
+        ir = self.f.irs["FixtureGammaMapped"]
+        self.close(ir.base_color.value, (10 / 255, 20 / 255, 30 / 255))
+        mix = ir.textures["base_color"].root
+        self.assertIsInstance(mix, tx.Mix)
+        self.close(mix.a.value, (128 / 255,) * 3, "Mix color 1")
+        self.close(mix.b.value, (64 / 255, 128 / 255, 192 / 255), "Mix color 2")
+        self.close(mix.factor, 0.25)
+        self.close(ir.textures["specular"].root.value, (128 / 255,) * 3, "VRayColor 128 -> 0.502")
+
+    def test_standard(self):
+        self.close(self.f.irs["FixtureGammaStandard"].base_color.value, (200 / 255, 40 / 255, 30 / 255))
+
+
 if __name__ == "__main__":
     unittest.main()
