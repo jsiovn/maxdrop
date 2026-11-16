@@ -61,6 +61,7 @@ VRAY_BLEND_MTL = ClassId(0x3DA0041B, 0x0F436E31)
 BITMAP_TEX = ClassId(0x00000240, 0)
 VRAY_NORMAL_MAP = ClassId(0x71FA6E51, 0x72057C2F)
 VRAY_BITMAP = ClassId(0x6769144B, 0x02C1017D)  # MAXScript's VRayHDRI (before V-Ray 5) is the same class
+VRAY_COLOR = ClassId(0x58F82B74, 0x73B75D7F)
 RGB_TINT = ClassId(0x00000224, 0)
 MIX = ClassId(0x00000230, 0)
 NOISE = ClassId(0x00000234, 0)
@@ -116,6 +117,7 @@ CLASSES = {
     (SC_TEXMAP, BITMAP_TEX): "Bitmap",
     (SC_TEXMAP, VRAY_NORMAL_MAP): "VRayNormalMap",
     (SC_TEXMAP, VRAY_BITMAP): "VRayBitmap",
+    (SC_TEXMAP, VRAY_COLOR): "VRayColor",
     (SC_TEXMAP, RGB_TINT): "RGB Tint",
     (SC_TEXMAP, MIX): "Mix",
     (SC_TEXMAP, NOISE): "Noise",

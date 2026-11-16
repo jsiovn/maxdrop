@@ -861,7 +861,8 @@ class VRayTexmaps(Checks):
     def test_class_ids_match_the_class_directory(self):
         names = {(e.superclass, e.class_id): e.name for e in (self.f.scene.entry(i) for i in range(len(self.f.scene)))
                  if e is not None}
-        for cid, name in ((classids.VRAY_BITMAP, "VRayBitmap"), (classids.NOISE, "Noise")):
+        for cid, name in ((classids.VRAY_BITMAP, "VRayBitmap"), (classids.NOISE, "Noise"),
+                          (classids.VRAY_COLOR, "VRayColor")):
             self.assertEqual(names.get((classids.SC_TEXMAP, cid)), name, name)
 
     def test_defaults_in_diffuse(self):
@@ -925,10 +926,29 @@ class VRayTexmaps(Checks):
         self.assertIsInstance(mix, tx.Mix)
         self.image(mix.a, "vtx_mix_a.png", tx.SRGB)
 
+    def test_vray_color(self):
+        t = self.f.irs["FixtureVColor"].textures
+        self.assertEqual((t["base_color"].approximated, t["base_color"].issues), (False, ()))
+        self.close(t["base_color"].root.value, (1.0, _lin(150), _lin(75)))  # 200 100 50 times 1.5, clamped
+        self.close(t["specular"].root.value, (_lin(255 * (128 / 255) ** 2.2),) * 3)  # color gamma 2.2
+
+    def test_vray_color_below_falloff_color_correction_and_mix(self):
+        g = self.f.irs["FixtureVFalloff"].textures["base_color"]
+        self.assertIsInstance(g.root, tx.Constant)
+        self.close(g.root.value, (_lin(50), _lin(150), _lin(250)))
+        self.assertTrue(g.approximated)  # the Falloff is peeled
+        cc = self.f.irs["FixtureCCColor"].textures["base_color"].root
+        self.assertIsInstance(cc, tx.ColorCorrect)
+        self.close(cc.saturation, 1.2)
+        self.close(cc.input.value, (_lin(100), _lin(200), _lin(50)))
+        mix = self.f.irs["FixtureMixMask"].textures["base_color"].root
+        self.assertIsInstance(mix.mask, tx.Constant)
+        self.close(mix.mask.value, _lin(64))  # a mask is data: a float
+
     def test_peeled_and_unsupported_classes(self):
-        # VRayColor (maxdrop-arp.13) and the Noise below a Color Correction (maxdrop-arp.14) convert to nothing yet
+        # the Noise below a Color Correction (maxdrop-arp.14) converts to nothing yet
         self.assertEqual(self.f.tex.stats.peeled, collections.Counter({"Falloff": 1}))
-        self.assertEqual(self.f.tex.stats.unsupported, collections.Counter({"VRayColor": 5, "Noise": 1}))
+        self.assertEqual(self.f.tex.stats.unsupported, collections.Counter({"Noise": 1}))
 
     def test_rgb_color_space_is_read_from_block_3(self):
         m = self.f.graph.get(self.f.irs["FixtureVBNormal"].textures["normal"].root.input.index)
@@ -1041,6 +1061,57 @@ class VRayBitmapSynthetic(Checks):
 
     def test_file_in_the_asset_helpers(self):
         self.assertEqual(assets.bitmap_file(_table(), _vbitmap(1)).name, "a.png")
+
+
+def _vc(kind=tx.COLOR, **params):
+    tex = _tex(FakeMap(1, classids.VRAY_COLOR, {int(k[1:]): v for k, v in params.items()}, cls="VRayColor",
+                       name="vc"))
+    return tex, tex.convert(mat.MapRef(1), kind)
+
+
+class VRayColorSynthetic(Checks):
+    def test_defaults(self):
+        _t, g = _vc()
+        self.assertEqual(g.root, tx.Constant((1.0, 1.0, 1.0)))
+        self.assertEqual((g.approximated, g.issues), (False, ()))
+
+    def test_multiplier_before_color_gamma(self):
+        # measured with renderMap: (100 gray, multiplier 2, color gamma 2) -> 156.86
+        _t, g = _vc(p5=(100 / 255,) * 3, p4=2.0, p10=2.0)
+        self.close(g.root.value, (_lin(255 * (200 / 255) ** 2.0),) * 3)
+        self.assertAlmostEqual(255 * (200 / 255) ** 2.0, 156.86, delta=0.01)  # not (100 / 255) ^ 2 x 2 = 78.4
+
+    def test_channels_when_the_color_is_unreadable(self):
+        _t, g = _vc(p5="x", p0=0.5, p1=0.25, p2=1.0)
+        self.close(g.root.value, (_lin(127.5), _lin(63.75), 1.0))
+        _t, g = _vc(p5=(0.5, float("nan"), 0.5), p0=0.5, p1=None, p2=0.5)
+        self.close(g.root.value, (1.0, 1.0, 1.0))  # neither is usable: white
+
+    def test_data_input_is_the_mean(self):
+        _t, g = _vc(tx.DATA, p5=(1.0, 0.0, 0.0))
+        self.close(g.root.value, 1.0 / 3.0)
+
+    def test_temperature_mode_reads_the_color(self):
+        _t, g = _vc(p9=1, p8=3000.0, p5=(1.0, 123.906 / 255, 38.3965 / 255))  # V-Ray's own 3000 K
+        self.close(g.root.value, (1.0, _lin(123.906), _lin(38.3965)))
+        self.assertEqual(g.issues, ())
+
+    def test_unusable_values_are_issues(self):
+        for params, words, want in (
+                ({"p4": float("inf")}, "multiplier", (1.0, 1.0, 1.0)),
+                ({"p4": -1.0, "p5": (0.5,) * 3}, "multiplier", (_lin(127.5),) * 3),
+                ({"p10": 0.0, "p5": (0.5,) * 3}, "color gamma", (_lin(127.5),) * 3),
+                ({"p10": "x", "p5": (0.5,) * 3}, "color gamma", (_lin(127.5),) * 3),
+                ({"p9": 7}, "color mode", (1.0, 1.0, 1.0)),
+                ({"p3": 0.5}, "alpha", (1.0, 1.0, 1.0)),
+                ({"p11": 1}, "primaries", (1.0, 1.0, 1.0))):
+            tex, g = _vc(**params)
+            self.close(g.root.value, want, str(params))
+            self.assertEqual(len(g.issues), 1, params)
+            self.assertIn(words, g.issues[0], params)
+        _t, g = _vc(p4=0.0, p3=1.0, p11=0, p9=0)
+        self.close(g.root.value, (0.0, 0.0, 0.0))
+        self.assertEqual(g.issues, ())
 
 
 if __name__ == "__main__":

@@ -45,7 +45,9 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
   not measured). An environment mapping type (angular, cubic, spherical, mirrored ball), a map source, ACEScg
   primaries, RGB output intensity, an unusable transfer function or multiplier are issues.
 - CoronaColor -> Constant (color and hex as swatches, the HDR color linear, the temperature through kelvin_rgb, times
-  the multiplier). CoronaMix: operation mix -> Mix(bottom, top, amount, mask), multiply -> Multiply (under a Mix for
+  the multiplier). VRayColor -> Constant: its swatch times its RGB multiplier, then to the power of its color gamma
+  (that order measured), decoded as a swatch; in temperature mode its color holds V-Ray's temperature color. Its
+  alpha below 1, RGB primaries other than sRGB and unusable values are issues. CoronaMix: operation mix -> Mix(bottom, top, amount, mask), multiply -> Multiply (under a Mix for
   an amount below 1 or a mask), any other operation peeled to its first bitmap (an issue); layer multipliers and
   offsets are an issue.
 - Kept as nodes (the allow-list): Mix (color 1 / 2 where a map is off or missing, the mask, the mix amount; its
@@ -138,6 +140,10 @@ MAX_MULTIPLIER = 1e6
 _IMAGE_FILES = {classids.CORONA_BITMAP: ("CoronaBitmap", CB_FILE), classids.VRAY_BITMAP: ("VRayBitmap", VB_FILE)}
 # CoronaColor, block 0: method 0 color, 1 HDR color (linear), 2 temperature, 3 hex
 CC_METHOD, CC_TEMPERATURE, CC_COLOR, CC_MULTIPLIER, CC_HDR, CC_HEX = 50, 51, 52, 57, 58, 59
+# VRayColor, block 0: color_mode 0 RGB, 1 temperature (V-Ray writes the temperature's color into color, measured);
+# red / green / blue are color again; rgb_primaries 0 sRGB. Block 1 (gamma_correction, gamma_value) is transient
+VC_RED, VC_GREEN, VC_BLUE, VC_ALPHA, VC_MULTIPLIER, VC_COLOR, VC_MODE, VC_GAMMA, VC_PRIMARIES = (
+    0, 1, 2, 3, 4, 5, 9, 10, 11)
 # CoronaMix, block 0: result = mix(bottom, operation(bottom, top), amount), the mask map replacing the amount
 CM_OPERATION, CM_AMOUNT, CM_MULT_TOP, CM_MULT_BOTTOM, CM_OFFSET_TOP, CM_OFFSET_BOTTOM = 200, 201, 202, 203, 204, 205
 CM_MAP_TOP, CM_MAP_BOTTOM, CM_COLOR_TOP, CM_COLOR_BOTTOM, CM_MASK, CM_MASK_ON, CM_TOP_ON, CM_BOTTOM_ON = (
@@ -954,6 +960,41 @@ def _corona_color(conv, m, kind, walk, depth, chain):
     return Constant(lin if kind == COLOR else sum(lin) / 3.0)
 
 
+def _vray_color(conv, m, kind, walk, depth, chain):
+    """VRayColor: its swatch (color, else red / green / blue) times rgb_multiplier, then to the power color_gamma
+    (renderMap in 3ds Max: (100 gray, multiplier 2, gamma 2) -> 255 * (200 / 255) ^ 2), then decoded from sRGB like
+    every swatch. In temperature mode color holds V-Ray's own temperature color. A mono input takes the mean of the
+    color, not the alpha (measured with a Mix mask)."""
+    v = m.param(VC_COLOR, 0)
+    if not (isinstance(v, tuple) and len(v) >= 3 and all(_finite(c) for c in v[:3])):
+        v = tuple(m.param(pid, 0) for pid in (VC_RED, VC_GREEN, VC_BLUE))
+    swatch = tuple(float(c) for c in v[:3]) if all(_finite(c) for c in v[:3]) else (1.0, 1.0, 1.0)
+    mult = m.param(VC_MULTIPLIER, 0)
+    if mult is None:
+        mult = 1.0
+    elif not (_finite(mult) and mult >= 0.0):
+        conv._issue(walk, m.index, "VRayColor %r: RGB multiplier %r not converted: 1" % (m.name, mult))
+        mult = 1.0
+    gamma = m.param(VC_GAMMA, 0)
+    if gamma is None:
+        gamma = 1.0
+    elif not (_finite(gamma) and 0.01 <= gamma <= 100.0):
+        conv._issue(walk, m.index, "VRayColor %r: color gamma %r not converted: 1" % (m.name, gamma))
+        gamma = 1.0
+    mode = m.param(VC_MODE, 0)
+    if mode not in (None, 0, 1):
+        conv._issue(walk, m.index, "VRayColor %r: color mode %r not converted: its color" % (m.name, mode))
+    alpha = m.param(VC_ALPHA, 0)
+    if _finite(alpha) and alpha != 1.0:
+        conv._issue(walk, m.index, "VRayColor %r: alpha %r not converted: 1" % (m.name, alpha))
+    primaries = m.param(VC_PRIMARIES, 0)
+    if primaries not in (None, 0):
+        conv._issue(walk, m.index, "VRayColor %r: RGB primaries %r drawn as sRGB" % (m.name, primaries))
+    scaled = tuple(min(1.0, max(0.0, c * float(mult))) for c in swatch)
+    lin = _linear(tuple(c ** float(gamma) for c in scaled))
+    return Constant(lin if kind == COLOR else sum(lin) / 3.0)
+
+
 def _corona_mix(conv, m, kind, walk, depth, chain):
     """Operation mix -> Mix(bottom, top, amount, mask), multiply -> Multiply (under a Mix when the amount is below 1
     or a mask is set); any other operation is peeled to its first bitmap. A layer without a map (or with its map
@@ -982,7 +1023,7 @@ def _corona_mix(conv, m, kind, walk, depth, chain):
 
 
 _KEEP = {MIX: _mix, RGB_MULTIPLY: _rgb_multiply, COLOR_CORRECTION: _color_correction, COMPOSITE: _composite,
-         classids.CORONA_COLOR: _corona_color, classids.CORONA_MIX: _corona_mix}
+         classids.CORONA_COLOR: _corona_color, classids.CORONA_MIX: _corona_mix, classids.VRAY_COLOR: _vray_color}
 _PEEL = {FALLOFF: _falloff, VRAY_DIRT: _vray_dirt, OUTPUT: _output_map, RGB_TINT: _rgb_tint,
          VRAY_COLOR2BUMP: _color2bump}
 
