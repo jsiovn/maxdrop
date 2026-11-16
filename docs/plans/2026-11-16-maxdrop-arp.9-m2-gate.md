@@ -141,3 +141,11 @@ and by how much.
   that fills the empty references from such a per-ClassID table gives scene A 213 of 214 (99.5 %).
 - The fix is in `maxdrop/reader/pblock.py` (outside this bead's Files): stopped, bead blocked for the owner's
   decision. Chunk 2 (bump, docs, baseline, upgrade test) waits for the rerun.
+
+## Gate rerun 2026-11-16, after maxdrop-arp.11
+
+- Raw-param parity: `tests/unit/test_materials.py` OK (`test_raw_param_parity` on every fixture).
+- Per-material IR parity, same scratch tool and oracle dumps: fixtures 49 of 49 (perturbed oracle: 0 of 49);
+  scene B 220 of 220 (100 %); **scene A 213 of 214 (99.5 %)**. The one left: a VRayMtl whose normal-bump input
+  pairs to an object the tool cannot read (two same-named Bitmaps: a pairing conflict of the tool).
+- Gate met: Chunk 2 and the Verification run as planned above.
