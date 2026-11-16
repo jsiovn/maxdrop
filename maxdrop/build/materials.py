@@ -226,6 +226,8 @@ class _Tree:
 
     def color_input(self, name, inp, graph):
         s = self.bsdf_input(name)
+        if s is None:
+            return
         self.start_row()
         v = self.graph(graph.root, COLOR, 0) if graph is not None else MISSING
         self.feed(s, inp.value if v is MISSING else v)
@@ -234,9 +236,12 @@ class _Tree:
         """A float input; a color graph on it goes through the mean of its channels, times scale. True when a
         node drives it."""
         s = self.bsdf_input(name)
+        if s is None:
+            return False
         self.start_row()
         color = graph is not None and graph.kind == tx.COLOR
-        v = MISSING if graph is None else self.graph(graph.root, COLOR, 1) if color else             self.graph(graph.root, FLOAT, 0)
+        v = MISSING if graph is None else (
+            self.graph(graph.root, COLOR, 1) if color else self.graph(graph.root, FLOAT, 0))
         if not isinstance(v, bpy.types.NodeSocket):
             _default(s, _mean(inp.value if v is MISSING else v) * scale)
             return False
@@ -272,8 +277,9 @@ class _Tree:
             if key in tex:
                 self.start_row()
                 out = self.normal_root(tex[key].root, 0, out)
-        if out is not None:
-            self.links.new(out, self.bsdf_input("Normal"))
+        normal = self.bsdf_input("Normal") if out is not None else None
+        if normal is not None:
+            self.links.new(out, normal)
         self.value("Coat Weight", ir.coat_weight)
         self.value("Coat Roughness", ir.coat_roughness)
         self.value("Coat IOR", ir.coat_ior)
@@ -285,9 +291,10 @@ class _Tree:
         if ir.thin_walled:
             self.value("Thin Wall", True)
         m = self.material
+        alpha = self.bsdf_input("Alpha", needed=False)
         if alpha_map:
             m.surface_render_method = 'DITHERED'
-        elif self.bsdf_input("Alpha").default_value < 1.0:
+        elif alpha is not None and alpha.default_value < 1.0:
             m.surface_render_method = 'BLENDED'
         m.diffuse_color = _as(ir.base_color.value, COLOR) + (1.0,)
         m.metallic = min(1.0, max(0.0, _mean(ir.metallic.value)))

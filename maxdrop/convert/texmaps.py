@@ -521,6 +521,10 @@ class TexmapConverter:
     def _node(self, i, kind, walk, depth, chain):
         """The node of map object i in an input of that kind, None when nothing usable is there. Converted once per
         (object, kind, depth): the same map reached again shares the node, its issues and its approximation."""
+        # The key leaves out the chain, so a map met first through a cycle keeps the branch the cycle cut, also where
+        # it is reached again without one: order-dependent, and only in a scene that has a cycle. Keying on the chain
+        # (or not caching a cut) would make a shared map cost one conversion per path to it, not one in all
+        # (test_shared_maps_do_not_blow_up).
         if i is None:
             return None
         key = (i, kind, depth)
@@ -564,12 +568,16 @@ class TexmapConverter:
 
     def _first_image(self, m, kind, walk, depth, chain):
         """The first image below map m, depth first in reference order, None without one; looked for once per
-        (map, kind, depth)."""
+        (map, kind, depth), its issues replayed into every walk that finds it."""
         key = (m.index, kind, depth)
         if key not in self._firsts:
-            self._firsts[key] = None  # a cycle back to here finds nothing
-            self._firsts[key] = self._first_image_walk(m, kind, walk, depth, chain)
-        return self._firsts[key]
+            self._firsts[key] = (None, False, ())  # a cycle back to here finds nothing
+            sub = _Walk()
+            image = self._first_image_walk(m, kind, sub, depth, chain)
+            self._firsts[key] = (image, sub.approximated, tuple(sub.issues))
+        image, approximated, issues = self._firsts[key]
+        walk.merge(approximated, issues)
+        return image
 
     def _first_image_walk(self, m, kind, walk, depth, chain):
         for c in m.children:

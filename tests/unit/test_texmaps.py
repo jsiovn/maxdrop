@@ -468,6 +468,16 @@ class Synthetic(Checks):
         self.assertTrue(g.approximated)
         self.assertEqual(tex.stats.peeled, collections.Counter({"Noise": 1}))
 
+    def test_first_image_issues_reach_every_graph_that_peels_to_it(self):
+        shared = FakeMap(5, (0x1234, 0), children=[6, 7], cls="Noise")  # its first bitmap has no file
+        tex = _tex(FakeMap(10, (0x1235, 0), children=[5], cls="Cellular"),
+                   FakeMap(20, (0x1236, 0), children=[5], cls="Smoke"), shared, _bitmap(6, guid=b"\xff" * 16),
+                   _bitmap(7))
+        for i in (10, 20):
+            g = tex.convert(mat.MapRef(i), tx.COLOR)
+            self.assertEqual(g.root.name, "a.png")
+            self.assertTrue(any("no file" in r for r in g.issues), i)
+
     def test_unknown_class_without_a_bitmap(self):
         tex = _tex(FakeMap(1, (0x1234, 0), cls="Noise"))
         self.assertIsNone(tex.convert(mat.MapRef(1), tx.COLOR))

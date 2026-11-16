@@ -586,7 +586,7 @@ def vray_car_paint_mtl(conv, m, ir):
     _car_paint(conv, m, ir, 0.6, 55)
     f0 = _clamp01(_num(m, 31, 0, 0.05))
     ir.coat_weight = 1.0 if f0 > 0 else 0.0
-    ir.coat_ior = ior_from_reflectance(f0)
+    ir.coat_ior = _ior(ior_from_reflectance(f0))
 
 
 def vray_car_paint_mtl2(conv, m, ir):
