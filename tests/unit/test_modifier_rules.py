@@ -262,6 +262,7 @@ class Rules(unittest.TestCase):
             self.assertAlmostEqual(s["thickness"], thickness, msg=repr((inner, outer)))
             self.assertAlmostEqual(s["offset"], offset, msg=repr((inner, outer)))
 
+    @unittest.skipIf(numpy is None, "numpy missing")  # a Symmetry's frame
     def test_refused(self):
         cases = ((classids.TURBOSMOOTH, None), (classids.TURBOSMOOTH, {0: pblock.Animated(3)}),
                  (classids.TURBOSMOOTH, {0: "two"}), (classids.TURBOSMOOTH, {0: float("nan")}),
@@ -274,6 +275,7 @@ class Rules(unittest.TestCase):
         with self.assertRaises(rules.ModifierError):
             _convert(classids.SYMMETRY, {}, context=None)
 
+    @unittest.skipIf(numpy is None, "numpy missing")  # a Symmetry's frame
     def test_symmetry_without_a_gizmo_mirrors_in_the_object_axes(self):
         md, issues = _convert(classids.SYMMETRY, {0: 1, 4: 1, 2: 0})
         s = dict(md.settings)
@@ -281,6 +283,7 @@ class Rules(unittest.TestCase):
                           s["use_mirror_merge"], len(issues)), (None, Y, Y, Y, False, 1))
         self.assertAlmostEqual(s["merge_threshold"], 0.05)
 
+    @unittest.skipIf(numpy is None, "numpy missing")  # a Symmetry's frame
     def test_mirror_frame(self):
         e = rules.mirror_frame(_translate(5, 0, 0), _translate(2, 0, 0), _translate(1, 0, 0))
         self.assertEqual(e[3][:3], (4.0, 0.0, 0.0))

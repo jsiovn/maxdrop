@@ -31,7 +31,8 @@ for the fixtures the operator reported INFO with the report's summary, nothing l
 only things listed are on the material side: wrappers and maps approximated, map classes without a map below
 (vray_texmaps' Noise), texture files not found (the fixtures carry no images), material issues or, on
 Blender 4, Principled inputs that Blender lacks; and the modifiers not applied, as many as the oracle lists, in a
-fixture whose oracle lists some (modifier_pivot), and the issues a fixture is made to raise (uvwmap). Two scenes
+fixture whose oracle lists some (modifier_pivot; the ones converted to Blender modifiers are not counted), and
+the issues a fixture is made to raise (uvwmap, stack_convert). Two scenes
 in one run: the text holds both reports; a file that was not imported is named after them.
 Prints `IMPORT PASSED` (exit 0) or `IMPORT FAILED` (exit 1).
 """
@@ -56,12 +57,15 @@ failures = []
 REPORTS = []  # (level, message) of each scene the operator imported, while record_reports() wraps it
 EXTRUDE = ("0x000000a0", "0x00000000")  # its ClassID as the oracle writes it
 UVW_MAP = ("0x000f72b1", "0x00000000")
+# TurboSmooth, MeshSmooth, Shell, Symmetry: kept as Blender modifiers (convert/modifiers.py)
+CONVERTIBLE = {("0x0d727b3e", "0x491d29a7"), ("0x00000032", "0x00007f9e"), ("0x3b9b1a16", "0x6d84e8d0"),
+               ("0x2d7e702b", "0x0be41a6e")}
 # modifiers the current fixture's report must name as not applied (modifier_pivot: 2), issues it must list
 FIXTURE = {"modifiers": 0, "issues": 0}
 # What the oracle does not tell: a UVW Map of a type MaxDrop does not evaluate (shrink-wrap), and the issues each
 # fixture is made to raise (ISSUES in tests/unit/test_convert_scene.py)
 NOT_EVALUATED = {"FixtureUVWShrink"}
-FIXTURE_ISSUES = {"uvwmap.max": 2}
+FIXTURE_ISSUES = {"uvwmap.max": 2, "stack_convert.max": 1}
 
 
 def oracle_modifiers(path):
@@ -69,7 +73,8 @@ def oracle_modifiers(path):
     from path's oracle (tests/fixtures/<name>.oracle.json); 0 without one. The rule is gather() in
     maxdrop/convert/report.py. A shape whose lowest modifier that renders is an Extrude has it applied
     (convert/extrude.py), and so are the UVW Maps that render right above it, or right above a mesh
-    (convert/uvwmap.py): those are not counted."""
+    (convert/uvwmap.py), and the run of TurboSmooth, MeshSmooth, Shell and Symmetry right above those is converted
+    to Blender modifiers (convert/modifiers.py): those are not counted."""
     try:
         with open(path[:-4] + ".oracle.json", encoding="ascii") as f:
             nodes = json.load(f)["nodes"]
@@ -82,11 +87,14 @@ def oracle_modifiers(path):
             if not (mods and tuple(mods[0]["class_id"]) == EXTRUDE):
                 mods = []  # a shape without an Extrude at the bottom: a curve, nothing applied
             applied, mods = mods[:1], mods[1:]
-        for m in mods:
-            if tuple(m["class_id"]) != UVW_MAP:
-                break
+        k = 0
+        while k < len(mods) and tuple(mods[k]["class_id"]) == UVW_MAP:
             if n["name"] not in NOT_EVALUATED:
-                applied.append(m)
+                applied.append(mods[k])
+            k += 1
+        while k < len(mods) and tuple(mods[k]["class_id"]) in CONVERTIBLE:
+            applied.append(mods[k])
+            k += 1
         return {tuple(m["class_id"]) for m in n["modifiers"] if not any(m is a for a in applied)}
 
     return sum(len(counted(n)) for n in nodes)
