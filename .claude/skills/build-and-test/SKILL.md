@@ -59,7 +59,7 @@ PowerShell 7 is the primary shell. Shell state (variables) does not carry betwee
   `$ErrorActionPreference = "Stop"` turns a redirected native stderr line into a terminating error. Redirect in
   PowerShell 7 (as below) or through `cmd /c "<command> > <log> 2>&1"`, never `2>&1` inside a PS 5 script with
   `Stop`. `build.ps1` does not redirect, so it is safe as written.
-- Logs as UTF-8 (`Out-File -Encoding utf8`). The import engine prints object and texture names: logs of a corpus
+- Logs as UTF-8 (`Out-File -Encoding utf8`). The importer prints object and texture names: logs of a corpus
   scene stay in `S` and are never quoted in a commit, a bead or a PR.
 
 ## Changed paths -> checks
