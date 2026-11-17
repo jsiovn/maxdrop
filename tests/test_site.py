@@ -144,7 +144,8 @@ class Page(unittest.TestCase):
                 "<strong>Scene units</strong>: a scene saved in millimeters, centimeters, inches or feet arrives at its "
                 "real size.",
                 "<strong>Units: Auto</strong> takes the unit the scene was saved with",
-                "<strong>Primitives</strong> (Box, Sphere, Cylinder…): they arrive as empties"):
+                "<strong>Primitives</strong> (Box, Plane, Pyramid, Sphere, GeoSphere, Cylinder, Cone, Tube, Torus) as the "
+                "meshes 3ds Max builds", "<strong>Extrude</strong> on a shape as its mesh", "<strong>Other modifiers</strong>"):
             self.assertTrue(needle in page, needle)
 
     def test_the_page_names_no_option_the_importer_lost(self):

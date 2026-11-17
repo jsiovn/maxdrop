@@ -5,9 +5,10 @@ file onto Blender, or use *File › Import › MaxDrop*. It also takes the `.zip
 scene was downloaded as. Blender 4.2 or newer; tested on 4.2 LTS, 4.5 LTS and 5.2 LTS.
 
 > **Early release.** MaxDrop is a new fork of [io_scene_max](https://github.com/nrgsille76/io_scene_max). It
-> imports editable meshes with their UVs, smoothing, instances, hierarchy, layers and scene units, and V-Ray,
-> Corona, Standard and Physical materials with their texture maps. Lights, cameras, splines and modifiers are not
-> read yet, so a whole interior scene arrives incomplete.
+> imports editable meshes with their UVs, smoothing, instances, hierarchy, layers and scene units, the room shell
+> (shapes, Extrude, UVW Map), the standard primitives, and V-Ray, Corona, Standard and Physical materials with their
+> texture maps. Lights and cameras are not read yet and most modifiers are not applied, so a whole interior scene
+> arrives incomplete.
 > [docs/SUPPORT.md](docs/SUPPORT.md) is the honest list.
 
 > **Independent.** Not affiliated with, endorsed by or supported by Autodesk or Chaos. Autodesk and 3ds Max are
@@ -17,6 +18,12 @@ scene was downloaded as. Blender 4.2 or newer; tested on 4.2 LTS, 4.5 LTS and 5.
 
 - **Editable Mesh and Editable Poly** objects: vertices, faces, material IDs, UV channels, smoothing groups (as
   sharp edges), instances as shared meshes.
+- **Primitives** (Box, Plane, Pyramid, Sphere, GeoSphere, Cylinder, Cone, Tube, Torus) as the meshes 3ds Max builds
+  from their parameters.
+- **Shapes** (Line, Editable Spline, Rectangle, Circle, Ellipse, Arc, NGon) as curves, and **Extrude** on a shape as
+  the mesh 3ds Max makes of it: walls, floors and ceilings drawn as outlines arrive closed, with their caps.
+- **UVW Map** (planar, box, cylindrical, spherical) applied to its map channel, and **TurboSmooth, MeshSmooth, Shell
+  and Symmetry** kept as Subdivision Surface, Solidify and Mirror modifiers.
 - **Position, rotation, scale and the whole hierarchy**, matched by the file's own object references (two objects
   with the same name stay apart); groups and Dummy helpers become empties.
 - **Scene units**: a scene saved in millimeters, centimeters, inches or feet arrives at its real size in meters.
@@ -28,9 +35,9 @@ scene was downloaded as. Blender 4.2 or newer; tested on 4.2 LTS, 4.5 LTS and 5.
 - **Textures** that are plain image files, next to the `.max` file, in a `maps` or `textures` folder beside it, or
   in folders you add in the preferences.
 
-Not yet: lights and cameras, modifiers (the object arrives as it was before them), splines and shapes,
-primitives (Box, Sphere… arrive as empties), animation, procedural maps (simplified to the image below them). See
-[docs/SUPPORT.md](docs/SUPPORT.md).
+Not yet: lights and cameras, the other modifiers (Edit Poly, Edit Mesh, FFD, Noise…: the object arrives as it was
+before them), Teapot, sliced primitives and hemispheres, animation, procedural maps (simplified to the image below
+them). See [docs/SUPPORT.md](docs/SUPPORT.md).
 
 ## Install
 
@@ -120,8 +127,9 @@ any importer; it then complains about a missing manifest. Import a `.zip` throug
 **The scene arrives at the wrong size.** The file states its unit and **Units: Auto** uses it. If the scene was
 modelled in another unit than it was saved with, pick that unit in **Units**; **Scale** is an extra factor.
 
-**Objects are missing.** Lights, cameras, splines and everything a modifier builds are not imported yet; an
-object MaxDrop cannot convert arrives as an empty with its 3ds Max class in the custom property `maxdrop_class`.
+**Objects are missing or misshapen.** Lights and cameras are not imported yet, and a modifier MaxDrop does not
+apply (Edit Poly, Edit Mesh, FFD…) leaves the object as it was below it; an object MaxDrop cannot convert arrives
+as an empty with its 3ds Max class in the custom property `maxdrop_class`.
 The text **MaxDrop Report** (Text Editor) lists them, and what became of the materials.
 
 **Which 3ds Max versions?** MaxDrop's own test files are saved by 3ds Max 2020, and scenes of 3ds Max 2015 and

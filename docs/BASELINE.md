@@ -1,8 +1,9 @@
 # Baseline: import time, memory and accuracy
 
 What MaxDrop does with two large real interior scenes: first the engine inherited from io_scene_max 1.9.2
-(`maxdrop/import_max.py`, unchanged in MaxDrop 0.0.1), then MaxDrop's own reader in version 0.0.3 and its
-materials in 0.0.4, measured the same way and compared with what 3ds Max itself reports.
+(`maxdrop/import_max.py`, unchanged in MaxDrop 0.0.1), then MaxDrop's own reader in version 0.0.3, its
+materials in 0.0.4 and its room shells and modifiers in 0.0.5, measured the same way and compared with what 3ds Max
+itself reports.
 
 The two scenes are commercial assets and are not in this repository: they are called **scene A** and **scene B**
 here, and only counts and measurements are recorded. Both are V-Ray interior scenes.
@@ -179,6 +180,74 @@ reference to its normal map is stale; 0.0.4 reads the map 3ds Max shows. Scene A
 file saved in the 2012 format, whose parameter blocks do not list which reference holds each map: version 0.0.4
 reads that from a table per class (before it, 39 of scene A's materials lost maps). Separately, the raw parameter
 values of every V-Ray test file equal what 3ds Max reports (`tests/unit/test_materials.py`).
+
+## Version 0.0.5: room shells and modifiers
+
+Shapes arrive as curves, an Extrude on a shape as its mesh, UVW Maps are applied to their map channel, the standard
+primitives are built from their parameters, and TurboSmooth, MeshSmooth, Shell and Symmetry are kept as Blender
+modifiers. Measured as above (`tools/baseline.py`, Blender 5.2.0 LTS, Python 3.13.13, the same machine, default
+options, Modifiers: Keep as Blender Modifiers), MaxDrop 0.0.5, once, on 2026-11-18. Vertices and polygons count the
+meshes as built, before Blender's own modifiers.
+
+| | Scene A 0.0.4 | Scene A 0.0.5 | Scene B 0.0.4 | Scene B 0.0.5 |
+|---|---:|---:|---:|---:|
+| Outcome | finished, no traceback | finished, no traceback | finished, no traceback | finished, no traceback |
+| Wall time | 13 s | 14 s | 17 s | 17 s |
+| Import time (operator) | 11 s | 11 s | 15 s | 14 s |
+| Peak memory | 1.3 GB (1.4 GB) | 1.3 GB (1.4 GB) | 1.4 GB (1.4 GB) | 1.4 GB (1.4 GB) |
+| Blender objects created | 747 | 747 | 2,252 | 2,252 |
+| … meshes | 343 | 363 | 1,625 | 1,629 |
+| … curves | | 9 | | 0 |
+| Vertices | 3,116,416 | 3,117,812 | 9,027,887 | 9,027,919 |
+| Polygons | 4,828,478 | 4,830,308 | 11,859,710 | 11,859,734 |
+| Meshes with a UV layer | 271 | 317 | 1,570 | 1,574 |
+| Meshes with a material | 336 | 363 | 1,625 | 1,629 |
+| Materials created | 141 | 158 | 141 | 143 |
+| Images loaded | 115 | 127 | 135 | 141 |
+| Placeholders | 323 | 294 | 448 | 444 |
+| Modifiers applied (nodes, per class) | | 71 | | 20 |
+| Modifiers converted to Blender modifiers (nodes, per class) | | 1 | | 158 |
+| Modifiers not applied (nodes, per class) | | 41 | | 102 |
+
+- Scene A's room is built from outlines: its 20 extruded shapes are now meshes, the shell of the room, so it no
+  longer arrives open. They and the 9 shapes without an Extrude (now curves) were placeholders in 0.0.4. Scene B's
+  4 boxes are meshes now. More materials and images: the extruded room and the Multi/Sub-Object IDs past the list
+  (0.0.4 left 7 meshes of scene A without one) take their materials.
+- Time and memory are unchanged: evaluating the stack costs little next to reading the file.
+- Modifiers not applied, by class (nodes): scene A Edit Mesh 18, FFD 2x2x2 9, UVW Map 9 (above an Edit Mesh or an
+  FFD), Edit Poly 1, Edit Spline 1, and a TurboSmooth, a Shell and a Symmetry on a shape without an Extrude; scene B
+  UVW Map 45 (24 above an Edit Mesh, 19 switched off, 2 above a TurboSmooth), Edit Mesh 24, TurboSmooth 13 (7
+  switched off, 6 above an FFD), Edit Poly 6, FFD(box) 6, Noise 6, FFD 2x2x2 1, VRayDisplacementMod 1.
+
+### Modifiers against 3ds Max
+
+Both scenes were compared node by node with the same 3ds Max 2020 dumps as the materials, which hold each node's
+mesh after its whole stack (`eval_verts`, `eval_faces`, the world bounding box). Blender's side is the evaluated
+object, its Blender modifiers included. A box matches within 1e-3 in file units, plus 1e-5 of the value for the
+dump's 6 significant digits (the room of scene A is in millimeters: a wall corner at 6,260 mm is printed to 0.01).
+
+| | Scene A | Scene B |
+|---|---:|---:|
+| Extrude modifiers (census) | 20 | 0 |
+| … evaluated | 20 | |
+| … vertex and triangle counts = 3ds Max's | 20 | |
+| … bounding box = 3ds Max's | 16 | |
+| UVW Map modifiers (census, objects) | 29 | 10 |
+| … applied | 23 | 4 |
+| Objects whose modifiers are all applied or converted | 57 | 150 |
+| … vertex count = 3ds Max's | 57 | 150 |
+| … bounding box = 3ds Max's | 57 | 149 |
+
+- The 4 extruded shapes whose box misses carry an Edit Mesh (3) or an FFD (1) above the Extrude, which MaxDrop does
+  not apply: their box is off by 5 to 200 mm, what those modifiers move. The 6 UVW Maps of scene A that are not
+  applied sit above an Edit Mesh or an FFD; in scene B above an Edit Mesh or a TurboSmooth, or switched off (the
+  census counts a switched-off modifier too).
+- Scene B's one box that misses is a TurboSmooth (kept as a Subdivision Surface), 0.3 mm off on a 213 mm object.
+- Triangle counts can differ where vertex counts agree: a face that repeats another face or uses a vertex twice is
+  left out (see [SUPPORT.md](SUPPORT.md)). That is the case for one object of scene A with a UVW Map, 27 of its 280
+  objects without modifiers and 13 of scene B's 1,420.
+- A render of scene A's room, headless from a fixed point inside it with a default light (its own lights and cameras
+  are not imported yet), shows walls, floor and ceiling closed around the furniture; the image is not kept here.
 
 ## Reproduce
 

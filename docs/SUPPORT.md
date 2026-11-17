@@ -1,8 +1,9 @@
 # What MaxDrop imports
 
-**This page describes version 0.0.4.** Nodes, meshes, transforms, hierarchy, instances, layers, scene units and
+**This page describes version 0.0.5.** Nodes, meshes, transforms, hierarchy, instances, layers, scene units and
 materials are read by MaxDrop's own reader; the engine of [io_scene_max](https://github.com/nrgsille76/io_scene_max)
-1.9.2 that 0.0.3 still used for materials is gone. A scene pack (`.zip`, `.rar`, `.7z`) is unpacked and its `.max`
+1.9.2 that 0.0.3 still used for materials is gone. From 0.0.5 the room shell arrives too: shapes, Extrude, UVW Map,
+the standard primitives, and TurboSmooth, MeshSmooth, Shell and Symmetry as Blender modifiers. A scene pack (`.zip`, `.rar`, `.7z`) is unpacked and its `.max`
 imported (see [Files](#files)), and several `.max` files chosen at once are imported one after the other.
 
 How far to trust the list: MaxDrop's test files (`tests/fixtures/`, saved by 3ds Max 2020) are compared with what
@@ -14,8 +15,14 @@ without an error, and 99.7 % and 99.9 % of their objects without modifiers get t
 Standard, Physical Material and the texture maps below): the parameters MaxDrop reads are compared with what 3ds Max
 reports, and the Blender material with those parameters, on Blender 4.2, 4.5 and 5.2. In the two commercial scenes,
 the conversion of 214 of 214 and 220 of 220 materials (100 %) gives what the same rules give from the
-parameters 3ds Max reports, textures included (see [BASELINE.md](BASELINE.md)). The page is updated with every
-version.
+parameters 3ds Max reports, textures included (see [BASELINE.md](BASELINE.md)). Modifiers are checked the same
+way: in the test files, the meshes MaxDrop makes from shapes with an Extrude, from primitives, with UVW Maps and with
+the modifiers it keeps as Blender modifiers have 3ds Max's vertex and triangle counts and bounding box (Symmetry's
+weld aside, see its row), and UVW Map coordinates equal 3ds Max's. In the scene whose room is built from outlines
+(3ds Max 2015), all 20 extruded shapes of the room get 3ds Max's vertex and triangle counts, and the 16 whose
+stack MaxDrop evaluates in full its bounding box (the other 4 have an Edit Mesh or an FFD above the Extrude, which
+MaxDrop does not apply); in both scenes every object whose modifiers are all applied or converted gets 3ds Max's
+vertex count (57 and 150 objects). The page is updated with every version.
 
 "Not yet" means the importer does not convert it: the node arrives as an empty (a *placeholder*) at its place in
 the hierarchy, with its 3ds Max class name in the custom property `maxdrop_class`.
@@ -141,8 +148,8 @@ the scene in the archive is kept.
   are not verified one by one yet.
 - When a `.max` is dropped, the options popup shows a **File** line: the 3ds Max version, the renderer, the
   number of objects and the unit, read in a fraction of a second even from a large scene.
-- A very large scene works but needs time and memory: see [BASELINE.md](BASELINE.md) (version 0.0.4 next to
-  0.0.3 and the engine they replaced).
+- A very large scene works but needs time and memory: see [BASELINE.md](BASELINE.md) (version 0.0.5 next to
+  0.0.4, 0.0.3 and the engine they replaced).
 - **Scene packs**: a `.zip`, `.rar` or `.7z` holding the scene, chosen in *File › Import*; a `.rar` or `.7z` can
   also be dropped (a dropped `.zip` goes to Blender's extension installer). The format is recognised by the file's
   content. The chosen `.max` and the image and `.ies` files it names are unpacked into a folder named after the
@@ -159,4 +166,4 @@ the scene in the archive is kept.
 
 ## What comes next
 
-In this order: room shells (splines, Extrude, UVW Map), then lights and cameras.
+Lights and cameras: V-Ray, Corona and standard lights, the sun and sky, cameras with their targets.

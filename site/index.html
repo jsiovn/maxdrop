@@ -191,7 +191,7 @@ footer p { margin: 0; }
     <div class="status" role="note" aria-labelledby="status-title">
       <h2 id="status-title">Version {{version}} is an early release</h2>
       <p>MaxDrop is a new fork of the free <a href="https://github.com/nrgsille76/io_scene_max">io_scene_max</a> importer. MaxDrop reads the scene and its materials with its own reader, also from the scene pack it came in; io_scene_max's file parser is gone.</p>
-      <p>It brings in editable meshes with their UVs, smoothing, instances, hierarchy, layers and scene units, and V-Ray, Corona, Standard and Physical materials with their texture maps. Lights, cameras, splines and modifiers are not read yet, so a whole interior scene will arrive incomplete. <a href="#support">See the full list</a>.</p>
+      <p>It brings in editable meshes with their UVs, smoothing, instances, hierarchy, layers and scene units, the room shell (shapes, Extrude, UVW Map), the standard primitives, and V-Ray, Corona, Standard and Physical materials with their texture maps. Lights and cameras are not read yet and most modifiers are not applied, so a whole interior scene will arrive incomplete. <a href="#support">See the full list</a>.</p>
       <p>Whole scenes are what the next versions are for, and updates arrive inside Blender.</p>
     </div>
   </div>
@@ -242,6 +242,9 @@ footer p { margin: 0; }
           <h3>Arrives in Blender</h3>
           <ul class="marks yes">
             <li><strong>Editable Mesh and Editable Poly</strong> objects: vertices, faces, material IDs, UV channels, smoothing groups, and instances as shared meshes.</li>
+            <li><strong>Primitives</strong> (Box, Plane, Pyramid, Sphere, GeoSphere, Cylinder, Cone, Tube, Torus) as the meshes 3ds Max builds from their parameters.</li>
+            <li><strong>Shapes</strong> (Line, Editable Spline, Rectangle, Circle…) as curves, and <strong>Extrude</strong> on a shape as its mesh: walls, floors and ceilings drawn as outlines arrive closed.</li>
+            <li><strong>UVW Map</strong> (planar, box, cylindrical, spherical) applied to its map channel; <strong>TurboSmooth, MeshSmooth, Shell and Symmetry</strong> kept as Blender modifiers.</li>
             <li><strong>Position, rotation, scale and the whole hierarchy</strong> of the objects; groups and Dummy helpers become empties.</li>
             <li><strong>Scene units</strong>: a scene saved in millimeters, centimeters, inches or feet arrives at its real size.</li>
             <li><strong>Layers</strong> as collections, with their hidden, frozen and non-rendering flags.</li>
@@ -253,9 +256,9 @@ footer p { margin: 0; }
           <h3>Not imported yet</h3>
           <ul class="marks no">
             <li><strong>Lights and cameras</strong>, V-Ray lights included.</li>
-            <li><strong>Modifiers</strong> (Extrude, UVW Map, TurboSmooth, Shell…): the object arrives as it was before its modifiers.</li>
-            <li><strong>Splines and shapes</strong>, so walls and floors made from an extruded outline are missing.</li>
-            <li><strong>Primitives</strong> (Box, Sphere, Cylinder…): they arrive as empties until a later version.</li>
+            <li><strong>Other modifiers</strong> (Edit Poly, Edit Mesh, FFD, Noise…): the object arrives as it was before them.</li>
+            <li><strong>Teapot</strong>, sliced primitives and hemispheres: they arrive as empties until a later version.</li>
+            <li><strong>Star, Text, Helix, Donut</strong> and NURBS curves.</li>
             <li><strong>Animation</strong>: objects arrive as they stand at frame 0.</li>
             <li><strong>Procedural maps</strong> (Noise, Gradient, VRayDirt, Falloff…): simplified to the image below them, or the channel keeps its plain color.</li>
             <li><strong>Other materials</strong> (Arnold Standard Surface, Raytrace, Architectural, Corona Skin and Hair…): a grey material that keeps its name.</li>
@@ -327,7 +330,7 @@ footer p { margin: 0; }
       </details>
       <details>
         <summary>Objects are missing, or the room has no walls</summary>
-        <p>Lights, cameras, splines and everything built by a modifier are not imported yet; see <a href="#support">what this version imports</a>. An object MaxDrop cannot convert arrives as an empty that keeps its place in the hierarchy.</p>
+        <p>Lights and cameras are not imported yet, and a modifier MaxDrop does not apply (Edit Poly, Edit Mesh, FFD…) leaves the object as it was below it; a wall drawn as an outline with an Extrude arrives closed. See <a href="#support">what this version imports</a>. An object MaxDrop cannot convert arrives as an empty that keeps its place in the hierarchy.</p>
       </details>
       <details>
         <summary>Materials arrive without textures</summary>
