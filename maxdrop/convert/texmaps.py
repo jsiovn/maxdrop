@@ -102,10 +102,10 @@ MAX_DEPTH = 8
 MAX_NODES = 256  # nodes of one graph drawn as a tree
 SRGB_GAMMA, GAMMA_TOLERANCE = 2.2, 0.05
 
-# ClassIDs (texmap superclass); those not in reader/classids.py are checked against texmap_rules in the tests.
+# ClassIDs (texmap superclass), aliased from reader/classids.py.
 FALLOFF = classids.FALLOFF
-VRAY_DIRT = ClassId(0x2F567899, 0x090D5EA4)
-VRAY_COLOR2BUMP = ClassId(0x31E15D1D, 0x7D7E2810)
+VRAY_DIRT = classids.VRAY_DIRT
+VRAY_COLOR2BUMP = classids.VRAY_COLOR2BUMP
 OUTPUT = classids.OUTPUT_MAP
 RGB_TINT = classids.RGB_TINT
 MIX = classids.MIX
