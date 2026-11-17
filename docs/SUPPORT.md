@@ -80,7 +80,7 @@ sRGB either way (or what their own gamma says). Turn materials off with
 | VRayLightMtl, VRayFastSSS2, VRayCarPaintMtl, VRayCarPaintMtl2 | **Imported**: emission; subsurface; a metal base with a coat |
 | Standard (Blinn, Phong, Metal, Anisotropic, Oren-Nayar-Blinn, Multi-Layer, Translucent, Strauss) | **Imported**: diffuse, specular level and color, glossiness, self-illumination, opacity, IOR, bump |
 | Physical Material | **Imported**: base, reflectivity, roughness, metalness, transparency, IOR, thin-walled, emission (luminance in cd/m²), coating, bump, cutout |
-| Multi/Sub-Object | **Imported**: one material slot per material ID the faces use; nested ones too. A face whose ID has no entry in the list gets no material (3ds Max repeats the list for such IDs) |
+| Multi/Sub-Object | **Imported**: one material slot per material ID the faces use; nested ones too. A face ID past the list wraps as in 3ds Max (modulo the highest ID plus one); a face whose ID still has no entry, or whose entry is switched off or empty, gets no material (3ds Max renders it black) |
 | VRay2SidedMtl, VRayBlendMtl, VRayOverrideMtl, VRayMtlWrapper, Double Sided, Shellac | **The first sub-material** (the front, the base) |
 | Shell Material | **The render sub-material** |
 | CoronaPhysicalMtl | **Imported**: base color and level, roughness or glossiness mode, metalness, IOR, refraction (transmission, thin mode with its tint), opacity, self-illumination, clearcoat, bump. Verified on scenes made with Corona 12 |
