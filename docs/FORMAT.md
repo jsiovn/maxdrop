@@ -40,9 +40,10 @@ An object points to others by object index.
   the Editable Mesh of editable_mesh one.
 - `0x2035`: a `u32`, then `(u32 slot, i32 index)` pairs. The first value is the number of reference slots: 16
   for Node and RootNode, 48 for Texmaps and 2 for Bezier Float, Bezier Scale, Bezier Color, Boolean Controller and
-  Grid Reference in every fixture, 2 for MtlBaseLib in stack_basic (and for the point class of Custom Curve Control, nameless in the class directory:
-  texmap_rules' Falloff curves), 34 for VRayMtl (vray_basic, vray_maps, vray_wrappers: what the SDK's
-  `NumRefs` reports for a VRayMtl), and for a ParamBlock2 the number of its reference slots (25 and 37 in
+  Grid Reference in every fixture, 2 for MtlBaseLib in stack_basic (and for the point class of Custom Curve
+  Control, nameless in the class directory: texmap_rules' Falloff curves), 34 for VRayMtl (vray_basic,
+  vray_maps, vray_wrappers: what the SDK's `NumRefs` reports for a VRayMtl), and for a ParamBlock2 the number of
+  its reference slots (25 and 37 in
   standard_physical and vray_wrappers; 37 for the VRayBlendMtl block, see [Parameter blocks](#parameter-blocks)).
   Every pair's slot is below it (`test_scene.py`). The reader does not need it. RootNode and the controllers have
   no pairs.
@@ -69,10 +70,9 @@ Reference slots of a node, checked on every node of every fixture (`test_scene.p
 - slot 1: the object. With no modifier it is the base object, whose ClassID and superclass equal the oracle's
   `base_class_id` and `base_superclass`. With modifiers it is a derived object: special id `0x2032`, past the
   class directory, whose references are its modifiers top to bottom and then the base object (modifier_pivot:
-  Bend, UVW Map, Editable Poly, the oracle's order; `Scene.object_stack` follows them). See
-  [Modifiers](#modifiers). Nodes whose stacks end
-  in the same base object are exactly the oracle's `instances` (instances: three instances share the source's
-  object, the copy has its own; modifier_pivot: a bare source and two references with modifiers of their own,
+  Bend, UVW Map, Editable Poly, the oracle's order; `Scene.object_stack` follows them; see
+  [Modifiers](#modifiers)). Nodes whose stacks end in the same base object are exactly the oracle's `instances`
+  (instances: three instances share the source's object, the copy has its own; modifier_pivot: a bare source and two references with modifiers of their own,
   three slot-1 objects on one base object);
 - slot 3: the material, present exactly when the oracle names one (the group head of layers_flags has no
   material and three pairs instead of four);

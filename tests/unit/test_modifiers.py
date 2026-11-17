@@ -91,7 +91,7 @@ class TestFixtures(unittest.TestCase):
                                      [(m["enabled"], m["enabled_in_views"], m["enabled_in_renders"]) for m in want],
                                      label)
                     for m, w in zip(st.modifiers, want):
-                        self.assertIsNotNone(m.context.tm, label)
+                        self.assertIsNotNone(m.context, label)
                         _close(self, [v for row in m.context.tm for v in row[:3]], w["context_tm"], label)
                         self.assertEqual([row[3] for row in m.context.tm], [0.0, 0.0, 0.0, 1.0], label)
                         # Max computes a context's box when the modifier first needs it: the file may hold none
@@ -152,7 +152,7 @@ class TestFixtures(unittest.TestCase):
             s = scene.Scene.from_file(cf)
             n = next(n for n in s.nodes() if n.name == "FixtureFlags")
             def key(st):  # parameter blocks are compared by what they hold, not by identity
-                return st.base, st.derived, st.issues, [m[:8] + (sorted(m.blocks), sorted(m.legacy)) + m[10:]
+                return st.base, st.derived, st.issues, [m._replace(blocks=sorted(m.blocks), legacy=sorted(m.legacy))
                                                         for m in st.modifiers]
             self.assertEqual(key(modifiers.stack(s, n)), key(modifiers.Modifiers(s).stack(n)))
             self.assertEqual(key(modifiers.Modifiers(s).object_stack(n.object)), key(modifiers.stack(s, n)))
@@ -267,6 +267,36 @@ class TestSynthetic(unittest.TestCase):
         st = modifiers.Modifiers(s).object_stack(2)
         self.assertEqual([(m.index, m.blocks, m.legacy) for m in st.modifiers], [(1, {}, {})])
         self.assertEqual(len(st.issues), 1)
+
+    def test_damaged_info_poisons_only_its_modifier(self):
+        """A 0x39BF whose child claims more bytes than it holds: that modifier keeps its class name and every
+        switch on, the stack and the other modifier are read."""
+        bad = struct.pack("<HI", 0x0100, 6 + 400) + b"ab"
+        s = _scene(node(0), node(1, leaf(0x204B, b"\x2e"), node(0x39BF, bad)), _modifier(1, leaf(0x0110)),
+                   _derived(0x2032, (1, 2, 0), [_context(), _context()]))
+        st = modifiers.Modifiers(s).object_stack(3)
+        self.assertEqual([(m.index, m.name, m.enabled) for m in st.modifiers], [(2, "Bend", False), (1, "Bend", True)])
+        self.assertEqual([i for i, _why in st.issues], [1])
+
+    def test_shared_modifier_issues_on_every_stack(self):
+        """One damaged modifier in two stacks: both name it, whichever is read first."""
+        s = _scene(node(0), node(1, leaf(0x2034, b"\x01\x02\x03")), _derived(0x2032, (1, 0), [_context()]),
+                   _derived(0x2032, (1, 0), [_context()]))
+        reader = modifiers.Modifiers(s)
+        self.assertEqual([len(reader.object_stack(i).issues) for i in (2, 3, 2)], [1, 1, 1])
+
+    def test_not_a_modifier_in_a_modifier_slot(self):
+        """A geometry object or a derived object where a modifier belongs: kept, named in issues, not followed."""
+        s = _scene(node(0), node(0), _derived(0x2032, (1, 0), [_context()]), _derived(0x2032, (2, 0), [_context()]))
+        reader = modifiers.Modifiers(s)
+        geo, derived = reader.object_stack(2), reader.object_stack(3)
+        self.assertEqual([(m.index, m.superclass) for m in geo.modifiers], [(1, 0x10)])
+        self.assertEqual([(m.index, m.class_id, m.name) for m in derived.modifiers], [(2, None, "")])
+        self.assertEqual((len(geo.issues), len(derived.issues), derived.base), (1, 1, 0))
+
+    def test_odd_name_chunk_keeps_the_class_name(self):
+        s = _scene(node(0), _modifier(1, leaf(0x0100, b"x")), _derived(0x2032, (1, 0), [_context()]))
+        self.assertEqual(modifiers.Modifiers(s).object_stack(2).modifiers[0].name, "Bend")
 
     def test_shared_modifier_read_once(self):
         s = _scene(node(0), _modifier(1), _derived(0x2032, (1, 0), [_context()]),

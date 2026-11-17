@@ -100,7 +100,7 @@ def census_scene(s):
 
     base, base_descs = collections.Counter(), {}
     depths, outermost = collections.Counter(), set()
-    unreadable = with_modifiers = 0
+    unreadable = with_modifiers = with_issues = 0
     reader = modifiers_.Modifiers(s)
     mod_nodes, switches = collections.Counter(), {}  # class key -> nodes; modifier object -> (key, switches)
     for i in s.node_indices:
@@ -115,6 +115,7 @@ def census_scene(s):
             continue
         if stack.modifiers:
             with_modifiers += 1
+        with_issues += bool(stack.issues)
         for k in {_key(_describe(s, m.index)) for m in stack.modifiers}:
             mod_nodes[k] += 1
         for m in stack.modifiers:
@@ -170,6 +171,7 @@ def census_scene(s):
             "stack_depths": {str(k): v for k, v in sorted(depths.items())},
             "derived_objects": derived,
             "unreadable": bad_derived,
+            "nodes_with_issues": with_issues,
             "by_class": [dict(row, derived_objects=holders[_key(row)], objects=len(objects[_key(row)]),
                               nodes=mod_nodes[_key(row)], **{k: v[_key(row)] for k, v in off.items()})
                          for row in _rows(modifiers, modifier_descs)],
@@ -196,7 +198,8 @@ def format_text(result):
     mods = result["modifiers"]
     depths = ", ".join("%s: %d" % kv for kv in mods["stack_depths"].items()) or "none"
     out += ["", "Modifier stacks of nodes: %d (modifiers per stack -> stacks: %s)" % (mods["stacks"], depths),
-            "Derived objects: %d (unreadable %d)" % (mods["derived_objects"], mods["unreadable"]),
+            "Derived objects: %d (unreadable %d); nodes whose stack has an issue: %d" % (
+                mods["derived_objects"], mods["unreadable"], mods["nodes_with_issues"]),
             "Modifiers per class (entries in derived objects; then derived objects holding one, modifier objects, "
             "nodes, objects off / off in the viewport / off in the renderer):"]
     out += [_class_line(row, "  in %d, objects %d, nodes %d, off %d/%d/%d" % (

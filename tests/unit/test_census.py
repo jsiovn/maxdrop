@@ -73,8 +73,8 @@ class TestFixtures(unittest.TestCase):
                 depths = {}
                 for stack in stacks:
                     depths[str(len(stack))] = depths.get(str(len(stack)), 0) + 1
-                self.assertEqual((mods["stacks"], mods["stack_depths"], mods["derived_objects"], mods["unreadable"]),
-                                 (len(stacks), depths, len(stacks), 0))
+                self.assertEqual((mods["stacks"], mods["stack_depths"], mods["derived_objects"], mods["unreadable"],
+                                  mods["nodes_with_issues"]), (len(stacks), depths, len(stacks), 0, 0))
                 # nodes per modifier class, each class once per node
                 by_class = {}
                 for stack in stacks:

@@ -24,9 +24,12 @@ class name; 0x0110 present: off; 0x0120: off in the viewport; 0x0130: off in the
 and gizmo controller (superclass 0x9008) are among its references. docs/FORMAT.md says which fixture shows what.
 
 The stack is read, never evaluated: the file holds no result of it. The file comes from anywhere: a derived-object
-cycle or a damaged derived object raises ChunkError (as Scene.object_stack does); a missing or damaged context or a
-modifier whose references cannot be read poisons only that modifier (no context, no blocks) and is named in
-issues. A modifier object shared by several stacks is read once. No bpy.
+cycle or a damaged derived object raises ChunkError (as Scene.object_stack does); a missing or damaged context
+poisons only that modifier's context, a modifier whose chunk or references cannot be read only that modifier (the
+class name, every switch on, no blocks), and an object that is not a modifier (superclass 0x810 or 0x820) in a
+modifier slot is kept (class_id None for a special id): each is named in issues. A modifier object shared by
+several stacks is read once and its issues are named in every stack holding it; its blocks, legacy and refs dicts
+are shared too, so they are read-only. No bpy.
 """
 import collections
 import math
@@ -40,6 +43,7 @@ DERIVED_OBJECT, WSM_DERIVED_OBJECT = 0x2032, 0x2033
 DERIVED_IDS = (DERIVED_OBJECT, WSM_DERIVED_OBJECT)
 _CONTEXT, _CONTEXT_TM, _CONTEXT_BOX = 0x2500, 0x2510, 0x2511
 _INFO, _NAME, _OFF, _OFF_IN_VIEWS, _OFF_IN_RENDERS = 0x39BF, 0x0100, 0x0110, 0x0120, 0x0130
+MODIFIER_SUPERCLASSES = (classids.SC_OSMODIFIER, classids.SC_WSMODIFIER)
 _TM = struct.Struct("<12f")
 _BOX = struct.Struct("<6f")
 
@@ -76,7 +80,7 @@ class ModifierStack(collections.namedtuple("ModifierStack", "base modifiers deri
     __slots__ = ()
 
 
-class _Info(collections.namedtuple("_Info", "class_id superclass name flags blocks legacy refs gizmo")):
+class _Info(collections.namedtuple("_Info", "class_id superclass name flags blocks legacy refs gizmo issues")):
     __slots__ = ()
 
 
@@ -139,29 +143,36 @@ class Modifiers:
                 issues.append((i, "block at slot %d (object %d) left out: %s" % (slot, target, e)))
         return blocks, legacy
 
-    def _read_info(self, i, issues):
+    def _read_info(self, i):
+        """The _Info of modifier object i, read once; its issues go to every stack holding it."""
         info = self._info.get(i)
         if info is not None:
             return info
         entry = self.scene.entry(i)
-        chunk = self.scene.chunk(i)
-        name, flags = ("" if entry is None else entry.name), frozenset()
-        held = chunk.first(_INFO) if chunk.container else None
-        if held is not None and held.container:
-            text = held.first(_NAME)
-            if text is not None and text.payload_size:
-                name = text.text()
-            flags = frozenset(c for c in (_OFF, _OFF_IN_VIEWS, _OFF_IN_RENDERS) if held.first(c) is not None)
+        class_id, superclass = (None, None) if entry is None else (entry.class_id, entry.superclass)
+        name, issues = ("" if entry is None else entry.name), []
+        if superclass not in MODIFIER_SUPERCLASSES:
+            issues.append((i, "not a modifier (superclass %s) in a modifier slot" %
+                           ("none" if superclass is None else "0x%X" % superclass)))
         try:
+            chunk = self.scene.chunk(i)
+            flags = frozenset()
+            held = chunk.first(_INFO) if chunk.container else None
+            if held is not None and held.container:
+                text = held.first(_NAME)
+                if text is not None:
+                    name = text.text() or name
+                flags = frozenset(c for c in (_OFF, _OFF_IN_VIEWS, _OFF_IN_RENDERS) if held.first(c) is not None)
             refs = self.scene.refs(i) if chunk.container else {}
         except ChunkError as e:
-            # not cached: read again, and named again, in every stack holding it
-            issues.append((i, "modifier references left out: %s" % e))
-            return _Info(entry and entry.class_id, entry and entry.superclass, name, flags, {}, {}, {}, None)
-        owner = None if entry is None else (entry.superclass, entry.class_id)
-        blocks, legacy = self._blocks(i, refs, owner, issues)
-        gizmo = next((t for _s, t in sorted(refs.items()) if self._superclass(t) == classids.SC_CTRL_MATRIX3), None)
-        info = _Info(entry and entry.class_id, entry and entry.superclass, name, flags, blocks, legacy, refs, gizmo)
+            issues.append((i, "modifier left out of its stack's reading (class name, every switch on): %s" % e))
+            info = _Info(class_id, superclass, name, frozenset(), {}, {}, {}, None, tuple(issues))
+        else:
+            owner = None if entry is None else (superclass, class_id)
+            blocks, legacy = self._blocks(i, refs, owner, issues)
+            gizmo = next((t for _s, t in sorted(refs.items()) if self._superclass(t) == classids.SC_CTRL_MATRIX3),
+                         None)
+            info = _Info(class_id, superclass, name, flags, blocks, legacy, refs, gizmo, tuple(issues))
         self._info[i] = info
         return info
 
@@ -203,7 +214,8 @@ class Modifiers:
             for k, m in enumerate(refs[:-1]):
                 if m is None:
                     continue
-                info = self._read_info(m, issues)
+                info = self._read_info(m)
+                issues.extend(info.issues)
                 level.append(Modifier(m, info.class_id, info.superclass, info.name, _OFF not in info.flags,
                                       _OFF_IN_VIEWS not in info.flags, _OFF_IN_RENDERS not in info.flags,
                                       self._context(i, k, contexts, issues), info.blocks, info.legacy, info.refs,
