@@ -7,6 +7,7 @@
     built = build(desc, collection)
     built.objects[node.index]           # the Object of each node
     built.meshes[node.mesh]             # the Mesh, one per MeshDescription: instances share it
+    built.curves[node.curve]            # the Curve of a shape node, one per CurveDescription (build.curves)
     built.roots()                       # every object without a parent, the shear helper included
     built = build(desc, collection, slots=assign(...), material=make)   # with material slots
     built.materials[ir.index]           # the Material make(ir) returned, once per Max material
@@ -28,7 +29,8 @@ so world = parent world @ local again and the children inherit the shear. Blende
 without a parent, so a sheared top-level node gets one: the empty SHEAR_HELPER at the identity, one per build,
 made only when needed and listed in built.helpers. It is not baked into the mesh instead because most such nodes
 are empties (placeholders) and the object's own world matrix would stay off.
-An EMPTY node becomes a plain-axes empty with the custom property maxdrop_class.
+An EMPTY node becomes a plain-axes empty with the custom property maxdrop_class; a CURVE node an object of its
+Curve, which gets no material.
 
 With collections (build.collections.make), each object goes into its layer's collection, else into collection.
 A node hidden in 3ds Max gets hide_viewport and is hidden in view_layer (hide_set), one that does not render
@@ -38,6 +40,7 @@ import bpy
 from mathutils import Matrix
 
 from ..convert import scene as convert_scene
+from . import curves as build_curves
 
 MAX_UV_LAYERS = 8
 CLASS_PROPERTY = "maxdrop_class"
@@ -46,13 +49,14 @@ SHEAR_HELPER = "MaxDrop Shear"
 
 
 class Built:
-    """objects {node index: Object}, meshes {mesh key: Mesh}, dropped_uv_layers (channels Blender had no room
-    for), helpers (objects that are no node: the shear helper), materials {Max material object index: Material}."""
-    __slots__ = ("objects", "meshes", "dropped_uv_layers", "helpers", "materials")
+    """objects {node index: Object}, meshes {mesh key: Mesh}, curves {curve key: Curve}, dropped_uv_layers
+    (channels Blender had no room for), helpers (objects that are no node: the shear helper), materials {Max
+    material object index: Material}."""
+    __slots__ = ("objects", "meshes", "curves", "dropped_uv_layers", "helpers", "materials")
 
     def __init__(self):
         self.objects, self.meshes, self.dropped_uv_layers, self.helpers = {}, {}, 0, []
-        self.materials = {}
+        self.curves, self.materials = {}, {}
 
     def roots(self):
         """The objects without a parent, helpers included: what a change of axes turns."""
@@ -170,10 +174,13 @@ def build(desc, collection, collections=None, view_layer=None, slots=None, mater
         plan = slots.get(key)
         built.meshes[key], dropped = make_mesh(md, plan.indices if plan is not None else None)
         built.dropped_uv_layers += dropped
+    for key, cd in desc.curves.items():
+        built.curves[key] = build_curves.make_curve(cd)
     identity = Matrix.Identity(4)
     hidden = []
     for node in desc.nodes:
-        data = built.meshes[node.mesh] if node.kind == convert_scene.MESH else None
+        data = (built.meshes[node.mesh] if node.kind == convert_scene.MESH else
+                built.curves[node.curve] if node.kind == convert_scene.CURVE else None)
         ob = bpy.data.objects.new(node.name, data)
         (collections.of(node) if collections is not None else collection).objects.link(ob)
         if data is None:

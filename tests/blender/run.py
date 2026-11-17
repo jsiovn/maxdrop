@@ -18,6 +18,10 @@ vertex and face counts, UV layers, sharp edges and flat faces, material indices,
 oracle's instances), outward normals as rendered (the inverse transpose of the world matrix times each face normal
 points away from the oracle's bounding box center, also on the mirrored object) and the class of each placeholder. The
 oracle has no map channels or smoothing groups: those expectations come from the fixture scripts (tools/fixtures/*.ms).
+shapes: each shape node a curve object (3D, FREE handles) with the oracle's splines, point counts and cyclic flags,
+its points where 3ds Max has its knots, each segment's middle (mathutils.geometry.interpolate_bezier) where 3ds Max
+interpolates it (the straight segment included), the resolution from the steps, a bevel and faces only on the
+renderable FixtureLine.
 layers_flags: two layer collections, one hidden object, one with hide_render, the group head as the parent of its two
 members. modifier_pivot: a node with modifiers gets its base mesh (no bounding box check, the oracle's is after the
 modifiers), the report names the modifiers not applied, and the node whose pivot alone is rotated keeps its object
@@ -50,6 +54,7 @@ import traceback
 
 import bpy
 from mathutils import Matrix, Vector
+from mathutils.geometry import interpolate_bezier
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
@@ -69,6 +74,7 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1
     "layers_flags": [],
     "modifier_pivot": ["UVMap"],  # the base mesh's channel: the UVW Map modifier is not applied
     "multi_uv": ["UVMap", "UVChannel_2", "UVChannel_3"],
+    "shapes": ["UVMap"],  # FixtureBox; the shapes are curves
     "stack_basic": ["UVMap"],  # the base meshes' channel: no modifier is applied
     "standard_physical": ["UVMap"],
     "texmap_rules": ["UVMap"],
@@ -101,6 +107,8 @@ def empty_scene():
         bpy.data.objects.remove(ob)
     for mesh in list(bpy.data.meshes):
         bpy.data.meshes.remove(mesh)
+    for curve in list(bpy.data.curves):
+        bpy.data.curves.remove(curve)
     for col in list(bpy.data.collections):
         bpy.data.collections.remove(col)
     for text in list(bpy.data.texts):
@@ -191,6 +199,9 @@ def run_fixture(path, modules):
         flags = (ob.hide_viewport, ob.hide_get(view_layer=view_layer), ob.hide_render, ob.hide_select)
         check(label + ": hidden, renderable and frozen flags",
               flags == (o["hidden"], o["hidden"], not o["renderable"], o["frozen"]), str(flags))
+        if o["shape"] is not None:
+            check_curve(label, ob, o["shape"], meters)
+            continue
         if o["base_verts"] is None:
             check(label + ": placeholder empty", ob.type == 'EMPTY' and ob.get("maxdrop_class") == o["base_class_name"],
                   "%s %r" % (ob.type, ob.get("maxdrop_class")))
@@ -239,6 +250,11 @@ def run_fixture(path, modules):
         check("instances: four objects share one mesh, the copy has its own", users == [1, 4], str(users))
     if name == "modifier_pivot":
         check_modifier_pivot(obs, meters)
+    if name == "shapes":
+        curves = sorted(c.name for c in bpy.data.curves)
+        shaped = sum(1 for o in nodes if o["shape"] is not None)
+        check("shapes: one curve per shape node, one mesh", len(curves) == shaped == 13 and len(meshes) == 1,
+              str(curves))
     if name == "hierarchy":
         mirrored = [n.name for n in desc.nodes if n.mirrored]
         check("hierarchy: FixtureLeaf is the mirrored node", mirrored == ["FixtureLeaf"], str(mirrored))
@@ -279,6 +295,52 @@ def run_fixture(path, modules):
         check("%s: report published, nothing left out" % name, level == "INFO" and published, line)
     print("COUNTS %s: objects=%d meshes=%d placeholders=%d issues=%d" % (
         name, len(bpy.data.objects), len(bpy.data.meshes), sum(desc.placeholders.values()), len(desc.issues)))
+
+
+def check_curve(label, ob, shape, meters):
+    """A shape node's curve object against the oracle's knots (object space: no fixture shape has an object
+    offset): splines, points, cyclic flags, each segment's middle, resolution and bevel."""
+    check(label + ": curve object", ob.type == 'CURVE', ob.type)
+    if ob.type != 'CURVE':
+        return
+    cu = ob.data
+    want = shape["splines"]
+    got = [(len(sp.bezier_points), sp.use_cyclic_u, sp.type) for sp in cu.splines]
+    check(label + ": splines, points and cyclic flags", got == [(len(w["knots"]), w["closed"], 'BEZIER') for w in want],
+          str(got))
+    check(label + ": 3D", cu.dimensions == '3D', cu.dimensions)
+    steps = 12 if shape["adaptive"] else shape["steps"] + 1
+    check(label + ": resolution from the steps", cu.resolution_u == steps and
+          all(sp.resolution_u == steps for sp in cu.splines), "%d vs %d" % (cu.resolution_u, steps))
+    if shape["renderable"]:
+        check(label + ": a bevel of the thickness", abs(cu.bevel_depth - shape["thickness"] / 2 * meters) < 1e-9 and
+              cu.bevel_resolution == (shape["sides"] - 4) // 2, "%g, %d" % (cu.bevel_depth, cu.bevel_resolution))
+    else:
+        check(label + ": no bevel", cu.bevel_depth == 0, str(cu.bevel_depth))
+    for k, (sp, w) in enumerate(zip(cu.splines, want)):
+        pts = sp.bezier_points
+        n = len(pts)
+        knots = [list(p.co / meters) for p in pts]
+        check("%s spline %d: points at the knots" % (label, k),
+              close([c for p in knots for c in p], [c for x in w["knots"] for c in x["pos"]], MATRIX_TOLERANCE))
+        check("%s spline %d: FREE handles" % (label, k),
+              all(p.handle_left_type == p.handle_right_type == 'FREE' for p in pts))
+        mids, expected = [], []
+        for j, x in enumerate(w["knots"]):
+            if x["mid"] is None:
+                continue
+            a, b = pts[j], pts[(j + 1) % n]
+            mid = interpolate_bezier(a.co, a.handle_right, b.handle_left, b.co, 3)[1]
+            mids += list(mid / meters)
+            expected += x["mid"]
+        check("%s spline %d: segment middles where 3ds Max interpolates them" % (label, k),
+              close(mids, expected, MATRIX_TOLERANCE), "%s vs %s" % (["%.6g" % v for v in mids], expected))
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    evaluated = ob.evaluated_get(depsgraph)
+    mesh = evaluated.to_mesh()
+    faces = len(mesh.polygons)
+    evaluated.to_mesh_clear()
+    check(label + ": faces exactly when it renders", (faces > 0) == shape["renderable"], str(faces))
 
 
 def check_modifier_pivot(obs, meters):

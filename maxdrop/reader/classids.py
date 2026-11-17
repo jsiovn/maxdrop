@@ -15,6 +15,7 @@ from .classdir import ClassId
 SC_BASENODE = 0x0001
 SC_PARAMETER_BLOCK = 0x0008
 SC_GEOMOBJECT = 0x0010
+SC_SHAPE = 0x0040
 SC_HELPER = 0x0050
 SC_PARAMETER_BLOCK2 = 0x0082
 SC_OSMODIFIER = 0x0810
@@ -53,6 +54,15 @@ PARAM_BLOCK2 = ClassId(0x00000082, 0)
 EDITABLE_MESH = ClassId(0xE44F10B3, 0)
 EDITABLE_POLY = ClassId(0x1BF8338D, 0x192F6098)
 DUMMY = ClassId(0x00876234, 0)
+
+# Shapes.
+SPLINE_SHAPE = ClassId(0x0000000A, 0)  # an Editable Spline
+LINE = ClassId(0x00001040, 0)
+RECTANGLE = ClassId(0x00001065, 0)
+CIRCLE = ClassId(0x00001999, 0)
+ELLIPSE = ClassId(0x00001097, 0)
+ARC = ClassId(0x00001996, 0)
+NGON = ClassId(0x00001050, 0)
 
 # Materials, maps and their parts.
 STANDARD_MTL = ClassId(0x00000002, 0)
@@ -114,6 +124,13 @@ CLASSES = {
     (SC_GEOMOBJECT, EDITABLE_MESH): "Editable Mesh",
     (SC_GEOMOBJECT, EDITABLE_POLY): "Editable Poly",
     (SC_HELPER, DUMMY): "Dummy",
+    (SC_SHAPE, SPLINE_SHAPE): "SplineShape",
+    (SC_SHAPE, LINE): "Line",
+    (SC_SHAPE, RECTANGLE): "Rectangle",
+    (SC_SHAPE, CIRCLE): "Circle",
+    (SC_SHAPE, ELLIPSE): "Ellipse",
+    (SC_SHAPE, ARC): "Arc",
+    (SC_SHAPE, NGON): "NGon",
     (SC_MATERIAL, STANDARD_MTL): "Standard",
     (SC_MATERIAL, MULTI_SUB_MTL): "Multi/Sub-Object",
     (SC_MATERIAL, SHELL_MTL): "Shell Material",

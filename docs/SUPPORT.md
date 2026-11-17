@@ -20,8 +20,8 @@ version.
 "Not yet" means the importer does not convert it: the node arrives as an empty (a *placeholder*) at its place in
 the hierarchy, with its 3ds Max class name in the custom property `maxdrop_class`.
 
-After every import the **import report** says what arrived and what did not: the unit, the objects and meshes
-built, layers, hidden and frozen objects, groups, the placeholders by class, the modifiers not applied, unknown
+After every import the **import report** says what arrived and what did not: the unit, the objects, meshes and
+curves built, layers, hidden and frozen objects, groups, the placeholders by class, the modifiers not applied, unknown
 controllers and geometry errors, the unpack of a scene pack; the materials built and converted by class, the
 wrappers and maps that were simplified (peeled to what is below them) by class, material and map classes without a
 rule, the textures found by each step of the lookup and the ones not found by file name (for a scene from a pack:
@@ -43,7 +43,8 @@ your computer.
 | Dummy helper, group head | **Imported** as an empty (the group's members are its children, as in 3ds Max) |
 | Box, Sphere, Cylinder, Cone, Torus, Plane | Not yet: placeholder (version 0.0.2 rebuilt them as Blender primitives) |
 | Boolean compound object, Biped | Not yet: placeholder |
-| Line, Rectangle, Ellipse, Circle, NURBS surface | Not yet: placeholder |
+| Line, Editable Spline, Rectangle, Circle, Ellipse, Arc, NGon | **Imported** as curve objects: each spline with its knots and handles as 3ds Max draws them (straight segments stay straight), open or closed, the interpolation steps as the resolution. A shape that renders in 3ds Max (Enable In Renderer) gets a round bevel of its thickness; a rectangular section is drawn round, an NGon's corner radius and an Ellipse's outline are left out (each a line in the report). With modifiers (Extrude…) the shape arrives as the curve |
+| Star, Text, Helix, Donut, Section, NURBS curves and surfaces | Not yet: placeholder |
 | Standard lights, V-Ray lights, sky | Not yet: placeholder |
 | Cameras and their targets | Not yet: placeholder |
 | Everything else: other lights, hair, proxies (`.vrmesh`, Corona proxy), XRefs, particles, bones… | Not yet: placeholder |

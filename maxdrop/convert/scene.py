@@ -7,6 +7,7 @@
     desc = read(path)                   # the file's own system unit; read(path, meters=0.01) overrides it
     desc.nodes                          # NodeDescription per node, pre-order: a parent before its children
     desc.meshes[node.mesh]              # MeshDescription, shared by the nodes of one base object
+    desc.curves[node.curve]             # CurveDescription of a shape node, shared the same way
     desc.placeholders                   # Counter: class name -> nodes built as an empty
     desc.layers                         # LayerDescription per layer that holds a node, a parent before its children
     desc.unknown_controllers            # Counter: controller class name -> times met
@@ -30,8 +31,15 @@ distinct masks the edge is sharp (a file can put any number of faces on one edge
 vertex used twice, the vertex set of an earlier face) are left out and reported. UV layers: every map channel >= 1, ascending; channel 1 is "UVMap", channel n
 "UVChannel_<n>"; the w coordinate is dropped.
 
-A node becomes an EMPTY placeholder when its base object is not an Editable Mesh or Editable Poly, when it has no
-object, or when the reader refuses its geometry or its record; placeholders counts them by the class name of the
+A shape (reader.shapes: Line, Editable Spline, Rectangle, Circle, Ellipse, Arc, NGon) becomes a CURVE, keyed and
+shared like a mesh, its offset baked into the knots: one Bezier spline per spline, Max's in and out vectors as the
+left and right handles. A segment 3ds Max draws straight (segment type line) gets handles a third of the way along
+its chord, whatever the stored vectors. Resolution: 3ds Max's steps + 1 segments per Bezier segment, ADAPTIVE for
+an adaptive shape. A shape that renders (Enable In Renderer) gets a round bevel of its thickness (Max's thickness
+is the diameter) with about as many sides; a rectangular section is drawn round (an issue).
+
+A node becomes an EMPTY placeholder when its base object is not an Editable Mesh, Editable Poly or a shape read
+here, when it has no object, or when the reader refuses its geometry or its record; placeholders counts them by the class name of the
 file's class directory ("" when there is none). A Dummy helper (a group head is one) is an EMPTY too, but that is
 its conversion, not a placeholder. A group head keeps its members as children: that is how 3ds Max stores a group.
 Modifiers are listed, not evaluated: the base mesh is built.
@@ -49,10 +57,11 @@ Nothing here imports bpy; numpy is imported when a scene is described.
 import collections
 import math
 
-from ..reader import cfb, chunks, classids, controllers, geometry, units
+from ..reader import cfb, chunks, classids, controllers, geometry, shapes, units
 from ..reader import scene as reader_scene
 
-MESH, EMPTY = "MESH", "EMPTY"
+MESH, CURVE, EMPTY = "MESH", "CURVE", "EMPTY"
+ADAPTIVE = 12  # Blender's default curve resolution, for a shape 3ds Max interpolates adaptively
 UV_FIRST = "UVMap"
 UV_NAME = "UVChannel_%d"
 MAX_EDGE_MASKS = 64  # distinct smoothing-group masks paired on one non-manifold edge
@@ -62,21 +71,24 @@ ChunkError = chunks.ChunkError
 
 
 class NodeDescription:
-    """One node: index is its object index, parent the parent's (None at the top level); kind MESH or EMPTY; mesh
-    the key into SceneDescription.meshes (None for an empty); class_name the base object's class ("" without
+    """One node: index is its object index, parent the parent's (None at the top level); kind MESH, CURVE or EMPTY;
+    mesh the key into SceneDescription.meshes, curve the key into SceneDescription.curves (None when not one); class_name the base object's class ("" without
     one); modifiers the class names of its modifier stack, top first; layer the layer's object index (None without
     one); hidden, frozen, renderable, group_head and group_member the node's own flags; sheared whether matrix has
     shear (see sheared())."""
     __slots__ = ("index", "name", "parent", "matrix", "world", "kind", "mesh", "class_name", "mirrored",
-                 "modifiers", "layer", "hidden", "frozen", "renderable", "group_head", "group_member", "sheared")
+                 "modifiers", "layer", "hidden", "frozen", "renderable", "group_head", "group_member", "sheared",
+                 "curve")
 
     def __init__(self, index, name, parent, matrix, world, kind, mesh, class_name, mirrored, modifiers, layer=None,
-                 hidden=False, frozen=False, renderable=True, group_head=False, group_member=False, sheared=False):
+                 hidden=False, frozen=False, renderable=True, group_head=False, group_member=False, sheared=False,
+                 curve=None):
         self.index, self.name, self.parent, self.matrix, self.world = index, name, parent, matrix, world
         self.kind, self.mesh, self.class_name, self.mirrored, self.modifiers = kind, mesh, class_name, mirrored, \
             modifiers
         self.layer, self.hidden, self.frozen, self.renderable = layer, hidden, frozen, renderable
         self.group_head, self.group_member, self.sheared = group_head, group_member, sheared
+        self.curve = curve
 
     def __repr__(self):
         return "NodeDescription(%d, %r, %s, parent=%r)" % (self.index, self.name, self.kind, self.parent)
@@ -103,6 +115,33 @@ class MeshDescription:
             self.name, len(self.positions), len(self.loop_starts), len(self.uv_layers))
 
 
+class SplineDescription:
+    """One Bezier spline in meters: points, left and right handles, each [(x, y, z)] (Blender's handle_left is Max's
+    in vector, handle_right its out vector), cyclic for a closed spline."""
+    __slots__ = ("points", "left", "right", "cyclic")
+
+    def __init__(self, points, left, right, cyclic):
+        self.points, self.left, self.right, self.cyclic = points, left, right, cyclic
+
+    def __repr__(self):
+        return "SplineDescription(%d points%s)" % (len(self.points), ", cyclic" if self.cyclic else "")
+
+
+class CurveDescription:
+    """One curve in meters, offset baked: splines [SplineDescription]; resolution the Bezier resolution (segments
+    per Bezier segment); bevel_depth the bevel's radius (0: no bevel), bevel_resolution its round profile's
+    resolution; users the object indices of the nodes that share it, in walk order."""
+    __slots__ = ("key", "name", "splines", "resolution", "bevel_depth", "bevel_resolution", "users")
+
+    def __init__(self, key, name, splines, resolution, bevel_depth=0.0, bevel_resolution=0):
+        self.key, self.name, self.splines, self.resolution = key, name, splines, resolution
+        self.bevel_depth, self.bevel_resolution = bevel_depth, bevel_resolution
+        self.users = []
+
+    def __repr__(self):
+        return "CurveDescription(%r, %d splines)" % (self.name, len(self.splines))
+
+
 class LayerDescription:
     """One layer: index its object index, parent the parent layer's (None at the top level)."""
     __slots__ = ("index", "name", "parent", "hidden", "frozen", "renderable")
@@ -116,19 +155,22 @@ class LayerDescription:
 
 
 class SceneDescription:
-    """nodes in walk order, meshes {key: MeshDescription} in order of first use, meters per file unit, unit the
-    reader's SystemUnit (None when the file does not say), layers, placeholders, unknown_controllers and issues."""
-    __slots__ = ("nodes", "meshes", "meters", "unit", "layers", "placeholders", "unknown_controllers", "issues")
+    """nodes in walk order, meshes {key: MeshDescription} and curves {key: CurveDescription} in order of first use,
+    meters per file unit, unit the reader's SystemUnit (None when the file does not say), layers, placeholders,
+    unknown_controllers and issues."""
+    __slots__ = ("nodes", "meshes", "curves", "meters", "unit", "layers", "placeholders", "unknown_controllers",
+                 "issues")
 
     def __init__(self, meters, unit=None):
         self.nodes, self.meshes, self.meters, self.unit, self.layers = [], {}, meters, unit, []
+        self.curves = {}
         self.placeholders = collections.Counter()
         self.unknown_controllers = collections.Counter()
         self.issues = []
 
     def __repr__(self):
-        return "SceneDescription(%d nodes, %d meshes, %d placeholders, %g m per unit)" % (
-            len(self.nodes), len(self.meshes), sum(self.placeholders.values()), self.meters)
+        return "SceneDescription(%d nodes, %d meshes, %d curves, %d placeholders, %g m per unit)" % (
+            len(self.nodes), len(self.meshes), len(self.curves), sum(self.placeholders.values()), self.meters)
 
 
 def blender_matrix(m, meters=1.0):
@@ -254,6 +296,51 @@ def mesh_description(key, name, data, offset, meters):
                            uv_layers, dropped)
 
 
+def _straight(knots, closed):
+    """(left, right) handle lists of reader knots, those of each straight segment (segment type line) moved to a
+    third and two thirds of its chord."""
+    left = [k.in_vec for k in knots]
+    right = [k.out_vec for k in knots]
+    n = len(knots)
+    for k, knot in enumerate(knots):
+        if knot.segment != shapes.LINE or n < 2 or (k == n - 1 and not closed):
+            continue
+        a, b = knot.point, knots[(k + 1) % n].point
+        right[k] = tuple(x + (y - x) / 3.0 for x, y in zip(a, b))
+        left[(k + 1) % n] = tuple(x + (y - x) * 2.0 / 3.0 for x, y in zip(a, b))
+    return left, right
+
+
+def curve_description(key, name, shape, offset, meters):
+    """(a CurveDescription of a reader Shape, issues): straight segments as straight handles, the offset (a reader
+    matrix) applied, then meters; issues name what is drawn otherwise."""
+    issues = list(shape.issues)
+
+    def place(p):
+        if offset is not None:
+            p = tuple(p[0] * offset[0][c] + p[1] * offset[1][c] + p[2] * offset[2][c] + offset[3][c]
+                      for c in range(3))
+        return tuple(x * meters for x in p)
+
+    splines = []
+    for sp in shape.splines:
+        if not sp.knots:
+            continue
+        left, right = _straight(sp.knots, sp.closed)
+        splines.append(SplineDescription([place(k.point) for k in sp.knots], [place(p) for p in left],
+                                         [place(p) for p in right], sp.closed))
+    resolution = ADAPTIVE if shape.adaptive else shape.steps + 1
+    depth, profile = 0.0, 0
+    r = shape.render
+    if r.renderable and r.thickness > 0:
+        if r.rectangular:
+            issues.append("a rectangular section (%g x %g) is drawn round, %g across" % (r.width, r.length,
+                                                                                        r.thickness))
+        depth = r.thickness / 2.0 * meters
+        profile = max(0, (r.sides - 4) // 2)  # Blender's round profile has 4 + 2 * resolution sides
+    return CurveDescription(key, name, splines, resolution, depth, profile), issues
+
+
 def sheared(m):
     """Whether the 3x3 of a reader matrix is more than a rotation and a scale along its own axes (its rows are not
     orthogonal): Blender's matrix_basis cannot hold that."""
@@ -276,6 +363,7 @@ def describe(scene, meters=1.0, unit=None):
     desc = SceneDescription(meters, unit)
     order = scene.walk()
     found = {}  # node -> (reader Node, Stack or None), or the ChunkError its record or object stack raised
+    shape_of = {}  # base object index -> reader Shape, or None when the reader refused it
     remaining = collections.Counter()  # base object -> nodes still to build: its MeshData goes with the last
     for i in order:
         try:
@@ -291,6 +379,7 @@ def describe(scene, meters=1.0, unit=None):
     for i in order:
         local, world = t.local(i), t.world(i)
         kind, key, class_name, modifiers, name, node, layer, base = EMPTY, None, "", (), "", None, None, None
+        curve = None
         if isinstance(found[i], ChunkError):  # a damaged node record or object stack: an empty, children placed
             desc.issues.append((i, "node: %s" % found[i]))
         else:
@@ -300,7 +389,11 @@ def describe(scene, meters=1.0, unit=None):
             base = stack.base if stack is not None else None
             if stack is not None:
                 modifiers = tuple(_class_name(scene, m) for m in stack.modifiers)
-            if base is not None:
+            if base is not None and shapes.is_shape(scene, base):
+                class_name = _class_name(scene, base)
+                kind, curve = _curve(scene, desc, shape_of, base, i, name, t.offset(i), meters)
+                remaining[base] -= 1
+            elif base is not None:
                 class_name = _class_name(scene, base)
                 if base not in data_of:
                     try:
@@ -331,13 +424,36 @@ def describe(scene, meters=1.0, unit=None):
         desc.nodes.append(NodeDescription(i, name, scene.parent(i), blender_matrix(local, meters),
                                           blender_matrix(world, meters), kind, key, class_name,
                                           determinant3(world) < 0, modifiers, layer, sheared=sheared(local),
-                                          **flags))
+                                          curve=curve, **flags))
     desc.issues.extend((issue.node, "transform: %s" % issue.reason) for issue in t.issues)
     desc.unknown_controllers.update(
         _class_name(scene, issue.controller) if issue.controller is not None else ""
         for issue in t.issues if issue.reason == controllers.UNKNOWN_CLASS)
     desc.layers = _layer_descriptions(scene, layers)
     return desc
+
+
+def _curve(scene, desc, shape_of, base, node, name, offset, meters):
+    """(kind, curve key) of a node whose base object is a shape: CURVE and its key in desc.curves, made on first
+    use; EMPTY and None when the reader refuses the shape (an issue). shape_of caches the reader's Shapes."""
+    if base not in shape_of:
+        try:
+            shape_of[base] = shapes.read_shape(scene, base)
+        except shapes.ShapeError as exc:
+            shape_of[base] = None
+            desc.issues.append((node, "shape: %s" % exc))
+    sh = shape_of[base]
+    if sh is None:
+        return EMPTY, None
+    offset = None if offset == controllers.IDENTITY else offset
+    key = (base, offset)
+    cd = desc.curves.get(key)
+    if cd is None:
+        cd, issues = curve_description(key, name, sh, offset, meters)
+        desc.curves[key] = cd
+        desc.issues.extend((node, "shape: %s" % x) for x in issues)
+    cd.users.append(node)
+    return CURVE, key
 
 
 def _layer(scene, i, layers, issues, node):

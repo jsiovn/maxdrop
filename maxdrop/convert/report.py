@@ -46,7 +46,8 @@ UNKNOWN_CONTROLLER = "transform: " + controllers.UNKNOWN_CLASS  # convert.scene'
 class Report:
     """Counters and lists of one import. issues and geometry_errors are [(node label, reason)], material_issues
     [(material or map object index, reason)]. materials_built is None when the import made no materials."""
-    __slots__ = ("source", "unit", "meters", "nodes", "objects_built", "meshes_built", "layers", "hidden_layers",
+    __slots__ = ("source", "unit", "meters", "nodes", "objects_built", "meshes_built", "curves_built", "layers",
+                 "hidden_layers",
                  "hidden", "unrenderable", "frozen", "groups", "placeholders", "unknown_controllers", "modifiers",
                  "modifiers_applied", "modifiers_converted",
                  "dropped_uv_layers", "unknown_controller_nodes", "geometry_errors", "issues", "pack", "pack_name",
@@ -57,6 +58,7 @@ class Report:
     def __init__(self, source=""):
         self.source, self.unit, self.meters = source, None, 1.0
         self.nodes = self.objects_built = self.meshes_built = self.layers = self.hidden_layers = 0
+        self.curves_built = 0
         self.hidden = self.unrenderable = self.frozen = self.groups = self.dropped_uv_layers = 0
         self.unknown_controller_nodes = 0  # their issues, listed by class in unknown_controllers instead
         self.placeholders = collections.Counter()
@@ -106,6 +108,8 @@ class Report:
         """(level, one line) for the operator's report."""
         name = self.source or "the scene"
         built = "%s, %s" % (_plural(self.objects_built, "object"), _plural(self.meshes_built, "mesh", "meshes"))
+        if self.curves_built:
+            built += ", " + _plural(self.curves_built, "curve")
         if self.materials_built is not None:
             built += ", " + _plural(self.materials_built, "material")
         if not self.left_out and not self.approximated:
@@ -133,7 +137,8 @@ class Report:
         else:
             lines.append("Units: not stated in the file, %g m per unit" % self.meters)
         lines.append("Nodes read: %d" % self.nodes)
-        lines.append("Objects built: %d, meshes: %d" % (self.objects_built, self.meshes_built))
+        lines.append("Objects built: %d, meshes: %d" % (self.objects_built, self.meshes_built)
+                     + (", curves: %d" % self.curves_built if self.curves_built else ""))
         lines.append("Layers: %d (%d hidden)" % (self.layers, self.hidden_layers))
         lines.append("Objects hidden: %d, not renderable: %d, frozen: %d" % (self.hidden, self.unrenderable,
                                                                              self.frozen))
@@ -280,7 +285,8 @@ def _pack_lines(pack, pack_name):
     return lines
 
 
-def gather(desc, source="", objects_built=None, meshes_built=None, dropped_uv_layers=0, pack=None, pack_name=""):
+def gather(desc, source="", objects_built=None, meshes_built=None, dropped_uv_layers=0, pack=None, pack_name="",
+           curves_built=None):
     """The Report of one import from its SceneDescription and what build/ made of it."""
     rep = Report(source)
     rep.unit = desc.unit.name if desc.unit is not None else None
@@ -288,6 +294,7 @@ def gather(desc, source="", objects_built=None, meshes_built=None, dropped_uv_la
     rep.nodes = len(desc.nodes)
     rep.objects_built = len(desc.nodes) if objects_built is None else objects_built
     rep.meshes_built = len(desc.meshes) if meshes_built is None else meshes_built
+    rep.curves_built = len(desc.curves) if curves_built is None else curves_built
     rep.dropped_uv_layers = dropped_uv_layers
     rep.layers = len(desc.layers)
     rep.hidden_layers = sum(1 for la in desc.layers if la.hidden)

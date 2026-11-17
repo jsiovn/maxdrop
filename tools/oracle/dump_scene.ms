@@ -17,7 +17,7 @@ global MaxDropOracle
 
 struct MaxDropOracleStruct
 (
-	version = 3,
+	version = 4,
 
 	fn num v =
 	(
@@ -190,6 +190,47 @@ struct MaxDropOracleStruct
 		)
 	),
 
+	-- the base object of a shape node as 3ds Max's own Bezier: a copy of the node without its modifiers, collapsed to
+	-- an Editable Spline; knots and vectors in object space (getKnotPoint answers in world space)
+	fn shapeJson n =
+	(
+		local b = n.baseObject
+		if superClassOf b != shape do return "null"
+		local t = copy n
+		while t.modifiers.count > 0 do deleteModifier t 1
+		convertToSplineShape t
+		local inv = inverse t.objectTransform
+		local splines = #()
+		for s = 1 to numSplines t do
+		(
+			local segs = numSegments t s
+			local knots = for k = 1 to numKnots t s collect inline #( \
+				#("in", vec ((getInVec t s k) * inv)), \
+				#("mid", if k <= segs then vec ((interpBezier3D t s k 0.5) * inv) else "null"), \
+				#("out", vec ((getOutVec t s k) * inv)), \
+				#("pos", vec ((getKnotPoint t s k) * inv)), \
+				#("segment", if k <= segs then str ((getSegmentType t s k) as string) else "null"), \
+				#("type", str ((getKnotType t s k) as string)) \
+			)
+			append splines (obj #(#("closed", bool (isClosed t s)), #("knots", block knots 12)) 10)
+		)
+		delete t
+		obj #( \
+			#("adaptive", bool b.adaptive), \
+			#("angle", num b.render_angle), \
+			#("display_render_mesh", bool b.render_displayRenderMesh), \
+			#("length", num b.render_length), \
+			#("optimize", bool b.optimize), \
+			#("rectangular", bool b.render_rectangular), \
+			#("renderable", bool b.render_renderable), \
+			#("sides", intOrNull b.render_sides), \
+			#("splines", block splines 8), \
+			#("steps", intOrNull b.steps), \
+			#("thickness", num b.render_thickness), \
+			#("width", num b.render_width) \
+		) 6
+	),
+
 	fn nodeJson n index mats =
 	(
 		local b = n.baseObject
@@ -228,6 +269,7 @@ struct MaxDropOracleStruct
 			#("offset_scale", vec n.objectOffsetScale), \
 			#("parent", parent), \
 			#("renderable", bool n.renderable), \
+			#("shape", shapeJson n), \
 			#("transform", mat12 n.transform) \
 		) 4
 	),

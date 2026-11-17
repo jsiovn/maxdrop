@@ -8,6 +8,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ## [Unreleased]
 
+### Added
+
+- **Shapes as curves**: Line, Editable Spline, Rectangle, Circle, Ellipse, Arc and NGon arrive as Blender curve
+  objects with their splines, knots and handles as 3ds Max draws them, straight segments straight, open or closed,
+  at their place in the hierarchy. A shape set to render in 3ds Max gets its thickness as a round bevel. The import
+  report counts the curves.
+
 ### Changed
 
 - **Import report, modifiers**: the line of modifiers not applied says what that means, "ignored: the object

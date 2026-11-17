@@ -60,7 +60,7 @@ Top level:
 | `max_version` | The Max that made the dump: `[release, year]`, e.g. `[22000, 2020]`. |
 | `node_count` | Number of entries in `nodes`. |
 | `nodes` | Every node of the scene, see below. |
-| `oracle_version` | Version of this layout (2: `material_graph` added; 3: the modifier context, switches and name of each modifier). |
+| `oracle_version` | Version of this layout (2: `material_graph` added; 3: the modifier context, switches and name of each modifier; 4: `shape`). |
 | `renderer` | The current renderer: `class_id`, `class_name`. |
 | `time` | The frame every node was evaluated at: always 0. |
 | `units` | `system_type` (e.g. `millimeters`), `system_scale`, `display_type` (`Generic`, `Metric`, `US`, `Custom`), `display_metric`, `display_us`. |
@@ -88,6 +88,7 @@ parent always comes before its children):
 | `layer` | Name of the node's layer. |
 | `hidden`, `frozen`, `renderable` | The node's own flags (a layer's flags are in `layers`). |
 | `material` | Index into `materials`, `null` without a material. Max materials have no handle that survives a reload. |
+| `shape` | `null` unless the base object is a shape (superclass 64). Then the base object as 3ds Max's own Bezier: a copy of the node without its modifiers, collapsed to an Editable Spline (`convertToSplineShape`). `splines`, each `closed` and its `knots`: `type` (`corner`, `smooth`, `bezier`, `bezierCorner`), `segment` (`curve` or `line`, the segment that starts at the knot; `null` after the last knot of an open spline), `pos`, `in`, `out` (`getKnotPoint`, `getInVec`, `getOutVec`, turned from world into object space by the inverse object transform) and `mid` (`interpBezier3D` at 0.5: the middle of that segment as 3ds Max interpolates it, `null` where `segment` is). The base object's `steps`, `optimize`, `adaptive`, and its rendering settings: `renderable` (Enable In Renderer), `display_render_mesh` (Enable In Viewport), `thickness`, `sides`, `angle`, `rectangular`, `width`, `length`. |
 
 ## The material graph
 

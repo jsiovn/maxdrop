@@ -23,9 +23,13 @@ TOP_KEYS = ["file", "file_version", "layers", "material_graph", "materials", "ma
 NODE_KEYS = ["base_class_id", "base_class_name", "base_faces", "base_superclass", "base_verts", "bbox_max",
              "bbox_min", "eval_faces", "eval_verts", "frozen", "handle", "hidden", "index", "instances", "layer",
              "material", "modifiers", "name", "object_transform", "offset_pos", "offset_rot", "offset_scale",
-             "parent", "renderable", "transform"]
+             "parent", "renderable", "shape", "transform"]
 MODIFIER_KEYS = ["class_id", "class_name", "context_bbox_max", "context_bbox_min", "context_tm", "enabled",
                  "enabled_in_renders", "enabled_in_views", "name"]
+SHAPE_KEYS = ["adaptive", "angle", "display_render_mesh", "length", "optimize", "rectangular", "renderable", "sides",
+              "splines", "steps", "thickness", "width"]
+KNOT_KEYS = ["in", "mid", "out", "pos", "segment", "type"]
+KNOT_TYPES = ("corner", "smooth", "bezier", "bezierCorner")
 GRAPH_KEYS = ["blocks", "class_id", "class_name", "index", "name", "parts", "subs", "superclass"]
 BLOCK_KEYS = ["block_id", "kind", "params", "ref"]
 PB2_PARAM_KEYS = ["id", "name", "transient", "type", "value"]
@@ -113,7 +117,7 @@ class OracleFiles(unittest.TestCase):
             with self.subTest(name):
                 o = _oracle(name)
                 self.assertEqual(list(o), TOP_KEYS)
-                self.assertEqual(o["oracle_version"], 3)
+                self.assertEqual(o["oracle_version"], 4)
                 self.assertEqual(o["file"], name + ".max")
                 self.assertEqual(o["node_count"], len(o["nodes"]))
                 handles = {n["handle"] for n in o["nodes"]}
@@ -130,6 +134,9 @@ class OracleFiles(unittest.TestCase):
                         self.assertTrue(all(CLASS_ID.match(c) for c in cid), cid)
                     for h in n["instances"]:
                         self.assertEqual(groups[h], n["instances"])
+                    self.assertEqual(n["shape"] is not None, n["base_superclass"] == 64, n["name"])
+                    if n["shape"] is not None:
+                        self._check_shape(n["shape"])
                     self.assertEqual(n["index"], i)
                     self.assertEqual(len(n["transform"]), 12)
                     self.assertEqual(len(n["object_transform"]), 12)
@@ -139,6 +146,20 @@ class OracleFiles(unittest.TestCase):
                     self.assertTrue(set(n["instances"]) <= handles)
                     self.assertIn(n["layer"], [layer["name"] for layer in o["layers"]])
                 self.assertEqual([m["index"] for m in o["materials"]], list(range(len(o["materials"]))))
+
+    def _check_shape(self, shape):
+        self.assertEqual(list(shape), SHAPE_KEYS)
+        for sp in shape["splines"]:
+            self.assertEqual(list(sp), ["closed", "knots"])
+            knots = sp["knots"]
+            for k, knot in enumerate(knots):
+                self.assertEqual(list(knot), KNOT_KEYS)
+                self.assertIn(knot["type"], KNOT_TYPES)
+                # a closed spline has a segment after every knot, an open one none after its last
+                last = k == len(knots) - 1 and not sp["closed"]
+                self.assertEqual(knot["segment"] is None, last)
+                self.assertEqual(knot["mid"] is None, last)
+                self.assertIn(knot["segment"], (None, "curve", "line"))
 
     def _check_block(self, b, size):
         self.assertEqual(list(b), BLOCK_KEYS)
@@ -300,6 +321,37 @@ class OracleFiles(unittest.TestCase):
         self.assertEqual(stack("FixtureNested"), [("Taper", True, True, True)])
         self.assertEqual(stack("FixtureNestedRef"), [("Twist", True, True, True), ("Taper", True, True, True)])
         self.assertEqual(by_name["FixtureNested"]["instances"], by_name["FixtureNestedRef"]["instances"])
+
+    def test_shapes(self):
+        by_name = {n["name"]: n for n in _oracle("shapes")["nodes"]}
+        self.assertEqual(len(by_name), 14)
+        self.assertIsNone(by_name["FixtureBox"]["shape"])  # the one mesh
+        line = by_name["FixtureLine"]["shape"]
+        self.assertEqual([(sp["closed"], [k["type"] for k in sp["knots"]]) for sp in line["splines"]],
+                         [(True, ["corner", "smooth", "bezier", "bezierCorner"]),
+                          (False, ["corner", "bezier", "corner"])])
+        self.assertEqual((line["renderable"], line["display_render_mesh"], line["thickness"], line["sides"],
+                          line["steps"]), (True, True, 2, 8, 4))
+        # a straight segment stays straight although its knots have vectors off the chord
+        a, b = line["splines"][1]["knots"][1:]
+        self.assertEqual(a["segment"], "line")
+        _close(self, a["mid"], [(x + y) / 2 for x, y in zip(a["pos"], b["pos"])])
+        curved = [(p + 3 * o + 3 * i + q) / 8 for p, o, i, q in zip(a["pos"], a["out"], b["in"], b["pos"])]
+        self.assertGreater(max(abs(x - y) for x, y in zip(curved, a["mid"])), 1)
+        # stood up: the knots are in object space, the transform turns them
+        arc = by_name["FixtureArc"]
+        self.assertTrue(all(k["pos"][2] == 0 for k in arc["shape"]["splines"][0]["knots"]))
+        _close(self, arc["transform"][6:9], [0, -1, 0])
+        self.assertEqual(by_name["FixtureOpen"]["parent"], by_name["FixtureRect"]["handle"])
+        counts = {name: [len(sp["knots"]) for sp in n["shape"]["splines"]] for name, n in by_name.items()
+                  if n["shape"] is not None}
+        self.assertEqual(counts, {"FixtureLine": [4, 3], "FixtureEditable": [4], "FixtureRect": [8],
+                                  "FixtureOpen": [3], "FixtureRectSharp": [4], "FixtureCircle": [4],
+                                  "FixtureEllipse": [4], "FixtureArc": [4], "FixturePie": [5],
+                                  "FixtureArcWide": [4], "FixtureNGon": [6], "FixtureNGonRound": [5],
+                                  "FixtureNGonIn": [3]})
+        self.assertEqual((by_name["FixtureCircle"]["shape"]["steps"], by_name["FixtureNGon"]["shape"]["adaptive"]),
+                         (3, True))
 
     def test_layers_flags(self):
         o = _oracle("layers_flags")

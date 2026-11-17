@@ -5,7 +5,7 @@
 """Tests of maxdrop/convert/scene.py, the scene description: no Blender. The smoothing-group rule, the loop reversal
 of a mirrored object offset, and every committed fixture against its 3ds Max oracle (order, parents, world
 matrices, world bounding boxes, counts, shared meshes, units) and its authoring script (UV channels, smoothing
-groups).
+groups), the shapes' curves against the oracle's knots and segment midpoints.
 
     python -I -m unittest discover tests
 """
@@ -16,6 +16,7 @@ import os
 import sys
 import types
 import unittest
+from unittest import mock
 
 try:
     import numpy
@@ -38,6 +39,7 @@ conv = importlib.import_module(_PKG + ".convert.scene")
 geometry = importlib.import_module(_PKG + ".reader.geometry")
 cfb = importlib.import_module(_PKG + ".reader.cfb")
 reader_scene = importlib.import_module(_PKG + ".reader.scene")
+shapes = importlib.import_module(_PKG + ".reader.shapes")
 
 # From the fixture scripts (tools/fixtures/*.ms: mapcoords:true gives channel 1); the oracle has no map channels or
 # smoothing groups.
@@ -55,6 +57,7 @@ UV_LAYERS = {
     "layers_flags": [],
     "modifier_pivot": ["UVMap"],  # the base mesh's channel: the UVW Map modifier is not applied
     "multi_uv": ["UVMap", "UVChannel_2", "UVChannel_3"],
+    "shapes": ["UVMap"],  # FixtureBox; the shapes are curves
     "stack_basic": ["UVMap"],  # the base meshes' channel: no modifier is applied
     "standard_physical": ["UVMap"],
     "texmap_rules": ["UVMap"],
@@ -275,6 +278,48 @@ class DamagedInput(unittest.TestCase):
         self.assertEqual(dict(desc.unknown_controllers), {"Position/Rotation/Scale": len(desc.nodes)})
 
 
+class Curves(unittest.TestCase):
+    def _shape(self, knots, closed=False, **kw):
+        render = shapes.DEFAULT_RENDER._replace(**kw)
+        return shapes.Shape(shapes.classids.LINE, (shapes.Spline(tuple(knots), closed),), 6, True, False, render, ())
+
+    def test_straight_segment_and_offset(self):
+        """A segment of type line gets its handles on the chord; the offset and meters apply to every handle."""
+        k = shapes.Knot
+        knots = [k(shapes.BEZIER, shapes.LINE, (0, 0, 0), (0, -5, 0), (0, 5, 0)),
+                 k(shapes.BEZIER, shapes.CURVE, (9, 0, 0), (9, 5, 0), (9, -5, 0)),
+                 k(shapes.CORNER, shapes.LINE, (9, 9, 0), (9, 9, 0), (9, 9, 0))]
+        offset = ((1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (1, 2, 3, 1))
+        cd, issues = conv.curve_description("k", "n", self._shape(knots), offset, 0.5)
+        sp = cd.splines[0]
+        self.assertEqual(issues, [])
+        self.assertEqual(sp.points, [(0.5, 1, 1.5), (5, 1, 1.5), (5, 5.5, 1.5)])
+        self.assertEqual(sp.right[0], (2, 1, 1.5))  # a third of the chord, not the stored (0, 5)
+        self.assertEqual(sp.left[1], (3.5, 1, 1.5))
+        self.assertEqual(sp.right[1], (5, -1.5, 1.5))  # a curve segment keeps its vector
+        self.assertEqual(sp.right[2], (5, 5.5, 1.5))  # open: no segment after the last knot
+        self.assertEqual((cd.resolution, cd.bevel_depth), (7, 0.0))
+
+    def test_closing_straight_segment_and_bevel(self):
+        k = shapes.Knot
+        knots = [k(shapes.CORNER, shapes.CURVE, (0, 0, 0), (0, 0, 0), (0, 0, 0)),
+                 k(shapes.CORNER, shapes.LINE, (3, 0, 0), (3, 0, 0), (3, 0, 0))]
+        cd, issues = conv.curve_description("k", "n", self._shape(knots, closed=True, renderable=True, thickness=4.0,
+                                                                  sides=3, rectangular=True), None, 1.0)
+        self.assertEqual((cd.splines[0].right[1], cd.splines[0].left[0]), ((2, 0, 0), (1, 0, 0)))
+        self.assertEqual((cd.bevel_depth, cd.bevel_resolution), (2.0, 0))
+        self.assertEqual(len(issues), 1)  # the rectangular section is drawn round
+
+    def test_refused_shape_is_a_placeholder_with_an_issue(self):
+        path = os.path.join(ROOT, "tests", "fixtures", "shapes.max")
+        with mock.patch.object(shapes, "read_shape", side_effect=shapes.ShapeError("object 1 (Line): damaged")):
+            desc = conv.read(path)
+        self.assertEqual(desc.curves, {})
+        self.assertEqual(sum(desc.placeholders.values()), 13)
+        self.assertEqual(len(desc.issues), 13)
+        self.assertTrue(all(reason.startswith("shape: ") for _i, reason in desc.issues))
+
+
 class Shear(unittest.TestCase):
     def test_rotation_and_axis_scale_are_not_shear(self):
         c, s = 0.6, 0.8
@@ -408,7 +453,8 @@ class Fixtures(unittest.TestCase):
     def test_counts_equal_the_oracle(self):
         for name, desc, oracle in self.cases:
             for node, o in zip(desc.nodes, oracle["nodes"]):
-                self.assertEqual(node.kind, conv.MESH if o["base_verts"] is not None else conv.EMPTY, name)
+                kind = conv.MESH if o["base_verts"] is not None else conv.CURVE if o["shape"] else conv.EMPTY
+                self.assertEqual(node.kind, kind, "%s %s" % (name, node.name))
                 if node.kind == conv.MESH:
                     md = desc.meshes[node.mesh]
                     self.assertEqual((len(md.positions), len(md.loop_starts)), (o["base_verts"], o["base_faces"]),
@@ -510,6 +556,47 @@ class Fixtures(unittest.TestCase):
         self.assertEqual(sorted(k for k, n in by_name.items() if n.group_member),
                          sorted(k for k, n in by_name.items() if n.parent == head))
         self.assertEqual(len([n for n in desc.nodes if n.parent == head]), 2)
+
+    def test_curves_equal_the_oracle(self):
+        """Every shape node's curve: splines, points and cyclic flags as 3ds Max converts the shape, each segment's
+        Bezier midpoint where 3ds Max interpolates it (straight segments included), resolution and bevel."""
+        for name, desc, oracle in self.cases:
+            for node, o in zip(desc.nodes, oracle["nodes"]):
+                if o["shape"] is None:
+                    self.assertIsNone(node.curve)
+                    continue
+                label = "%s %s" % (name, node.name)
+                cd = desc.curves[node.curve]
+                self.assertIn(node.index, cd.users, label)
+                self.assertIsNone(node.curve[1], label)  # no object offset in the fixtures: object space = curve's
+                want = o["shape"]["splines"]
+                self.assertEqual([(len(sp.points), sp.cyclic) for sp in cd.splines],
+                                 [(len(w["knots"]), w["closed"]) for w in want], label)
+                for sp, w in zip(cd.splines, want):
+                    n = len(sp.points)
+                    for k, knot in enumerate(w["knots"]):
+                        numpy.testing.assert_allclose(numpy.asarray(sp.points[k]) / desc.meters, knot["pos"],
+                                                      atol=1e-4, err_msg=label)
+                        if knot["mid"] is None:
+                            continue
+                        j = (k + 1) % n
+                        mid = (numpy.asarray(sp.points[k]) + 3 * numpy.asarray(sp.right[k]) +
+                               3 * numpy.asarray(sp.left[j]) + numpy.asarray(sp.points[j])) / 8 / desc.meters
+                        numpy.testing.assert_allclose(mid, knot["mid"], atol=1e-4, err_msg="%s knot %d" % (label, k))
+                s = o["shape"]
+                self.assertEqual(cd.resolution, conv.ADAPTIVE if s["adaptive"] else s["steps"] + 1, label)
+                if s["renderable"]:
+                    self.assertAlmostEqual(cd.bevel_depth, s["thickness"] / 2 * desc.meters, places=9)
+                    self.assertEqual(cd.bevel_resolution, (s["sides"] - 4) // 2, label)
+                else:
+                    self.assertEqual(cd.bevel_depth, 0.0, label)
+
+    def test_shapes_are_not_placeholders(self):
+        desc = dict((n, d) for n, d, _o in self.cases)["shapes"]
+        self.assertEqual([n.kind for n in desc.nodes], [conv.CURVE] * 13 + [conv.MESH])
+        self.assertEqual(len(desc.curves), 13)
+        line = next(n for n in desc.nodes if n.name == "FixtureLine")
+        self.assertEqual(desc.curves[line.curve].bevel_resolution, 2)  # 8 sides
 
     def test_material_indices_from_the_reader(self):
         desc = dict((n, d) for n, d, _o in self.cases)["box_poly_standard"]

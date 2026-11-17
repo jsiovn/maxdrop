@@ -32,6 +32,8 @@
 # asset list names (_referenced_maps), and the popup asks the same of an earlier unpack.
 # Modified for MaxDrop, 2026-11-17 (jsiovn). Color swatches follow the gamma setting the scene was saved with
 # (convert.colors): both converters share the rule read once, and the import report states it.
+# Modified for MaxDrop, 2026-11-17 (jsiovn). Shapes are built as curves: a failed build also removes the curves it
+# made, and the import report counts them.
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -74,7 +76,7 @@ _SHOWN_FILES = 5
 _UNREADABLE = (OSError, ValueError, IndexError, struct.error)
 # What a build makes besides objects and collections, in the order a failed build removes them. Addresses, not
 # names: a new datablock could reuse the address of one freed meanwhile, but the build frees none.
-_MADE = ("meshes", "materials", "images")
+_MADE = ("meshes", "curves", "materials", "images")
 
 # Saved in presets by identifier; the numbers keep each item's value stable.
 UNITS = (
@@ -324,13 +326,13 @@ def _material_slots(cf, sc, desc, max_path, context, image_search):
 
 def _remove(cols, before):
     """Remove what a failed build left: the objects of the file's collection tree, the collections, and the meshes,
-    materials and images made since before ({kind: the as_pointer() of each datablock before the build}) that
+    curves, materials and images made since before ({kind: the as_pointer() of each datablock before the build}) that
     nothing uses."""
     for ob in list(cols.root.all_objects):
         bpy.data.objects.remove(ob)
     for col in list(cols.layers.values()) + [cols.root]:
         bpy.data.collections.remove(col)
-    for kind in _MADE:  # meshes first: a removed mesh frees its materials, a removed material its images
+    for kind in _MADE:  # meshes and curves first: they free their materials, a removed material its images
         blocks = getattr(bpy.data, kind)
         for block in [b for b in blocks if b.as_pointer() not in before[kind] and not b.users]:
             blocks.remove(block)
@@ -533,8 +535,8 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
         collection, then publish its import report (console and the text "MaxDrop Report"). pack: archive.unpack()'s
         result when the scene came from a scene pack, pack_name the archive's file name. ([(report level, line)],
         the convert.report.Report), the report's summary last; one of _UNREADABLE when the file cannot be read. A
-        build that fails is removed again (objects, collections, meshes, materials, images) before the exception goes
-        on."""
+        build that fails is removed again (objects, collections, meshes, curves, materials, images) before the
+        exception goes on."""
         from .build import collections as build_collections
         from .build import materials as build_materials
         from .build import objects as build_objects
@@ -569,7 +571,8 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
             raise
         del slots
         rep = convert_report.gather(desc, source=name, objects_built=len(built.objects),
-                                    meshes_built=len(built.meshes), dropped_uv_layers=built.dropped_uv_layers,
+                                    meshes_built=len(built.meshes), curves_built=len(built.curves),
+                                    dropped_uv_layers=built.dropped_uv_layers,
                                     pack=pack, pack_name=pack_name)
         rep.issues.extend(builder.issues())
         if materials:

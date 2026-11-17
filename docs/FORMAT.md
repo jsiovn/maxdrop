@@ -237,6 +237,71 @@ this order:
 
 A field whose value is zero is left out: the top of every box has mask `0x30`, the other faces `0x38`.
 
+## Shapes
+
+`maxdrop/reader/shapes.py` reads them; `tests/unit/test_shapes.py` checks every shape node of every fixture against
+the oracle's `shape`: what 3ds Max's own conversion to an Editable Spline gives (knot types, segment types,
+positions and vectors within 1e-4, closed flags, interpolation and rendering settings). shapes has one node per
+case below. The classes, superclass `0x40` (shape):
+
+| Class (ClassID) | Kept as |
+|---|---|
+| SplineShape `(0xA, 0)` (Editable Spline) | its knots: FixtureEditable (a Circle collapsed, a knot moved), FixtureOpen |
+| Line `(0x1040, 0)` | its knots, the same chunks inside a `0x2000` container: FixtureLine |
+| Rectangle `(0x1065, 0)` | old ParamBlock at slot 1: 0 length, 1 width, 2 corner radius |
+| Circle `(0x1999, 0)` | old ParamBlock at slot 1: 0 radius |
+| Ellipse `(0x1097, 0)` | ParamBlock2 at slot 1: 0 length, 1 width, 2 outline thickness, 3 outline (on / off) |
+| Arc `(0x1996, 0)` | old ParamBlock at slot 1: 0 radius, 1 from, 2 to (degrees), 3 pie, 4 reverse |
+| NGon `(0x1050, 0)` | old ParamBlock at slot 1: 0 radius, 1 sides, 2 circular, 3 corner radius, 4 scribe |
+
+Every shape has the rendering block at reference slot 0, an old ParamBlock of 28 entries; the parametric ones keep
+their interpolation in another at slot 2 (0 steps, 1 optimize, 2 adaptive). Of the rendering block, set to distinct
+values in a scratch file of 3ds Max 2020 and in FixtureLine: 0 thickness (the diameter), 1 sides, 2 angle (degrees),
+3 to 5 the same for the viewport, 6 Enable In Renderer, 7 generate mapping coordinates, 8 Enable In Viewport, 9 use
+viewport settings, 11 rectangular, 12 width, 13 length, 14 the rectangular angle, 21 the auto-smooth threshold
+(radians).
+
+An Editable Spline keeps a BezierShape `0x1010`:
+
+| Chunk | Content |
+|---|---|
+| `0x1010` | one container per spline, below |
+| `0x1050` | `i32` steps; `-1` when adaptive (the probe: steps 7 and adaptive gave `-1` here and 7 below) |
+| `0x1060` | `u32` optimize (`0` off) |
+| `0x1020`, `0x1030`, `0x1040` | selections; not read |
+
+and beside it `0x1060`, an `i32`: the steps. A spline:
+
+| Chunk | Content |
+|---|---|
+| `0x2900` | `u32` knot count |
+| `0x2904` | `u32`, `0` in every file; not decoded |
+| `0x290A` | the knots, 52 bytes each: `i32` knot type (0 smooth, 1 corner, 2 Bezier, 3 Bezier corner), `i32` type of the segment that starts at the knot (0 curve, 1 line), an `f32` (not decoded), then the point, the in vector and the out vector as 3 x `f32` each, in object space, and a `u32` (not decoded) |
+| `0x290D` | `u32` closed |
+
+The vectors are positions, not offsets, and the file holds them for every knot type: what 3ds Max computed for a
+corner or smooth knot is what it shows. A segment of type line is straight whatever the vectors (FixtureLine's
+open spline: the oracle's segment middle is the middle of the chord, the Bezier through the vectors is not).
+Corpus scene A (format 14000): the same layout on all 255 splines of its 18 Editable Splines and 4 Lines, 434
+segments of type line; every shape node of the scene (29, with Rectangles) equals its oracle within 1e-5 of the
+knot's magnitude.
+
+The parametric shapes are made by the reader the way 3ds Max makes them, fitted to the oracle:
+
+- a circular arc of angle *a* gets vectors of radius times `veccalc(a)` along its tangents, where `veccalc` is the
+  3ds Max SDK's bisection that makes the mean distance of 10 points of the segment from the center equal the
+  radius: 0.5517857 for 90 degrees (the textbook 4/3 tan(a/4) is 0.552285);
+- Circle: 4 Bezier knots from angle 0, counter-clockwise; Ellipse: the same scaled to width / 2 and length / 2;
+- Rectangle: without a corner radius 4 Bezier-corner knots from (width / 2, length / 2), counter-clockwise, each
+  vector a third of the way to its neighbour; with one 8, each pair at the ends of a side, both vectors along that
+  side, radius x `veccalc(90 degrees)` long;
+- Arc: always 4 Bezier knots, 3 equal segments (FixtureArc 170 degrees, FixturePie 90, FixtureArcWide 350), the
+  first in vector and the last out vector at their knot; pie adds the center and closes the spline; reverse runs
+  from `to` back to `from`;
+- NGon: scribe 0 puts the corners at radius / cos(180 degrees / sides) (the radius is the apothem), scribe 1 at the
+  radius, the first at angle 0; Bezier-corner knots with vectors a third of the way to the neighbours, or with
+  circular a Bezier knot per corner with vectors of the arc between them.
+
 ## System unit
 
 `maxdrop/reader/units.py` reads it; `tests/unit/test_units.py` checks every fixture against the oracle's
@@ -521,6 +586,11 @@ Not shown by any fixture yet, so not stated above:
     and the others the reader keeps as raw bytes).
 - Other root container ids: `0x2014` and `0x2023` occur in older files, and the 64-bit chunk header (size 0,
   then a `u64`) in large ones.
+- Of shapes ([Shapes](#shapes)): NGon's corner radius and Ellipse's outline (no fixture sets them: drawn without,
+  an issue), an Arc whose `from` equals `to` (taken as a full turn), the order of a reversed pie's knots (the center
+  last), the rectangular rendering section; the `f32` and the last `u32` of a knot, `0x2904`, `0x1070` of the
+  BezierShape and `0x2150` (on some Editable Splines and Lines); the other shape classes (Star, Text, Helix, Donut,
+  Section, NURBS curves...), which stay placeholders.
 - Of a modifier stack ([Modifiers](#modifiers)): `0x204B`, `0x2501`, `0x2502`, `0x2512` and `0x2513`; how the
   gizmo controller combines with the context matrix; a modifier without `0x39BF` (4 of 74 modifier objects in scene
   A, 3 of 46 in scene B: read with every switch on and the class name).

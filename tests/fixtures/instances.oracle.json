@@ -161,6 +161,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "renderable": true,
+      "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]
     },
     {
@@ -188,6 +189,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "renderable": true,
+      "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 20, 0, 0]
     },
     {
@@ -215,6 +217,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "renderable": true,
+      "shape": null,
       "transform": [0.707107, 0.707107, 0, -0.707107, 0.707107, 0, 0, 0, 1, 40, 0, 0]
     },
     {
@@ -242,6 +245,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "renderable": true,
+      "shape": null,
       "transform": [2, 0, 0, 0, 2, 0, 0, 0, 2, 60, 0, 0]
     },
     {
@@ -269,10 +273,11 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "renderable": true,
+      "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 20, 0]
     }
   ],
-  "oracle_version": 3,
+  "oracle_version": 4,
   "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
   "time": 0,
   "units": {"display_metric": "meters", "display_type": "Generic", "display_us": "ft_Frac_In", "system_scale": 1, "system_type": "millimeters"}

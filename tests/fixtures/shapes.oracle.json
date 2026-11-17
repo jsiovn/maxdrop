@@ -1,0 +1,849 @@
+{
+  "file": "shapes.max",
+  "file_version": [22000, 22000],
+  "layers": [
+    {"frozen": false, "hidden": false, "name": "0", "renderable": true}
+  ],
+  "material_graph": [
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "shaderType", "transient": false, "type": 1, "value": 1},
+          {"id": 1, "name": "wire", "transient": false, "type": 4, "value": 0},
+          {"id": 2, "name": "twoSided", "transient": false, "type": 4, "value": 0},
+          {"id": 3, "name": "faceMap", "transient": false, "type": 4, "value": 0},
+          {"id": 4, "name": "faceted", "transient": false, "type": 4, "value": 0},
+          {"id": 5, "name": "shaderByName", "transient": false, "type": 8, "value": "Blinn"}
+        ],
+        "ref": 3
+      },
+      {
+        "block_id": 1,
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "opacityType", "transient": false, "type": 1, "value": 0},
+          {"id": 1, "name": "opacity", "transient": false, "type": 6, "value": 1},
+          {"id": 2, "name": "filterColor", "transient": false, "type": 2, "value": [0.5, 0.5, 0.5]},
+          {"id": 3, "name": "filterMap", "transient": false, "type": 15, "value": null},
+          {"id": 4, "name": "opacityFallOffType", "transient": false, "type": 1, "value": 0},
+          {"id": 5, "name": "opacityFallOff", "transient": false, "type": 6, "value": 0},
+          {"id": 6, "name": "ior", "transient": false, "type": 0, "value": 1.5},
+          {"id": 7, "name": "wireSize", "transient": false, "type": 0, "value": 1},
+          {"id": 8, "name": "wireUnits", "transient": false, "type": 1, "value": 0},
+          {"id": 9, "name": "applyReflectionDimming", "transient": false, "type": 4, "value": 0},
+          {"id": 10, "name": "dimLevel", "transient": false, "type": 0, "value": 0},
+          {"id": 11, "name": "reflectionLevel", "transient": false, "type": 0, "value": 3}
+        ],
+        "ref": 4
+      },
+      {
+        "block_id": 2,
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "sampler", "transient": false, "type": 1, "value": 3},
+          {"id": 1, "name": "samplerQuality", "transient": false, "type": 0, "value": 0.5},
+          {"id": 2, "name": "samplerEnable", "transient": false, "type": 4, "value": 0},
+          {"id": 4, "name": "samplerAdaptThreshold", "transient": false, "type": 0, "value": 0.1},
+          {"id": 3, "name": "samplerAdaptOn", "transient": false, "type": 4, "value": 1},
+          {"id": 6, "name": "subSampleTextureOn", "transient": false, "type": 4, "value": 1},
+          {"id": 5, "name": "samplerAdvancedOptions", "transient": false, "type": 4, "value": 1},
+          {"id": 7, "name": "samplerByName", "transient": false, "type": 8, "value": "Max 2.5 Star"},
+          {"id": 8, "name": "UserParam0", "transient": false, "type": 0, "value": 0},
+          {"id": 9, "name": "UserParam1", "transient": false, "type": 0, "value": 0},
+          {"id": 10, "name": "samplerUseGlobal", "transient": false, "type": 4, "value": 1}
+        ],
+        "ref": 5
+      },
+      {
+        "block_id": 3,
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "mapEnables", "transient": false, "type": 2052, "value": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]},
+          {"id": 1, "name": "maps", "transient": false, "type": 2063, "value": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null]},
+          {"id": 2, "name": "mapAmounts", "transient": false, "type": 2054, "value": [1, 1, 1, 1, 1, 1, 1, 1, 0.3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]},
+          {"id": 3, "name": "adTextureLock", "transient": false, "type": 4, "value": 1}
+        ],
+        "ref": 6
+      },
+      {
+        "block_id": 4,
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "bounce", "transient": false, "type": 0, "value": 1},
+          {"id": 1, "name": "staticFriction", "transient": false, "type": 0, "value": 0},
+          {"id": 2, "name": "slidingFriction", "transient": false, "type": 0, "value": 0}
+        ],
+        "ref": 7
+      }
+    ],
+      "class_id": ["0x00000002", "0x00000000"],
+      "class_name": "Standardmaterial",
+      "index": 0,
+      "name": "FixtureGrey",
+      "parts": [
+      {
+        "blocks": [
+        {
+        "block_id": 0,
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "ambient", "transient": false, "type": 2, "value": [0.588, 0.588, 0.588]},
+          {"id": 1, "name": "diffuse", "transient": false, "type": 2, "value": [0.501961, 0.501961, 0.501961]},
+          {"id": 2, "name": "specular", "transient": false, "type": 2, "value": [0.9, 0.9, 0.9]},
+          {"id": 3, "name": "adTextureLock", "transient": false, "type": 4, "value": 1},
+          {"id": 4, "name": "adLock", "transient": false, "type": 4, "value": 1},
+          {"id": 5, "name": "dsLock", "transient": false, "type": 4, "value": 0},
+          {"id": 6, "name": "useSelfIllumColor", "transient": false, "type": 4, "value": 0},
+          {"id": 7, "name": "selfIllumAmount", "transient": false, "type": 6, "value": 0},
+          {"id": 8, "name": "selfIllumColor", "transient": false, "type": 2, "value": [0, 0, 0]},
+          {"id": 9, "name": "specularLevel", "transient": false, "type": 6, "value": 0},
+          {"id": 10, "name": "glossiness", "transient": false, "type": 6, "value": 0.1},
+          {"id": 11, "name": "soften", "transient": false, "type": 0, "value": 0.1}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000038", "0x00000000"],
+        "ref": 2
+      },
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 0, "value": 0.5},
+          {"index": 1, "type": 4, "value": 0},
+          {"index": 2, "type": 4, "value": 1}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x25773211", "0x00000000"],
+        "ref": 8
+      }
+    ],
+      "subs": [],
+      "superclass": 3072
+    }
+  ],
+  "materials": [
+    {"class_id": ["0x00000002", "0x00000000"], "class_name": "Standardmaterial", "index": 0, "name": "FixtureGrey", "sub_count": 0}
+  ],
+  "max_version": [22000, 2020],
+  "node_count": 14,
+  "nodes": [
+    {
+      "base_class_id": ["0x00001040", "0x00000000"],
+      "base_class_name": "line",
+      "base_faces": null,
+      "base_superclass": 64,
+      "base_verts": null,
+      "bbox_max": [-5, 40, 5],
+      "bbox_min": [-40, -1.66667, 0],
+      "eval_faces": null,
+      "eval_verts": null,
+      "frozen": false,
+      "handle": 1,
+      "hidden": false,
+      "index": 0,
+      "instances": [1],
+      "layer": "0",
+      "material": null,
+      "modifiers": [],
+      "name": "FixtureLine",
+      "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, -40, 0, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "renderable": true,
+      "shape": {
+        "adaptive": false,
+        "angle": 0,
+        "display_render_mesh": true,
+        "length": 6,
+        "optimize": true,
+        "rectangular": false,
+        "renderable": true,
+        "sides": 8,
+        "splines": [
+          {
+            "closed": true,
+            "knots": [
+              {"in": [7.5, 12.5, 2.5], "mid": [10.625, -0.625, 0], "out": [6.66667, 0, 0], "pos": [0, 0, 0], "segment": "curve", "type": "corner"},
+              {"in": [15, -1.66667, 0], "mid": [25, 7.5, 0], "out": [25, 1.66667, 0], "pos": [20, 0, 0], "segment": "curve", "type": "smooth"},
+              {"in": [25, 15, 0], "mid": [29.875, 13.875, 0], "out": [35, 5, 0], "pos": [30, 10, 0], "segment": "curve", "type": "bezier"},
+              {"in": [28, 22, 0], "mid": [10.9375, 16.5625, 2.8125], "out": [15, 25, 5], "pos": [20, 20, 0], "segment": "curve", "type": "bezierCorner"}
+            ]
+          },
+          {
+            "closed": false,
+            "knots": [
+              {"in": [0, 30, 0], "mid": [4.0625, 36.875, 0], "out": [2.5, 35, 0], "pos": [0, 30, 0], "segment": "curve", "type": "corner"},
+              {"in": [5, 40, 0], "mid": [15, 35, 0], "out": [15, 40, 0], "pos": [10, 40, 0], "segment": "line", "type": "bezier"},
+              {"in": [17.5, 35, 0], "mid": null, "out": [20, 30, 0], "pos": [20, 30, 0], "segment": null, "type": "corner"}
+            ]
+          }
+        ],
+        "steps": 4,
+        "thickness": 2,
+        "width": 2
+      },
+      "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, -40, 0, 0]
+    },
+    {
+      "base_class_id": ["0x0000000a", "0x00000000"],
+      "base_class_name": "SplineShape",
+      "base_faces": null,
+      "base_superclass": 64,
+      "base_verts": null,
+      "bbox_max": [70.5074, 8, 0],
+      "bbox_min": [52, -8, 0],
+      "eval_faces": null,
+      "eval_verts": null,
+      "frozen": false,
+      "handle": 2,
+      "hidden": false,
+      "index": 1,
+      "instances": [2],
+      "layer": "0",
+      "material": null,
+      "modifiers": [],
+      "name": "FixtureEditable",
+      "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 60, 0, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "renderable": true,
+      "shape": {
+        "adaptive": false,
+        "angle": 0,
+        "display_render_mesh": false,
+        "length": 6,
+        "optimize": true,
+        "rectangular": false,
+        "renderable": false,
+        "sides": 12,
+        "splines": [
+          {
+            "closed": true,
+            "knots": [
+              {"in": [10.5074, -4.74953, 0], "mid": [6.52491, 5.97811, 0], "out": [9.65215, 4.94162, 0], "pos": [10, 1, 0], "segment": "curve", "type": "bezier"},
+              {"in": [4.41429, 8, 0], "mid": [-5.65536, 5.65536, 0], "out": [-4.41429, 8, 0], "pos": [0, 8, 0], "segment": "curve", "type": "bezier"},
+              {"in": [-8, 4.41429, 0], "mid": [-5.65536, -5.65536, 0], "out": [-8, -4.41429, 0], "pos": [-8, -6.99382e-07, 0], "segment": "curve", "type": "bezier"},
+              {"in": [-4.41429, -8, 0], "mid": [6.84563, -5.65607, 0], "out": [4.41429, -8, 0], "pos": [0, -8, 0], "segment": "curve", "type": "bezier"}
+            ]
+          }
+        ],
+        "steps": 6,
+        "thickness": 1,
+        "width": 2
+      },
+      "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 60, 0, 0]
+    },
+    {
+      "base_class_id": ["0x00001065", "0x00000000"],
+      "base_class_name": "Rectangle",
+      "base_faces": null,
+      "base_superclass": 64,
+      "base_verts": null,
+      "bbox_max": [15, -30, 0],
+      "bbox_min": [-15, -50, 0],
+      "eval_faces": null,
+      "eval_verts": null,
+      "frozen": false,
+      "handle": 3,
+      "hidden": false,
+      "index": 2,
+      "instances": [3],
+      "layer": "0",
+      "material": null,
+      "modifiers": [],
+      "name": "FixtureRect",
+      "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -40, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "renderable": true,
+      "shape": {
+        "adaptive": false,
+        "angle": 0,
+        "display_render_mesh": false,
+        "length": 6,
+        "optimize": true,
+        "rectangular": false,
+        "renderable": false,
+        "sides": 12,
+        "splines": [
+          {
+            "closed": true,
+            "knots": [
+              {"in": [15, 5.34464, 0], "mid": [14.1208, 9.12076, 0], "out": [15, 8.65536, 0], "pos": [15, 7, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [13.6554, 10, 0], "mid": [0, 10, 0], "out": [10.3446, 10, 0], "pos": [12, 10, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [-10.3446, 10, 0], "mid": [-14.1208, 9.12076, 0], "out": [-13.6554, 10, 0], "pos": [-12, 10, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [-15, 8.65536, 0], "mid": [-15, 0, 0], "out": [-15, 5.34464, 0], "pos": [-15, 7, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [-15, -5.34464, 0], "mid": [-14.1208, -9.12076, 0], "out": [-15, -8.65536, 0], "pos": [-15, -7, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [-13.6554, -10, 0], "mid": [0, -10, 0], "out": [-10.3446, -10, 0], "pos": [-12, -10, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [10.3446, -10, 0], "mid": [14.1208, -9.12076, 0], "out": [13.6554, -10, 0], "pos": [12, -10, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [15, -8.65536, 0], "mid": [15, 0, 0], "out": [15, -5.34464, 0], "pos": [15, -7, 0], "segment": "curve", "type": "bezierCorner"}
+            ]
+          }
+        ],
+        "steps": 6,
+        "thickness": 1,
+        "width": 2
+      },
+      "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -40, 0]
+    },
+    {
+      "base_class_id": ["0x0000000a", "0x00000000"],
+      "base_class_name": "SplineShape",
+      "base_faces": null,
+      "base_superclass": 64,
+      "base_verts": null,
+      "bbox_max": [22.3205, -23.7799, 3],
+      "bbox_min": [5, -35, -0.5],
+      "eval_faces": null,
+      "eval_verts": null,
+      "frozen": false,
+      "handle": 5,
+      "hidden": false,
+      "index": 3,
+      "instances": [5],
+      "layer": "0",
+      "material": null,
+      "modifiers": [],
+      "name": "FixtureOpen",
+      "object_transform": [0.866025, 0.5, 0, -0.5, 0.866025, 0, 0, 0, 1, 5, -35, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": 3,
+      "renderable": true,
+      "shape": {
+        "adaptive": false,
+        "angle": 0,
+        "display_render_mesh": false,
+        "length": 6,
+        "optimize": true,
+        "rectangular": false,
+        "renderable": false,
+        "sides": 12,
+        "splines": [
+          {
+            "closed": false,
+            "knots": [
+              {"in": [0, 0, 0], "mid": [5, 3.75, -0.375], "out": [3.33333, 3.33333, -0.5], "pos": [0, 0, 0], "segment": "curve", "type": "smooth"},
+              {"in": [6.66667, 5, -0.5], "mid": [15, 3.75, 1.125], "out": [13.3333, 5, 0.5], "pos": [10, 5, 0], "segment": "curve", "type": "smooth"},
+              {"in": [16.6667, 3.33334, 1.5], "mid": null, "out": [20, 0, 3], "pos": [20, 0, 3], "segment": null, "type": "smooth"}
+            ]
+          }
+        ],
+        "steps": 6,
+        "thickness": 1,
+        "width": 2
+      },
+      "transform": [0.866025, 0.5, 0, -0.5, 0.866025, 0, 0, 0, 1, 5, -35, 0]
+    },
+    {
+      "base_class_id": ["0x00001065", "0x00000000"],
+      "base_class_name": "Rectangle",
+      "base_faces": null,
+      "base_superclass": 64,
+      "base_verts": null,
+      "bbox_max": [6, -75, 0],
+      "bbox_min": [-6, -85, 0],
+      "eval_faces": null,
+      "eval_verts": null,
+      "frozen": false,
+      "handle": 4,
+      "hidden": false,
+      "index": 4,
+      "instances": [4],
+      "layer": "0",
+      "material": null,
+      "modifiers": [],
+      "name": "FixtureRectSharp",
+      "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -80, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "renderable": true,
+      "shape": {
+        "adaptive": false,
+        "angle": 0,
+        "display_render_mesh": false,
+        "length": 6,
+        "optimize": true,
+        "rectangular": false,
+        "renderable": false,
+        "sides": 12,
+        "splines": [
+          {
+            "closed": true,
+            "knots": [
+              {"in": [6, 1.66666, 0], "mid": [0, 5, 0], "out": [2, 5, 0], "pos": [6, 5, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [-2, 5, 0], "mid": [-6, 0, 0], "out": [-6, 1.66666, 0], "pos": [-6, 5, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [-6, -1.66666, 0], "mid": [0, -5, 0], "out": [-2, -5, 0], "pos": [-6, -5, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [2, -5, 0], "mid": [6, 0, 0], "out": [6, -1.66666, 0], "pos": [6, -5, 0], "segment": "curve", "type": "bezierCorner"}
+            ]
+          }
+        ],
+        "steps": 6,
+        "thickness": 1,
+        "width": 2
+      },
+      "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -80, 0]
+    },
+    {
+      "base_class_id": ["0x00001999", "0x00000000"],
+      "base_class_name": "Circle",
+      "base_faces": null,
+      "base_superclass": 64,
+      "base_verts": null,
+      "bbox_max": [50, -30, 0],
+      "bbox_min": [30, -50, 0],
+      "eval_faces": null,
+      "eval_verts": null,
+      "frozen": false,
+      "handle": 6,
+      "hidden": false,
+      "index": 5,
+      "instances": [6],
+      "layer": "0",
+      "material": null,
+      "modifiers": [],
+      "name": "FixtureCircle",
+      "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 40, -40, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "renderable": true,
+      "shape": {
+        "adaptive": false,
+        "angle": 0,
+        "display_render_mesh": false,
+        "length": 6,
+        "optimize": true,
+        "rectangular": false,
+        "renderable": false,
+        "sides": 12,
+        "splines": [
+          {
+            "closed": true,
+            "knots": [
+              {"in": [10, -5.51786, 0], "mid": [7.0692, 7.0692, 0], "out": [10, 5.51786, 0], "pos": [10, 0, 0], "segment": "curve", "type": "bezier"},
+              {"in": [5.51786, 10, 0], "mid": [-7.0692, 7.0692, 0], "out": [-5.51786, 10, 0], "pos": [0, 10, 0], "segment": "curve", "type": "bezier"},
+              {"in": [-10, 5.51786, 0], "mid": [-7.0692, -7.0692, 0], "out": [-10, -5.51786, 0], "pos": [-10, 0, 0], "segment": "curve", "type": "bezier"},
+              {"in": [-5.51786, -10, 0], "mid": [7.0692, -7.0692, 0], "out": [5.51786, -10, 0], "pos": [0, -10, 0], "segment": "curve", "type": "bezier"}
+            ]
+          }
+        ],
+        "steps": 3,
+        "thickness": 1,
+        "width": 2
+      },
+      "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 40, -40, 0]
+    },
+    {
+      "base_class_id": ["0x00001097", "0x00000000"],
+      "base_class_name": "Ellipse",
+      "base_faces": null,
+      "base_superclass": 64,
+      "base_verts": null,
+      "bbox_max": [100, -30, 0],
+      "bbox_min": [60, -50, 0],
+      "eval_faces": null,
+      "eval_verts": null,
+      "frozen": false,
+      "handle": 7,
+      "hidden": false,
+      "index": 6,
+      "instances": [7],
+      "layer": "0",
+      "material": null,
+      "modifiers": [],
+      "name": "FixtureEllipse",
+      "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 80, -40, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "renderable": true,
+      "shape": {
+        "adaptive": false,
+        "angle": 0,
+        "display_render_mesh": false,
+        "length": 6,
+        "optimize": true,
+        "rectangular": false,
+        "renderable": false,
+        "sides": 12,
+        "splines": [
+          {
+            "closed": true,
+            "knots": [
+              {"in": [20, -5.51786, 0], "mid": [14.1384, 7.0692, 0], "out": [20, 5.51786, 0], "pos": [20, 0, 0], "segment": "curve", "type": "bezier"},
+              {"in": [11.0357, 10, 0], "mid": [-14.1384, 7.0692, 0], "out": [-11.0357, 10, 0], "pos": [0, 10, 0], "segment": "curve", "type": "bezier"},
+              {"in": [-20, 5.51786, 0], "mid": [-14.1384, -7.0692, 0], "out": [-20, -5.51786, 0], "pos": [-20, 0, 0], "segment": "curve", "type": "bezier"},
+              {"in": [-11.0357, -10, 0], "mid": [14.1384, -7.0692, 0], "out": [11.0357, -10, 0], "pos": [0, -10, 0], "segment": "curve", "type": "bezier"}
+            ]
+          }
+        ],
+        "steps": 6,
+        "thickness": 1,
+        "width": 2
+      },
+      "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 80, -40, 0]
+    },
+    {
+      "base_class_id": ["0x00001996", "0x00000000"],
+      "base_class_name": "Arc",
+      "base_faces": null,
+      "base_superclass": 64,
+      "base_verts": null,
+      "bbox_max": [132.99, -40, 15.2681],
+      "bbox_min": [104.178, -40, -5.1303],
+      "eval_faces": null,
+      "eval_verts": null,
+      "frozen": false,
+      "handle": 8,
+      "hidden": false,
+      "index": 7,
+      "instances": [8],
+      "layer": "0",
+      "material": null,
+      "modifiers": [],
+      "name": "FixtureArc",
+      "object_transform": [1, 0, 0, 0, 0, 1, 0, -1, 0, 120, -40, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "renderable": true,
+      "shape": {
+        "adaptive": false,
+        "angle": 0,
+        "display_render_mesh": false,
+        "length": 6,
+        "optimize": true,
+        "rectangular": false,
+        "renderable": false,
+        "sides": 12,
+        "splines": [
+          {
+            "closed": false,
+            "knots": [
+              {"in": [12.9904, 7.5, 0], "mid": [7.87452, 12.7665, 0], "out": [10.4665, 11.8714, 0], "pos": [12.9904, 7.5, 0], "segment": "curve", "type": "bezier"},
+              {"in": [5.91134, 14.6811, 0], "mid": [-6.33916, 13.5944, 0], "out": [-4.16699, 15.2681, 0], "pos": [0.872169, 14.9746, 0], "segment": "curve", "type": "bezier"},
+              {"in": [-9.01756, 13.0063, 0], "mid": [-14.8414, 2.17394, 0], "out": [-15.0461, 4.9085, 0], "pos": [-12.0318, 8.95738, 0], "segment": "curve", "type": "bezier"},
+              {"in": [-15.8218, -0.38701, 0], "mid": null, "out": [-14.0954, -5.1303, 0], "pos": [-14.0954, -5.1303, 0], "segment": null, "type": "bezier"}
+            ]
+          }
+        ],
+        "steps": 6,
+        "thickness": 1,
+        "width": 2
+      },
+      "transform": [1, 0, 0, 0, 0, 1, 0, -1, 0, 120, -40, 0]
+    },
+    {
+      "base_class_id": ["0x00001996", "0x00000000"],
+      "base_class_name": "Arc",
+      "base_faces": null,
+      "base_superclass": 64,
+      "base_verts": null,
+      "bbox_max": [172, -28, 0],
+      "bbox_min": [160, -40, 0],
+      "eval_faces": null,
+      "eval_verts": null,
+      "frozen": false,
+      "handle": 9,
+      "hidden": false,
+      "index": 8,
+      "instances": [9],
+      "layer": "0",
+      "material": null,
+      "modifiers": [],
+      "name": "FixturePie",
+      "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 160, -40, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "renderable": true,
+      "shape": {
+        "adaptive": false,
+        "angle": 0,
+        "display_render_mesh": false,
+        "length": 6,
+        "optimize": true,
+        "rectangular": false,
+        "renderable": false,
+        "sides": 12,
+        "splines": [
+          {
+            "closed": true,
+            "knots": [
+              {"in": [12, 0, 0], "mid": [11.5911, 3.10583, 0], "out": [12, 2.10642, 0], "pos": [12, 0, 0], "segment": "curve", "type": "bezier"},
+              {"in": [11.4455, 4.17579, 0], "mid": [8.48528, 8.48528, 0], "out": [9.3391, 7.82421, 0], "pos": [10.3923, 6, 0], "segment": "curve", "type": "bezier"},
+              {"in": [7.82422, 9.33909, 0], "mid": [3.10582, 11.5911, 0], "out": [4.17578, 11.4455, 0], "pos": [6, 10.3923, 0], "segment": "curve", "type": "bezier"},
+              {"in": [2.10641, 12, 0], "mid": [0, 6, 0], "out": [0, 12, 0], "pos": [0, 12, 0], "segment": "curve", "type": "bezier"},
+              {"in": [0, 0, 0], "mid": [6, 0, 0], "out": [0, 0, 0], "pos": [0, 0, 0], "segment": "curve", "type": "bezier"}
+            ]
+          }
+        ],
+        "steps": 6,
+        "thickness": 1,
+        "width": 2
+      },
+      "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 160, -40, 0]
+    },
+    {
+      "base_class_id": ["0x00001996", "0x00000000"],
+      "base_class_name": "Arc",
+      "base_faces": null,
+      "base_superclass": 64,
+      "base_verts": null,
+      "bbox_max": [208, -30.1863, 0],
+      "bbox_min": [190.46, -49.9625, 0],
+      "eval_faces": null,
+      "eval_verts": null,
+      "frozen": false,
+      "handle": 10,
+      "hidden": false,
+      "index": 9,
+      "instances": [10],
+      "layer": "0",
+      "material": null,
+      "modifiers": [],
+      "name": "FixtureArcWide",
+      "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 200, -40, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "renderable": true,
+      "shape": {
+        "adaptive": false,
+        "angle": 0,
+        "display_render_mesh": false,
+        "length": 6,
+        "optimize": true,
+        "rectangular": false,
+        "renderable": false,
+        "sides": 12,
+        "splines": [
+          {
+            "closed": false,
+            "knots": [
+              {"in": [7.87846, -1.38919, 0], "mid": [2.94991, -7.42535, 0], "out": [6.84744, -7.23635, 0], "pos": [7.87846, -1.38919, 0], "segment": "curve", "type": "bezier"},
+              {"in": [-0.0147705, -9.96254, 0], "mid": [-7.95946, 0.696362, 0], "out": [-9.53976, -2.87144, 0], "pos": [-4.77727, -6.41698, 0], "segment": "curve", "type": "bezier"},
+              {"in": [-8.89622, 4.48438, 0], "mid": [4.19449, 6.8003, 0], "out": [1.71544, 9.81375, 0], "pos": [-3.59039, 7.14906, 0], "segment": "curve", "type": "bezier"},
+              {"in": [8, 5.93737, 0], "mid": null, "out": [8, 0, 0], "pos": [8, 0, 0], "segment": null, "type": "bezier"}
+            ]
+          }
+        ],
+        "steps": 6,
+        "thickness": 1,
+        "width": 2
+      },
+      "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 200, -40, 0]
+    },
+    {
+      "base_class_id": ["0x00001050", "0x00000000"],
+      "base_class_name": "Ngon",
+      "base_faces": null,
+      "base_superclass": 64,
+      "base_verts": null,
+      "bbox_max": [51.547, -70, 0],
+      "bbox_min": [28.453, -90, 0],
+      "eval_faces": null,
+      "eval_verts": null,
+      "frozen": false,
+      "handle": 11,
+      "hidden": false,
+      "index": 10,
+      "instances": [11],
+      "layer": "0",
+      "material": null,
+      "modifiers": [],
+      "name": "FixtureNGon",
+      "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 40, -80, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "renderable": true,
+      "shape": {
+        "adaptive": true,
+        "angle": 0,
+        "display_render_mesh": false,
+        "length": 6,
+        "optimize": true,
+        "rectangular": false,
+        "renderable": false,
+        "sides": 12,
+        "splines": [
+          {
+            "closed": true,
+            "knots": [
+              {"in": [9.62251, -3.33334, 0], "mid": [8.66026, 5, 0], "out": [9.62251, 3.33334, 0], "pos": [11.547, 0, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [7.698, 6.66666, 0], "mid": [0, 10, 0], "out": [1.9245, 10, 0], "pos": [5.7735, 10, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [-1.9245, 10, 0], "mid": [-8.66026, 5, 0], "out": [-7.69801, 6.66666, 0], "pos": [-5.7735, 10, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [-9.62251, 3.33334, 0], "mid": [-8.66025, -5, 0], "out": [-9.62251, -3.33334, 0], "pos": [-11.547, 0, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [-7.698, -6.66667, 0], "mid": [3.8147e-06, -10, 0], "out": [-1.9245, -10, 0], "pos": [-5.7735, -10, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [1.9245, -10, 0], "mid": [8.66026, -5, 0], "out": [7.69801, -6.66666, 0], "pos": [5.77351, -10, 0], "segment": "curve", "type": "bezierCorner"}
+            ]
+          }
+        ],
+        "steps": 6,
+        "thickness": 1,
+        "width": 2
+      },
+      "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 40, -80, 0]
+    },
+    {
+      "base_class_id": ["0x00001050", "0x00000000"],
+      "base_class_name": "Ngon",
+      "base_faces": null,
+      "base_superclass": 64,
+      "base_verts": null,
+      "bbox_max": [92.3607, -66.5901, 0],
+      "bbox_min": [66.8536, -93.4099, 0],
+      "eval_faces": null,
+      "eval_verts": null,
+      "frozen": false,
+      "handle": 12,
+      "hidden": false,
+      "index": 11,
+      "instances": [12],
+      "layer": "0",
+      "material": null,
+      "modifiers": [],
+      "name": "FixtureNGonRound",
+      "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 80, -80, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "renderable": true,
+      "shape": {
+        "adaptive": false,
+        "angle": 0,
+        "display_render_mesh": false,
+        "length": 6,
+        "optimize": true,
+        "rectangular": false,
+        "renderable": false,
+        "sides": 12,
+        "splines": [
+          {
+            "closed": true,
+            "knots": [
+              {"in": [12.3607, -5.35303, 0], "mid": [9.99931, 7.26492, 0], "out": [12.3607, 5.35303, 0], "pos": [12.3607, 0, 0], "segment": "curve", "type": "bezier"},
+              {"in": [8.9107, 10.1015, 0], "mid": [-3.8194, 11.7549, 0], "out": [-1.27138, 13.4099, 0], "pos": [3.81966, 11.7557, 0], "segment": "curve", "type": "bezier"},
+              {"in": [-6.85357, 11.5961, 0], "mid": [-12.3598, 0, 0], "out": [-13.1464, 2.93473, 0], "pos": [-10, 7.26543, 0], "segment": "curve", "type": "bezier"},
+              {"in": [-13.1464, -2.93473, 0], "mid": [-3.8194, -11.7549, 0], "out": [-6.85356, -11.5961, 0], "pos": [-10, -7.26543, 0], "segment": "curve", "type": "bezier"},
+              {"in": [-1.27138, -13.4099, 0], "mid": [9.99931, -7.26492, 0], "out": [8.9107, -10.1015, 0], "pos": [3.81966, -11.7557, 0], "segment": "curve", "type": "bezier"}
+            ]
+          }
+        ],
+        "steps": 6,
+        "thickness": 1,
+        "width": 2
+      },
+      "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 80, -80, 0]
+    },
+    {
+      "base_class_id": ["0x00001050", "0x00000000"],
+      "base_class_name": "Ngon",
+      "base_faces": null,
+      "base_superclass": 64,
+      "base_verts": null,
+      "bbox_max": [130, -71.3397, 0],
+      "bbox_min": [115, -88.6603, 0],
+      "eval_faces": null,
+      "eval_verts": null,
+      "frozen": false,
+      "handle": 13,
+      "hidden": false,
+      "index": 12,
+      "instances": [13],
+      "layer": "0",
+      "material": null,
+      "modifiers": [],
+      "name": "FixtureNGonIn",
+      "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 120, -80, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "renderable": true,
+      "shape": {
+        "adaptive": false,
+        "angle": 0,
+        "display_render_mesh": false,
+        "length": 6,
+        "optimize": true,
+        "rectangular": false,
+        "renderable": false,
+        "sides": 12,
+        "splines": [
+          {
+            "closed": true,
+            "knots": [
+              {"in": [5, -2.88675, 0], "mid": [2.5, 4.33012, 0], "out": [5, 2.88675, 0], "pos": [10, 0, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [0, 5.7735, 0], "mid": [-5, 0, 0], "out": [-5, 2.88675, 0], "pos": [-5, 8.66026, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [-5, -2.88675, 0], "mid": [2.5, -4.33012, 0], "out": [0, -5.77351, 0], "pos": [-5, -8.66026, 0], "segment": "curve", "type": "bezierCorner"}
+            ]
+          }
+        ],
+        "steps": 6,
+        "thickness": 1,
+        "width": 2
+      },
+      "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 120, -80, 0]
+    },
+    {
+      "base_class_id": ["0x1bf8338d", "0x192f6098"],
+      "base_class_name": "Editable_Poly",
+      "base_faces": 6,
+      "base_superclass": 16,
+      "base_verts": 8,
+      "bbox_max": [5, 45, 2],
+      "bbox_min": [-5, 35, 0],
+      "eval_faces": 12,
+      "eval_verts": 8,
+      "frozen": false,
+      "handle": 14,
+      "hidden": false,
+      "index": 13,
+      "instances": [14],
+      "layer": "0",
+      "material": 0,
+      "modifiers": [],
+      "name": "FixtureBox",
+      "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 40, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "renderable": true,
+      "shape": null,
+      "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 40, 0]
+    }
+  ],
+  "oracle_version": 4,
+  "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
+  "time": 0,
+  "units": {"display_metric": "meters", "display_type": "Generic", "display_us": "ft_Frac_In", "system_scale": 1, "system_type": "millimeters"}
+}
