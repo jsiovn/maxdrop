@@ -3,16 +3,26 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """tools/baseline.py reads the operator's import line from Blender's console log: plain Python, no Blender."""
+import importlib
 import importlib.util
 import os
 import shutil
+import sys
 import tempfile
+import types
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _spec = importlib.util.spec_from_file_location("baseline", os.path.join(ROOT, "tools", "baseline.py"))
 baseline = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(baseline)
+
+_PKG = "maxdrop_convert_test"  # as in tests/unit/test_report.py: maxdrop/__init__.py (and bpy) never runs
+if _PKG not in sys.modules:
+    _pkg = types.ModuleType(_PKG)
+    _pkg.__path__ = [os.path.join(ROOT, "maxdrop")]
+    sys.modules[_PKG] = _pkg
+report = importlib.import_module(_PKG + ".convert.report")
 
 ZERO = {"placeholders": 0, "modifiers_not_applied": 0, "textures_missing": 0, "approximated": 0, "issues": 0}
 
@@ -63,6 +73,25 @@ class ReadLog(unittest.TestCase):
         for key in ("node_errors", "nodes_failed", "nodes_skipped"):
             self.assertNotIn(key, found)
         self.assertIsNone(found["import_report"])
+
+    def test_round_trip_with_report_summary(self):
+        """The line Report.summary() really builds, so a change of its wording fails here, not silently in a
+        measurement: every left-out part, singular and plural, and a name that looks like a summary itself."""
+        for n in (1, 2):
+            rep = report.Report("x: 9 objects, 9 meshes, nothing left out.max")
+            rep.objects_built, rep.meshes_built, rep.materials_built = n, n, n
+            rep.placeholders["Light"] = n
+            rep.modifiers["Bend"] = n
+            rep.textures_missing = ["t.png"] * n
+            rep.wrappers["Blend"] = n
+            rep.issues = ["?"] * n
+            found = self.read("MaxDrop: " + rep.summary()[1])
+            self.assertEqual(found["import_report"], {
+                "objects": n, "meshes": n, "materials": n, "placeholders": n, "modifiers_not_applied": n,
+                "textures_missing": n, "approximated": n, "issues": n}, rep.summary()[1])
+        rep = report.Report("")
+        found = self.read("MaxDrop: " + rep.summary()[1])
+        self.assertEqual(found["import_report"], dict(ZERO, objects=0, meshes=0, materials=None))
 
     def test_missing_log(self):
         found = baseline.read_log(os.path.join(self.folder, "none.log"))

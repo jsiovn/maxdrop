@@ -74,7 +74,8 @@ def free_memory():
 
 def read_log(path):
     """What the operator printed, without the names: the counts of its "Imported ..." lines (summed when a pack
-    held several scenes, None without one) and whether a traceback was printed."""
+    held several scenes, None without one; materials is None only when no line names them) and whether a
+    traceback was printed."""
     report, traceback = None, False
     try:
         with open(path, encoding="utf-8", errors="replace") as f:
