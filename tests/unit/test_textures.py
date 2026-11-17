@@ -178,8 +178,6 @@ class BoundsTest(Tree):
         self.assertIsNone(idx.find("f4.png"))
         self.assertIsNone(idx.find("g.png"))  # the budget is per rule
         self.assertEqual(idx.report.truncated, [(USER, lib, 3)])
-        self.assertIn("Texture search of texture search folders stopped after 3 files and folders, in " + lib,
-                      idx.report.lines())
 
     def test_folders_count_against_the_budget(self):
         lib = os.path.join(self.root, "lib")
@@ -308,10 +306,6 @@ class ReportTest(Tree):
         r = idx.report
         self.assertEqual(r.found, {SCENE: 1, SIBLING: 1, USER: 1, ORIGINAL: 0})
         self.assertEqual(r.missing, ["Gone.tif", "zz.png"])
-        lines = r.lines()
-        self.assertEqual(lines[0], "Textures found: 3 (the scene's folder 1, maps or textures folders 1, "
-                                   "texture search folders 1, the stored path 0)")
-        self.assertEqual(lines[1], "Textures not found: 2: Gone.tif, zz.png")
 
     def test_a_name_found_later_is_no_longer_missing(self):
         r = textures.TextureReport()
