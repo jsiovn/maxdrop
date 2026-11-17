@@ -67,6 +67,10 @@ NGON = ClassId(0x00001050, 0)
 # Modifiers.
 EXTRUDE = ClassId(0x000000A0, 0)
 UVW_MAP = ClassId(0x000F72B1, 0)
+TURBOSMOOTH = ClassId(0x0D727B3E, 0x491D29A7)
+MESHSMOOTH = ClassId(0x00000032, 0x00007F9E)
+SHELL = ClassId(0x3B9B1A16, 0x6D84E8D0)
+SYMMETRY = ClassId(0x2D7E702B, 0x0BE41A6E)
 
 # Materials, maps and their parts.
 STANDARD_MTL = ClassId(0x00000002, 0)
@@ -137,6 +141,10 @@ CLASSES = {
     (SC_SHAPE, NGON): "NGon",
     (SC_OSMODIFIER, EXTRUDE): "Extrude",
     (SC_OSMODIFIER, UVW_MAP): "UVW Map",
+    (SC_OSMODIFIER, TURBOSMOOTH): "TurboSmooth",
+    (SC_OSMODIFIER, MESHSMOOTH): "MeshSmooth",
+    (SC_OSMODIFIER, SHELL): "Shell",
+    (SC_OSMODIFIER, SYMMETRY): "Symmetry",
     (SC_MATERIAL, STANDARD_MTL): "Standard",
     (SC_MATERIAL, MULTI_SUB_MTL): "Multi/Sub-Object",
     (SC_MATERIAL, SHELL_MTL): "Shell Material",
