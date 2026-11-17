@@ -494,9 +494,10 @@ center vertex and the vertex and triangle counts are 3ds Max's, which the oracle
   units (U by 2π · radius 1), each cap flat over its rim's extent (U = x - min x, V = max y - y below, y - min y on
   top). A negative height flips every face so that they point out.
 - **Tube**: the profile (outer side up, top inwards, inner side down, bottom outwards) swept from +Y turning towards
-  +X; radius 1 is the outer one unless radius 2 is larger (they swap). IDs outer 3, top 1, inner 4, bottom 2; groups
-  sides 2, caps 4 (all 0 unsmoothed). UV: U along the profile (q / profile points), V = j / sides; Real-World Map
-  Size: U = (1 - j / sides) · 2π · radius 1, V the length along the profile.
+  +X; the outer side's role (ID 3, the profile's start) is the larger radius's, the smaller one's under a negative
+  height (the faces then point out without a flip). IDs outer 3, top 1, inner 4, bottom 2; groups sides 2, caps 4
+  (all 0 unsmoothed). UV: U along the profile (q / profile points), V = j / sides; Real-World Map Size: U = (1 - j /
+  sides) · 2π · the larger radius, V the distance along the profile (the height signed, the caps' widths).
 - **Torus**: segments around Z from +Y towards +X, each ring of sides from the outer equator upwards, turned by
   rotation + twist · (segment + 1) / segments. ID 1. Groups: smooth 0 none, 2 all 1, 1 alternating 2 / 1 by side
   (4 on the last of an odd count), 3 the same by segment. UV: U = side / sides, V = segment / segments; Real-World
@@ -504,7 +505,8 @@ center vertex and the vertex and triangle counts are 3ds Max's, which the oracle
 
 Not built (the node stays a placeholder, a line in the report): Slice on a Sphere, Cylinder, Cone, Tube or Torus,
 and a Sphere's or GeoSphere's hemisphere. Plane's render scale and density act at render time only (built at the
-viewport size, a line in the report). Teapot is not built.
+viewport size, a line in the report). Teapot is not built. A primitive past 2^21 face corners (`MAX_CORNERS`) is
+refused: a file can ask for any number of segments.
 
 ## System unit
 

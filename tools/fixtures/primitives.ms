@@ -22,6 +22,9 @@
 -- Signs and edge cases: FixtureBoxInside (width -12: 3ds Max's faces point in), FixturePlaneDown (width -12: its
 -- faces point down), FixtureCylinderDown (height -10), FixtureConeTip (radius 2 of 0), FixtureTubeSwap (radius 1
 -- smaller than radius 2), FixtureTorusOdd (7 segments, 5 sides, smooth 3, Real-World Map Size).
+-- Real-World Map Size on the rest: FixturePlaneReal, FixturePyramidDown (height -10), FixtureSphereOdd (13
+-- segments, Base To Pivot), FixtureGeoReal (tetrahedron, 4 segments), FixtureCylinderReal (2 cap segments),
+-- FixtureTubeDown (height -8).
 -- One Standard material on every node.
 -- It also writes C:\maxdrop_fixtures\primitives.mesh.jsonl: per primitive node, its base object's TriMesh (object
 -- space): vertices, and per triangle its vertices, edge visibility, material ID, smoothing groups and channel 1's
@@ -97,6 +100,17 @@
 		pos:[120, 160, 0]
 	Torus name:"FixtureTorusOdd" radius1:8 radius2:2 segs:7 sides:5 smooth:3 mapcoords:true realWorldMapSize:true \
 		pos:[150, 160, 0]
+	Plane name:"FixturePlaneReal" length:10 width:12 widthsegs:2 lengthsegs:3 mapcoords:true realWorldMapSize:true \
+		pos:[0, 210, 0]
+	Pyramid name:"FixturePyramidDown" width:10 depth:14 height:-10 widthsegs:2 depthsegs:1 heightsegs:2 \
+		mapcoords:true realWorldMapSize:true pos:[30, 210, 0]
+	Sphere name:"FixtureSphereOdd" radius:6 segs:13 recenter:true mapcoords:true realWorldMapSize:true \
+		pos:[60, 210, 0]
+	GeoSphere name:"FixtureGeoReal" radius:6 segs:4 baseType:0 mapcoords:true realWorldMapSize:true pos:[90, 210, 0]
+	Cylinder name:"FixtureCylinderReal" radius:5 height:10 heightsegs:2 capsegs:2 sides:7 mapcoords:true \
+		realWorldMapSize:true pos:[120, 210, 0]
+	Tube name:"FixtureTubeDown" radius1:5 radius2:3 height:-8 heightsegs:1 capsegs:1 sides:7 mapcoords:true \
+		realWorldMapSize:true pos:[150, 210, 0]
 
 	local mat = StandardMaterial name:"FixtureGrey" diffuse:(color 128 128 128)
 	for o in objects do o.material = mat

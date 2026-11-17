@@ -71,6 +71,11 @@ EXPECTED = {
     "FixtureTorus": ("Torus", dict(radius1=10.0, radius2=3.0, segs=12, sides=8, rotation=20 * DEG, twist=30 * DEG,
                                    smooth=1), False),
     "FixtureTorusOdd": ("Torus", dict(radius1=8.0, radius2=2.0, segs=7, sides=5, smooth=3), True),
+    "FixturePyramidDown": ("Pyramid", dict(width=10.0, depth=14.0, height=-10.0, width_segs=2, depth_segs=1,
+                                           height_segs=2), True),
+    "FixtureSphereOdd": ("Sphere", dict(radius=6.0, segs=13, base_to_pivot=True), True),
+    "FixtureGeoReal": ("GeoSphere", dict(radius=6.0, segs=4, base_type=0), True),
+    "FixtureTubeDown": ("Tube", dict(radius1=5.0, radius2=3.0, height=-8.0, sides=7), True),
 }
 
 
@@ -201,7 +206,7 @@ class FixtureTest(unittest.TestCase):
         cls.cf.close()
 
     def test_every_node_is_a_primitive(self):
-        self.assertEqual(len(self.bases), 20)
+        self.assertEqual(len(self.bases), 26)
         for name, base in self.bases.items():
             self.assertTrue(prim.is_primitive(self.scene, base), name)
 
@@ -231,7 +236,7 @@ class FixtureTest(unittest.TestCase):
     def test_counts_and_world_boxes_equal_the_oracle(self):
         desc = conv.read(FIXTURE, meters=1.0)
         self.assertEqual((dict(desc.placeholders), desc.issues), ({}, []))
-        self.assertEqual(len(desc.meshes), 19)  # FixtureBoxCopy shares FixtureBox's
+        self.assertEqual(len(desc.meshes), 25)  # FixtureBoxCopy shares FixtureBox's
         for node in desc.nodes:
             o = self.oracle[node.name]
             md = desc.meshes[node.mesh]
@@ -312,6 +317,52 @@ class HandMadeTest(unittest.TestCase):
         data, issues = prim.build(p)
         self.assertEqual(len(data.loop_starts), 16)  # 4 x 4 segments, the viewport's
         self.assertEqual(issues, ["render scale 3 and density 2 act at render time: built at the viewport size"])
+
+    def test_hostile_sizes_give_a_mesh_or_a_refusal(self):
+        """Every class with nothing stored, every size 0, each size negative, and sizes near the float range: a
+        MeshData or a PrimitiveError, nothing else."""
+        for class_id, (name, spec) in prim._SPECS.items():
+            sizes = [pid for _key, (pid, kind, _d, _m) in spec.items() if kind == "f"]
+            cases = [{}, {pid: 0.0 for pid in sizes}, {pid: 1e30 for pid in sizes}, {pid: 3e38 for pid in sizes}]
+            cases += [{q: (-1.0 if q == pid else 1.0) for q in sizes} for pid in sizes]
+            for values in cases:
+                with self.subTest(cls=name, values=values):
+                    p, _ = prim.params_of(class_id, Block(values))
+                    try:
+                        data, _ = prim.build(p)
+                    except prim.PrimitiveError:
+                        continue
+                    self.assertTrue(numpy.isfinite(data.positions).all())
+                    for channel in data.maps.values():
+                        self.assertTrue(numpy.isfinite(channel.uvw).all())
+
+    def test_flat_pyramid(self):
+        p, _ = prim.params_of(classids.PYRAMID, Block({0: 2.0, 1: 3.0}))  # height 0 (not stored)
+        data, _ = prim.build(p)
+        self.assertEqual((len(data.positions), len(data.loop_starts)), (6, 8))
+        self.assertTrue((data.positions[:, 2] == 0).all())
+
+    def test_a_refused_primitive_is_a_placeholder_named_once(self):
+        """convert.scene: a primitive whose build fails (refused, or a formula error) is a placeholder of its class
+        with one issue, also when an instance shares it; the import goes on."""
+        real = prim.mesh
+        for error in (prim.PrimitiveError("Sphere with Slice on is not built yet"), ZeroDivisionError("x")):
+            def failing(scene, i, error=error):
+                if scene.entry(i).name == "Box":
+                    raise error
+                return real(scene, i)
+            prim.mesh = failing
+            try:
+                desc = conv.read(FIXTURE)
+            finally:
+                prim.mesh = real
+            boxes = [n for n in desc.nodes if n.class_name == "Box"]
+            self.assertTrue(boxes and all(n.kind == conv.EMPTY for n in boxes))
+            self.assertEqual(dict(desc.placeholders), {"Box": len(boxes)})
+            self.assertEqual(len(desc.issues), 5)  # one per Box object: FixtureBoxCopy shares FixtureBox's
+            self.assertTrue(all(r.startswith("primitive: ") for _i, r in desc.issues), desc.issues)
+            others = [n for n in desc.nodes if n.class_name != "Box"]
+            self.assertTrue(all(n.kind == conv.MESH for n in others))
 
     def test_every_class_builds_closed_or_flat_with_its_defaults(self):
         """Each class with only its sizes set: a mesh whose every edge has two faces (one for the Plane's border)."""

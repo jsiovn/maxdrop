@@ -114,15 +114,20 @@ SHARP_EDGES = {"editable_mesh": 8, "modifier_pivot": {"FixtureSmooth": 0, None: 
                               "FixtureBoxSmooth": 0, "FixturePyramid": 18, "FixtureGeoOcta": 48,
                               "FixtureCylinder": 20, "FixtureCone": 18, "FixtureTube": 32, "FixtureTorus": 96,
                               "FixtureBoxInside": 16, "FixtureCylinderDown": 14, "FixtureConeTip": 14,
-                              "FixtureTubeSwap": 28, "FixtureTorusOdd": 35, None: 0}}
+                              "FixtureTubeSwap": 28, "FixtureTorusOdd": 35, "FixturePyramidDown": 14,
+                              "FixtureCylinderReal": 14, "FixtureTubeDown": 28, None: 0}}
 SHARP_EDGES_DEFAULT = 12
 FLAT_SHADED = {"FixtureGeoOcta"}  # a GeoSphere not smoothed: no smoothing group, every face flat
 # primitives whose normals are not "away from the box center": a Plane's point up or down (by its sizes' signs), and
 # a Box of width -12 keeps 3ds Max's faces, which point in
-PLANE_NORMALS = {"FixturePlane": 1.0, "FixturePlaneDown": -1.0}
+PLANE_NORMALS = {"FixturePlane": 1.0, "FixturePlaneDown": -1.0, "FixturePlaneReal": 1.0}
 INSIDE_OUT = {"FixtureBoxInside"}
 # hollow: a tube's inner side and a torus's inner half face the box center; closed, they enclose a positive volume
-HOLLOW = {"FixtureTube", "FixtureTubeSwap", "FixtureTorus", "FixtureTorusOdd"}
+# the oracle's base_class_id of the primitives MaxDrop builds (convert/primitives.py)
+PRIMITIVE_CLASSES = {("0x00000010", "0x00000000"), ("0x00000011", "0x00000000"), ("0x00000012", "0x00000000"),
+                     ("0x00000020", "0x00000000"), ("0xa86c23dd", "0x00000000"), ("0x00007b21", "0x00000000"),
+                     ("0x00000000", "0x00007f9e"), ("0x081f1dfc", "0x77566f65"), ("0x76bf318a", "0x4bf37b10")}
+HOLLOW = {"FixtureTube", "FixtureTubeSwap", "FixtureTubeDown", "FixtureTorus", "FixtureTorusOdd"}
 # extrude (Generate Mapping Coords on two nodes); sharp edges: the vertical edges at corner knots, one per level, and
 # both rims of every capped outline; V - E + F: a solid 2, one with a round tunnel 0, a ring and its island 0 + 2
 EXTRUDE_UV_LAYERS = {"FixtureExtRect": ["UVMap"], "FixtureExtAdaptive": ["UVMap"],
@@ -251,7 +256,7 @@ def run_fixture(path, modules):
         if o["shape"] is not None:
             check_curve(label, ob, o["shape"], meters)
             continue
-        primitive = o["base_verts"] is None and node.kind == convert_scene.MESH  # built from its parameters
+        primitive = tuple(o["base_class_id"]) in PRIMITIVE_CLASSES  # built from its parameters
         if o["base_verts"] is None and not primitive:
             check(label + ": placeholder empty", ob.type == 'EMPTY' and ob.get("maxdrop_class") == o["base_class_name"],
                   "%s %r" % (ob.type, ob.get("maxdrop_class")))

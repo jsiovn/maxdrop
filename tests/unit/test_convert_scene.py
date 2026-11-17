@@ -99,7 +99,9 @@ SHARP_EDGES_PRIMITIVES = {"FixtureBox": 36, "FixtureBoxDown": 12, "FixtureBoxNoM
                           "FixtureGeoOcta": 48, "FixtureCylinder": 20, "FixtureCone": 18, "FixtureTube": 32,
                           "FixtureTorus": 96, "FixtureBoxInside": 16, "FixturePlaneDown": 0,
                           "FixtureCylinderDown": 14, "FixtureConeTip": 14, "FixtureTubeSwap": 28,
-                          "FixtureTorusOdd": 35}
+                          "FixtureTorusOdd": 35, "FixturePlaneReal": 0, "FixturePyramidDown": 4 * 2 + 6,
+                          "FixtureSphereOdd": 0, "FixtureGeoReal": 0, "FixtureCylinderReal": 14,
+                          "FixtureTubeDown": 28}
 FLAT_MESHES = {"FixtureGeoOcta"}
 # the oracle's base_class_id of the primitives MaxDrop builds (convert/primitives.py)
 PRIMITIVE_CLASSES = {("0x00000010", "0x00000000"), ("0x00000011", "0x00000000"), ("0x00000012", "0x00000000"),

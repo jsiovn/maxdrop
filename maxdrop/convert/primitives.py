@@ -23,8 +23,9 @@ Sphere, Cylinder, Cone, Tube or Torus. Plane's render scale and density act only
 viewport size (an issue when they are not 1).
 
 The file comes from anywhere: a missing block, an animated parameter or one that is no number or not finite raise
-PrimitiveError; segments below 3ds Max's own minimum are raised to it, and a mesh past MAX_FACES polygons is
-refused. No bpy; numpy is imported when a mesh is made.
+PrimitiveError; segments below 3ds Max's own minimum are raised to it, a mesh past MAX_CORNERS face corners is
+refused, and so is one whose points or UVs are not finite (sizes near the float range). A size of 0 builds the flat
+or collapsed mesh 3ds Max builds (UVs that would divide by it take 0 there). No bpy; numpy is imported when a mesh is made.
 """
 import collections
 import math
@@ -35,7 +36,9 @@ from ..reader import chunks, classids, geometry, pblock
 ChunkError = chunks.ChunkError
 
 SLOT_BLOCK = 0
-MAX_FACES = 2000000  # polygons one primitive may make: a file can ask for any number of segments
+# Face corners one primitive may make (a file can ask for any number of segments): 524,288 quads, measured at the
+# cap in 1.5 to 4 s (a GeoSphere the slowest) and 450 MB at most, of the order of convert/extrude.py's budget.
+MAX_CORNERS = 1 << 21
 _REAL_WORLD, _RW_ENTRY, _RW_FLAG = 0x2150, 0x0110, 0x0130
 _TAU = 2.0 * math.pi
 _SEAM = 1e-6
@@ -185,12 +188,15 @@ class _Builder:
 
     def data(self, mapping):
         import numpy
-        positions = numpy.asarray(self.points, dtype=numpy.float32).reshape(-1, 3)
+        with numpy.errstate(over="ignore", invalid="ignore"):  # checked below
+            positions = numpy.asarray(self.points, dtype=numpy.float32).reshape(-1, 3)
+            uvw = numpy.asarray(self.uvw, dtype=numpy.float32).reshape(-1, 3) if mapping else None
+        if not numpy.isfinite(positions).all() or (uvw is not None and not numpy.isfinite(uvw).all()):
+            raise PrimitiveError("its sizes give points or UVs past the float range")
         loops = numpy.asarray(self.loops, dtype=numpy.int32)
         maps = {}
         if mapping:
-            maps[1] = geometry.MapChannel(1, numpy.asarray(self.uvw, dtype=numpy.float32).reshape(-1, 3),
-                                          numpy.arange(len(loops), dtype=numpy.int32))
+            maps[1] = geometry.MapChannel(1, uvw, numpy.arange(len(loops), dtype=numpy.int32))
         return geometry.MeshData(positions, loops, numpy.asarray(self.starts, dtype=numpy.int32),
                                  numpy.asarray(self.groups, dtype=numpy.uint32),
                                  numpy.asarray(self.mats, dtype=numpy.uint16), maps)
@@ -280,6 +286,11 @@ def _plane(b, p):
         _grid(b, lambda a, c: at(nx - a, c), nx, ny, 1, 1, scale, flip=True)
 
 
+def _div(a, b):
+    """a / b, 0 for a size b of 0 (a flat pyramid)."""
+    return a / b if b else 0.0
+
+
 def _pyramid(b, p):
     w, d, h = p.width, p.depth, p.height
     nw, nd, nh = p.width_segs, p.depth_segs, p.height_segs
@@ -306,14 +317,14 @@ def _pyramid(b, p):
 
     def side_uv(side, x, y, z):
         if side == 0:
-            u = 0.5 + x / w
+            u = 0.5 + _div(x, w)
         elif side == 2:
-            u = 0.5 - x / w
+            u = 0.5 - _div(x, w)
         elif side == 1:
-            u = 1.0 - w / (2.0 * d) + y / d
+            u = 1.0 - _div(w, 2.0 * d) + _div(y, d)
         else:
-            u = 1.0 - w / (2.0 * d) - y / d
-        v = z / h
+            u = 1.0 - _div(w, 2.0 * d) - _div(y, d)
+        v = _div(z, h)
         return (u * sizes[side], v * h) if rw else (u, v)
 
     def corner(k, q, side):
@@ -333,7 +344,7 @@ def _pyramid(b, p):
     base = rings[-1]
 
     def base_uv(x, y):
-        u, v = 0.5 + x / w, 0.5 - y / d
+        u, v = 0.5 + _div(x, w), 0.5 - _div(y, d)
         return (u * w, v * d) if rw else (u, v)
 
     for q in range(n):
@@ -468,11 +479,14 @@ def _cylinder(b, p, r1, r2):
 
 def _tube(b, p):
     """The profile (outer side up, top inwards, inner side down, bottom outwards) swept around from +Y: U along the
-    profile, V around. Real-world map size: U around (2 pi times radius 1, falling), V the length along the
-    profile, both in file units."""
-    r1, r2, h = p.radius1, p.radius2, p.height
-    if abs(r2) > abs(r1):
-        r1, r2 = r2, r1
+    profile, V around. The outer side's role (its material ID, the profile's start) goes to the larger radius, to the
+    smaller one under a negative height, which keeps the faces pointing out. Real-world map size: U
+    around (2 pi times the larger radius, falling), V along the profile (the height signed, the caps' widths), both
+    in file units."""
+    h = p.height
+    down = h < 0
+    big, small = sorted((p.radius1, p.radius2), key=abs, reverse=True)
+    r1, r2 = (small, big) if down else (big, small)
     ns, nc, nh = p.sides, p.cap_segs, p.height_segs
     # (radius, z, material ID, smoothing group of the face that starts there)
     sides_group, cap_group = (2, 4) if p.smooth else (0, 0)
@@ -489,11 +503,11 @@ def _tube(b, p):
     grid = [[b.point(rho * math.sin(j * _TAU / ns), rho * math.cos(j * _TAU / ns), z) for rho, z, _m, _g in profile]
             for j in range(ns)]
     if p.real_world:
+        steps = [h / nh] * nh + [abs(r1 - r2) / nc] * nc
         along = [0.0]
-        for q in range(m):
-            (ra, za, _m, _g), (rb, zb, _n, _h) = profile[q], profile[(q + 1) % m]
-            along.append(along[-1] + math.hypot(rb - ra, zb - za))
-        around = _TAU * abs(r1)
+        for step in steps + steps:
+            along.append(along[-1] + step)
+        around = _TAU * abs(big)
 
         def uv(q, j):
             return ((1.0 - j / ns) * around, along[q])
@@ -607,14 +621,20 @@ def _geosphere(b, p):
     index = {}
     unit = {}
 
+    lattice = {}  # (face, i, j) -> point index: the slerps once per lattice point
+
     def at(face, i, j):
+        found = lattice.get((face, i, j))
+        if found is not None:
+            return found
         a, bb, c = (pts[x] for x in face)
         row = i + j
         q = a if row == 0 else _slerp(_slerp(a, bb, row / n), _slerp(a, c, row / n), j / row)
-        key = tuple(round(x, 9) for x in q)
+        key = tuple(round(x, 9) for x in q)  # a point on an edge of two base faces is one vertex
         if key not in index:
             index[key] = b.point(q[0] * r, q[1] * r, q[2] * r + lift)
             unit[index[key]] = q
+        lattice[(face, i, j)] = index[key]
         return index[key]
 
     rw = p.real_world
@@ -650,7 +670,7 @@ def _geosphere(b, p):
 
 
 def _faces(p):
-    """How many polygons p makes (an upper bound for the GeoSphere)."""
+    """How many polygons p makes."""
     v = p.values
     c = p.class_id
     if c == classids.BOX:
@@ -661,9 +681,9 @@ def _faces(p):
     if c == classids.PYRAMID:
         return 2 * (v["width_segs"] + v["depth_segs"]) * (v["height_segs"] + 1)
     if c == classids.SPHERE:
-        return v["segs"] * v["segs"]
+        return v["segs"] * (v["segs"] // 2)
     if c == classids.GEOSPHERE:
-        return 20 * v["segs"] * v["segs"]
+        return len(_solid(v["base_type"])[1]) * v["segs"] * v["segs"]
     if c in (classids.CYLINDER, classids.CONE):
         return v["sides"] * (v["height_segs"] + 2 * v["cap_segs"])
     if c == classids.TUBE:
@@ -682,8 +702,8 @@ def build(p):
     if c == classids.GEOSPHERE and p.hemisphere:
         raise PrimitiveError("a GeoSphere's hemisphere is not built yet")
     faces = _faces(p)
-    if faces > MAX_FACES:
-        raise PrimitiveError("%s of %d faces refused (more than %d)" % (p.name, faces, MAX_FACES))
+    if faces * 4 > MAX_CORNERS:  # four corners per face at most
+        raise PrimitiveError("%s of %d faces refused (more than %d)" % (p.name, faces, MAX_CORNERS // 4))
     b = _Builder()
     if c == classids.BOX:
         _box(b, p)
@@ -705,8 +725,7 @@ def build(p):
     elif c == classids.CONE:
         b.flip = p.height < 0
         _cylinder(b, p, p.radius1, p.radius2)
-    elif c == classids.TUBE:
-        b.flip = p.height < 0
+    elif c == classids.TUBE:  # under a negative height the radii trade sides: the faces point out unflipped
         _tube(b, p)
     else:
         _torus(b, p)

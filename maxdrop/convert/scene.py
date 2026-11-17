@@ -45,7 +45,8 @@ not built (Slice, a hemisphere) is a placeholder (an issue).
 A node becomes an EMPTY placeholder when its base object is not an Editable Mesh, Editable Poly, a primitive built
 here or a shape read here, when it has no object, or when the reader refuses its geometry or its record; placeholders
 counts them by the class name of the file's class directory ("" when there is none). A Dummy helper (a group head is
-one) is an EMPTY too, but that is its conversion, not a placeholder. A group head keeps its members as children: that is how 3ds Max stores a group.
+one) is an EMPTY too, but that is its conversion, not a placeholder. A group head keeps its members as children: that
+is how 3ds Max stores a group.
 Modifiers are listed, not evaluated: the base mesh is built, but for an Extrude on a shape and UVW Maps, and the
 modifiers converted to Blender modifiers.
 
@@ -492,6 +493,9 @@ def _primitive(scene, base, issues, node):
         data, more = primitives.mesh(scene, base)
     except ChunkError as exc:  # PrimitiveError, or a block the reader refuses
         issues.append((node, "primitive: %s" % exc))
+        return None
+    except (ArithmeticError, ValueError) as exc:  # a formula the sizes break costs the object, not the import
+        issues.append((node, "primitive: not built: %s" % exc))
         return None
     issues.extend((node, "primitive: %s" % x) for x in more)
     return data
