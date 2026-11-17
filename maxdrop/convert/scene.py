@@ -76,8 +76,9 @@ with every parent before its children. A node's hidden, frozen and renderable fl
 hides its nodes in 3ds Max without setting their flag, so build/ applies the layer's flags to its collection.
 
 A local matrix with shear (a scale along a rotated axis) sets node.sheared: Blender's matrix_basis cannot hold
-it, so build/ puts the rest into matrix_parent_inverse. A base object's reader arrays are dropped once its last
-node is described.
+it, so build/ puts the rest into matrix_parent_inverse. A base object's reader arrays (an extruded shape's too) are
+dropped once its last node is described. Once the primitives and extrusions made so far have MAX_BUILT_CORNERS face
+corners, the next primitive is a placeholder and the next extruded shape a curve (an issue each).
 Nothing here imports bpy; numpy is imported when a scene is described.
 """
 import collections
@@ -92,6 +93,10 @@ ADAPTIVE = 12  # Blender's default curve resolution, for a shape 3ds Max interpo
 UV_FIRST = "UVMap"
 UV_NAME = "UVChannel_%d"
 MAX_EDGE_MASKS = 64  # distinct smoothing-group masks paired on one non-manifold edge
+# Face corners the primitives and extrusions of one scene may make: each has its own cap (primitives.MAX_CORNERS,
+# extrude.MAX_VERTICES), but a file can hold any number of them, each costing seconds and hundreds of MB.
+MAX_BUILT_CORNERS = 1 << 24
+_SPENT = "the primitives and extrusions before it reach %d face corners, the most for one scene"
 SHEAR_TOLERANCE = 1e-5  # |cos| between two rows of a local matrix
 
 ChunkError = chunks.ChunkError
@@ -410,7 +415,8 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True):
         except ChunkError as exc:
             found[i] = exc
     data_of = {}  # base object index -> MeshData, or None when the reader refused or does not read it
-    extruded = {}  # (base object index, Extrude modifier index) -> MeshData, or None when it cannot be evaluated
+    extruded = {}  # base object index -> {Extrude modifier index: MeshData, or None when it cannot be evaluated}
+    built = [0]  # face corners the primitives and extrusions made so far
     mapped = {}  # UVW Map modifier index -> (Params, gizmo matrix), or None when it is not evaluated
     told = set()  # modifier indices whose conversion issues were named (on the first node only)
     layers = {}  # layer object index -> reader Layer, or None when its record cannot be read
@@ -432,9 +438,12 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True):
                 ext, maps, rest = _evaluated(scene, stacks, node, desc.issues, i, True) if stack.modifiers else \
                     (None, (), ())
                 if ext is not None:
+                    fresh = {m.index for m in rest} - told  # named on this node only if its Extrude is made
                     conv, conv_issues = _converted(scene, rest, meters, _offset(t, i), told, convert_modifiers)
                     key, done = _extruded(scene, desc, shape_of, extruded, mapped, base, ext, maps, i, name,
-                                          t.offset(i), meters, _shading(conv))
+                                          t.offset(i), meters, built, _shading(conv))
+                    if key is None:
+                        told.difference_update(fresh)
                 if key is not None:
                     kind = MESH
                     converted, more = rules.budget(conv, len(desc.meshes[key].loop_vertices))
@@ -442,6 +451,9 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True):
                     applied, modifiers = _split(scene, stack.modifiers, (ext,) + done, conv)
                 else:
                     kind, curve = _curve(scene, desc, shape_of, base, i, name, t.offset(i), meters)
+                remaining[base] -= 1
+                if not remaining[base]:
+                    extruded.pop(base, None)
             elif base is not None:
                 class_name = _class_name(scene, base)
                 if base not in data_of:
@@ -452,7 +464,7 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True):
                         desc.issues.append((i, "geometry: %s" % exc))
                     else:
                         if data_of[base] is None and primitives.is_primitive(scene, base):
-                            data_of[base] = _primitive(scene, base, desc.issues, i)
+                            data_of[base] = _primitive(scene, base, desc.issues, i, built)
                 data = data_of[base]
                 if data is not None:
                     _ext, maps, rest = _evaluated(scene, stacks, node, desc.issues, i, False) if stack.modifiers \
@@ -486,9 +498,12 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True):
     return desc
 
 
-def _primitive(scene, base, issues, node):
+def _primitive(scene, base, issues, node, built):
     """The MeshData convert.primitives builds for primitive base, or None when it is not built (an issue); its
-    issues are named on the first node only (the caller caches the result)."""
+    issues are named on the first node only (the caller caches the result). built: [face corners made so far]."""
+    if built[0] >= MAX_BUILT_CORNERS:
+        issues.append((node, "primitive: not built: " + _SPENT % MAX_BUILT_CORNERS))
+        return None
     try:
         data, more = primitives.mesh(scene, base)
     except ChunkError as exc:  # PrimitiveError, or a block the reader refuses
@@ -497,6 +512,7 @@ def _primitive(scene, base, issues, node):
     except (ArithmeticError, ValueError) as exc:  # a formula the sizes break costs the object, not the import
         issues.append((node, "primitive: not built: %s" % exc))
         return None
+    built[0] += len(data.loop_vertices)
     issues.extend((node, "primitive: %s" % x) for x in more)
     return data
 
@@ -676,22 +692,28 @@ def _mapped_mesh(scene, desc, mapped, key, data, maps, node, name, offset, meter
     return key, md.applied
 
 
-def _extruded(scene, desc, shape_of, extruded, mapped, base, ext, maps, node, name, offset, meters, shading=None):
+def _extruded(scene, desc, shape_of, extruded, mapped, base, ext, maps, node, name, offset, meters, built,
+              shading=None):
     """(the key in desc.meshes of shape base under the Extrude ext and the UVW Maps maps, the maps applied), made on
-    first use; (None, ()) when the shape or the Extrude cannot be read (an issue, once per base object and Extrude)."""
-    cache = (base, ext.index)
-    if cache not in extruded:
-        extruded[cache] = None
+    first use; (None, ()) when the shape or the Extrude cannot be read or the scene's MAX_BUILT_CORNERS are spent (an
+    issue, once per base object and Extrude). extruded caches the MeshData per base object, built counts the face
+    corners made."""
+    cache = extruded.setdefault(base, {})
+    if ext.index not in cache:
+        cache[ext.index] = None
         sh = _shape(scene, desc, shape_of, base, node)
-        if sh is not None:
+        if sh is not None and built[0] >= MAX_BUILT_CORNERS:
+            desc.issues.append((node, "extrude: not made: " + _SPENT % MAX_BUILT_CORNERS))
+        elif sh is not None:
             try:
                 params, issues = extrude.read_params(scene, ext)
                 data, more = extrude.extrude(sh, params)
-                extruded[cache] = data
+                cache[ext.index] = data
+                built[0] += len(data.loop_vertices)
                 desc.issues.extend((node, "extrude: %s" % x) for x in issues + more)
             except extrude.ExtrudeError as exc:
                 desc.issues.append((node, "extrude: %s" % exc))
-    data = extruded[cache]
+    data = cache[ext.index]
     if data is None:
         return None, ()
     offset = None if offset == controllers.IDENTITY else offset

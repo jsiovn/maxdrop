@@ -17,6 +17,7 @@ import os
 import sys
 import types
 import unittest
+import weakref
 from unittest import mock
 
 try:
@@ -39,6 +40,7 @@ shapes = importlib.import_module(_PKG + ".reader.shapes")
 pblock = importlib.import_module(_PKG + ".reader.pblock")
 classids = importlib.import_module(_PKG + ".reader.classids")
 reader_modifiers = importlib.import_module(_PKG + ".reader.modifiers")
+rules = importlib.import_module(_PKG + ".convert.modifiers")
 
 CAPPED = ("FixtureExtRect", "FixtureExtL", "FixtureExtHole", "FixtureExtIsland", "FixtureExtMirror",
           "FixtureExtAdaptive")
@@ -194,6 +196,74 @@ class Fixture(unittest.TestCase):
         self.assertEqual([r for _i, r in desc.issues], ["extrude: refused"] * 7)
         self.assertEqual(desc.meshes, {})
 
+    def test_extruded_data_is_released_after_its_last_node(self):
+        """An extruded shape's MeshData goes once its base object's last node is described, like a mesh's."""
+        made, alive = [], []
+        real_extrude, real_description = extrude.extrude, conv.mesh_description
+
+        def extruding(shape, params):
+            data, issues = real_extrude(shape, params)
+            made.append(weakref.ref(data.positions))
+            return data, issues
+
+        def describing(*args, **kw):
+            alive.append(sum(r() is not None for r in made))
+            return real_description(*args, **kw)
+
+        with mock.patch.object(extrude, "extrude", extruding), mock.patch.object(conv, "mesh_description",
+                                                                                 describing):
+            conv.read(FIXTURE)
+        self.assertEqual(len(made), 7)
+        self.assertEqual(alive, [1] * 7)  # only the extrusion being described
+
+    def test_a_scene_wide_budget_keeps_the_rest_curves(self):
+        with mock.patch.object(conv, "MAX_BUILT_CORNERS", 1):
+            desc = conv.read(FIXTURE)
+        self.assertEqual(sorted(n.kind for n in desc.nodes), [conv.CURVE] * 7 + [conv.MESH])
+        spent = [r for _i, r in desc.issues if r.startswith("extrude: not made: the primitives and extrusions ")]
+        self.assertEqual(len(spent), 6)
+
+    def test_conversion_issues_wait_for_a_made_extrude(self):
+        """A converted modifier's issues are named on the first node whose Extrude is made: one whose Extrude
+        fails is a curve, its modifiers not converted."""
+        real_evaluated, real_read = conv._evaluated, extrude.read_params
+        shared = types.SimpleNamespace(index=None)
+        calls = []
+
+        def evaluated(*args):
+            ext, maps, rest = real_evaluated(*args)
+            if ext is not None:
+                if shared.index is None:
+                    shared.index = ext.index
+                rest = rest + (shared,)  # one modifier instanced on every extruded shape
+            return ext, maps, rest
+
+        def converting(_scene, m, _meters=1.0, _offset=None):
+            md = rules.ModifierDescription(m.index, rules.SOLIDIFY, "Shell", "Shell", True, (), None, None)
+            return md, ["a rule issue"]
+
+        def failing_first(scene, m):
+            calls.append(m.index)
+            if len(calls) == 1:
+                raise extrude.ExtrudeError("refused")
+            return real_read(scene, m)
+
+        patches = (mock.patch.object(conv, "_evaluated", evaluated),
+                   mock.patch.object(rules, "is_convertible", lambda m: m is shared),
+                   mock.patch.object(rules, "convert", converting),
+                   mock.patch.object(extrude, "read_params", failing_first))
+        for p in patches:
+            p.start()
+        try:
+            desc = conv.read(FIXTURE)
+        finally:
+            for p in patches:
+                p.stop()
+        named = [i for i, r in desc.issues if r.endswith(": a rule issue")]
+        self.assertEqual(len(named), 1)
+        kinds = {n.index: n.kind for n in desc.nodes}
+        self.assertEqual(kinds[named[0]], conv.MESH)
+
 
 def _knots(points, kind=shapes.CORNER):
     return tuple(shapes.Knot(kind, shapes.LINE, p, p, p) for p in points)
@@ -309,6 +379,15 @@ class Triangulate(unittest.TestCase):
         pts = [(0, 0), (1, 0), (1, 1), (0, 1), (5, 5), (5, 6), (6, 6), (6, 5)]
         with self.assertRaises(extrude.CapError):
             extrude.triangulate(pts, [0, 1, 2, 3], [[4, 5, 6, 7]])
+
+    def test_a_spent_budget_is_a_cap_error(self):
+        pts = [(0, 0), (20, 0), (20, 10), (0, 10), (2, 2), (2, 8), (8, 8), (8, 2)]
+        budget = [10 ** 9]
+        extrude.triangulate(pts, [0, 1, 2, 3], [[4, 5, 6, 7]], budget)
+        used = 10 ** 9 - budget[0]
+        self.assertGreater(used, 0)
+        with self.assertRaises(extrude.CapError):
+            extrude.triangulate(pts, [0, 1, 2, 3], [[4, 5, 6, 7]], [used - 1])
 
     def test_a_self_crossing_outline_still_ends(self):
         pts = [(0, 0), (10, 10), (10, 0), (0, 10), (5, 12), (-2, 6)]
@@ -439,6 +518,39 @@ class Synthetic(unittest.TestCase):
         with mock.patch.object(extrude, "MAX_LOOPS", 1):
             _data, issues = extrude.extrude(holed, self.params())
         self.assertEqual(len(issues), 1)
+
+    def test_a_hostile_loop_set_is_refused_by_the_nesting_budget(self):
+        """Concentric outlines make every pair a candidate: the point-edge tests are counted, not the loops."""
+        rings = [shapes.Spline(_knots([(r * math.cos(2 * math.pi * k / 64), r * math.sin(2 * math.pi * k / 64), 0)
+                                       for k in range(64)]), True) for r in range(1, 31)]
+        data, issues = extrude.extrude(_shape(rings), self.params())
+        self.assertEqual(issues, [])
+        self.assertIn(extrude.TOP_ID, set(_mats(data).tolist()))
+        tested = []
+        real = extrude._inside
+
+        def inside(p, poly):
+            tested.append(len(poly))
+            return real(p, poly)
+
+        with mock.patch.object(extrude, "MAX_NEST_TESTS", 1000), mock.patch.object(extrude, "_inside", inside):
+            data, issues = extrude.extrude(_shape(rings), self.params())
+        self.assertLessEqual(sum(tested), 1000)
+        self.assertEqual(issues, ["30 closed splines take more than 1000 tests to nest: no caps"])
+        self.assertEqual(set(_mats(data).tolist()), {extrude.SIDE_ID})
+
+    def test_the_holed_caps_of_one_mesh_share_a_step_budget(self):
+        """Two solids with a hole each: a budget that one cap fits in leaves the second open."""
+        pts = [(0, 0), (10, 0), (10, 10), (0, 10), (2, 2), (2, 4), (4, 4), (4, 2)]
+        budget = [10 ** 9]
+        extrude.triangulate(pts, [0, 1, 2, 3], [[4, 5, 6, 7]], budget)
+        one = 10 ** 9 - budget[0]
+        two = _shape([self.square(10), self.rect(2, 2, 4, 4), self.rect(20, 0, 30, 10), self.rect(22, 2, 24, 4)])
+        with mock.patch.object(extrude, "MAX_CLIP_STEPS", one + one // 2):
+            data, issues = extrude.extrude(two, self.params())
+        self.assertEqual(issues, ["a cap with holes is left open: more than %d steps to triangulate the caps" %
+                                  (one + one // 2)])
+        self.assertEqual(int((_mats(data) == extrude.TOP_ID).sum()), 8)  # one holed cap: 8 + 2 - 2 triangles
 
     def test_too_many_points_are_refused_before_any_is_made(self):
         knots = _knots([(k, k % 3, 0) for k in range(3000)], kind=shapes.CORNER)

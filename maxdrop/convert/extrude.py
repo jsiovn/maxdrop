@@ -32,8 +32,9 @@ ID 1. Smooth gives the sides smoothing groups that change only at a corner or Be
 Real-World Map Size), V up the levels (0 to 1, or the height); the caps map the shape's XY box (0 to 1, or its size).
 
 The file comes from anywhere: a parameter that is animated or no number raises ExtrudeError; segments are clamped
-to 1 .. MAX_SEGMENTS; a mesh past MAX_VERTICES raises ExtrudeError; a holed cap past MAX_CAP_POINTS or one that
-cannot be bridged is left open (an issue). docs/FORMAT.md says which fixture shows what.
+to 1 .. MAX_SEGMENTS; a mesh past MAX_VERTICES raises ExtrudeError; a holed cap past MAX_CAP_POINTS, one that
+cannot be bridged or one past the mesh's MAX_CLIP_STEPS is left open, and outlines that take more than
+MAX_NEST_TESTS to nest get no caps (an issue each). docs/FORMAT.md says which fixture shows what.
 No bpy; numpy is imported when a mesh is made.
 """
 import collections
@@ -58,7 +59,9 @@ CAP_GROUP = 1 << 4
 MAX_SEGMENTS = 10000
 MAX_VERTICES = 1 << 21  # about 2 million: about a second and 500 MB at most
 MAX_CAP_POINTS = 5000  # a holed cap is ear-clipped in Python: quadratic
+MAX_CLIP_STEPS = 1 << 25  # the holed caps of one mesh: a 5000-point cap takes up to about 8 million, 3 s
 MAX_LOOPS = 4000  # closed polylines nested against each other: quadratic
+MAX_NEST_TESTS = 1 << 24  # point-edge tests telling which outline lies in which: about 2 s in Python
 _STRAIGHT = 1e-6  # relative distance of a vector from the chord
 _U32 = struct.Struct("<I")
 
@@ -287,14 +290,6 @@ def _inside(p, poly):
     return inside
 
 
-def _contains(outer, inner):
-    for p in inner:
-        r = _inside(p, outer)
-        if r is not None:
-            return r
-    return False
-
-
 def _cross(o, a, b):
     return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
 
@@ -361,7 +356,13 @@ def _bridge(pts, ring, hole):
     return ring[:at + 1] + loop + ring[at:]
 
 
-def _earclip(pts, ring):
+def _charge(budget, steps):
+    budget[0] -= steps
+    if budget[0] < 0:
+        raise CapError("more than %d steps to triangulate the caps" % MAX_CLIP_STEPS)
+
+
+def _earclip(pts, ring, budget):
     n = len(ring)
     if n < 3:
         return []
@@ -380,6 +381,7 @@ def _earclip(pts, ring):
     while remaining > 3:
         a, c = prev[k], nxt[k]
         ear = convexity(k) > eps
+        _charge(budget, 1 + len(reflex) if ear else 1)  # a hostile outline can stall round after round
         if ear:
             pa, pb, pc = xy[a], xy[k], xy[c]
             for r in reflex:
@@ -397,6 +399,7 @@ def _earclip(pts, ring):
                 k = nxt[k]
                 continue
             # no ear in a whole round (a self-touching or degenerate outline): clip the most convex vertex
+            _charge(budget, remaining)
             best, j = None, k
             for _ in range(remaining):
                 v = convexity(j)
@@ -421,32 +424,48 @@ def _earclip(pts, ring):
     return tris
 
 
-def triangulate(pts, outer, holes=()):
+def triangulate(pts, outer, holes=(), budget=None):
     """Counter-clockwise triangles (index triples into pts, (x, y) each) of the counter-clockwise polygon outer
-    with the clockwise holes; CapError when a hole cannot be bridged."""
+    with the clockwise holes; CapError when a hole cannot be bridged or the work passes budget, a one-item list of
+    steps left that calls can share (None: MAX_CLIP_STEPS for this call)."""
+    if budget is None:
+        budget = [MAX_CLIP_STEPS]
     ring = list(outer)
     for hole in sorted(holes, key=lambda h: -max(pts[i][0] for i in h)):
+        _charge(budget, len(ring) + len(hole))
         ring = _bridge(pts, ring, list(hole))
-    return _earclip(pts, ring)
+    return _earclip(pts, ring, budget)
 
 
 # The mesh
 
 def _nest(loops, issues):
     """{solid: [holes]} for the closed polylines (index -> (x, y) points, counter-clockwise or not): the depth of
-    each in the others, even = solid; a hole belongs to its innermost container."""
+    each in the others, even = solid; a hole belongs to its innermost container. None when that takes more than
+    MAX_NEST_TESTS point-edge tests (an issue)."""
     areas = {j: abs(_area(xy)) for j, xy in loops.items()}
     boxes = {j: (min(p[0] for p in xy), min(p[1] for p in xy), max(p[0] for p in xy), max(p[1] for p in xy))
              for j, xy in loops.items()}
     containers = {j: [] for j in loops}
+    tests = 0
     for i in loops:
         bi = boxes[i]
         for j in loops:
             bj = boxes[j]
             if i == j or areas[j] <= areas[i] or bi[0] < bj[0] or bi[1] < bj[1] or bi[2] > bj[2] or bi[3] > bj[3]:
                 continue
-            if _contains(loops[j], loops[i]):
-                containers[i].append(j)
+            outer = loops[j]
+            for p in loops[i]:  # the first point not on outer's boundary decides
+                tests += len(outer)
+                if tests > MAX_NEST_TESTS:
+                    issues.append("%d closed splines take more than %d tests to nest: no caps" %
+                                  (len(loops), MAX_NEST_TESTS))
+                    return None
+                r = _inside(p, outer)
+                if r is not None:
+                    if r:
+                        containers[i].append(j)
+                    break
     solids = {j: [] for j in loops if len(containers[j]) % 2 == 0}
     for j in loops:
         if j in solids:
@@ -533,6 +552,7 @@ def _caps(closed, solids, issues):
     """{solid: [[(polyline, point), ...]]}: each cap polygon counter-clockwise; a holed cap that cannot be
     triangulated is left out (an issue)."""
     out = {}
+    budget = [MAX_CLIP_STEPS]  # shared: many holed caps must not each take the whole budget
     for s, hs in solids.items():
         if not hs:
             out[s] = [[(s, k) for k in range(len(closed[s]))]]
@@ -546,7 +566,7 @@ def _caps(closed, solids, issues):
         pts = [closed[j][k] for j, k in ids]
         try:
             tris = triangulate(pts, [index[(s, k)] for k in range(len(closed[s]))],
-                               [[index[(x, k)] for k in range(len(closed[x]))] for x in hs])
+                               [[index[(x, k)] for k in range(len(closed[x]))] for x in hs], budget)
         except CapError as exc:
             issues.append("a cap with holes is left open: %s" % exc)
             continue
@@ -571,7 +591,9 @@ def extrude(shape, params):
     if len(closed) > MAX_LOOPS:
         issues.append("%d closed splines, more than %d: no caps" % (len(closed), MAX_LOOPS))
     elif closed:
-        solids, nested = _nest(closed, issues), True
+        solids = _nest(closed, issues)
+        nested = solids is not None
+        solids = solids or {}
     if nested:  # solids counter-clockwise, holes (those left open too) clockwise
         for j in closed:
             if (_area(closed[j]) > 0) != (j in solids):

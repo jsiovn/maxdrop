@@ -444,6 +444,19 @@ class Synthetic(unittest.TestCase):
         with self.assertRaises(uvwmap.UVWMapError):
             uvwmap.apply(data, tiny, IDENTITY, IDENTITY)
 
+    def test_a_gizmo_is_refused_by_its_shape_not_its_size(self):
+        """A uniformly tiny gizmo inverts; one squashed flat relative to its other axes does not."""
+        data = _quad_mesh([(-1, -1, 0), (1, -1, 0), (1, 1, 0)], [(0, 1, 2)])
+
+        def scaled(x, y, z):
+            return ((x, 0.0, 0.0, 0.0), (0.0, y, 0.0, 0.0), (0.0, 0.0, z, 0.0), (0.0, 0.0, 0.0, 1.0))
+
+        out = uvwmap.apply(data, self.params(), scaled(1e-5, 1e-5, 1e-5), IDENTITY)
+        numpy.testing.assert_allclose(out.maps[1].uvw[:, 0], [0.5 + 1e5 / 2, 0.5 - 1e5 / 2, 0.5 - 1e5 / 2], rtol=1e-6)
+        for bad in (scaled(1.0, 1.0, 1e-13), scaled(1.0, float("nan"), 1.0), scaled(0.0, 0.0, 0.0)):
+            with self.assertRaises(uvwmap.UVWMapError):
+                uvwmap.apply(data, self.params(), bad, IDENTITY)
+
     def test_an_empty_mesh(self):
         data = _quad_mesh([], [])
         data = geometry.MeshData(numpy.zeros((0, 3), dtype=numpy.float32), numpy.zeros(0, dtype=numpy.int32),

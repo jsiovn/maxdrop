@@ -18,9 +18,11 @@ import importlib
 import json
 import math
 import os
+import struct
 import sys
 import types
 import unittest
+from unittest import mock
 
 try:
     import numpy
@@ -45,6 +47,7 @@ classids = importlib.import_module(_PKG + ".reader.classids")
 cfb = importlib.import_module(_PKG + ".reader.cfb")
 reader_scene = importlib.import_module(_PKG + ".reader.scene")
 pblock = importlib.import_module(_PKG + ".reader.pblock")
+chunks = importlib.import_module(_PKG + ".reader.chunks")
 
 DEG = math.pi / 180.0
 # what tools/fixtures/primitives.ms sets, by node (lengths in the file's units, angles in radians)
@@ -256,6 +259,16 @@ class FixtureTest(unittest.TestCase):
         by_name = {n.name: n for n in desc.nodes}
         self.assertEqual(by_name["FixtureBox"].mesh, by_name["FixtureBoxCopy"].mesh)
 
+    def test_a_scene_wide_budget_leaves_the_rest_placeholders(self):
+        """Past convert.scene.MAX_BUILT_CORNERS the next primitive is not built: a placeholder with an issue."""
+        with mock.patch.object(conv, "MAX_BUILT_CORNERS", 1):
+            desc = conv.read(FIXTURE)
+        built = {n.mesh[0] for n in desc.nodes if n.kind == conv.MESH}
+        self.assertEqual(len(built), 1)  # the first primitive, with its instance if it has one
+        spent = [r for _i, r in desc.issues if r.startswith("primitive: not built: the primitives and extrusions ")]
+        self.assertEqual(len(spent), 24)  # 25 primitive objects
+        self.assertEqual(sum(desc.placeholders.values()), sum(n.kind == conv.EMPTY for n in desc.nodes))
+
 
 class Block:
     """A stand-in ParamBlock2: get(pid) from a dict."""
@@ -341,6 +354,30 @@ class HandMadeTest(unittest.TestCase):
         data, _ = prim.build(p)
         self.assertEqual((len(data.positions), len(data.loop_starts)), (6, 8))
         self.assertTrue((data.positions[:, 2] == 0).all())
+
+    def test_real_world_is_the_entry_of_its_own_class(self):
+        """Real-World Map Size is the 0x2150 entry naming the object's class, as on a UVW Map: another class's
+        entry (another plug-in's data on the object) does not turn it on."""
+        def leaf(cid, payload):
+            return struct.pack("<HI", cid, 6 + len(payload)) + payload
+
+        def holder(cid, *children):
+            body = b"".join(children)
+            return struct.pack("<HI", cid, (6 + len(body)) | 0x80000000) + body
+
+        def entry(cls, flag):
+            return holder(0x0110, leaf(0x0120, struct.pack("<5I", cls[0], cls[1], 0x10, 0, 4)),
+                          leaf(0x0130, struct.pack("<I", flag)))
+
+        def flag(*entries):
+            chunk = chunks.index(holder(0x0001, holder(0x2150, leaf(0x0100, struct.pack("<I", 1)), *entries)))[0]
+            return prim._real_world(chunk, classids.SPHERE)
+
+        own, other = tuple(classids.SPHERE), (0x1234, 0x5678)
+        self.assertFalse(flag(entry(other, 1)))
+        self.assertFalse(flag(entry(other, 1), entry(own, 0)))
+        self.assertTrue(flag(entry(other, 0), entry(own, 1)))
+        self.assertFalse(flag())
 
     def test_a_refused_primitive_is_a_placeholder_named_once(self):
         """convert.scene: a primitive whose build fails (refused, or a formula error) is a placeholder of its class

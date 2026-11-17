@@ -204,8 +204,9 @@ def apply(data, params, gizmo_tm, context_tm):
         raise UVWMapError("%s mapping is not evaluated" % params.type_name)
     g = numpy.asarray(gizmo_tm, dtype=numpy.float64)
     ctx = numpy.asarray(context_tm, dtype=numpy.float64)
-    det = numpy.linalg.det(g[:3, :3])
-    if not math.isfinite(det) or abs(det) < 1e-12 * max(1.0, float(numpy.abs(g[:3, :3]).max()) ** 3):
+    axes = g[:3, :3]
+    sv = numpy.linalg.svd(axes, compute_uv=False) if numpy.isfinite(axes).all() else None
+    if sv is None or not sv[0] > 0 or sv[-1] < 1e-12 * sv[0]:  # relative: a uniformly tiny gizmo still inverts
         raise UVWMapError("the gizmo cannot be inverted")
     m = ctx @ numpy.linalg.inv(g)  # row vectors: object space -> gizmo space
     p = numpy.asarray(data.positions, dtype=numpy.float64)
@@ -216,6 +217,7 @@ def apply(data, params, gizmo_tm, context_tm):
         raise UVWMapError("a face without corners")
     face = numpy.repeat(numpy.arange(len(starts)), totals)
     q = p[lv] @ m[:3, :3] + m[3, :3]
+    # like the points, not by the inverse transpose: that is what 3ds Max does (fitted, see the module docstring)
     n = (_face_normals(numpy, p, lv, starts, totals) @ m[:3, :3])[face]
     kind = params.maptype
     round_ = kind in (CYLINDRICAL, SPHERICAL)

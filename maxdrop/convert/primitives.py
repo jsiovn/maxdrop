@@ -39,7 +39,7 @@ SLOT_BLOCK = 0
 # Face corners one primitive may make (a file can ask for any number of segments): 524,288 quads, measured at the
 # cap in 1.5 to 4 s (a GeoSphere the slowest) and 450 MB at most, of the order of convert/extrude.py's budget.
 MAX_CORNERS = 1 << 21
-_REAL_WORLD, _RW_ENTRY, _RW_FLAG = 0x2150, 0x0110, 0x0130
+_REAL_WORLD, _RW_ENTRY, _RW_CLASS, _RW_FLAG = 0x2150, 0x0110, 0x0120, 0x0130
 _TAU = 2.0 * math.pi
 _SEAM = 1e-6
 
@@ -62,6 +62,7 @@ _SPECS = {
                                    "height": (2, "f", 0.0, None), "width_segs": (3, "i", 1, 1),
                                    "depth_segs": (4, "i", 1, 1), "height_segs": (5, "i", 1, 1),
                                    "mapping": (6, "b", True, None)}),
+    # squash (chop or squash) shapes only a hemisphere, which build() refuses: read and checked, never used
     classids.SPHERE: ("Sphere", {"radius": (0, "f", 0.0, None), "segs": (1, "i", 32, 4),
                                  "smooth": (2, "b", True, None), "hemisphere": (3, "f", 0.0, None),
                                  "squash": (4, "i", 0, None), "base_to_pivot": (5, "b", False, None),
@@ -121,17 +122,20 @@ def _value(block, pid, kind, default):
     return float(v)
 
 
-def _real_world(chunk):
-    """Whether Real-World Map Size is on: 0x2150{0x0110{..., 0x0130 u32}} of the object's chunk."""
+def _real_world(chunk, class_id):
+    """Whether Real-World Map Size is on: the 0x0130 u32 of the 0x2150{0x0110} entry whose 0x0120 names the object's
+    own class, as convert.uvwmap reads it (another class's entry is not this flag)."""
     if not chunk.container:
         return False
     held = chunk.first(_REAL_WORLD)
     if held is None or not held.container:
         return False
     for entry in held.find_all(_RW_ENTRY):
-        flag = entry.first(_RW_FLAG) if entry.container else None
-        if flag is not None and flag.payload_size >= 4 and flag.unpack("<I")[0]:
-            return True
+        cls = entry.first(_RW_CLASS) if entry.container else None
+        if cls is None or cls.payload_size < 8 or tuple(cls.unpack("<II")) != tuple(class_id):
+            continue
+        flag = entry.first(_RW_FLAG)
+        return flag is not None and flag.payload_size >= 4 and flag.unpack("<I")[0] != 0
     return False
 
 
@@ -163,7 +167,7 @@ def read_params(scene, i):
         raise PrimitiveError("no parameter block (reference slot 0)")
     block = pblock.ParamBlock2.from_chunk(scene.chunk(target), scene.refs(target), refs, len(scene),
                                           (entry.superclass, entry.class_id))
-    return params_of(entry.class_id, block, _real_world(scene.chunk(i)))
+    return params_of(entry.class_id, block, _real_world(scene.chunk(i), entry.class_id))
 
 
 class _Builder:
