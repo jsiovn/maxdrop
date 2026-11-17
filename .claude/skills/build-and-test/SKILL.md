@@ -324,9 +324,11 @@ Pass: exit 0, and the printed JSON has `"outcome": "finished"`, `"traceback": fa
 stops Blender (by its own process id) at `--limit-minutes` (30), `--max-memory-gb` (40) or below
 `--min-free-gb` (6) free. For a corpus scene: `--label "scene A"` (or `"scene B"`), the result and its `.log`
 stay in `S`, and only counts and measurements are compared with `docs/BASELINE.md` (wall time, peak memory,
-objects, meshes, materials, failed and skipped nodes). `counts.nodes` is the number of nodes MaxDrop's reader
-walks in the file (`tools/baseline_import.py`; the importer builds one object per node), `null` only when the
-reader cannot index the file.
+objects, meshes, materials, placeholders). `counts.nodes` is the number of nodes MaxDrop's reader walks in the
+file (`tools/baseline_import.py`; the importer builds one object per node), `null` only when the reader cannot
+index the file. `import_report` holds the counts of the operator's `Imported ...` line (objects, meshes,
+materials, placeholders, modifiers not applied, textures missing, approximated, issues), `null` when the log
+has no such line.
 
 ## Evidence and report
 

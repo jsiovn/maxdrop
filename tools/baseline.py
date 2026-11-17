@@ -11,12 +11,12 @@ Blender runs headless with --factory-startup and its own profile (--profile beco
 the file with the dev package of this checkout (tools/baseline_import.py) and is stopped, by its process id, when
 the time is up, when it holds more than --max-memory-gb, or when the machine has less than --min-free-gb left.
 
-The result JSON and this tool's output name the scene only by --label; the engine's own log (next to the JSON,
-<out>.log) does name objects and texture files, so keep both outside the repository for scenes that are not yours.
+The result JSON and this tool's output name the scene only by --label (import_report holds the counts of the
+operator's "Imported ..." line, not its scene name); Blender's console log (next to the JSON, <out>.log) does name
+objects and texture files, so keep both outside the repository for scenes that are not yours.
 The memory watch uses the Windows process API; elsewhere the tool refuses to run. Standard library only.
 """
 import argparse
-import collections
 import ctypes
 import json
 import os
@@ -26,8 +26,13 @@ import sys
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# "\tImportError: <exception> [<index>]<class> <node name>": the engine catches a node's failure and goes on.
-NODE_ERROR = re.compile(r"^\tImportError: (.*?) \[\s*[0-9a-fA-F]+\]")
+# The operator's summary of one scene (convert/report.py, Report.summary, printed with "MaxDrop: "). The name is
+# greedy, so a name holding ": " still parses; group 4 is what was left out, e.g. "3 placeholders, 2 issues".
+IMPORTED = re.compile(r"^MaxDrop: Imported .*: (\d+) objects?, (\d+) mesh(?:es)?(?:, (\d+) materials?)?"
+                      r"(?:, nothing left out\.|; (.*)\. See the text MaxDrop Report\.)$")
+LEFT_OUT = re.compile(r"(\d+) (placeholder|modifier|texture|approximated|issue)")
+LEFT_OUT_KEYS = {"placeholder": "placeholders", "modifier": "modifiers_not_applied",
+                 "texture": "textures_missing", "approximated": "approximated", "issue": "issues"}
 GB = 1024 ** 3
 
 
@@ -68,22 +73,28 @@ def free_memory():
 
 
 def read_log(path):
-    """What the engine printed, without the names: the failed nodes by exception, the skipped ones, a traceback."""
-    errors, skipped, traceback = collections.Counter(), 0, False
+    """What the operator printed, without the names: the counts of its "Imported ..." lines (summed when a pack
+    held several scenes, None without one) and whether a traceback was printed."""
+    report, traceback = None, False
     try:
         with open(path, encoding="utf-8", errors="replace") as f:
             for line in f:
-                m = NODE_ERROR.match(line)
+                m = IMPORTED.match(line.rstrip("\r\n"))
                 if m:
-                    errors[m.group(1)] += 1
-                elif line.startswith("\tskipping "):
-                    skipped += 1
+                    if report is None:
+                        report = dict({"objects": 0, "meshes": 0, "materials": None},
+                                      **{key: 0 for key in LEFT_OUT_KEYS.values()})
+                    report["objects"] += int(m.group(1))
+                    report["meshes"] += int(m.group(2))
+                    if m.group(3) is not None:
+                        report["materials"] = (report["materials"] or 0) + int(m.group(3))
+                    for n, word in LEFT_OUT.findall(m.group(4) or ""):
+                        report[LEFT_OUT_KEYS[word]] += int(n)
                 elif line.startswith("Traceback (most recent call last)"):
                     traceback = True
     except OSError:
         pass
-    return {"node_errors": dict(errors.most_common()), "nodes_failed": sum(errors.values()),
-            "nodes_skipped": skipped, "traceback": traceback}
+    return {"import_report": report, "traceback": traceback}
 
 
 def run(args):
@@ -156,7 +167,7 @@ def main(argv=None):
     parser.add_argument("--blender", required=True, help="path of the Blender executable")
     parser.add_argument("--profile", required=True, help="scratch folder for Blender's profile")
     parser.add_argument("--label", default="scene", help="how the result names the file")
-    parser.add_argument("--out", required=True, help="result JSON; the engine's log goes to <out>.log")
+    parser.add_argument("--out", required=True, help="result JSON; Blender's console log goes to <out>.log")
     parser.add_argument("--limit-minutes", type=float, default=30.0)
     parser.add_argument("--max-memory-gb", type=float, default=40.0)
     parser.add_argument("--min-free-gb", type=float, default=6.0)
