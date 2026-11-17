@@ -316,7 +316,6 @@ the real `REPO_URL`: Check for Updates must say `Up to date`.
 
 ```powershell
 $S = "<scratch>"; $B = "<blender.exe>"; $fixture = "<local fixture .max>"
-New-Item -ItemType Directory -Force "$S\baseline" | Out-Null   # the tool does not create the --out folder
 python tools\baseline.py --blender $B --profile "$S\profile-baseline" --label fixture --out "$S\baseline\fixture.json" $fixture
 "exit $LASTEXITCODE"
 ```

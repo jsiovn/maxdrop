@@ -88,6 +88,7 @@ def read_log(path):
 
 def run(args):
     out = os.path.abspath(args.out)
+    os.makedirs(os.path.dirname(out), exist_ok=True)
     log, counts = out + ".log", out + ".counts.json"
     for path in (out, log, counts):
         if os.path.exists(path):
