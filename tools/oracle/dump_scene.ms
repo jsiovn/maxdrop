@@ -17,7 +17,7 @@ global MaxDropOracle
 
 struct MaxDropOracleStruct
 (
-	version = 4,
+	version = 5,
 
 	fn num v =
 	(
@@ -231,6 +231,42 @@ struct MaxDropOracleStruct
 		) 6
 	),
 
+	-- the map channels the node's UVW Map modifiers write, evaluated: per triangle corner of snapshotAsMesh (world
+	-- space) the position, the face normal and the map vertex; null without a UVW Map
+	fn evalMapsJson n =
+	(
+		local chans = #()
+		for m in n.modifiers where classOf m == Uvwmap do
+		(
+			local ch = if m.channel == 1 then 0 else m.mapChannel
+			appendIfUnique chans ch
+		)
+		if chans.count == 0 or superClassOf n != GeometryClass do return "null"
+		sort chans
+		local s = try (snapshotAsMesh n) catch undefined
+		if s == undefined do return "null"
+		local items = #()
+		for ch in chans do
+		(
+			local corners = #()
+			if meshop.getMapSupport s ch do for f = 1 to s.numfaces do
+			(
+				local fc = getFace s f
+				local mf = meshop.getMapFace s ch f
+				local nrm = getFaceNormal s f
+				for k = 1 to 3 do
+				(
+					local p = getVert s fc[k]
+					local t = meshop.getMapVert s ch mf[k]
+					append corners (list #(num p.x, num p.y, num p.z, num nrm.x, num nrm.y, num nrm.z, num t.x, num t.y, num t.z))
+				)
+			)
+			append items (obj #(#("channel", ch as string), #("corners", block corners 10)) 8)
+		)
+		free s
+		block items 6
+	),
+
 	fn nodeJson n index mats =
 	(
 		local b = n.baseObject
@@ -253,6 +289,7 @@ struct MaxDropOracleStruct
 			#("bbox_max", bmax), \
 			#("bbox_min", bmin), \
 			#("eval_faces", intOrNull ev[2]), \
+			#("eval_maps", evalMapsJson n), \
 			#("eval_verts", intOrNull ev[1]), \
 			#("frozen", bool n.isFrozen), \
 			#("handle", n.handle as string), \

@@ -3372,6 +3372,7 @@
       "bbox_max": [10, 10, 20],
       "bbox_min": [-10, -10, 0],
       "eval_faces": 12,
+      "eval_maps": null,
       "eval_verts": 8,
       "frozen": false,
       "handle": 1,
@@ -3400,6 +3401,7 @@
       "bbox_max": [40, 10, 20],
       "bbox_min": [20, -10, 0],
       "eval_faces": 12,
+      "eval_maps": null,
       "eval_verts": 8,
       "frozen": false,
       "handle": 2,
@@ -3428,6 +3430,7 @@
       "bbox_max": [70, 10, 20],
       "bbox_min": [50, -10, 0],
       "eval_faces": 12,
+      "eval_maps": null,
       "eval_verts": 8,
       "frozen": false,
       "handle": 3,
@@ -3448,7 +3451,7 @@
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 60, 0, 0]
     }
   ],
-  "oracle_version": 4,
+  "oracle_version": 5,
   "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
   "time": 0,
   "units": {"display_metric": "meters", "display_type": "Generic", "display_us": "ft_Frac_In", "system_scale": 1, "system_type": "millimeters"}

@@ -21,8 +21,8 @@ FIXTURE_DIR = os.path.join(ROOT, "tests", "fixtures")
 TOP_KEYS = ["file", "file_version", "layers", "material_graph", "materials", "max_version", "node_count", "nodes",
             "oracle_version", "renderer", "time", "units"]
 NODE_KEYS = ["base_class_id", "base_class_name", "base_faces", "base_superclass", "base_verts", "bbox_max",
-             "bbox_min", "eval_faces", "eval_verts", "frozen", "handle", "hidden", "index", "instances", "layer",
-             "material", "modifiers", "name", "object_transform", "offset_pos", "offset_rot", "offset_scale",
+             "bbox_min", "eval_faces", "eval_maps", "eval_verts", "frozen", "handle", "hidden", "index", "instances",
+             "layer", "material", "modifiers", "name", "object_transform", "offset_pos", "offset_rot", "offset_scale",
              "parent", "renderable", "shape", "transform"]
 MODIFIER_KEYS = ["class_id", "class_name", "context_bbox_max", "context_bbox_min", "context_tm", "enabled",
                  "enabled_in_renders", "enabled_in_views", "name"]
@@ -117,7 +117,7 @@ class OracleFiles(unittest.TestCase):
             with self.subTest(name):
                 o = _oracle(name)
                 self.assertEqual(list(o), TOP_KEYS)
-                self.assertEqual(o["oracle_version"], 4)
+                self.assertEqual(o["oracle_version"], 5)
                 self.assertEqual(o["file"], name + ".max")
                 self.assertEqual(o["node_count"], len(o["nodes"]))
                 handles = {n["handle"] for n in o["nodes"]}
@@ -137,6 +137,10 @@ class OracleFiles(unittest.TestCase):
                     self.assertEqual(n["shape"] is not None, n["base_superclass"] == 64, n["name"])
                     if n["shape"] is not None:
                         self._check_shape(n["shape"])
+                    uvw = any(m["class_name"] == "Uvwmap" for m in n["modifiers"])
+                    self.assertEqual(n["eval_maps"] is not None, uvw, n["name"])
+                    if n["eval_maps"] is not None:
+                        self._check_maps(n["eval_maps"], n["eval_faces"])
                     self.assertEqual(n["index"], i)
                     self.assertEqual(len(n["transform"]), 12)
                     self.assertEqual(len(n["object_transform"]), 12)
@@ -160,6 +164,14 @@ class OracleFiles(unittest.TestCase):
                 self.assertEqual(knot["segment"] is None, last)
                 self.assertEqual(knot["mid"] is None, last)
                 self.assertIn(knot["segment"], (None, "curve", "line"))
+
+    def _check_maps(self, maps, faces):
+        """Per channel a UVW Map writes, ascending: per triangle corner position, normal and map vertex."""
+        self.assertEqual([m["channel"] for m in maps], sorted({m["channel"] for m in maps}))
+        for m in maps:
+            self.assertEqual(list(m), ["channel", "corners"])
+            self.assertEqual(len(m["corners"]), 3 * faces)
+            self.assertTrue(all(len(c) == 9 and all(isinstance(v, (int, float)) for v in c) for c in m["corners"]))
 
     def _check_block(self, b, size):
         self.assertEqual(list(b), BLOCK_KEYS)

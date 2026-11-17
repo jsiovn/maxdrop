@@ -60,7 +60,7 @@ Top level:
 | `max_version` | The Max that made the dump: `[release, year]`, e.g. `[22000, 2020]`. |
 | `node_count` | Number of entries in `nodes`. |
 | `nodes` | Every node of the scene, see below. |
-| `oracle_version` | Version of this layout (2: `material_graph` added; 3: the modifier context, switches and name of each modifier; 4: `shape`). |
+| `oracle_version` | Version of this layout (2: `material_graph` added; 3: the modifier context, switches and name of each modifier; 4: `shape`; 5: `eval_maps`). |
 | `renderer` | The current renderer: `class_id`, `class_name`. |
 | `time` | The frame every node was evaluated at: always 0. |
 | `units` | `system_type` (e.g. `millimeters`), `system_scale`, `display_type` (`Generic`, `Metric`, `US`, `Custom`), `display_metric`, `display_us`. |
@@ -79,6 +79,7 @@ parent always comes before its children):
 | `base_superclass` | Super class id of the base object, decimal (16 = geometry, also camera and light targets; 32 = camera; 48 = light; 64 = shape; 80 = helper, also Particle Flow operators). |
 | `base_verts`, `base_faces` | Counts of the base object: polygons for Editable Poly, triangles for Editable Mesh, `null` for every other class. |
 | `eval_verts`, `eval_faces` | The evaluated world-state mesh (`snapshotAsMesh`, after every modifier) as triangles; `null` when the node is not geometry or yields no mesh (lights, helpers, targets, particle flow events). |
+| `eval_maps` | `null` unless a modifier of the node is a UVW Map. Then, per map channel one of its UVW Maps writes (`mapChannel`, or 0 for the vertex color channel), ascending: `channel` and `corners`, one entry per corner of every triangle of that evaluated mesh in face order, `[x, y, z, nx, ny, nz, u, v, w]`: the world position (`getVert`), the face normal (`getFaceNormal`, world space) and the map vertex (`meshop.getMapVert` of `meshop.getMapFace`). |
 | `modifiers` | The modifier stack from top to bottom (modifier_pivot: a Bend added over a UVW Map lists Bend first), each: `class_id`, `class_name`; `name` (`m.name`: the one the user gave, else the class's display name); `enabled`, `enabled_in_views`, `enabled_in_renders`; `context_tm` (`getModContextTM`, 12 floats as `transform`) and `context_bbox_min`, `context_bbox_max` (`getModContextBBoxMin/Max`): the modifier context on this node, which an instanced modifier has once per node. The box is the one Max holds after evaluating the node; the file may hold none (docs/FORMAT.md, Modifiers). |
 | `instances` | Sorted handles of every node that shares this node's base object, itself included (a one-element list when not instanced). Instances and references both count. |
 | `transform` | World node transform (`node.transform`, the pivot), 12 floats: rows 1 to 4, row 4 = translation. |
