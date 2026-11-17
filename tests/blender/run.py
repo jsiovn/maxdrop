@@ -26,6 +26,10 @@ Converted modifiers (TurboSmooth, MeshSmooth, Shell, Symmetry): each object's Bl
 the description's settings and mirror empties, creases where a smoother separates by smoothing groups, and the
 evaluated mesh with 3ds Max's vertex and triangle counts and world box (stack_convert, stack_basic, modifier_pivot);
 stack_convert imported with Modifiers: Ignore gets none.
+primitives (convert/primitives.py): each node a mesh with 3ds Max's vertex and triangle counts (eval_verts, eval_faces)
+and world box, its UV layer (none without Generate Mapping Coords), sharp edges, the unsmoothed GeoSphere flat, normals
+outward but for the Planes (up, or down for the one of negative width) and the Box of negative width (in, as 3ds Max
+makes it); the instance shares FixtureBox's mesh; the TurboSmooth over a Box evaluates to 3ds Max's counts.
 layers_flags: two layer collections, one hidden object, one with hide_render, the group head as the parent of its two
 members. modifier_pivot: a node with modifiers gets its base mesh (no bounding box check, the oracle's is after the
 modifiers), the report names the modifiers not applied, and the node whose pivot alone is rotated keeps its object
@@ -79,6 +83,7 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1
     "layers_flags": [],
     "modifier_pivot": ["UVMap"],  # FixtureBent's UVW Map writes channel 1 (applied, the Bend above it is not)
     "multi_uv": ["UVMap", "UVChannel_2", "UVChannel_3"],
+    "primitives": {"FixtureBoxNoMap": []},  # else UVMap: Generate Mapping Coords
     "shapes": ["UVMap"],  # FixtureBox; the shapes are curves
     "stack_basic": ["UVMap"],  # FixtureTurbo's UVW Map writes channel 1; no other modifier is applied
     "stack_convert": ["UVMap"],  # the modifiers become Blender modifiers on the base meshes
@@ -103,8 +108,21 @@ SHARP_EDGES = {"editable_mesh": 8, "modifier_pivot": {"FixtureSmooth": 0, None: 
                # boxes of 3 x 2 x 2 segments: 28; the cylinder's rims 2 x 16; the sphere is smooth
                "uvwmap": {"FixtureUVWCyl": 32, "FixtureUVWSphere": 0, "FixtureUVWSharedB": 12, None: 28},
                # smooth spheres, the rims of a 10-sided cylinder
-               "uvwmap_oblique": {"FixtureUVWObliqueCap": 20, None: 0}}
+               "uvwmap_oblique": {"FixtureUVWObliqueCap": 20, None: 0},
+               # primitives (tests/unit/test_convert_scene.py, SHARP_EDGES_PRIMITIVES); the TurboSmooth smooths
+               "primitives": {"FixtureBox": 36, "FixtureBoxCopy": 36, "FixtureBoxDown": 12, "FixtureBoxNoMap": 12,
+                              "FixtureBoxSmooth": 0, "FixturePyramid": 18, "FixtureGeoOcta": 48,
+                              "FixtureCylinder": 20, "FixtureCone": 18, "FixtureTube": 32, "FixtureTorus": 96,
+                              "FixtureBoxInside": 16, "FixtureCylinderDown": 14, "FixtureConeTip": 14,
+                              "FixtureTubeSwap": 28, "FixtureTorusOdd": 35, None: 0}}
 SHARP_EDGES_DEFAULT = 12
+FLAT_SHADED = {"FixtureGeoOcta"}  # a GeoSphere not smoothed: no smoothing group, every face flat
+# primitives whose normals are not "away from the box center": a Plane's point up or down (by its sizes' signs), and
+# a Box of width -12 keeps 3ds Max's faces, which point in
+PLANE_NORMALS = {"FixturePlane": 1.0, "FixturePlaneDown": -1.0}
+INSIDE_OUT = {"FixtureBoxInside"}
+# hollow: a tube's inner side and a torus's inner half face the box center; closed, they enclose a positive volume
+HOLLOW = {"FixtureTube", "FixtureTubeSwap", "FixtureTorus", "FixtureTorusOdd"}
 # extrude (Generate Mapping Coords on two nodes); sharp edges: the vertical edges at corner knots, one per level, and
 # both rims of every capped outline; V - E + F: a solid 2, one with a round tunnel 0, a ring and its island 0 + 2
 EXTRUDE_UV_LAYERS = {"FixtureExtRect": ["UVMap"], "FixtureExtAdaptive": ["UVMap"],
@@ -233,7 +251,8 @@ def run_fixture(path, modules):
         if o["shape"] is not None:
             check_curve(label, ob, o["shape"], meters)
             continue
-        if o["base_verts"] is None:
+        primitive = o["base_verts"] is None and node.kind == convert_scene.MESH  # built from its parameters
+        if o["base_verts"] is None and not primitive:
             check(label + ": placeholder empty", ob.type == 'EMPTY' and ob.get("maxdrop_class") == o["base_class_name"],
                   "%s %r" % (ob.type, ob.get("maxdrop_class")))
             continue
@@ -251,8 +270,14 @@ def run_fixture(path, modules):
                   and close(hi, o["bbox_max"], BBOX_TOLERANCE),
                   "%s..%s vs %s..%s" % (["%.6g" % v for v in lo], ["%.6g" % v for v in hi], o["bbox_min"],
                                         o["bbox_max"]))
-        check(label + ": vertex and face counts", (len(mesh.vertices), len(mesh.polygons)) ==
-              (o["base_verts"], o["base_faces"]), "%d, %d" % (len(mesh.vertices), len(mesh.polygons)))
+        if primitive:  # the oracle counts the triangles of the TriMesh 3ds Max builds, after the modifiers
+            if not o["modifiers"]:
+                triangles = sum(len(p.vertices) - 2 for p in mesh.polygons)
+                check(label + ": vertex and triangle counts = 3ds Max's", (len(mesh.vertices), triangles) ==
+                      (o["eval_verts"], o["eval_faces"]), "%d, %d" % (len(mesh.vertices), triangles))
+        else:
+            check(label + ": vertex and face counts", (len(mesh.vertices), len(mesh.polygons)) ==
+                  (o["base_verts"], o["base_faces"]), "%d, %d" % (len(mesh.vertices), len(mesh.polygons)))
         uv = [layer.name for layer in mesh.uv_layers]
         want = UV_LAYERS[name]
         check(label + ": UV layers", uv == (want.get(o["name"], ["UVMap"]) if isinstance(want, dict) else want),
@@ -267,7 +292,10 @@ def run_fixture(path, modules):
         want = want.get(o["name"], want[None]) if isinstance(want, dict) else want
         check(label + ": sharp edges", count == want, str(count))
         flat = mesh.attributes.get("sharp_face")
-        check(label + ": every face smooth", flat is None or not any(d.value for d in flat.data))
+        if o["name"] in FLAT_SHADED:
+            check(label + ": every face flat", flat is not None and all(d.value for d in flat.data))
+        else:
+            check(label + ": every face smooth", flat is None or not any(d.value for d in flat.data))
         indices = [p.material_index for p in mesh.polygons]
         check(label + ": each face on its material's slot", indices == plan[node.mesh].indices.tolist(),
               str(indices))
@@ -280,8 +308,26 @@ def run_fixture(path, modules):
         box = (lo, hi) if o["modifiers"] else (o["bbox_min"], o["bbox_max"])
         center = (Vector(box[0]) + Vector(box[1])) * (meters / 2.0)
         normal_matrix = mw.to_3x3().inverted().transposed()
-        outward = [(normal_matrix @ p.normal).dot(mw @ p.center - center) > 0 for p in mesh.polygons]
-        check(label + ": normals outward as rendered", all(outward), "%d of %d" % (sum(outward), len(outward)))
+        faces = [p for p in mesh.polygons if p.area > 1e-12]  # a cone's tip cap: its points all in one place
+        if o["name"] in HOLLOW:
+            volume = 0.0
+            for p in mesh.polygons:
+                a = mesh.vertices[p.vertices[0]].co
+                for k in range(1, len(p.vertices) - 1):
+                    volume += a.dot(mesh.vertices[p.vertices[k]].co.cross(mesh.vertices[p.vertices[k + 1]].co)) / 6
+            check(label + ": a closed mesh facing out (positive volume)", volume * mw.determinant() > 0, str(volume))
+        elif o["name"] in PLANE_NORMALS:
+            up = [(normal_matrix @ p.normal).z * PLANE_NORMALS[o["name"]] > 0 for p in faces]
+            check(label + ": normals point %s as in 3ds Max" % ("up" if PLANE_NORMALS[o["name"]] > 0 else "down"),
+                  all(up), "%d of %d" % (sum(up), len(up)))
+        else:
+            outward = [(normal_matrix @ p.normal).dot(mw @ p.center - center) > 0 for p in faces]
+            if o["name"] in INSIDE_OUT:
+                check(label + ": normals inward as 3ds Max makes them", not any(outward),
+                      "%d of %d out" % (sum(outward), len(outward)))
+            else:
+                check(label + ": normals outward as rendered", all(outward), "%d of %d" % (sum(outward),
+                                                                                          len(outward)))
     if name == "instances":
         users = sorted(m.users for m in bpy.data.meshes)
         check("instances: four objects share one mesh, the copy has its own", users == [1, 4], str(users))

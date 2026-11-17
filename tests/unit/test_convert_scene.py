@@ -60,6 +60,7 @@ UV_LAYERS = {
     "layers_flags": [],
     "modifier_pivot": ["UVMap"],  # FixtureBent's UVW Map writes channel 1 (applied, the Bend above it is not)
     "multi_uv": ["UVMap", "UVChannel_2", "UVChannel_3"],
+    "primitives": collections.defaultdict(lambda: ["UVMap"], {"FixtureBoxNoMap": []}),  # Generate Mapping Coords
     "shapes": ["UVMap"],  # FixtureBox; the shapes are curves
     "stack_basic": ["UVMap"],  # FixtureTurbo's UVW Map writes channel 1; no other modifier is applied
     "stack_convert": ["UVMap"],  # its modifiers become Blender modifiers: the base meshes are built
@@ -89,6 +90,21 @@ SHARP_EDGES_UVWMAP = {"FixtureUVWCyl": 32, "FixtureUVWSphere": 0, "FixtureUVWSha
                       # uvwmap_oblique: smooth spheres, the rims of a 10-sided cylinder
                       "FixtureUVWObliqueBox": 0, "FixtureUVWObliqueMirror": 0, "FixtureUVWObliqueCap": 20,
                       "FixtureUVWObliqueBoxX": 0, "FixtureUVWObliquePlanarX": 0}
+# primitives: a group per side of a box (FixtureBox's edges in segments: 4 x 3 + 4 x 2 + 4 x 4), the rims of
+# cylinders, cones and tubes, the pyramid's four ridges of 2 segments and its base outline of 10, the torus's
+# alternating groups (every edge between two sides; on the odd one every edge between two segments), every edge of
+# the unsmoothed GeoSphere; spheres, smooth GeoSpheres and planes have none
+SHARP_EDGES_PRIMITIVES = {"FixtureBox": 36, "FixtureBoxDown": 12, "FixtureBoxNoMap": 12, "FixtureBoxSmooth": 0,
+                          "FixturePlane": 0, "FixturePyramid": 4 * 2 + 10, "FixtureSphere": 0, "FixtureGeoSphere": 0,
+                          "FixtureGeoOcta": 48, "FixtureCylinder": 20, "FixtureCone": 18, "FixtureTube": 32,
+                          "FixtureTorus": 96, "FixtureBoxInside": 16, "FixturePlaneDown": 0,
+                          "FixtureCylinderDown": 14, "FixtureConeTip": 14, "FixtureTubeSwap": 28,
+                          "FixtureTorusOdd": 35}
+FLAT_MESHES = {"FixtureGeoOcta"}
+# the oracle's base_class_id of the primitives MaxDrop builds (convert/primitives.py)
+PRIMITIVE_CLASSES = {("0x00000010", "0x00000000"), ("0x00000011", "0x00000000"), ("0x00000012", "0x00000000"),
+                     ("0x00000020", "0x00000000"), ("0xa86c23dd", "0x00000000"), ("0x00007b21", "0x00000000"),
+                     ("0x00000000", "0x00007f9e"), ("0x081f1dfc", "0x77566f65"), ("0x76bf318a", "0x4bf37b10")}
 # the issues the fixtures are made to raise
 ISSUES = {"uvwmap": ["uvw map: a UVW Map above Bend is not evaluated",
                      "uvw map: shrink-wrap mapping is not evaluated: the stored channel stays"],
@@ -487,12 +503,15 @@ class Fixtures(unittest.TestCase):
         for name, desc, oracle in self.cases:
             for node, o in zip(desc.nodes, oracle["nodes"]):
                 extruded = o["shape"] is not None and o["eval_verts"] is not None  # an Extrude on the shape
-                kind = conv.MESH if o["base_verts"] is not None or extruded else conv.CURVE if o["shape"] else \
-                    conv.EMPTY
+                primitive = tuple(o["base_class_id"]) in PRIMITIVE_CLASSES
+                kind = conv.MESH if o["base_verts"] is not None or extruded or primitive else \
+                    conv.CURVE if o["shape"] else conv.EMPTY
                 self.assertEqual(node.kind, kind, "%s %s" % (name, node.name))
                 if node.kind == conv.MESH:
                     md = desc.meshes[node.mesh]
-                    if extruded:  # 3ds Max's counts are of triangles
+                    if primitive and o["modifiers"]:  # 3ds Max's counts are after the TurboSmooth
+                        self.assertTrue(node.converted, "%s %s" % (name, node.name))
+                    elif extruded or primitive:  # 3ds Max's counts are of triangles
                         self.assertEqual((len(md.positions), int((md.loop_totals - 2).sum())),
                                          (o["eval_verts"], o["eval_faces"]), "%s %s" % (name, node.name))
                     else:
@@ -564,10 +583,15 @@ class Fixtures(unittest.TestCase):
             want = {"editable_mesh": SHARP_EDGES_EDITABLE_MESH,
                     "modifier_pivot": SHARP_EDGES_TALL_BOX, "uvwmap": 28}.get(name, SHARP_EDGES_POLY_BOX)
             for md in desc.meshes.values():
+                if name == "primitives":  # FixtureBox is a name of other fixtures too
+                    want = SHARP_EDGES_PRIMITIVES[md.name]
                 want_here = SHARP_EDGES_SMOOTHED.get(md.name, SHARP_EDGES_EXTRUDE.get(
                     md.name, SHARP_EDGES_UVWMAP.get(md.name, want)))
                 self.assertEqual(len(md.sharp_edges), want_here, "%s %s" % (name, md.name))
-                self.assertFalse(md.sharp_faces.any(), name)
+                # an unsmoothed GeoSphere has no smoothing group: every face flat
+                self.assertEqual(bool(md.sharp_faces.any()), md.name in FLAT_MESHES, "%s %s" % (name, md.name))
+                if md.name in FLAT_MESHES:
+                    self.assertTrue(md.sharp_faces.all(), name)
 
     def test_placeholders(self):
         for name, desc, _o in self.cases:

@@ -1,0 +1,110 @@
+-- SPDX-FileCopyrightText: 2026 jsiovn
+--
+-- SPDX-License-Identifier: GPL-3.0-or-later
+
+-- The standard primitives MaxDrop builds from their parameters (convert/primitives.py), one of each with
+-- non-default segments, left as primitives (not collapsed):
+-- FixtureBox: length 20, width 30, height 40; 3 x 2 x 4 segments (width, length, height).
+-- FixtureBoxDown: length 10, width 12, height -15 (dragged down), Real-World Map Size.
+-- FixtureBoxNoMap: 10 x 10 x 10, Generate Mapping Coords off.
+-- FixtureBoxCopy: an instance of FixtureBox.
+-- FixtureBoxSmooth: 10 x 10 x 10 under a TurboSmooth (one iteration).
+-- FixturePlane: length 20, width 30; 3 x 2 segments.
+-- FixturePyramid: width 20, depth 30, height 25; 2 x 3 x 2 segments.
+-- FixtureSphere: radius 10, 12 segments.
+-- FixtureGeoSphere: icosahedron, radius 10, 3 segments.
+-- FixtureGeoOcta: octahedron, radius 8, 2 segments, not smoothed, Base To Pivot.
+-- FixtureCylinder: radius 10, height 20; 3 height and 2 cap segments, 10 sides; turned 30 degrees about X.
+-- FixtureCone: radius 8 and 3, height 20; 2 height and 2 cap segments, 9 sides; Real-World Map Size.
+-- FixtureTube: radius 10 and 6, height 20; 2 height and 2 cap segments, 8 sides.
+-- FixtureTorus: radius 10 and 3, 12 segments, 8 sides, rotation 20, twist 30, smooth 1 (a group per side,
+-- alternating).
+-- Signs and edge cases: FixtureBoxInside (width -12: 3ds Max's faces point in), FixturePlaneDown (width -12: its
+-- faces point down), FixtureCylinderDown (height -10), FixtureConeTip (radius 2 of 0), FixtureTubeSwap (radius 1
+-- smaller than radius 2), FixtureTorusOdd (7 segments, 5 sides, smooth 3, Real-World Map Size).
+-- One Standard material on every node.
+-- It also writes C:\maxdrop_fixtures\primitives.mesh.jsonl: per primitive node, its base object's TriMesh (object
+-- space): vertices, and per triangle its vertices, edge visibility, material ID, smoothing groups and channel 1's
+-- map vertices. tests/unit/test_primitives.py compares MaxDrop's meshes with it.
+-- Authored for MaxDrop's tests (see CONTRIBUTING.md, "Test files"): it resets the scene, so run it in a 3ds Max
+-- session with nothing to keep, then sanitize and check the saved file before it goes into tests/fixtures/.
+(
+	resetMaxFile #noPrompt
+	IDisplayGamma.colorCorrectionMode = #none  -- the fixtures are saved with the gamma off (CONTRIBUTING.md)
+
+	fn num x = (local s = formattedPrint (x as float) format:".7g"; if s == "-0" then "0" else s)
+	fn p3 p = "[" + num p.x + "," + num p.y + "," + num p.z + "]"
+	fn flag b = if b then "1" else "0"
+	fn dumpMesh o =
+	(
+		local ss = stringStream ""
+		local m = o.baseObject.mesh
+		format "{\"name\":\"%\",\"class\":\"%\",\"verts\":[" o.name ((classOf o) as string) to:ss
+		for i = 1 to m.numverts do (if i > 1 do format "," to:ss; format "%" (p3 (getVert m i)) to:ss)
+		format "],\"faces\":[" to:ss
+		local hasMap = meshop.getMapSupport m 1
+		for f = 1 to m.numfaces do
+		(
+			if f > 1 do format "," to:ss
+			local v = getFace m f
+			format "{\"v\":[%,%,%],\"vis\":[%,%,%],\"mat\":%,\"sg\":%" ((v.x as integer) - 1) ((v.y as integer) - 1) \
+				((v.z as integer) - 1) (flag (getEdgeVis m f 1)) (flag (getEdgeVis m f 2)) (flag (getEdgeVis m f 3)) \
+				(getFaceMatID m f) (getFaceSmoothGroup m f) to:ss
+			if hasMap do
+			(
+				local t = meshop.getMapFace m 1 f
+				format ",\"uv\":[%,%,%]" (p3 (meshop.getMapVert m 1 t.x)) (p3 (meshop.getMapVert m 1 t.y)) \
+					(p3 (meshop.getMapVert m 1 t.z)) to:ss
+			)
+			format "}" to:ss
+		)
+		format "]}" to:ss
+		ss as string
+	)
+
+	local firstBox = Box name:"FixtureBox" length:20 width:30 height:40 widthsegs:3 lengthsegs:2 heightsegs:4 \
+		mapcoords:true pos:[0, 0, 0]
+	Box name:"FixtureBoxDown" length:10 width:12 height:-15 mapcoords:true realWorldMapSize:true pos:[40, 0, 0]
+	Box name:"FixtureBoxNoMap" length:10 width:10 height:10 mapcoords:false pos:[70, 0, 0]
+	local copyOf = instance firstBox
+	copyOf.name = "FixtureBoxCopy"
+	copyOf.pos = [0, -40, 0]
+	local smoothed = Box name:"FixtureBoxSmooth" length:10 width:10 height:10 mapcoords:true pos:[40, -40, 0]
+	addModifier smoothed (TurboSmooth iterations:1)
+	Plane name:"FixturePlane" length:20 width:30 widthsegs:3 lengthsegs:2 mapcoords:true pos:[100, 0, 0]
+	Pyramid name:"FixturePyramid" width:20 depth:30 height:25 widthsegs:2 depthsegs:3 heightsegs:2 mapcoords:true \
+		pos:[140, 0, 0]
+	Sphere name:"FixtureSphere" radius:10 segs:12 smooth:true mapcoords:true pos:[0, 60, 10]
+	GeoSphere name:"FixtureGeoSphere" radius:10 segs:3 baseType:2 smooth:true mapcoords:true pos:[40, 60, 10]
+	GeoSphere name:"FixtureGeoOcta" radius:8 segs:2 baseType:1 smooth:false baseToPivot:true mapcoords:true \
+		pos:[70, 60, 0]
+	local cyl = Cylinder name:"FixtureCylinder" radius:10 height:20 heightsegs:3 capsegs:2 sides:10 smooth:true \
+		mapcoords:true pos:[100, 60, 0]
+	rotate cyl (eulerangles 30 0 0)
+	Cone name:"FixtureCone" radius1:8 radius2:3 height:20 heightsegs:2 capsegs:2 sides:9 smooth:true mapcoords:true \
+		realWorldMapSize:true pos:[140, 60, 0]
+	Tube name:"FixtureTube" radius1:10 radius2:6 height:20 heightsegs:2 capsegs:2 sides:8 smooth:true mapcoords:true \
+		pos:[0, 110, 0]
+	Torus name:"FixtureTorus" radius1:10 radius2:3 segs:12 sides:8 tubeRotation:20 tubeTwist:30 smooth:1 \
+		mapcoords:true pos:[40, 110, 0]
+	Box name:"FixtureBoxInside" length:10 width:-12 height:8 widthsegs:2 mapcoords:true pos:[0, 160, 0]
+	Plane name:"FixturePlaneDown" length:10 width:-12 widthsegs:2 lengthsegs:1 mapcoords:true pos:[30, 160, 0]
+	Cylinder name:"FixtureCylinderDown" radius:5 height:-10 heightsegs:1 capsegs:1 sides:7 mapcoords:true \
+		pos:[60, 160, 0]
+	Cone name:"FixtureConeTip" radius1:5 radius2:0 height:10 heightsegs:2 capsegs:1 sides:7 mapcoords:true \
+		pos:[90, 160, 0]
+	Tube name:"FixtureTubeSwap" radius1:3 radius2:5 height:10 heightsegs:1 capsegs:1 sides:7 mapcoords:true \
+		pos:[120, 160, 0]
+	Torus name:"FixtureTorusOdd" radius1:8 radius2:2 segs:7 sides:5 smooth:3 mapcoords:true realWorldMapSize:true \
+		pos:[150, 160, 0]
+
+	local mat = StandardMaterial name:"FixtureGrey" diffuse:(color 128 128 128)
+	for o in objects do o.material = mat
+
+	makeDir @"C:\maxdrop_fixtures" all:true
+	saveMaxFile @"C:\maxdrop_fixtures\primitives.max" quiet:true
+	local f = createFile @"C:\maxdrop_fixtures\primitives.mesh.jsonl"
+	for o in objects where o != copyOf do format "%\n" (dumpMesh o) to:f
+	close f
+	"primitives: " + (objects.count as string) + " objects"
+)

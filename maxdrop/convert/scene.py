@@ -38,10 +38,14 @@ its chord, whatever the stored vectors. Resolution: 3ds Max's steps + 1 segments
 an adaptive shape. A shape that renders (Enable In Renderer) gets a round bevel of its thickness (Max's thickness
 is the diameter) with about as many sides; a rectangular section is drawn round (an issue).
 
-A node becomes an EMPTY placeholder when its base object is not an Editable Mesh, Editable Poly or a shape read
-here, when it has no object, or when the reader refuses its geometry or its record; placeholders counts them by the
-class name of the file's class directory ("" when there is none). A Dummy helper (a group head is one) is an EMPTY too, but that is
-its conversion, not a placeholder. A group head keeps its members as children: that is how 3ds Max stores a group.
+A standard primitive (Box, Plane, Pyramid, Sphere, GeoSphere, Cylinder, Cone, Tube, Torus) becomes the mesh 3ds Max
+builds from its parameters (convert.primitives) and from there on is a mesh like any other; one with an option that is
+not built (Slice, a hemisphere) is a placeholder (an issue).
+
+A node becomes an EMPTY placeholder when its base object is not an Editable Mesh, Editable Poly, a primitive built
+here or a shape read here, when it has no object, or when the reader refuses its geometry or its record; placeholders
+counts them by the class name of the file's class directory ("" when there is none). A Dummy helper (a group head is
+one) is an EMPTY too, but that is its conversion, not a placeholder. A group head keeps its members as children: that is how 3ds Max stores a group.
 Modifiers are listed, not evaluated: the base mesh is built, but for an Extrude on a shape and UVW Maps, and the
 modifiers converted to Blender modifiers.
 
@@ -80,7 +84,7 @@ import math
 
 from ..reader import cfb, chunks, classids, controllers, geometry, modifiers as reader_modifiers, shapes, units
 from ..reader import scene as reader_scene
-from . import extrude, modifiers as rules, uvwmap
+from . import extrude, modifiers as rules, primitives, uvwmap
 
 MESH, CURVE, EMPTY = "MESH", "CURVE", "EMPTY"
 ADAPTIVE = 12  # Blender's default curve resolution, for a shape 3ds Max interpolates adaptively
@@ -445,6 +449,9 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True):
                     except geometry.GeometryError as exc:
                         data_of[base] = None
                         desc.issues.append((i, "geometry: %s" % exc))
+                    else:
+                        if data_of[base] is None and primitives.is_primitive(scene, base):
+                            data_of[base] = _primitive(scene, base, desc.issues, i)
                 data = data_of[base]
                 if data is not None:
                     _ext, maps, rest = _evaluated(scene, stacks, node, desc.issues, i, False) if stack.modifiers \
@@ -476,6 +483,18 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True):
         for issue in t.issues if issue.reason == controllers.UNKNOWN_CLASS)
     desc.layers = _layer_descriptions(scene, layers)
     return desc
+
+
+def _primitive(scene, base, issues, node):
+    """The MeshData convert.primitives builds for primitive base, or None when it is not built (an issue); its
+    issues are named on the first node only (the caller caches the result)."""
+    try:
+        data, more = primitives.mesh(scene, base)
+    except ChunkError as exc:  # PrimitiveError, or a block the reader refuses
+        issues.append((node, "primitive: %s" % exc))
+        return None
+    issues.extend((node, "primitive: %s" % x) for x in more)
+    return data
 
 
 def _shape(scene, desc, shape_of, base, node):

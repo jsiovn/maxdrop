@@ -55,6 +55,17 @@ EDITABLE_MESH = ClassId(0xE44F10B3, 0)
 EDITABLE_POLY = ClassId(0x1BF8338D, 0x192F6098)
 DUMMY = ClassId(0x00876234, 0)
 
+# Primitives (convert/primitives.py).
+BOX = ClassId(0x00000010, 0)
+SPHERE = ClassId(0x00000011, 0)
+CYLINDER = ClassId(0x00000012, 0)
+TORUS = ClassId(0x00000020, 0)
+CONE = ClassId(0xA86C23DD, 0)
+TUBE = ClassId(0x00007B21, 0)
+GEOSPHERE = ClassId(0x00000000, 0x00007F9E)
+PLANE = ClassId(0x081F1DFC, 0x77566F65)
+PYRAMID = ClassId(0x76BF318A, 0x4BF37B10)
+
 # Shapes.
 SPLINE_SHAPE = ClassId(0x0000000A, 0)  # an Editable Spline
 LINE = ClassId(0x00001040, 0)
@@ -132,6 +143,15 @@ CLASSES = {
     (SC_GEOMOBJECT, EDITABLE_MESH): "Editable Mesh",
     (SC_GEOMOBJECT, EDITABLE_POLY): "Editable Poly",
     (SC_HELPER, DUMMY): "Dummy",
+    (SC_GEOMOBJECT, BOX): "Box",
+    (SC_GEOMOBJECT, SPHERE): "Sphere",
+    (SC_GEOMOBJECT, CYLINDER): "Cylinder",
+    (SC_GEOMOBJECT, TORUS): "Torus",
+    (SC_GEOMOBJECT, CONE): "Cone",
+    (SC_GEOMOBJECT, TUBE): "Tube",
+    (SC_GEOMOBJECT, GEOSPHERE): "GeoSphere",
+    (SC_GEOMOBJECT, PLANE): "Plane",
+    (SC_GEOMOBJECT, PYRAMID): "Pyramid",
     (SC_SHAPE, SPLINE_SHAPE): "SplineShape",
     (SC_SHAPE, LINE): "Line",
     (SC_SHAPE, RECTANGLE): "Rectangle",
