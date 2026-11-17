@@ -62,6 +62,7 @@ UV_LAYERS = {
     "multi_uv": ["UVMap", "UVChannel_2", "UVChannel_3"],
     "shapes": ["UVMap"],  # FixtureBox; the shapes are curves
     "stack_basic": ["UVMap"],  # FixtureTurbo's UVW Map writes channel 1; no other modifier is applied
+    "stack_convert": ["UVMap"],  # its modifiers become Blender modifiers: the base meshes are built
     "standard_physical": ["UVMap"],
     "texmap_rules": ["UVMap"],
     "units_cm": ["UVMap"],
@@ -90,7 +91,17 @@ SHARP_EDGES_UVWMAP = {"FixtureUVWCyl": 32, "FixtureUVWSphere": 0, "FixtureUVWSha
                       "FixtureUVWObliqueBoxX": 0, "FixtureUVWObliquePlanarX": 0}
 # the issues the fixtures are made to raise
 ISSUES = {"uvwmap": ["uvw map: a UVW Map above Bend is not evaluated",
-                     "uvw map: shrink-wrap mapping is not evaluated: the stored channel stays"]}
+                     "uvw map: shrink-wrap mapping is not evaluated: the stored channel stays"],
+          "stack_convert": ["modifiers: TurboSmooth above Bend is not converted"]}
+# meshes under a converted smoother with Smooth Result: no sharp edge (modifier_pivot's reference, stack_basic's box)
+SHARP_EDGES_SMOOTHED = {"FixtureSmooth": 0, "FixtureTurbo": 0, "FixtureTurboOne": 0, "FixtureMeshSmooth": 0,
+                        "FixtureOrder": 0}
+
+
+def _shading(node):
+    """The ("shading", ...) a converted smoother adds to a node's mesh key, else None."""
+    last = node.mesh[-1] if node.mesh else None
+    return last if isinstance(last, tuple) and len(last) == 2 and last[0] == "shading" else None
 
 
 def _oracle(path):
@@ -463,7 +474,7 @@ class Fixtures(unittest.TestCase):
         for name, desc, oracle in self.cases:
             for node, o in zip(desc.nodes, oracle["nodes"]):
                 # the oracle's box is after every modifier: a UVW Map left as it is moves nothing
-                if node.kind != conv.MESH or any(m != "UVW Map" for m in node.modifiers) or \
+                if node.kind != conv.MESH or any(m != "UVW Map" for m in node.modifiers) or node.converted or \
                         (o["modifiers"] and not node.applied):
                     continue
                 p = _world_points(node, desc.meshes[node.mesh]) / desc.meters
@@ -498,9 +509,12 @@ class Fixtures(unittest.TestCase):
             def offset(o):
                 return o["offset_pos"], o["offset_rot"], o["offset_scale"]
 
+            shading = {o["handle"]: _shading(node) for node, o in zip(desc.nodes, oracle["nodes"])}
             for node, o in zip(desc.nodes, oracle["nodes"]):
                 if node.kind == conv.MESH:
-                    want = [h for h in o["instances"] if offset(by_handle[h]) == offset(o)]
+                    # a converted smoother's shading is the mesh's own: an instance without it has another mesh
+                    want = [h for h in o["instances"] if offset(by_handle[h]) == offset(o)
+                            and shading[h] == shading[o["handle"]]]
                     self.assertEqual(sorted(handle[u] for u in desc.meshes[node.mesh].users), want,
                                      "%s %s" % (name, node.name))
 
@@ -550,8 +564,9 @@ class Fixtures(unittest.TestCase):
             want = {"editable_mesh": SHARP_EDGES_EDITABLE_MESH,
                     "modifier_pivot": SHARP_EDGES_TALL_BOX, "uvwmap": 28}.get(name, SHARP_EDGES_POLY_BOX)
             for md in desc.meshes.values():
-                self.assertEqual(len(md.sharp_edges), SHARP_EDGES_EXTRUDE.get(md.name, SHARP_EDGES_UVWMAP.get(
-                    md.name, want)), "%s %s" % (name, md.name))
+                want_here = SHARP_EDGES_SMOOTHED.get(md.name, SHARP_EDGES_EXTRUDE.get(
+                    md.name, SHARP_EDGES_UVWMAP.get(md.name, want)))
+                self.assertEqual(len(md.sharp_edges), want_here, "%s %s" % (name, md.name))
                 self.assertFalse(md.sharp_faces.any(), name)
 
     def test_placeholders(self):

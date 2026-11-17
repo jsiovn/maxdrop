@@ -42,7 +42,8 @@ A node becomes an EMPTY placeholder when its base object is not an Editable Mesh
 here, when it has no object, or when the reader refuses its geometry or its record; placeholders counts them by the
 class name of the file's class directory ("" when there is none). A Dummy helper (a group head is one) is an EMPTY too, but that is
 its conversion, not a placeholder. A group head keeps its members as children: that is how 3ds Max stores a group.
-Modifiers are listed, not evaluated: the base mesh is built, but for an Extrude on a shape and UVW Maps.
+Modifiers are listed, not evaluated: the base mesh is built, but for an Extrude on a shape and UVW Maps, and the
+modifiers converted to Blender modifiers.
 
 Extrude: a shape whose lowest modifier that renders is an Extrude becomes a MESH (convert.extrude), keyed (base
 object index, offset, Extrude modifier index), its offset baked like any mesh's; node.applied names the Extrude and
@@ -54,6 +55,14 @@ into their map channel (convert.uvwmap), bottom first; each applied one adds (mo
 to the mesh key and its name to node.applied. A UVW Map of a type evaluated nowhere here (shrink-wrap, face, XYZ to
 UVW), one writing the vertex color channel (no UV layer) or whose parameters cannot be read keeps the stored channel
 and stays in node.modifiers (an issue); so does one above any other modifier, which is not evaluated.
+
+Blender modifiers: right above what is evaluated here (the base mesh, an applied Extrude, the UVW Maps above them;
+one left unapplied changes no geometry), the run of TurboSmooth, MeshSmooth, Shell and Symmetry that render becomes
+node.converted (convert.modifiers ModifierDescriptions, bottom first), built as Subdivision Surface, Solidify and
+Mirror; the first other modifier, or one the rules refuse, ends the run, and each of the four above it is an issue.
+The lowest converted smoother sets the mesh's shading, which adds ("shading", SMOOTH or CREASE) to the mesh key: SMOOTH
+leaves no sharp edge or flat face, CREASE keeps them and sets md.creases. describe(..., convert_modifiers=False)
+converts nothing.
 
 Layers: each node names its layer's object index (None without one, or when the layer record cannot be read, which
 is an issue); desc.layers holds the layers that hold a node and their parent layers, in the Layer Manager's order
@@ -70,7 +79,7 @@ import math
 
 from ..reader import cfb, chunks, classids, controllers, geometry, modifiers as reader_modifiers, shapes, units
 from ..reader import scene as reader_scene
-from . import extrude, uvwmap
+from . import extrude, modifiers as convert_modifiers, uvwmap
 
 MESH, CURVE, EMPTY = "MESH", "CURVE", "EMPTY"
 ADAPTIVE = 12  # Blender's default curve resolution, for a shape 3ds Max interpolates adaptively
@@ -88,20 +97,21 @@ class NodeDescription:
     class_name the base object's class ("" without one); modifiers the class names of its modifier stack not applied,
     top first, applied those evaluated into its mesh (an Extrude); layer the layer's object index (None without
     one); hidden, frozen, renderable, group_head and group_member the node's own flags; sheared whether matrix has
-    shear (see sheared())."""
+    shear (see sheared()); converted the modifiers that become Blender modifiers (convert.modifiers
+    ModifierDescriptions, bottom first)."""
     __slots__ = ("index", "name", "parent", "matrix", "world", "kind", "mesh", "class_name", "mirrored",
                  "modifiers", "layer", "hidden", "frozen", "renderable", "group_head", "group_member", "sheared",
-                 "curve", "applied")
+                 "curve", "applied", "converted")
 
     def __init__(self, index, name, parent, matrix, world, kind, mesh, class_name, mirrored, modifiers, layer=None,
                  hidden=False, frozen=False, renderable=True, group_head=False, group_member=False, sheared=False,
-                 curve=None, applied=()):
+                 curve=None, applied=(), converted=()):
         self.index, self.name, self.parent, self.matrix, self.world = index, name, parent, matrix, world
         self.kind, self.mesh, self.class_name, self.mirrored, self.modifiers = kind, mesh, class_name, mirrored, \
             modifiers
         self.layer, self.hidden, self.frozen, self.renderable = layer, hidden, frozen, renderable
         self.group_head, self.group_member, self.sheared = group_head, group_member, sheared
-        self.curve, self.applied = curve, applied
+        self.curve, self.applied, self.converted = curve, applied, converted
 
     def __repr__(self):
         return "NodeDescription(%d, %r, %s, parent=%r)" % (self.index, self.name, self.kind, self.parent)
@@ -112,9 +122,10 @@ class MeshDescription:
     loop_totals int32 (F,); material_indices int32 (F,), zero-based; sharp_faces bool (F,); sharp_edges int32
     (E, 2), sorted vertex pairs; uv_layers [(name, float32 (L, 2))]; users the object indices of the nodes that
     share it, in walk order; dropped_faces the faces left out (a repeated vertex, doubled); applied the UVW Maps
-    (reader.modifiers Modifiers) evaluated into it."""
+    (reader.modifiers Modifiers) evaluated into it; creases whether its sharp edges are to be creased (a converted
+    smoother separates by smoothing groups)."""
     __slots__ = ("key", "name", "positions", "loop_vertices", "loop_starts", "loop_totals", "material_indices",
-                 "sharp_faces", "sharp_edges", "uv_layers", "users", "dropped_faces", "applied")
+                 "sharp_faces", "sharp_edges", "uv_layers", "users", "dropped_faces", "applied", "creases")
 
     def __init__(self, key, name, positions, loop_vertices, loop_starts, loop_totals, material_indices,
                  sharp_faces, sharp_edges, uv_layers, dropped_faces=0):
@@ -124,6 +135,7 @@ class MeshDescription:
         self.uv_layers, self.dropped_faces = uv_layers, dropped_faces
         self.users = []
         self.applied = ()
+        self.creases = False
 
     def __repr__(self):
         return "MeshDescription(%r, %d vertices, %d faces, %d UV layers)" % (
@@ -370,8 +382,9 @@ def sheared(m):
     return False
 
 
-def describe(scene, meters=1.0, unit=None):
-    """The SceneDescription of a reader.scene.Scene; meters is the length of one file unit."""
+def describe(scene, meters=1.0, unit=None, convert_modifiers=True):
+    """The SceneDescription of a reader.scene.Scene; meters is the length of one file unit; convert_modifiers False
+    leaves the modifiers Blender has an equivalent for in node.modifiers, unconverted and unreported."""
     if not (math.isfinite(meters) and meters > 0):
         raise ValueError("meters per unit must be a positive number, not %r" % (meters,))
     t = controllers.Transforms(scene)
@@ -393,11 +406,12 @@ def describe(scene, meters=1.0, unit=None):
     data_of = {}  # base object index -> MeshData, or None when the reader refused or does not read it
     extruded = {}  # (base object index, Extrude modifier index) -> MeshData, or None when it cannot be evaluated
     mapped = {}  # UVW Map modifier index -> (Params, gizmo matrix), or None when it is not evaluated
+    told = set()  # modifier indices whose conversion issues were named (on the first node only)
     layers = {}  # layer object index -> reader Layer, or None when its record cannot be read
     for i in order:
         local, world = t.local(i), t.world(i)
         kind, key, class_name, modifiers, name, node, layer, base = EMPTY, None, "", (), "", None, None, None
-        curve, applied = None, ()
+        curve, applied, converted = None, (), ()
         if isinstance(found[i], ChunkError):  # a damaged node record or object stack: an empty, children placed
             desc.issues.append((i, "node: %s" % found[i]))
         else:
@@ -409,13 +423,16 @@ def describe(scene, meters=1.0, unit=None):
                 modifiers = tuple(_class_name(scene, m) for m in stack.modifiers)
             if base is not None and shapes.is_shape(scene, base):
                 class_name = _class_name(scene, base)
-                ext, maps = _evaluated(scene, stacks, node, desc.issues, i, True) if stack.modifiers else (None, ())
+                ext, maps, rest = _evaluated(scene, stacks, node, desc.issues, i, True) if stack.modifiers else \
+                    (None, (), ())
                 if ext is not None:
+                    conv, conv_issues = _converted(scene, rest, meters, _offset(t, i), told, convert_modifiers)
                     key, done = _extruded(scene, desc, shape_of, extruded, mapped, base, ext, maps, i, name,
-                                          t.offset(i), meters)
+                                          t.offset(i), meters, _shading(conv))
                 if key is not None:
-                    kind = MESH
-                    applied, modifiers = _split(scene, stack.modifiers, (ext,) + done)
+                    kind, converted = MESH, conv
+                    desc.issues.extend((i, x) for x in conv_issues)
+                    applied, modifiers = _split(scene, stack.modifiers, (ext,) + done, conv)
                 else:
                     kind, curve = _curve(scene, desc, shape_of, base, i, name, t.offset(i), meters)
             elif base is not None:
@@ -428,13 +445,15 @@ def describe(scene, meters=1.0, unit=None):
                         desc.issues.append((i, "geometry: %s" % exc))
                 data = data_of[base]
                 if data is not None:
-                    maps = _evaluated(scene, stacks, node, desc.issues, i, False)[1] if stack.modifiers else ()
-                    offset = t.offset(i)
-                    offset = None if offset == controllers.IDENTITY else offset
+                    _ext, maps, rest = _evaluated(scene, stacks, node, desc.issues, i, False) if stack.modifiers \
+                        else (None, (), ())
+                    offset = _offset(t, i)
+                    converted, conv_issues = _converted(scene, rest, meters, offset, told, convert_modifiers)
+                    desc.issues.extend((i, x) for x in conv_issues)
                     key, done = _mapped_mesh(scene, desc, mapped, (base, offset), data, maps, i, name, offset,
-                                             meters)
-                    if done:
-                        applied, modifiers = _split(scene, stack.modifiers, done)
+                                             meters, _shading(converted))
+                    if done or converted:
+                        applied, modifiers = _split(scene, stack.modifiers, done, converted)
                     kind = MESH
                 remaining[base] -= 1
                 if not remaining[base]:
@@ -446,7 +465,7 @@ def describe(scene, meters=1.0, unit=None):
         desc.nodes.append(NodeDescription(i, name, scene.parent(i), blender_matrix(local, meters),
                                           blender_matrix(world, meters), kind, key, class_name,
                                           determinant3(world) < 0, modifiers, layer, sheared=sheared(local),
-                                          curve=curve, applied=applied, **flags))
+                                          curve=curve, applied=applied, converted=converted, **flags))
     desc.issues.extend((issue.node, "transform: %s" % issue.reason) for issue in t.issues)
     desc.unknown_controllers.update(
         _class_name(scene, issue.controller) if issue.controller is not None else ""
@@ -487,14 +506,15 @@ def _curve(scene, desc, shape_of, base, node, name, offset, meters):
 
 
 def _evaluated(scene, stacks, node, issues, i, shape):
-    """(Extrude, UVW Maps): the bottom run of node i's modifiers that render and are evaluated here (reader.modifiers
-    Modifiers, bottom first). On a shape the run starts with an Extrude (None without one: no UVW Map either); an
-    Extrude or a UVW Map above another modifier is an issue."""
+    """(Extrude, UVW Maps, rest): the bottom run of node i's modifiers that render and are evaluated here
+    (reader.modifiers Modifiers, bottom first), and the modifiers that render above it. On a shape the run starts
+    with an Extrude (None without one: no UVW Map either, no rest); an Extrude or a UVW Map above another modifier
+    is an issue."""
     try:
         st = stacks.object_stack(node.object)
     except ChunkError as exc:
         issues.append((i, "modifiers: the modifier stack cannot be read: %s" % exc))
-        return None, ()
+        return None, (), ()
     active = [m for m in st.modifiers if m.renders]  # bottom first
     ext, start = None, 0
     if shape:
@@ -502,7 +522,7 @@ def _evaluated(scene, stacks, node, issues, i, shape):
             if any(extrude.is_extrude(m) for m in active):
                 issues.append((i, "extrude: an Extrude above %s is not evaluated: the shape is a curve" %
                                (_class_name(scene, active[0].index) or "another modifier")))
-            return None, ()
+            return None, (), ()
         ext, start = active[0], 1
     maps = []
     for m in active[start:]:
@@ -513,14 +533,56 @@ def _evaluated(scene, stacks, node, issues, i, shape):
     if any(uvwmap.is_uvwmap(m) for m in rest):
         issues.append((i, "uvw map: a UVW Map above %s is not evaluated" %
                        (_class_name(scene, rest[0].index) or "another modifier")))
-    return ext, tuple(maps)
+    return ext, tuple(maps), tuple(rest)
 
 
-def _split(scene, stack_modifiers, done):
+def _offset(t, i):
+    """Node i's object offset (a reader matrix), None for the identity."""
+    offset = t.offset(i)
+    return None if offset == controllers.IDENTITY else offset
+
+
+def _converted(scene, rest, meters, offset, told, convert):
+    """(ModifierDescriptions, issues): the bottom run of rest (the modifiers that render above those evaluated,
+    bottom first) that convert.modifiers turns into Blender modifiers. The first other modifier, or one the rules
+    refuse, ends the run; each convertible modifier above it is an issue. A UVW Map left unapplied is not in rest
+    (it changes no geometry). The rules' own issues are named once per modifier (told). convert False: nothing."""
+    out, issues, stop = [], [], None
+    if not convert:
+        return (), []
+    for m in rest:
+        cls = _class_name(scene, m.index) or "another modifier"
+        if stop is not None:
+            if convert_modifiers.is_convertible(m):
+                issues.append("modifiers: %s above %s is not converted" % (cls, stop))
+            continue
+        if not convert_modifiers.is_convertible(m):
+            stop = cls
+            continue
+        first = m.index not in told
+        told.add(m.index)
+        try:
+            md, more = convert_modifiers.convert(scene, m, meters, offset)
+        except convert_modifiers.ModifierError as exc:
+            issues.append("modifiers: %s not converted: %s" % (cls, exc))
+            stop = cls
+            continue
+        out.append(md)
+        if first:
+            issues.extend("modifiers: %s: %s" % (cls, x) for x in more)
+    return tuple(out), issues
+
+
+def _shading(converted):
+    """What the lowest converted smoother does to the mesh's shading: convert.modifiers SMOOTH, CREASE or None."""
+    return next((m.shading for m in converted if m.kind == convert_modifiers.SUBSURF), None)
+
+
+def _split(scene, stack_modifiers, done, converted=()):
     """(applied, rest): the class names of the modifiers done (reader Modifiers, bottom first) and of the rest of the
-    stack (object indices, top first)."""
+    stack (object indices, top first) without them and without those converted (ModifierDescriptions)."""
     rest = list(stack_modifiers)
-    for m in done:
+    for m in tuple(done) + tuple(converted):
         if m.index in rest:
             rest.remove(m.index)
     return tuple(_class_name(scene, m.index) for m in done), tuple(_class_name(scene, m) for m in rest)
@@ -548,9 +610,10 @@ def _mapping(scene, mapped, m, issues, node):
     return mapped[m.index]
 
 
-def _mapped_mesh(scene, desc, mapped, key, data, maps, node, name, offset, meters):
+def _mapped_mesh(scene, desc, mapped, key, data, maps, node, name, offset, meters, shading=None):
     """(the key in desc.meshes of reader MeshData data under the UVW Maps maps, the maps applied), made on first use:
-    key extended by (modifier index, context matrix) per UVW Map evaluated."""
+    key extended by (modifier index, context matrix) per UVW Map evaluated, then by ("shading", shading) when a
+    converted smoother changes the shading (SMOOTH: no sharp edge or flat face; CREASE: the sharp edges creased)."""
     usable = []
     for m in maps:
         found = _mapping(scene, mapped, m, desc.issues, node)
@@ -561,6 +624,8 @@ def _mapped_mesh(scene, desc, mapped, key, data, maps, node, name, offset, meter
             continue
         usable.append((m, found))
     key = key + tuple((m.index, m.context.tm) for m, _found in usable)
+    if shading is not None:
+        key = key + (("shading", shading),)
     md = desc.meshes.get(key)
     if md is None:
         done = []
@@ -572,6 +637,10 @@ def _mapped_mesh(scene, desc, mapped, key, data, maps, node, name, offset, meter
                 desc.issues.append((node, "uvw map: %s: the stored channel stays" % exc))
         md = desc.meshes[key] = mesh_description(key, name, data, offset, meters)
         md.applied = tuple(done)
+        if shading == convert_modifiers.SMOOTH:
+            md.sharp_faces[:] = False
+            md.sharp_edges = md.sharp_edges[:0]
+        md.creases = shading == convert_modifiers.CREASE
         if md.dropped_faces:
             desc.issues.append((node, "geometry: %d faces with a repeated vertex or doubled, left out"
                                 % md.dropped_faces))
@@ -579,7 +648,7 @@ def _mapped_mesh(scene, desc, mapped, key, data, maps, node, name, offset, meter
     return key, md.applied
 
 
-def _extruded(scene, desc, shape_of, extruded, mapped, base, ext, maps, node, name, offset, meters):
+def _extruded(scene, desc, shape_of, extruded, mapped, base, ext, maps, node, name, offset, meters, shading=None):
     """(the key in desc.meshes of shape base under the Extrude ext and the UVW Maps maps, the maps applied), made on
     first use; (None, ()) when the shape or the Extrude cannot be read (an issue, once per base object and Extrude)."""
     cache = (base, ext.index)
@@ -598,7 +667,8 @@ def _extruded(scene, desc, shape_of, extruded, mapped, base, ext, maps, node, na
     if data is None:
         return None, ()
     offset = None if offset == controllers.IDENTITY else offset
-    return _mapped_mesh(scene, desc, mapped, (base, offset, ext.index), data, maps, node, name, offset, meters)
+    return _mapped_mesh(scene, desc, mapped, (base, offset, ext.index), data, maps, node, name, offset, meters,
+                        shading)
 
 
 def _layer(scene, i, layers, issues, node):
@@ -654,11 +724,12 @@ def _class_name(scene, i):
     return entry.name if entry is not None else ""
 
 
-def read(path, meters=None):
-    """The SceneDescription of a .max file. meters None: the file's system unit, 1.0 when it does not say."""
+def read(path, meters=None, convert_modifiers=True):
+    """The SceneDescription of a .max file. meters None: the file's system unit, 1.0 when it does not say;
+    convert_modifiers as describe's."""
     with cfb.CompoundFile(path) as cf:
         sc = reader_scene.Scene.from_file(cf)
         unit = units.system_unit(sc)
         if meters is None:
             meters = unit.meters if unit is not None else 1.0
-        return describe(sc, meters, unit)
+        return describe(sc, meters, unit, convert_modifiers)

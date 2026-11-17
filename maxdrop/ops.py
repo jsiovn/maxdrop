@@ -34,6 +34,8 @@
 # (convert.colors): both converters share the rule read once, and the import report states it.
 # Modified for MaxDrop, 2026-11-17 (jsiovn). Shapes are built as curves: a failed build also removes the curves it
 # made, and the import report counts them.
+# Modified for MaxDrop, 2026-11-17 (jsiovn). New option Modifiers (Keep as Blender Modifiers / Ignore): TurboSmooth,
+# MeshSmooth, Shell and Symmetry become Subdivision Surface, Solidify and Mirror (build.modifiers).
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -86,6 +88,12 @@ UNITS = (
     ('METERS', "Meters", "One unit of the file is a meter", 3),
     ('INCHES', "Inches", "One unit of the file is an inch", 4),
     ('FEET', "Feet", "One unit of the file is a foot", 5),
+)
+# Saved in presets by identifier, like UNITS.
+MODIFIERS = (
+    ('KEEP', "Keep as Blender Modifiers",
+     "TurboSmooth and MeshSmooth become Subdivision Surface, Shell Solidify, Symmetry Mirror", 0),
+    ('IGNORE', "Ignore", "The objects arrive without these modifiers (each counted in the import report)", 1),
 )
 UNIT_METERS = {'MILLIMETERS': 0.001, 'CENTIMETERS': 0.01, 'METERS': 1.0, 'INCHES': 0.0254, 'FEET': 0.3048}
 _SEP = re.compile(r"[\\/]")
@@ -403,6 +411,12 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
         description="What to bring in with the objects",
         default={'MATERIAL', 'UV'},
     )
+    modifiers: EnumProperty(
+        name="Modifiers",
+        description="What becomes of the 3ds Max modifiers Blender has an equivalent for",
+        items=MODIFIERS,
+        default='KEEP',
+    )
     # SKIP_PRESET as well as SKIP_SAVE: the operator has presets, and a scene name belongs to one pack.
     pack_scene: StringProperty(
         name="Scene",
@@ -539,6 +553,7 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
         exception goes on."""
         from .build import collections as build_collections
         from .build import materials as build_materials
+        from .build import modifiers as build_modifiers
         from .build import objects as build_objects
         from .build import report as build_report
         from .convert import report as convert_report
@@ -551,7 +566,7 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
             sc = reader_scene.Scene.from_file(cf)
             unit = units.system_unit(sc)
             meters, note = _meters(self.units, unit, self.scale_objects)
-            desc = convert_scene.describe(sc, meters, unit)
+            desc = convert_scene.describe(sc, meters, unit, convert_modifiers=self.modifiers == 'KEEP')
             slots, counts = (_material_slots(cf, sc, desc, max_path, context, self.use_image_search) if materials
                              else (None, None))
             del sc  # the Scene holds the inflated stream of a compressed file
@@ -565,6 +580,7 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
         try:
             built = build_objects.build(desc, cols.root, cols, view_layer, slots=slots,
                                         material=builder.make if materials else None)
+            settings_skipped = build_modifiers.add(desc, built)
             build_collections.finish(cols, view_layer)
         except BaseException:
             _remove(cols, before)
@@ -575,6 +591,9 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
                                     dropped_uv_layers=built.dropped_uv_layers,
                                     pack=pack, pack_name=pack_name)
         rep.issues.extend(builder.issues())
+        if settings_skipped:
+            rep.issues.append(("modifiers", "%d settings not on Blender %s, not set" % (settings_skipped,
+                                                                                       bpy.app.version_string)))
         if materials:
             conv_stats, tex_stats, lookup, swatches = counts
             convert_report.add_materials(rep, len(built.materials), builder.classes, conv_stats=conv_stats,
@@ -687,6 +706,7 @@ def import_include(layout, operator):
         layrow.prop(operator, "use_image_search")
         layrow.label(text="", icon='OUTLINER_OB_IMAGE' if operator.use_image_search else 'IMAGE_DATA')
         layout.column().prop(operator, "object_filter")
+        layout.prop(operator, "modifiers")
 
 
 def import_transform(layout, operator):

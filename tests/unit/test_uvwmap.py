@@ -151,7 +151,8 @@ class Fixtures(unittest.TestCase):
         for path, oracle, desc in self.cases:
             kinds = self.kinds(path)
             for node, o in zip(desc.nodes, oracle["nodes"]):
-                if not o["eval_maps"] or node.kind != conv.MESH or node.modifiers:
+                # a converted modifier changes the mesh in Blender, after the UVs MaxDrop makes
+                if not o["eval_maps"] or node.kind != conv.MESH or node.modifiers or node.converted:
                     continue
                 md = desc.meshes[node.mesh]
                 m = numpy.asarray(node.world, dtype=numpy.float64)

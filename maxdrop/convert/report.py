@@ -14,7 +14,7 @@
 
 Modifiers have three outcomes, counted per class once per node whose stack holds one: applied (baked into the
 mesh), converted (to a Blender modifier) and ignored (the object arrives as its base object, a "not applied" left
-out). gather() counts every modifier of the description as ignored: no modifier is evaluated yet;
+out). gather() counts each node's applied, converted and modifiers (not applied) under the three;
 rep.add_modifiers(outcome, class names) counts one node's modifiers under an outcome.
 
 desc is a convert.scene.SceneDescription. The counts of what build/ made default to the description's own. pack is
@@ -305,6 +305,7 @@ def gather(desc, source="", objects_built=None, meshes_built=None, dropped_uv_la
         rep.groups += node.group_head
         rep.add_modifiers(IGNORED, node.modifiers)
         rep.add_modifiers(APPLIED, getattr(node, "applied", ()))
+        rep.add_modifiers(CONVERTED, [m.class_name for m in getattr(node, "converted", ())])
     rep.placeholders.update(desc.placeholders)
     rep.unknown_controllers.update(desc.unknown_controllers)
     labels = {node.index: node.name or "object %d" % node.index for node in desc.nodes}
