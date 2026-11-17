@@ -411,7 +411,7 @@ class MaterialConverter:
 
     def _multi(self, index):
         """(entries {zero-based material ID: sub-material object index or None (off or empty)} of a Multi/Sub-Object,
-        the IDs in list order)."""
+        the IDs in list order: _entry wraps past the highest of them)."""
         if index in self._multis:
             return self._multis[index]
         block = self.graph.get(index).block(0)
@@ -452,9 +452,9 @@ class MaterialConverter:
         """The entry (sub-material object index or None) zero-based face ID material_id picks in Multi/Sub-Object
         index. An ID without an entry wraps modulo the highest ID of the list plus one, entries switched off or empty
         counted: what 3ds Max renders (one-based, as Max shows them: with IDs 3 and 7, face ID 10 gets 3, 14
-        gets 7, 15 none)."""
+        gets 7, 15 none). A negative ID never wraps: no entry."""
         entries, order = self._multi(index)
-        if material_id not in entries and order:
+        if material_id not in entries and order and material_id >= 0:
             material_id %= max(order) + 1
         return entries.get(material_id)
 

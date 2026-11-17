@@ -739,6 +739,7 @@ class MultiSub(unittest.TestCase):
                 _vray(10, "R"), _vray(11, "G"), _vray(12, "B"), _vray(13, "Y"), _vray(14, "C"))
         conv = mat.MaterialConverter(FakeGraph(*objs))
         self.assertEqual(names(0, [2, 3, 10, 13]), ["R", "G", "R", "G"])
+        self.assertEqual(names(0, [-1, -2]), [None, None])  # Python's % would map -1 to 1
         self.assertEqual(names(1, [9, 13, 16]), ["R", "G", "R"])  # modulo 7, not the entry count
         self.assertEqual(names(1, [0, 1, 3, 4, 5, 7, 8, 10, 14]), [None] * 9)  # no entry after the wrap
         self.assertEqual(names(2, [9, 13]), ["G", "R"])  # by ID, not by list position
