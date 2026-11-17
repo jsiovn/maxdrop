@@ -286,6 +286,8 @@ def _seam(numpy, u, big_x, big_y, side, starts, totals, face):
         y_at = y0 + (y1 - y0) * (x0 / (x0 - x1))
     across = side & side[following] & ((x0 < 0) != (x1 < 0)) & (y_at > 0)
     crossing = (numpy.add.reduceat(across.astype(numpy.int64), starts) > 0)[face]
+    # exact zero, no tolerance: a rotated gizmo can leave a pole at about 1e-17 (an arbitrary angle), but no fixture
+    # has one to show what 3ds Max does there
     pole = side & (big_x == 0) & (big_y == 0)
     angled = side & ~pole
     u = numpy.where(angled & crossing & (u < 0.5), u + 1.0, u)

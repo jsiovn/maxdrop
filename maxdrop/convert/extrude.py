@@ -32,9 +32,10 @@ ID 1. Smooth gives the sides smoothing groups that change only at a corner or Be
 Real-World Map Size), V up the levels (0 to 1, or the height); the caps map the shape's XY box (0 to 1, or its size).
 
 The file comes from anywhere: a parameter that is animated or no number raises ExtrudeError; segments are clamped
-to 1 .. MAX_SEGMENTS; a mesh past MAX_VERTICES raises ExtrudeError; a holed cap past MAX_CAP_POINTS, one that
-cannot be bridged or one past the mesh's MAX_CLIP_STEPS is left open, and outlines that take more than
-MAX_NEST_TESTS to nest get no caps (an issue each). docs/FORMAT.md says which fixture shows what.
+to 1 .. MAX_SEGMENTS; a mesh past MAX_VERTICES raises ExtrudeError; a holed cap past MAX_CAP_POINTS or one that
+cannot be bridged is left open, and outlines that take more than MAX_NEST_TESTS to nest get no caps (an issue
+each); the holed cap that passes the mesh's MAX_CLIP_STEPS and those after it are left open (an issue, and one
+more that counts the rest). docs/FORMAT.md says which fixture shows what.
 No bpy; numpy is imported when a mesh is made.
 """
 import collections
@@ -432,7 +433,7 @@ def triangulate(pts, outer, holes=(), budget=None):
         budget = [MAX_CLIP_STEPS]
     ring = list(outer)
     for hole in sorted(holes, key=lambda h: -max(pts[i][0] for i in h)):
-        _charge(budget, len(ring) + len(hole))
+        _charge(budget, 3 * len(ring) + len(hole))  # _bridge walks the ring up to three times, the hole once
         ring = _bridge(pts, ring, list(hole))
     return _earclip(pts, ring, budget)
 
@@ -550,12 +551,16 @@ def _sides(numpy, pl, base, first, params, side_id):
 
 def _caps(closed, solids, issues):
     """{solid: [[(polyline, point), ...]]}: each cap polygon counter-clockwise; a holed cap that cannot be
-    triangulated is left out (an issue)."""
+    triangulated is left out (an issue; those after the budget is spent, one issue for all)."""
     out = {}
     budget = [MAX_CLIP_STEPS]  # shared: many holed caps must not each take the whole budget
+    spent = 0
     for s, hs in solids.items():
         if not hs:
             out[s] = [[(s, k) for k in range(len(closed[s]))]]
+            continue
+        if budget[0] < 0:
+            spent += 1
             continue
         count = len(closed[s]) + sum(len(closed[x]) for x in hs)
         if count > MAX_CAP_POINTS:
@@ -571,6 +576,8 @@ def _caps(closed, solids, issues):
             issues.append("a cap with holes is left open: %s" % exc)
             continue
         out[s] = [[ids[i] for i in t] for t in tris]
+    if spent:
+        issues.append("%d more cap%s with holes left open: no steps left" % (spent, "" if spent == 1 else "s"))
     return out
 
 

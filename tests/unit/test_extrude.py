@@ -552,6 +552,23 @@ class Synthetic(unittest.TestCase):
                                   (one + one // 2)])
         self.assertEqual(int((_mats(data) == extrude.TOP_ID).sum()), 8)  # one holed cap: 8 + 2 - 2 triangles
 
+    def test_the_holed_caps_after_a_spent_budget_share_one_issue(self):
+        """Once the budget is spent the rest are not tried: one issue counts them, not one each."""
+        pts = [(0, 0), (10, 0), (10, 10), (0, 10), (2, 2), (2, 4), (4, 4), (4, 2)]
+        budget = [10 ** 9]
+        extrude.triangulate(pts, [0, 1, 2, 3], [[4, 5, 6, 7]], budget)
+        one = 10 ** 9 - budget[0]
+        rings = [self.square(10), self.rect(2, 2, 4, 4)]
+        for x in (20, 40, 60):
+            rings += [self.rect(x, 0, x + 10, 10), self.rect(x + 2, 2, x + 4, 4)]
+        with mock.patch.object(extrude, "MAX_CLIP_STEPS", one + one // 2), \
+                mock.patch.object(extrude, "triangulate", wraps=extrude.triangulate) as tried:
+            data, issues = extrude.extrude(_shape(rings), self.params())
+        self.assertEqual(tried.call_count, 2)
+        self.assertEqual(issues, ["a cap with holes is left open: more than %d steps to triangulate the caps" %
+                                  (one + one // 2), "2 more caps with holes left open: no steps left"])
+        self.assertEqual(int((_mats(data) == extrude.TOP_ID).sum()), 8)
+
     def test_too_many_points_are_refused_before_any_is_made(self):
         knots = _knots([(k, k % 3, 0) for k in range(3000)], kind=shapes.CORNER)
         many = shapes.Shape(shapes.classids.LINE, (shapes.Spline(knots, False),), 100, False, False,

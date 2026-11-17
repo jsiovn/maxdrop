@@ -94,9 +94,10 @@ UV_FIRST = "UVMap"
 UV_NAME = "UVChannel_%d"
 MAX_EDGE_MASKS = 64  # distinct smoothing-group masks paired on one non-manifold edge
 # Face corners the primitives and extrusions of one scene may make: each has its own cap (primitives.MAX_CORNERS,
-# extrude.MAX_VERTICES), but a file can hold any number of them, each costing seconds and hundreds of MB.
+# extrude.MAX_VERTICES), but a file can hold any number of them, each costing seconds and hundreds of MB. Checked
+# before each is made, so the last one made can pass it by up to its own cap.
 MAX_BUILT_CORNERS = 1 << 24
-_SPENT = "the primitives and extrusions before it reach %d face corners, the most for one scene"
+_SPENT = "the primitives and extrusions before it reach %d face corners, the budget for one scene"
 SHEAR_TOLERANCE = 1e-5  # |cos| between two rows of a local matrix
 
 ChunkError = chunks.ChunkError
