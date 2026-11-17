@@ -30,11 +30,13 @@ After every import the text "MaxDrop Report" exists and its first line names the
 for the fixtures the operator reported INFO with the report's summary, nothing left out, or WARNING when the
 only things listed are on the material side: wrappers and maps approximated, map classes without a map below
 (vray_texmaps' Noise), texture files not found (the fixtures carry no images), material issues or, on
-Blender 4, Principled inputs that Blender lacks. Two scenes in one run: the text holds both reports; a file that
+Blender 4, Principled inputs that Blender lacks; and the modifiers not applied, as many as the oracle lists, in a
+fixture whose oracle lists some (modifier_pivot). Two scenes in one run: the text holds both reports; a file that
 was not imported is named after them.
 Prints `IMPORT PASSED` (exit 0) or `IMPORT FAILED` (exit 1).
 """
 import glob
+import json
 import os
 import shutil
 import struct
@@ -52,6 +54,17 @@ SECOND = "second.max"
 TEXT_NAME = "MaxDrop Report"
 failures = []
 REPORTS = []  # (level, message) of each scene the operator imported, while record_reports() wraps it
+MODIFIERS = []  # the modifier class names the current fixture's oracle lists (modifier_pivot has some)
+
+
+def oracle_modifiers(path):
+    """Sorted class names of the modifiers in path's oracle (tests/fixtures/<name>.oracle.json), [] without one."""
+    try:
+        with open(path[:-4] + ".oracle.json", encoding="ascii") as f:
+            nodes = json.load(f)["nodes"]
+    except OSError:
+        return []
+    return sorted(m["class_name"] for n in nodes for m in n["modifiers"])
 
 
 def check(name, cond, detail=""):
@@ -106,7 +119,8 @@ def check_report(name, max_name, pack_name=None):
         summaries = [(kind, m) for kind, m in REPORTS if m.startswith("Imported ")]
         clean = summaries and all(kind == 'INFO' and m.endswith("nothing left out.") for kind, m in summaries) \
             and "\nNothing was left out." in body
-        missing = summaries and all(kind == 'WARNING' for kind, _m in summaries) and only_known_gaps(body)
+        missing = summaries and all(kind == 'WARNING' for kind, _m in summaries) and only_known_gaps(body) \
+            and (not MODIFIERS or all("%d modifiers not applied" % len(MODIFIERS) in m for _k, m in summaries))
         check("%s: the operator reported INFO, nothing left out (or only the known gaps of the fixtures)" % name,
               clean or missing, str(summaries))
 
@@ -128,13 +142,15 @@ def only_known_gaps(body):
     """True when the report's only gaps are on the material side, which the fixtures have on purpose: wrappers and
     maps approximated, map classes without a map below (vray_texmaps has Noise), texture files not found (the
     fixtures carry no images), material issues and, on Blender 4, the Principled inputs it lacks
-    (vray_basic is thin-walled: Thin Wall exists from Blender 5). Placeholders, modifiers, geometry errors and other
-    issues are no known gap."""
+    (vray_basic is thin-walled: Thin Wall exists from Blender 5); modifiers only in a fixture whose oracle lists
+    them (modifier_pivot). Placeholders, geometry errors and other issues are no known gap."""
     lines = body.split("\n")
     approximated, left_out = _block_heads(lines, "Approximated:"), _block_heads(lines, "Not converted:")
     known = ("  Map classes without a map below ", "  Textures not found: ", "  Material issues: ")
     if bpy.app.version < (5, 0, 0):
         known += ("  Principled inputs not on Blender ",)
+    if MODIFIERS:
+        known += ("  Modifiers not applied ",)
     return bool(approximated or left_out) and all(head.startswith(known) for head in left_out)
 
 
@@ -414,11 +430,13 @@ def run():
             if path.lower().endswith(ARCHIVES):
                 import_one(path, pack_name=os.path.basename(path))
                 continue
+            MODIFIERS[:] = [] if argv else oracle_modifiers(path)
             images = import_one(path)
             work = os.path.join(scratch, str(n))
             as_pack(path, work, images, archive)
             two_scenes(path, work)
             selections(path, work)
+        MODIFIERS[:] = []
         if not argv:
             units_and_preflight(ops)
             filters_and_failures(scratch)

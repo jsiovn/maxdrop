@@ -444,15 +444,21 @@ class TestFixtures(unittest.TestCase):
                         self.assertEqual(n.parent_index, s.root_node)
                     for got, ref in zip(n.pivot_position + n.pivot_scale, e["offset_pos"] + e["offset_scale"]):
                         self.assertAlmostEqual(got, ref, places=4)
-                    # every fixture's offset rotation is the identity: its sign convention is not shown yet
-                    self.assertEqual(e["offset_rot"], [0, 0, 0, 1])
-                    self.assertEqual(n.pivot_rotation, (0.0, 0.0, 0.0, 1.0))
+                    # stored as MAXScript prints objectOffsetRot (docs/ORACLE.md), modifier_pivot: [0, 0, 0.258819, ..]
+                    for got, ref in zip(n.pivot_rotation, e["offset_rot"]):
+                        self.assertAlmostEqual(got, ref, places=5)
                     stack = s.object_stack(n.object)
                     base = s.entry(stack.base)
                     self.assertEqual(["0x%08x" % base.class_a, "0x%08x" % base.class_b], e["base_class_id"])
                     self.assertEqual(base.superclass, e["base_superclass"])
-                    self.assertEqual(len(stack.modifiers), len(e["modifiers"]))
-                    sharing = sorted(expected[position[m.index]]["handle"] for m in nodes if m.object == n.object)
+                    # top to bottom, as the oracle lists them
+                    self.assertEqual([["0x%08x" % s.entry(m).class_a, "0x%08x" % s.entry(m).class_b]
+                                      for m in stack.modifiers], [m["class_id"] for m in e["modifiers"]], e["name"])
+                    self.assertEqual(bool(stack.derived), bool(e["modifiers"]), e["name"])
+                    # the oracle's instances share the base object, not necessarily the node's object: two
+                    # references with modifiers of their own (modifier_pivot) each have a derived object
+                    sharing = sorted(expected[position[m.index]]["handle"] for m in nodes
+                                     if s.object_stack(m.object).base == stack.base)
                     self.assertEqual(sharing, e["instances"], e["name"])
                     self.assertEqual(n.material is not None, e["material"] is not None, e["name"])
                     self.assertEqual(s.entry(n.layer).superclass, classids.SC_LAYER)
@@ -478,7 +484,8 @@ class TestFixtures(unittest.TestCase):
     def test_flags_and_pair_heads(self):
         """The values docs/FORMAT.md quotes: 0x0960 flags per node, the first u32 of 0x2035 per class."""
         flags = {"FixtureHidden": 0x100800, "FixtureGroup": 0x40, "FixtureGroupA": 0x900, "FixtureGroupB": 0x900,
-                 "FixtureInstance01": 0, "FixtureInstance02": 0, "FixtureInstance03": 0, "FixtureCopy": 0}
+                 "FixtureInstance01": 0, "FixtureInstance02": 0, "FixtureInstance03": 0, "FixtureCopy": 0,
+                 "FixtureBent": 0, "FixtureSmooth": 0}
         heads = {"Node": 16, "RootNode": 16, "Texmaps": 48, "Bezier Float": 2, "Bezier Scale": 2, "Bezier Color": 2,
                  "Boolean Controller": 2, "Grid Reference": 2, "VRayMtl": 34,
                  "": 2}  # Custom Curve Control's point class, nameless in the class directory (texmap_rules' Falloffs)

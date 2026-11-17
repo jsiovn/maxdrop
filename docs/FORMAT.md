@@ -59,7 +59,7 @@ fixture.
 | `0x0960` | `i32` parent object index, `u32` flags | every fixture; a top-level node's parent is the RootNode |
 | `0x099C` | `u32`, bit `0x8000` = renderable | layers_flags, below |
 | `0x096A` | 3 x `f32` object offset position | hierarchy: `[5, 5, 0]` for FixtureRoot and FixtureChild = oracle `offset_pos` |
-| `0x096B` | 4 x `f32` object offset rotation | every fixture: `[0, 0, 0, 1]` = oracle `offset_rot` |
+| `0x096B` | 4 x `f32` object offset rotation | modifier_pivot: FixtureBent `[0, 0, 0.258819, 0.965926]` = oracle `offset_rot` (stored as MAXScript prints it); every other node `[0, 0, 0, 1]` |
 | `0x096C` | 7 x `f32`: object offset scale (3), then a scale axis rotation (4) | every fixture: `[1, 1, 1]`, `[0, 0, 0, 1]` |
 | `0x2035` | slots 0, 1, 3, 6 | below |
 
@@ -67,14 +67,16 @@ Reference slots of a node, checked on every node of every fixture (`test_scene.p
 
 - slot 0: the transform controller, a Position/Rotation/Scale (`(0x2005, 0)`, superclass `0x9008`);
 - slot 1: the object. With no modifier it is the base object, whose ClassID and superclass equal the oracle's
-  `base_class_id` and `base_superclass`. Nodes that share their slot-1 object are exactly the oracle's
-  `instances` (instances: three instances share the source's object, the copy has its own);
+  `base_class_id` and `base_superclass`; with modifiers a derived object (`0x2032`, below) whose stack ends in
+  that base object. Nodes whose stacks end in the same base object are exactly the oracle's `instances`
+  (instances: three instances share the source's object, the copy has its own; modifier_pivot: a bare source
+  and two references with modifiers of their own, three slot-1 objects on one base object);
 - slot 3: the material, present exactly when the oracle names one (the group head of layers_flags has no
   material and three pairs instead of four);
 - slot 6: the layer, a Base Layer (superclass `0x10F0`).
 
 Flags in `0x0960` seen so far: `0x800` on most nodes, `0` on the three instances and the copy in instances (the
-source has `0x800`), `0x100800` on the hidden node of layers_flags, `0x40` on its group head and `0x900` on the
+source has `0x800`) and on the two references in modifier_pivot, `0x100800` on the hidden node of layers_flags, `0x40` on its group head and `0x900` on the
 two group members (`test_scene.py`, `test_flags_and_pair_heads`, which also checks the first `0x2035` values
 above). Decoded from layers_flags:
 
@@ -133,7 +135,10 @@ names, order and flags of every fixture's layers against the oracle).
   (position `[25, 5, 0]` under FixtureChild under the rotated FixtureRoot) lands on `[40.1314, 26.8301, 0]`.
 - Object offset = scale (`0x096C`, along its axis) * rotation (`0x096B`) * position (`0x096A`); the object's world
   transform = offset * world. hierarchy: FixtureRoot and FixtureChild (offset `[5, 5, 0]`) match the oracle's
-  `object_transform`.
+  `object_transform`. The stored rotation is the conjugate of the standard quaternion, as MAXScript prints it:
+  modifier_pivot's FixtureBent (pivot alone turned +30° about Z) stores `[0, 0, 0.258819, 0.965926]`, a -30° turn
+  read as row 1 = `[0.866025, -0.5, 0]` (`controllers.quat_matrix`), and offset * world is then the identity
+  rotation of the oracle's `object_transform`.
 
 ## Geometry
 
@@ -225,7 +230,7 @@ picker and Material Editor switches off).
   | Group | Parts (box_poly_standard) |
   |---|---|
   | General | `3ds Max Version: 22.00`, `Uncompressed`, `Build: 22.2.0.2176`, `Saved As Version: 22.00` |
-  | Mesh Totals | `Vertices: 8`, `Faces: 6` (the sum of the oracle's `base_verts` in every fixture) |
+  | Mesh Totals | `Vertices: 8`, `Faces: 6` (`Vertices` = the sum of the oracle's `eval_verts`, after the modifiers: 114 in modifier_pivot, whose base objects add up to 60) |
   | Scene Totals | `Objects`, `Shapes`, `Lights`, `Cameras`, `Helpers`, `Space Warps`, `Total` (`Total` = the oracle's `node_count`: layers_flags has 5 objects and 1 helper, its group head) |
   | External Dependencies | file paths (none in the fixtures) |
   | Objects, Materials | node and material names (Materials: as many as the oracle's materials) |
@@ -464,9 +469,8 @@ Not shown by any fixture yet, so not stated above:
 - Other root container ids: `0x2014` and `0x2023` occur in older files, and the 64-bit chunk header (size 0,
   then a `u64`) in large ones.
 - Derived objects (an object with modifiers): special id `0x2032`, past the class directory, referencing its
-  modifiers and then its base object. The reader follows them (`Scene.object_stack`), but no fixture has a
-  modifier.
-- The sign convention of the offset rotation: every fixture's is the identity.
+  modifiers top to bottom and then its base object (modifier_pivot: Bend, UVW Map, Editable Poly, the oracle's
+  order). The reader follows them (`Scene.object_stack`); what a modifier stores is not read yet.
 - The meaning of bit `0x800` and the other flag bits in `0x0960`.
 - Layer and node flags no fixture has, found with `tools/maxdiff.py` on scratch files saved by 3ds Max 2020 (three
   boxes on two layers; the same scene saved again; then one change per file). `reader/scene.py` relies on them:

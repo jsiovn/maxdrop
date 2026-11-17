@@ -53,6 +53,7 @@ UV_LAYERS = {
     "hierarchy": [],
     "instances": ["UVMap"],
     "layers_flags": [],
+    "modifier_pivot": ["UVMap"],  # the base mesh's channel: the UVW Map modifier is not applied
     "multi_uv": ["UVMap", "UVChannel_2", "UVChannel_3"],
     "standard_physical": ["UVMap"],
     "texmap_rules": ["UVMap"],
@@ -66,6 +67,7 @@ UV_LAYERS = {
 }
 SHARP_EDGES_POLY_BOX = 12  # one smoothing group per side: every edge of the box
 SHARP_EDGES_EDITABLE_MESH = 8  # group 1 on top and bottom, 2 on the sides: the rims of top and bottom
+SHARP_EDGES_TALL_BOX = 24  # modifier_pivot's four height segments: 4 x 4 vertical side edges and both rims
 
 
 def _oracle(path):
@@ -394,7 +396,7 @@ class Fixtures(unittest.TestCase):
     def test_world_bounding_boxes_equal_the_oracle(self):
         for name, desc, oracle in self.cases:
             for node, o in zip(desc.nodes, oracle["nodes"]):
-                if node.kind != conv.MESH:
+                if node.kind != conv.MESH or o["modifiers"]:  # the oracle's box is after the modifiers
                     continue
                 p = _world_points(node, desc.meshes[node.mesh]) / desc.meters
                 numpy.testing.assert_allclose(p.min(axis=0), o["bbox_min"], atol=BBOX_TOLERANCE,
@@ -413,12 +415,31 @@ class Fixtures(unittest.TestCase):
                     self.assertEqual(int(md.loop_totals.sum()), len(md.loop_vertices))
 
     def test_shared_meshes_equal_the_oracle_instances(self):
+        """The nodes sharing a base object and the same object offset share one mesh (the offset is baked)."""
         for name, desc, oracle in self.cases:
             handle = {node.index: o["handle"] for node, o in zip(desc.nodes, oracle["nodes"])}
+            by_handle = {o["handle"]: o for o in oracle["nodes"]}
+
+            def offset(o):
+                return o["offset_pos"], o["offset_rot"], o["offset_scale"]
+
             for node, o in zip(desc.nodes, oracle["nodes"]):
                 if node.kind == conv.MESH:
-                    self.assertEqual(sorted(handle[u] for u in desc.meshes[node.mesh].users), o["instances"],
+                    want = [h for h in o["instances"] if offset(by_handle[h]) == offset(o)]
+                    self.assertEqual(sorted(handle[u] for u in desc.meshes[node.mesh].users), want,
                                      "%s %s" % (name, node.name))
+
+    def test_rotated_pivot_leaves_the_object_in_place(self):
+        """modifier_pivot: FixtureBent's pivot alone is turned 30 degrees about Z. Its baked base mesh is the
+        source's, moved by the 30 units between the two nodes: the offset rotation undoes the pivot's."""
+        desc = dict((n, d) for n, d, _o in self.cases)["modifier_pivot"]
+        by_name = {n.name: n for n in desc.nodes}
+        src, bent = by_name["FixtureSource"], by_name["FixtureBent"]
+        self.assertNotEqual(src.mesh, bent.mesh)
+        self.assertIsNotNone(bent.mesh[1])
+        a = _world_points(src, desc.meshes[src.mesh]) / desc.meters
+        b = _world_points(bent, desc.meshes[bent.mesh]) / desc.meters - [30, 0, 0]
+        numpy.testing.assert_allclose(b, a, atol=BBOX_TOLERANCE)
 
     def test_instances_share_one_mesh_and_the_copy_has_its_own(self):
         desc = dict((n, d) for n, d, _o in self.cases)["instances"]
@@ -446,7 +467,8 @@ class Fixtures(unittest.TestCase):
 
     def test_sharp_edges_from_smoothing_groups(self):
         for name, desc, _o in self.cases:
-            want = SHARP_EDGES_EDITABLE_MESH if name == "editable_mesh" else SHARP_EDGES_POLY_BOX
+            want = {"editable_mesh": SHARP_EDGES_EDITABLE_MESH,
+                    "modifier_pivot": SHARP_EDGES_TALL_BOX}.get(name, SHARP_EDGES_POLY_BOX)
             for md in desc.meshes.values():
                 self.assertEqual(len(md.sharp_edges), want, name)
                 self.assertFalse(md.sharp_faces.any(), name)

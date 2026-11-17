@@ -161,7 +161,8 @@ class TestFixtures(unittest.TestCase):
                                  tuple(int(x, 16) for x in oracle["renderer"]["class_id"]))
                 self.assertEqual(info["counts"]["total"], oracle["node_count"])
                 self.assertEqual(info["counts"]["materials"], len(oracle["materials"]))
-                self.assertEqual(info["counts"]["vertices"], sum(n.get("base_verts") or 0 for n in oracle["nodes"]))
+                # the evaluated meshes, after the modifiers (modifier_pivot's TurboSmooth: 74, not 20)
+                self.assertEqual(info["counts"]["vertices"], sum(n.get("eval_verts") or 0 for n in oracle["nodes"]))
                 self.assertIn("ctrl.dlc", info["plugins"])
 
     def test_no_identity_or_names(self):

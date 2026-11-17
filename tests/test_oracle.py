@@ -11,6 +11,7 @@ No Blender, no 3ds Max.
 import glob
 import importlib.util
 import json
+import math
 import os
 import re
 import unittest
@@ -74,6 +75,12 @@ def _sorted_pairs(pairs):
 def _read(path):
     with open(path, "rb") as f:
         return f.read()
+
+
+def _close(test, got, want, places=5):
+    test.assertEqual(len(got), len(want))
+    for g, e in zip(got, want):
+        test.assertAlmostEqual(g, e, places=places, msg="%r vs %r" % (got, want))
 
 
 def _oracle(name):
@@ -216,6 +223,49 @@ class OracleFiles(unittest.TestCase):
         det = (t[0] * (t[4] * t[8] - t[5] * t[7]) - t[1] * (t[3] * t[8] - t[5] * t[6])
                + t[2] * (t[3] * t[7] - t[4] * t[6]))
         self.assertAlmostEqual(det, -1, places=4)
+
+    def test_modifier_pivot(self):
+        o = _oracle("modifier_pivot")
+        by_name = {n["name"]: n for n in o["nodes"]}
+        src, bent, smooth = by_name["FixtureSource"], by_name["FixtureBent"], by_name["FixtureSmooth"]
+        # three nodes on one base object, each with a stack of its own (references, not instances)
+        for n in (src, bent, smooth):
+            self.assertEqual(n["instances"], [1, 2, 3], n["name"])
+            self.assertEqual((n["base_verts"], n["base_faces"]), (20, 18), n["name"])
+        # top to bottom: the Bend was added last, over the UVW Map
+        self.assertEqual(src["modifiers"], [])
+        self.assertEqual(bent["modifiers"], [{"class_id": ["0x00000010", "0x00000000"], "class_name": "Bend"},
+                                             {"class_id": ["0x000f72b1", "0x00000000"], "class_name": "Uvwmap"}])
+        self.assertEqual(smooth["modifiers"], [{"class_id": ["0x0d727b3e", "0x491d29a7"],
+                                                "class_name": "TurboSmooth"}])
+        # eval counts are triangles after the stack: 18 quads = 36 triangles; one TurboSmooth iteration on a
+        # closed quad mesh gives V + E + F vertices (E = V + F - 2) and four quads per quad
+        v, f = 20, 18
+        self.assertEqual((src["eval_verts"], src["eval_faces"]), (v, 2 * f))
+        self.assertEqual((bent["eval_verts"], bent["eval_faces"]), (v, 2 * f))  # Bend moves, UVW Map maps
+        self.assertEqual((smooth["eval_verts"], smooth["eval_faces"]), (v + (v + f - 2) + f, 2 * 4 * f))
+        # the Bend shows in the box: unbent, the base box is 10 x 10 x 40
+        self.assertGreater(bent["bbox_max"][0] - bent["bbox_min"][0], 20)
+        self.assertLess(bent["bbox_max"][2], 40)
+
+        # the pivot alone is turned +30 degrees about Z: row 1 = [cos 30, sin 30, 0], the object stays put
+        c, s = math.cos(math.radians(30)), math.sin(math.radians(30))
+        _close(self, bent["transform"], [c, s, 0, -s, c, 0, 0, 0, 1, 30, 0, 0])
+        _close(self, bent["object_transform"], [1, 0, 0, 0, 1, 0, 0, 0, 1, 30, 0, 0])
+        # so the offset is a -30 degree turn, which MAXScript prints with +z: the conjugate of the standard
+        # quaternion (docs/ORACLE.md)
+        _close(self, bent["offset_rot"], [0, 0, math.sin(math.radians(15)), math.cos(math.radians(15))])
+        qx, qy, qz, w = bent["offset_rot"]
+        x, y, z = -qx, -qy, -qz
+        # a standard quaternion as a row-vector matrix: row 1 = [1 - 2(y2 + z2), 2(xy + zw), 2(xz - yw)]
+        offset_row1 = [1 - 2 * (y * y + z * z), 2 * (x * y + z * w), 2 * (x * z - y * w)]
+        _close(self, offset_row1, [c, -s, 0])
+        # offset times node transform = object transform: [c, -s] times the node rotation is the identity row
+        t = bent["transform"]
+        _close(self, [offset_row1[0] * t[0] + offset_row1[1] * t[3], offset_row1[0] * t[1] + offset_row1[1] * t[4]],
+               [1, 0])
+        for n in (src, smooth):
+            self.assertEqual(n["offset_rot"], [0, 0, 0, 1])
 
     def test_layers_flags(self):
         o = _oracle("layers_flags")

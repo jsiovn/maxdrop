@@ -19,7 +19,9 @@ oracle's instances), outward normals as rendered (the inverse transpose of the w
 points away from the oracle's bounding box center, also on the mirrored object) and the class of each placeholder. The
 oracle has no map channels or smoothing groups: those expectations come from the fixture scripts (tools/fixtures/*.ms).
 layers_flags: two layer collections, one hidden object, one with hide_render, the group head as the parent of its two
-members. Each fixture's import report is published (build.report) and must say nothing was left out; the one the
+members. modifier_pivot: a node with modifiers gets its base mesh (no bounding box check, the oracle's is after the
+modifiers), the report names the modifiers not applied, and the node whose pivot alone is rotated keeps its object
+in place. Each fixture's import report is published (build.report) and must say nothing was left out; the one the
 operator published for vray_wrappers lists its three peeled wrappers by class. A changed layers_flags description
 checks a hidden, a frozen, a non-rendering and a nested layer, which no fixture has. A hand-made description with sheared local matrices (top-level and parented, hidden, a zero scale) checks that
 Blender's world matrices equal the products of the locals, through the helper empty for top-level ones. Material
@@ -65,6 +67,7 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1
     "hierarchy": [],
     "instances": ["UVMap"],
     "layers_flags": [],
+    "modifier_pivot": ["UVMap"],  # the base mesh's channel: the UVW Map modifier is not applied
     "multi_uv": ["UVMap", "UVChannel_2", "UVChannel_3"],
     "standard_physical": ["UVMap"],
     "texmap_rules": ["UVMap"],
@@ -76,7 +79,9 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1
     "vray_texmaps": ["UVMap"],
     "vray_wrappers": ["UVMap"],
 }
-SHARP_EDGES = {"editable_mesh": 8}  # group 1 on top and bottom, 2 on the sides; a box with a group per side: 12
+# editable_mesh: group 1 on top and bottom, 2 on the sides; a box with a group per side: 12; modifier_pivot's box of
+# four height segments: 4 x 4 vertical side edges and both rims
+SHARP_EDGES = {"editable_mesh": 8, "modifier_pivot": 24}
 SHARP_EDGES_DEFAULT = 12
 VALUE_TOLERANCE = 1e-4
 SPECULAR_LEVEL = 0.5  # the IR's specular is a reflection weight: 1 is Blender's Specular IOR Level 0.5
@@ -172,6 +177,7 @@ def run_fixture(path, modules):
     obs = objects_of(desc)
     meshes = {ob.data.name: ob.data for ob in obs if ob.type == 'MESH'}
     handle_of = {ob.as_pointer(): o["handle"] for ob, o in zip(obs, nodes)}
+    offset_of = {o["handle"]: (o["offset_pos"], o["offset_rot"], o["offset_scale"]) for o in nodes}
     for ob, node, o in zip(obs, desc.nodes, nodes):
         label = "%s/%s" % (name, o["name"])
         parent = handle_of.get(ob.parent.as_pointer()) if ob.parent else None
@@ -196,9 +202,11 @@ def run_fixture(path, modules):
         world = [mw @ v.co for v in mesh.vertices]
         lo = [min(p[k] for p in world) / meters for k in range(3)]
         hi = [max(p[k] for p in world) / meters for k in range(3)]
-        check(label + ": world bounding box", close(lo, o["bbox_min"], BBOX_TOLERANCE)
-              and close(hi, o["bbox_max"], BBOX_TOLERANCE),
-              "%s..%s vs %s..%s" % (["%.6g" % v for v in lo], ["%.6g" % v for v in hi], o["bbox_min"], o["bbox_max"]))
+        if not o["modifiers"]:  # the oracle's box is after the modifiers, the base mesh is built
+            check(label + ": world bounding box", close(lo, o["bbox_min"], BBOX_TOLERANCE)
+                  and close(hi, o["bbox_max"], BBOX_TOLERANCE),
+                  "%s..%s vs %s..%s" % (["%.6g" % v for v in lo], ["%.6g" % v for v in hi], o["bbox_min"],
+                                        o["bbox_max"]))
         check(label + ": vertex and face counts", (len(mesh.vertices), len(mesh.polygons)) ==
               (o["base_verts"], o["base_faces"]), "%d, %d" % (len(mesh.vertices), len(mesh.polygons)))
         uv = [layer.name for layer in mesh.uv_layers]
@@ -216,14 +224,20 @@ def run_fixture(path, modules):
         check(label + ": each face on its material's slot", indices == plan[node.mesh].indices.tolist(),
               str(indices))
         sharing = sorted(handle_of[other.as_pointer()] for other in obs if other.data == mesh)
-        check(label + ": objects sharing the mesh = oracle instances", sharing == o["instances"], str(sharing))
-        center = (Vector(o["bbox_min"]) + Vector(o["bbox_max"])) * (meters / 2.0)
+        # the object offset is baked into the mesh: only the instances with the same offset share it
+        same_offset = [h for h in o["instances"] if offset_of[h] == offset_of[o["handle"]]]
+        check(label + ": objects sharing the mesh = oracle instances with its offset", sharing == same_offset,
+              str(sharing))
+        box = (lo, hi) if o["modifiers"] else (o["bbox_min"], o["bbox_max"])
+        center = (Vector(box[0]) + Vector(box[1])) * (meters / 2.0)
         normal_matrix = mw.to_3x3().inverted().transposed()
         outward = [(normal_matrix @ p.normal).dot(mw @ p.center - center) > 0 for p in mesh.polygons]
         check(label + ": normals outward as rendered", all(outward), "%d of %d" % (sum(outward), len(outward)))
     if name == "instances":
         users = sorted(m.users for m in bpy.data.meshes)
         check("instances: four objects share one mesh, the copy has its own", users == [1, 4], str(users))
+    if name == "modifier_pivot":
+        check_modifier_pivot(obs, meters)
     if name == "hierarchy":
         mirrored = [n.name for n in desc.nodes if n.mirrored]
         check("hierarchy: FixtureLeaf is the mirrored node", mirrored == ["FixtureLeaf"], str(mirrored))
@@ -251,10 +265,24 @@ def run_fixture(path, modules):
                                 meshes_built=len(meshes))
     level, line = build_report.publish(rep)
     text = bpy.data.texts.get(build_report.TEXT_NAME)
-    check("%s: report published, nothing left out" % name,
-          level == "INFO" and text is not None and text.as_string().rstrip("\n") == rep.text(), line)
+    modified = sum(len(o["modifiers"]) for o in nodes)  # reported as not applied: the base mesh is built
+    check("%s: report published, nothing left out but %d modifiers" % (name, modified),
+          level == ("WARNING" if modified else "INFO") and text is not None
+          and text.as_string().rstrip("\n") == rep.text()
+          and (not modified or "%d modifiers not applied" % modified in line), line)
     print("COUNTS %s: objects=%d meshes=%d placeholders=%d issues=%d" % (
         name, len(bpy.data.objects), len(bpy.data.meshes), sum(desc.placeholders.values()), len(desc.issues)))
+
+
+def check_modifier_pivot(obs, meters):
+    """FixtureBent's pivot alone is turned 30 degrees about Z: its base mesh lands where the source's does, moved by
+    the 30 units between the two nodes (the offset rotation undoes the pivot's)."""
+    by_name = {ob.name: ob for ob in obs}
+    src, bent = by_name["FixtureSource"], by_name["FixtureBent"]
+    a = [c / meters for v in src.data.vertices for c in src.matrix_world @ v.co]
+    b = [c / meters for v in bent.data.vertices for c in bent.matrix_world @ v.co - Vector((30 * meters, 0, 0))]
+    check("modifier_pivot: FixtureBent has a mesh of its own", src.data != bent.data)
+    check("modifier_pivot: the rotated pivot leaves the object in place", close(b, a, BBOX_TOLERANCE))
 
 
 def _irs(path):

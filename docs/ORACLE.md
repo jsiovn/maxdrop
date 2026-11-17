@@ -76,10 +76,10 @@ parent always comes before its children):
 | `base_superclass` | Super class id of the base object, decimal (16 = geometry, also camera and light targets; 32 = camera; 48 = light; 64 = shape; 80 = helper, also Particle Flow operators). |
 | `base_verts`, `base_faces` | Counts of the base object: polygons for Editable Poly, triangles for Editable Mesh, `null` for every other class. |
 | `eval_verts`, `eval_faces` | The evaluated world-state mesh (`snapshotAsMesh`, after every modifier) as triangles; `null` when the node is not geometry or yields no mesh (lights, helpers, targets, particle flow events). |
-| `modifiers` | The modifier stack from top to bottom: `class_id`, `class_name`. |
+| `modifiers` | The modifier stack from top to bottom: `class_id`, `class_name` (modifier_pivot: a Bend added over a UVW Map lists Bend first). |
 | `instances` | Sorted handles of every node that shares this node's base object, itself included (a one-element list when not instanced). Instances and references both count. |
 | `transform` | World node transform (`node.transform`, the pivot), 12 floats: rows 1 to 4, row 4 = translation. |
-| `offset_pos`, `offset_rot`, `offset_scale` | Object offset: where the object sits relative to the pivot. `offset_rot` is a quaternion `[x, y, z, w]` as MAXScript gives it, which is the conjugate of the usual right-handed one: a rotation of +30° about Z (row 1 = `[0.866, 0.5, 0]`) prints as `[0, 0, -0.258819, 0.965926]`. Negate x, y and z before using it as a standard quaternion. |
+| `offset_pos`, `offset_rot`, `offset_scale` | Object offset: where the object sits relative to the pivot. `offset_rot` is a quaternion `[x, y, z, w]` as MAXScript gives it, which is the conjugate of the usual right-handed one: a rotation of +30° about Z (row 1 = `[0.866, 0.5, 0]`) prints as `[0, 0, -0.258819, 0.965926]`. Negate x, y and z before using it as a standard quaternion. Shown by modifier_pivot: FixtureBent's pivot alone turned +30° about Z gives an offset of -30°, `[0, 0, 0.258819, 0.965926]` (`tests/test_oracle.py`). |
 | `object_transform` | World transform of the object (`node.objectTransform` = offset times node transform), 12 floats. Mesh vertices in object space times this matrix are world positions. |
 | `bbox_min`, `bbox_max` | World-aligned bounding box of the evaluated object: `nodeGetBoundingBox node (matrix3 1)`. This is the tight box of the evaluated points (checked against the vertex extremes of a rotated, bent, parented sphere); `node.min` / `node.max` would instead transform the object's local box and be larger under rotation. |
 | `layer` | Name of the node's layer. |
@@ -121,7 +121,7 @@ reference target, bitmap, matrix).
 
 ## Measured
 
-- The thirteen fixtures: under 0.5 s each to load, under 0.5 s to dump (vray_wrappers, the slowest, 0.4 s).
+- The 22 fixtures, 2026-11-17: under 0.4 s each to load, under 0.7 s to dump (vray_texmaps, the slowest, 0.64 s).
 - Scene A (746 nodes) and scene B (2,251 nodes), 3ds Max 2020, 2026-11-15: A loaded in 10 to 50 s (warm or cold
   disk cache) and dumped in 5 s, B loaded in 5 s and dumped in 17 s; the Max process peaked at 3.1 GB. Their dumps are kept outside the
   repository.

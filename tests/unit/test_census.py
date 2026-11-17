@@ -52,7 +52,9 @@ class TestFixtures(unittest.TestCase):
                 result = census.census(path)
                 nodes = result["nodes"]
                 self.assertEqual(nodes["total"], oracle["node_count"])
-                self.assertEqual((nodes["unreadable"], nodes["cycles_cut"], nodes["with_modifiers"]), (0, 0, 0))
+                stacks = [n["modifiers"] for n in oracle["nodes"] if n["modifiers"]]
+                self.assertEqual((nodes["unreadable"], nodes["cycles_cut"], nodes["with_modifiers"]),
+                                 (0, 0, len(stacks)))
                 self.assertEqual(nodes["top_level"], sum(1 for n in oracle["nodes"] if n["parent"] is None))
                 self.assertEqual(sum(r["count"] for r in nodes["by_base_class"]), nodes["total"])
                 self.assertEqual(sum(r["count"] for r in result["classes"]), result["objects"])
@@ -65,8 +67,18 @@ class TestFixtures(unittest.TestCase):
                 self.assertEqual(got, want)
                 node_rows = [r for r in result["classes"] if r["name"] == "Node"]
                 self.assertEqual([r["count"] for r in node_rows], [oracle["node_count"]])
-                self.assertEqual(result["modifiers"], {"stacks": 0, "stack_depths": {}, "derived_objects": 0,
-                                                       "unreadable": 0, "by_class": []})
+                # no fixture shares a derived object: one stack per node with modifiers
+                mods = result["modifiers"]
+                depths = {}
+                for stack in stacks:
+                    depths[str(len(stack))] = depths.get(str(len(stack)), 0) + 1
+                self.assertEqual((mods["stacks"], mods["stack_depths"], mods["derived_objects"], mods["unreadable"]),
+                                 (len(stacks), depths, len(stacks), 0))
+                by_class = {}
+                for m in (m for stack in stacks for m in stack):
+                    cid = tuple("0x" + x[2:].upper() for x in m["class_id"])
+                    by_class[cid] = by_class.get(cid, 0) + 1
+                self.assertEqual({tuple(r["class_id"]): r["count"] for r in mods["by_class"]}, by_class)
                 self.assertEqual(nodes["bad_parents"], 0)
                 self.assertEqual(result["root_id"], "0x2025")
 

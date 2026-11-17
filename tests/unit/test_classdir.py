@@ -38,6 +38,7 @@ cfb = _load("maxdrop_reader.cfb", os.path.join(_READER, "cfb.py"))
 chunks = _load("maxdrop_reader.chunks", os.path.join(_READER, "chunks.py"))
 classdir = _load("maxdrop_reader.classdir", os.path.join(_READER, "classdir.py"))
 classids = _load("maxdrop_reader.classids", os.path.join(_READER, "classids.py"))
+DERIVED_OBJECT = 0x2032  # reader/scene.py: an object with modifiers
 ClassId = classdir.ClassId
 ChunkError = chunks.ChunkError
 
@@ -200,8 +201,9 @@ class TestFixtures(unittest.TestCase):
                 d = classdir.ClassDirectory.from_file(cf)
                 top = chunks.index(cf.open("Scene"))
                 objects = top[0].children
-                self.assertTrue(all(i < len(d) for i in objects.ids))
-                nodes = [c for c in objects if d[c.id].superclass == classids.SC_BASENODE
+                # past the directory only the derived object id (modifier_pivot's two stacks)
+                self.assertTrue(all(i < len(d) or i == DERIVED_OBJECT for i in objects.ids))
+                nodes = [c for c in objects if c.id < len(d) and d[c.id].superclass == classids.SC_BASENODE
                          and d[c.id].class_id == classids.NODE]
                 self.assertGreater(len(nodes), 0)
                 for c in nodes:
