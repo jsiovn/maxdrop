@@ -19,7 +19,7 @@ import unittest
 
 try:
     import numpy
-except ImportError:  # the plain CI job has no numpy; Blender ships it
+except ImportError:  # optional here: CI installs it, Blender ships it
     numpy = None
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
