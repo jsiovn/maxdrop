@@ -6,7 +6,8 @@
 
     python -I tools/check_fixture.py "tests/fixtures/**/*"
 
-A pattern (`**` included, for any depth) expands to the files it matches; the folders it matches are left out.
+A pattern (`**` included, for any depth) expands to the files it matches, hidden ones too from Python 3.11 on; the
+folders it matches are left out.
 
 The repository is public and its history permanent, and 3ds Max writes the Windows user and computer name into
 every file it saves (tools/sanitize_fixture.py blanks them). A file fails when its bytes, or any of its streams
@@ -129,7 +130,9 @@ def _expand(arg):
     anything else is taken as it is."""
     if not glob.has_magic(arg):
         return [arg]
-    return [p for p in sorted(glob.glob(arg, recursive=True)) if os.path.isfile(p)]
+    # Hidden names too (a pack's .maxdrop-pack.json holds the archive name); glob can only from Python 3.11 on.
+    hidden = {"include_hidden": True} if sys.version_info >= (3, 11) else {}
+    return [p for p in sorted(glob.glob(arg, recursive=True, **hidden)) if os.path.isfile(p)]
 
 
 def main(argv):

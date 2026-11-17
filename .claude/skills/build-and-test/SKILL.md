@@ -94,7 +94,7 @@ machine name or user path; 3ds Max writes the first two into every file it saves
 blanks them):
 
 ```powershell
-python -I tools/check_fixture.py "tests/fixtures/*.max"
+python -I tools/check_fixture.py "tests/fixtures/**/*"
 ```
 
 Pass: exit 0, one `clean` line per file. Otherwise the file is not committed; the tool prints the kind of string

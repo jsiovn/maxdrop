@@ -14,6 +14,7 @@ import io
 import os
 import shutil
 import struct
+import sys
 import tempfile
 import unittest
 
@@ -324,13 +325,20 @@ class Check(unittest.TestCase):
                 f.write(b"plain text")
             with open(os.path.join(tmp, "sub", "dirty"), "wb") as f:
                 f.write(b"see Q:\\private\\scene.max")
+            os.mkdir(os.path.join(tmp, ".hid"))
+            for hidden in (".marker.json", os.path.join(".hid", "inner")):
+                with open(os.path.join(tmp, hidden), "wb") as f:
+                    f.write(b"see Q:\\private\\scene.max")
             out, err = io.StringIO(), io.StringIO()
             with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-                self.assertEqual(check_fixture.main(["check_fixture", os.path.join(tmp, "**", "*")]), 1)
+                self.assertEqual(check_fixture.main(["check_fixture", os.path.join(glob.escape(tmp), "**", "*")]), 1)
             for name in ("a.max", "b.max", "notes"):
                 self.assertIn(name + ": clean", out.getvalue())
             self.assertIn("dirty: drive path (ASCII)", err.getvalue())
             self.assertNotIn("cannot read", err.getvalue())
+            if sys.version_info >= (3, 11):  # CI's Python; glob cannot match hidden names before 3.11
+                self.assertIn(".marker.json: drive path (ASCII)", err.getvalue())
+                self.assertIn("inner: drive path (ASCII)", err.getvalue())
 
 
 if __name__ == "__main__":
