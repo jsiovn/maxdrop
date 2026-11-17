@@ -556,6 +556,9 @@ def matrix(scene, i):
     rules as a node's local matrix: identity and an issue (node None) when it cannot be evaluated."""
     issues = []
     ev = _Eval(scene, None, issues)
+    if not 0 <= i < len(scene):
+        issues.append(Issue(None, None, None, None, "%s: object %d past the scene" % (DAMAGED, i)))
+        return IDENTITY, issues
     try:
         m = ev.matrix(i)
     except (ValueError, OverflowError, IndexError, struct.error) as exc:  # ChunkError is a ValueError

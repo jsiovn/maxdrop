@@ -352,7 +352,8 @@ above the Extrude, which are not evaluated.
 ## UVW Map
 
 The UVW Map modifier (ClassID `(0xF72B1, 0)`, superclass `0x810`; `convert/uvwmap.py`, `tests/unit/test_uvwmap.py`
-against the oracle's `eval_maps` of the uvwmap fixture, and of modifier_pivot and stack_basic) references
+against the oracle's `eval_maps` of the uvwmap and uvwmap_oblique fixtures, and of modifier_pivot and stack_basic)
+references
 `[gizmo Position/Rotation/Scale, old ParamBlock]`:
 
 | Index | Parameter | uvwmap fixture |
@@ -361,7 +362,7 @@ against the oracle's `eval_maps` of the uvwmap fixture, and of modifier_pivot an
 | 1, 2, 3 | U, V, W tile (`f32`) | FixtureUVWGizmo 2, 3, 1.5 |
 | 4, 5, 6 | U, V, W flip | FixtureUVWGizmo U, FixtureUVWBox V, FixtureUVWCyl W |
 | 7 | cap (cylindrical) | FixtureUVWCyl, FixtureUVWCylAxisX |
-| 8 | 0 map channel, 1 vertex color channel | 0 |
+| 8 | 0 map channel, 1 vertex color channel (not applied by MaxDrop: no UV layer) | 0 |
 | 9, 10, 11 | length, width, height (`f32`) | as 3ds Max fits them, or set: FixtureUVWGizmo 17, 23, 13 |
 | 12 | alignment: 0 X, 1 Y, 2 Z | FixtureUVWCylAxisX and FixtureUVWTwo's spherical 0, FixtureUVWAxisY 1 |
 | 13 | map channel | FixtureUVWGizmo 2, FixtureUVWTwo's spherical 3 |
@@ -380,9 +381,11 @@ within 1e-4 for planar and box, 1e-3 for the round types):
   `(-qx, -qz, -qy)` for X, `(qz, -qy, qx)` for Y. Setting the alignment does not change the gizmo's matrix.
 - **Planar**: u = a / width + 0.5, v = b / length + 0.5, w = c / height + 0.5. Real-World Map Size drops the 0.5 of
   u and v; it changes nothing on the other types.
-- **Box**: the face normal, transformed like the points and divided by (width, length, height), picks the axis k
-  of its largest component, s its sign; with x, y, z = a / width, b / length, c / height: on ±a u = 0.5 + s·y,
-  v = z + 0.5; on ±b u = 0.5 - s·x, v = z + 0.5; on ±c u = 0.5 + s·x, v = y + 0.5; w = the coordinate along k + 0.5.
+- **Box**: the face normal, transformed like the points (not by the inverse transpose; uvwmap_oblique's spheres
+  under turned, unevenly scaled and mirrored gizmos tell the two apart) and divided by (width, length, height), picks
+  the axis k of its largest component, s its sign; with x, y, z = a / width, b / length, c / height: on ±a
+  u = 0.5 + s·y, v = z + 0.5; on ±b u = 0.5 - s·x, v = z + 0.5; on ±c u = 0.5 + s·x, v = y + 0.5; w = the coordinate
+  along k + 0.5.
 - **Cylindrical**: X = a / (length / 2), Y = b / (width / 2); u = 0.5 + atan2(X, -Y) / 2π, v = c / height + 0.5,
   w = |(X, Y)|. Cap: a face whose normal, divided by (length / 2, width / 2, height), is largest along c gets
   u = 0.5 - Y / 2, v = 0.5 + X / 2, w = c / height / 2.

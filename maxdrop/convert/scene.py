@@ -52,8 +52,8 @@ whose Extrude cannot be evaluated, stays a curve (an issue).
 UVW Map: the UVW Maps that render and sit right above the base mesh, or right above an applied Extrude, are evaluated
 into their map channel (convert.uvwmap), bottom first; each applied one adds (modifier index, its context matrix)
 to the mesh key and its name to node.applied. A UVW Map of a type evaluated nowhere here (shrink-wrap, face, XYZ to
-UVW) or whose parameters cannot be read keeps the stored channel and stays in node.modifiers (an issue); so does one
-above any other modifier, which is not evaluated.
+UVW), one writing the vertex color channel (no UV layer) or whose parameters cannot be read keeps the stored channel
+and stays in node.modifiers (an issue); so does one above any other modifier, which is not evaluated.
 
 Layers: each node names its layer's object index (None without one, or when the layer record cannot be read, which
 is an issue); desc.layers holds the layers that hold a node and their parent layers, in the Layer Manager's order
@@ -536,6 +536,8 @@ def _mapping(scene, mapped, m, issues, node):
             if not params.supported:
                 issues.append((node, "uvw map: %s mapping is not evaluated: the stored channel stays" %
                                params.type_name))
+            elif params.vertex_color:  # channel 0 is no UV layer: applying it would change nothing in Blender
+                issues.append((node, "uvw map: the vertex color channel is not imported: not applied"))
             else:
                 tm, gizmo_issues = uvwmap.gizmo(scene, m)
                 mapped[m.index] = (params, tm)

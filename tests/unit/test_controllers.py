@@ -531,6 +531,52 @@ class TestUnsupportedAndDamaged(MatrixCase):
         self.assertEqual(b.transforms().offset(n), ct.IDENTITY)
 
 
+class TestMatrixAlone(MatrixCase):
+    """controllers.matrix: a Matrix3 controller outside any node (a modifier's gizmo)."""
+
+    @staticmethod
+    def scene_of(b):
+        return scene.Scene(node(0x2025, *b.objects), CLASSES)
+
+    def test_prs(self):
+        b = Build()
+        tm = b.simple_prs((1, 2, 3), (0, 0, math.pi / 2), (2, 1, 1))
+        m, issues = ct.matrix(self.scene_of(b), tm)
+        self.assertMatrix(m, ((0, 2, 0, 0), (-1, 0, 0, 0), (0, 0, 1, 0), (1, 2, 3, 1)))
+        self.assertEqual(issues, [])
+
+    def test_damaged(self):
+        b = Build()
+        lst = len(b.objects)
+        b.add(node(C_POSLIST, refs34(lst), leaf(0x1010, struct.pack("<i", 1))))
+        tm = b.prs(lst)
+        m, issues = ct.matrix(self.scene_of(b), tm)
+        self.assertEqual(m, ct.IDENTITY)
+        self.assertEqual([(i.node, i.controller) for i in issues], [(None, lst)])
+        self.assertTrue(issues[0].reason.startswith(ct.DAMAGED), issues[0].reason)
+        b = Build()
+        inner = b.xyz(C_POSXYZ, (1, 0, 0))
+        for _ in range(ct.MAX_DEPTH):
+            inner = b.add(node(C_POSLIST, refs34(inner), leaf(0x1010, struct.pack("<i", 1))))
+        tm = b.prs(inner)
+        m, issues = ct.matrix(self.scene_of(b), tm)
+        self.assertEqual(m, ct.IDENTITY)
+        self.assertIn("deeper than %d below the controller" % ct.MAX_DEPTH, issues[0].reason)
+        m, issues = ct.matrix(self.scene_of(b), len(b.objects))
+        self.assertEqual(m, ct.IDENTITY)
+        self.assertTrue(issues[0].reason.startswith(ct.DAMAGED), issues[0].reason)
+
+    def test_non_finite_and_unknown(self):
+        b = Build()
+        tm = b.simple_prs((float("nan"), 0, 0))
+        m, issues = ct.matrix(self.scene_of(b), tm)
+        self.assertEqual((m, [i.reason for i in issues]), (ct.IDENTITY, [ct.NON_FINITE]))
+        b = Build()
+        other = b.xyz(C_POSXYZ, (1, 0, 0))  # a position controller where a Matrix3 one belongs
+        m, issues = ct.matrix(self.scene_of(b), other)
+        self.assertEqual((m, [i.reason for i in issues]), (ct.IDENTITY, [ct.UNKNOWN_CLASS]))
+
+
 @unittest.skipUnless(FIXTURES, "no fixtures")
 class TestFixtures(unittest.TestCase):
     def test_world_and_object_transforms_match_the_oracle(self):
