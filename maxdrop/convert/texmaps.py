@@ -102,17 +102,18 @@ MAX_DEPTH = 8
 MAX_NODES = 256  # nodes of one graph drawn as a tree
 SRGB_GAMMA, GAMMA_TOLERANCE = 2.2, 0.05
 
-# ClassIDs (texmap superclass), checked against the class directory of texmap_rules in the tests.
-FALLOFF = ClassId(0x6EC3730C, 0)
+# ClassIDs (texmap superclass), checked against the class directory of texmap_rules in the tests. Those of
+# reader/classids.py come from there; VRayDirt and VRayColor2Bump are only here (no fixture of classids.py has them).
+FALLOFF = classids.FALLOFF
 VRAY_DIRT = ClassId(0x2F567899, 0x090D5EA4)
 VRAY_COLOR2BUMP = ClassId(0x31E15D1D, 0x7D7E2810)
-OUTPUT = ClassId(0x000002B0, 0)
-RGB_TINT = ClassId(0x00000224, 0)
-MIX = ClassId(0x00000230, 0)
-RGB_MULTIPLY = ClassId(0x00000290, 0)
-COLOR_CORRECTION = ClassId(0x000002D0, 0)
-COMPOSITE = ClassId(0x00000280, 0)
-NORMAL_BUMP = ClassId(0x243E22C6, 0x63F6A014)
+OUTPUT = classids.OUTPUT_MAP
+RGB_TINT = classids.RGB_TINT
+MIX = classids.MIX
+RGB_MULTIPLY = classids.RGB_MULTIPLY
+COLOR_CORRECTION = classids.COLOR_CORRECTION
+COMPOSITE = classids.COMPOSITE
+NORMAL_BUMP = classids.NORMAL_BUMP
 CORONA_NORMAL = classids.CORONA_NORMAL
 IMAGES = (classids.BITMAP_TEX, classids.CORONA_BITMAP, classids.VRAY_BITMAP)  # map classes that are an image file
 
