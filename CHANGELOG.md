@@ -22,6 +22,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   Map Size, also on an extruded shape and with several UVW Maps on one stack. Faces across the seam of a round map
   do not smear. Shrink-wrap, face and XYZ-to-UVW keep the stored coordinates, as does a UVW Map above a modifier
   MaxDrop does not apply (each a line in the report).
+- **TurboSmooth, MeshSmooth, Shell and Symmetry as Blender modifiers**: they arrive as Subdivision Surface, Solidify
+  and Mirror in 3ds Max's order, with their iterations, Smooth Result and smoothing-group creases, inner and outer
+  amounts, axis, flip, slice, weld threshold and a moved or turned mirror gizmo (an empty), so the evaluated mesh
+  matches 3ds Max's. New import option **Modifiers: Keep as Blender Modifiers / Ignore**. One above a modifier
+  MaxDrop does not evaluate stays off (a line in the report); the report counts the converted ones.
 
 ### Changed
 

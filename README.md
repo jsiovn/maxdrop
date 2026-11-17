@@ -68,6 +68,8 @@ above.
    - **Scale**: an extra factor on top of Units; leave it at `1`.
    - **Image Search** also looks for the textures in the subfolders of the scene's folder.
    - **Object Filter** picks whether materials and UV maps come along; **Forward** and **Up** turn the scene.
+   - **Modifiers**: **Keep as Blender Modifiers** turns TurboSmooth, MeshSmooth, Shell and Symmetry into Subdivision
+     Surface, Solidify and Mirror; **Ignore** leaves them out.
    - Every import makes a collection named after the file, with one collection per 3ds Max layer below it.
 3. Click **Import**. A large scene takes a while and Blender does not respond until it is done
    ([docs/BASELINE.md](docs/BASELINE.md) has measured times).

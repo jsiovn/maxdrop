@@ -403,6 +403,41 @@ and shrink-wrap (FixtureUVWShrink) leave the stored channel.
 Scene A: 29 UVW Map modifiers (the census), 27 box and 2 planar, on 66 nodes; 23 evaluated, on 51 nodes; the other
 6 sit above an Edit Mesh or an FFD, which are not evaluated.
 
+## Modifiers converted to Blender modifiers
+
+TurboSmooth `(0x0D727B3E, 0x491D29A7)`, MeshSmooth `(0x32, 0x7F9E)`, Shell `(0x3B9B1A16, 0x6D84E8D0)` and Symmetry
+`(0x2D7E702B, 0x0BE41A6E)`, superclass `0x810`, each keep one ParamBlock2 in reference slot 0; Symmetry's mirror
+gizmo is a Position/Rotation/Scale controller in slot 1 (`convert/modifiers.py`; read on two scratch scenes of 3ds
+Max 2020 with every parameter set apart from its default, then the stack_convert fixture):
+
+| Class | Parameter id: parameter |
+|---|---|
+| TurboSmooth | 0 iterations, 1 use render iterations, 2 render iterations, 3 isoline display, 4 smooth result, 5 separate by materials, 6 separate by smoothing groups, 7 update (radio), 8 explicit normals |
+| MeshSmooth | 9 method (0 classic, 1 quad output, 2 NURMS), 4 iterations, 2 smoothness, 13 use render iterations, 14 render iterations, 15 use render smoothness, 16 render smoothness, 5 smooth result, 6 separate by materials, 7 separate by smoothing groups (and about twenty others: soft selection, cage, local control) |
+| Shell | 0 inner amount, 1 outer amount, 2 override material ID (edges), 3 its ID, 4 override smoothing group, 5 the group, 6 edge mapping, 7 TV offset, 8 override inner material ID, 9 its ID, 10 and 11 select edge / inner faces, 12 segments, 13 straighten corners, 14 auto smooth, 15 its angle, 16 select outer faces, 17 override outer material ID, 18 its ID, 19 bevel edges, 20 bevel shape |
+| Symmetry | 0 axis (0 X, 1 Y, 2 Z), 1 slice along mirror, 2 weld seam, 3 threshold, 4 flip |
+
+What 3ds Max 2020 makes, against Blender's evaluated meshes (`tests/blender/run.py`, the oracle's `eval_verts`,
+`eval_faces` and box after the stack):
+
+- **TurboSmooth, MeshSmooth NURMS / quad output**: Catmull-Clark on the control points, not the limit surface: a
+  box gives 26 vertices after one iteration, 98 after two, and Blender's Subdivision Surface with
+  `use_limit_surface` off has the same vertices (the limit surface shrinks the box to 8.4 of 10). MeshSmooth classic
+  is another scheme (80 vertices after two iterations). Separate by smoothing groups keeps the vertex count and
+  hardens the edges between groups (a crease of 1 in Blender).
+- **Shell**: the new surfaces lie at -inner and +outer amount along the vertex normals, not at an even thickness: a
+  box with outer amount 2 grows by 2 / √3 along each axis (Solidify with `use_even_offset` off).
+- **Symmetry**: the mirror plane is in the gizmo's space, q = p * context * inverse(gizmo), as UVW Map's; without
+  flip the side where q along the axis is positive stays, sliced at the plane; without slice the whole object is
+  mirrored and both copies stay (FixtureSymmetryNoSlice: 16 vertices). Weld seam: 3ds Max slices beside a vertex
+  that lies within the threshold of the plane, Blender's Mirror merges it with its copy onto the plane
+  (FixtureSymmetryTurned, a corner 0.062 off the plane, threshold 0.2: boxes 0.031 apart). On a shelled box (FixtureOrder)
+  3ds Max leaves the seam unwelded (32 vertices, 100 after a TurboSmooth; Blender 84): the same surface.
+
+Scene A: of its 2 TurboSmooth, 1 Shell and 1 Symmetry (the census), 1 TurboSmooth is converted; the rest sit on a
+shape without an Extrude below them (a curve). Scene B: TurboSmooth on 105 nodes, MeshSmooth on 51, Shell on 2
+converted; 6 TurboSmooth sit above an FFD(box).
+
 ## System unit
 
 `maxdrop/reader/units.py` reads it; `tests/unit/test_units.py` checks every fixture against the oracle's
