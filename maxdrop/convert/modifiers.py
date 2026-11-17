@@ -32,7 +32,9 @@ them (CREASE), else Smooth Result smooths every face and edge (SMOOTH). Lengths 
 
 The file comes from anywhere: a missing block, an animated parameter or one that is no number, an axis outside X / Y
 / Z, a gizmo that cannot be evaluated or a mirror frame that cannot be inverted raise ModifierError; iterations
-outside 0 .. MAX_ITERATIONS are clamped (an issue). No bpy; numpy is imported for a Symmetry.
+outside 0 .. MAX_ITERATIONS are clamped (an issue), and budget() lowers the viewport levels of an object that would
+pass MAX_VIEWPORT_CORNERS (an issue). Shell's amounts and Symmetry's threshold are lengths of the object before its
+offset, which MaxDrop bakes into the mesh: they take the offset's scale. No bpy; numpy is imported for a Symmetry.
 """
 import collections
 import math
@@ -47,6 +49,10 @@ MAX_ITERATIONS = 10  # 3ds Max's own limit for TurboSmooth and MeshSmooth
 SLOT_BLOCK, SLOT_GIZMO = 0, 1
 CLASSIC, QUAD_OUTPUT, NURMS = 0, 1, 2
 IDENTITY_TOLERANCE = 1e-6
+# Face corners an object may reach in the viewport through its converted modifiers: Blender evaluates the viewport
+# levels right after the import, and a file can ask for 10 iterations on any mesh. About a million quads.
+MAX_VIEWPORT_CORNERS = 4000000
+SCALE_TOLERANCE = 1e-5
 _FATAL = (controllers.UNKNOWN_CLASS, controllers.DAMAGED, controllers.NON_FINITE)
 _KINDS = {classids.TURBOSMOOTH: SUBSURF, classids.MESHSMOOTH: SUBSURF, classids.SHELL: SOLIDIFY,
           classids.SYMMETRY: MIRROR}
@@ -122,13 +128,25 @@ def _smoother(modifier):
     return settings, shading, issues
 
 
-def _shell(modifier, meters):
+def _offset_scale(offset, issues):
+    """The scale of the object offset, which 3ds Max applies after the modifiers and MaxDrop bakes into the mesh: the
+    mean of its axes' lengths, an issue when they differ."""
+    if offset is None:
+        return 1.0
+    lengths = [math.sqrt(sum(offset[r][c] ** 2 for c in range(3))) for r in range(3)]
+    if max(lengths) - min(lengths) > SCALE_TOLERANCE * max(lengths):
+        issues.append("the object offset scales its axes unevenly (%s): lengths made with their mean" %
+                      ", ".join("%g" % x for x in lengths))
+    return sum(lengths) / 3.0
+
+
+def _shell(modifier, meters, offset):
     b, issues = _block(modifier), []
     inner, outer = float(_value(b, 0, 0.0)), float(_value(b, 1, 1.0))
     lo, hi = min(-inner, outer), max(-inner, outer)  # the two surfaces along the normal
     if hi - lo <= 0:
         raise ModifierError("a shell of no thickness (inner %g, outer %g)" % (inner, outer))
-    if lo > 0 or hi < 0:  # Solidify keeps the original surface between its two
+    if lo > 0 or hi < 0:  # not seen in a file; Solidify's offset past -1 .. 1 is not checked against 3ds Max
         raise ModifierError("both surfaces on one side (inner %g, outer %g)" % (inner, outer))
     if int(_value(b, 12, 1)) > 1:
         issues.append("%d segments made as one" % int(_value(b, 12, 1)))
@@ -138,7 +156,8 @@ def _shell(modifier, meters):
         issues.append("material ID overrides not converted")
     if _value(b, 4, 0):
         issues.append("smoothing group override not converted")
-    settings = (("solidify_mode", "EXTRUDE"), ("thickness", (hi - lo) * meters), ("offset", (hi + lo) / (hi - lo)),
+    scale = meters * _offset_scale(offset, issues)
+    settings = (("solidify_mode", "EXTRUDE"), ("thickness", (hi - lo) * scale), ("offset", (hi + lo) / (hi - lo)),
                 ("use_even_offset", False), ("use_rim", True))
     return settings, issues
 
@@ -187,10 +206,11 @@ def _symmetry(scene, modifier, meters, offset):
                    for c in range(4))
     on = tuple(k == axis for k in range(3))
     slice_ = bool(_value(b, 1, 1))
+    scale = meters * _offset_scale(offset, issues)
     settings = (("use_axis", on), ("use_bisect_axis", on if slice_ else (False,) * 3),
                 ("use_bisect_flip_axis", tuple(k == axis and bool(_value(b, 4, 0)) for k in range(3))
                  if slice_ else (False,) * 3),
-                ("use_mirror_merge", bool(_value(b, 2, 1))), ("merge_threshold", float(_value(b, 3, 0.1)) * meters))
+                ("use_mirror_merge", bool(_value(b, 2, 1))), ("merge_threshold", float(_value(b, 3, 0.1)) * scale))
     return settings, None if identity else _blender(frame, meters), issues
 
 
@@ -204,10 +224,36 @@ def convert(scene, modifier, meters=1.0, offset=None):
     if kind == SUBSURF:
         settings, shading, issues = _smoother(modifier)
     elif kind == SOLIDIFY:
-        settings, issues = _shell(modifier, meters)
+        settings, issues = _shell(modifier, meters, offset)
     else:
         settings, mirror, issues = _symmetry(scene, modifier, meters, offset)
     entry = scene.entry(modifier.index)
     class_name = entry.name if entry is not None else ""
     return ModifierDescription(modifier.index, kind, modifier.name or class_name, class_name,
                                modifier.enabled_in_views, settings, mirror, shading), issues
+
+
+def budget(converted, corners):
+    """(converted, issues): the ModifierDescriptions of one object, their viewport levels lowered until the object
+    has at most MAX_VIEWPORT_CORNERS face corners in the viewport; corners: its mesh's. A Subdivision level makes a
+    quad of each corner (4 corners), Solidify at most triples the corners (two surfaces and the rim), Mirror doubles
+    them. The render levels stay."""
+    out, issues = [], []
+    for m in converted:
+        if m.kind == SOLIDIFY:
+            corners *= 3
+        elif m.kind == MIRROR:
+            corners *= 2
+        elif m.kind == SUBSURF:
+            settings = dict(m.settings)
+            levels = settings["levels"]
+            while levels > 0 and corners * 4 ** levels > MAX_VIEWPORT_CORNERS:
+                levels -= 1
+            if levels != settings["levels"]:
+                issues.append("modifiers: %s: viewport levels %d made %d (at most about %d faces in the viewport); "
+                              "the render levels stay" % (m.class_name, settings["levels"], levels,
+                                                          MAX_VIEWPORT_CORNERS // 4))
+                m = m._replace(settings=tuple((a, levels if a == "levels" else v) for a, v in m.settings))
+            corners *= 4 ** levels
+        out.append(m)
+    return tuple(out), issues

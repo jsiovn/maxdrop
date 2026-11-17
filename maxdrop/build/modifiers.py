@@ -9,14 +9,18 @@
 Each node's converted modifiers are added in their order (3ds Max's, bottom first), named as in 3ds Max, with their
 settings; a setting this Blender lacks is skipped and counted in the result. A Mirror whose plane is not the
 object's own gets an empty as its mirror object: a child of the object (identity parent inverse, so it follows the
-object), placed at the description's frame, in the object's collection, not rendered, listed in built.helpers. A
-mesh whose description asks for creases (a converted smoother separates by smoothing groups) gets crease_edge 1.0
-on its sharp edges, the generic attribute Blender 4.0 and later read for edge creases.
+object), placed at the description's frame (a shear kept in its parent inverse, as build.objects keeps a node's),
+in the object's collection, hidden and frozen with the object, not rendered. It is no node and no root: not in
+built.objects or built.helpers. A mesh whose description asks for creases (a converted smoother separates by
+smoothing groups) gets crease_edge 1.0 on its sharp edges, the generic attribute Blender 4.0 and later read for edge
+creases.
 """
 import bpy
 from mathutils import Matrix
 
-HELPER_PROPERTY = "maxdrop_helper"
+from ..convert import scene as convert_scene
+from .objects import HELPER_PROPERTY, _keep_shear
+
 MIRROR_HELPER = "mirror"
 CREASE_ATTRIBUTE = "crease_edge"
 EMPTY_SIZE = 0.25
@@ -34,7 +38,7 @@ def _crease(mesh):
     crease.data.foreach_set("value", flags.astype(numpy.float32))
 
 
-def _mirror_object(built, ob, frame):
+def _mirror_object(ob, frame):
     empty = bpy.data.objects.new(ob.name + " Mirror", None)
     empty.empty_display_type = 'ARROWS'
     empty.empty_display_size = EMPTY_SIZE
@@ -44,9 +48,12 @@ def _mirror_object(built, ob, frame):
     empty.parent = ob
     empty.matrix_parent_inverse = Matrix.Identity(4)
     empty.matrix_basis = Matrix(frame)
+    rows = tuple(tuple(frame[c][r] for c in range(4)) for r in range(4))  # sheared() reads row vectors
+    if convert_scene.sheared(rows):
+        _keep_shear(empty, frame)
     empty.hide_render = True
     empty.hide_viewport = ob.hide_viewport
-    built.helpers.append(empty)
+    empty.hide_select = ob.hide_select
     return empty
 
 
@@ -67,7 +74,7 @@ def add(desc, built):
                     skipped += 1
             mod.show_viewport = md.show_viewport
             if md.mirror is not None:
-                mod.mirror_object = _mirror_object(built, ob, md.mirror)
+                mod.mirror_object = _mirror_object(ob, md.mirror)
     for key, md in desc.meshes.items():
         mesh = built.meshes.get(key)
         if md.creases and mesh is not None:

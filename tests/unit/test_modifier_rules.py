@@ -283,6 +283,43 @@ class Rules(unittest.TestCase):
                           s["use_mirror_merge"], len(issues)), (None, Y, Y, Y, False, 1))
         self.assertAlmostEqual(s["merge_threshold"], 0.05)
 
+    def test_offset_scale_scales_shell_and_threshold(self):
+        scaled = ((2.0, 0.0, 0.0, 0.0), (0.0, 2.0, 0.0, 0.0), (0.0, 0.0, 2.0, 0.0), (1.0, 2.0, 3.0, 1.0))
+        md, issues = rules.convert(FakeScene(), _modifier(classids.SHELL, {0: 1.0, 1: 2.0}), 0.5, scaled)
+        self.assertEqual((dict(md.settings)["thickness"], issues), (3.0, []))
+        uneven = ((2.0, 0.0, 0.0, 0.0), (0.0, 1.0, 0.0, 0.0), (0.0, 0.0, 3.0, 0.0), (0.0, 0.0, 0.0, 1.0))
+        md, issues = rules.convert(FakeScene(), _modifier(classids.SHELL, {0: 0.0, 1: 1.0}), 1.0, uneven)
+        self.assertEqual((dict(md.settings)["thickness"], len(issues)), (2.0, 1))
+
+    @unittest.skipIf(numpy is None, "numpy missing")  # a Symmetry's frame
+    def test_offset_scale_scales_the_weld_threshold(self):
+        scaled = ((2.0, 0.0, 0.0, 0.0), (0.0, 2.0, 0.0, 0.0), (0.0, 0.0, 2.0, 0.0), (0.0, 0.0, 0.0, 1.0))
+        md, _issues = rules.convert(FakeScene(), _modifier(classids.SYMMETRY, {3: 0.25}), 0.5, scaled)
+        self.assertAlmostEqual(dict(md.settings)["merge_threshold"], 0.25)
+        self.assertIsNotNone(md.mirror)  # the offset's scale is part of the frame too
+
+    def test_budget_lowers_viewport_levels_only(self):
+        smooth, _i = _convert(classids.TURBOSMOOTH, {0: 10, 1: 1, 2: 10})
+        shell, _i = _convert(classids.SHELL, {})
+        out, issues = rules.budget((smooth,), 24)  # a box: 24 corners; 24 * 4 ** 8 <= 4e6 < 24 * 4 ** 9
+        self.assertEqual((dict(out[0].settings)["levels"], dict(out[0].settings)["render_levels"], len(issues)),
+                         (8, 10, 1))
+        out, issues = rules.budget((shell, smooth), 24)  # tripled first: 72 * 4 ** 7 <= 4e6 < 72 * 4 ** 8
+        self.assertEqual((dict(out[1].settings)["levels"], len(issues)), (7, 1))
+        out, issues = rules.budget((smooth, smooth), 24)  # the second gets what the first left: none
+        self.assertEqual(([dict(m.settings)["levels"] for m in out], len(issues)), ([8, 0], 2))
+        small, _i = _convert(classids.TURBOSMOOTH, {0: 2})
+        self.assertEqual(rules.budget((small,), 24), ((small,), []))
+        self.assertEqual(rules.budget((), 10 ** 9), ((), []))
+
+    def test_the_lowest_smoother_that_changes_the_shading_decides(self):
+        plain, _i = _convert(classids.TURBOSMOOTH, {4: 0})
+        crease, _i = _convert(classids.TURBOSMOOTH, {6: 1})
+        smooth, _i = _convert(classids.TURBOSMOOTH, {})
+        self.assertEqual(conv._shading((plain, crease, smooth)), rules.CREASE)
+        self.assertEqual(conv._shading((smooth, crease)), rules.SMOOTH)
+        self.assertIsNone(conv._shading((plain,)))
+
     @unittest.skipIf(numpy is None, "numpy missing")  # a Symmetry's frame
     def test_mirror_frame(self):
         e = rules.mirror_frame(_translate(5, 0, 0), _translate(2, 0, 0), _translate(1, 0, 0))

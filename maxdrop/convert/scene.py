@@ -60,9 +60,10 @@ Blender modifiers: right above what is evaluated here (the base mesh, an applied
 one left unapplied changes no geometry), the run of TurboSmooth, MeshSmooth, Shell and Symmetry that render becomes
 node.converted (convert.modifiers ModifierDescriptions, bottom first), built as Subdivision Surface, Solidify and
 Mirror; the first other modifier, or one the rules refuse, ends the run, and each of the four above it is an issue.
-The lowest converted smoother sets the mesh's shading, which adds ("shading", SMOOTH or CREASE) to the mesh key: SMOOTH
-leaves no sharp edge or flat face, CREASE keeps them and sets md.creases. describe(..., convert_modifiers=False)
-converts nothing.
+The lowest converted smoother that changes the shading sets the mesh's, which adds ("shading", SMOOTH or CREASE) to the mesh key: SMOOTH
+leaves no sharp edge or flat face, CREASE keeps them and sets md.creases. Viewport levels that would give an
+object more than convert.modifiers.MAX_VIEWPORT_CORNERS face corners are lowered (an issue).
+describe(..., convert_modifiers=False) converts nothing.
 
 Layers: each node names its layer's object index (None without one, or when the layer record cannot be read, which
 is an issue); desc.layers holds the layers that hold a node and their parent layers, in the Layer Manager's order
@@ -79,7 +80,7 @@ import math
 
 from ..reader import cfb, chunks, classids, controllers, geometry, modifiers as reader_modifiers, shapes, units
 from ..reader import scene as reader_scene
-from . import extrude, modifiers as convert_modifiers, uvwmap
+from . import extrude, modifiers as rules, uvwmap
 
 MESH, CURVE, EMPTY = "MESH", "CURVE", "EMPTY"
 ADAPTIVE = 12  # Blender's default curve resolution, for a shape 3ds Max interpolates adaptively
@@ -430,8 +431,9 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True):
                     key, done = _extruded(scene, desc, shape_of, extruded, mapped, base, ext, maps, i, name,
                                           t.offset(i), meters, _shading(conv))
                 if key is not None:
-                    kind, converted = MESH, conv
-                    desc.issues.extend((i, x) for x in conv_issues)
+                    kind = MESH
+                    converted, more = rules.budget(conv, len(desc.meshes[key].loop_vertices))
+                    desc.issues.extend((i, x) for x in conv_issues + more)
                     applied, modifiers = _split(scene, stack.modifiers, (ext,) + done, conv)
                 else:
                     kind, curve = _curve(scene, desc, shape_of, base, i, name, t.offset(i), meters)
@@ -452,6 +454,8 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True):
                     desc.issues.extend((i, x) for x in conv_issues)
                     key, done = _mapped_mesh(scene, desc, mapped, (base, offset), data, maps, i, name, offset,
                                              meters, _shading(converted))
+                    converted, more = rules.budget(converted, len(desc.meshes[key].loop_vertices))
+                    desc.issues.extend((i, x) for x in more)
                     if done or converted:
                         applied, modifiers = _split(scene, stack.modifiers, done, converted)
                     kind = MESH
@@ -553,17 +557,17 @@ def _converted(scene, rest, meters, offset, told, convert):
     for m in rest:
         cls = _class_name(scene, m.index) or "another modifier"
         if stop is not None:
-            if convert_modifiers.is_convertible(m):
+            if rules.is_convertible(m):
                 issues.append("modifiers: %s above %s is not converted" % (cls, stop))
             continue
-        if not convert_modifiers.is_convertible(m):
+        if not rules.is_convertible(m):
             stop = cls
             continue
         first = m.index not in told
         told.add(m.index)
         try:
-            md, more = convert_modifiers.convert(scene, m, meters, offset)
-        except convert_modifiers.ModifierError as exc:
+            md, more = rules.convert(scene, m, meters, offset)
+        except rules.ModifierError as exc:
             issues.append("modifiers: %s not converted: %s" % (cls, exc))
             stop = cls
             continue
@@ -574,8 +578,9 @@ def _converted(scene, rest, meters, offset, told, convert):
 
 
 def _shading(converted):
-    """What the lowest converted smoother does to the mesh's shading: convert.modifiers SMOOTH, CREASE or None."""
-    return next((m.shading for m in converted if m.kind == convert_modifiers.SUBSURF), None)
+    """What the lowest converted smoother that changes the shading does to it: convert.modifiers SMOOTH, CREASE or
+    None."""
+    return next((m.shading for m in converted if m.kind == rules.SUBSURF and m.shading), None)
 
 
 def _split(scene, stack_modifiers, done, converted=()):
@@ -637,10 +642,10 @@ def _mapped_mesh(scene, desc, mapped, key, data, maps, node, name, offset, meter
                 desc.issues.append((node, "uvw map: %s: the stored channel stays" % exc))
         md = desc.meshes[key] = mesh_description(key, name, data, offset, meters)
         md.applied = tuple(done)
-        if shading == convert_modifiers.SMOOTH:
+        if shading == rules.SMOOTH:
             md.sharp_faces[:] = False
             md.sharp_edges = md.sharp_edges[:0]
-        md.creases = shading == convert_modifiers.CREASE
+        md.creases = shading == rules.CREASE
         if md.dropped_faces:
             desc.issues.append((node, "geometry: %d faces with a repeated vertex or doubled, left out"
                                 % md.dropped_faces))
