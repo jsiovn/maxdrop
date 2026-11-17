@@ -17,11 +17,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - **Extrude**: a shape with an Extrude arrives as the mesh 3ds Max makes of it: walls, floors and ceilings drawn as
   outlines are closed, with caps (holes where one outline lies inside another), outward normals, material IDs,
   sharp corners and mapping coordinates. The import report counts it as applied.
+- **UVW Map**: planar, box, cylindrical (with cap) and spherical UVW Map modifiers give the mesh the mapping the
+  artist set, in their map channel, with the gizmo's place, turn and size, tiling, flips, alignment and Real-World
+  Map Size, also on an extruded shape and with several UVW Maps on one stack. Faces across the seam of a round map
+  do not smear. Shrink-wrap, face and XYZ-to-UVW keep the stored coordinates, as does a UVW Map above a modifier
+  MaxDrop does not apply (each a line in the report).
 
 ### Changed
 
 - **Import report, modifiers**: the line of modifiers not applied says what that means, "ignored: the object
-  arrives as its base object, or as its Extrude makes it", and the report lists the modifiers applied (Extrude)
+  arrives as its base object, or as its Extrude makes it", and the report lists the modifiers applied (Extrude,
+  UVW Map)
   apart from those converted to a Blender modifier.
 
 ### Fixed

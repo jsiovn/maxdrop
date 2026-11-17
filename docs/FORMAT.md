@@ -136,7 +136,7 @@ A modifier keeps its name and its three switches in `0x39BF`:
 Its references: UVW Map `[gizmo Position/Rotation/Scale, old ParamBlock]`; Bend, Taper, Twist, Noise `[gizmo
 Position/Rotation/Scale, center Position XYZ, block]`; TurboSmooth `[ParamBlock2]`. Bend and TurboSmooth keep a
 ParamBlock2, UVW Map, Taper, Twist and Noise the old ParamBlock (UVW Map: index 0 map type, 9 to 11 length, width,
-height; TurboSmooth: parameter 0 iterations).
+height, see [UVW Map](#uvw-map); TurboSmooth: parameter 0 iterations).
 
 A world-space modifier (a "binding", superclass `0x820`) sits in a derived object of its own, special id `0x2033`:
 a scratch file of 3ds Max 2020 (one box, a UVW Map, then a Map Scaler binding; not committed) had node slot 1 =
@@ -348,6 +348,57 @@ What 3ds Max 2020 makes of it (`snapshotAsMesh`, probed on scratch scenes and ch
 Scene A: 20 shapes with an Extrude (the census), all evaluated: vertex and triangle counts equal 3ds Max's on all
 20, the world box within 1e-3 plus the oracle's 6 significant digits on 16; the other 4 have an Edit Mesh or an FFD
 above the Extrude, which are not evaluated.
+
+## UVW Map
+
+The UVW Map modifier (ClassID `(0xF72B1, 0)`, superclass `0x810`; `convert/uvwmap.py`, `tests/unit/test_uvwmap.py`
+against the oracle's `eval_maps` of the uvwmap fixture, and of modifier_pivot and stack_basic) references
+`[gizmo Position/Rotation/Scale, old ParamBlock]`:
+
+| Index | Parameter | uvwmap fixture |
+|---|---|---|
+| 0 | map type: 0 planar, 1 cylindrical, 2 spherical, 3 shrink-wrap, 4 box, 5 face, 6 XYZ to UVW | every type but face and XYZ to UVW |
+| 1, 2, 3 | U, V, W tile (`f32`) | FixtureUVWGizmo 2, 3, 1.5 |
+| 4, 5, 6 | U, V, W flip | FixtureUVWGizmo U, FixtureUVWBox V, FixtureUVWCyl W |
+| 7 | cap (cylindrical) | FixtureUVWCyl, FixtureUVWCylAxisX |
+| 8 | 0 map channel, 1 vertex color channel | 0 |
+| 9, 10, 11 | length, width, height (`f32`) | as 3ds Max fits them, or set: FixtureUVWGizmo 17, 23, 13 |
+| 12 | alignment: 0 X, 1 Y, 2 Z | FixtureUVWCylAxisX and FixtureUVWTwo's spherical 0, FixtureUVWAxisY 1 |
+| 13 | map channel | FixtureUVWGizmo 2, FixtureUVWTwo's spherical 3 |
+| 14, 15 | not known; 0 everywhere | |
+
+Real-World Map Size is not in the block: as on Extrude, `0x2150` holds `0x0110` entries, each a `0x0120` naming a
+class (the first 8 bytes its ClassID) and a `0x0130` `u32`; the entry naming the modifier's own class holds the flag
+(1 on FixtureUVWRealWorld). An instanced UVW Map (FixtureUVWSharedA/B) holds three entries.
+
+What 3ds Max 2020 computes (fitted to `meshop.getMapVert` on scratch scenes, then checked on the fixture: U and V
+within 1e-4 for planar and box, 1e-3 for the round types):
+
+- **Space**: a point p of the object goes to q = p * context * inverse(gizmo) (row vectors; the gizmo's matrix holds
+  its scale; FixtureUVWSharedA/B have two contexts). Then a frame (a, b, c): planar and box `(-qx, -qy, qz)` for
+  alignment Z, `(qz, -qy, qx)` for X, `(-qx, qz, qy)` for Y; cylindrical and spherical `(-qx, -qy, qz)` for Z,
+  `(-qx, -qz, -qy)` for X, `(qz, -qy, qx)` for Y. Setting the alignment does not change the gizmo's matrix.
+- **Planar**: u = a / width + 0.5, v = b / length + 0.5, w = c / height + 0.5. Real-World Map Size drops the 0.5 of
+  u and v; it changes nothing on the other types.
+- **Box**: the face normal, transformed like the points and divided by (width, length, height), picks the axis k
+  of its largest component, s its sign; with x, y, z = a / width, b / length, c / height: on ±a u = 0.5 + s·y,
+  v = z + 0.5; on ±b u = 0.5 - s·x, v = z + 0.5; on ±c u = 0.5 + s·x, v = y + 0.5; w = the coordinate along k + 0.5.
+- **Cylindrical**: X = a / (length / 2), Y = b / (width / 2); u = 0.5 + atan2(X, -Y) / 2π, v = c / height + 0.5,
+  w = |(X, Y)|. Cap: a face whose normal, divided by (length / 2, width / 2, height), is largest along c gets
+  u = 0.5 - Y / 2, v = 0.5 + X / 2, w = c / height / 2.
+- **Spherical**: Z = c / (height / 2), r = |(X, Y, Z)|; u as cylindrical, v = 0.5 + asin(Z / r) / π, w = r.
+- **Flip, tile**: per component, flipped (1 - value), then times its tile.
+- **Seam**: 3ds Max shares map vertices and may shift a face's U by a whole turn, also on faces that do not cross the
+  seam; the image is the same. MaxDrop gives +1 to the corners below 0.5 of a face with an edge across the seam
+  (X = 0, Y > 0) and the mean U of the face to a corner on the axis. A face that goes around the axis
+  (FixtureUVWCylAxisX: 4 triangles) has no single U; there the two differ.
+
+Evaluated: the UVW Maps that render right above the base object or above an applied Extrude (FixtureUVWExtrude;
+FixtureUVWTwo, two in a row). One above another modifier (FixtureUVWAboveBend), a switched-off one (FixtureUVWOff)
+and shrink-wrap (FixtureUVWShrink) leave the stored channel.
+
+Scene A: 29 UVW Map modifiers (the census), 27 box and 2 planar, on 66 nodes; 23 evaluated, on 51 nodes; the other
+6 sit above an Edit Mesh or an FFD, which are not evaluated.
 
 ## System unit
 
