@@ -60,13 +60,18 @@ FIXTURE = {"modifiers": 0}  # modifiers the current fixture's report must name a
 def oracle_modifiers(path):
     """How many modifiers the report of path names as not applied (each class once per node whose stack holds it),
     from path's oracle (tests/fixtures/<name>.oracle.json); 0 without one. The rule is gather() in
-    maxdrop/convert/report.py; tests/blender/run.py counts the same way."""
+    maxdrop/convert/report.py; tests/blender/run.py counts the same way. A shape that 3ds Max evaluates to a mesh
+    has its Extrude applied (convert/extrude.py), so that one is not counted."""
     try:
         with open(path[:-4] + ".oracle.json", encoding="ascii") as f:
             nodes = json.load(f)["nodes"]
     except OSError:
         return 0
-    return sum(len({tuple(m["class_id"]) for m in n["modifiers"]}) for n in nodes)
+    def counted(n):
+        extruded = n["shape"] is not None and n["eval_verts"] is not None
+        return {tuple(m["class_id"]) for m in n["modifiers"] if not (extruded and m["class_name"] == "Extrude")}
+
+    return sum(len(counted(n)) for n in nodes)
 
 
 def check(name, cond, detail=""):
@@ -124,7 +129,8 @@ def check_report(name, max_name, pack_name=None):
             and all(kind == 'INFO' and m.endswith("nothing left out.") for kind, m in summaries) \
             and "\nNothing was left out." in body
         missing = summaries and all(kind == 'WARNING' for kind, _m in summaries) and only_known_gaps(body) \
-            and (not modified or all("; %d modifiers not applied" % modified in m for _k, m in summaries))
+            and (not modified or all("; %d modifier%s not applied" % (modified, "" if modified == 1 else "s") in m
+                                     for _k, m in summaries))
         check("%s: the operator reported INFO, nothing left out (or only the known gaps of the fixtures)" % name,
               clean or missing, str(summaries))
 

@@ -64,6 +64,9 @@ ELLIPSE = ClassId(0x00001097, 0)
 ARC = ClassId(0x00001996, 0)
 NGON = ClassId(0x00001050, 0)
 
+# Modifiers.
+EXTRUDE = ClassId(0x000000A0, 0)
+
 # Materials, maps and their parts.
 STANDARD_MTL = ClassId(0x00000002, 0)
 MULTI_SUB_MTL = ClassId(0x00000200, 0)
@@ -131,6 +134,7 @@ CLASSES = {
     (SC_SHAPE, ELLIPSE): "Ellipse",
     (SC_SHAPE, ARC): "Arc",
     (SC_SHAPE, NGON): "NGon",
+    (SC_OSMODIFIER, EXTRUDE): "Extrude",
     (SC_MATERIAL, STANDARD_MTL): "Standard",
     (SC_MATERIAL, MULTI_SUB_MTL): "Multi/Sub-Object",
     (SC_MATERIAL, SHELL_MTL): "Shell Material",

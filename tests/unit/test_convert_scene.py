@@ -51,6 +51,8 @@ UV_LAYERS = {
     "corona_maps": ["UVMap"],
     "corona_physical": ["UVMap"],
     "editable_mesh": ["UVMap"],
+    # per mesh (named after its first node): Extrude makes channel 1 only with Generate Mapping Coords.
+    "extrude": {"FixtureExtRect": ["UVMap"], "FixtureExtAdaptive": ["UVMap"]},
     "gamma_swatches": ["UVMap"],
     "hierarchy": [],
     "instances": ["UVMap"],
@@ -72,6 +74,10 @@ UV_LAYERS = {
 SHARP_EDGES_POLY_BOX = 12  # one smoothing group per side: every edge of the box
 SHARP_EDGES_EDITABLE_MESH = 8  # group 1 on top and bottom, 2 on the sides: the rims of top and bottom
 SHARP_EDGES_TALL_BOX = 24  # modifier_pivot's four height segments: 4 x 4 vertical side edges and both rims
+# extrude: the vertical edges at corner knots (one per level) and both rims of every capped outline
+SHARP_EDGES_EXTRUDE = {"FixtureExtRect": 4 * 2 + 8, "FixtureExtL": 6 + 12, "FixtureExtHole": 4 + 8 + 56,
+                       "FixtureExtIsland": 12 + 24, "FixtureExtOpen": 0, "FixtureExtMirror": 8 + 64,
+                       "FixtureExtAdaptive": 256}
 
 
 def _oracle(path):
@@ -310,6 +316,7 @@ class Curves(unittest.TestCase):
         self.assertEqual((cd.bevel_depth, cd.bevel_resolution), (2.0, 0))
         self.assertEqual(len(issues), 1)  # the rectangular section is drawn round
 
+    @unittest.skipIf(numpy is None, "numpy missing")  # shapes.max has a box: its mesh is read with numpy
     def test_refused_shape_is_a_placeholder_with_an_issue(self):
         path = os.path.join(ROOT, "tests", "fixtures", "shapes.max")
         with mock.patch.object(shapes, "read_shape", side_effect=shapes.ShapeError("object 1 (Line): damaged")):
@@ -442,7 +449,7 @@ class Fixtures(unittest.TestCase):
     def test_world_bounding_boxes_equal_the_oracle(self):
         for name, desc, oracle in self.cases:
             for node, o in zip(desc.nodes, oracle["nodes"]):
-                if node.kind != conv.MESH or o["modifiers"]:  # the oracle's box is after the modifiers
+                if node.kind != conv.MESH or (o["modifiers"] and not node.applied):  # the box is after the modifiers
                     continue
                 p = _world_points(node, desc.meshes[node.mesh]) / desc.meters
                 numpy.testing.assert_allclose(p.min(axis=0), o["bbox_min"], atol=BBOX_TOLERANCE,
@@ -453,12 +460,17 @@ class Fixtures(unittest.TestCase):
     def test_counts_equal_the_oracle(self):
         for name, desc, oracle in self.cases:
             for node, o in zip(desc.nodes, oracle["nodes"]):
-                kind = conv.MESH if o["base_verts"] is not None else conv.CURVE if o["shape"] else conv.EMPTY
+                extruded = o["shape"] is not None and o["eval_verts"] is not None  # an Extrude on the shape
+                kind = conv.MESH if o["base_verts"] is not None or extruded else conv.CURVE if o["shape"] else                     conv.EMPTY
                 self.assertEqual(node.kind, kind, "%s %s" % (name, node.name))
                 if node.kind == conv.MESH:
                     md = desc.meshes[node.mesh]
-                    self.assertEqual((len(md.positions), len(md.loop_starts)), (o["base_verts"], o["base_faces"]),
-                                     "%s %s" % (name, node.name))
+                    if extruded:  # 3ds Max's counts are of triangles
+                        self.assertEqual((len(md.positions), int((md.loop_totals - 2).sum())),
+                                         (o["eval_verts"], o["eval_faces"]), "%s %s" % (name, node.name))
+                    else:
+                        self.assertEqual((len(md.positions), len(md.loop_starts)), (o["base_verts"], o["base_faces"]),
+                                         "%s %s" % (name, node.name))
                     self.assertEqual(int(md.loop_totals.sum()), len(md.loop_vertices))
 
     def test_shared_meshes_equal_the_oracle_instances(self):
@@ -507,7 +519,9 @@ class Fixtures(unittest.TestCase):
     def test_uv_layers_follow_the_map_channels(self):
         for name, desc, _o in self.cases:
             for md in desc.meshes.values():
-                self.assertEqual([n for n, _uv in md.uv_layers], UV_LAYERS[name], name)
+                want = UV_LAYERS[name]
+                want = want.get(md.name, []) if isinstance(want, dict) else want
+                self.assertEqual([n for n, _uv in md.uv_layers], want, name)
                 for _n, uv in md.uv_layers:
                     self.assertEqual(uv.shape, (len(md.loop_vertices), 2))
                     self.assertEqual(uv.dtype, numpy.float32)
@@ -517,7 +531,7 @@ class Fixtures(unittest.TestCase):
             want = {"editable_mesh": SHARP_EDGES_EDITABLE_MESH,
                     "modifier_pivot": SHARP_EDGES_TALL_BOX}.get(name, SHARP_EDGES_POLY_BOX)
             for md in desc.meshes.values():
-                self.assertEqual(len(md.sharp_edges), want, name)
+                self.assertEqual(len(md.sharp_edges), SHARP_EDGES_EXTRUDE.get(md.name, want), "%s %s" % (name, md.name))
                 self.assertFalse(md.sharp_faces.any(), name)
 
     def test_placeholders(self):
@@ -562,7 +576,7 @@ class Fixtures(unittest.TestCase):
         Bezier midpoint where 3ds Max interpolates it (straight segments included), resolution and bevel."""
         for name, desc, oracle in self.cases:
             for node, o in zip(desc.nodes, oracle["nodes"]):
-                if o["shape"] is None:
+                if o["shape"] is None or node.kind == conv.MESH:  # an extruded shape is a mesh
                     self.assertIsNone(node.curve)
                     continue
                 label = "%s %s" % (name, node.name)

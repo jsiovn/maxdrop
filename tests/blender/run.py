@@ -68,6 +68,7 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1
     "corona_maps": ["UVMap"],
     "corona_physical": ["UVMap"],
     "editable_mesh": ["UVMap"],
+    "extrude": [],  # per mesh: EXTRUDE_UV_LAYERS
     "gamma_swatches": ["UVMap"],
     "hierarchy": [],
     "instances": ["UVMap"],
@@ -90,6 +91,13 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1
 # four height segments: 4 x 4 vertical side edges and both rims
 SHARP_EDGES = {"editable_mesh": 8, "modifier_pivot": 24}
 SHARP_EDGES_DEFAULT = 12
+# extrude (Generate Mapping Coords on two nodes); sharp edges: the vertical edges at corner knots, one per level, and
+# both rims of every capped outline; V - E + F: a solid 2, one with a round tunnel 0, a ring and its island 0 + 2
+EXTRUDE_UV_LAYERS = {"FixtureExtRect": ["UVMap"], "FixtureExtAdaptive": ["UVMap"]}
+EXTRUDE_SHARP_EDGES = {"FixtureExtRect": 16, "FixtureExtL": 18, "FixtureExtHole": 68, "FixtureExtIsland": 36,
+                       "FixtureExtOpen": 0, "FixtureExtMirror": 72, "FixtureExtAdaptive": 256}
+EXTRUDE_EULER = {"FixtureExtRect": 2, "FixtureExtL": 2, "FixtureExtHole": 0, "FixtureExtIsland": 2,
+                 "FixtureExtOpen": None, "FixtureExtMirror": 2, "FixtureExtAdaptive": 2}
 VALUE_TOLERANCE = 1e-4
 SPECULAR_LEVEL = 0.5  # the IR's specular is a reflection weight: 1 is Blender's Specular IOR Level 0.5
 DEG = math.pi / 180.0
@@ -199,6 +207,9 @@ def run_fixture(path, modules):
         flags = (ob.hide_viewport, ob.hide_get(view_layer=view_layer), ob.hide_render, ob.hide_select)
         check(label + ": hidden, renderable and frozen flags",
               flags == (o["hidden"], o["hidden"], not o["renderable"], o["frozen"]), str(flags))
+        if o["shape"] is not None and node.kind == convert_scene.MESH:
+            check_extruded(label, ob, node, o, meters, plan)
+            continue
         if o["shape"] is not None:
             check_curve(label, ob, o["shape"], meters)
             continue
@@ -250,6 +261,10 @@ def run_fixture(path, modules):
         check("instances: four objects share one mesh, the copy has its own", users == [1, 4], str(users))
     if name == "modifier_pivot":
         check_modifier_pivot(obs, meters)
+    if name == "extrude":
+        kinds = [ob.type for ob in obs]
+        check("extrude: seven meshes, the switched-off Extrude a curve", kinds == ['MESH'] * 7 + ['CURVE'],
+              str(kinds))
     if name == "shapes":
         curves = sorted(c.name for c in bpy.data.curves)
         shaped = sum(1 for o in nodes if o["shape"] is not None)
@@ -283,18 +298,64 @@ def run_fixture(path, modules):
     level, line = build_report.publish(rep)
     text = bpy.data.texts.get(build_report.TEXT_NAME)
     published = text is not None and text.as_string().rstrip("\n") == rep.text()
-    # the report counts each modifier class once per node whose stack holds it: not applied, the base mesh is built
-    modified = sum(len({tuple(m["class_id"]) for m in o["modifiers"]}) for o in nodes)
+    # the report counts each modifier class once per node whose stack holds it: not applied, the base mesh is built;
+    # an Extrude evaluated on a shape is counted as applied
+    modified = sum(len({tuple(m["class_id"]) for m in o["modifiers"]}) for o in nodes) - sum(
+        len(n.applied) for n in desc.nodes)
+    applied = sum(len(n.applied) for n in desc.nodes)
+    check("%s: the report counts each applied modifier" % name, sum(rep.modifiers_applied.values()) == applied,
+          str(dict(rep.modifiers_applied)))
     if modified:
         check("%s: report published, nothing left out but the %d modifiers" % (name, modified),
               level == "WARNING" and published and not rep.approximated
               and rep.left_out == sum(rep.modifiers.values()) == modified
-              and line.endswith("; %d modifiers not applied. See the text %s." % (modified, build_report.TEXT_NAME)),
+              and line.endswith("; %d modifier%s not applied. See the text %s." % (
+                  modified, "" if modified == 1 else "s", build_report.TEXT_NAME)),
               line)
     else:
         check("%s: report published, nothing left out" % name, level == "INFO" and published, line)
     print("COUNTS %s: objects=%d meshes=%d placeholders=%d issues=%d" % (
         name, len(bpy.data.objects), len(bpy.data.meshes), sum(desc.placeholders.values()), len(desc.issues)))
+
+
+def check_extruded(label, ob, node, o, meters, plan):
+    """A shape under an Extrude: a mesh with the oracle's world box, vertex count and triangle count, closed with
+    normals outward as rendered (the signed volume of the world mesh, times the sign of the world matrix's
+    determinant, is positive) when capped, its UV layers, sharp edges and material slots."""
+    check(label + ": mesh object", ob.type == 'MESH', ob.type)
+    if ob.type != 'MESH':
+        return
+    mesh, mw = ob.data, world_of(ob)
+    world = [mw @ v.co for v in mesh.vertices]
+    lo = [min(p[k] for p in world) / meters for k in range(3)]
+    hi = [max(p[k] for p in world) / meters for k in range(3)]
+    check(label + ": world bounding box", close(lo, o["bbox_min"], BBOX_TOLERANCE)
+          and close(hi, o["bbox_max"], BBOX_TOLERANCE),
+          "%s..%s vs %s..%s" % (["%.6g" % v for v in lo], ["%.6g" % v for v in hi], o["bbox_min"], o["bbox_max"]))
+    triangles = sum(len(p.vertices) - 2 for p in mesh.polygons)
+    check(label + ": vertex and triangle counts", (len(mesh.vertices), triangles) == (o["eval_verts"], o["eval_faces"]),
+          "%d, %d" % (len(mesh.vertices), triangles))
+    name = o["name"]
+    euler = EXTRUDE_EULER[name]
+    if euler is not None:
+        uses = collections.Counter(tuple(sorted(e.vertices)) for p in mesh.polygons for e in
+                                   (mesh.edges[mesh.loops[i].edge_index] for i in p.loop_indices))
+        check(label + ": closed (every edge has two faces)", set(uses.values()) == {2}, str(set(uses.values())))
+        check(label + ": V - E + F", len(mesh.vertices) - len(mesh.edges) + len(mesh.polygons) == euler)
+        volume = 0.0
+        for p in mesh.polygons:
+            v = [world[i] for i in p.vertices]
+            for k in range(1, len(v) - 1):
+                volume += v[0].dot(v[k].cross(v[k + 1])) / 6.0
+        check(label + ": normals outward as rendered", volume * mw.to_3x3().determinant() > 0, "%g" % volume)
+    uv = [layer.name for layer in mesh.uv_layers]
+    check(label + ": UV layers", uv == EXTRUDE_UV_LAYERS.get(name, []), str(uv))
+    sharp = mesh.attributes.get("sharp_edge")
+    count = sum(1 for d in sharp.data if d.value) if sharp else 0
+    check(label + ": sharp edges", count == EXTRUDE_SHARP_EDGES[name], str(count))
+    indices = [p.material_index for p in mesh.polygons]
+    check(label + ": each face on its material's slot", indices == plan[node.mesh].indices.tolist(), str(indices))
+    check(label + ": a material", any(sl.material for sl in ob.material_slots))
 
 
 def check_curve(label, ob, shape, meters):

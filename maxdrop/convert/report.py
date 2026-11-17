@@ -303,6 +303,7 @@ def gather(desc, source="", objects_built=None, meshes_built=None, dropped_uv_la
         rep.frozen += node.frozen
         rep.groups += node.group_head
         rep.add_modifiers(IGNORED, node.modifiers)
+        rep.add_modifiers(APPLIED, getattr(node, "applied", ()))
     rep.placeholders.update(desc.placeholders)
     rep.unknown_controllers.update(desc.unknown_controllers)
     labels = {node.index: node.name or "object %d" % node.index for node in desc.nodes}

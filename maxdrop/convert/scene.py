@@ -42,7 +42,12 @@ A node becomes an EMPTY placeholder when its base object is not an Editable Mesh
 here, when it has no object, or when the reader refuses its geometry or its record; placeholders counts them by the
 class name of the file's class directory ("" when there is none). A Dummy helper (a group head is one) is an EMPTY too, but that is
 its conversion, not a placeholder. A group head keeps its members as children: that is how 3ds Max stores a group.
-Modifiers are listed, not evaluated: the base mesh is built.
+Modifiers are listed, not evaluated: the base mesh is built, but for an Extrude on a shape.
+
+Extrude: a shape whose lowest modifier that renders is an Extrude becomes a MESH (convert.extrude), keyed (base
+object index, offset, Extrude modifier index), its offset baked like any mesh's; node.applied names the Extrude and
+node.modifiers the rest of the stack, which is not evaluated. A shape with another modifier below its Extrude, or
+whose Extrude cannot be evaluated, stays a curve (an issue).
 
 Layers: each node names its layer's object index (None without one, or when the layer record cannot be read, which
 is an issue); desc.layers holds the layers that hold a node and their parent layers, in the Layer Manager's order
@@ -57,8 +62,9 @@ Nothing here imports bpy; numpy is imported when a scene is described.
 import collections
 import math
 
-from ..reader import cfb, chunks, classids, controllers, geometry, shapes, units
+from ..reader import cfb, chunks, classids, controllers, geometry, modifiers as reader_modifiers, shapes, units
 from ..reader import scene as reader_scene
+from . import extrude
 
 MESH, CURVE, EMPTY = "MESH", "CURVE", "EMPTY"
 ADAPTIVE = 12  # Blender's default curve resolution, for a shape 3ds Max interpolates adaptively
@@ -73,22 +79,23 @@ ChunkError = chunks.ChunkError
 class NodeDescription:
     """One node: index is its object index, parent the parent's (None at the top level); kind MESH, CURVE or EMPTY;
     mesh the key into SceneDescription.meshes, curve the key into SceneDescription.curves (None when not one);
-    class_name the base object's class ("" without one); modifiers the class names of its modifier stack, top first; layer the layer's object index (None without
+    class_name the base object's class ("" without one); modifiers the class names of its modifier stack not applied,
+    top first, applied those evaluated into its mesh (an Extrude); layer the layer's object index (None without
     one); hidden, frozen, renderable, group_head and group_member the node's own flags; sheared whether matrix has
     shear (see sheared())."""
     __slots__ = ("index", "name", "parent", "matrix", "world", "kind", "mesh", "class_name", "mirrored",
                  "modifiers", "layer", "hidden", "frozen", "renderable", "group_head", "group_member", "sheared",
-                 "curve")
+                 "curve", "applied")
 
     def __init__(self, index, name, parent, matrix, world, kind, mesh, class_name, mirrored, modifiers, layer=None,
                  hidden=False, frozen=False, renderable=True, group_head=False, group_member=False, sheared=False,
-                 curve=None):
+                 curve=None, applied=()):
         self.index, self.name, self.parent, self.matrix, self.world = index, name, parent, matrix, world
         self.kind, self.mesh, self.class_name, self.mirrored, self.modifiers = kind, mesh, class_name, mirrored, \
             modifiers
         self.layer, self.hidden, self.frozen, self.renderable = layer, hidden, frozen, renderable
         self.group_head, self.group_member, self.sheared = group_head, group_member, sheared
-        self.curve = curve
+        self.curve, self.applied = curve, applied
 
     def __repr__(self):
         return "NodeDescription(%d, %r, %s, parent=%r)" % (self.index, self.name, self.kind, self.parent)
@@ -360,6 +367,7 @@ def describe(scene, meters=1.0, unit=None):
     if not (math.isfinite(meters) and meters > 0):
         raise ValueError("meters per unit must be a positive number, not %r" % (meters,))
     t = controllers.Transforms(scene)
+    stacks = reader_modifiers.Modifiers(scene)
     desc = SceneDescription(meters, unit)
     order = scene.walk()
     found = {}  # node -> (reader Node, Stack or None), or the ChunkError its record or object stack raised
@@ -375,11 +383,12 @@ def describe(scene, meters=1.0, unit=None):
         except ChunkError as exc:
             found[i] = exc
     data_of = {}  # base object index -> MeshData, or None when the reader refused or does not read it
+    extruded = {}  # (base object index, Extrude modifier index) -> MeshData, or None when it cannot be evaluated
     layers = {}  # layer object index -> reader Layer, or None when its record cannot be read
     for i in order:
         local, world = t.local(i), t.world(i)
         kind, key, class_name, modifiers, name, node, layer, base = EMPTY, None, "", (), "", None, None, None
-        curve = None
+        curve, applied = None, ()
         if isinstance(found[i], ChunkError):  # a damaged node record or object stack: an empty, children placed
             desc.issues.append((i, "node: %s" % found[i]))
         else:
@@ -391,7 +400,16 @@ def describe(scene, meters=1.0, unit=None):
                 modifiers = tuple(_class_name(scene, m) for m in stack.modifiers)
             if base is not None and shapes.is_shape(scene, base):
                 class_name = _class_name(scene, base)
-                kind, curve = _curve(scene, desc, shape_of, base, i, name, t.offset(i), meters)
+                ext = _extrusion(scene, stacks, node, desc.issues, i) if stack.modifiers else None
+                if ext is not None:
+                    key = _extruded(scene, desc, shape_of, extruded, base, ext, i, name, t.offset(i), meters)
+                if key is not None:
+                    kind, applied = MESH, (_class_name(scene, ext.index),)
+                    rest = list(stack.modifiers)
+                    rest.remove(ext.index)
+                    modifiers = tuple(_class_name(scene, m) for m in rest)
+                else:
+                    kind, curve = _curve(scene, desc, shape_of, base, i, name, t.offset(i), meters)
             elif base is not None:
                 class_name = _class_name(scene, base)
                 if base not in data_of:
@@ -423,7 +441,7 @@ def describe(scene, meters=1.0, unit=None):
         desc.nodes.append(NodeDescription(i, name, scene.parent(i), blender_matrix(local, meters),
                                           blender_matrix(world, meters), kind, key, class_name,
                                           determinant3(world) < 0, modifiers, layer, sheared=sheared(local),
-                                          curve=curve, **flags))
+                                          curve=curve, applied=applied, **flags))
     desc.issues.extend((issue.node, "transform: %s" % issue.reason) for issue in t.issues)
     desc.unknown_controllers.update(
         _class_name(scene, issue.controller) if issue.controller is not None else ""
@@ -455,6 +473,59 @@ def _curve(scene, desc, shape_of, base, node, name, offset, meters):
         desc.issues.extend((node, "shape: %s" % x) for x in issues)
     cd.users.append(node)
     return CURVE, key
+
+
+def _extrusion(scene, stacks, node, issues, i):
+    """The Extrude modifier (reader.modifiers.Modifier) that is the lowest modifier rendering on the shape node
+    i, or None; an Extrude above another modifier is an issue."""
+    try:
+        st = stacks.object_stack(node.object)
+    except ChunkError as exc:
+        issues.append((i, "extrude: the modifier stack cannot be read: %s" % exc))
+        return None
+    active = [m for m in st.modifiers if m.renders]  # bottom first
+    if active and extrude.is_extrude(active[0]):
+        return active[0]
+    if any(extrude.is_extrude(m) for m in active):
+        issues.append((i, "extrude: an Extrude above %s is not evaluated: the shape is a curve" %
+                       (_class_name(scene, active[0].index) or "another modifier")))
+    return None
+
+
+def _extruded(scene, desc, shape_of, extruded, base, ext, node, name, offset, meters):
+    """The key in desc.meshes of shape base under the Extrude ext, made on first use; None when the shape or the
+    Extrude cannot be read (an issue, once per base object and Extrude)."""
+    cache = (base, ext.index)
+    if cache not in extruded:
+        extruded[cache] = None
+        if base not in shape_of:
+            try:
+                shape_of[base] = shapes.read_shape(scene, base)
+                desc.issues.extend((node, "shape: %s" % x) for x in shape_of[base].issues)
+            except shapes.ShapeError as exc:
+                shape_of[base] = None
+                desc.issues.append((node, "shape: %s" % exc))
+        if shape_of[base] is not None:
+            try:
+                params, issues = extrude.read_params(scene, ext)
+                data, more = extrude.extrude(shape_of[base], params)
+                extruded[cache] = data
+                desc.issues.extend((node, "extrude: %s" % x) for x in issues + more)
+            except extrude.ExtrudeError as exc:
+                desc.issues.append((node, "extrude: %s" % exc))
+    data = extruded[cache]
+    if data is None:
+        return None
+    offset = None if offset == controllers.IDENTITY else offset
+    key = (base, offset, ext.index)
+    md = desc.meshes.get(key)
+    if md is None:
+        md = desc.meshes[key] = mesh_description(key, name, data, offset, meters)
+        if md.dropped_faces:
+            desc.issues.append((node, "geometry: %d faces with a repeated vertex or doubled, left out"
+                                % md.dropped_faces))
+    md.users.append(node)
+    return key
 
 
 def _layer(scene, i, layers, issues, node):
