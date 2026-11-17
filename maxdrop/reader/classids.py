@@ -66,6 +66,7 @@ NGON = ClassId(0x00001050, 0)
 
 # Modifiers.
 EXTRUDE = ClassId(0x000000A0, 0)
+UVW_MAP = ClassId(0x000F72B1, 0)
 
 # Materials, maps and their parts.
 STANDARD_MTL = ClassId(0x00000002, 0)
@@ -135,6 +136,7 @@ CLASSES = {
     (SC_SHAPE, ARC): "Arc",
     (SC_SHAPE, NGON): "NGon",
     (SC_OSMODIFIER, EXTRUDE): "Extrude",
+    (SC_OSMODIFIER, UVW_MAP): "UVW Map",
     (SC_MATERIAL, STANDARD_MTL): "Standard",
     (SC_MATERIAL, MULTI_SUB_MTL): "Multi/Sub-Object",
     (SC_MATERIAL, SHELL_MTL): "Shell Material",

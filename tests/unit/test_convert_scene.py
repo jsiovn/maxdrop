@@ -9,6 +9,7 @@ groups), the shapes' curves against the oracle's knots and segment midpoints.
 
     python -I -m unittest discover tests
 """
+import collections
 import glob
 import importlib
 import json
@@ -57,10 +58,10 @@ UV_LAYERS = {
     "hierarchy": [],
     "instances": ["UVMap"],
     "layers_flags": [],
-    "modifier_pivot": ["UVMap"],  # the base mesh's channel: the UVW Map modifier is not applied
+    "modifier_pivot": ["UVMap"],  # FixtureBent's UVW Map writes channel 1 (applied, the Bend above it is not)
     "multi_uv": ["UVMap", "UVChannel_2", "UVChannel_3"],
     "shapes": ["UVMap"],  # FixtureBox; the shapes are curves
-    "stack_basic": ["UVMap"],  # the base meshes' channel: no modifier is applied
+    "stack_basic": ["UVMap"],  # FixtureTurbo's UVW Map writes channel 1; no other modifier is applied
     "standard_physical": ["UVMap"],
     "texmap_rules": ["UVMap"],
     "units_cm": ["UVMap"],
@@ -70,6 +71,9 @@ UV_LAYERS = {
     "vray_maps": ["UVMap"],
     "vray_texmaps": ["UVMap"],
     "vray_wrappers": ["UVMap"],
+    # per mesh: every box, the cylinder and the sphere have channel 1; two UVW Maps write channels 2 and 3
+    "uvwmap": collections.defaultdict(lambda: ["UVMap"], {"FixtureUVWGizmo": ["UVMap", "UVChannel_2"],
+                                                          "FixtureUVWTwo": ["UVMap", "UVChannel_3"]}),
 }
 SHARP_EDGES_POLY_BOX = 12  # one smoothing group per side: every edge of the box
 SHARP_EDGES_EDITABLE_MESH = 8  # group 1 on top and bottom, 2 on the sides: the rims of top and bottom
@@ -77,7 +81,12 @@ SHARP_EDGES_TALL_BOX = 24  # modifier_pivot's four height segments: 4 x 4 vertic
 # extrude: the vertical edges at corner knots (one per level) and both rims of every capped outline
 SHARP_EDGES_EXTRUDE = {"FixtureExtRect": 4 * 2 + 8, "FixtureExtL": 6 + 12, "FixtureExtHole": 4 + 8 + 56,
                        "FixtureExtIsland": 12 + 24, "FixtureExtOpen": 0, "FixtureExtMirror": 8 + 64,
-                       "FixtureExtAdaptive": 256}
+                       "FixtureExtAdaptive": 256, "FixtureUVWExtrude": 4 + 8}
+# uvwmap: boxes of 3 x 2 x 2 segments, a group per side: 28 edges; the cylinder's two rims; the sphere is smooth
+SHARP_EDGES_UVWMAP = {"FixtureUVWCyl": 32, "FixtureUVWSphere": 0, "FixtureUVWSharedB": SHARP_EDGES_POLY_BOX}
+# the issues the fixtures are made to raise
+ISSUES = {"uvwmap": ["uvw map: a UVW Map above Bend is not evaluated",
+                     "uvw map: shrink-wrap mapping is not evaluated: the stored channel stays"]}
 
 
 def _oracle(path):
@@ -449,7 +458,9 @@ class Fixtures(unittest.TestCase):
     def test_world_bounding_boxes_equal_the_oracle(self):
         for name, desc, oracle in self.cases:
             for node, o in zip(desc.nodes, oracle["nodes"]):
-                if node.kind != conv.MESH or (o["modifiers"] and not node.applied):  # the box is after the modifiers
+                # the oracle's box is after every modifier: a UVW Map left as it is moves nothing
+                if node.kind != conv.MESH or any(m != "UVW Map" for m in node.modifiers) or \
+                        (o["modifiers"] and not node.applied):
                     continue
                 p = _world_points(node, desc.meshes[node.mesh]) / desc.meters
                 numpy.testing.assert_allclose(p.min(axis=0), o["bbox_min"], atol=BBOX_TOLERANCE,
@@ -521,7 +532,10 @@ class Fixtures(unittest.TestCase):
         for name, desc, _o in self.cases:
             for md in desc.meshes.values():
                 want = UV_LAYERS[name]
-                want = want.get(md.name, []) if isinstance(want, dict) else want
+                if isinstance(want, collections.defaultdict):
+                    want = want[md.name]
+                elif isinstance(want, dict):
+                    want = want.get(md.name, [])
                 self.assertEqual([n for n, _uv in md.uv_layers], want, name)
                 for _n, uv in md.uv_layers:
                     self.assertEqual(uv.shape, (len(md.loop_vertices), 2))
@@ -530,15 +544,16 @@ class Fixtures(unittest.TestCase):
     def test_sharp_edges_from_smoothing_groups(self):
         for name, desc, _o in self.cases:
             want = {"editable_mesh": SHARP_EDGES_EDITABLE_MESH,
-                    "modifier_pivot": SHARP_EDGES_TALL_BOX}.get(name, SHARP_EDGES_POLY_BOX)
+                    "modifier_pivot": SHARP_EDGES_TALL_BOX, "uvwmap": 28}.get(name, SHARP_EDGES_POLY_BOX)
             for md in desc.meshes.values():
-                self.assertEqual(len(md.sharp_edges), SHARP_EDGES_EXTRUDE.get(md.name, want), "%s %s" % (name, md.name))
+                self.assertEqual(len(md.sharp_edges), SHARP_EDGES_EXTRUDE.get(md.name, SHARP_EDGES_UVWMAP.get(
+                    md.name, want)), "%s %s" % (name, md.name))
                 self.assertFalse(md.sharp_faces.any(), name)
 
     def test_placeholders(self):
         for name, desc, _o in self.cases:
             self.assertEqual(dict(desc.placeholders), {}, name)  # the group head is a Dummy: converted, an empty
-            self.assertEqual(desc.issues, [], name)
+            self.assertEqual(sorted(r for _i, r in desc.issues), ISSUES.get(name, []), name)
             self.assertEqual(dict(desc.unknown_controllers), {}, name)
         desc = dict((n, d) for n, d, _o in self.cases)["layers_flags"]
         head = next(n for n in desc.nodes if n.kind == conv.EMPTY)

@@ -73,10 +73,10 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1
     "hierarchy": [],
     "instances": ["UVMap"],
     "layers_flags": [],
-    "modifier_pivot": ["UVMap"],  # the base mesh's channel: the UVW Map modifier is not applied
+    "modifier_pivot": ["UVMap"],  # FixtureBent's UVW Map writes channel 1 (applied, the Bend above it is not)
     "multi_uv": ["UVMap", "UVChannel_2", "UVChannel_3"],
     "shapes": ["UVMap"],  # FixtureBox; the shapes are curves
-    "stack_basic": ["UVMap"],  # the base meshes' channel: no modifier is applied
+    "stack_basic": ["UVMap"],  # FixtureTurbo's UVW Map writes channel 1; no other modifier is applied
     "standard_physical": ["UVMap"],
     "texmap_rules": ["UVMap"],
     "units_cm": ["UVMap"],
@@ -86,18 +86,22 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1
     "vray_maps": ["UVMap"],
     "vray_texmaps": ["UVMap"],
     "vray_wrappers": ["UVMap"],
+    "uvwmap": {"FixtureUVWGizmo": ["UVMap", "UVChannel_2"], "FixtureUVWTwo": ["UVMap", "UVChannel_3"]},  # else UVMap
 }
 # editable_mesh: group 1 on top and bottom, 2 on the sides; a box with a group per side: 12; modifier_pivot's box of
 # four height segments: 4 x 4 vertical side edges and both rims
-SHARP_EDGES = {"editable_mesh": 8, "modifier_pivot": 24}
+SHARP_EDGES = {"editable_mesh": 8, "modifier_pivot": 24,
+               # boxes of 3 x 2 x 2 segments: 28; the cylinder's rims 2 x 16; the sphere is smooth
+               "uvwmap": {"FixtureUVWCyl": 32, "FixtureUVWSphere": 0, "FixtureUVWSharedB": 12, None: 28}}
 SHARP_EDGES_DEFAULT = 12
 # extrude (Generate Mapping Coords on two nodes); sharp edges: the vertical edges at corner knots, one per level, and
 # both rims of every capped outline; V - E + F: a solid 2, one with a round tunnel 0, a ring and its island 0 + 2
-EXTRUDE_UV_LAYERS = {"FixtureExtRect": ["UVMap"], "FixtureExtAdaptive": ["UVMap"]}
+EXTRUDE_UV_LAYERS = {"FixtureExtRect": ["UVMap"], "FixtureExtAdaptive": ["UVMap"],
+                     "FixtureUVWExtrude": ["UVMap"]}  # uvwmap: no mapping from the Extrude, the UVW Map's
 EXTRUDE_SHARP_EDGES = {"FixtureExtRect": 16, "FixtureExtL": 18, "FixtureExtHole": 68, "FixtureExtIsland": 36,
-                       "FixtureExtOpen": 0, "FixtureExtMirror": 72, "FixtureExtAdaptive": 256}
+                       "FixtureExtOpen": 0, "FixtureExtMirror": 72, "FixtureExtAdaptive": 256, "FixtureUVWExtrude": 12}
 EXTRUDE_EULER = {"FixtureExtRect": 2, "FixtureExtL": 2, "FixtureExtHole": 0, "FixtureExtIsland": 2,
-                 "FixtureExtOpen": None, "FixtureExtMirror": 2, "FixtureExtAdaptive": 2}
+                 "FixtureExtOpen": None, "FixtureExtMirror": 2, "FixtureExtAdaptive": 2, "FixtureUVWExtrude": 2}
 VALUE_TOLERANCE = 1e-4
 SPECULAR_LEVEL = 0.5  # the IR's specular is a reflection weight: 1 is Blender's Specular IOR Level 0.5
 DEG = math.pi / 180.0
@@ -233,14 +237,18 @@ def run_fixture(path, modules):
         check(label + ": vertex and face counts", (len(mesh.vertices), len(mesh.polygons)) ==
               (o["base_verts"], o["base_faces"]), "%d, %d" % (len(mesh.vertices), len(mesh.polygons)))
         uv = [layer.name for layer in mesh.uv_layers]
-        check(label + ": UV layers", uv == UV_LAYERS[name], str(uv))
+        want = UV_LAYERS[name]
+        check(label + ": UV layers", uv == (want.get(o["name"], ["UVMap"]) if isinstance(want, dict) else want),
+              str(uv))
         md = desc.meshes[node.mesh]
         for (uv_name, uv_data), layer in zip(md.uv_layers, mesh.uv_layers):
             got = [c for d in layer.data for c in d.uv]
             check(label + ": UV data of " + uv_name, close(got, uv_data.ravel().tolist(), 1e-6))
         sharp = mesh.attributes.get("sharp_edge")
         count = sum(1 for d in sharp.data if d.value) if sharp else 0
-        check(label + ": sharp edges", count == SHARP_EDGES.get(name, SHARP_EDGES_DEFAULT), str(count))
+        want = SHARP_EDGES.get(name, SHARP_EDGES_DEFAULT)
+        want = want.get(o["name"], want[None]) if isinstance(want, dict) else want
+        check(label + ": sharp edges", count == want, str(count))
         flat = mesh.attributes.get("sharp_face")
         check(label + ": every face smooth", flat is None or not any(d.value for d in flat.data))
         indices = [p.material_index for p in mesh.polygons]
@@ -298,19 +306,23 @@ def run_fixture(path, modules):
     level, line = build_report.publish(rep)
     text = bpy.data.texts.get(build_report.TEXT_NAME)
     published = text is not None and text.as_string().rstrip("\n") == rep.text()
-    # the report counts each modifier class once per node whose stack holds it: not applied, the base mesh is built;
-    # an Extrude evaluated on a shape is counted as applied
-    modified = sum(len({tuple(m["class_id"]) for m in o["modifiers"]}) for o in nodes) - sum(
-        len(n.applied) for n in desc.nodes)
-    applied = sum(len(n.applied) for n in desc.nodes)
+    # the report counts each modifier class once per node whose stack holds it, applied (an Extrude on a shape, the
+    # UVW Maps right above it or a mesh) or not (the rest: the base mesh is built); every modifier of the oracle is
+    # one or the other
+    split = [len(n.applied) + len(n.modifiers) for n in desc.nodes]
+    check("%s: each modifier applied or not" % name, split == [len(o["modifiers"]) for o in nodes], str(split))
+    modified = sum(len(set(n.modifiers)) for n in desc.nodes)
+    applied = sum(len(set(n.applied)) for n in desc.nodes)
+    issues = len(desc.issues)  # the issues a fixture is made to raise (tests/unit/test_convert_scene.py)
     check("%s: the report counts each applied modifier" % name, sum(rep.modifiers_applied.values()) == applied,
           str(dict(rep.modifiers_applied)))
     if modified:
-        check("%s: report published, nothing left out but the %d modifiers" % (name, modified),
+        check("%s: report published, nothing left out but the %d modifiers and %d issues" % (name, modified, issues),
               level == "WARNING" and published and not rep.approximated
-              and rep.left_out == sum(rep.modifiers.values()) == modified
-              and line.endswith("; %d modifier%s not applied. See the text %s." % (
-                  modified, "" if modified == 1 else "s", build_report.TEXT_NAME)),
+              and rep.left_out == sum(rep.modifiers.values()) + issues and sum(rep.modifiers.values()) == modified
+              and line.endswith("; %d modifier%s not applied%s. See the text %s." % (
+                  modified, "" if modified == 1 else "s", ", %d issue%s" % (issues, "" if issues == 1 else "s")
+                  if issues else "", build_report.TEXT_NAME)),
               line)
     else:
         check("%s: report published, nothing left out" % name, level == "INFO" and published, line)

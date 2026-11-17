@@ -42,12 +42,18 @@ A node becomes an EMPTY placeholder when its base object is not an Editable Mesh
 here, when it has no object, or when the reader refuses its geometry or its record; placeholders counts them by the
 class name of the file's class directory ("" when there is none). A Dummy helper (a group head is one) is an EMPTY too, but that is
 its conversion, not a placeholder. A group head keeps its members as children: that is how 3ds Max stores a group.
-Modifiers are listed, not evaluated: the base mesh is built, but for an Extrude on a shape.
+Modifiers are listed, not evaluated: the base mesh is built, but for an Extrude on a shape and UVW Maps.
 
 Extrude: a shape whose lowest modifier that renders is an Extrude becomes a MESH (convert.extrude), keyed (base
 object index, offset, Extrude modifier index), its offset baked like any mesh's; node.applied names the Extrude and
 node.modifiers the rest of the stack, which is not evaluated. A shape with another modifier below its Extrude, or
 whose Extrude cannot be evaluated, stays a curve (an issue).
+
+UVW Map: the UVW Maps that render and sit right above the base mesh, or right above an applied Extrude, are evaluated
+into their map channel (convert.uvwmap), bottom first; each applied one adds (modifier index, its context matrix)
+to the mesh key and its name to node.applied. A UVW Map of a type evaluated nowhere here (shrink-wrap, face, XYZ to
+UVW) or whose parameters cannot be read keeps the stored channel and stays in node.modifiers (an issue); so does one
+above any other modifier, which is not evaluated.
 
 Layers: each node names its layer's object index (None without one, or when the layer record cannot be read, which
 is an issue); desc.layers holds the layers that hold a node and their parent layers, in the Layer Manager's order
@@ -64,7 +70,7 @@ import math
 
 from ..reader import cfb, chunks, classids, controllers, geometry, modifiers as reader_modifiers, shapes, units
 from ..reader import scene as reader_scene
-from . import extrude
+from . import extrude, uvwmap
 
 MESH, CURVE, EMPTY = "MESH", "CURVE", "EMPTY"
 ADAPTIVE = 12  # Blender's default curve resolution, for a shape 3ds Max interpolates adaptively
@@ -105,9 +111,10 @@ class MeshDescription:
     """One mesh in meters, offset baked: positions float32 (N, 3); loop_vertices int32 (L,); loop_starts and
     loop_totals int32 (F,); material_indices int32 (F,), zero-based; sharp_faces bool (F,); sharp_edges int32
     (E, 2), sorted vertex pairs; uv_layers [(name, float32 (L, 2))]; users the object indices of the nodes that
-    share it, in walk order; dropped_faces the faces left out (a repeated vertex, doubled)."""
+    share it, in walk order; dropped_faces the faces left out (a repeated vertex, doubled); applied the UVW Maps
+    (reader.modifiers Modifiers) evaluated into it."""
     __slots__ = ("key", "name", "positions", "loop_vertices", "loop_starts", "loop_totals", "material_indices",
-                 "sharp_faces", "sharp_edges", "uv_layers", "users", "dropped_faces")
+                 "sharp_faces", "sharp_edges", "uv_layers", "users", "dropped_faces", "applied")
 
     def __init__(self, key, name, positions, loop_vertices, loop_starts, loop_totals, material_indices,
                  sharp_faces, sharp_edges, uv_layers, dropped_faces=0):
@@ -116,6 +123,7 @@ class MeshDescription:
         self.material_indices, self.sharp_faces, self.sharp_edges = material_indices, sharp_faces, sharp_edges
         self.uv_layers, self.dropped_faces = uv_layers, dropped_faces
         self.users = []
+        self.applied = ()
 
     def __repr__(self):
         return "MeshDescription(%r, %d vertices, %d faces, %d UV layers)" % (
@@ -384,6 +392,7 @@ def describe(scene, meters=1.0, unit=None):
             found[i] = exc
     data_of = {}  # base object index -> MeshData, or None when the reader refused or does not read it
     extruded = {}  # (base object index, Extrude modifier index) -> MeshData, or None when it cannot be evaluated
+    mapped = {}  # UVW Map modifier index -> (Params, gizmo matrix), or None when it is not evaluated
     layers = {}  # layer object index -> reader Layer, or None when its record cannot be read
     for i in order:
         local, world = t.local(i), t.world(i)
@@ -400,14 +409,13 @@ def describe(scene, meters=1.0, unit=None):
                 modifiers = tuple(_class_name(scene, m) for m in stack.modifiers)
             if base is not None and shapes.is_shape(scene, base):
                 class_name = _class_name(scene, base)
-                ext = _extrusion(scene, stacks, node, desc.issues, i) if stack.modifiers else None
+                ext, maps = _evaluated(scene, stacks, node, desc.issues, i, True) if stack.modifiers else (None, ())
                 if ext is not None:
-                    key = _extruded(scene, desc, shape_of, extruded, base, ext, i, name, t.offset(i), meters)
+                    key, done = _extruded(scene, desc, shape_of, extruded, mapped, base, ext, maps, i, name,
+                                          t.offset(i), meters)
                 if key is not None:
-                    kind, applied = MESH, (_class_name(scene, ext.index),)
-                    rest = list(stack.modifiers)
-                    rest.remove(ext.index)
-                    modifiers = tuple(_class_name(scene, m) for m in rest)
+                    kind = MESH
+                    applied, modifiers = _split(scene, stack.modifiers, (ext,) + done)
                 else:
                     kind, curve = _curve(scene, desc, shape_of, base, i, name, t.offset(i), meters)
             elif base is not None:
@@ -420,16 +428,13 @@ def describe(scene, meters=1.0, unit=None):
                         desc.issues.append((i, "geometry: %s" % exc))
                 data = data_of[base]
                 if data is not None:
+                    maps = _evaluated(scene, stacks, node, desc.issues, i, False)[1] if stack.modifiers else ()
                     offset = t.offset(i)
                     offset = None if offset == controllers.IDENTITY else offset
-                    key = (base, offset)
-                    md = desc.meshes.get(key)
-                    if md is None:
-                        md = desc.meshes[key] = mesh_description(key, name, data, offset, meters)
-                        if md.dropped_faces:
-                            desc.issues.append((i, "geometry: %d faces with a repeated vertex or doubled, left out"
-                                                % md.dropped_faces))
-                    md.users.append(i)
+                    key, done = _mapped_mesh(scene, desc, mapped, (base, offset), data, maps, i, name, offset,
+                                             meters)
+                    if done:
+                        applied, modifiers = _split(scene, stack.modifiers, done)
                     kind = MESH
                 remaining[base] -= 1
                 if not remaining[base]:
@@ -481,26 +486,100 @@ def _curve(scene, desc, shape_of, base, node, name, offset, meters):
     return CURVE, key
 
 
-def _extrusion(scene, stacks, node, issues, i):
-    """The Extrude modifier (reader.modifiers.Modifier) that is the lowest modifier rendering on the shape node
-    i, or None; an Extrude above another modifier is an issue."""
+def _evaluated(scene, stacks, node, issues, i, shape):
+    """(Extrude, UVW Maps): the bottom run of node i's modifiers that render and are evaluated here (reader.modifiers
+    Modifiers, bottom first). On a shape the run starts with an Extrude (None without one: no UVW Map either); an
+    Extrude or a UVW Map above another modifier is an issue."""
     try:
         st = stacks.object_stack(node.object)
     except ChunkError as exc:
-        issues.append((i, "extrude: the modifier stack cannot be read: %s" % exc))
-        return None
+        issues.append((i, "modifiers: the modifier stack cannot be read: %s" % exc))
+        return None, ()
     active = [m for m in st.modifiers if m.renders]  # bottom first
-    if active and extrude.is_extrude(active[0]):
-        return active[0]
-    if any(extrude.is_extrude(m) for m in active):
-        issues.append((i, "extrude: an Extrude above %s is not evaluated: the shape is a curve" %
-                       (_class_name(scene, active[0].index) or "another modifier")))
-    return None
+    ext, start = None, 0
+    if shape:
+        if not (active and extrude.is_extrude(active[0])):
+            if any(extrude.is_extrude(m) for m in active):
+                issues.append((i, "extrude: an Extrude above %s is not evaluated: the shape is a curve" %
+                               (_class_name(scene, active[0].index) or "another modifier")))
+            return None, ()
+        ext, start = active[0], 1
+    maps = []
+    for m in active[start:]:
+        if not uvwmap.is_uvwmap(m):
+            break
+        maps.append(m)
+    rest = active[start + len(maps):]
+    if any(uvwmap.is_uvwmap(m) for m in rest):
+        issues.append((i, "uvw map: a UVW Map above %s is not evaluated" %
+                       (_class_name(scene, rest[0].index) or "another modifier")))
+    return ext, tuple(maps)
 
 
-def _extruded(scene, desc, shape_of, extruded, base, ext, node, name, offset, meters):
-    """The key in desc.meshes of shape base under the Extrude ext, made on first use; None when the shape or the
-    Extrude cannot be read (an issue, once per base object and Extrude)."""
+def _split(scene, stack_modifiers, done):
+    """(applied, rest): the class names of the modifiers done (reader Modifiers, bottom first) and of the rest of the
+    stack (object indices, top first)."""
+    rest = list(stack_modifiers)
+    for m in done:
+        if m.index in rest:
+            rest.remove(m.index)
+    return tuple(_class_name(scene, m.index) for m in done), tuple(_class_name(scene, m) for m in rest)
+
+
+def _mapping(scene, mapped, m, issues, node):
+    """(Params, gizmo matrix) of UVW Map m, read once (mapped caches it; None when it is not evaluated: an issue on
+    the first node only)."""
+    if m.index not in mapped:
+        mapped[m.index] = None
+        try:
+            params, more = uvwmap.read_params(scene, m)
+            if not params.supported:
+                issues.append((node, "uvw map: %s mapping is not evaluated: the stored channel stays" %
+                               params.type_name))
+            else:
+                tm, gizmo_issues = uvwmap.gizmo(scene, m)
+                mapped[m.index] = (params, tm)
+                more = more + gizmo_issues
+            issues.extend((node, "uvw map: %s" % x) for x in more)
+        except uvwmap.UVWMapError as exc:
+            issues.append((node, "uvw map: %s: the stored channel stays" % exc))
+    return mapped[m.index]
+
+
+def _mapped_mesh(scene, desc, mapped, key, data, maps, node, name, offset, meters):
+    """(the key in desc.meshes of reader MeshData data under the UVW Maps maps, the maps applied), made on first use:
+    key extended by (modifier index, context matrix) per UVW Map evaluated."""
+    usable = []
+    for m in maps:
+        found = _mapping(scene, mapped, m, desc.issues, node)
+        if found is None:
+            continue
+        if m.context is None:
+            desc.issues.append((node, "uvw map: no modifier context: the stored channel stays"))
+            continue
+        usable.append((m, found))
+    key = key + tuple((m.index, m.context.tm) for m, _found in usable)
+    md = desc.meshes.get(key)
+    if md is None:
+        done = []
+        for m, (params, tm) in usable:
+            try:
+                data = uvwmap.apply(data, params, tm, m.context.tm)
+                done.append(m)
+            except uvwmap.UVWMapError as exc:
+                desc.issues.append((node, "uvw map: %s: the stored channel stays" % exc))
+        md = desc.meshes[key] = mesh_description(key, name, data, offset, meters)
+        md.applied = tuple(done)
+        if md.dropped_faces:
+            desc.issues.append((node, "geometry: %d faces with a repeated vertex or doubled, left out"
+                                % md.dropped_faces))
+    md.users.append(node)
+    return key, md.applied
+
+
+def _extruded(scene, desc, shape_of, extruded, mapped, base, ext, maps, node, name, offset, meters):
+    """(the key in desc.meshes of shape base under the Extrude ext and the UVW Maps maps, the maps applied), made on
+    first use; (None, ()) when the shape or the Extrude cannot be read (an issue, once per base object and Extrude)."""
     cache = (base, ext.index)
     if cache not in extruded:
         extruded[cache] = None
@@ -515,17 +594,9 @@ def _extruded(scene, desc, shape_of, extruded, base, ext, node, name, offset, me
                 desc.issues.append((node, "extrude: %s" % exc))
     data = extruded[cache]
     if data is None:
-        return None
+        return None, ()
     offset = None if offset == controllers.IDENTITY else offset
-    key = (base, offset, ext.index)
-    md = desc.meshes.get(key)
-    if md is None:
-        md = desc.meshes[key] = mesh_description(key, name, data, offset, meters)
-        if md.dropped_faces:
-            desc.issues.append((node, "geometry: %d faces with a repeated vertex or doubled, left out"
-                                % md.dropped_faces))
-    md.users.append(node)
-    return key
+    return _mapped_mesh(scene, desc, mapped, (base, offset, ext.index), data, maps, node, name, offset, meters)
 
 
 def _layer(scene, i, layers, issues, node):

@@ -9,6 +9,7 @@
     t.offset(i)         # object offset: where the object sits relative to the pivot
     t.object_world(i)   # offset * world (node.objectTransform): object-space vertices times this = world
     t.issues            # Issue(node, controller, superclass, class_id, reason), in the order met
+    m, issues = matrix(scene, i)        # Matrix3 controller i alone (a modifier's gizmo); Issue.node is None
 
 Matrices are 4x4 tuples of row tuples of floats (float64) in Max's row-vector convention: a point p becomes
 p * M, row 4 holds the translation, and A * B applies A first. That is the layout of the oracle's `transform`.
@@ -202,7 +203,7 @@ class _At:
             ev.failed = i
             if i in ev.path:
                 raise ChunkError("controller %d references itself" % i)
-            raise ChunkError("controllers deeper than %d below node %d" % (MAX_DEPTH, ev.node))
+            raise ChunkError("controllers deeper than %d below %s" % (MAX_DEPTH, ev.where()))
         ev.path.append(i)
 
     def __exit__(self, exc_type, exc, tb):
@@ -221,6 +222,9 @@ class _Eval:
         self.path = []
         self.failed = None
         self.memo = {}  # (kind, controller) -> value: a shared sub-controller is evaluated once per node
+
+    def where(self):
+        return "node %d" % self.node if self.node is not None else "the controller"
 
     def issue(self, i, reason):
         entry = self.scene.entry(i) if i is not None else None
@@ -545,3 +549,20 @@ class Transforms:
     def object_world(self, i):
         """offset * world: where node i's object-space vertices land in the world."""
         return multiply(self.offset(i), self.world(i))
+
+
+def matrix(scene, i):
+    """(the matrix of Matrix3 controller i at frame 0, issues), outside any node: a modifier's gizmo. The same
+    rules as a node's local matrix: identity and an issue (node None) when it cannot be evaluated."""
+    issues = []
+    ev = _Eval(scene, None, issues)
+    try:
+        m = ev.matrix(i)
+    except (ValueError, OverflowError, IndexError, struct.error) as exc:  # ChunkError is a ValueError
+        del issues[:]
+        ev.issue(ev.failed if ev.failed is not None else i, "%s: %s" % (DAMAGED, exc))
+        return IDENTITY, issues
+    if not _finite(m):
+        ev.issue(i, NON_FINITE)
+        return IDENTITY, issues
+    return m, issues
