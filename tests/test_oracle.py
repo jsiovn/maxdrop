@@ -24,6 +24,8 @@ NODE_KEYS = ["base_class_id", "base_class_name", "base_faces", "base_superclass"
              "bbox_min", "eval_faces", "eval_verts", "frozen", "handle", "hidden", "index", "instances", "layer",
              "material", "modifiers", "name", "object_transform", "offset_pos", "offset_rot", "offset_scale",
              "parent", "renderable", "transform"]
+MODIFIER_KEYS = ["class_id", "class_name", "context_bbox_max", "context_bbox_min", "context_tm", "enabled",
+                 "enabled_in_renders", "enabled_in_views", "name"]
 GRAPH_KEYS = ["blocks", "class_id", "class_name", "index", "name", "parts", "subs", "superclass"]
 BLOCK_KEYS = ["block_id", "kind", "params", "ref"]
 PB2_PARAM_KEYS = ["id", "name", "transient", "type", "value"]
@@ -111,7 +113,7 @@ class OracleFiles(unittest.TestCase):
             with self.subTest(name):
                 o = _oracle(name)
                 self.assertEqual(list(o), TOP_KEYS)
-                self.assertEqual(o["oracle_version"], 2)
+                self.assertEqual(o["oracle_version"], 3)
                 self.assertEqual(o["file"], name + ".max")
                 self.assertEqual(o["node_count"], len(o["nodes"]))
                 handles = {n["handle"] for n in o["nodes"]}
@@ -119,6 +121,10 @@ class OracleFiles(unittest.TestCase):
                 groups = {n["handle"]: n["instances"] for n in o["nodes"]}
                 for i, n in enumerate(o["nodes"]):
                     self.assertEqual(list(n), NODE_KEYS)
+                    for m in n["modifiers"]:
+                        self.assertEqual(list(m), MODIFIER_KEYS)
+                        self.assertEqual(len(m["context_tm"]), 12)
+                        self.assertEqual((len(m["context_bbox_min"]), len(m["context_bbox_max"])), (3, 3))
                     for cid in [n["base_class_id"]] + [m["class_id"] for m in n["modifiers"]]:
                         self.assertEqual(len(cid), 2)
                         self.assertTrue(all(CLASS_ID.match(c) for c in cid), cid)
@@ -235,10 +241,15 @@ class OracleFiles(unittest.TestCase):
             self.assertEqual((n["base_verts"], n["base_faces"]), (20, 18), n["name"])
         # top to bottom: the Bend was added last, over the UVW Map
         self.assertEqual(src["modifiers"], [])
-        self.assertEqual(bent["modifiers"], [{"class_id": ["0x00000010", "0x00000000"], "class_name": "Bend"},
-                                             {"class_id": ["0x000f72b1", "0x00000000"], "class_name": "Uvwmap"}])
-        self.assertEqual(smooth["modifiers"], [{"class_id": ["0x0d727b3e", "0x491d29a7"],
-                                                "class_name": "TurboSmooth"}])
+        self.assertEqual([(m["class_id"], m["class_name"], m["name"]) for m in bent["modifiers"]],
+                         [(["0x00000010", "0x00000000"], "Bend", "Bend"),
+                          (["0x000f72b1", "0x00000000"], "Uvwmap", "UVW Map")])
+        self.assertEqual([(m["class_id"], m["class_name"]) for m in smooth["modifiers"]],
+                         [(["0x0d727b3e", "0x491d29a7"], "TurboSmooth")])
+        for m in bent["modifiers"] + smooth["modifiers"]:  # added to one node each: an identity context
+            self.assertEqual(m["context_tm"], [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0])
+            self.assertEqual((m["context_bbox_min"], m["context_bbox_max"]), ([-5, -5, 0], [5, 5, 40]))
+            self.assertEqual((m["enabled"], m["enabled_in_views"], m["enabled_in_renders"]), (True, True, True))
         # eval counts are triangles after the stack: 18 quads = 36 triangles; one TurboSmooth iteration on a
         # closed quad mesh gives V + E + F vertices (E = V + F - 2) and four quads per quad
         v, f = 20, 18
@@ -267,6 +278,28 @@ class OracleFiles(unittest.TestCase):
                [1, 0])
         for n in (src, smooth):
             self.assertEqual(n["offset_rot"], [0, 0, 0, 1])
+
+    def test_stack_basic(self):
+        by_name = {n["name"]: n for n in _oracle("stack_basic")["nodes"]}
+
+        def stack(name):  # top to bottom, as the oracle lists it
+            return [(m["name"], m["enabled"], m["enabled_in_views"], m["enabled_in_renders"])
+                    for m in by_name[name]["modifiers"]]
+
+        self.assertEqual(stack("FixtureTurbo"), [("TurboSmooth", True, True, True), ("FixtureUVW", True, True, True)])
+        # two TurboSmooth iterations of a cube: 8 + 12 + 6 = 26 vertices and 24 quads, then 26 + 48 + 24
+        self.assertEqual(by_name["FixtureTurbo"]["eval_verts"], 98)
+        self.assertEqual(stack("FixtureFlags"), [("Twist", True, True, False), ("Taper", True, False, True),
+                                                 ("Bend", False, True, True)])
+        # one Noise on both boxes: one gizmo around the two, so each context is moved to the gizmo's centre
+        a, b = by_name["FixtureSharedA"]["modifiers"], by_name["FixtureSharedB"]["modifiers"]
+        self.assertEqual([m["name"] for m in a + b], ["FixtureNoise", "FixtureNoise"])
+        self.assertEqual((a[0]["context_tm"][9:], b[0]["context_tm"][9:]), ([-10, 0, -10], [10, 0, -10]))
+        self.assertEqual((a[0]["context_bbox_min"], a[0]["context_bbox_max"]), ([-15, -5, -10], [15, 5, 10]))
+        # the reference shows the shared Taper under its own Twist
+        self.assertEqual(stack("FixtureNested"), [("Taper", True, True, True)])
+        self.assertEqual(stack("FixtureNestedRef"), [("Twist", True, True, True), ("Taper", True, True, True)])
+        self.assertEqual(by_name["FixtureNested"]["instances"], by_name["FixtureNestedRef"]["instances"])
 
     def test_layers_flags(self):
         o = _oracle("layers_flags")

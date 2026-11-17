@@ -12,6 +12,11 @@
     rep.summary()                       # (level, line): "INFO" when nothing was approximated or left out, else
                                         # "WARNING"
 
+Modifiers have three outcomes, counted per class once per node whose stack holds one: applied (baked into the
+mesh), converted (to a Blender modifier) and ignored (the object arrives as its base object, a "not applied" left
+out). gather() counts every modifier of the description as ignored: no modifier is evaluated yet;
+rep.add_modifiers(outcome, class names) counts one node's modifiers under an outcome.
+
 desc is a convert.scene.SceneDescription. The counts of what build/ made default to the description's own. pack is
 the result of maxdrop.intake.archive.unpack() when the import started from a scene pack (read by attribute, so
 this module never imports the intake package), and pack_name the archive's file name: its block comes first.
@@ -32,6 +37,7 @@ from ..reader import controllers
 from . import textures
 
 MAX_LISTED = 50
+APPLIED, CONVERTED, IGNORED = "applied", "converted", "ignored"
 LEVEL_INFO, LEVEL_WARNING = "INFO", "WARNING"
 GEOMETRY = "geometry: "
 UNKNOWN_CONTROLLER = "transform: " + controllers.UNKNOWN_CLASS  # convert.scene's wording of that issue
@@ -42,6 +48,7 @@ class Report:
     [(material or map object index, reason)]. materials_built is None when the import made no materials."""
     __slots__ = ("source", "unit", "meters", "nodes", "objects_built", "meshes_built", "layers", "hidden_layers",
                  "hidden", "unrenderable", "frozen", "groups", "placeholders", "unknown_controllers", "modifiers",
+                 "modifiers_applied", "modifiers_converted",
                  "dropped_uv_layers", "unknown_controller_nodes", "geometry_errors", "issues", "pack", "pack_name",
                  "materials_built", "materials", "wrappers", "grey_materials", "maps_peeled", "maps_unsupported",
                  "sockets_skipped", "blender", "textures_found", "textures_missing", "texture_search_stopped",
@@ -54,7 +61,9 @@ class Report:
         self.unknown_controller_nodes = 0  # their issues, listed by class in unknown_controllers instead
         self.placeholders = collections.Counter()
         self.unknown_controllers = collections.Counter()
-        self.modifiers = collections.Counter()  # class name -> nodes whose stack holds it, not applied
+        self.modifiers = collections.Counter()  # class name -> nodes whose stack holds it, ignored (not applied)
+        self.modifiers_applied = collections.Counter()  # class name -> nodes, baked into the mesh
+        self.modifiers_converted = collections.Counter()  # class name -> nodes, as a Blender modifier
         self.geometry_errors, self.issues = [], []
         self.pack, self.pack_name = None, ""
         self.materials_built, self.blender = None, ""
@@ -67,6 +76,12 @@ class Report:
         self.textures_found = []  # [(lookup rule name, files found)] in lookup order
         self.textures_missing, self.texture_search_stopped, self.material_issues = [], [], []
         self.swatches = ""  # how color swatches were made linear (the scene's gamma)
+
+    def add_modifiers(self, outcome, class_names):
+        """Count one node's modifiers under outcome (APPLIED, CONVERTED or IGNORED): each class once."""
+        counter = {APPLIED: self.modifiers_applied, CONVERTED: self.modifiers_converted,
+                   IGNORED: self.modifiers}[outcome]
+        counter.update(set(class_names))
 
     @property
     def approximated(self):
@@ -123,6 +138,11 @@ class Report:
         lines.append("Objects hidden: %d, not renderable: %d, frozen: %d" % (self.hidden, self.unrenderable,
                                                                              self.frozen))
         lines.append("Groups: %d" % self.groups)
+        if self.modifiers_applied:
+            lines.append("Modifiers applied (baked into the mesh), nodes by class: " + _counts(self.modifiers_applied))
+        if self.modifiers_converted:
+            lines.append("Modifiers converted to a Blender modifier, nodes by class: "
+                         + _counts(self.modifiers_converted))
         if self.materials_built is not None:
             lines.append("Materials built: %d" % self.materials_built
                          + (" (converted by class: %s)" % _counts(self.materials) if self.materials else ""))
@@ -146,7 +166,8 @@ class Report:
         if self.placeholders:
             lines.append("  Placeholders (empties) by class: " + _counts(self.placeholders))
         if self.modifiers:
-            lines.append("  Modifiers not applied (the base mesh is built), nodes by class: " + _counts(self.modifiers))
+            lines.append("  Modifiers not applied (ignored: the object arrives as its base object), nodes by class: "
+                         + _counts(self.modifiers))
         if self.unknown_controllers:
             lines.append("  Unknown controllers by class (identity used): " + _counts(self.unknown_controllers))
         if self.dropped_uv_layers:
@@ -275,7 +296,7 @@ def gather(desc, source="", objects_built=None, meshes_built=None, dropped_uv_la
         rep.unrenderable += not node.renderable
         rep.frozen += node.frozen
         rep.groups += node.group_head
-        rep.modifiers.update(set(node.modifiers))
+        rep.add_modifiers(IGNORED, node.modifiers)
     rep.placeholders.update(desc.placeholders)
     rep.unknown_controllers.update(desc.unknown_controllers)
     labels = {node.index: node.name or "object %d" % node.index for node in desc.nodes}

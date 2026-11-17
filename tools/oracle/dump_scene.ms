@@ -17,7 +17,7 @@ global MaxDropOracle
 
 struct MaxDropOracleStruct
 (
-	version = 2,
+	version = 3,
 
 	fn num v =
 	(
@@ -173,6 +173,23 @@ struct MaxDropOracleStruct
 		sort hs
 	),
 
+	-- the modifier context of m on node n: its transform and box (an empty box is +1e30 .. -1e30), and the flags
+	fn modJson n m =
+	(
+		local tm = try (getModContextTM n m) catch undefined
+		inline #( \
+			#("class_id", cid (classOf m)), \
+			#("class_name", str ((classOf m) as string)), \
+			#("context_bbox_max", vec (try (getModContextBBoxMax n m) catch undefined)), \
+			#("context_bbox_min", vec (try (getModContextBBoxMin n m) catch undefined)), \
+			#("context_tm", if tm == undefined then "null" else mat12 tm), \
+			#("enabled", bool m.enabled), \
+			#("enabled_in_renders", bool m.enabledInRenders), \
+			#("enabled_in_views", bool m.enabledInViews), \
+			#("name", str m.name) \
+		)
+	),
+
 	fn nodeJson n index mats =
 	(
 		local b = n.baseObject
@@ -183,7 +200,7 @@ struct MaxDropOracleStruct
 		local bb = try (nodeGetBoundingBox n (matrix3 1)) catch undefined
 		local bmin = if bb == undefined then "null" else vec bb[1]
 		local bmax = if bb == undefined then "null" else vec bb[2]
-		local mods = for m in n.modifiers collect inline #(#("class_id", cid (classOf m)), #("class_name", str ((classOf m) as string)))
+		local mods = for m in n.modifiers collect modJson n m
 		local matIndex = if n.material == undefined then "null" else (((findItem mats n.material) - 1) as string)
 		local parent = if n.parent == undefined then "null" else (n.parent.handle as string)
 		obj #( \

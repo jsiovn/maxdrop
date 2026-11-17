@@ -69,6 +69,7 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1
     "layers_flags": [],
     "modifier_pivot": ["UVMap"],  # the base mesh's channel: the UVW Map modifier is not applied
     "multi_uv": ["UVMap", "UVChannel_2", "UVChannel_3"],
+    "stack_basic": ["UVMap"],  # the base meshes' channel: no modifier is applied
     "standard_physical": ["UVMap"],
     "texmap_rules": ["UVMap"],
     "units_cm": ["UVMap"],

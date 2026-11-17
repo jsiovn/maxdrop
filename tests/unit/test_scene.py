@@ -503,9 +503,9 @@ class TestFixtures(unittest.TestCase):
         """The values docs/FORMAT.md quotes: 0x0960 flags per node, the first u32 of 0x2035 per class."""
         flags = {"FixtureHidden": 0x100800, "FixtureGroup": 0x40, "FixtureGroupA": 0x900, "FixtureGroupB": 0x900,
                  "FixtureInstance01": 0, "FixtureInstance02": 0, "FixtureInstance03": 0, "FixtureCopy": 0,
-                 "FixtureBent": 0, "FixtureSmooth": 0}
+                 "FixtureBent": 0, "FixtureSmooth": 0, "FixtureNestedRef": 0}  # instances and references: 0
         heads = {"Node": 16, "RootNode": 16, "Texmaps": 48, "Bezier Float": 2, "Bezier Scale": 2, "Bezier Color": 2,
-                 "Boolean Controller": 2, "Grid Reference": 2, "VRayMtl": 34,
+                 "Boolean Controller": 2, "Grid Reference": 2, "VRayMtl": 34, "MtlBaseLib": 2,
                  "": 2}  # Custom Curve Control's point class, nameless in the class directory (texmap_rules' Falloffs)
         varies = {"ParamBlock2"}  # the number of reference slots of its descriptor: 25 and 37 in the fixtures
         for path in FIXTURES:

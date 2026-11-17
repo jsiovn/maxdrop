@@ -60,7 +60,7 @@ Top level:
 | `max_version` | The Max that made the dump: `[release, year]`, e.g. `[22000, 2020]`. |
 | `node_count` | Number of entries in `nodes`. |
 | `nodes` | Every node of the scene, see below. |
-| `oracle_version` | Version of this layout (2: `material_graph` added; nothing else changed from 1). |
+| `oracle_version` | Version of this layout (2: `material_graph` added; 3: the modifier context, switches and name of each modifier). |
 | `renderer` | The current renderer: `class_id`, `class_name`. |
 | `time` | The frame every node was evaluated at: always 0. |
 | `units` | `system_type` (e.g. `millimeters`), `system_scale`, `display_type` (`Generic`, `Metric`, `US`, `Custom`), `display_metric`, `display_us`. |
@@ -79,7 +79,7 @@ parent always comes before its children):
 | `base_superclass` | Super class id of the base object, decimal (16 = geometry, also camera and light targets; 32 = camera; 48 = light; 64 = shape; 80 = helper, also Particle Flow operators). |
 | `base_verts`, `base_faces` | Counts of the base object: polygons for Editable Poly, triangles for Editable Mesh, `null` for every other class. |
 | `eval_verts`, `eval_faces` | The evaluated world-state mesh (`snapshotAsMesh`, after every modifier) as triangles; `null` when the node is not geometry or yields no mesh (lights, helpers, targets, particle flow events). |
-| `modifiers` | The modifier stack from top to bottom: `class_id`, `class_name` (modifier_pivot: a Bend added over a UVW Map lists Bend first). |
+| `modifiers` | The modifier stack from top to bottom (modifier_pivot: a Bend added over a UVW Map lists Bend first), each: `class_id`, `class_name`; `name` (`m.name`: the one the user gave, else the class's display name); `enabled`, `enabled_in_views`, `enabled_in_renders`; `context_tm` (`getModContextTM`, 12 floats as `transform`) and `context_bbox_min`, `context_bbox_max` (`getModContextBBoxMin/Max`): the modifier context on this node, which an instanced modifier has once per node. The box is the one Max holds after evaluating the node; the file may hold none (docs/FORMAT.md, Modifiers). |
 | `instances` | Sorted handles of every node that shares this node's base object, itself included (a one-element list when not instanced). Instances and references both count. |
 | `transform` | World node transform (`node.transform`, the pivot), 12 floats: rows 1 to 4, row 4 = translation. |
 | `offset_pos`, `offset_rot`, `offset_scale` | Object offset: where the object sits relative to the pivot. `offset_rot` is a quaternion `[x, y, z, w]` as MAXScript gives it, which is the conjugate of the usual right-handed one: a rotation of +30° about Z (row 1 = `[0.866, 0.5, 0]`) prints as `[0, 0, -0.258819, 0.965926]`. Negate x, y and z before using it as a standard quaternion. Shown by modifier_pivot: FixtureBent's pivot alone turned +30° about Z gives an offset of -30°, `[0, 0, 0.258819, 0.965926]` (`tests/test_oracle.py`). |
@@ -124,7 +124,7 @@ reference target, bitmap, matrix).
 
 ## Measured
 
-- The 22 fixtures, 2026-11-17: under 0.4 s each to load, under 0.7 s to dump (vray_texmaps, the slowest, 0.64 s).
+- The 22 fixtures before stack_basic, 2026-11-17: under 0.4 s each to load, under 0.7 s to dump (vray_texmaps, the slowest, 0.64 s).
 - Scene A (746 nodes) and scene B (2,251 nodes), 3ds Max 2020, 2026-11-15: A loaded in 10 to 50 s (warm or cold
   disk cache) and dumped in 5 s, B loaded in 5 s and dumped in 17 s; the Max process peaked at 3.1 GB. Their dumps are kept outside the
   repository.

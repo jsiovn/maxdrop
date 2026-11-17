@@ -40,7 +40,7 @@ An object points to others by object index.
   the Editable Mesh of editable_mesh one.
 - `0x2035`: a `u32`, then `(u32 slot, i32 index)` pairs. The first value is the number of reference slots: 16
   for Node and RootNode, 48 for Texmaps and 2 for Bezier Float, Bezier Scale, Bezier Color, Boolean Controller and
-  Grid Reference in every fixture (and for the point class of Custom Curve Control, nameless in the class directory:
+  Grid Reference in every fixture, 2 for MtlBaseLib in stack_basic (and for the point class of Custom Curve Control, nameless in the class directory:
   texmap_rules' Falloff curves), 34 for VRayMtl (vray_basic, vray_maps, vray_wrappers: what the SDK's
   `NumRefs` reports for a VRayMtl), and for a ParamBlock2 the number of its reference slots (25 and 37 in
   standard_physical and vray_wrappers; 37 for the VRayBlendMtl block, see [Parameter blocks](#parameter-blocks)).
@@ -69,7 +69,8 @@ Reference slots of a node, checked on every node of every fixture (`test_scene.p
 - slot 1: the object. With no modifier it is the base object, whose ClassID and superclass equal the oracle's
   `base_class_id` and `base_superclass`. With modifiers it is a derived object: special id `0x2032`, past the
   class directory, whose references are its modifiers top to bottom and then the base object (modifier_pivot:
-  Bend, UVW Map, Editable Poly, the oracle's order; `Scene.object_stack` follows them). Nodes whose stacks end
+  Bend, UVW Map, Editable Poly, the oracle's order; `Scene.object_stack` follows them). See
+  [Modifiers](#modifiers). Nodes whose stacks end
   in the same base object are exactly the oracle's `instances` (instances: three instances share the source's
   object, the copy has its own; modifier_pivot: a bare source and two references with modifiers of their own,
   three slot-1 objects on one base object);
@@ -91,6 +92,56 @@ which also checks the first `0x2035` values above). Decoded from layers_flags:
 `0x800` is not decoded. Renderable is not in `0x0960` (FixtureNoRender has `0x800`) but in `0x099C`, a `u32` on
 every node of every fixture: `0x0F00D600` on each node, `0x0F005600` on FixtureNoRender, so bit `0x8000` is
 renderable. `test_scene.py` checks every node's hidden, frozen and renderable flags against the oracle.
+
+## Modifiers
+
+A node's slot 1 with modifiers is a derived object `0x2032` (`reader/modifiers.py`, `tests/unit/test_modifiers.py`
+against the oracle's `modifiers` on every fixture; stack_basic and modifier_pivot have stacks):
+
+| Chunk | Content | Shown by |
+|---|---|---|
+| `0x2034` | references: the modifiers from the top of the stack down, then the object below them | every stack |
+| `0x204B` | 1 byte, `0x2e` | every derived object and modifier; not decoded |
+| `0x2500` | one container per modifier reference slot, in slot order: that modifier's context on this node | below |
+| `0x2501`, `0x2502` | empty; `0x2502` only on the derived objects of references (modifier_pivot's two, FixtureNestedRef) | not decoded |
+
+The object below the modifiers is the base object or another derived object. A reference (`reference` in MAXScript)
+wraps the shared derived object: stack_basic's FixtureNestedRef references `[Twist, FixtureNested's derived object]`
+and that one `[Taper, Editable Poly]`, so the reference's stack, bottom first, is Taper, Twist (the oracle lists
+Twist, Taper). An instanced modifier is one modifier object referenced by several derived objects, each with its
+own context: FixtureSharedA and FixtureSharedB (one Noise added to both selected boxes).
+
+A modifier context `0x2500`:
+
+| Chunk | Content | Shown by |
+|---|---|---|
+| `0x2510` | 12 x `f32`, rows 1 to 4 (row 4 = translation), then a `u32`: the Matrix3 flags (7 = identity, 6 = translated only) | `getModContextTM`: identity on every node but FixtureSharedA `[-10, 0, -10]` and FixtureSharedB `[10, 0, -10]` (flags 6) |
+| `0x2511` | 6 x `f32`: the context's box, min then max; `+1e30` x 3, `-1e30` x 3 = not computed when saved | `getModContextBBoxMin/Max` where stored; FixtureSharedA/B `[-15, -5, -10]..[15, 5, 10]` |
+| `0x2513` | 4 bytes: `00 01 04 00` on most, `00 00 04 04` and `00 00 04 00` on the shared contexts | not decoded |
+| `0x2512` | empty in stack_basic (FixtureTurbo's TurboSmooth); in 29 of 126 contexts of scene A, 80 of 121 of scene B | not decoded |
+
+Max computes a context's box when the modifier first needs it: modifier_pivot, built by script and saved before
+anything evaluated its stacks, holds empty boxes for its Bend and its TurboSmooth, while the oracle, dumped after
+evaluating the scene, reports one. A box is read only where stored.
+
+A modifier keeps its name and its three switches in `0x39BF`:
+
+| Chunk in `0x39BF` | Meaning | Shown by |
+|---|---|---|
+| `0x0100` | UTF-16 name; empty = the class directory's name | FixtureUVW, FixtureNoise (`m.name` in the oracle) |
+| `0x0110` | present: off (`enabled` false) | FixtureFlags' Bend |
+| `0x0120` | present: off in the viewport (`enabledInViews` false) | FixtureFlags' Taper |
+| `0x0130` | present: off in the renderer (`enabledInRenders` false) | FixtureFlags' Twist |
+
+Its references: UVW Map `[gizmo Position/Rotation/Scale, old ParamBlock]`; Bend, Taper, Twist, Noise `[gizmo
+Position/Rotation/Scale, center Position XYZ, block]`; TurboSmooth `[ParamBlock2]`. Bend and TurboSmooth keep a
+ParamBlock2, UVW Map, Taper, Twist and Noise the old ParamBlock (UVW Map: index 0 map type, 9 to 11 length, width,
+height; TurboSmooth: parameter 0 iterations).
+
+A world-space modifier (a "binding", superclass `0x820`) sits in a derived object of its own, special id `0x2033`:
+a scratch file of 3ds Max 2020 (one box, a UVW Map, then a Map Scaler binding; not committed) had node slot 1 =
+`0x2033` with references `[Map Scaler, the 0x2032 derived object]` and the same `0x2500` layout. `modifiers.py`
+follows it; `Scene.object_stack` does not yet. Neither corpus scene has one.
 
 ## Layers
 
@@ -470,8 +521,9 @@ Not shown by any fixture yet, so not stated above:
     and the others the reader keeps as raw bytes).
 - Other root container ids: `0x2014` and `0x2023` occur in older files, and the 64-bit chunk header (size 0,
   then a `u64`) in large ones.
-- What a modifier stores (its parameters, its gizmo, the per-node modifier context): the reader follows a
-  derived object's stack (slot 1 above) but reads nothing of a modifier yet.
+- Of a modifier stack ([Modifiers](#modifiers)): `0x204B`, `0x2501`, `0x2502`, `0x2512` and `0x2513`; how the
+  gizmo controller combines with the context matrix; a modifier without `0x39BF` (4 of 74 modifier objects in scene
+  A, 3 of 46 in scene B: read with every switch on and the class name).
 - The meaning of bit `0x800` and the other flag bits in `0x0960`.
 - Layer and node flags no fixture has, found with `tools/maxdiff.py` on scratch files saved by 3ds Max 2020 (three
   boxes on two layers; the same scene saved again; then one change per file). `reader/scene.py` relies on them:

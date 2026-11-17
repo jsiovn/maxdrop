@@ -92,7 +92,8 @@ class TestSynthetic(unittest.TestCase):
             "Groups: 1",
             "Not converted:",
             "  Placeholders (empties) by class: (unnamed class) 1, VRayLight 1",
-            "  Modifiers not applied (the base mesh is built), nodes by class: UVW Map 2, TurboSmooth 1",
+            "  Modifiers not applied (ignored: the object arrives as its base object), nodes by class: UVW Map 2, "
+            "TurboSmooth 1",
             "  Unknown controllers by class (identity used): Noise Position 2",
             "  UV channels past Blender's limit: 1",
             "  Geometry errors: 1",
@@ -100,6 +101,24 @@ class TestSynthetic(unittest.TestCase):
             "  Other issues: 1",
             "    object 99: node: damaged",
         ])
+
+    def test_modifier_outcomes(self):
+        """Applied and converted modifiers are listed with what was built and left out of the count; ignored ones
+        are what the report calls not applied. Each class counts once per node."""
+        rep = self.rep
+        self.assertEqual((dict(rep.modifiers_applied), dict(rep.modifiers_converted)), ({}, {}))
+        rep.add_modifiers(report.APPLIED, ("Extrude", "UVW Map", "UVW Map"))
+        rep.add_modifiers(report.CONVERTED, ("TurboSmooth",))
+        rep.add_modifiers(report.CONVERTED, ("TurboSmooth", "Shell"))
+        self.assertEqual((dict(rep.modifiers_applied), dict(rep.modifiers_converted)),
+                         ({"Extrude": 1, "UVW Map": 1}, {"TurboSmooth": 2, "Shell": 1}))
+        self.assertEqual(rep.left_out, 2 + 3 + 1 + 1 + 1 + 1)
+        lines = rep.text().split("\n")
+        self.assertEqual(lines[7:9], [
+            "Modifiers applied (baked into the mesh), nodes by class: Extrude 1, UVW Map 1",
+            "Modifiers converted to a Blender modifier, nodes by class: TurboSmooth 2, Shell 1"])
+        with self.assertRaises(KeyError):
+            rep.add_modifiers("dropped", ("Bend",))
 
     def test_summary_warns(self):
         self.assertEqual(self.rep.summary(), (

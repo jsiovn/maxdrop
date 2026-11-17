@@ -180,7 +180,7 @@
       "instances": [1, 2, 3],
       "layer": "0",
       "material": 0,
-      "modifiers": [{"class_id": ["0x00000010", "0x00000000"], "class_name": "Bend"}, {"class_id": ["0x000f72b1", "0x00000000"], "class_name": "Uvwmap"}],
+      "modifiers": [{"class_id": ["0x00000010", "0x00000000"], "class_name": "Bend", "context_bbox_max": [5, 5, 40], "context_bbox_min": [-5, -5, 0], "context_tm": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0], "enabled": true, "enabled_in_renders": true, "enabled_in_views": true, "name": "Bend"}, {"class_id": ["0x000f72b1", "0x00000000"], "class_name": "Uvwmap", "context_bbox_max": [5, 5, 40], "context_bbox_min": [-5, -5, 0], "context_tm": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0], "enabled": true, "enabled_in_renders": true, "enabled_in_views": true, "name": "UVW Map"}],
       "name": "FixtureBent",
       "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 30, 0, 0],
       "offset_pos": [0, 0, 0],
@@ -207,7 +207,7 @@
       "instances": [1, 2, 3],
       "layer": "0",
       "material": 0,
-      "modifiers": [{"class_id": ["0x0d727b3e", "0x491d29a7"], "class_name": "TurboSmooth"}],
+      "modifiers": [{"class_id": ["0x0d727b3e", "0x491d29a7"], "class_name": "TurboSmooth", "context_bbox_max": [5, 5, 40], "context_bbox_min": [-5, -5, 0], "context_tm": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0], "enabled": true, "enabled_in_renders": true, "enabled_in_views": true, "name": "TurboSmooth"}],
       "name": "FixtureSmooth",
       "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 60, 0, 0],
       "offset_pos": [0, 0, 0],
@@ -218,7 +218,7 @@
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 60, 0, 0]
     }
   ],
-  "oracle_version": 2,
+  "oracle_version": 3,
   "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
   "time": 0,
   "units": {"display_metric": "meters", "display_type": "Generic", "display_us": "ft_Frac_In", "system_scale": 1, "system_type": "millimeters"}

@@ -7,8 +7,11 @@
     python -I tools/census.py <file.max> [--json]
 
 Counts the objects per class (name, ClassID, superclass), the nodes per base-object class (through derived
-objects, so a node with modifiers counts under the class at the bottom of its stack), and the modifier classes
-of the derived objects. It reads the file through maxdrop/reader (scene.py), loaded by path so no bpy is pulled.
+objects, so a node with modifiers counts under the class at the bottom of its stack), and the modifier classes:
+per class the entries in derived objects, the derived objects holding one, the modifier objects (an instanced
+modifier is one object in several stacks), the nodes whose stack holds one, and how many of those objects are
+switched off, off in the viewport, off in the renderer. It reads the file through maxdrop/reader (scene.py,
+modifiers.py), loaded by path so no bpy is pulled.
 
 The output names classes only, never a node, material or layer, and not the file: it may be run on a scene that
 is not ours and pasted into notes. A node that cannot be read counts as unreadable instead of stopping the run.
@@ -42,8 +45,10 @@ _load("maxdrop_reader", os.path.join(_READER, "__init__.py"), _READER)
 cfb = _load("maxdrop_reader.cfb", os.path.join(_READER, "cfb.py"))
 chunks = _load("maxdrop_reader.chunks", os.path.join(_READER, "chunks.py"))
 scene = _load("maxdrop_reader.scene", os.path.join(_READER, "scene.py"))
+modifiers_ = _load("maxdrop_reader.modifiers", os.path.join(_READER, "modifiers.py"))
 
-SPECIAL_NAMES = {scene.DERIVED_OBJECT: "(derived object)"}
+SPECIAL_NAMES = {modifiers_.DERIVED_OBJECT: "(derived object)",
+                 modifiers_.WSM_DERIVED_OBJECT: "(world-space derived object)"}
 NONE = {"name": "(none)", "class_id": None, "superclass": None}
 
 
@@ -96,10 +101,12 @@ def census_scene(s):
     base, base_descs = collections.Counter(), {}
     depths, outermost = collections.Counter(), set()
     unreadable = with_modifiers = 0
+    reader = modifiers_.Modifiers(s)
+    mod_nodes, switches = collections.Counter(), {}  # class key -> nodes; modifier object -> (key, switches)
     for i in s.node_indices:
         try:
             node = s.node(i)
-            stack = s.object_stack(node.object) if node.object is not None else None
+            stack = reader.stack(node) if node.object is not None else None
         except (chunks.ChunkError, IndexError):
             unreadable += 1
             continue
@@ -108,15 +115,25 @@ def census_scene(s):
             continue
         if stack.modifiers:
             with_modifiers += 1
+        for k in {_key(_describe(s, m.index)) for m in stack.modifiers}:
+            mod_nodes[k] += 1
+        for m in stack.modifiers:
+            switches[m.index] = (_key(_describe(s, m.index)), m.enabled, m.enabled_in_views, m.enabled_in_renders)
         if stack.derived and stack.derived[0] not in outermost:  # an instanced stack counts once
             outermost.add(stack.derived[0])
             depths[len(stack.modifiers)] += 1
+    off = {name: collections.Counter() for name in ("off", "off_in_views", "off_in_renders")}
+    for key, enabled, in_views, in_renders in switches.values():
+        off["off"][key] += not enabled
+        off["off_in_views"][key] += not in_views
+        off["off_in_renders"][key] += not in_renders
 
     # Every derived object once, nested ones included: its own modifiers are all but its last reference.
     modifiers, modifier_descs, holders = collections.Counter(), {}, collections.Counter()
+    objects = collections.defaultdict(set)
     derived = bad_derived = 0
     for i in range(len(s)):
-        if not s.is_derived(i):
+        if s.entry(i) is not None or s.class_index(i) not in modifiers_.DERIVED_IDS:
             continue
         derived += 1
         try:
@@ -130,6 +147,7 @@ def census_scene(s):
                 desc = _describe(s, m)
                 _count(modifiers, modifier_descs, desc)
                 held.add(_key(desc))
+                objects[_key(desc)].add(m)
         for k in held:
             holders[k] += 1
 
@@ -152,7 +170,9 @@ def census_scene(s):
             "stack_depths": {str(k): v for k, v in sorted(depths.items())},
             "derived_objects": derived,
             "unreadable": bad_derived,
-            "by_class": [dict(row, derived_objects=holders[_key(row)]) for row in _rows(modifiers, modifier_descs)],
+            "by_class": [dict(row, derived_objects=holders[_key(row)], objects=len(objects[_key(row)]),
+                              nodes=mod_nodes[_key(row)], **{k: v[_key(row)] for k, v in off.items()})
+                         for row in _rows(modifiers, modifier_descs)],
         },
     }
 
@@ -177,8 +197,11 @@ def format_text(result):
     depths = ", ".join("%s: %d" % kv for kv in mods["stack_depths"].items()) or "none"
     out += ["", "Modifier stacks of nodes: %d (modifiers per stack -> stacks: %s)" % (mods["stacks"], depths),
             "Derived objects: %d (unreadable %d)" % (mods["derived_objects"], mods["unreadable"]),
-            "Modifiers per class (count, then the number of derived objects holding it):"]
-    out += [_class_line(row, "  in %d" % row["derived_objects"]) for row in mods["by_class"]]
+            "Modifiers per class (entries in derived objects; then derived objects holding one, modifier objects, "
+            "nodes, objects off / off in the viewport / off in the renderer):"]
+    out += [_class_line(row, "  in %d, objects %d, nodes %d, off %d/%d/%d" % (
+        row["derived_objects"], row["objects"], row["nodes"], row["off"], row["off_in_views"], row["off_in_renders"]))
+        for row in mods["by_class"]]
     return "\n".join(out) + "\n"
 
 

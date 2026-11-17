@@ -19,6 +19,7 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 FIXTURES = sorted(glob.glob(os.path.join(ROOT, "tests", "fixtures", "*.max")))
 BOX = os.path.join(ROOT, "tests", "fixtures", "box_poly_standard.max")
+STACK_BASIC = os.path.join(ROOT, "tests", "fixtures", "stack_basic.max")
 
 
 def _load_tool():
@@ -67,20 +68,34 @@ class TestFixtures(unittest.TestCase):
                 self.assertEqual(got, want)
                 node_rows = [r for r in result["classes"] if r["name"] == "Node"]
                 self.assertEqual([r["count"] for r in node_rows], [oracle["node_count"]])
-                # no fixture shares a derived object: one stack per node with modifiers
+                # no fixture shares a whole stack: one outermost derived object per node with modifiers
                 mods = result["modifiers"]
                 depths = {}
                 for stack in stacks:
                     depths[str(len(stack))] = depths.get(str(len(stack)), 0) + 1
                 self.assertEqual((mods["stacks"], mods["stack_depths"], mods["derived_objects"], mods["unreadable"]),
                                  (len(stacks), depths, len(stacks), 0))
+                # nodes per modifier class, each class once per node
                 by_class = {}
-                for m in (m for stack in stacks for m in stack):
-                    cid = tuple("0x" + x[2:].upper() for x in m["class_id"])
-                    by_class[cid] = by_class.get(cid, 0) + 1
-                self.assertEqual({tuple(r["class_id"]): r["count"] for r in mods["by_class"]}, by_class)
+                for stack in stacks:
+                    for cid in {tuple("0x" + x[2:].upper() for x in m["class_id"]) for m in stack}:
+                        by_class[cid] = by_class.get(cid, 0) + 1
+                self.assertEqual({tuple(r["class_id"]): r["nodes"] for r in mods["by_class"]}, by_class)
+                for r in mods["by_class"]:
+                    self.assertLessEqual(r["objects"], r["count"])
+                    self.assertLessEqual(r["derived_objects"], r["count"])
                 self.assertEqual(nodes["bad_parents"], 0)
                 self.assertEqual(result["root_id"], "0x2025")
+
+    def test_stack_basic(self):
+        """An instanced Noise (one object, two stacks), a Taper shared by a reference's stack, the switches."""
+        rows = {r["name"]: r for r in census.census(STACK_BASIC)["modifiers"]["by_class"]}
+        got = {k: (r["count"], r["derived_objects"], r["objects"], r["nodes"], r["off"], r["off_in_views"],
+                   r["off_in_renders"]) for k, r in rows.items()}
+        self.assertEqual(got, {"Noise": (2, 2, 1, 2, 0, 0, 0), "Taper": (2, 2, 2, 3, 0, 1, 0),
+                               "Twist": (2, 2, 2, 2, 0, 0, 1), "Bend": (1, 1, 1, 1, 1, 0, 0),
+                               "TurboSmooth": (1, 1, 1, 1, 0, 0, 0), "UVW Map": (1, 1, 1, 1, 0, 0, 0)})
+        self.assertIn("in 2, objects 1, nodes 2, off 0/0/0", census.format_text(census.census(STACK_BASIC)))
 
     def test_box(self):
         rows = census.census(BOX)["nodes"]["by_base_class"]
@@ -156,8 +171,9 @@ class TestSynthetic(unittest.TestCase):
         mods = r["modifiers"]
         self.assertEqual((mods["stacks"], mods["stack_depths"], mods["derived_objects"], mods["unreadable"]),
                          (1, {"2": 1}, 2, 0))
-        self.assertEqual({row["name"]: (row["count"], row["derived_objects"]) for row in mods["by_class"]},
-                         {"UVW Map": (1, 1), "Edit Mesh": (1, 1)})
+        self.assertEqual({row["name"]: (row["count"], row["derived_objects"], row["objects"], row["nodes"])
+                          for row in mods["by_class"]},
+                         {"UVW Map": (1, 1, 1, 2), "Edit Mesh": (1, 1, 1, 2)})
         derived = [row for row in r["classes"] if row["name"] == "(derived object)"]
         self.assertEqual([(row["count"], row["special_id"]) for row in derived], [(2, "0x2032")])
         self.assertIn("Derived objects: 2", census.format_text(dict(r, seconds=0)))
