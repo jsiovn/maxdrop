@@ -2,10 +2,10 @@ name: Test
 
 # The plain job, on Ubuntu and Windows, each with the oldest and the newest numpy a supported Blender ships (no
 # Blender; the tests themselves use no network, only apt installs bsdtar and pip installs numpy and ruff): the unit
-# tests with the no-bpy guard, the tools, the landing page, the license files and
-# the scene packs; the scan of every file under tests/fixtures/ for user names, computer names and user paths;
-# ruff. Then on each Blender of the matrix: build, validate, the license text in the zip, the register smoke
-# test, the import smoke test on tests/fixtures/*.max and the fixture tests (tests/blender/run.py).
+# tests with the no-bpy guard, the tools, the landing page, the license files and the scene packs; the scan of
+# every file under tests/fixtures/ for user names, computer names and user paths; ruff. Then on each Blender of the
+# matrix: build, validate, the license text in the zip, the register smoke test, the import smoke test on
+# tests/fixtures/*.max and the fixture tests (tests/blender/run.py).
 #
 # Runs on pull requests and by hand. On a push to main it runs as the first job of the Publish workflow, which
 # calls this file: nothing is published unless it passes, and the tests do not run twice.
@@ -72,14 +72,15 @@ jobs:
           ruff check --output-format=github .
 
   # Branch protection on main requires a check named "Plain Python": the matrix jobs above carry the operating
-  # system in their names, so this job keeps that name and passes only when every one of them passed.
+  # system and the numpy version in their names, so this job keeps that name and passes only when every one of
+  # them passed.
   python-gate:
     name: Plain Python
     needs: python
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Every operating system passed
+      - name: Every matrix entry passed
         env:
           RESULT: ${{ needs.python.result }}
         run: |
