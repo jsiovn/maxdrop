@@ -438,6 +438,74 @@ Scene A: of its 2 TurboSmooth, 1 Shell and 1 Symmetry (the census), 1 TurboSmoot
 shape without an Extrude below them (a curve). Scene B: TurboSmooth on 105 nodes, MeshSmooth on 51, Shell on 2
 converted; 6 TurboSmooth sit above an FFD(box).
 
+## Primitives
+
+The standard primitives, superclass `0x10`, keep one ParamBlock2 in reference slot 0 and no mesh: 3ds Max builds
+the mesh from the parameters each time (`convert/primitives.py`; ids read on scratch scenes of 3ds Max 2020 with
+every parameter set apart, the meshes compared vertex for vertex with `o.baseObject.mesh` on about 80 of them, then
+the primitives fixture and its `primitives.mesh.jsonl`). Lengths in file units, angles in radians:
+
+| Class (ClassId) | Parameter id: parameter |
+|---|---|
+| Box `(0x10, 0)` | 0 length (Y), 1 width (X), 2 height (Z), 3 width segments, 4 length segments, 5 height segments, 6 generate mapping coords |
+| Plane `(0x081F1DFC, 0x77566F65)` | 0 length, 1 width, 2 width segments, 3 length segments, 4 density, 5 render scale, 6 mapping |
+| Pyramid `(0x76BF318A, 0x4BF37B10)` | 0 width, 1 depth, 2 height, 3 width, 4 depth, 5 height segments, 6 mapping |
+| Sphere `(0x11, 0)` | 0 radius, 1 segments, 2 smooth, 3 hemisphere, 4 squash (0 chop), 5 base to pivot, 6 mapping, 7 slice, 8 and 9 its angles |
+| GeoSphere `(0, 0x7F9E)` | 0 radius, 1 segments, 2 base type (0 tetra, 1 octa, 2 icosa), 3 hemisphere, 4 smooth, 5 base to pivot, 6 mapping |
+| Cylinder `(0x12, 0)` | 0 radius, 1 height, 2 height segments, 3 cap segments, 4 sides, 5 smooth, 6 slice, 7 and 8 its angles, 9 mapping |
+| Cone `(0xA86C23DD, 0)` | 0 radius 1, 1 radius 2, 2 height, 3 height segments, 4 cap segments, 5 sides, 6 smooth, 7 slice, 8 and 9 its angles, 10 mapping |
+| Tube `(0x7B21, 0)` | 0 radius 1, 1 radius 2, 2 height, 3 sides, 4 cap segments, 5 height segments, 6 smooth, 7 slice, 8 and 9 its angles, 10 mapping |
+| Torus `(0x20, 0)` | 0 radius 1, 1 radius 2, 2 rotation, 3 twist, 4 segments, 5 sides, 6 smooth (0 none, 1 groups alternating by side, 2 all, 3 alternating by segment), 7 slice, 8 and 9 its angles, 10 mapping |
+
+Real-World Map Size is not in the block: `0x2150{0x0100 u32 1, 0x0110{0x0120 the class (classA, classB,
+superclass, 4), 0x0130 u32 flag}}` in the object's chunk; there is no `0x2150` while mapping is off.
+
+What 3ds Max builds (the TriMesh; MaxDrop merges two triangles that share an edge hidden in both, each with only that
+edge hidden, into the quad 3ds Max shows, and keeps every other triangle, so a cap's fan stays triangles around its
+center vertex and the vertex and triangle counts are 3ds Max's, which the oracle's `eval_verts` / `eval_faces` are):
+
+- **Box**: a lattice of segments, each side a grid. IDs (one-based) bottom 2, top 1, front (-Y) 5, right (+X) 4,
+  back 6, left 3; smoothing groups 2, 4, 8, 16, 32, 64 in that order; each side's UV 0..1 (U along +X on top and
+  front, -X on bottom and back, +Y right, -Y left; V along +Y on top and bottom, up on the sides). The sizes are
+  signed: a negative size hands the role of a side (its ID and UVs) to the opposite one (top and bottom when an odd
+  number of sizes is negative, front and back when the width is, left and right when the length is), while the
+  smoothing group stays with the side's place; the faces point in when width and length differ in sign (3ds Max's
+  own box: FixtureBoxInside). Plane: one grid, ID 1, group 1, facing up when width and length have one sign, else
+  down with ID 2 and U running back.
+- **Pyramid**: the apex, rings of the base outline scaled by k / segments, the base center. Groups front 4, right 2,
+  back 16, left 32, base 8; ID 1. Side UVs: apex (0.5, 1), V = z / height, U = 0.5 + x / width on the front (back:
+  minus), U = 1 - width / (2 depth) + y / depth on the right (left: minus); base U = 0.5 + x / width, V = 0.5 - y /
+  depth.
+- **Sphere**: poles at ±radius, rings at polar angles k · 360° / segments for k below segments / 2 (an odd count
+  leaves a wider last row), each from +Y turning towards -X. ID 2, group 1 (0 unsmoothed). UV: U = j / segments, V =
+  1 - 2k / segments (the south pole at 1 - 2 · floor(segments / 2) / segments). Base To Pivot raises it by the radius.
+- **GeoSphere**: the base solid (tetrahedron with a vertex on +Z, octahedron, icosahedron with a vertex on +Z and
+  its upper ring from +X), each face subdivided in rows of equal angles (a slerp along both edges, then along the
+  row), the apex of each face the first of its corners (the icosahedron's band: the lone corner). Smooth: ID 2, group
+  1; else ID 1, group 0. UV per face: U = 0.5 + atan2(y, x) / 360°, V = 1 - polar angle / 180°; a face spanning more
+  than half a turn brings its corners past 3/4 down by one; a pole takes the mean of the face's other corners. A
+  point on the -X meridian sits a rounding error to either side of it in 3ds Max (U 0 in some faces, 1 in others):
+  MaxDrop's float rounding decides that differently, a whole turn on a few faces near that meridian.
+- **Cylinder, Cone**: center fans and cap rings, the side in height segments; vertices from +X counterclockwise.
+  IDs: bottom fan 2, bottom cap rings 1, side 3, top cap rings 2, top fan 1 (the rings take the other cap's ID);
+  groups caps 1, side 8 (0 unsmoothed). UV: U = 0.75 + j / sides, each face shifted down a whole turn while its end
+  would reach 1; V = z / height on the side; the caps take the side's U with V 0 or 1 (degenerate), and a ring of
+  radius 0 (a cone's tip) U 0.5, the face below it without the seam's shift. Real-World Map Size: the side in file
+  units (U by 2π · radius 1), each cap flat over its rim's extent (U = x - min x, V = max y - y below, y - min y on
+  top). A negative height flips every face so that they point out.
+- **Tube**: the profile (outer side up, top inwards, inner side down, bottom outwards) swept from +Y turning towards
+  +X; radius 1 is the outer one unless radius 2 is larger (they swap). IDs outer 3, top 1, inner 4, bottom 2; groups
+  sides 2, caps 4 (all 0 unsmoothed). UV: U along the profile (q / profile points), V = j / sides; Real-World Map
+  Size: U = (1 - j / sides) · 2π · radius 1, V the length along the profile.
+- **Torus**: segments around Z from +Y towards +X, each ring of sides from the outer equator upwards, turned by
+  rotation + twist · (segment + 1) / segments. ID 1. Groups: smooth 0 none, 2 all 1, 1 alternating 2 / 1 by side
+  (4 on the last of an odd count), 3 the same by segment. UV: U = side / sides, V = segment / segments; Real-World
+  Map Size: U = (1 - segment / segments) · 2π · radius 1, V = side / sides · 2π · radius 2.
+
+Not built (the node stays a placeholder, a line in the report): Slice on a Sphere, Cylinder, Cone, Tube or Torus,
+and a Sphere's or GeoSphere's hemisphere. Plane's render scale and density act at render time only (built at the
+viewport size, a line in the report). Teapot is not built.
+
 ## System unit
 
 `maxdrop/reader/units.py` reads it; `tests/unit/test_units.py` checks every fixture against the oracle's

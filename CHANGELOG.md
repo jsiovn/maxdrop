@@ -27,6 +27,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   amounts, axis, flip, slice, weld threshold and a moved or turned mirror gizmo (an empty), so the evaluated mesh
   matches 3ds Max's. New import option **Modifiers: Keep as Blender Modifiers / Ignore**. One above a modifier
   MaxDrop does not evaluate stays off (a line in the report); the report counts the converted ones.
+- **Primitives**: Box, Plane, Pyramid, Sphere, GeoSphere, Cylinder, Cone, Tube and Torus arrive as the meshes 3ds
+  Max builds from their parameters (segments, smoothing, material IDs, mapping coordinates, Real-World Map Size,
+  negative sizes) instead of empties, and take UVW Maps and the modifiers kept as Blender modifiers like any mesh.
+  Slice and hemispheres are not built yet: such a primitive stays an empty, with a line in the report.
 
 ### Changed
 
