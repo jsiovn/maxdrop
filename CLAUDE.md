@@ -153,9 +153,11 @@ never inside a milestone epic: deprecations with a date, workarounds to undo, to
 milestone left out, docs that drifted, and defects found while working on something else when fixing them would
 widen that bead. A debt bead is a `chore` (or `bug`) with `--parent maxdrop-em3 --labels tech-debt` and the usual
 contract; its Goal says what leaving it costs and any deadline. An executor that takes such a shortcut or finds
-such a gap files the debt bead before closing its own. The epic is never closed, also when empty, and is not run
-with `executor-epic-sequential`: each debt bead lands on its own (`executor-task`). List them with
-`bd list --label tech-debt`.
+such a gap files the debt bead before closing its own. The epic is never closed, also when empty, and is itself
+never run with `executor-epic-sequential`: each debt bead lands on its own (`executor-task`). The one exception:
+small debt beads that need no corpus scene, render, 3ds Max session or external tool may be moved, on the owner's
+word, into a named batch epic (type `epic`, not a milestone) and run with `executor-epic-sequential` as one PR;
+they keep the `tech-debt` label, and em3 stays their home otherwise. List them with `bd list --label tech-debt`.
 
 Workflow scaffold files such as `CLAUDE.md`, `BEADS_WORKFLOW.md`, repo-local skills under `.claude/skills/`, and repo-local subagents under `.claude/agents/` (plus their generated omp / OpenCode copies under `.omp/agents/` and `.opencode/agents/` when the repo was scaffolded with `--with-omp` / `--with-opencode`) are committed to this repo's git — so they travel with feature branches and `git worktree` checkouts. Refresh them from the template with `agent-workflow-beads update`. Plan files under `docs/plans/` are committed too: `writing-plans` commits each bead's plan on its branch, so plans travel with the branch and land in the PR. A plan is only visible from other branches once it merges; until then, inline it into the bead's `notes` (Dolt-synced) when another checkout needs it.
 
