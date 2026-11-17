@@ -2,10 +2,9 @@ name: Test
 
 # The plain job, on Ubuntu and Windows (no Blender; the tests themselves use no network, only apt installs bsdtar
 # and pip installs ruff): the unit tests with the no-bpy guard, the tools, the landing page, the license files and
-# the scene packs; the scan of tests/fixtures/ and tests/fixtures/packs/ for user names, computer names and user
-# paths; ruff. Then on each Blender of the matrix: build, validate, the license text in the zip, the register
-# smoke test, the import smoke test on tests/fixtures/*.max and the fixture tests (tests/blender/run.py) once
-# they exist.
+# the scene packs; the scan of every file under tests/fixtures/ for user names, computer names and user paths;
+# ruff. Then on each Blender of the matrix: build, validate, the license text in the zip, the register smoke
+# test, the import smoke test on tests/fixtures/*.max and the fixture tests (tests/blender/run.py).
 #
 # Runs on pull requests and by hand. On a push to main it runs as the first job of the Publish workflow, which
 # calls this file: nothing is published unless it passes, and the tests do not run twice.
@@ -50,7 +49,7 @@ jobs:
       - name: The unit tests and the no-bpy guard, the tools, the landing page, the license files, the scene packs
         run: python -I -m unittest discover tests
       - name: Fixture scan (user names, computer names, user paths)
-        run: python -I tools/check_fixture.py "tests/fixtures/*.*" "tests/fixtures/packs/*"
+        run: python -I tools/check_fixture.py "tests/fixtures/**/*"
       - name: Ruff
         if: runner.os == 'Linux'
         run: |
@@ -135,9 +134,9 @@ jobs:
           BLENDER_USER_RESOURCES="$RUNNER_TEMP/blender-profile" ~/blender/blender --background --factory-startup \
             --python-exit-code 1 --python tests/smoke_import.py
 
-      # The fixtures through the new pipeline, compared with their 3ds Max oracle; runs once the file exists.
+      # The fixtures through the new pipeline, compared with their 3ds Max oracle. No file gate: a renamed or
+      # deleted run.py fails the job instead of turning the fixture tests off.
       - name: Fixture tests
-        if: hashFiles('tests/blender/run.py') != ''
         run: |
           BLENDER_USER_RESOURCES="$RUNNER_TEMP/blender-profile" ~/blender/blender --background --factory-startup \
             --python-exit-code 1 --python tests/blender/run.py
