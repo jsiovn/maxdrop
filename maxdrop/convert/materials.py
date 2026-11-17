@@ -63,9 +63,11 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   class (a Multi/Sub-Object included), at most MAX_PEEL wrappers deep; each wrapper object peeled counts once.
 - Multi/Sub-Object: entry k has the material ID materialIDList[k] (zero-based, as the faces store it), the
   material materialList[k] and the switch mapEnabled[k]; the first entry with an ID wins. A face ID without an
-  entry, or whose entry is switched off or empty, gets no material (an empty slot). A Multi/Sub-Object inside a
-  wrapper or inside another Multi/Sub-Object (which looks up the same ID) resolves the same way, at most MAX_PEEL
-  deep. convert() of one (a caller without face IDs) gives the material of its first entry that is on and set.
+  entry wraps as 3ds Max renders it: to ID modulo (the highest ID of the list + 1), every entry counted. A face ID
+  that still has no entry, or whose entry is switched off or empty, gets no material (an empty slot; 3ds Max renders
+  it black). A Multi/Sub-Object inside a wrapper or inside another Multi/Sub-Object (which looks up the face's own
+  ID and wraps it by its own list) resolves the same way, at most MAX_PEEL deep. convert() of one (a caller
+  without face IDs) gives the material of its first entry that is on and set.
 - Any other class -> a grey material that keeps its name, counted by class name.
 
 The slots of a mesh (assign): its distinct face IDs, each keyed by the materials its users (the nodes sharing the
@@ -446,11 +448,20 @@ class MaterialConverter:
             name = "Multi/Sub-Object"
         return self._grey(index, "%s: no sub-material" % name)
 
+    def _entry(self, index, material_id):
+        """The entry (sub-material object index or None) zero-based face ID material_id picks in Multi/Sub-Object
+        index. An ID without an entry wraps modulo the highest ID of the list plus one, entries switched off or empty
+        counted: what 3ds Max renders (one-based IDs 3, 7: face ID 10 gets 3, 14 gets 7, 15 none)."""
+        entries, order = self._multi(index)
+        if material_id not in entries and order:
+            material_id %= max(order) + 1
+        return entries.get(material_id)
+
     def material_for(self, index, material_id):
         """The MaterialIR a face with that zero-based material ID renders with under material object index: wrappers
-        peeled, Multi/Sub-Objects looked up by the ID (nested ones with the same ID); None for no material, an ID
-        without an entry, an entry switched off or empty, or a Multi/Sub-Object cycle or chain deeper than
-        MAX_PEEL (an issue)."""
+        peeled, Multi/Sub-Objects looked up by the ID (_entry; nested ones with the same ID); None for no material,
+        an ID without an entry after the wrap, an entry switched off or empty, or a Multi/Sub-Object cycle or chain
+        deeper than MAX_PEEL (an issue)."""
         key = (index, material_id)
         if key in self._for:
             return self._for[key]
@@ -472,7 +483,7 @@ class MaterialConverter:
                 self._issue_once(index, "more than %d nested Multi/Sub-Objects below object %d" % (MAX_PEEL, index))
                 break
             chain.append(base)
-            i = self._multi(base)[0].get(material_id)
+            i = self._entry(base, material_id)
         self._for[key] = out
         return out
 

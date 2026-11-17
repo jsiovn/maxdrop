@@ -694,11 +694,12 @@ class MultiSub(unittest.TestCase):
         with cf:
             conv = mat.MaterialConverter(graph)
             multi = by_name["FixtureMulti"]
-            got = {mid: (lambda ir: ir and ir.name)(conv.material_for(multi, mid)) for mid in range(8)}
+            got = {mid: (lambda ir: ir and ir.name)(conv.material_for(multi, mid)) for mid in range(16)}
             default = conv.convert(multi)
-        # IDs 1, 3, 7 (zero-based 0, 2, 6); 3 is switched off
+        # IDs 1, 3, 7 (zero-based 0, 2, 6); 3 is switched off. Past the list an ID wraps modulo 7
         self.assertEqual(got, {0: "FixtureSubOne", 1: None, 2: None, 3: None, 4: None, 5: None, 6: "FixtureSubSeven",
-                               7: None})
+                               7: "FixtureSubOne", 8: None, 9: None, 10: None, 11: None, 12: None,
+                               13: "FixtureSubSeven", 14: "FixtureSubOne", 15: None})
         self.assertEqual(default.name, "FixtureSubOne")
         self.assertEqual((dict(conv.stats.unknown), conv.stats.issues), ({}, []))
 
@@ -714,11 +715,39 @@ class MultiSub(unittest.TestCase):
         conv = mat.MaterialConverter(FakeGraph(*objs))
         self.assertEqual(conv.material_for(0, 4).name, "Front")
         self.assertEqual(conv.material_for(0, 5).name, "Deep")
-        self.assertIsNone(conv.material_for(0, 6))
-        self.assertIsNone(conv.material_for(0, 9))
+        self.assertEqual(conv.material_for(0, 6).name, "Deep")  # the nested Multi without ID 6 wraps it to 0
+        self.assertIsNone(conv.material_for(0, 9))  # 9 mod 7 = 2: no entry either
+        self.assertEqual(conv.material_for(0, 11).name, "Front")  # 11 mod 7 = 4
+        self.assertIsNone(conv.material_for(0, 12))  # 12 mod 7 = 5, then 12 mod 6 = 0: no entry in the nested one
         self.assertIsNone(conv.material_for(None, 0))
         self.assertEqual(conv.material_for(5, 3).name, "Front")  # not a Multi: whatever the ID
         self.assertEqual(conv.convert(0).name, "Front")
+
+    def test_wrap_past_the_list(self):
+        # what 3ds Max 2020 renders (one face per ID): an ID without an entry takes the entry of ID modulo the
+        # highest ID of the list plus one, every entry counted; IDs below are zero-based
+        def names(index, ids):
+            return [(lambda ir: ir and ir.name)(conv.material_for(index, mid)) for mid in ids]
+        objs = (_multi(0, [(0, Ref(10), 1), (1, Ref(11), 1)]),
+                _multi(1, [(2, Ref(10), 1), (6, Ref(11), 1)]),
+                _multi(2, [(6, Ref(10), 1), (2, Ref(11), 1)]),
+                _multi(3, [(0, Ref(10), 1), (4, Ref(11), 1), (4, Ref(12), 1)]),
+                _multi(4, [(0, Ref(10), 1), (1, Ref(11), 1), (2, Ref(12), 0)]),
+                _multi(5, [(0, Ref(10), 1), (1, Ref(11), 1), (2, Ref(None), 1)]),
+                _multi(6, [(0, Ref(10), 1), (1, Ref(7), 1)]),
+                _multi(7, [(0, Ref(12), 1), (1, Ref(13), 1), (2, Ref(14), 1)]),
+                _vray(10, "R"), _vray(11, "G"), _vray(12, "B"), _vray(13, "Y"), _vray(14, "C"))
+        conv = mat.MaterialConverter(FakeGraph(*objs))
+        self.assertEqual(names(0, [2, 3, 10, 13]), ["R", "G", "R", "G"])
+        self.assertEqual(names(1, [9, 13, 16]), ["R", "G", "R"])  # modulo 7, not the entry count
+        self.assertEqual(names(1, [0, 1, 3, 4, 5, 7, 8, 10, 14]), [None] * 9)  # no entry after the wrap
+        self.assertEqual(names(2, [9, 13]), ["G", "R"])  # by ID, not by list position
+        self.assertEqual(names(3, [4, 5, 9, 10]), ["G", "R", "G", "R"])  # the first of a duplicate ID wins
+        self.assertEqual(names(4, [3, 5]), ["R", None])  # the highest entry switched off still counts
+        self.assertEqual(names(5, [3, 5]), ["R", None])  # and an empty one
+        # nested: the inner Multi gets the face's own ID and wraps it by its own list
+        self.assertEqual(names(6, [1, 3, 5, 7, 9, 11, 2]), ["Y", "B", "C", "Y", "B", "C", "R"])
+        self.assertEqual(conv.stats.issues, [])
 
     def test_missing_ids_list_duplicates_and_bad_entries(self):
         objs = (_multi(0, [(None, Ref(1), 1), (None, Ref(2), 1)], ids=False), _vray(1, "A"), _vray(2, "B"),
