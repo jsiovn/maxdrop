@@ -440,6 +440,44 @@ class Synthetic(unittest.TestCase):
             _data, issues = extrude.extrude(holed, self.params())
         self.assertEqual(len(issues), 1)
 
+    def test_too_many_points_are_refused_before_any_is_made(self):
+        knots = _knots([(k, k % 3, 0) for k in range(3000)], kind=shapes.CORNER)
+        many = shapes.Shape(shapes.classids.LINE, (shapes.Spline(knots, False),), 100, False, False,
+                            shapes.DEFAULT_RENDER, ())
+        with mock.patch.object(extrude, "_polyline", side_effect=AssertionError("interpolated")):
+            with self.assertRaises(extrude.ExtrudeError):
+                extrude.extrude(many, self.params(segments=10))
+
+    def test_an_amount_past_single_precision_is_refused(self):
+        with self.assertRaises(extrude.ExtrudeError):
+            extrude.extrude(_shape([self.square(4)]), self.params(amount=1e300))
+
+    def test_a_zero_area_outline_gets_sides_and_a_flat_cap(self):
+        flat = shapes.Spline(_knots([(0, 0, 0), (4, 0, 0), (8, 0, 0)]), True)
+        data, _issues = extrude.extrude(_shape([flat]), self.params())
+        self.assertEqual(len(data.positions), 6)
+        self.assertEqual(int((data.loop_totals == 4).sum()), 3)
+
+    def test_a_self_touching_outline_ends(self):
+        bow = shapes.Spline(_knots([(0, 0, 0), (10, 10, 0), (10, 0, 0), (0, 10, 0)]), True)
+        data, _issues = extrude.extrude(_shape([bow]), self.params())
+        self.assertEqual(len(data.positions), 8)
+        self.assertTrue(numpy.isfinite(data.positions).all())
+
+    def test_a_hole_left_open_keeps_its_sides_facing_out(self):
+        """An outline inside two overlapping holes is a hole without a solid: no cap, but its sides still face
+        out of the material, into it (clockwise, like any hole)."""
+        data, _issues = extrude.extrude(_shape([self.square(10), self.rect(1, 1, 6, 6), self.rect(4, 4, 9, 9),
+                                                self.rect(4.5, 4.5, 5.5, 5.5)]), self.params(cap_start=False,
+                                                                                           cap_end=False))
+        last = data.loop_vertices[-16:].reshape(4, 4)  # the island's four side quads
+        p = data.positions.astype(numpy.float64)
+        for quad in last:
+            a, b = p[quad[0]], p[quad[1]]
+            mid = (a + b) / 2.0
+            normal = numpy.array([b[1] - a[1], a[0] - b[0]])  # the right of a -> b: where the face looks
+            self.assertLess(numpy.dot(normal, mid[:2] - (5.0, 5.0)), 0)  # towards the center of the small square
+
 
 if __name__ == "__main__":
     unittest.main()

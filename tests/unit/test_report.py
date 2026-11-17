@@ -92,8 +92,8 @@ class TestSynthetic(unittest.TestCase):
             "Groups: 1",
             "Not converted:",
             "  Placeholders (empties) by class: (unnamed class) 1, VRayLight 1",
-            "  Modifiers not applied (ignored: the object arrives as its base object), nodes by class: UVW Map 2, "
-            "TurboSmooth 1",
+            "  Modifiers not applied (ignored: the object arrives as its base object, or as its Extrude makes it), "
+            "nodes by class: UVW Map 2, TurboSmooth 1",
             "  Unknown controllers by class (identity used): Noise Position 2",
             "  UV channels past Blender's limit: 1",
             "  Geometry errors: 1",

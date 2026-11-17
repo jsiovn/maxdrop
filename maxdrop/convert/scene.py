@@ -450,10 +450,9 @@ def describe(scene, meters=1.0, unit=None):
     return desc
 
 
-def _curve(scene, desc, shape_of, base, node, name, offset, meters):
-    """(kind, curve key) of a node whose base object is a shape: CURVE and its key in desc.curves, made on first
-    use; EMPTY and None when the reader refuses the shape (an issue). shape_of caches the reader's Shapes (small:
-    knots, no arrays), whose issues are named once, on the first node."""
+def _shape(scene, desc, shape_of, base, node):
+    """The reader Shape of base, read once (shape_of caches it, None when refused); its issues, or the refusal,
+    are named on the first node only."""
     if base not in shape_of:
         try:
             shape_of[base] = shapes.read_shape(scene, base)
@@ -461,7 +460,14 @@ def _curve(scene, desc, shape_of, base, node, name, offset, meters):
         except shapes.ShapeError as exc:
             shape_of[base] = None
             desc.issues.append((node, "shape: %s" % exc))
-    sh = shape_of[base]
+    return shape_of[base]
+
+
+def _curve(scene, desc, shape_of, base, node, name, offset, meters):
+    """(kind, curve key) of a node whose base object is a shape: CURVE and its key in desc.curves, made on first
+    use; EMPTY and None when the reader refuses the shape (an issue). shape_of caches the reader's Shapes (small:
+    knots, no arrays), whose issues are named once, on the first node."""
+    sh = _shape(scene, desc, shape_of, base, node)
     if sh is None:
         return EMPTY, None
     offset = None if offset == controllers.IDENTITY else offset
@@ -498,17 +504,11 @@ def _extruded(scene, desc, shape_of, extruded, base, ext, node, name, offset, me
     cache = (base, ext.index)
     if cache not in extruded:
         extruded[cache] = None
-        if base not in shape_of:
-            try:
-                shape_of[base] = shapes.read_shape(scene, base)
-                desc.issues.extend((node, "shape: %s" % x) for x in shape_of[base].issues)
-            except shapes.ShapeError as exc:
-                shape_of[base] = None
-                desc.issues.append((node, "shape: %s" % exc))
-        if shape_of[base] is not None:
+        sh = _shape(scene, desc, shape_of, base, node)
+        if sh is not None:
             try:
                 params, issues = extrude.read_params(scene, ext)
-                data, more = extrude.extrude(shape_of[base], params)
+                data, more = extrude.extrude(sh, params)
                 extruded[cache] = data
                 desc.issues.extend((node, "extrude: %s" % x) for x in issues + more)
             except extrude.ExtrudeError as exc:

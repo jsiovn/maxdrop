@@ -54,22 +54,24 @@ SECOND = "second.max"
 TEXT_NAME = "MaxDrop Report"
 failures = []
 REPORTS = []  # (level, message) of each scene the operator imported, while record_reports() wraps it
+EXTRUDE = ("0x000000a0", "0x00000000")  # its ClassID as the oracle writes it
 FIXTURE = {"modifiers": 0}  # modifiers the current fixture's report must name as not applied (modifier_pivot: 3)
 
 
 def oracle_modifiers(path):
     """How many modifiers the report of path names as not applied (each class once per node whose stack holds it),
     from path's oracle (tests/fixtures/<name>.oracle.json); 0 without one. The rule is gather() in
-    maxdrop/convert/report.py; tests/blender/run.py counts the same way. A shape that 3ds Max evaluates to a mesh
-    has its Extrude applied (convert/extrude.py), so that one is not counted."""
+    maxdrop/convert/report.py; tests/blender/run.py counts the same way. A shape whose lowest modifier that renders is
+    an Extrude has it applied (convert/extrude.py), so that one is not counted."""
     try:
         with open(path[:-4] + ".oracle.json", encoding="ascii") as f:
             nodes = json.load(f)["nodes"]
     except OSError:
         return 0
     def counted(n):
-        extruded = n["shape"] is not None and n["eval_verts"] is not None
-        return {tuple(m["class_id"]) for m in n["modifiers"] if not (extruded and m["class_name"] == "Extrude")}
+        mods = [m for m in n["modifiers"] if m["enabled"] and m["enabled_in_renders"]]  # top first
+        applied = n["shape"] is not None and mods and tuple(mods[-1]["class_id"]) == EXTRUDE  # the lowest
+        return {tuple(m["class_id"]) for m in n["modifiers"] if not (applied and m is mods[-1])}
 
     return sum(len(counted(n)) for n in nodes)
 

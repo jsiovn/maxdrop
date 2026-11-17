@@ -21,8 +21,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 ### Changed
 
 - **Import report, modifiers**: the line of modifiers not applied says what that means, "ignored: the object
-  arrives as its base object", and the report has a place for modifiers applied or converted to a Blender
-  modifier, which later versions fill. Nothing imports differently yet.
+  arrives as its base object, or as its Extrude makes it", and the report lists the modifiers applied (Extrude)
+  apart from those converted to a Blender modifier.
 
 ### Fixed
 

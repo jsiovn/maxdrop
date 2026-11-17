@@ -170,7 +170,8 @@ class Report:
         if self.placeholders:
             lines.append("  Placeholders (empties) by class: " + _counts(self.placeholders))
         if self.modifiers:
-            lines.append("  Modifiers not applied (ignored: the object arrives as its base object), nodes by class: "
+            lines.append("  Modifiers not applied (ignored: the object arrives as its base object, or as its Extrude "
+                         "makes it), nodes by class: "
                          + _counts(self.modifiers))
         if self.unknown_controllers:
             lines.append("  Unknown controllers by class (identity used): " + _counts(self.unknown_controllers))

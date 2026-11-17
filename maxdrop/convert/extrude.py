@@ -56,7 +56,7 @@ ADAPTIVE_DEPTH = 5
 TOP_ID, BOTTOM_ID, SIDE_ID = 0, 1, 2  # zero-based: 3ds Max shows 1, 2, 3
 CAP_GROUP = 1 << 4
 MAX_SEGMENTS = 10000
-MAX_VERTICES = 1 << 24
+MAX_VERTICES = 1 << 21  # about 2 million: about a second and 500 MB at most
 MAX_CAP_POINTS = 5000  # a holed cap is ear-clipped in Python: quadratic
 MAX_LOOPS = 4000  # closed polylines nested against each other: quadratic
 _STRAIGHT = 1e-6  # relative distance of a vector from the chord
@@ -397,7 +397,7 @@ def _earclip(pts, ring):
                 k = nxt[k]
                 continue
             # no ear in a whole round (a self-touching or degenerate outline): clip the most convex vertex
-            k, best, j = k, None, k
+            best, j = None, k
             for _ in range(remaining):
                 v = convexity(j)
                 if best is None or v > best:
@@ -487,147 +487,173 @@ def _side_groups(hard, closed, columns, smooth):
     return out
 
 
+def _estimate(shape):
+    """The most points the polylines of shape can have: known before any is interpolated."""
+    per = (1 << ADAPTIVE_DEPTH) if shape.adaptive else shape.steps + 1
+    return sum(len(sp.knots) * per + 1 for sp in shape.splines)
+
+
+def _sides(numpy, pl, base, first, params, side_id):
+    """(loops, groups, materials, map loops, map vertices) of the sides of a polyline: a grid of segments x columns,
+    its vertices from base, its map vertices from first."""
+    n, segs = len(pl.points), params.segments
+    columns = n if pl.closed else n - 1
+    k = numpy.arange(columns, dtype=numpy.int32)  # indices stay below MAX_VERTICES
+    level = numpy.arange(segs, dtype=numpy.int32)[:, None]
+    low, high = base + level * n, base + (level + 1) * n
+    k1 = (k + 1) % n
+    quads = [low + k, low + k1, high + k1, high + k]
+    row = columns + 1
+    mlow, mhigh = first + level * row, first + (level + 1) * row
+    mquads = [mlow + k, mlow + k + 1, mhigh + k + 1, mhigh + k]
+    if params.amount < 0:  # downwards: the same faces the other way round keep facing out
+        quads = [quads[0], quads[3], quads[2], quads[1]]
+        mquads = [mquads[0], mquads[3], mquads[2], mquads[1]]
+    loops = numpy.stack(quads, axis=-1).reshape(-1)
+    groups = numpy.tile(numpy.asarray(_side_groups(pl.hard, pl.closed, columns, params.smooth), dtype=numpy.uint32),
+                        segs)
+    mats = numpy.full(segs * columns, side_id, dtype=numpy.uint16)
+    if not params.mapping:
+        return loops, groups, mats, None, None
+    p = numpy.asarray(pl.points, dtype=numpy.float64)
+    nxt = numpy.roll(p, -1, axis=0)[:columns]
+    lengths = numpy.concatenate(([0.0], numpy.cumsum(numpy.linalg.norm(nxt - p[:columns], axis=1))))
+    if not params.real_world:
+        lengths = lengths / lengths[-1] if lengths[-1] else numpy.zeros_like(lengths)
+    vs = numpy.arange(segs + 1, dtype=numpy.float64) / segs
+    if params.real_world:
+        vs = vs * abs(params.amount)
+    uvw = numpy.zeros((segs + 1, row, 3), dtype=numpy.float32)
+    uvw[:, :, 0] = lengths[None, :]
+    uvw[:, :, 1] = vs[:, None]
+    return loops, groups, mats, numpy.stack(mquads, axis=-1).reshape(-1), uvw.reshape(-1, 3)
+
+
+def _caps(closed, solids, issues):
+    """{solid: [[(polyline, point), ...]]}: each cap polygon counter-clockwise; a holed cap that cannot be
+    triangulated is left out (an issue)."""
+    out = {}
+    for s, hs in solids.items():
+        if not hs:
+            out[s] = [[(s, k) for k in range(len(closed[s]))]]
+            continue
+        count = len(closed[s]) + sum(len(closed[x]) for x in hs)
+        if count > MAX_CAP_POINTS:
+            issues.append("a cap of %d points with holes, more than %d: left open" % (count, MAX_CAP_POINTS))
+            continue
+        ids = [(j, k) for j in [s] + hs for k in range(len(closed[j]))]
+        index = {key: i for i, key in enumerate(ids)}
+        pts = [closed[j][k] for j, k in ids]
+        try:
+            tris = triangulate(pts, [index[(s, k)] for k in range(len(closed[s]))],
+                               [[index[(x, k)] for k in range(len(closed[x]))] for x in hs])
+        except CapError as exc:
+            issues.append("a cap with holes is left open: %s" % exc)
+            continue
+        out[s] = [[ids[i] for i in t] for t in tris]
+    return out
+
+
 def extrude(shape, params):
     """(MeshData, issues) of a reader Shape under an Extrude with params, in the shape's object space."""
     import numpy
     issues = []
-    lines = polylines(shape)
     segs = params.segments
     levels = segs + 1
-    total = sum(len(pl.points) for pl in lines) * levels
-    if total > MAX_VERTICES:
-        raise ExtrudeError("%d vertices, more than %d" % (total, MAX_VERTICES))
+    most = _estimate(shape) * levels
+    if most > MAX_VERTICES:  # before any point is made: a small file can ask for hundreds of millions
+        raise ExtrudeError("up to %d vertices, more than %d" % (most, MAX_VERTICES))
+    lines = polylines(shape)
     if params.amount == 0:
         issues.append("an amount of 0: a flat mesh")
-    sign = -1.0 if params.amount < 0 else 1.0
     closed = {j: [(p[0], p[1]) for p in pl.points] for j, pl in enumerate(lines) if pl.closed}
-    solids = {}
+    solids, nested = {}, False
     if len(closed) > MAX_LOOPS:
         issues.append("%d closed splines, more than %d: no caps" % (len(closed), MAX_LOOPS))
     elif closed:
-        solids = _nest(closed, issues)
-    holes = {h for hs in solids.values() for h in hs}
-    for j in closed:  # solids counter-clockwise, holes clockwise
-        if (_area(closed[j]) > 0) != (j not in holes):
-            pl = lines[j]
-            pts, hard = pl.points[::-1], pl.hard[::-1]
-            lines[j] = Polyline(pts[-1:] + pts[:-1], hard[-1:] + hard[:-1], True)  # keep the first point first
-            closed[j] = [(p[0], p[1]) for p in lines[j].points]
+        solids, nested = _nest(closed, issues), True
+    if nested:  # solids counter-clockwise, holes (those left open too) clockwise
+        for j in closed:
+            if (_area(closed[j]) > 0) != (j in solids):
+                pl = lines[j]
+                pts, hard = pl.points[::-1], pl.hard[::-1]
+                lines[j] = Polyline(pts[-1:] + pts[:-1], hard[-1:] + hard[:-1], True)  # the first point first
+                closed[j] = [(p[0], p[1]) for p in lines[j].points]
 
     base, start = [], 0
     for pl in lines:
         base.append(start)
         start += len(pl.points) * levels
     positions = numpy.empty((start, 3), dtype=numpy.float64)
+    rise = params.amount * numpy.arange(levels, dtype=numpy.float64) / segs
     for j, pl in enumerate(lines):
-        p = numpy.asarray(pl.points, dtype=numpy.float64)
-        n = len(p)
-        for level in range(levels):
-            block = positions[base[j] + level * n:base[j] + (level + 1) * n]
-            block[:] = p
-            block[:, 2] += params.amount * level / segs
+        block = numpy.tile(numpy.asarray(pl.points, dtype=numpy.float64), (levels, 1))
+        block[:, 2] += numpy.repeat(rise, len(pl.points))
+        positions[base[j]:base[j] + len(block)] = block
+    if not (numpy.abs(positions) < float(numpy.finfo(numpy.float32).max)).all():
+        raise ExtrudeError("the mesh does not fit single precision (amount %g)" % params.amount)
 
-    def vertex(j, level, k):
-        return base[j] + level * len(lines[j].points) + k
-
-    faces, groups, mats, map_faces = [], [], [], []
-    uvw = []
     side_id = SIDE_ID if params.material_ids else 0
-    height = abs(params.amount)
+    loop_parts, total_parts, group_parts, mat_parts, map_parts, uvw_parts = [], [], [], [], [], []
+    mapped = 0
     for j, pl in enumerate(lines):
-        n = len(pl.points)
-        columns = n if pl.closed else n - 1
-        side = _side_groups(pl.hard, pl.closed, columns, params.smooth)
+        loops, groups, mats, mloops, uvw = _sides(numpy, pl, base[j], mapped, params, side_id)
+        loop_parts.append(loops)
+        total_parts.append(numpy.full(len(groups), 4, dtype=numpy.int32))
+        group_parts.append(groups)
+        mat_parts.append(mats)
         if params.mapping:
-            lengths = [0.0]
-            for k in range(columns):
-                lengths.append(lengths[-1] + _norm(_sub(pl.points[(k + 1) % n], pl.points[k])))
-            whole = lengths[-1]
-            us = lengths if params.real_world else [x / whole if whole else 0.0 for x in lengths]
-            first = len(uvw)
-            for level in range(levels):
-                v = height * level / segs if params.real_world else level / segs
-                uvw.extend((u, v, 0.0) for u in us)
-        for level in range(segs):
-            for k in range(columns):
-                k1 = (k + 1) % n
-                quad = [vertex(j, level, k), vertex(j, level, k1), vertex(j, level + 1, k1), vertex(j, level + 1, k)]
-                if params.mapping:
-                    row = columns + 1
-                    mq = [first + level * row + k, first + level * row + k + 1, first + (level + 1) * row + k + 1,
-                          first + (level + 1) * row + k]
-                if sign < 0:
-                    quad = [quad[0], quad[3], quad[2], quad[1]]
-                    if params.mapping:
-                        mq = [mq[0], mq[3], mq[2], mq[1]]
-                faces.append(quad)
-                groups.append(side[k])
-                mats.append(side_id)
-                if params.mapping:
-                    map_faces.append(mq)
+            map_parts.append(mloops)
+            uvw_parts.append(uvw)
+            mapped += len(uvw)
 
-    caps = []
-    if params.cap_start:
-        caps.append(0)
-    if params.cap_end:
-        caps.append(segs)
-    if solids and caps:
+    caps = ([0] if params.cap_start else []) + ([segs] if params.cap_end else [])
+    cap_faces = _caps(closed, solids, issues) if solids and caps else {}
+    faces, cap_mats, map_faces, cap_uvw = [], [], [], []
+    if cap_faces:
         xs = [p[0] for j in solids for p in closed[j]]
         ys = [p[1] for j in solids for p in closed[j]]
         x0, y0 = min(xs), min(ys)
         w, h = max(xs) - x0, max(ys) - y0
-        cap_faces = {}  # solid -> [[(j, k), ...]] counter-clockwise
-        for s in solids:
-            hs = solids[s]
-            if not hs:
-                cap_faces[s] = [[(s, k) for k in range(len(closed[s]))]]
-                continue
-            count = len(closed[s]) + sum(len(closed[x]) for x in hs)
-            if count > MAX_CAP_POINTS:
-                issues.append("a cap of %d points with holes, more than %d: left open" % (count, MAX_CAP_POINTS))
-                continue
-            ids = [(j, k) for j in [s] + hs for k in range(len(closed[j]))]
-            index = {key: i for i, key in enumerate(ids)}
-            pts = [closed[j][k] for j, k in ids]
-            try:
-                tris = triangulate(pts, [index[(s, k)] for k in range(len(closed[s]))],
-                                   [[index[(x, k)] for k in range(len(closed[x]))] for x in hs])
-            except CapError as exc:
-                issues.append("a cap with holes is left open: %s" % exc)
-                continue
-            cap_faces[s] = [[ids[i] for i in t] for t in tris]
-        for level in caps:
-            up = (level == segs) == (sign > 0)  # this cap faces +Z
-            mat = (TOP_ID if up else BOTTOM_ID) if params.material_ids else 0
-            mapped = {}
-            for s, polys in cap_faces.items():
-                for poly in polys:
-                    loop = poly if up else poly[::-1]
-                    faces.append([vertex(j, level, k) for j, k in loop])
-                    groups.append(CAP_GROUP)
-                    mats.append(mat)
-                    if params.mapping:
-                        mf = []
-                        for j, k in loop:
-                            if (j, k) not in mapped:
-                                x, y = closed[j][k]
-                                u, v = x - x0, y - y0
-                                if not params.real_world:
-                                    u, v = (u / w if w else 0.0), (v / h if h else 0.0)
-                                mapped[(j, k)] = len(uvw)
-                                uvw.append((u, v, 0.0))
-                            mf.append(mapped[(j, k)])
-                        map_faces.append(mf)
+    for level in caps:
+        up = (level == segs) == (params.amount >= 0)  # this cap faces +Z
+        mat = (TOP_ID if up else BOTTOM_ID) if params.material_ids else 0
+        index = {}
+        for polys in cap_faces.values():
+            for poly in polys:
+                loop = poly if up else poly[::-1]
+                faces.append([base[j] + level * len(lines[j].points) + k for j, k in loop])
+                cap_mats.append(mat)
+                if not params.mapping:
+                    continue
+                for j, k in loop:
+                    if (j, k) not in index:
+                        x, y = closed[j][k]
+                        u, v = x - x0, y - y0
+                        if not params.real_world:
+                            u, v = (u / w if w else 0.0), (v / h if h else 0.0)
+                        index[(j, k)] = mapped + len(cap_uvw)
+                        cap_uvw.append((u, v, 0.0))
+                map_faces.append([index[(j, k)] for j, k in loop])
+    if faces:
+        loop_parts.append(numpy.asarray([v for f in faces for v in f], dtype=numpy.int64))
+        total_parts.append(numpy.asarray([len(f) for f in faces], dtype=numpy.int64))
+        group_parts.append(numpy.full(len(faces), CAP_GROUP, dtype=numpy.uint32))
+        mat_parts.append(numpy.asarray(cap_mats, dtype=numpy.uint16))
+        if params.mapping:
+            map_parts.append(numpy.asarray([v for f in map_faces for v in f], dtype=numpy.int64))
+            uvw_parts.append(numpy.asarray(cap_uvw, dtype=numpy.float64).reshape(-1, 3))
 
-    totals = numpy.asarray([len(f) for f in faces], dtype=numpy.int64)
-    starts = numpy.zeros(len(faces), dtype=numpy.int32)
-    if len(faces):
+    def joined(parts, dtype, shape=(0,)):
+        return numpy.concatenate(parts).astype(dtype) if parts else numpy.zeros(shape, dtype=dtype)
+
+    totals = joined(total_parts, numpy.int64)
+    starts = numpy.zeros(len(totals), dtype=numpy.int32)
+    if len(totals):
         starts[1:] = numpy.cumsum(totals[:-1])
-    loops = numpy.asarray([v for f in faces for v in f], dtype=numpy.int32)
     maps = {}
     if params.mapping:
-        maps[1] = geometry.MapChannel(1, numpy.asarray(uvw, dtype=numpy.float32).reshape(-1, 3),
-                                      numpy.asarray([v for f in map_faces for v in f], dtype=numpy.int32))
-    data = geometry.MeshData(positions.astype(numpy.float32), loops, starts,
-                             numpy.asarray(groups, dtype=numpy.uint32), numpy.asarray(mats, dtype=numpy.uint16), maps)
+        maps[1] = geometry.MapChannel(1, joined(uvw_parts, numpy.float32, (0, 3)), joined(map_parts, numpy.int32))
+    data = geometry.MeshData(positions.astype(numpy.float32), joined(loop_parts, numpy.int32), starts,
+                             joined(group_parts, numpy.uint32), joined(mat_parts, numpy.uint16), maps)
     return data, issues

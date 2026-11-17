@@ -461,7 +461,8 @@ class Fixtures(unittest.TestCase):
         for name, desc, oracle in self.cases:
             for node, o in zip(desc.nodes, oracle["nodes"]):
                 extruded = o["shape"] is not None and o["eval_verts"] is not None  # an Extrude on the shape
-                kind = conv.MESH if o["base_verts"] is not None or extruded else conv.CURVE if o["shape"] else                     conv.EMPTY
+                kind = conv.MESH if o["base_verts"] is not None or extruded else conv.CURVE if o["shape"] else \
+                    conv.EMPTY
                 self.assertEqual(node.kind, kind, "%s %s" % (name, node.name))
                 if node.kind == conv.MESH:
                     md = desc.meshes[node.mesh]
