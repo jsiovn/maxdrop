@@ -144,7 +144,7 @@ class Fixtures(unittest.TestCase):
 
     def test_the_fixtures_with_a_uvw_map(self):
         self.assertEqual(sorted(os.path.basename(p) for p, _o, _d in self.cases),
-                         ["modifier_pivot.max", "stack_basic.max", "uvwmap.max"])
+                         ["modifier_pivot.max", "stack_basic.max", "uvwmap.max", "uvwmap_oblique.max"])
 
     def test_uv_of_every_corner_equals_the_oracle(self):
         compared = 0
@@ -179,7 +179,7 @@ class Fixtures(unittest.TestCase):
                         _compare(self, label, kind, tile[0], uv[loops].astype(numpy.float64), tri[:, 6:8], poles,
                                  face_u)
                         compared += 1
-        self.assertEqual(compared, 812)  # the triangles of the 12 nodes whose stack is evaluated
+        self.assertEqual(compared, 1168)  # the triangles of the 17 nodes whose stack is evaluated
 
     def kinds(self, path):
         """{(node name, channel): (type name, (u tile, v tile))} of the UVW Maps evaluated in path."""
@@ -309,6 +309,19 @@ class Fixtures(unittest.TestCase):
         with mock.patch.object(controllers, "matrix", return_value=(controllers.IDENTITY, [bad])):
             desc = conv.read(FIXTURE)
         self.assertTrue(all("UVW Map" not in n.applied for n in desc.nodes))
+
+    def test_a_vertex_color_uvw_map_is_not_applied(self):
+        real = uvwmap.read_params
+
+        def to_vertex_color(scene, m):
+            p, issues = real(scene, m)
+            return p._replace(vertex_color=True), issues
+
+        with mock.patch.object(uvwmap, "read_params", to_vertex_color):
+            desc = conv.read(FIXTURE)
+        self.assertTrue(all("UVW Map" not in n.applied for n in desc.nodes))
+        self.assertEqual(len([r for _i, r in desc.issues
+                              if r == "uvw map: the vertex color channel is not imported: not applied"]), 12)
 
 
 class FakeBlock:

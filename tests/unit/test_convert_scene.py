@@ -74,6 +74,7 @@ UV_LAYERS = {
     # per mesh: every box, the cylinder and the sphere have channel 1; two UVW Maps write channels 2 and 3
     "uvwmap": collections.defaultdict(lambda: ["UVMap"], {"FixtureUVWGizmo": ["UVMap", "UVChannel_2"],
                                                           "FixtureUVWTwo": ["UVMap", "UVChannel_3"]}),
+    "uvwmap_oblique": ["UVMap"],
 }
 SHARP_EDGES_POLY_BOX = 12  # one smoothing group per side: every edge of the box
 SHARP_EDGES_EDITABLE_MESH = 8  # group 1 on top and bottom, 2 on the sides: the rims of top and bottom
@@ -83,7 +84,10 @@ SHARP_EDGES_EXTRUDE = {"FixtureExtRect": 4 * 2 + 8, "FixtureExtL": 6 + 12, "Fixt
                        "FixtureExtIsland": 12 + 24, "FixtureExtOpen": 0, "FixtureExtMirror": 8 + 64,
                        "FixtureExtAdaptive": 256, "FixtureUVWExtrude": 4 + 8}
 # uvwmap: boxes of 3 x 2 x 2 segments, a group per side: 28 edges; the cylinder's two rims; the sphere is smooth
-SHARP_EDGES_UVWMAP = {"FixtureUVWCyl": 32, "FixtureUVWSphere": 0, "FixtureUVWSharedB": SHARP_EDGES_POLY_BOX}
+SHARP_EDGES_UVWMAP = {"FixtureUVWCyl": 32, "FixtureUVWSphere": 0, "FixtureUVWSharedB": SHARP_EDGES_POLY_BOX,
+                      # uvwmap_oblique: smooth spheres, the rims of a 10-sided cylinder
+                      "FixtureUVWObliqueBox": 0, "FixtureUVWObliqueMirror": 0, "FixtureUVWObliqueCap": 20,
+                      "FixtureUVWObliqueBoxX": 0, "FixtureUVWObliquePlanarX": 0}
 # the issues the fixtures are made to raise
 ISSUES = {"uvwmap": ["uvw map: a UVW Map above Bend is not evaluated",
                      "uvw map: shrink-wrap mapping is not evaluated: the stored channel stays"]}

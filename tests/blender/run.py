@@ -87,12 +87,15 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1
     "vray_texmaps": ["UVMap"],
     "vray_wrappers": ["UVMap"],
     "uvwmap": {"FixtureUVWGizmo": ["UVMap", "UVChannel_2"], "FixtureUVWTwo": ["UVMap", "UVChannel_3"]},  # else UVMap
+    "uvwmap_oblique": ["UVMap"],
 }
 # editable_mesh: group 1 on top and bottom, 2 on the sides; a box with a group per side: 12; modifier_pivot's box of
 # four height segments: 4 x 4 vertical side edges and both rims
 SHARP_EDGES = {"editable_mesh": 8, "modifier_pivot": 24,
                # boxes of 3 x 2 x 2 segments: 28; the cylinder's rims 2 x 16; the sphere is smooth
-               "uvwmap": {"FixtureUVWCyl": 32, "FixtureUVWSphere": 0, "FixtureUVWSharedB": 12, None: 28}}
+               "uvwmap": {"FixtureUVWCyl": 32, "FixtureUVWSphere": 0, "FixtureUVWSharedB": 12, None: 28},
+               # smooth spheres, the rims of a 10-sided cylinder
+               "uvwmap_oblique": {"FixtureUVWObliqueCap": 20, None: 0}}
 SHARP_EDGES_DEFAULT = 12
 # extrude (Generate Mapping Coords on two nodes); sharp edges: the vertical edges at corner knots, one per level, and
 # both rims of every capped outline; V - E + F: a solid 2, one with a round tunnel 0, a ring and its island 0 + 2
