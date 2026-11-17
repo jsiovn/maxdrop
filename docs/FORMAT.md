@@ -302,6 +302,53 @@ The parametric shapes are made by the reader the way 3ds Max makes them, fitted 
   radius, the first at angle 0; Bezier-corner knots with vectors a third of the way to the neighbours, or with
   circular a Bezier knot per corner with vectors of the arc between them.
 
+## Extrude
+
+The Extrude modifier (ClassID `(0xA0, 0)`, superclass `0x810`; `convert/extrude.py`, `tests/unit/test_extrude.py`
+against the extrude fixture's oracle) keeps its parameters in an old ParamBlock at reference slot 0:
+
+| Index | Parameter | extrude fixture |
+|---|---|---|
+| 0 | amount (`f32`) | FixtureExtRect 10, FixtureExtL -15 |
+| 1 | segments | FixtureExtRect 2, the others 1 |
+| 2, 3 | cap start, cap end | 1 everywhere |
+| 4 | cap type: 0 morph, 1 grid | 0 |
+| 5 | output: 0 patch, 1 mesh, 2 NURBS | 1 |
+| 6 | generate mapping coordinates | FixtureExtRect and FixtureExtAdaptive 1 |
+| 7 | generate material IDs | FixtureExtAdaptive 0, the others 1 |
+| 8 | use shape IDs | 0 |
+| 9 | smooth | 1 |
+
+Real-World Map Size is not in the block: the modifier's own chunk holds `0x2150 {0x0100 u32 1, 0x0110 {0x0120: 20
+bytes naming the class, 0x0130 u32}}`, and that `u32` is 1 on FixtureExtAdaptive, 0 on the others.
+
+What 3ds Max 2020 makes of it (`snapshotAsMesh`, probed on scratch scenes and checked on the fixture: the oracle's
+`eval_verts`, `eval_faces` and `bbox_*`; `tests/unit/test_extrude.py` holds the counts):
+
+- **Interpolation**: each segment gets `steps` points between its knots; with optimize, a straight segment (type
+  line, or both vectors on the chord) gets none; without optimize even a line segment gets its steps (a sharp
+  Rectangle, steps 2: 12 points). Adaptive: a straight segment gets none, a curved one 2^d - 1, d the smallest
+  depth up to 5 at which every piece turns by at most 2 degrees between the chords of its halves (a Circle: 31 per
+  quarter, 128 points; Arcs of 30, 90, 180, 300 degrees: 13, 25, 49, 97 points).
+- **Vertices**: per spline, one copy of its points per level (segments + 1), nothing more: the caps reuse them.
+- **Faces**: the sides two triangles per segment and level; a cap of n points with h holes n + 2h - 2 triangles,
+  without extra vertices (FixtureExtHole: 32 + 2 - 2 = 32 per cap). Nested closed splines alternate solid / hole
+  (FixtureExtIsland: a square, a hole, an island in it). An open spline gets no cap (FixtureExtOpen).
+- **Normals**: outward whatever the splines' direction and the sign of the amount; the side faces of an open spline
+  look to the right of it.
+- **Material IDs**: the cap facing +Z gets ID 1, the one facing -Z ID 2, the sides ID 3 (FixtureExtRect: the cap at
+  the shape faces down and is ID 2; FixtureExtL, amount -15: the cap at the shape faces up and is ID 1); without
+  Generate Material IDs every face is ID 1.
+- **Smoothing**: caps group 16; the sides change group only at a corner or Bezier-corner knot (FixtureExtMirror's
+  rounded Rectangle: sharp at its 8 Bezier-corner knots), the groups alternating 1, 2 (4 where three runs meet,
+  1, 3, 2 ... along a spline with no corner).
+- **Mapping**: the sides U along each spline by length (0 to 1, the seam at its first point), V up the levels; the
+  caps the shape's XY box, 0 to 1. Real-World Map Size: the lengths and sizes in file units instead.
+
+Scene A: 20 shapes with an Extrude (the census), all evaluated: vertex and triangle counts equal 3ds Max's on all
+20, the world box within 1e-3 plus the oracle's 6 significant digits on 16; the other 4 have an Edit Mesh or an FFD
+above the Extrude, which are not evaluated.
+
 ## System unit
 
 `maxdrop/reader/units.py` reads it; `tests/unit/test_units.py` checks every fixture against the oracle's

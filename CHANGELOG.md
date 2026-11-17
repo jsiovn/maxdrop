@@ -14,6 +14,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   objects with their splines, knots and handles as 3ds Max draws them, straight segments straight, open or closed,
   at their place in the hierarchy. A shape set to render in 3ds Max gets its thickness as a round bevel. The import
   report counts the curves.
+- **Extrude**: a shape with an Extrude arrives as the mesh 3ds Max makes of it: walls, floors and ceilings drawn as
+  outlines are closed, with caps (holes where one outline lies inside another), outward normals, material IDs,
+  sharp corners and mapping coordinates. The import report counts it as applied.
 
 ### Changed
 
