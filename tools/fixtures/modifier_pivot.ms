@@ -17,7 +17,9 @@
 	convertToPoly src
 	local bent = reference src name:"FixtureBent" pos:[30,0,0]
 	local smooth = reference src name:"FixtureSmooth" pos:[60,0,0]
-	-- Affect Pivot Only: turn the node, then turn the object offset back by the same rotation
+	-- Affect Pivot Only: the same quaternion turns node.rotation and objectOffsetRot opposite ways (the oracle
+	-- shows it: node +30, offset -30), so multiplying both by q turns the pivot +30 degrees and the offset -30, and the
+	-- object stays put; the offset position, [0,0,0] here, is turned with it as the usual recipe does
 	local q = inverse ((eulerAngles 0 0 30) as quat)
 	in coordsys local bent.rotation *= q
 	bent.objectOffsetRot *= q

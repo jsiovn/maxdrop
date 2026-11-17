@@ -67,18 +67,20 @@ Reference slots of a node, checked on every node of every fixture (`test_scene.p
 
 - slot 0: the transform controller, a Position/Rotation/Scale (`(0x2005, 0)`, superclass `0x9008`);
 - slot 1: the object. With no modifier it is the base object, whose ClassID and superclass equal the oracle's
-  `base_class_id` and `base_superclass`; with modifiers a derived object (`0x2032`, below) whose stack ends in
-  that base object. Nodes whose stacks end in the same base object are exactly the oracle's `instances`
-  (instances: three instances share the source's object, the copy has its own; modifier_pivot: a bare source
-  and two references with modifiers of their own, three slot-1 objects on one base object);
+  `base_class_id` and `base_superclass`. With modifiers it is a derived object: special id `0x2032`, past the
+  class directory, whose references are its modifiers top to bottom and then the base object (modifier_pivot:
+  Bend, UVW Map, Editable Poly, the oracle's order; `Scene.object_stack` follows them). Nodes whose stacks end
+  in the same base object are exactly the oracle's `instances` (instances: three instances share the source's
+  object, the copy has its own; modifier_pivot: a bare source and two references with modifiers of their own,
+  three slot-1 objects on one base object);
 - slot 3: the material, present exactly when the oracle names one (the group head of layers_flags has no
   material and three pairs instead of four);
 - slot 6: the layer, a Base Layer (superclass `0x10F0`).
 
 Flags in `0x0960` seen so far: `0x800` on most nodes, `0` on the three instances and the copy in instances (the
-source has `0x800`) and on the two references in modifier_pivot, `0x100800` on the hidden node of layers_flags, `0x40` on its group head and `0x900` on the
-two group members (`test_scene.py`, `test_flags_and_pair_heads`, which also checks the first `0x2035` values
-above). Decoded from layers_flags:
+source has `0x800`) and on the two references in modifier_pivot, `0x100800` on the hidden node of layers_flags,
+`0x40` on its group head and `0x900` on the two group members (`test_scene.py`, `test_flags_and_pair_heads`,
+which also checks the first `0x2035` values above). Decoded from layers_flags:
 
 | Bit | Meaning |
 |---|---|
@@ -230,7 +232,7 @@ picker and Material Editor switches off).
   | Group | Parts (box_poly_standard) |
   |---|---|
   | General | `3ds Max Version: 22.00`, `Uncompressed`, `Build: 22.2.0.2176`, `Saved As Version: 22.00` |
-  | Mesh Totals | `Vertices: 8`, `Faces: 6` (`Vertices` = the sum of the oracle's `eval_verts`, after the modifiers: 114 in modifier_pivot, whose base objects add up to 60) |
+  | Mesh Totals | `Vertices: 8`, `Faces: 6` (`Vertices` = the sum of the oracle's `eval_verts`, after the modifiers: 114 in modifier_pivot, whose nodes' `base_verts` add up to 60) |
   | Scene Totals | `Objects`, `Shapes`, `Lights`, `Cameras`, `Helpers`, `Space Warps`, `Total` (`Total` = the oracle's `node_count`: layers_flags has 5 objects and 1 helper, its group head) |
   | External Dependencies | file paths (none in the fixtures) |
   | Objects, Materials | node and material names (Materials: as many as the oracle's materials) |
@@ -468,9 +470,8 @@ Not shown by any fixture yet, so not stated above:
     and the others the reader keeps as raw bytes).
 - Other root container ids: `0x2014` and `0x2023` occur in older files, and the 64-bit chunk header (size 0,
   then a `u64`) in large ones.
-- Derived objects (an object with modifiers): special id `0x2032`, past the class directory, referencing its
-  modifiers top to bottom and then its base object (modifier_pivot: Bend, UVW Map, Editable Poly, the oracle's
-  order). The reader follows them (`Scene.object_stack`); what a modifier stores is not read yet.
+- What a modifier stores (its parameters, its gizmo, the per-node modifier context): the reader follows a
+  derived object's stack (slot 1 above) but reads nothing of a modifier yet.
 - The meaning of bit `0x800` and the other flag bits in `0x0960`.
 - Layer and node flags no fixture has, found with `tools/maxdiff.py` on scratch files saved by 3ds Max 2020 (three
   boxes on two layers; the same scene saved again; then one change per file). `reader/scene.py` relies on them:

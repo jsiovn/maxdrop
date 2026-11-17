@@ -265,11 +265,17 @@ def run_fixture(path, modules):
                                 meshes_built=len(meshes))
     level, line = build_report.publish(rep)
     text = bpy.data.texts.get(build_report.TEXT_NAME)
-    modified = sum(len(o["modifiers"]) for o in nodes)  # reported as not applied: the base mesh is built
-    check("%s: report published, nothing left out but %d modifiers" % (name, modified),
-          level == ("WARNING" if modified else "INFO") and text is not None
-          and text.as_string().rstrip("\n") == rep.text()
-          and (not modified or "%d modifiers not applied" % modified in line), line)
+    published = text is not None and text.as_string().rstrip("\n") == rep.text()
+    # the report counts each modifier class once per node whose stack holds it: not applied, the base mesh is built
+    modified = sum(len({tuple(m["class_id"]) for m in o["modifiers"]}) for o in nodes)
+    if modified:
+        check("%s: report published, nothing left out but the %d modifiers" % (name, modified),
+              level == "WARNING" and published and not rep.approximated
+              and rep.left_out == sum(rep.modifiers.values()) == modified
+              and line.endswith("; %d modifiers not applied. See the text %s." % (modified, build_report.TEXT_NAME)),
+              line)
+    else:
+        check("%s: report published, nothing left out" % name, level == "INFO" and published, line)
     print("COUNTS %s: objects=%d meshes=%d placeholders=%d issues=%d" % (
         name, len(bpy.data.objects), len(bpy.data.meshes), sum(desc.placeholders.values()), len(desc.issues)))
 

@@ -481,6 +481,23 @@ class TestFixtures(unittest.TestCase):
             members = sorted(by_name[k].index for k in ("FixtureGroupA", "FixtureGroupB"))
             self.assertEqual(sorted(s.children(by_name["FixtureGroup"].index)), members)
 
+    def test_modifier_pivot_slot_one(self):
+        """The bare source's slot 1 is the base object; each reference has a derived object of its own on it."""
+        with cfb.CompoundFile(os.path.join(ROOT, "tests", "fixtures", "modifier_pivot.max")) as cf:
+            s = _scene(cf)
+            by_name = {n.name: n for n in s.nodes()}
+            src, bent, smooth = (by_name[k] for k in ("FixtureSource", "FixtureBent", "FixtureSmooth"))
+            stacks = [s.object_stack(n.object) for n in (src, bent, smooth)]
+            self.assertEqual(len({st.base for st in stacks}), 1)
+            self.assertEqual(src.object, stacks[0].base)
+            self.assertEqual(stacks[0].derived, ())
+            self.assertEqual([len(st.derived) for st in stacks[1:]], [1, 1])
+            self.assertEqual((bent.object, smooth.object), (stacks[1].derived[0], stacks[2].derived[0]))
+            self.assertNotEqual(bent.object, smooth.object)
+            self.assertEqual([s.entry(m).name for m in stacks[1].modifiers], ["Bend", "UVW Map"])
+            self.assertEqual([s.entry(m).name for m in stacks[2].modifiers], ["TurboSmooth"])
+            del by_name, src, bent, smooth
+
     def test_flags_and_pair_heads(self):
         """The values docs/FORMAT.md quotes: 0x0960 flags per node, the first u32 of 0x2035 per class."""
         flags = {"FixtureHidden": 0x100800, "FixtureGroup": 0x40, "FixtureGroupA": 0x900, "FixtureGroupB": 0x900,
