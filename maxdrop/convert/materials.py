@@ -451,7 +451,8 @@ class MaterialConverter:
     def _entry(self, index, material_id):
         """The entry (sub-material object index or None) zero-based face ID material_id picks in Multi/Sub-Object
         index. An ID without an entry wraps modulo the highest ID of the list plus one, entries switched off or empty
-        counted: what 3ds Max renders (one-based IDs 3, 7: face ID 10 gets 3, 14 gets 7, 15 none)."""
+        counted: what 3ds Max renders (one-based, as Max shows them: with IDs 3 and 7, face ID 10 gets 3, 14
+        gets 7, 15 none)."""
         entries, order = self._multi(index)
         if material_id not in entries and order:
             material_id %= max(order) + 1

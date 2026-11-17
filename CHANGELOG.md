@@ -11,8 +11,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 ### Fixed
 
 - **Multi/Sub-Object material IDs past the list**: a face whose material ID has no entry gets the sub-material
-  3ds Max renders it with (the list repeats: ID modulo the highest ID plus one, nested Multi/Sub-Objects too)
-  instead of no material.
+  3ds Max renders it with instead of no material: the list repeats every *highest ID* IDs (with IDs 3 and 7,
+  face ID 10 takes 3 and 14 takes 7), in nested Multi/Sub-Objects too.
 
 ## [0.0.4] - 2026-11-17
 
