@@ -153,15 +153,38 @@ def _reversed(knots):
     return [k._replace(in_vec=k.out_vec, out_vec=k.in_vec) for k in reversed(knots)]
 
 
-def _finite(*values):
-    for v in values:
-        if v is None or not math.isfinite(v):
-            raise ChunkError("a parameter is %r" % (v,))
-    return values
+def _is_number(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
+class _Params:
+    """An old ParamBlock or a ParamBlock2 read by index / parameter id alike. A value is whatever the file stored:
+    a point3 where a float belongs, or a controller (pblock.Animated) on an animated parameter, so number()
+    refuses anything that is not a finite number."""
+
+    def __init__(self, block):
+        self.block = block
+
+    def get(self, i, default=None):
+        value = None if self.block is None else self.block.get(i)
+        return default if value is None else value
+
+    def number(self, i, default=0.0):
+        """Parameter i as a float; ChunkError when it is stored as anything but a finite number."""
+        v = self.get(i, default)
+        if not _is_number(v):
+            raise ChunkError("parameter %d is %s" % (i, "animated (a controller)" if isinstance(v, pblock.Animated)
+                                                     else "not a number: %r" % (v,)))
+        return float(v)
+
+    def flag(self, i, default=False):
+        """Parameter i as a switch: a number other than 0; anything else is the default."""
+        v = self.get(i)
+        return bool(v) if _is_number(v) else default
 
 
 def _rectangle(params, _issues):
-    length, width, radius = _finite(params.get(0, 0.0), params.get(1, 0.0), params.get(2, 0.0))
+    length, width, radius = params.number(0), params.number(1), params.number(2)
     x, y, r = abs(width) / 2.0, abs(length) / 2.0, max(radius, 0.0)
     if r <= 0:
         return [Spline(_polygon([_p(x, y), _p(-x, y), _p(-x, -y), _p(x, -y)]), True)]
@@ -174,42 +197,41 @@ def _rectangle(params, _issues):
 
 
 def _circle_shape(params, _issues):
-    (radius,) = _finite(params.get(0, 0.0))
-    return [Spline(_circle(4, abs(radius)), True)]
+    return [Spline(_circle(4, abs(params.number(0))), True)]
 
 
 def _ellipse(params, issues):
-    length, width = _finite(params.get(0, 0.0), params.get(1, 0.0))
-    if params.get(3):
+    length, width = params.number(0), params.number(1)
+    if params.flag(3):
         issues.append("the outline (a second spline) is not drawn: the ellipse alone")
     return [Spline(_scaled(_circle(4, 1.0), abs(width) / 2.0, abs(length) / 2.0), True)]
 
 
 def _arc(params, _issues):
-    radius, start, end = _finite(params.get(0, 0.0), params.get(1, 0.0), params.get(2, 0.0))
+    radius, start, end = params.number(0), params.number(1), params.number(2)
     span = (end - start) % 360.0 or 360.0
     knots = _arc_knots(abs(radius), math.radians(start), math.radians(span) / 3.0, 4)
     knots[0] = knots[0]._replace(in_vec=knots[0].point)
     knots[-1] = knots[-1]._replace(out_vec=knots[-1].point)
-    if params.get(4):
+    if params.flag(4):
         knots = _reversed(knots)
-    if params.get(3):  # pie: closed through the center
+    pie = params.flag(3)
+    if pie:  # closed through the center
         center = _p(0, 0)
         knots.append(Knot(BEZIER, CURVE, center, center, center))
-    return [Spline(knots, bool(params.get(3)))]
+    return [Spline(knots, pie)]
 
 
 def _ngon(params, issues):
-    (radius,) = _finite(params.get(0, 0.0))
-    sides = params.get(1, 6)
-    if not 3 <= sides <= MAX_SIDES:
-        issues.append("%d sides, drawn with %d" % (sides, min(max(sides, 3), MAX_SIDES)))
-        sides = min(max(sides, 3), MAX_SIDES)
-    r = abs(radius) if params.get(4) else abs(radius) / math.cos(math.pi / sides)  # scribe 0: r is the apothem
-    if params.get(2):
+    radius, stored = params.number(0), params.number(1, 6)
+    sides = int(min(max(stored, 3), MAX_SIDES))
+    if sides != stored:
+        issues.append("%g sides, drawn with %d" % (stored, sides))
+    r = abs(radius) if params.flag(4) else abs(radius) / math.cos(math.pi / sides)  # scribe 0: r is the apothem
+    if params.flag(2):
         return [Spline(_circle(sides, r), True)]
     corner = params.get(3, 0.0)
-    if corner and math.isfinite(corner) and corner > 0:
+    if _is_number(corner) and corner > 0:
         issues.append("the corner radius is not drawn: sharp corners")
     step = 2 * math.pi / sides
     return [Spline(_polygon([_p(r * math.cos(k * step), r * math.sin(k * step)) for k in range(sides)]), True)]
@@ -304,32 +326,20 @@ def _block(scene, refs, slot, superclasses):
     return pblock.ParamBlock.from_chunk(scene.chunk(t))
 
 
-class _Params:
-    """An old ParamBlock or a ParamBlock2 read by index / parameter id alike."""
-
-    def __init__(self, block):
-        self.block = block
-
-    def get(self, i, default=None):
-        if self.block is None:
-            return default
-        value = self.block.get(i)
-        return default if value is None else value
-
-
 def _render(scene, refs, issues):
     block = _block(scene, refs, SLOT_RENDER, (classids.SC_PARAMETER_BLOCK,))
     if block is None:
         issues.append("no rendering block (reference slot 0): rendering settings left at 3ds Max's defaults")
         return DEFAULT_RENDER
-    d = DEFAULT_RENDER
+    d, params = DEFAULT_RENDER, _Params(block)
 
-    def number(i, default):
-        v = block.get(i)
-        return float(v) if v is not None and math.isfinite(v) else default
+    def number(i, default):  # a value that is no number keeps 3ds Max's default: it only shapes the bevel
+        v = params.get(i)
+        return float(v) if _is_number(v) else default
 
-    return Render(bool(block.get(6, d.renderable)), bool(block.get(8, d.viewport)), number(0, d.thickness),
-                  int(block.get(1, d.sides)), number(2, d.angle), bool(block.get(11, d.rectangular)),
+    sides = number(1, d.sides)
+    return Render(params.flag(6, d.renderable), params.flag(8, d.viewport), number(0, d.thickness),
+                  int(min(max(sides, 0), 1000)), number(2, d.angle), params.flag(11, d.rectangular),
                   number(12, d.width), number(13, d.length))
 
 
@@ -350,9 +360,9 @@ def read_shape(scene, i):
                 raise ChunkError("no parameter block (reference slot 1)")
             splines = _PARAMETRIC[entry.class_id](_Params(params), issues)
             interp = _Params(_block(scene, refs, SLOT_INTERPOLATION, (classids.SC_PARAMETER_BLOCK,)))
-            steps, optimize, adaptive = interp.get(0, DEFAULT_STEPS), bool(interp.get(1, 1)), bool(interp.get(2, 0))
+            steps, optimize, adaptive = interp.number(0, DEFAULT_STEPS), interp.flag(1, True), interp.flag(2)
         render = _render(scene, refs, issues)
-    except (ChunkError, struct.error, MemoryError, OverflowError, ValueError) as exc:
+        steps = int(min(max(steps, 0), MAX_STEPS))
+    except (ChunkError, struct.error, MemoryError, OverflowError, ValueError, TypeError) as exc:
         raise ShapeError("object %d (%s): %s" % (i, entry.name, exc or type(exc).__name__)) from None
-    steps = min(max(int(steps), 0), MAX_STEPS)
     return Shape(entry.class_id, tuple(splines), steps, optimize, adaptive, render, tuple(issues))

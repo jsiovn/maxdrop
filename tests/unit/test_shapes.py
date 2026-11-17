@@ -137,10 +137,12 @@ def _refs(*values):
 
 
 def _old_block(*values):
-    """An old ParamBlock: index k holds values[k] (a float, an int or a bool)."""
+    """An old ParamBlock: index k holds values[k] (a float, an int, a bool or a point3 tuple)."""
     entries = []
     for k, v in enumerate(values):
-        if isinstance(v, float):
+        if isinstance(v, tuple):
+            value = leaf(0x0103, struct.pack("<3f", *v))
+        elif isinstance(v, float):
             value = leaf(0x0100, struct.pack("<f", v))
         else:
             value = leaf(0x0101, struct.pack("<i", int(v)))
@@ -247,6 +249,57 @@ class TestSynthetic(unittest.TestCase):
     def test_steps_clamped(self):
         sh = shapes.read_shape(_parametric(7, (5.0,), interp=(1000, 1, 0)), 3)
         self.assertEqual(sh.steps, shapes.MAX_STEPS)
+
+    def test_parameters_of_any_type(self):
+        """Every parameter of every parametric class stored as a float, an int, a point3 or NaN gives a Shape or a
+        ShapeError, never another exception: the file decides each value's type."""
+        defaults = {5: (20.0, 30.0, 3.0), 7: (10.0,), 3: (10.0, 6, 0, 0.0, 0), 4: (20.0, 40.0, 0.0, 0),
+                    6: (15.0, 30.0, 200.0, 0, 0)}
+        for cls, params in defaults.items():
+            for k in range(len(params)):
+                for bad in (6.5, 7, (1.0, 2.0, 3.0), float("nan"), -1e30, 1e30):
+                    values = list(params)
+                    values[k] = bad
+                    with self.subTest(cls=cls, index=k, value=bad):
+                        try:
+                            sh = shapes.read_shape(_parametric(cls, tuple(values)), 3)
+                        except shapes.ShapeError:
+                            continue
+                        self.assertTrue(all(math.isfinite(c) for sp in sh.splines for kn in sp.knots
+                                            for c in kn.point + kn.in_vec + kn.out_vec) or bad in (1e30, -1e30))
+        for interp in ((float("nan"), 1, 0), ((1.0, 2.0, 3.0), 1, 0), (6, (1.0, 2.0, 3.0), 2.5)):
+            with self.subTest(interp=interp):
+                try:
+                    sh = shapes.read_shape(_parametric(7, (5.0,), interp=interp), 3)
+                except shapes.ShapeError:
+                    continue
+                self.assertTrue(0 <= sh.steps <= shapes.MAX_STEPS)
+
+    def test_float_sides_and_point3_radius(self):
+        sh = shapes.read_shape(_parametric(3, (10.0, 6.5, 0, 0.0, 1)), 3)
+        self.assertEqual((len(sh.splines[0].knots), len(sh.issues)), (6, 1))
+        with self.assertRaises(shapes.ShapeError):
+            shapes.read_shape(_parametric(7, ((1.0, 2.0, 3.0),)), 3)
+        with self.assertRaises(shapes.ShapeError):  # NaN steps
+            shapes.read_shape(_parametric(7, (5.0,), interp=(float("nan"), 1, 0)), 3)
+
+    def test_animated_parameter_is_refused(self):
+        """An animated ParamBlock2 parameter (an Ellipse's length) has a controller, no value: the shape is
+        refused with a reason instead of failing on the controller."""
+        class Block:
+            def get(self, i, default=None):
+                return shapes.pblock.Animated(9) if i == 0 else 20.0
+
+        with self.assertRaises(shapes.ChunkError) as caught:
+            shapes._ellipse(shapes._Params(Block()), [])
+        self.assertIn("animated", str(caught.exception))
+
+    def test_rendering_values_of_any_type(self):
+        """A rendering value that is no number keeps 3ds Max's default: the shape is still read."""
+        s = scene.Scene(node(0x2025, _old_block((1.0, 2.0, 3.0), float("nan"), 0.0, 1.0, 12, 0.0, (1.0, 1.0, 1.0)),
+                             _spline_shape(1, [_spline([GOOD])])), _scene().classes)
+        sh = shapes.read_shape(s, 1)
+        self.assertEqual(sh.render, shapes.DEFAULT_RENDER)
 
     def test_arc_wraps_and_pie_reversed(self):
         """to below from runs on past 360 degrees; a reversed pie keeps its center and is closed."""

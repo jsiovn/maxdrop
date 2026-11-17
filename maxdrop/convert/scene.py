@@ -39,8 +39,8 @@ an adaptive shape. A shape that renders (Enable In Renderer) gets a round bevel 
 is the diameter) with about as many sides; a rectangular section is drawn round (an issue).
 
 A node becomes an EMPTY placeholder when its base object is not an Editable Mesh, Editable Poly or a shape read
-here, when it has no object, or when the reader refuses its geometry or its record; placeholders counts them by the class name of the
-file's class directory ("" when there is none). A Dummy helper (a group head is one) is an EMPTY too, but that is
+here, when it has no object, or when the reader refuses its geometry or its record; placeholders counts them by the
+class name of the file's class directory ("" when there is none). A Dummy helper (a group head is one) is an EMPTY too, but that is
 its conversion, not a placeholder. A group head keeps its members as children: that is how 3ds Max stores a group.
 Modifiers are listed, not evaluated: the base mesh is built.
 
@@ -72,8 +72,8 @@ ChunkError = chunks.ChunkError
 
 class NodeDescription:
     """One node: index is its object index, parent the parent's (None at the top level); kind MESH, CURVE or EMPTY;
-    mesh the key into SceneDescription.meshes, curve the key into SceneDescription.curves (None when not one); class_name the base object's class ("" without
-    one); modifiers the class names of its modifier stack, top first; layer the layer's object index (None without
+    mesh the key into SceneDescription.meshes, curve the key into SceneDescription.curves (None when not one);
+    class_name the base object's class ("" without one); modifiers the class names of its modifier stack, top first; layer the layer's object index (None without
     one); hidden, frozen, renderable, group_head and group_member the node's own flags; sheared whether matrix has
     shear (see sheared())."""
     __slots__ = ("index", "name", "parent", "matrix", "world", "kind", "mesh", "class_name", "mirrored",
@@ -313,8 +313,8 @@ def _straight(knots, closed):
 
 def curve_description(key, name, shape, offset, meters):
     """(a CurveDescription of a reader Shape, issues): straight segments as straight handles, the offset (a reader
-    matrix) applied, then meters; issues name what is drawn otherwise."""
-    issues = list(shape.issues)
+    matrix) applied, then meters; issues name what this drawing changes (the reader's own are the Shape's)."""
+    issues = []
 
     def place(p):
         if offset is not None:
@@ -392,7 +392,6 @@ def describe(scene, meters=1.0, unit=None):
             if base is not None and shapes.is_shape(scene, base):
                 class_name = _class_name(scene, base)
                 kind, curve = _curve(scene, desc, shape_of, base, i, name, t.offset(i), meters)
-                remaining[base] -= 1
             elif base is not None:
                 class_name = _class_name(scene, base)
                 if base not in data_of:
@@ -435,10 +434,12 @@ def describe(scene, meters=1.0, unit=None):
 
 def _curve(scene, desc, shape_of, base, node, name, offset, meters):
     """(kind, curve key) of a node whose base object is a shape: CURVE and its key in desc.curves, made on first
-    use; EMPTY and None when the reader refuses the shape (an issue). shape_of caches the reader's Shapes."""
+    use; EMPTY and None when the reader refuses the shape (an issue). shape_of caches the reader's Shapes (small:
+    knots, no arrays), whose issues are named once, on the first node."""
     if base not in shape_of:
         try:
             shape_of[base] = shapes.read_shape(scene, base)
+            desc.issues.extend((node, "shape: %s" % x) for x in shape_of[base].issues)
         except shapes.ShapeError as exc:
             shape_of[base] = None
             desc.issues.append((node, "shape: %s" % exc))

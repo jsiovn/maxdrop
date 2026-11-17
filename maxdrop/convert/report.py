@@ -47,8 +47,7 @@ class Report:
     """Counters and lists of one import. issues and geometry_errors are [(node label, reason)], material_issues
     [(material or map object index, reason)]. materials_built is None when the import made no materials."""
     __slots__ = ("source", "unit", "meters", "nodes", "objects_built", "meshes_built", "curves_built", "layers",
-                 "hidden_layers",
-                 "hidden", "unrenderable", "frozen", "groups", "placeholders", "unknown_controllers", "modifiers",
+                 "hidden_layers", "hidden", "unrenderable", "frozen", "groups", "placeholders", "unknown_controllers", "modifiers",
                  "modifiers_applied", "modifiers_converted",
                  "dropped_uv_layers", "unknown_controller_nodes", "geometry_errors", "issues", "pack", "pack_name",
                  "materials_built", "materials", "wrappers", "grey_materials", "maps_peeled", "maps_unsupported",

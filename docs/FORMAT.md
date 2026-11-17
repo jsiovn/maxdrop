@@ -588,7 +588,8 @@ Not shown by any fixture yet, so not stated above:
   then a `u64`) in large ones.
 - Of shapes ([Shapes](#shapes)): NGon's corner radius and Ellipse's outline (no fixture sets them: drawn without,
   an issue), an Arc whose `from` equals `to` (taken as a full turn), the order of a reversed pie's knots (the center
-  last), the rectangular rendering section; the `f32` and the last `u32` of a knot, `0x2904`, `0x1070` of the
+  last), a Rectangle whose corner radius is more than half a side (its knots cross; 3ds Max's handling is not
+  known), the rectangular rendering section; the `f32` and the last `u32` of a knot, `0x2904`, `0x1070` of the
   BezierShape and `0x2150` (on some Editable Splines and Lines); the other shape classes (Star, Text, Helix, Donut,
   Section, NURBS curves...), which stay placeholders.
 - Of a modifier stack ([Modifiers](#modifiers)): `0x204B`, `0x2501`, `0x2502`, `0x2512` and `0x2513`; how the
