@@ -38,8 +38,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 - **Import report, modifiers**: the line of modifiers not applied says what that means, "ignored: the object
   arrives as its base object, or as its Extrude makes it", and the report lists the modifiers applied (Extrude,
-  UVW Map)
-  apart from those converted to a Blender modifier.
+  UVW Map) apart from those converted to a Blender modifier.
 
 ### Fixed
 

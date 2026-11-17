@@ -144,13 +144,16 @@ class Page(unittest.TestCase):
                 "<strong>Scene units</strong>: a scene saved in millimeters, centimeters, inches or feet arrives at its "
                 "real size.",
                 "<strong>Units: Auto</strong> takes the unit the scene was saved with",
-                "<strong>Primitives</strong> (Box, Plane, Pyramid, Sphere, GeoSphere, Cylinder, Cone, Tube, Torus) as the "
-                "meshes 3ds Max builds", "<strong>Extrude</strong> on a shape as its mesh", "<strong>Other modifiers</strong>"):
+                "<strong>Primitives</strong> (Box, Plane, Pyramid, Sphere, GeoSphere, Cylinder, Cone, Tube, Torus) as "
+                "the meshes 3ds Max builds", "<strong>Extrude</strong> on a shape as its mesh",
+                "<strong>Other modifiers</strong>"):
             self.assertTrue(needle in page, needle)
 
     def test_the_page_names_no_option_the_importer_lost(self):
         page = self.page()
-        for gone in ("Apply Matrix", "<strong>Collection</strong>", "one 3ds Max unit becomes one meter",
+        for gone in ("Splines and shapes", "<strong>Primitives</strong> (Box, Sphere, Cylinder…)",
+                     "<strong>Modifiers</strong> (Extrude", "Apply Matrix", "<strong>Collection</strong>",
+                     "one 3ds Max unit becomes one meter",
                      "imports exactly what that importer imports"):
             self.assertFalse(gone in page, gone)
 

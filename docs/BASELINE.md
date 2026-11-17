@@ -187,7 +187,8 @@ Shapes arrive as curves, an Extrude on a shape as its mesh, UVW Maps are applied
 primitives are built from their parameters, and TurboSmooth, MeshSmooth, Shell and Symmetry are kept as Blender
 modifiers. Measured as above (`tools/baseline.py`, Blender 5.2.0 LTS, Python 3.13.13, the same machine, default
 options, Modifiers: Keep as Blender Modifiers), MaxDrop 0.0.5, once, on 2026-11-18. Vertices and polygons count the
-meshes as built, before Blender's own modifiers.
+meshes as built, before Blender's own modifiers. The 0.0.4 placeholders are those measured for 0.0.3: no object
+kind changed in 0.0.4.
 
 | | Scene A 0.0.4 | Scene A 0.0.5 | Scene B 0.0.4 | Scene B 0.0.5 |
 |---|---:|---:|---:|---:|
@@ -234,15 +235,21 @@ dump's 6 significant digits (the room of scene A is in millimeters: a wall corne
 | … bounding box = 3ds Max's | 16 | |
 | UVW Map modifiers (census, objects) | 29 | 10 |
 | … applied | 23 | 4 |
+| Nodes with a UVW Map (census) | 59 | 46 |
+| … with one applied | 51 | 20 |
 | Objects whose modifiers are all applied or converted | 57 | 150 |
 | … vertex count = 3ds Max's | 57 | 150 |
 | … bounding box = 3ds Max's | 57 | 149 |
 
+- The census counts modifier objects: a UVW Map instanced on several nodes counts once there, and once per node in
+  the rows below it and in the first table. A node can hold a UVW Map that is applied and one that is not (above an
+  Edit Mesh), so the first table's applied and not-applied nodes add up to more than the nodes with a UVW Map.
 - The 4 extruded shapes whose box misses carry an Edit Mesh (3) or an FFD (1) above the Extrude, which MaxDrop does
   not apply: their box is off by 5 to 200 mm, what those modifiers move. The 6 UVW Maps of scene A that are not
   applied sit above an Edit Mesh or an FFD; in scene B above an Edit Mesh or a TurboSmooth, or switched off (the
   census counts a switched-off modifier too).
-- Scene B's one box that misses is a TurboSmooth (kept as a Subdivision Surface), 0.3 mm off on a 213 mm object.
+- Scene B's one box that misses is a TurboSmooth (kept as a Subdivision Surface), 0.3 mm off on an object 213 mm
+  across (scene B is in millimeters too).
 - Triangle counts can differ where vertex counts agree: a face that repeats another face or uses a vertex twice is
   left out (see [SUPPORT.md](SUPPORT.md)). That is the case for one object of scene A with a UVW Map, 27 of its 280
   objects without modifiers and 13 of scene B's 1,420.

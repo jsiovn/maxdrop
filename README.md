@@ -6,9 +6,9 @@ scene was downloaded as. Blender 4.2 or newer; tested on 4.2 LTS, 4.5 LTS and 5.
 
 > **Early release.** MaxDrop is a new fork of [io_scene_max](https://github.com/nrgsille76/io_scene_max). It
 > imports editable meshes with their UVs, smoothing, instances, hierarchy, layers and scene units, the room shell
-> (shapes, Extrude, UVW Map), the standard primitives, and V-Ray, Corona, Standard and Physical materials with their
-> texture maps. Lights and cameras are not read yet and most modifiers are not applied, so a whole interior scene
-> arrives incomplete.
+> (shapes, Extrude, UVW Map), nine of the standard primitives, and V-Ray, Corona, Standard and Physical materials
+> with their texture maps. Lights and cameras are not read yet and most modifiers are not applied, so a whole
+> interior scene arrives incomplete.
 > [docs/SUPPORT.md](docs/SUPPORT.md) is the honest list.
 
 > **Independent.** Not affiliated with, endorsed by or supported by Autodesk or Chaos. Autodesk and 3ds Max are
@@ -36,8 +36,8 @@ scene was downloaded as. Blender 4.2 or newer; tested on 4.2 LTS, 4.5 LTS and 5.
   in folders you add in the preferences.
 
 Not yet: lights and cameras, the other modifiers (Edit Poly, Edit Mesh, FFD, Noise…: the object arrives as it was
-before them), Teapot, sliced primitives and hemispheres, animation, procedural maps (simplified to the image below
-them). See [docs/SUPPORT.md](docs/SUPPORT.md).
+before them), Teapot, sliced primitives and hemispheres, other shapes (Star, Text, Helix, Donut…), animation,
+procedural maps (simplified to the image below them). See [docs/SUPPORT.md](docs/SUPPORT.md).
 
 ## Install
 
