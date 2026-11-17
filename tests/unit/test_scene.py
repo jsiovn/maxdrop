@@ -496,6 +496,7 @@ class TestFixtures(unittest.TestCase):
             self.assertNotEqual(bent.object, smooth.object)
             self.assertEqual([s.entry(m).name for m in stacks[1].modifiers], ["Bend", "UVW Map"])
             self.assertEqual([s.entry(m).name for m in stacks[2].modifiers], ["TurboSmooth"])
+            # the nodes hold views of the mapped file: drop them so close() can unmap it now
             del by_name, src, bent, smooth
 
     def test_flags_and_pair_heads(self):

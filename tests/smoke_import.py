@@ -59,7 +59,8 @@ FIXTURE = {"modifiers": 0}  # modifiers the current fixture's report must name a
 
 def oracle_modifiers(path):
     """How many modifiers the report of path names as not applied (each class once per node whose stack holds it),
-    from path's oracle (tests/fixtures/<name>.oracle.json); 0 without one."""
+    from path's oracle (tests/fixtures/<name>.oracle.json); 0 without one. The rule is gather() in
+    maxdrop/convert/report.py; tests/blender/run.py counts the same way."""
     try:
         with open(path[:-4] + ".oracle.json", encoding="ascii") as f:
             nodes = json.load(f)["nodes"]

@@ -43,6 +43,9 @@ outside printable ASCII escaped as `\uXXXX`, two-space indent, LF line ends, a f
 same after a reset and reload: they are kept in the file, not numbered at load (a node deleted before saving
 leaves a gap that is still there after loading). Only the base name of the file is written, never a path.
 
+`.gitattributes` marks `*.oracle.json` as `-text`, so git never converts their line ends: the files stay LF on
+every checkout, and `tests/test_oracle.py` compares their bytes.
+
 ## Fields
 
 Top level:

@@ -229,8 +229,9 @@ class OracleFiles(unittest.TestCase):
         by_name = {n["name"]: n for n in o["nodes"]}
         src, bent, smooth = by_name["FixtureSource"], by_name["FixtureBent"], by_name["FixtureSmooth"]
         # three nodes on one base object, each with a stack of its own (references, not instances)
+        handles = sorted(n["handle"] for n in (src, bent, smooth))
         for n in (src, bent, smooth):
-            self.assertEqual(n["instances"], [1, 2, 3], n["name"])
+            self.assertEqual(n["instances"], handles, n["name"])
             self.assertEqual((n["base_verts"], n["base_faces"]), (20, 18), n["name"])
         # top to bottom: the Bend was added last, over the UVW Map
         self.assertEqual(src["modifiers"], [])
