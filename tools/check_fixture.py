@@ -4,7 +4,9 @@
 
 """Refuse a test file that holds a user name, a computer name or a user path, before it enters the repository.
 
-    python -I tools/check_fixture.py tests/fixtures/*.max
+    python -I tools/check_fixture.py "tests/fixtures/**/*"
+
+A pattern (`**` included, for any depth) expands to the files it matches; the folders it matches are left out.
 
 The repository is public and its history permanent, and 3ds Max writes the Windows user and computer name into
 every file it saves (tools/sanitize_fixture.py blanks them). A file fails when its bytes, or any of its streams
@@ -122,8 +124,16 @@ def problems(data, names=None):
     return sorted(found, key=lambda p: (p[0], p[1], p[2] or ""))
 
 
+def _expand(arg):
+    """The files a command-line argument names: a pattern expands to the files it matches, directories left out;
+    anything else is taken as it is."""
+    if not glob.has_magic(arg):
+        return [arg]
+    return [p for p in sorted(glob.glob(arg, recursive=True)) if os.path.isfile(p)]
+
+
 def main(argv):
-    paths = [p for arg in argv[1:] for p in (sorted(glob.glob(arg)) if glob.has_magic(arg) else [arg])]
+    paths = [p for arg in argv[1:] for p in _expand(arg)]
     if not paths:
         print(__doc__)
         return 2
