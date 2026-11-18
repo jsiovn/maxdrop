@@ -17,8 +17,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   once no longer make the second fail or replace a folder made in between: it takes the next free folder name (or
   reuses the first one's folder); a `.zip` listing more entries than MaxDrop reads is refused before its directory
   is loaded into memory; a Windows junction is no longer searched or written into, like a link.
-- Import report: the status line names material problems on their own ("2 material issues, 1 issue"), and a texture
-  file that was found but did not load is listed under the material issues instead of the other issues.
+- Import report: the status line names material problems on their own ("2 material problems, 1 issue") and the text
+  MaxDrop Report states their total; a texture file that was found but did not load is listed under the material
+  issues instead of the other issues.
 
 ## [0.0.5] - 2026-11-18
 

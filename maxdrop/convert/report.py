@@ -95,7 +95,7 @@ class Report:
     def material_problems(self):
         """The problems of the materials (part of left_out): materials without a rule, maps without a usable map
         below, Principled inputs this Blender lacks (per material) and the material issues of the converters and
-        the builder."""
+        the builder. The swatch rule's note is not one: it is about the whole scene, an other issue."""
         return (sum(self.grey_materials.values()) + sum(self.maps_unsupported.values())
                 + sum(self.sockets_skipped.values()) + len(self.material_issues))
 
@@ -133,7 +133,7 @@ class Report:
             parts.append("%d approximated" % self.approximated)
         materials = self.material_problems
         if materials:
-            parts.append(_plural(materials, "material issue"))
+            parts.append(_plural(materials, "material problem"))
         others = self._problems() - materials
         if others:
             parts.append(_plural(others, "issue"))
@@ -178,6 +178,8 @@ class Report:
             if not self.approximated:
                 lines.append("Nothing was left out.")
             return "\n".join(lines)
+        if self.material_problems:
+            lines.append("Material problems: %d (listed under Not converted)" % self.material_problems)
         lines.append("Not converted:")
         if self.placeholders:
             lines.append("  Placeholders (empties) by class: " + _counts(self.placeholders))
@@ -209,8 +211,8 @@ class Report:
 
 
 def run_text(reports, failed):
-    """The text of a run of several files: each report's text in import order, then "Not imported: <line>" for each
-    of failed, a blank line between them."""
+    """The text of a run of several files (or of one with files not imported): each report's text in import order,
+    then "Not imported: <line>" for each of failed, a blank line between them."""
     return "\n\n".join([rep.text() for rep in reports] + ["Not imported: " + line for line in failed])
 
 

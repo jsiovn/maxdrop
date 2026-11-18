@@ -222,6 +222,7 @@ class TestMaterials(unittest.TestCase):
             "Approximated:",
             "  Wrappers peeled to their sub-material, by class: Shell Material 1, VRay2SidedMtl 1",
             "  Maps peeled to the map below them, by class: Falloff 3",
+            "Material problems: 7 (listed under Not converted)",
             "Not converted:",
             "  Material classes without a rule (grey material), by class: FooMtl 2",
             "  Map classes without a map below (not used), by class: BarMap 1",
@@ -237,7 +238,7 @@ class TestMaterials(unittest.TestCase):
     def test_summary_warns(self):
         self.assertEqual(self.rep.summary(), (
             "WARNING", "Imported box.max: 1 object, 1 mesh, 6 materials; 2 textures missing, 5 approximated, "
-                       "7 material issues. See the text MaxDrop Report."))
+                       "7 material problems. See the text MaxDrop Report."))
         self.assertEqual(self.rep.material_problems, 2 + 1 + 2 + 2)  # grey, unsupported, sockets, issues
 
     def test_material_problems_named_apart(self):
@@ -247,7 +248,8 @@ class TestMaterials(unittest.TestCase):
         self.assertEqual(rep.material_problems, 1)
         self.assertEqual(rep.summary(), (
             "WARNING", "Imported room.max: 6 objects, 2 meshes, 1 material; 2 placeholders, 3 modifiers not applied, "
-                       "1 material issue, 4 issues. See the text MaxDrop Report."))
+                       "1 material problem, 4 issues. See the text MaxDrop Report."))
+        self.assertIn("Material problems: 1 (listed under Not converted)", rep.text().split("\n"))
 
     def test_build_issues_are_material_issues(self):
         """The builder's own problems (a texture file found but not loaded) are material issues, not other issues:
@@ -256,12 +258,12 @@ class TestMaterials(unittest.TestCase):
         report.add_materials(rep, 1, collections.Counter({"Standard": 1}), lookup=lookup(found=("a.png",)),
                              build_issues=[("Wood", "texture not loaded: a.png (bad header)")])
         lines = rep.text().split("\n")
-        self.assertEqual(lines[-3:], ["Not converted:", "  Material issues: 1",
-                                      "    Wood: texture not loaded: a.png (bad header)"])
+        self.assertEqual(lines[-4:], ["Material problems: 1 (listed under Not converted)", "Not converted:",
+                                      "  Material issues: 1", "    Wood: texture not loaded: a.png (bad header)"])
         self.assertNotIn("Nothing was left out.", lines)
         self.assertEqual(rep.left_out, 1)
         self.assertEqual(rep.summary(), ("WARNING", "Imported box.max: 1 object, 1 mesh, 1 material; "
-                                                    "1 material issue. See the text MaxDrop Report."))
+                                                    "1 material problem. See the text MaxDrop Report."))
 
     def test_only_approximated_warns(self):
         rep = report.gather(box(), source="box.max")

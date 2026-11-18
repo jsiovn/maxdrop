@@ -20,7 +20,7 @@ materials, maps without a map below, Principled inputs missing, material issues)
 ## File map
 
 - `maxdrop/convert/report.py`: `material_issues` as `(label, reason)`; `material_problems` property; `summary()`
-  names "N material issue(s)" before the remaining "N issue(s)"; `add_materials(build_issues=())`; `run_text()`.
+  names "N material problem(s)" before the remaining "N issue(s)"; text() a line "Material problems: N (listed under Not converted)"; `add_materials(build_issues=())`; `run_text()`.
 - `maxdrop/build/report.py`: `_write(text)` helper; `publish()` uses it; `publish_run(reports, failed)`; docstring
   says what a run of several files leaves in the text.
 - `maxdrop/ops.py`: pass `builder.issues()` as `build_issues`; call `build_report.publish_run`; drop
@@ -33,19 +33,19 @@ materials, maps without a map below, Principled inputs missing, material issues)
 ### Task 1: material problems in convert/report.py
 
 - [ ] Tests first (`tests/unit/test_report.py`):
-  - `TestMaterials.test_summary_warns` expects `"...; 2 textures missing, 5 approximated, 7 material issues. See
+  - `TestMaterials.test_summary_warns` expects `"...; 2 textures missing, 5 approximated, 7 material problems. See
     the text MaxDrop Report."` (grey 2 + unsupported 1 + sockets 2 + material issues 2).
   - New `test_material_problems_named_apart`: synthetic scene (4 scene issues) + one grey material -> summary ends
-    `"1 material issue, 4 issues. See the text MaxDrop Report."`; `rep.material_problems == 1`.
+    `"1 material problem, 4 issues. See the text MaxDrop Report."`; `rep.material_problems == 1`.
   - New `test_build_issues_are_material_issues`: `add_materials(..., build_issues=[("Wood", "texture not loaded:
     a.png (bad)")])` -> text has `"  Material issues: 1"`, `"    Wood: texture not loaded: a.png (bad)"`, no
-    "Other issues"; summary WARNING, `"1 material issue"`; `left_out == 1`.
-  - Run `python -I -m unittest tests.unit.test_report` -> FAIL.
+    "Other issues"; summary WARNING, `"1 material problem"`; `left_out == 1`.
+  - Run `python -I -m unittest discover tests -p test_report.py` -> FAIL.
 - [ ] Implement:
   - `add_materials`: converter issues appended as `("object %d" % index, reason)`; `build_issues` appended as is.
   - `text()`: list `self.material_issues` directly.
   - `material_problems` property; `summary()`: `others = self._problems() - self.material_problems`; parts
-    `_plural(material_problems, "material issue")` then `_plural(others, "issue")`, each only when non-zero.
+    `_plural(material_problems, "material problem")` then `_plural(others, "issue")`, each only when non-zero.
   - Docstrings: Report (material_issues label form), module usage (`build_issues=builder.issues()`).
 - [ ] Run the unit tests -> OK.
 
