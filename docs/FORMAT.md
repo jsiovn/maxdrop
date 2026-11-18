@@ -320,7 +320,8 @@ against the extrude fixture's oracle) keeps its parameters in an old ParamBlock 
 | 9 | smooth | 1 |
 
 Real-World Map Size is not in the block: the modifier's own chunk holds `0x2150 {0x0100 u32 1, 0x0110 {0x0120: 20
-bytes naming the class, 0x0130 u32}}`, and that `u32` is 1 on FixtureExtAdaptive, 0 on the others.
+bytes naming the class, 0x0130 u32}}`, and that `u32` is 1 on FixtureExtAdaptive, 0 on the others. `0x2150` can hold
+several `0x0110` entries: the flag is the one whose `0x0120` names Extrude's ClassID (another class's entry is not it).
 
 What 3ds Max 2020 makes of it (`snapshotAsMesh`, probed on scratch scenes and checked on the fixture: the oracle's
 `eval_verts`, `eval_faces` and `bbox_*`; `tests/unit/test_extrude.py` holds the counts):

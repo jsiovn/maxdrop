@@ -23,7 +23,7 @@ bytes are not the modifier's ClassID, read the u32 of the first match; no match 
 - [ ] **Step 1: failing test** `Parameters.test_real_world_is_the_entry_of_its_own_class`: hand-made chunks as in
   `test_primitives.HandMadeTest.test_real_world_is_the_entry_of_its_own_class`: another class's entry set ->
   False; other set + own clear -> False; other clear + own set -> True; no entry -> False.
-- [ ] **Step 2:** `python -I -m unittest tests.unit.test_extrude -k real_world` -> FAIL (signature / first entry).
+- [ ] **Step 2:** `python -I -m unittest discover tests -p test_extrude.py -k real_world` -> FAIL (signature / first entry).
 - [ ] **Step 3:** implement `_real_world(chunk, class_id)` like uvwmap's; `read_params` passes `modifier.class_id`.
 - [ ] **Step 4:** rerun -> PASS; whole `test_extrude` (fixture: FixtureExtAdaptive still real-world) -> OK.
 - [ ] **Step 5:** commit (`Bead: maxdrop-em3.56`).
