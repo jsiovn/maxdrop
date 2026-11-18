@@ -112,6 +112,8 @@ def _targa(head):
     """A plausible TGA header (color map type, image type, pixel depth): Blender reads a Targa whatever its name."""
     return (len(head) >= 18 and head[1] in (0, 1) and head[2] in (1, 2, 3, 9, 10, 11)
             and head[16] in (8, 15, 16, 24, 32))
+
+
 _SIGNED = frozenset((".png", ".jpg", ".jpeg", ".jpe", ".bmp", ".tif", ".tiff", ".exr", ".hdr", ".dds", ".psd",
                      ".webp", ".jp2", ".j2k", ".j2c", ".sgi", ".rgb", ".rgba", ".bw", ".cin", ".dpx"))
 
@@ -253,13 +255,15 @@ class MaterialBuilder:
                 and not (path.startswith("//") and not bpy.data.filepath))
 
 
-def _load_alpha_mode(path):
-    """The alpha mode images.load gives a file: premultiplied for the float formats, straight for the others
-    (Blender's BKE_image_alpha_mode_from_extension). A format it treats otherwise is only never reused."""
-    return 'PREMUL' if os.path.splitext(path)[1].lower() in _PREMUL_ON_LOAD else 'STRAIGHT'
-
-
+# mirrors Blender's BKE_image_alpha_mode_from_extension: if Blender's list changes, an image of a format it now treats
+# otherwise fails _reusable as loaded and is loaded anew (a missed reuse); only one whose alpha mode was set by hand
+# to this list's value would still be reused
 _PREMUL_ON_LOAD = (".exr", ".cin", ".dpx", ".hdr")
+
+
+def _load_alpha_mode(path):
+    """The alpha mode images.load gives a file: premultiplied for the float formats, straight for the others."""
+    return 'PREMUL' if os.path.splitext(path)[1].lower() in _PREMUL_ON_LOAD else 'STRAIGHT'
 
 
 def _key(path, colorspace):
