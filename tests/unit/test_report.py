@@ -237,7 +237,31 @@ class TestMaterials(unittest.TestCase):
     def test_summary_warns(self):
         self.assertEqual(self.rep.summary(), (
             "WARNING", "Imported box.max: 1 object, 1 mesh, 6 materials; 2 textures missing, 5 approximated, "
-                       "7 issues. See the text MaxDrop Report."))
+                       "7 material issues. See the text MaxDrop Report."))
+        self.assertEqual(self.rep.material_problems, 2 + 1 + 2 + 2)  # grey, unsupported, sockets, issues
+
+    def test_material_problems_named_apart(self):
+        rep = report.gather(synthetic(), source="room.max", objects_built=6, meshes_built=2, dropped_uv_layers=1)
+        report.add_materials(rep, 1, conv_stats=stats(peeled=collections.Counter(),
+                                                      unknown=collections.Counter({"FooMtl": 1}), issues=[]))
+        self.assertEqual(rep.material_problems, 1)
+        self.assertEqual(rep.summary(), (
+            "WARNING", "Imported room.max: 6 objects, 2 meshes, 1 material; 2 placeholders, 3 modifiers not applied, "
+                       "1 material issue, 4 issues. See the text MaxDrop Report."))
+
+    def test_build_issues_are_material_issues(self):
+        """The builder's own problems (a texture file found but not loaded) are material issues, not other issues:
+        the report is not clean when a material lost its image."""
+        rep = report.gather(box(), source="box.max")
+        report.add_materials(rep, 1, collections.Counter({"Standard": 1}), lookup=lookup(found=("a.png",)),
+                             build_issues=[("Wood", "texture not loaded: a.png (bad header)")])
+        lines = rep.text().split("\n")
+        self.assertEqual(lines[-3:], ["Not converted:", "  Material issues: 1",
+                                      "    Wood: texture not loaded: a.png (bad header)"])
+        self.assertNotIn("Nothing was left out.", lines)
+        self.assertEqual(rep.left_out, 1)
+        self.assertEqual(rep.summary(), ("WARNING", "Imported box.max: 1 object, 1 mesh, 1 material; "
+                                                    "1 material issue. See the text MaxDrop Report."))
 
     def test_only_approximated_warns(self):
         rep = report.gather(box(), source="box.max")
@@ -323,6 +347,19 @@ class TestMaterials(unittest.TestCase):
         report.add_materials(rep, 1, lookup=lookup(missing=("wood.jpg",)))
         lines = rep.text().split("\n")
         self.assertEqual(lines[lines.index("  Textures not found: 1") + 1], "    wood.jpg")
+
+
+class TestRun(unittest.TestCase):
+    """The text of a run of several files: every report in import order, then a line per file not imported."""
+
+    def test_reports_then_failures(self):
+        first, second = report.gather(box(), source="a.max"), report.gather(synthetic(), source="b.max")
+        self.assertEqual(report.run_text([first, second], ["junk.max: not a 3ds Max file"]),
+                         first.text() + "\n\n" + second.text() + "\n\nNot imported: junk.max: not a 3ds Max file")
+
+    def test_one_report(self):
+        rep = report.gather(box(), source="a.max")
+        self.assertEqual(report.run_text([rep], []), rep.text())
 
 
 @unittest.skipIf(numpy is None, "numpy missing")

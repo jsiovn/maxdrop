@@ -7,10 +7,11 @@
     rep = gather(desc, source="scene.max", objects_built=n, meshes_built=m, dropped_uv_layers=k, pack=result)
     add_materials(rep, len(built.materials), builder.classes, conv.stats, tex.stats, index.report,
                   sockets=builder.sockets_skipped, blender=bpy.app.version_string,
-                  swatches=conv.swatches)   # when materials were made
+                  swatches=conv.swatches, build_issues=builder.issues())   # when materials were made
     rep.text()                          # the whole report, lines joined with "\n"
     rep.summary()                       # (level, line): "INFO" when nothing was approximated or left out, else
-                                        # "WARNING"
+                                        # "WARNING"; the material problems named apart from the other issues
+    run_text([rep, ...], failed)        # a run of several files: every report, then the files not imported
 
 Modifiers have three outcomes, counted per class once per node whose stack holds one: applied (baked into the
 mesh), converted (to a Blender modifier) and ignored (the object arrives as its base object, a "not applied" left
@@ -44,8 +45,9 @@ UNKNOWN_CONTROLLER = "transform: " + controllers.UNKNOWN_CLASS  # convert.scene'
 
 
 class Report:
-    """Counters and lists of one import. issues and geometry_errors are [(node label, reason)], material_issues
-    [(material or map object index, reason)]. materials_built is None when the import made no materials."""
+    """Counters and lists of one import. issues, geometry_errors and material_issues are [(label, reason)]: a node,
+    a material or map object ("object <index>") or a Blender material. materials_built is None when the import made
+    no materials."""
     __slots__ = ("source", "unit", "meters", "nodes", "objects_built", "meshes_built", "curves_built", "layers",
                  "hidden_layers", "hidden", "unrenderable", "frozen", "groups", "placeholders", "unknown_controllers", "modifiers",
                  "modifiers_applied", "modifiers_converted",
@@ -90,6 +92,14 @@ class Report:
         return sum(self.wrappers.values()) + sum(self.maps_peeled.values())
 
     @property
+    def material_problems(self):
+        """The problems of the materials (part of left_out): materials without a rule, maps without a usable map
+        below, Principled inputs this Blender lacks (per material) and the material issues of the converters and
+        the builder."""
+        return (sum(self.grey_materials.values()) + sum(self.maps_unsupported.values())
+                + sum(self.sockets_skipped.values()) + len(self.material_issues))
+
+    @property
     def left_out(self):
         """How many things were not converted: placeholders, nodes with modifiers not applied, texture files not
         found, and the issues (_problems)."""
@@ -97,11 +107,10 @@ class Report:
                 + self._problems())
 
     def _problems(self):
-        """UV channels without room, unknown controllers, geometry errors, materials without a rule, maps without a
-        usable map below, Principled inputs this Blender lacks (per material), material issues, other issues."""
+        """UV channels without room, unknown controllers, geometry errors, other issues and the material
+        problems."""
         return (len(self.geometry_errors) + len(self.issues) + self.dropped_uv_layers + self.unknown_controller_nodes
-                + sum(self.grey_materials.values()) + sum(self.maps_unsupported.values())
-                + sum(self.sockets_skipped.values()) + len(self.material_issues))
+                + self.material_problems)
 
     def summary(self):
         """(level, one line) for the operator's report."""
@@ -122,9 +131,12 @@ class Report:
             parts.append(_plural(len(self.textures_missing), "texture") + " missing")
         if self.approximated:
             parts.append("%d approximated" % self.approximated)
-        problems = self._problems()
-        if problems:
-            parts.append(_plural(problems, "issue"))
+        materials = self.material_problems
+        if materials:
+            parts.append(_plural(materials, "material issue"))
+        others = self._problems() - materials
+        if others:
+            parts.append(_plural(others, "issue"))
         return LEVEL_WARNING, "Imported %s: %s; %s. See the text MaxDrop Report." % (name, built, ", ".join(parts))
 
     def text(self):
@@ -188,13 +200,18 @@ class Report:
             where = _in_pack(self.pack)
             lines.append("  Textures not found: %d" % len(self.textures_missing))
             lines += _listed([name + where(name) for name in self.textures_missing])
-        materials = [("object %d" % index, reason) for index, reason in self.material_issues]
-        for title, items in (("Geometry errors", self.geometry_errors), ("Material issues", materials),
+        for title, items in (("Geometry errors", self.geometry_errors), ("Material issues", self.material_issues),
                              ("Other issues", self.issues)):
             if items:
                 lines.append("  %s: %d" % (title, len(items)))
                 lines += _listed(["%s: %s" % item for item in items])
         return "\n".join(lines)
+
+
+def run_text(reports, failed):
+    """The text of a run of several files: each report's text in import order, then "Not imported: <line>" for each
+    of failed, a blank line between them."""
+    return "\n\n".join([rep.text() for rep in reports] + ["Not imported: " + line for line in failed])
 
 
 def _listed(items):
@@ -322,13 +339,13 @@ def gather(desc, source="", objects_built=None, meshes_built=None, dropped_uv_la
 
 
 def add_materials(rep, materials_built, classes=(), conv_stats=None, tex_stats=None, lookup=None, sockets=(),
-                  blender="", swatches=None):
+                  blender="", swatches=None, build_issues=()):
     """Add what the material import did to rep: materials_built (Blender materials made), classes {class name:
     materials converted by a rule} and sockets {Principled input name: materials that needed it} from
     build.materials; conv_stats (peeled, unknown, issues), tex_stats (peeled, unsupported, issues) and lookup (a
     TextureReport: found, missing, truncated) from the converters; blender: the version the sockets are missing
     from; swatches: the converters' convert.colors.Swatches (its line; its note, set when the scene's gamma was not
-    found, an issue).
+    found, an issue); build_issues: build.materials' [(Blender material label, reason)], material issues too.
     """
     rep.materials_built, rep.blender = materials_built, blender
     if swatches is not None:
@@ -340,15 +357,16 @@ def add_materials(rep, materials_built, classes=(), conv_stats=None, tex_stats=N
     if conv_stats is not None:
         rep.wrappers.update(conv_stats.peeled)
         rep.grey_materials.update(conv_stats.unknown)
-        rep.material_issues.extend(conv_stats.issues)
+        rep.material_issues.extend(("object %d" % index, reason) for index, reason in conv_stats.issues)
     if tex_stats is not None:
         rep.maps_peeled.update(tex_stats.peeled)
         rep.maps_unsupported.update(tex_stats.unsupported)
-        rep.material_issues.extend(tex_stats.issues)
+        rep.material_issues.extend(("object %d" % index, reason) for index, reason in tex_stats.issues)
     if lookup is not None:
         rep.textures_found = [(textures.RULE_NAMES[r], lookup.found.get(r, 0)) for r in textures.RULES]
         rep.textures_missing = list(lookup.missing)
         rep.texture_search_stopped = [
             "Texture search of %s stopped after %d files and folders, in %s" % (textures.RULE_NAMES[r], n, folder)
             for r, folder, n in lookup.truncated]
+    rep.material_issues.extend(build_issues)
     return rep

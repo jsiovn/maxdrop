@@ -36,6 +36,8 @@
 # made, and the import report counts them.
 # Modified for MaxDrop, 2026-11-17 (jsiovn). New option Modifiers (Keep as Blender Modifiers / Ignore): TurboSmooth,
 # MeshSmooth, Shell and Symmetry become Subdivision Surface, Solidify and Mirror (build.modifiers).
+# Modified for MaxDrop, 2026-11-18 (jsiovn). The material builder's issues are material issues of the import report,
+# and build.report writes the text of a run of several files (publish_run).
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -346,19 +348,6 @@ def _remove(cols, before):
             blocks.remove(block)
 
 
-def _join_reports(reports, failed):
-    """Several files in one run: each scene was published on its own (console, status line), which leaves the text
-    "MaxDrop Report" with the last one; it then holds every report of the run, in import order, a blank line
-    between them, and a line per file that was not imported."""
-    from .build import report as build_report
-    parts = [rep.text() for rep in reports] + ["Not imported: " + line for line in failed]
-    block = bpy.data.texts.get(build_report.TEXT_NAME)
-    if block is None:
-        block = bpy.data.texts.new(build_report.TEXT_NAME)
-    block.clear()
-    block.write("\n\n".join(parts) + "\n")
-
-
 def _summary(path, result):
     if result.mode == "unpacked":
         done = _plural(result.written, "file") + " written"
@@ -538,7 +527,8 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
         if not reports:
             return self._error("Nothing imported. " + "; ".join(failed))
         if len(reports) > 1 or failed:
-            _join_reports(reports, failed)
+            from .build import report as build_report
+            build_report.publish_run(reports, failed)
         for line in failed:
             self.report({'WARNING'}, "Not imported: " + line)
             print("MaxDrop: not imported: " + line)
@@ -590,7 +580,6 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
                                     meshes_built=len(built.meshes), curves_built=len(built.curves),
                                     dropped_uv_layers=built.dropped_uv_layers,
                                     pack=pack, pack_name=pack_name)
-        rep.issues.extend(builder.issues())
         if settings_skipped:
             rep.issues.append(("modifiers", "%d settings not on Blender %s, not set" % (settings_skipped,
                                                                                        bpy.app.version_string)))
@@ -598,7 +587,8 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
             conv_stats, tex_stats, lookup, swatches = counts
             convert_report.add_materials(rep, len(built.materials), builder.classes, conv_stats=conv_stats,
                                          tex_stats=tex_stats, lookup=lookup, sockets=builder.sockets_skipped,
-                                         blender=bpy.app.version_string, swatches=swatches)
+                                         blender=bpy.app.version_string, swatches=swatches,
+                                         build_issues=builder.issues())
         del desc
         axis = axis_conversion(from_forward=self.axis_forward, from_up=self.axis_up).to_4x4()
         if axis != Matrix.Identity(4):
