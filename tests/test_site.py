@@ -146,7 +146,9 @@ class Page(unittest.TestCase):
                 "<strong>Units: Auto</strong> takes the unit the scene was saved with",
                 "<strong>Primitives</strong> (Box, Plane, Pyramid, Sphere, GeoSphere, Cylinder, Cone, Tube, Torus) as "
                 "the meshes 3ds Max builds", "<strong>Extrude</strong> on a shape as its mesh",
-                "<strong>Other modifiers</strong>"):
+                "<strong>Other modifiers</strong>",
+                "<strong>Lights and cameras</strong>: V-Ray plane, disc and sphere lights",
+                "<strong>Light Strength</strong> scales every light"):
             self.assertTrue(needle in page, needle)
 
     def test_the_page_names_no_option_the_importer_lost(self):
@@ -154,7 +156,8 @@ class Page(unittest.TestCase):
         for gone in ("Splines and shapes", "<strong>Primitives</strong> (Box, Sphere, Cylinder…)",
                      "<strong>Modifiers</strong> (Extrude", "Apply Matrix", "<strong>Collection</strong>",
                      "one 3ds Max unit becomes one meter",
-                     "imports exactly what that importer imports"):
+                     "imports exactly what that importer imports",
+                     "Lights and cameras are not read yet", "<strong>Lights and cameras</strong>, V-Ray lights included"):
             self.assertFalse(gone in page, gone)
 
     def test_the_page_says_how_scene_packs_are_imported(self):

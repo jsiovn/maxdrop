@@ -1,10 +1,12 @@
 # What MaxDrop imports
 
-**This page describes version 0.0.5.** Nodes, meshes, transforms, hierarchy, instances, layers, scene units and
+**This page describes version 0.1.0.** Nodes, meshes, transforms, hierarchy, instances, layers, scene units and
 materials are read by MaxDrop's own reader; the engine of [io_scene_max](https://github.com/nrgsille76/io_scene_max)
 1.9.2 that 0.0.3 still used for materials is gone. From 0.0.5 the room shell arrives too (shapes, Extrude, UVW
-Map), as do nine of the standard primitives and TurboSmooth, MeshSmooth, Shell and Symmetry as Blender modifiers. A
-scene pack (`.zip`, `.rar`, `.7z`) is unpacked and its `.max`
+Map), as do nine of the standard primitives and TurboSmooth, MeshSmooth, Shell and Symmetry as Blender modifiers.
+From 0.1.0 the lights (V-Ray, standard, photometric, VRaySun, VRayIES) and the cameras arrive, and a file with a
+camera sets the scene camera and the render size: a dropped interior scene can be looked at through its own camera,
+lit by its own lights. A scene pack (`.zip`, `.rar`, `.7z`) is unpacked and its `.max`
 imported (see [Files](#files)), and several `.max` files chosen at once are imported one after the other.
 
 How far to trust the list: MaxDrop's test files (`tests/fixtures/`, saved by 3ds Max 2020) are compared with what
@@ -23,7 +25,12 @@ weld aside, see its row), and UVW Map coordinates equal 3ds Max's. In the scene 
 (3ds Max 2015), all 20 extruded shapes of the room get 3ds Max's vertex and triangle counts, and the 16 whose
 stack MaxDrop evaluates in full its bounding box (the other 4 have an Edit Mesh or an FFD above the Extrude, which
 MaxDrop does not apply); in both scenes every object whose modifiers are all applied or converted gets 3ds Max's
-vertex count (57 and 150 objects). The page is updated with every version.
+vertex count (57 and 150 objects). Lights are checked against what V-Ray 5.2 renders (their brightness measured) and
+cameras against the field of view 3ds Max computes, on the test files and on both scenes' cameras. Dropped on
+Blender 4.2 and 5.2 with the default options, both scenes open, through their own camera, as a closed, textured
+room at its real height (3.4 m and 3.3 m floor to ceiling), lit by their own lights, with no missing texture and a
+report that accounts for every light, camera and modifier of the file (the *first open* in
+[BASELINE.md](BASELINE.md)). The page is updated with every version.
 
 "Not yet" means the importer does not convert it: the node arrives as an empty (a *placeholder*) at its place in
 the hierarchy, with its 3ds Max class name in the custom property `maxdrop_class`.
@@ -164,8 +171,8 @@ the scene in the archive is kept.
   are not verified one by one yet.
 - When a `.max` is dropped, the options popup shows a **File** line: the 3ds Max version, the renderer, the
   number of objects and the unit, read in a fraction of a second even from a large scene.
-- A very large scene works but needs time and memory: see [BASELINE.md](BASELINE.md) (version 0.0.5 next to
-  0.0.4, 0.0.3 and the engine they replaced).
+- A very large scene works but needs time and memory: see [BASELINE.md](BASELINE.md) (version 0.1.0 next to
+  0.0.5, 0.0.4, 0.0.3 and the engine they replaced).
 - **Scene packs**: a `.zip`, `.rar` or `.7z` holding the scene, chosen in *File › Import*; a `.rar` or `.7z` can
   also be dropped (a dropped `.zip` goes to Blender's extension installer). The format is recognised by the file's
   content. The chosen `.max` and the image and `.ies` files it names are unpacked into a folder named after the
@@ -182,5 +189,8 @@ the scene in the archive is kept.
 
 ## What comes next
 
-Lights and cameras: Corona lights, V-Ray mesh and dome lights, IES distributions, the sky and Skylight as the World,
-camera exposure.
+Toward 1.0: an import with a progress bar that Esc cancels, a time and memory budget for large scenes, node graphs
+for the map wrappers that are still simplified (Color Correction, Falloff, Mix, Composite), files of older 3ds Max
+versions, and limits and fuzz tests against hostile files. Not scheduled yet: Corona lights, V-Ray mesh and dome
+lights, IES distributions, the sky and Skylight as the World, camera exposure, and the modifiers that still leave an
+object as its base object (Edit Poly, Edit Mesh, FFD…).

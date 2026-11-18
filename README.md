@@ -6,9 +6,9 @@ scene was downloaded as. Blender 4.2 or newer; tested on 4.2 LTS, 4.5 LTS and 5.
 
 > **Early release.** MaxDrop is a new fork of [io_scene_max](https://github.com/nrgsille76/io_scene_max). It
 > imports editable meshes with their UVs, smoothing, instances, hierarchy, layers and scene units, the room shell
-> (shapes, Extrude, UVW Map), nine of the standard primitives, and V-Ray, Corona, Standard and Physical materials
-> with their texture maps. Lights and cameras are not read yet and most modifiers are not applied, so a whole
-> interior scene arrives incomplete.
+> (shapes, Extrude, UVW Map), nine of the standard primitives, V-Ray, Corona, Standard and Physical materials with
+> their texture maps, and the lights and cameras: a dropped V-Ray interior scene opens through its own camera, lit by
+> its own lights. Most modifiers are not applied yet and some lights and maps are simplified.
 > [docs/SUPPORT.md](docs/SUPPORT.md) is the honest list.
 
 > **Independent.** Not affiliated with, endorsed by or supported by Autodesk or Chaos. Autodesk and 3ds Max are
@@ -34,8 +34,14 @@ scene was downloaded as. Blender 4.2 or newer; tested on 4.2 LTS, 4.5 LTS and 5.
   Multi/Sub-Object, CoronaPhysicalMtl, CoronaMtl, CoronaLightMtl and CoronaLayeredMtl.
 - **Textures** that are plain image files, next to the `.max` file, in a `maps` or `textures` folder beside it, or
   in folders you add in the preferences.
+- **Lights**: V-Ray plane, disc and sphere lights, standard and photometric lights, VRaySun and VRayIES as Blender
+  area, point, spot and sun lights, as bright as V-Ray renders them (the import option **Light Strength** scales
+  them all).
+- **Cameras** (Free, Target, Physical, VRayPhysicalCamera) with 3ds Max's framing; the camera the file renders
+  becomes the scene camera and the file's render size Blender's.
 
-Not yet: lights and cameras, the other modifiers (Edit Poly, Edit Mesh, FFD, Noise…: the object arrives as it was
+Not yet: Corona lights, V-Ray mesh and dome lights, the sky (the World stays as it was), IES distributions, the other
+modifiers (Edit Poly, Edit Mesh, FFD, Noise…: the object arrives as it was
 before them), Teapot, sliced primitives and hemispheres, other shapes (Star, Text, Helix, Donut…), animation,
 procedural maps (simplified to the image below them). See [docs/SUPPORT.md](docs/SUPPORT.md).
 
@@ -77,14 +83,17 @@ above.
    - **Object Filter** picks whether materials and UV maps come along; **Forward** and **Up** turn the scene.
    - **Modifiers**: **Keep as Blender Modifiers** turns TurboSmooth, MeshSmooth, Shell and Symmetry into Subdivision
      Surface, Solidify and Mirror; **Ignore** leaves them out.
+   - **Light Strength** scales every light (default 1.43: Cycles then renders them as bright as V-Ray).
+   - **Keep Targets** aims target cameras and lights at their targets with a Track To constraint, so they follow
+     when a target moves; off, they keep the rotation 3ds Max gives them.
    - Every import makes a collection named after the file, with one collection per 3ds Max layer below it.
 3. Click **Import**. A large scene takes a while and Blender does not respond until it is done
    ([docs/BASELINE.md](docs/BASELINE.md) has measured times).
 4. The status bar sums up the import in one line. The text **MaxDrop Report** in the Text Editor (and the
-   system console) lists what arrived and what did not, such as lights kept as empties, and what became of the
-   materials: converted by class, wrappers and maps approximated, textures found and the ones not found by
-   file name. The report names your scene's objects and files: it stays on your computer. A bug report asks
-   for it.
+   system console) lists what arrived and what did not, such as light settings Blender has no place for, and
+   what became of the materials: converted by class, wrappers and maps approximated, textures found and the
+   ones not found by file name. The report names your scene's objects and files: it stays on your computer. A
+   bug report asks for it.
 
 A `.max` file names its texture files but does not contain them. MaxDrop looks for each file name in the scene's
 folder, then in `maps` or `textures` folders beside it, then in the **Texture Search Folders** of the add-on

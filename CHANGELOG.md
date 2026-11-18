@@ -8,8 +8,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-19
+
 ### Added
 
+- **First open of a whole scene**: a dropped V-Ray interior scene now opens through its own camera, lit by its own
+  lights, at its real size. Checked on two commercial interior scenes on Blender 4.2 and 5.2 (see
+  `docs/BASELINE.md`).
 - Target cameras, target lights and other objects aimed by a Look At controller or a LookAt Constraint point where
   they point in 3ds Max (they kept the rotation of no controller before); their targets arrive as empties, not
   placeholders. The new import option **Keep Targets** aims the ones with a Look At controller at their targets

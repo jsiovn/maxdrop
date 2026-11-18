@@ -2,8 +2,8 @@
 
 What MaxDrop does with two large real interior scenes: first the engine inherited from io_scene_max 1.9.2
 (`maxdrop/import_max.py`, unchanged in MaxDrop 0.0.1), then MaxDrop's own reader in version 0.0.3, its
-materials in 0.0.4 and its room shells and modifiers in 0.0.5, measured the same way and compared with what 3ds Max
-itself reports.
+materials in 0.0.4, its room shells and modifiers in 0.0.5 and its lights and cameras in 0.1.0, measured the same way
+and compared with what 3ds Max itself reports.
 
 The two scenes are commercial assets and are not in this repository: they are called **scene A** and **scene B**
 here, and only counts and measurements are recorded. Both are V-Ray interior scenes.
@@ -256,6 +256,61 @@ dump's 6 significant digits (the room of scene A is in millimeters: a wall corne
 - A render of scene A's room, headless from a fixed point inside it with a default light (its own lights and cameras
   are not imported yet), shows walls, floor and ceiling closed around the furniture; the image is not kept here.
 
+## Version 0.1.0: lights and cameras
+
+V-Ray, standard and photometric lights, VRaySun and VRayIES arrive as Blender lights, the cameras as Blender cameras,
+and a file with a camera sets the scene camera and the render size. Measured as above (`tools/baseline.py`, Blender
+5.2.0 LTS, Python 3.13.13, the same machine, default options), MaxDrop 0.1.0, once, on 2026-11-19.
+
+| | Scene A 0.0.5 | Scene A 0.1.0 | Scene B 0.0.5 | Scene B 0.1.0 |
+|---|---:|---:|---:|---:|
+| Outcome | finished, no traceback | finished, no traceback | finished, no traceback | finished, no traceback |
+| Wall time | 14 s | 13 s | 17 s | 16 s |
+| Import time (operator) | 11 s | 11 s | 14 s | 14 s |
+| Peak memory | 1.3 GB (1.4 GB) | 1.3 GB (1.4 GB) | 1.4 GB (1.4 GB) | 1.4 GB (1.4 GB) |
+| Blender objects created | 747 | 747 | 2,252 | 2,252 |
+| … lights (light datablocks) | | 289 (117) | | 25 (13) |
+| … cameras | | 1 | | 1 |
+| … meshes | 363 | 363 | 1,629 | 1,629 |
+| Materials created | 158 | 158 | 143 | 143 |
+| Images loaded | 127 | 127 | 141 | 141 |
+| Placeholders | 294 | 2 | 444 | 416 |
+
+- Instances of one light share its datablock, as instanced meshes do. Every light node of both files arrives as a
+  light: none is a placeholder or left unbuilt. Scene A's two placeholders are LinkComposite helpers; scene B's are
+  Particle Flow's operators and helpers (Mapping, Event, Display, Spin and the others), which MaxDrop does not read.
+- Each scene's one camera is the scene camera (the view its file renders) and its render size Blender's.
+
+### First open
+
+The v0.1.0 gate: drop each scene and look through its own camera. `tools/first_open.py` imports the file with the
+operator's default options (Units: Auto) in a fresh headless Blender, renders one frame through `scene.camera` with
+EEVEE at 640 pixels across, the world dark so that only the imported lights light it, and answers the gate's
+questions. Run on Blender 5.2.0 and 4.2.23 on 2026-11-19; both versions gave the same answers and counts.
+
+| | Scene A | Scene B |
+|---|---|---|
+| No traceback | yes | yes |
+| No magenta (texture that did not load) | yes: 0 % of the pixels, 0 texture files missing | yes: 0 %, 0 missing |
+| Lit by its own lights | yes: mean luminance 0.35 | yes: 0.44 |
+| Closed: rays through each quarter of the frame hit geometry | yes: 98 %, 100 %, 94 %, 94 % | yes: 100 % in each |
+| Right scale: floor to ceiling in front of the camera | yes: 3.4 m | yes: 3.3 m |
+| The report accounts for every node, light, camera and modifier | yes: 746 nodes, 289 lights, 1 camera | yes: 2,251 nodes, 25 lights, 1 camera |
+
+- Scene A's camera stands behind a wall and clips it away (3ds Max's clipping planes, imported): the image shows a
+  closed, textured room, its floor, walls, ceiling and furniture lit by its spots and strips. The bottom of the frame
+  is empty where the clipped floor would be, as in 3ds Max: those rays start past the near clip and pass under the
+  floor, hence the 94 %.
+- Scene B's camera is a long lens (139 mm) on one piece of furniture inside the room: every ray of the frame hits.
+  A wide lens from the same point shows the room around it: floor, walls, ceiling and windows, lit through the
+  windows by its VRaySun.
+- "Accounts for" is checked against the file read again: each light or camera node is a Blender light or camera, a
+  placeholder of its class or an issue that says it was not built, and each modifier class of a node is counted as
+  applied, converted or not applied. What was simplified (wrappers and maps peeled, maps without a usable map below,
+  lights' and cameras' settings Blender has no place for) is listed by class in the report.
+- Scene A from a `.zip` and from a `.rar` of its folder: the same objects (747), materials (158) and images (127)
+  as from the `.max` itself, and the same answers.
+
 ## Reproduce
 
 ```powershell
@@ -268,3 +323,14 @@ Keep `--out` outside the repository: the JSON holds counts only, but Blender's c
 `import_report` holds the counts of the operator's `Imported ...` line (objects, meshes, curves,
 materials, placeholders, modifiers not applied, textures missing, approximated, issues). The skipped and failed
 nodes of the 0.0.1 table came from lines the inherited engine printed; the tool no longer reads them.
+
+The first open:
+
+```powershell
+python tools\first_open.py --blender "<blender.exe>" --profile "<scratch>\profile" --label "scene A" `
+    --out "<scratch>\first_open" "<path>\scene.max"
+```
+
+It prints its JSON (counts, class names, issue kinds and a yes or no per question) and exits 0 when every answer is
+yes. The image and the log it writes beside the JSON show and name the scene: keep `--out` outside the repository
+too.
