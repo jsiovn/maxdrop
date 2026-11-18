@@ -616,6 +616,13 @@ disc π size0², sphere 4π size0² (m², doubled for a double-sided plane or di
 one change: in lm/m²/sr and W/m²/sr V-Ray lights a disc as if `a` were (2 size0)², 4/π more than its area; in the
 default units it does not. Blender's area light shines on one side: a double-sided plane or disc gets half.
 
+**A scaled node.** V-Ray grows the emitting area with the node's scale; in the units that follow the area (default,
+lm/m²/sr, W/m²/sr) the flux grows with it, in lm and W it does not. Measured on lights scaled 2, 1.5, 1 (the scratch
+scene below): plane and disc 3 × the unscaled flux (X × Y scale), sphere 4 × (its largest scale squared; X and the
+largest are the same there). Blender scales an area light's size with its object and keeps its power, so the power
+takes that factor (`area_scale`), and instances of one light with different scales get a light each. The
+vray_lights fixture's FixtureDiscScaled is such an instance.
+
 **Calibration of Light Strength (1.43).** A scratch scene (not committed): a white Lambert floor (VRayMtl diffuse
 255, no reflection; in Blender a Diffuse BSDF of 1.0), an invisible VRayLight 1 m above it, plane, disc and sphere
 of 100 mm size0 in each of the five units modes, each rendered alone through an orthographic camera looking down at
@@ -898,7 +905,9 @@ Not shown by any fixture yet, so not stated above:
 
 - Of VRayLight ([VRayLight](#vraylight)): a mesh light's mesh (parameter 34, a node; none picked in the fixture),
   the dome's parameters, size2, the texmap's use, the light units of a scene unit other than millimeters (the rules
-  scale lengths by the unit; the fixture is in millimeters), an animated parameter (its default is taken).
+  scale lengths by the unit; the fixture is in millimeters), an animated parameter (its default is taken); a sphere
+  scaled with Y or Z larger than X (taken as the largest scale), and whether a scaled sphere's radius in Blender
+  follows the object's scale as V-Ray's does.
 
 - Asset metadata seen only in the corpus (`assets.py` relies on it): scene A (saved as 3ds Max 2012) has
   `FileAssetMetaData2` instead, its records without the third string (155 records: `Bitmap` and `Photometric`);

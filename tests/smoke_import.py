@@ -9,8 +9,9 @@ Run headless with an isolated profile so your own preferences are never touched:
   & blender --background --factory-startup --python-exit-code 1 --python tests\\smoke_import.py -- <file or folder> ...
 
 Without arguments it takes tests/fixtures/*.max; with no file at all it prints `IMPORT SKIPPED` and exits 0.
-Each file is imported into an emptied scene with the default options and must bring at least one mesh with faces and
-one material (a fixture of lights only, LIGHTS_ONLY: a light); the counts are printed so that runs on different Blender versions can be compared.
+Each file is imported into an emptied scene with the default options and must bring at least one mesh with faces
+and one material (a fixture of lights only, LIGHTS_ONLY: a light); the counts are printed so that runs on different
+Blender versions can be compared.
 
 Every .max is then packed into a .zip in a scratch folder (the scene with the image and .ies files of its folder
 tree, plus one image no scene names) and imported from it: same checks, no fewer images, unpacked beside the zip;

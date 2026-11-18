@@ -49,7 +49,8 @@ class Report:
     """Counters and lists of one import. issues, geometry_errors and material_issues are [(label, reason)]: a node,
     a material or map object ("object <index>") or a Blender material. materials_built is None when the import made
     no materials."""
-    __slots__ = ("source", "unit", "meters", "nodes", "objects_built", "meshes_built", "curves_built", "layers",
+    __slots__ = ("source", "unit", "meters", "nodes", "objects_built", "meshes_built", "curves_built",
+                 "lights_built", "layers",
                  "hidden_layers", "hidden", "unrenderable", "frozen", "groups", "placeholders", "unknown_controllers", "modifiers",
                  "modifiers_applied", "modifiers_converted",
                  "dropped_uv_layers", "unknown_controller_nodes", "geometry_errors", "issues", "pack", "pack_name",
@@ -60,7 +61,7 @@ class Report:
     def __init__(self, source=""):
         self.source, self.unit, self.meters = source, None, 1.0
         self.nodes = self.objects_built = self.meshes_built = self.layers = self.hidden_layers = 0
-        self.curves_built = 0
+        self.curves_built = self.lights_built = 0
         self.hidden = self.unrenderable = self.frozen = self.groups = self.dropped_uv_layers = 0
         self.unknown_controller_nodes = 0  # their issues, listed by class in unknown_controllers instead
         self.placeholders = collections.Counter()
@@ -150,7 +151,8 @@ class Report:
             lines.append("Units: not stated in the file, %g m per unit" % self.meters)
         lines.append("Nodes read: %d" % self.nodes)
         lines.append("Objects built: %d, meshes: %d" % (self.objects_built, self.meshes_built)
-                     + (", curves: %d" % self.curves_built if self.curves_built else ""))
+                     + (", curves: %d" % self.curves_built if self.curves_built else "")
+                     + (", lights: %d" % self.lights_built if self.lights_built else ""))
         lines.append("Layers: %d (%d hidden)" % (self.layers, self.hidden_layers))
         lines.append("Objects hidden: %d, not renderable: %d, frozen: %d" % (self.hidden, self.unrenderable,
                                                                              self.frozen))
@@ -306,7 +308,7 @@ def _pack_lines(pack, pack_name):
 
 
 def gather(desc, source="", objects_built=None, meshes_built=None, dropped_uv_layers=0, pack=None, pack_name="",
-           curves_built=None):
+           curves_built=None, lights_built=None):
     """The Report of one import from its SceneDescription and what build/ made of it."""
     rep = Report(source)
     rep.unit = desc.unit.name if desc.unit is not None else None
@@ -315,6 +317,7 @@ def gather(desc, source="", objects_built=None, meshes_built=None, dropped_uv_la
     rep.objects_built = len(desc.nodes) if objects_built is None else objects_built
     rep.meshes_built = len(desc.meshes) if meshes_built is None else meshes_built
     rep.curves_built = len(desc.curves) if curves_built is None else curves_built
+    rep.lights_built = len(getattr(desc, "lights", ())) if lights_built is None else lights_built
     rep.dropped_uv_layers = dropped_uv_layers
     rep.layers = len(desc.layers)
     rep.hidden_layers = sum(1 for la in desc.layers if la.hidden)

@@ -6,7 +6,9 @@
 
     is_vray_light(scene, i)             # object i is a VRayLight
     values, issues = read_params(scene, i)   # {parameter id: value}, LightError without a block
-    ld, issues = describe_light(scene, i, name, meters, swatches)   # LightDescription, or None and the reason
+    not_built(values)                   # why a mesh or dome light is not built, None for the others
+    scale = area_scale(values, world)   # what a node's scale does to the area, rounded (part of the key)
+    ld, issues = describe(key, name, values, meters, swatches, scale)   # LightDescription, or None and the reason
     watts(units, multiplier, area(kind, size0, size1, double_sided, meters))
 
 A VRayLight keeps one ParamBlock2 in reference slot 0 (docs/FORMAT.md, "VRayLight"): 0 on, 1 type (0 plane, 1 dome,
@@ -20,7 +22,11 @@ ocbaby_exsKelvinRGB): the power is the total radiant flux in watts. Radiance uni
 area (plane 2 size0 x 2 size1, disc pi size0^2, sphere 4 pi size0^2, in m^2; a double-sided plane or disc twice
 that), photometric units at 683 lm/W, and one default (image) unit is 1500 / pi cd/m^2. One change, measured
 against V-Ray 5.2 renders (docs/FORMAT.md, "VRayLight"): in lm/m2/sr and W/m2/sr a disc emits as if its area were
-(2 size0)^2, 4 / pi times its own; in the default units it does not. Blender's area light shines
+(2 size0)^2, 4 / pi times its own; in the default units it does not. A node's scale grows the area in V-Ray (in
+the default units, lm/m2/sr and W/m2/sr, where the flux follows the area; not in lm and W): a plane or disc by its X
+times its Y scale, a sphere by the square of its largest scale (measured with a scale of 2, 1.5, 1: 3 and 4).
+Blender's area light grows with the object's scale but keeps its power, so the power takes that factor, and the
+nodes of one VRayLight share one LightDescription per factor (area_scale). Blender's area light shines
 on one side only: a double-sided plane or disc gets half the flux, the side it faces (an issue). Cycles has no
 per-light diffuse or specular factor: affect diffuse off hides the light from diffuse rays, affect specular and
 affect reflections both off from glossy rays (one switch for both: an issue when only one is off); a contribution
@@ -31,10 +37,12 @@ sRGB, as CoronaColor's temperature; V-Ray's own temperature color, which it also
 Plane -> AREA RECTANGLE, disc -> AREA DISK, sphere -> POINT with the radius: a V-Ray plane shines along its local
 -Z, as a Blender area light does, so the node transform stays. Mesh and dome lights are not built (the reason; "dome
 light -> World" is later work). The FBX route's spot mirrors and light de-instancing are dropped: the nodes of one
-VRayLight share one LightDescription. build/ multiplies the power by the import's Light Strength.
+VRayLight with the same area_scale share one LightDescription. build/ multiplies the power by the import's Light
+Strength.
 
 The file comes from anywhere: a parameter that is animated, missing or no finite number takes its default (the
-animated one an issue); a block that cannot be read raises LightError. No bpy.
+animated one an issue); a block that cannot be read raises LightError; a power past the float32 range (sizes near
+the float range) is 0 W, an issue. No bpy.
 """
 import math
 
@@ -81,7 +89,10 @@ NOT_YET = {MESH: "a mesh light is not imported yet",
 DOUBLE_SIDED = "double-sided: Blender's area light shines on one side, with half the power"
 TEXMAP = "its texture is not imported: the light has its color"
 DIRECTIONAL = "directional %g is not imported: it shines over the whole hemisphere"
-GLOSSY = "affect specular %s, affect reflections %s: Cycles has one switch for both, the light stays in glossy rays"
+GLOSSY = ("affect specular %s, affect reflections %s: Cycles has one switch for both and keeps the light in glossy "
+          "rays; EEVEE's specular factor follows affect specular")
+NOT_FINITE = "the power is out of range (sizes %g, %g): 0 W"
+MAX_POWER = 3.4028234663852886e38  # the largest float32: what a Blender light holds
 CONTRIBUTION = "%s contribution %g: Blender's %s factor, which only EEVEE uses"
 
 
@@ -127,6 +138,17 @@ def area(kind, size0, size1, double_sided, meters, units=UNITS_DEFAULT):
     else:
         return 1.0
     return a * 2.0 if double_sided and kind in (PLANE, DISC) else a
+
+
+def area_scale(values, world):
+    """The factor a node's world matrix (reader rows: the local axes in world space) puts on the emitting area of the
+    light of values, rounded to 9 digits: 1 in lm and W; a plane's or disc's X times Y scale; a sphere's largest
+    scale squared; 1 when that is no finite positive number."""
+    if values[P_UNITS] in (UNITS_LM, UNITS_W):
+        return 1.0
+    lengths = [math.sqrt(sum(c * c for c in world[r][:3])) for r in range(3)]
+    f = max(lengths) ** 2 if values[P_TYPE] == SPHERE else lengths[0] * lengths[1]
+    return float("%.9g" % f) if math.isfinite(f) and f > 0 else 1.0
 
 
 def watts(units, multiplier, a):
@@ -180,19 +202,33 @@ def read_params(scene, i):
     return values, issues
 
 
-def describe(key, name, values, meters, swatches):
-    """(LightDescription of a VRayLight's parameter values, or None, issues): None and the reason for a mesh or
-    dome light or a type 3ds Max does not have."""
+def not_built(values):
+    """Why a VRayLight of these parameter values is not built (a mesh or dome light, a type 3ds Max does not have),
+    None when it is."""
     kind = values[P_TYPE]
     if kind not in TYPE_NAMES:
-        return None, ["type %d is not a VRayLight type" % kind]
-    if kind in NOT_YET:
-        return None, [NOT_YET[kind]]
+        return "type %d is not a VRayLight type" % kind
+    return NOT_YET.get(kind)
+
+
+def describe(key, name, values, meters, swatches, scale=1.0):
+    """(LightDescription of a VRayLight's parameter values, or None, issues): None and the reason when it is not
+    built (not_built). scale: area_scale of its nodes."""
+    reason = not_built(values)
+    if reason is not None:
+        return None, [reason]
+    kind = values[P_TYPE]
     issues = []
     size0, size1 = abs(values[P_SIZE0]), abs(values[P_SIZE1])
     double = bool(values[P_DOUBLE_SIDED]) and kind in (PLANE, DISC)
     units = values[P_UNITS]
-    w = watts(units, values[P_MULTIPLIER], area(kind, size0, size1, double, meters, units))
+    try:
+        w = watts(units, values[P_MULTIPLIER], area(kind, size0, size1, double, meters, units) * scale)
+    except OverflowError:
+        w = math.inf
+    if not abs(w) <= MAX_POWER:  # also NaN
+        issues.append(NOT_FINITE % (size0, size1))
+        w = 0.0
     if double:
         issues.append(DOUBLE_SIDED)
     if values[P_TEXMAP] is not None and values[P_TEXMAP_ON]:
@@ -219,9 +255,9 @@ def describe(key, name, values, meters, swatches):
     return ld, issues
 
 
-def describe_light(scene, i, name, meters, swatches):
-    """(LightDescription of VRayLight object i keyed i, or None, issues); LightError when its block is missing or
-    damaged."""
+def describe_light(scene, i, name, meters, swatches, scale=1.0):
+    """(LightDescription of VRayLight object i keyed (i, scale), or None, issues); LightError when its block is
+    missing or damaged."""
     values, issues = read_params(scene, i)
-    ld, more = describe(i, name, values, meters, swatches)
+    ld, more = describe((i, scale), name, values, meters, swatches, scale)
     return ld, issues + more

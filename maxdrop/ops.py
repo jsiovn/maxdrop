@@ -90,8 +90,8 @@ _UNREADABLE = (OSError, ValueError, IndexError, struct.error)
 # names: a new datablock could reuse the address of one freed meanwhile, but the build frees none.
 _MADE = ("meshes", "curves", "lights", "materials", "images")
 
-# The default Light Strength: Cycles renders of the ported watts against V-Ray 5.2 renders of the same lights
-# (docs/FORMAT.md, "VRayLight"): 1.430 to 1.432 for plane and disc lights in every units mode, 1.446 for spheres.
+# The default Light Strength: V-Ray 5.2 renders against Cycles renders of the same lights (docs/FORMAT.md,
+# "VRayLight", where the measured ratios are).
 LIGHT_STRENGTH = 1.43
 
 # Saved in presets by identifier; the numbers keep each item's value stable.
@@ -600,6 +600,7 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
         from .build import modifiers as build_modifiers
         from .build import objects as build_objects
         from .build import report as build_report
+        from .convert import colors
         from .convert import report as convert_report
         from .convert import scene as convert_scene
         from .reader import cfb, units
@@ -619,6 +620,8 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
                     print("MaxDrop: materials of %s not converted:\n%s" % (name, traceback.format_exc()), end="")
                     failed.append(("materials", "not converted (%s: %s): the scene is imported without materials"
                                    % (type(e).__name__, e)))
+            # light colors follow the swatch rule too; with materials its note reaches the report through them
+            light_note = colors.of_scene(sc).note if desc.lights and not materials else ""
             del sc  # the Scene holds the inflated stream of a compressed file
         if 'UV' not in self.object_filter:
             for md in desc.meshes.values():
@@ -640,6 +643,7 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
         del slots
         rep = convert_report.gather(desc, source=name, objects_built=len(built.objects),
                                     meshes_built=len(built.meshes), curves_built=len(built.curves),
+                                    lights_built=len(built.lights),
                                     dropped_uv_layers=built.dropped_uv_layers,
                                     pack=pack, pack_name=pack_name)
         if settings_skipped:
@@ -648,6 +652,8 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
         names = {node.index: node.name or "object %d" % node.index for node in desc.nodes}
         rep.issues.extend((names[i], "Keep Targets: no Track To, the rotation stays fixed: %s" % reason)
                           for i, reason in kept)
+        if light_note:
+            rep.issues.append(("color swatches", light_note))
         if materials:
             conv_stats, tex_stats, lookup, swatches = counts or (None, None, None, None)
             made = sum(m is not None for m in built.materials.values())

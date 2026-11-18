@@ -17,7 +17,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - V-Ray lights: plane and disc lights arrive as area lights, sphere lights as point lights, with their size, color
   or color temperature, on / off, invisibility and diffuse / specular / reflection switches, and a power in watts
   from their units. The new import option **Light Strength** (default 1.43, calibrated so that Cycles matches V-Ray's
-  brightness) scales every light. Instances share one light. Mesh and dome lights are not imported yet (a line in
+  brightness) scales every light. A scaled light is as bright as in V-Ray. Instances share one light. Mesh and dome lights are not imported yet (a line in
   the report).
 
 ### Changed

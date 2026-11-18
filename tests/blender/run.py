@@ -40,7 +40,8 @@ Y axis). vray_lights: each VRayLight node a light object (mesh and dome lights e
 description's type, shape and size and of the shape the fixture script made, its -Z axis along the oracle's, its
 energy the watts 3ds Max computed with the rules source's function times the default Light Strength (the disc's 4 / pi,
 the double-sided plane's half), its color, the off light hidden in viewport and render, the invisible one unseen by
-the camera and glossy rays; the instance shares the plane's light; imported again with Light Strength 2, twice the
+the camera and glossy rays; the instance shares the plane's light, the disc's instance scaled 2, 1.5, 1 has its
+own, three times as strong; imported again with Light Strength 2, twice the
 power. Each fixture's import report is published (build.report) and must say nothing was left out; the one the
 operator published for vray_wrappers lists its three peeled wrappers by class. A changed layers_flags description
 checks a hidden, a frozen, a non-rendering and a nested layer, which no fixture has. A hand-made description with sheared local matrices (top-level and parented, hidden, a zero scale) checks that
@@ -144,8 +145,10 @@ INSIDE_OUT = {"FixtureBoxInside"}
 # gamma off: swatches and the Kelvin curve decoded from sRGB); the object and light flags that are not the default
 VRAY_LIGHT_WATTS = {"FixturePlane": 0.0527086444, "FixturePlaneInst": 0.0527086444, "FixturePlaneLm": 2.19619322,
                     "FixtureDisc": 0.00975400303, "FixtureSphere": 40.0, "FixtureSphereKelvin": 0.252661914,
-                    "FixtureOff": 0.00439238735, "FixtureInvisible": 20.0, "FixtureTargeted": 25.0}
-VRAY_LIGHT_POWER = {"FixtureDisc": 4.0 / math.pi, "FixturePlaneLm": 0.5}
+                    "FixtureOff": 0.00439238735, "FixtureInvisible": 20.0, "FixtureTargeted": 25.0,
+                    "FixtureDiscScaled": 0.00975400303}
+# the scaled disc: its area times 2 x 1.5, as V-Ray lights it (measured)
+VRAY_LIGHT_POWER = {"FixtureDisc": 4.0 / math.pi, "FixturePlaneLm": 0.5, "FixtureDiscScaled": 4.0 / math.pi * 3.0}
 VRAY_LIGHT_SHAPES = {"FixturePlane": ('AREA', 'RECTANGLE', 0.04, 0.02, 0.0),
                      "FixturePlaneInst": ('AREA', 'RECTANGLE', 0.04, 0.02, 0.0),
                      "FixturePlaneLm": ('AREA', 'RECTANGLE', 0.03, 0.03, 0.0),
@@ -153,9 +156,11 @@ VRAY_LIGHT_SHAPES = {"FixturePlane": ('AREA', 'RECTANGLE', 0.04, 0.02, 0.0),
                      "FixtureSphereKelvin": ('POINT', None, 0.0, 0.0, 0.008),
                      "FixtureOff": ('AREA', 'RECTANGLE', 0.02, 0.02, 0.0), "FixtureInvisible": ('AREA', 'DISK', 0.02,
                                                                                                0.0, 0.0),
-                     "FixtureTargeted": ('AREA', 'RECTANGLE', 0.02, 0.01, 0.0)}
+                     "FixtureTargeted": ('AREA', 'RECTANGLE', 0.02, 0.01, 0.0),
+                     "FixtureDiscScaled": ('AREA', 'DISK', 0.03, 0.0, 0.0)}
 VRAY_LIGHT_COLORS = {"FixturePlane": (1.0, 0.57758, 0.304987), "FixturePlaneInst": (1.0, 0.57758, 0.304987),
-                     "FixtureDisc": (0.187821, 0.351533, 1.0), "FixtureSphereKelvin": (1.0, 0.5304, 0.265643)}
+                     "FixtureDisc": (0.187821, 0.351533, 1.0), "FixtureDiscScaled": (0.187821, 0.351533, 1.0),
+                     "FixtureSphereKelvin": (1.0, 0.5304, 0.265643)}
 VRAY_LIGHT_FLAGS = {"FixtureInvisible": (False, True, False, 0.5, 0.0)}  # camera, diffuse, glossy, factors
 # hollow: a tube's inner side and a torus's inner half face the box center; closed, they enclose a positive volume
 # the oracle's base_class_id of the primitives MaxDrop builds (convert/primitives.py)
@@ -458,9 +463,10 @@ def run_fixture(path, modules):
         check_lookat(path, desc, obs, nodes, meters)
     if name == "vray_lights":
         lit = sorted(ob.name for ob in obs if ob.type == 'LIGHT')
-        check("vray_lights: nine light objects, eight lights (the instance shares one)",
-              len(lit) == 9 and len(bpy.data.lights) == 8 and bpy.data.objects["FixturePlane"].data ==
-              bpy.data.objects["FixturePlaneInst"].data, "%s, %d lights" % (lit, len(bpy.data.lights)))
+        check("vray_lights: ten light objects, nine lights (the instance shares one, the scaled one has its own)",
+              len(lit) == 10 and len(bpy.data.lights) == 9 and bpy.data.objects["FixturePlane"].data ==
+              bpy.data.objects["FixturePlaneInst"].data and bpy.data.objects["FixtureDisc"].data !=
+              bpy.data.objects["FixtureDiscScaled"].data, "%s, %d lights" % (lit, len(bpy.data.lights)))
         check_light_strength(path)
 
 

@@ -16,6 +16,7 @@ import os
 import sys
 import types
 import unittest
+from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 FIXTURE = os.path.join(ROOT, "tests", "fixtures", "vray_lights.max")
@@ -42,7 +43,10 @@ MM = 0.001
 # 3ds Max 2020, the fixture loaded, the rules source's ocbaby_exsVrayLightWatts per light (toM 0.001)
 MAX_WATTS = {"FixturePlane": 0.0527086444, "FixturePlaneInst": 0.0527086444, "FixturePlaneLm": 2.19619322,
              "FixtureDisc": 0.00975400303, "FixtureSphere": 40.0, "FixtureSphereKelvin": 0.252661914,
-             "FixtureOff": 0.00439238735, "FixtureInvisible": 20.0, "FixtureTargeted": 25.0}
+             "FixtureOff": 0.00439238735, "FixtureInvisible": 20.0, "FixtureTargeted": 25.0,
+             "FixtureDiscScaled": 0.00975400303}  # the rules source ignores the node's scale
+# what MaxDrop changes: the disc in lm/m2/sr (V-Ray's (2 r)^2), the scaled one's area (2 x 1.5, measured)
+FACTORS = {"FixtureDisc": 4.0 / math.pi, "FixtureDiscScaled": 4.0 / math.pi * 3.0}
 MAX_KELVIN_3500 = (255.0, 192.534, 140.827)  # ocbaby_exsKelvinRGB 3500 in 3ds Max
 
 
@@ -140,6 +144,30 @@ class Describe(unittest.TestCase):
                                                                                                []))
 
 
+class Scale(unittest.TestCase):
+    ROWS = ((2.0, 0.0, 0.0), (0.0, 0.0, 1.5), (0.0, -1.0, 0.0), (5.0, 6.0, 7.0))  # turned about X, scaled 2, 1.5, 1
+
+    def test_area_scale(self):
+        self.assertEqual(L.area_scale(values(), self.ROWS), 3.0)
+        self.assertEqual(L.area_scale(values(type=L.DISC, units=L.UNITS_W_M2_SR), self.ROWS), 3.0)
+        self.assertEqual(L.area_scale(values(type=L.SPHERE, units=L.UNITS_LM_M2_SR), self.ROWS), 4.0)
+        for units in (L.UNITS_LM, L.UNITS_W):
+            self.assertEqual(L.area_scale(values(units=units), self.ROWS), 1.0)
+        self.assertEqual(L.area_scale(values(), ((0.0,) * 3,) * 4), 1.0)  # a zero scale
+        self.assertEqual(L.area_scale(values(), ((float("inf"), 0.0, 0.0),) * 4), 1.0)
+
+    def test_the_power_takes_the_scale(self):
+        a, _ = L.describe(1, "a", values(units=L.UNITS_W_M2_SR), MM, colors.GAMMA_ON)
+        b, _ = L.describe(1, "b", values(units=L.UNITS_W_M2_SR), MM, colors.GAMMA_ON, 3.0)
+        self.assertAlmostEqual(b.watts, 3.0 * a.watts, delta=1e-12)
+        self.assertEqual((a.size, a.size_y), (b.size, b.size_y))  # Blender scales the object's light itself
+
+    def test_a_power_out_of_range_is_zero(self):
+        ld, issues = L.describe(1, "x", values(size0=1e30, size1=1e30, multiplier=1e30, units=L.UNITS_W_M2_SR),
+                                1.0, colors.GAMMA_ON, 1e200)
+        self.assertEqual((ld.watts, ld.power, issues), (0.0, 0.0, [L.NOT_FINITE % (1e30, 1e30)]))
+
+
 class _Block:
     def __init__(self, stored):
         self.stored = stored
@@ -190,6 +218,46 @@ class Params(unittest.TestCase):
 
 
 @unittest.skipIf(conv is None, "numpy missing")
+class SceneHook(unittest.TestCase):
+    """convert.scene._light: the reasons and issues of instances of one VRayLight."""
+    IDENTITY = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0), (0.0, 0.0, 0.0))
+    BIG = ((2.0, 0.0, 0.0), (0.0, 2.0, 0.0), (0.0, 0.0, 1.0), (0.0, 0.0, 0.0))
+
+    def hook(self, read, worlds):
+        desc = conv.SceneDescription(MM)
+        unlit, params = {}, {}
+        sc = _Scene([_Entry(classids.SC_LIGHT, classids.VRAY_LIGHT)], {})
+        with mock.patch.object(L, "read_params", read):
+            keys = [conv._light(sc, desc, unlit, params, 0, node, "n%d" % node, MM, colors.GAMMA_ON, world)
+                    for node, world in enumerate(worlds, 10)]
+        return desc, keys
+
+    def test_a_damaged_light_is_named_on_every_node(self):
+        def read(scene, i):
+            raise L.LightError("damaged")
+        desc, keys = self.hook(read, [self.IDENTITY, self.IDENTITY])
+        self.assertEqual(keys, [None, None])
+        self.assertEqual(desc.issues, [(10, "light: not built: parameters cannot be read: damaged"),
+                                       (11, "light: not built: parameters cannot be read: damaged")])
+        self.assertEqual((desc.lights, dict(desc.placeholders)), ({}, {}))
+
+    def test_a_dome_is_named_on_every_node(self):
+        desc, keys = self.hook(lambda scene, i: (values(type=L.DOME), ["read"]), [self.IDENTITY, self.IDENTITY])
+        self.assertEqual(keys, [None, None])
+        self.assertEqual(desc.issues, [(10, "light: read"), (10, "light: not built: " + L.NOT_YET[L.DOME]),
+                                       (11, "light: not built: " + L.NOT_YET[L.DOME])])
+
+    def test_issues_once_per_light_and_per_scale(self):
+        desc, keys = self.hook(lambda scene, i: (values(double_sided=1), ["read"]),
+                               [self.IDENTITY, self.IDENTITY, self.BIG])
+        self.assertEqual(keys, [(0, 1.0), (0, 1.0), (0, 4.0)])
+        self.assertEqual(desc.issues, [(10, "light: read"), (10, "light: " + L.DOUBLE_SIDED),
+                                       (12, "light: " + L.DOUBLE_SIDED)])
+        self.assertEqual([desc.lights[k].users for k in sorted(desc.lights)], [[10, 11], [12]])
+        self.assertAlmostEqual(desc.lights[(0, 4.0)].watts, 4.0 * desc.lights[(0, 1.0)].watts, delta=1e-12)
+
+
+@unittest.skipIf(conv is None, "numpy missing")
 class Fixture(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -202,10 +270,9 @@ class Fixture(unittest.TestCase):
         return self.desc.lights[node.light]
 
     def test_watts_equal_3ds_max(self):
-        """The rules source's own function, run in 3ds Max on each light; the disc in lm/m2/sr 4 / pi times it."""
+        """The rules source's own function, run in 3ds Max on each light, times FACTORS."""
         for name, want in MAX_WATTS.items():
-            if name == "FixtureDisc":
-                want *= 4.0 / math.pi
+            want *= FACTORS.get(name, 1.0)
             self.assertAlmostEqual(self.light(name).watts, want, delta=want * 1e-6, msg=name)
         self.assertAlmostEqual(self.light("FixturePlaneLm").power, MAX_WATTS["FixturePlaneLm"] / 2.0, delta=1e-6)
 
@@ -222,7 +289,8 @@ class Fixture(unittest.TestCase):
             "FixtureSphereKelvin": ("POINT", None, 0.0, 0.0, 0.008, True, False, True, True, 1.0, 1.0),
             "FixtureOff": ("AREA", "RECTANGLE", 0.02, 0.02, 0.0, False, False, True, True, 1.0, 1.0),
             "FixtureInvisible": ("AREA", "DISK", 0.02, 0.02, 0.0, True, True, True, False, 0.5, 0.0),
-            "FixtureTargeted": ("AREA", "RECTANGLE", 0.02, 0.01, 0.0, True, False, True, True, 1.0, 1.0)})
+            "FixtureTargeted": ("AREA", "RECTANGLE", 0.02, 0.01, 0.0, True, False, True, True, 1.0, 1.0),
+            "FixtureDiscScaled": ("AREA", "DISK", 0.03, 0.03, 0.0, True, False, True, True, 1.0, 1.0)})
 
     def test_colors(self):
         """The fixture is saved with the gamma off: swatches decoded from sRGB."""
@@ -236,7 +304,12 @@ class Fixture(unittest.TestCase):
         plane, inst = self.by_name["FixturePlane"], self.by_name["FixturePlaneInst"]
         self.assertEqual(plane.light, inst.light)
         self.assertEqual(self.desc.lights[plane.light].users, [plane.index, inst.index])
-        self.assertEqual(len(self.desc.lights), 8)
+        self.assertEqual(len(self.desc.lights), 9)
+
+    def test_a_scaled_instance_gets_its_own_light(self):
+        disc, big = self.by_name["FixtureDisc"], self.by_name["FixtureDiscScaled"]
+        self.assertEqual((disc.light, big.light[0]), ((big.light[0], 1.0), disc.light[0]))
+        self.assertAlmostEqual(big.light[1], 3.0, delta=1e-6)
 
     def test_mesh_and_dome_are_empties_not_placeholders(self):
         for name in ("FixtureMesh", "FixtureDome", "FixtureTargeted.Target"):

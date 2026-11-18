@@ -50,9 +50,10 @@ one) and a Target (the node a target camera or light aims at) are EMPTYs too, bu
 placeholder. A group head keeps its members as children: that is how 3ds Max stores a group.
 
 A VRayLight becomes a LIGHT (convert.lights): plane and disc an area light, sphere a point light, keyed by its base
-object index, so instances share it; its issues are named on the first node only. A mesh or dome light (not built
-yet) or one whose parameters cannot be read is an EMPTY with the reason as an issue, on every node, not counted as a
-placeholder.
+object index and the factor the node's world scale puts on its area (lights.area_scale), so instances of one scale
+share it; the issues of its parameters are named on its first node, those of a description on the first node of
+that key. A mesh or dome light (not built yet) or one whose parameters cannot be read is an EMPTY with the reason as
+an issue, on every node, not counted as a placeholder.
 
 Look At: the matrices of a node aimed by a Look At controller or a LookAt Constraint are the ones 3ds Max computes
 at frame 0 (reader.controllers), baked. A node with a Look At controller aimed at a node also gets node.look_at, a
@@ -461,6 +462,7 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True):
     told = set()  # modifier indices whose conversion issues were named (on the first node only)
     layers = {}  # layer object index -> reader Layer, or None when its record cannot be read
     unlit = {}  # VRayLight base object index -> why it is not built
+    light_params = {}  # VRayLight base object index -> its parameter values
     swatches = None  # the scene's swatch rule, read for the first light
     for i in order:
         local, world = t.local(i), t.world(i)
@@ -500,7 +502,7 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True):
                 class_name = _class_name(scene, base)
                 if swatches is None:
                     swatches = colors.of_scene(scene)
-                light = _light(scene, desc, unlit, base, i, name, meters, swatches)
+                light = _light(scene, desc, unlit, light_params, base, i, name, meters, swatches, world)
                 kind = LIGHT if light is not None else EMPTY
             elif base is not None:
                 class_name = _class_name(scene, base)
@@ -549,25 +551,32 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True):
     return desc
 
 
-def _light(scene, desc, unlit, base, node, name, meters, swatches):
-    """The key in desc.lights of VRayLight base, made on first use (its issues on that node); None when it is not
-    built (unlit caches the reason, an issue on every node)."""
-    if base not in desc.lights and base not in unlit:
+def _light(scene, desc, unlit, params, base, node, name, meters, swatches, world):
+    """The key in desc.lights of VRayLight base on node (world: its reader world matrix), made on first use; None
+    when it is not built (unlit caches the reason, an issue on every node). params caches the parameter values, whose
+    issues are named on the first node; a description's on the first node of its key."""
+    if base not in params and base not in unlit:
         try:
-            ld, issues = lights.describe_light(scene, base, name, meters, swatches)
+            values, issues = lights.read_params(scene, base)
+            reason = lights.not_built(values)
         except ChunkError as exc:
-            ld, issues = None, ["parameters cannot be read: %s" % exc]
-        if ld is None:
-            unlit[base] = issues[-1]
-            issues = issues[:-1]
-        else:
-            desc.lights[base] = ld
+            values, issues, reason = None, [], "parameters cannot be read: %s" % exc
         desc.issues.extend((node, "light: %s" % x) for x in issues)
+        if reason is None:
+            params[base] = values
+        else:
+            unlit[base] = reason
     if base in unlit:
         desc.issues.append((node, "light: not built: %s" % unlit[base]))
         return None
-    desc.lights[base].users.append(node)
-    return base
+    scale = lights.area_scale(params[base], world)
+    key = (base, scale)
+    if key not in desc.lights:
+        ld, issues = lights.describe(key, name, params[base], meters, swatches, scale)
+        desc.lights[key] = ld
+        desc.issues.extend((node, "light: %s" % x) for x in issues)
+    desc.lights[key].users.append(node)
+    return key
 
 
 def _primitive(scene, base, issues, node, built):
