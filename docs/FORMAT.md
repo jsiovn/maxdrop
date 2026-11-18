@@ -755,7 +755,8 @@ the image (keystone): Blender has nothing like it.
 sensor 36 mm for Free and Target (3ds Max's render aperture width), the film width for the others; lens = sensor /
 (2 tan(FOV / 2)). shift_x / shift_y = minus the shift fractions (Blender moves the frame, both in image widths with
 a horizontal fit). Clipping when 3ds Max clips. Depth of field, distortion, tilt, a multi-pass effect and V-Ray's
-exposure are lines in the report.
+exposure are lines in the report. The render size and pixel aspect go to the Blender scene, with the scene camera,
+only for a file that has a camera (build/cameras.py).
 
 ## Render settings and saved views
 

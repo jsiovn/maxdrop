@@ -30,8 +30,8 @@ fixture's oracle, and against renders):
 
 A focus distance at or inside the focal length, or none, takes no breathing (an issue). Blender gets sensor_fit
 HORIZONTAL, so its horizontal FOV is 2 atan(sensor / (2 lens)) for any aspect: sensor = 36 mm for the standard cameras
-(3ds Max's aperture width), the film width for the others; lens = sensor / (2 tan(FOV / 2)), kept within Blender's
-range (an issue). Lens shift (renders: the image only translates): both store it as a fraction of the film width
+(3ds Max's aperture width), the film width for the others; lens = sensor / (2 tan(FOV / 2)), at least Blender's 1 mm
+(an issue). Lens shift (renders: the image only translates): both store it as a fraction of the film width
 (Physical's UI shows percent), which is Blender's shift in image widths, negated (Blender moves the frame, 3ds Max
 the image). Tilt corrections,
 depth of field, distortion, a multi-pass effect and V-Ray's exposure have no Blender equivalent here: issues. Clipping
@@ -67,10 +67,12 @@ _FAMILIES = {classids.FREE_CAMERA: FREE, classids.TARGET_CAMERA: TARGET, classid
 PERSP, ORTHO = "PERSP", "ORTHO"
 
 STANDARD_SENSOR = 36.0  # mm: 3ds Max's render aperture width, the standard cameras' film
-LENS_RANGE = (1.0, 5000.0)  # mm: Blender's Camera.lens
-SENSOR_RANGE = (1.0, 100.0)  # mm: Blender's Camera.sensor_width
+MIN_LENS = 1.0  # mm: Blender's smallest Camera.lens (hard limit; the 5000 mm of its slider is soft)
+MIN_SENSOR = 1.0  # mm: Blender's smallest Camera.sensor_width
 MIN_CLIP = 1e-6  # m: Blender's smallest clip_start
-MAX_RESOLUTION = 65536  # Blender's largest render size per axis
+MAX_FILM = 1e6  # mm: a film or gate past this is no camera's: the standard 36 mm is used
+RESOLUTION_RANGE = (4, 65536)  # Blender's render size per axis
+ASPECT_RANGE = (1.0 / 200.0, 200.0)  # Blender's pixel_aspect_x / pixel_aspect_y run from 1 to 200
 MAX_VIEWPORTS = 16
 
 # standard cameras: old ParamBlock indices and chunks of the camera object
@@ -99,10 +101,12 @@ TILT = "its tilt correction (%g, %g) is not imported: Blender has no keystone co
 DISTORTION = "its lens distortion is not imported"
 EXPOSURE = "its exposure is not imported: Blender renders as if the camera had none"
 MULTIPASS = "its multi-pass effect (depth of field or motion blur) is not imported"
-LENS = "its field of view (%g degrees) needs a lens of %g mm: Blender's lens is kept within %g..%g mm"
-SENSOR = "film width %g mm is out of Blender's range: %g mm is used"
-BAD_SIZE = "the render size %s is out of range: Blender's is kept"
-BAD_ASPECT = "pixel aspect %r is out of range: 1 is used"
+LENS = "its field of view (%g degrees) needs a lens of %g mm: Blender's shortest, %g mm, is used"
+SENSOR = "film width %r mm is out of Blender's range: %g mm is used"
+NO_LENS = "focal length %r mm with zoom %r gives no field of view: 45 degrees is used"
+NO_WIDTH = "its orthographic width cannot be computed (target distance %r): 1 m is used"
+BAD_SIZE = "the render size %s is out of Blender's range: Blender's is kept"
+BAD_ASPECT = "pixel aspect %r is out of Blender's range: Blender's is kept"
 NO_VIEW = "no saved view: the first camera, %s, is the scene camera"
 NOT_A_CAMERA = "the view 3ds Max renders (viewport %d) looks through no camera: the first camera, %s, is the scene " \
     "camera"
@@ -127,8 +131,8 @@ class CameraDescription:
 
 
 RenderSettings = collections.namedtuple("RenderSettings", "width height pixel_aspect view index")
-RenderSettings.__doc__ = """The render settings: width and height in pixels (None when not stored or out of range),
-pixel_aspect (1 when not stored), view the 0-based viewport index of a locked render view (None: the active viewport
+RenderSettings.__doc__ = """The render settings: width and height in pixels, pixel_aspect (each None when not stored
+or out of Blender's range), view the 0-based viewport index of a locked render view (None: the active viewport
 renders), index the RenderEnvironment's object index."""
 SavedViews = collections.namedtuple("SavedViews", "viewports active")
 SavedViews.__doc__ = """The current viewport layout: viewports [(view type, node object index or None)], active the
@@ -234,10 +238,12 @@ def horizontal_fov(values, mm=1.0, target=None, issues=None):
     if finite(d) and d > f > 0:
         v = 1.0 / (1.0 / f - 1.0 / d)
         f = f + values["breathing"] * (v - f)
-    elif issues is not None and values["breathing"]:
+    elif issues is not None and values["breathing"] and finite(f) and f > 0:
         issues.append(NO_FOCUS % (d, f))
     f *= values["zoom"]
     if not (finite(f) and f > 0 and values["film"] > 0):
+        if issues is not None:
+            issues.append(NO_LENS % (values["focal"], values["zoom"]))
         return math.radians(45.0)
     return 2.0 * math.atan(values["film"] / (2.0 * f))
 
@@ -253,19 +259,23 @@ def describe(key, name, values, meters=1.0, mm=1.0, target=None):
         issues.append("field of view %r is out of range: 45 degrees is used" % (fov,))
         fov = math.radians(45.0)
     sensor = STANDARD_SENSOR if family in (FREE, TARGET) else values["film"]
-    if not SENSOR_RANGE[0] <= sensor <= SENSOR_RANGE[1]:
-        clamped = min(SENSOR_RANGE[1], max(SENSOR_RANGE[0], sensor)) if finite(sensor) else STANDARD_SENSOR
+    if not (finite(sensor) and MIN_SENSOR <= sensor <= MAX_FILM):
+        clamped = STANDARD_SENSOR if not finite(sensor) or sensor > MAX_FILM else MIN_SENSOR
         issues.append(SENSOR % (sensor, clamped))
         sensor = clamped
     lens = sensor / (2.0 * math.tan(fov / 2.0))
-    if not LENS_RANGE[0] <= lens <= LENS_RANGE[1]:
-        issues.append(LENS % (math.degrees(fov), lens, LENS_RANGE[0], LENS_RANGE[1]))
-        lens = min(LENS_RANGE[1], max(LENS_RANGE[0], lens))
+    if lens < MIN_LENS:
+        issues.append(LENS % (math.degrees(fov), lens, MIN_LENS))
+        lens = MIN_LENS
     cd = CameraDescription(key, name, lens=lens, sensor=sensor, fov=fov)
     if values.get("ortho"):
         cd.kind = ORTHO
-        width = 2.0 * abs(focus_target(values, target)) * math.tan(fov / 2.0) * meters
-        cd.ortho_scale = width if finite(width) and width > 0 else 1.0
+        distance = focus_target(values, target)
+        width = 2.0 * abs(distance) * math.tan(fov / 2.0) * meters
+        if finite(width) and width > 0:
+            cd.ortho_scale = width
+        else:
+            issues.append(NO_WIDTH % (distance,))
     if values.get("clip"):
         near, far = abs(values["near"]) * meters, abs(values["far"]) * meters
         cd.clip_start = max(MIN_CLIP, near)
@@ -316,19 +326,18 @@ def render_settings(scene):
         except ChunkError as exc:
             return None, ["render settings cannot be read: %s" % exc]
         issues = []
+        low, high = RESOLUTION_RANGE
         if width is None or height is None:  # not stored: the report says Blender's is kept
             width = height = None
-        elif not (0 < width <= MAX_RESOLUTION and 0 < height <= MAX_RESOLUTION):
+        elif not (low <= width <= high and low <= height <= high):
             issues.append(BAD_SIZE % ("%d x %d" % (width, height)))
             width = height = None
-        if aspect is None:
-            aspect = 1.0
-        elif not (finite(aspect) and 1e-3 <= aspect <= 1e3):
+        if aspect is not None and not (finite(aspect) and ASPECT_RANGE[0] <= aspect <= ASPECT_RANGE[1]):
             issues.append(BAD_ASPECT % aspect)
-            aspect = 1.0
+            aspect = None
         if view is not None and not 0 <= view < MAX_VIEWPORTS:
             view = None
-        return RenderSettings(width, height, float(aspect), view, i), issues
+        return RenderSettings(width, height, None if aspect is None else float(aspect), view, i), issues
     return None, []
 
 

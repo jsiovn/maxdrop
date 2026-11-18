@@ -374,12 +374,21 @@ class TestFixture(unittest.TestCase):
             "Units: millimeters (0.001 m per unit)",
             "Nodes read: 6",
             "Objects built: 6, meshes: 5",
-            "Render size: 640 x 480; scene camera: none",
+            "Render size: 640 x 480 (not applied: the file has no camera); scene camera: none",
             "Layers: 2 (0 hidden)",
             "Objects hidden: 1, not renderable: 1, frozen: 0",
             "Groups: 1",
             "Nothing was left out.",
         ])
+
+
+class TestSceneIssues(unittest.TestCase):
+    def test_an_issue_of_the_whole_scene_is_labelled_scene(self):
+        desc = box()
+        desc.issues.append((None, "render: the render size 3 x 450 is out of Blender's range: Blender's is kept"))
+        rep = report.gather(desc, source="a.max")
+        self.assertIn(("scene", "render: the render size 3 x 450 is out of Blender's range: Blender's is kept"),
+                      rep.issues)
 
 
 class TestSwatches(unittest.TestCase):

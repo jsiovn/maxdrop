@@ -47,7 +47,8 @@
 # Modified for MaxDrop, 2026-11-19 (jsiovn). The scene description gets the asset table: the report names the web
 # and IES files of the lights.
 # Modified for MaxDrop, 2026-11-19 (jsiovn). Cameras: the scene description gets the file's saved views, the build
-# makes the cameras, sets the render size and the scene camera, and removes the cameras of a failed build.
+# makes the cameras and, for a file with a camera, sets the scene camera and the render size; a failed build removes
+# its cameras.
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -599,12 +600,12 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
         archive's file name. ([(report level, line)], the convert.report.Report), the report's summary last; one of
         _UNREADABLE when the file cannot be read. A build that fails is removed again (objects, collections, meshes,
         curves, lights, cameras, materials, images) before the exception goes on."""
+        from .build import cameras as build_cameras
         from .build import collections as build_collections
         from .build import materials as build_materials
         from .build import modifiers as build_modifiers
         from .build import objects as build_objects
         from .build import report as build_report
-        from .build import cameras as build_cameras
         from .convert import cameras, colors
         from .convert import report as convert_report
         from .convert import scene as convert_scene
@@ -642,8 +643,8 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
                                         light_strength=self.light_strength)
             settings_skipped = build_modifiers.add(desc, built)
             kept = build_objects.track_targets(desc, built) if self.keep_targets else []
-            build_cameras.set_render(context.scene, desc, built)
             build_collections.finish(cols, view_layer)
+            build_cameras.set_render(context.scene, desc, built)  # last: a failed build leaves the scene's alone
         except BaseException:
             _remove(cols, before)
             raise

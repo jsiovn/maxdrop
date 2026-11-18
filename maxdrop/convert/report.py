@@ -44,6 +44,7 @@ LEVEL_INFO, LEVEL_WARNING = "INFO", "WARNING"
 GEOMETRY = "geometry: "
 SCENE = "scene"  # the label of an issue of the whole scene (index None)
 NO_RENDER_SIZE = "not stored, Blender's kept"
+NOT_APPLIED = " (not applied: the file has no camera)"
 UNKNOWN_CONTROLLER = "transform: " + controllers.UNKNOWN_CLASS  # convert.scene's wording of that issue
 
 
@@ -329,7 +330,9 @@ def gather(desc, source="", objects_built=None, meshes_built=None, dropped_uv_la
     render, camera = getattr(desc, "render", None), getattr(desc, "camera", None)
     if render is not None:
         size = "%d x %d" % (render.width, render.height) if render.width is not None else NO_RENDER_SIZE
-        rep.render_size = size + (", pixel aspect %g" % render.pixel_aspect if render.pixel_aspect != 1.0 else "")
+        aspect = render.pixel_aspect
+        rep.render_size = size + (", pixel aspect %g" % aspect if aspect not in (None, 1.0) else "") + (
+            NOT_APPLIED if camera is None else "")
     rep.dropped_uv_layers = dropped_uv_layers
     rep.layers = len(desc.layers)
     rep.hidden_layers = sum(1 for la in desc.layers if la.hidden)

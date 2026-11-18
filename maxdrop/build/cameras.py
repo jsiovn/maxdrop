@@ -5,16 +5,17 @@
 """Blender cameras and render settings from convert.cameras descriptions.
 
     camera = make_camera(cd)            # a Camera datablock: PERSP or ORTHO, sensor fit HORIZONTAL
-    set_render(scene, desc, built)      # the render size and scene.camera of a convert.scene.SceneDescription
+    applied = set_render(scene, desc, built)   # scene.camera and the render size, for a file with a camera
 
 One Camera per CameraDescription: the nodes of one camera object share it. sensor_fit HORIZONTAL keeps 3ds Max's
 horizontal field of view for any render aspect: Blender's is 2 atan(sensor_width / (2 lens)). Depth of field stays
 off (convert.cameras names it in the report). Clipping is set only when 3ds Max clips; Blender's own range stays
 otherwise.
 
-set_render sets the scene's resolution (at 100 %) and pixel aspect when the file stores them (Blender's are kept
-otherwise) and makes the scene camera's object scene.camera. A pixel aspect below 1 goes to pixel_aspect_y (Blender
-takes both at 1 or more).
+set_render applies only to a file that brings a camera (desc.camera): it makes that camera's object scene.camera and
+sets the scene's resolution (at 100 %) and pixel aspect when the file stores them (Blender's are kept otherwise), so
+the camera frames what 3ds Max renders. A file without a camera (a model dropped into a scene) leaves the scene's
+render settings alone. A pixel aspect below 1 goes to pixel_aspect_y (Blender takes both at 1 or more).
 """
 import bpy
 
@@ -38,16 +39,19 @@ def make_camera(cd):
 
 
 def set_render(scene, desc, built):
-    """The render size and pixel aspect of desc.render, and scene.camera = the object of desc.camera."""
+    """scene.camera = the object of desc.camera, and the render size and pixel aspect of desc.render; nothing without
+    a scene camera. Whether it applied them."""
+    ob = built.objects.get(desc.camera) if desc.camera is not None else None
+    if ob is None or ob.type != 'CAMERA':
+        return False
+    scene.camera = ob
     render = desc.render
     if render is not None and render.width is not None:
         scene.render.resolution_x = render.width
         scene.render.resolution_y = render.height
         scene.render.resolution_percentage = 100
-    if render is not None:
+    if render is not None and render.pixel_aspect is not None:
         aspect = render.pixel_aspect
         scene.render.pixel_aspect_x = aspect if aspect >= 1.0 else 1.0
         scene.render.pixel_aspect_y = 1.0 if aspect >= 1.0 else 1.0 / aspect
-    ob = built.objects.get(desc.camera) if desc.camera is not None else None
-    if ob is not None and ob.type == 'CAMERA':
-        scene.camera = ob
+    return True

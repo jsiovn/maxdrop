@@ -192,7 +192,7 @@ def build(desc, collection, collections=None, view_layer=None, slots=None, mater
         built.curves[key] = build_curves.make_curve(cd)
     for key, ld in desc.lights.items():
         built.lights[key] = build_lights.make_light(ld, light_strength)
-    for key, cd in getattr(desc, "cameras", {}).items():
+    for key, cd in desc.cameras.items():
         built.cameras[key] = build_cameras.make_camera(cd)
     identity = Matrix.Identity(4)
     hidden = []

@@ -15,7 +15,7 @@
     desc.placeholders                   # Counter: class name -> nodes built as an empty
     desc.layers                         # LayerDescription per layer that holds a node, a parent before its children
     desc.unknown_controllers            # Counter: controller class name -> times met
-    desc.issues                         # [(node object index, reason)] for the report
+    desc.issues                         # [(node object index, or None for the whole scene, reason)] for the report
 
 Matrices are Blender's convention: 4x4 tuples of rows, a column vector p becomes M @ p, the translation is the
 last column. The reader's row-vector matrices are transposed here. node.matrix is the local matrix (relative to
@@ -68,9 +68,9 @@ field of view or width depends on it, the distance to its target node (a targete
 the issues of its parameters are named on its first node, those of a description on the first node of that key. A
 camera whose parameters cannot be read is an EMPTY with the reason as an issue, not counted as a placeholder; one with
 an object offset keeps the node transform (an issue: 3ds Max looks from the object). desc.render holds the render
-size (an issue when it is not stored) and desc.camera the camera of the view 3ds Max renders (convert.cameras
-render_camera, with describe(..., views) the file's saved views; read() reads them), else the first camera (an issue).
-Scene-level issues have the index None.
+size (None, or a size of None, when not stored: the report says so; an issue when out of range) and desc.camera the
+camera of the view 3ds Max renders (convert.cameras render_camera, with describe(..., views) the file's saved views;
+read() reads them), else the first camera (an issue). Scene-level issues have the index None.
 
 Look At: the matrices of a node aimed by a Look At controller or a LookAt Constraint are the ones 3ds Max computes
 at frame 0 (reader.controllers), baked. A node with a Look At controller aimed at a node also gets node.look_at, a

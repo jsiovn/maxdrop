@@ -47,9 +47,10 @@ color of the rules (STOCK_LIGHTS), its -Z axis along the oracle's, its flags; th
 Cameras (cameras, lookat): each camera node a camera object of the description's type, sensor fit HORIZONTAL, sensor,
 lens, shift, clipping and orthographic width, Blender's horizontal field of view (angle_x) within 0.05 degrees of 3ds
 Max's (the oracle's EvalCameraState), depth of field off, its -Z axis and +Y up along the oracle's; cameras' shifts and
-sensors from its script (CAMERA_SHIFTS, CAMERA_SENSORS). Every fixture: the scene's render size is the oracle's, and
-scene.camera the oracle's render camera (cameras: CamTarget, the locked render view) or else the first camera (lookat:
-FixtureCam); cameras holds eleven camera objects with a Camera each.
+sensors from its script (CAMERA_SHIFTS, CAMERA_SENSORS). A fixture with a camera: the scene's render size is the
+oracle's, and scene.camera the oracle's render camera (cameras: CamTarget, the locked render view) or else the first
+camera (lookat: FixtureCam); cameras holds eleven camera objects with a Camera each. Without a camera the scene's render
+size and camera stay as they were.
 Each fixture's import report is published (build.report) and must say nothing was left out; the one the
 operator published for vray_wrappers lists its three peeled wrappers by class. A changed layers_flags description
 checks a hidden, a frozen, a non-rendering and a nested layer, which no fixture has. A hand-made description with sheared local matrices (top-level and parented, hidden, a zero scale) checks that
@@ -177,6 +178,7 @@ VRAY_LIGHT_FLAGS = {"FixtureInvisible": (False, True, False, 0.5, 0.0)}  # camer
 CAMERA_SHIFTS = {"CamPhysShift": (-0.1, 0.15), "CamVRayShift": (-0.1, -0.25)}
 CAMERA_SENSORS = {"CamVRayTarget": 30.0}
 FOV_TOLERANCE = 0.05  # degrees
+KEPT_SIZE = (1234, 567, 50)  # the scene's render size before each import (empty_scene)
 
 # lights_standard, lights_photometric (tools/fixtures/*.ms) and lookat's target spot: Blender's light type, spot
 # size in degrees and blend, and the watts of the rules (docs/FORMAT.md, "Standard and photometric lights") from
@@ -260,6 +262,10 @@ def empty_scene():
         bpy.data.collections.remove(col)
     for text in list(bpy.data.texts):
         bpy.data.texts.remove(text)
+    r = bpy.context.scene.render  # a size no fixture has: a file without a camera must leave it
+    r.resolution_x, r.resolution_y, r.resolution_percentage = KEPT_SIZE
+    r.pixel_aspect_x = r.pixel_aspect_y = 1.0
+    bpy.context.scene.camera = None
     for material in list(bpy.data.materials):
         bpy.data.materials.remove(material)
 
@@ -576,20 +582,23 @@ def check_camera(label, ob, node, desc, o):
 
 
 def check_render(name, oracle, obs, desc):
-    """Every fixture: the scene's render size is the oracle's, scene.camera the oracle's render camera or else the
-    first camera."""
+    """Every fixture: with a camera, the scene's render size is the oracle's and scene.camera the oracle's render
+    camera or else the first camera; without one, the scene's render size and camera stay as they were."""
     scene = bpy.context.scene
     r = oracle["render"]
     got = (scene.render.resolution_x, scene.render.resolution_y, scene.render.resolution_percentage,
            scene.render.pixel_aspect_x / scene.render.pixel_aspect_y)
-    check("%s: render size = 3ds Max's" % name, got[:3] == (r["width"], r["height"], 100) and
-          abs(got[3] - r["pixel_aspect"]) < 1e-6, str(got))
     by_handle = {o["handle"]: ob for ob, o in zip(obs, oracle["nodes"])}
     cams = [ob for ob, o in zip(obs, oracle["nodes"]) if o["camera"] is not None]
     want = by_handle[r["camera"]] if r["camera"] is not None else (cams[0] if cams else None)
     if want is not None:
+        check("%s: render size = 3ds Max's" % name, got[:3] == (r["width"], r["height"], 100) and
+              abs(got[3] - r["pixel_aspect"]) < 1e-6, str(got))
         check("%s: scene camera = %s" % (name, want.name), scene.camera == want,
               scene.camera.name if scene.camera else "none")
+    else:
+        check("%s: no camera: the scene's render size and camera are kept" % name,
+              got == KEPT_SIZE + (1.0,) and scene.camera is None, "%s %s" % (got, scene.camera))
     if name == "cameras":
         check("cameras: eleven camera objects, one Camera each, CamTarget the scene camera",
               len(cams) == 11 and len(bpy.data.cameras) == 11 and scene.camera.name == "CamTarget",
