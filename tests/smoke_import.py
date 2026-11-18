@@ -15,7 +15,7 @@ one material; the counts are printed so that runs on different Blender versions 
 Every .max is then packed into a .zip in a scratch folder (the scene with the image and .ies files of its folder
 tree, plus one image no scene names) and imported from it: same checks, no fewer images, unpacked beside the zip;
 when the scene's asset list is read, that image stays in the zip and the report counts it (`Files the scene does
-not use, left out: 1` for the fixtures, which carry no images). A zip holding it twice under two
+not use, left out: N`, N computed: 1 while the fixtures carry no images). A zip holding it twice under two
 names must be refused in EXEC mode with both names in the message, then import once the scene is named; its Scene
 Pack panel names the exact folder of the scene the Scene field names, and the reused one after the import. The same
 files are also chosen through directory + files, as the file browser and a drop pass them: a .max with a
@@ -267,7 +267,7 @@ def as_pack(max_path, scratch, images_of_max, archive, ops):
         f.write(b"\x89PNG\r\n\x1a\n not used")
     entries.append((stem + "/unused/" + UNUSED, unused))
     zip_path = make_zip(os.path.join(folder, stem + ".zip"), entries)
-    images = import_one(zip_path, "%s in a .zip (%d map files)" % (name, len(entries) - 1), max_name=name,
+    images = import_one(zip_path, "%s in a .zip (%d map files)" % (name, len(entries) - 2), max_name=name,
                         pack_name=os.path.basename(zip_path))
     check("%s in a .zip: no fewer images than from the .max" % name, images >= images_of_max,
           "%d from the .zip, %d from the .max" % (images, images_of_max))
@@ -289,8 +289,9 @@ def as_pack(max_path, scratch, images_of_max, archive, ops):
     expected = sum(1 for b in bases if archive.refused_reason(b) is None and archive.name_key(b) not in wanted)
     text = bpy.data.texts.get(TEXT_NAME)
     body = text.as_string() if text is not None else ""
+    on_disk = sorted(os.listdir(pack)) if os.path.isdir(pack) else []
     check("%s in a .zip: the image the scene does not use is not unpacked" % name,
-          UNUSED.casefold() not in {n.casefold() for n in os.listdir(pack)}, ", ".join(sorted(os.listdir(pack))))
+          os.path.isdir(pack) and UNUSED.casefold() not in {n.casefold() for n in on_disk}, ", ".join(on_disk))
     line = "\n  Files the scene does not use, left out: %d\n" % expected
     check("%s in a .zip: the report says %r" % (name, line.strip()), line in body + "\n",
           [s for s in body.split("\n") if "does not use" in s])

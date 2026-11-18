@@ -863,8 +863,10 @@ class RealToolTests(TempCase):
                     staged, data, beside = asked[0]
                     self.assertEqual(data, TREE["pack/scene/scene.max"])
                     self.assertEqual(beside, ["scene.max"])
-                    self.assertNotEqual(os.path.normcase(os.path.dirname(staged)),
-                                        os.path.normcase(result.folder), "asked about the staged scene")
+                    # Asked about the staged scene: in a staging folder beside the pack, not the final folder.
+                    self.assertEqual(os.path.normcase(os.path.dirname(os.path.dirname(staged))),
+                                     os.path.normcase(case_dir))
+                    self.assertTrue(os.path.basename(os.path.dirname(staged)).startswith(archive.STAGING_PREFIX))
                     self.assertEqual(folder_files(result.folder),
                                      {"scene.max": TREE["pack/scene/scene.max"], "wood.jpg": b"near wood"})
                     self.assertEqual((result.mode, result.written, result.unwanted), ("unpacked", 2, 2))
