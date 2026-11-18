@@ -1131,7 +1131,8 @@ def check_builder_debt():
               and all(_from(n.inputs[2]) == _from(f.inputs[0]) for n, f in zip(chain, floors))
               and _from(chain[0].inputs[2]).bl_idname == "ShaderNodeSeparateXYZ",
               "%s %s %s" % (tex.extension, [n.operation for n in chain], ks))
-        # the image coordinate the crop Mapping (POINT: c * size + location) gives each cell coordinate c
+        # the formula itself (the nodes and K are checked above): the image coordinate the crop Mapping (POINT:
+        # c * size + location) gives each cell coordinate c
         inside = []
         for size, loc, k in ((0.5, 0.25, ks[0]), (0.25, 0.75, ks[1])):
             for c in (-2.5, -0.01, 0.0, 0.3, 0.99, 1.0, 1.4, 7.0):
@@ -1148,6 +1149,20 @@ def check_builder_debt():
               and chain[0].inputs[1].default_value == 1.0 and chain[1].operation == 'WRAP'
               and chain[1].inputs[1].default_value == 1.0 and chain[1].inputs[2].default_value == 0.0,
               "%s %s" % (tex.extension, [n.operation for n in chain]))
+
+        tex, comb = _crop_case(builder, cm, tx, found, "CropMirrorNoTile",
+                               tx.Mapping(tile=(False, False), mirror=(True, True)), crop)
+        chain = [_from(comb.inputs[a]).operation for a in ("X", "Y")]
+        check("builder debt: mirror on with tile off still mirrors (mirror tiles), image EXTEND",
+              tex.extension == 'EXTEND' and chain == ['PINGPONG', 'PINGPONG'], "%s %s" % (tex.extension, chain))
+
+        tex, comb = _crop_case(builder, cm, tx, found, "PlaceMixed", tx.Mapping(tile=(True, False)),
+                               tx.Crop(0.25, 0.0, 0.5, 0.25, place=True))
+        x, y = _from(comb.inputs["X"]), _from(comb.inputs["Y"])
+        check("builder debt: a placed image tiled in U, clipped in V: wrap on X, V straight through, image CLIP",
+              tex.extension == 'CLIP' and x.operation == 'WRAP' and y.bl_idname == "ShaderNodeSeparateXYZ"
+              and comb.outputs["Vector"].links[0].to_node.vector_type == 'TEXTURE',
+              "%s %s %s" % (tex.extension, x.operation, y.bl_idname))
 
         tex, frac = _crop_case(builder, cm, tx, found, "CropTile", tx.Mapping(), crop)
         check("builder debt: a crop tiled both ways: one Fraction, image EXTEND",
@@ -1182,12 +1197,16 @@ def check_builder_debt():
         open(empty, "wb").close()
         tga = os.path.join(scratch, "any.tga")
         with open(tga, "wb") as f:
-            f.write(b"\x00\x00\x02" + bytes(15))
+            f.write(b"junk without a header")
+        targa = os.path.join(scratch, "really_tga.png")  # an uncompressed 24-bit Targa header, 1 x 1
+        with open(targa, "wb") as f:
+            f.write(b"\x00\x00\x02" + bytes(9) + b"\x01\x00\x01\x00\x18\x00" + b"\x10\x20\x30")
         renamed = os.path.join(scratch, "really_png.jpg")
         shutil.copy(png, renamed)
-        has = [build_materials.image_has_data(p) for p in (png, renamed, tga, junk, empty)]
-        check("builder debt: image_has_data: a PNG yes, a PNG named .jpg yes, a TGA (no signature) yes, text named "
-              ".png no, an empty file no", has == [True, True, True, False, False], str(has))
+        has = [build_materials.image_has_data(p) for p in (png, renamed, tga, targa, junk, empty)]
+        check("builder debt: image_has_data: a PNG yes, a PNG named .jpg yes, any .tga (no signature) yes, a Targa "
+              "named .png yes, text named .png no, an empty file no", has == [True, True, True, True, False, False],
+              str(has))
         images = len(bpy.data.images)
         ir = cm.MaterialIR(22, "Undecodable", "test", base_color=cm.Input((0.2, 0.3, 0.4), cm.MapRef(1)))
         lost = tx.Image(6, "junk.png", "junk.png", "", ct.Found(junk, ct.SCENE))
@@ -1217,7 +1236,7 @@ def check_builder_debt():
         check("builder debt: a material whose build raises: None, removed again, reported, not counted",
               got is None and len(bpy.data.materials) == materials and "Broken" not in bpy.data.materials
               and new == ("material Broken", "material not built (RuntimeError: maxdrop test: tree fails)")
-              and builder.classes["test"] == 6, "%s %s %s" % (got, new, dict(builder.classes)))
+              and builder.classes["test"] == 8, "%s %s %s" % (got, new, dict(builder.classes)))
     finally:
         empty_scene()
         for img in list(bpy.data.images):

@@ -92,10 +92,17 @@ def extension(mapping, crop=None):
     return 'CLIP'
 
 
-# the first bytes of every image format Blender reads that has a signature (TGA has none; WebP is checked apart)
-_SIGNATURES = (b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff", b"BM", b"II*\x00", b"MM\x00*", b"II+\x00", b"MM\x00+",
-               b"v/1\x01", b"#?", b"DDS ", b"8BPS", b"\x00\x00\x00\x0cjP  \r\n\x87\n", b"\xffO\xffQ", b"\x01\xda",
-               b"\x80\x2a\x5f\xd7", b"\xd7\x5f\x2a\x80", b"SDPX", b"XPDS")
+# the first bytes of every image format Blender reads that has a signature (TGA has none: _targa; WebP apart)
+_SIGNATURES = (b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff", b"BM", b"BA", b"CI", b"CP", b"IC", b"PT", b"II*\x00",
+               b"MM\x00*", b"II+\x00", b"MM\x00+", b"v/1\x01", b"#?", b"DDS ", b"8BPS",
+               b"\x00\x00\x00\x0cjP  \r\n\x87\n", b"\xffO\xffQ", b"\x01\xda", b"\xda\x01", b"\x80\x2a\x5f\xd7",
+               b"\xd7\x5f\x2a\x80", b"SDPX", b"XPDS")
+
+
+def _targa(head):
+    """A plausible TGA header (color map type, image type, pixel depth): Blender reads a Targa whatever its name."""
+    return (len(head) >= 18 and head[1] in (0, 1) and head[2] in (1, 2, 3, 9, 10, 11)
+            and head[16] in (8, 15, 16, 24, 32))
 _SIGNED = frozenset((".png", ".jpg", ".jpeg", ".jpe", ".bmp", ".tif", ".tiff", ".exr", ".hdr", ".dds", ".psd",
                      ".webp", ".jp2", ".j2k", ".j2c", ".sgi", ".rgb", ".rgba", ".bw", ".cin", ".dpx"))
 
@@ -107,14 +114,14 @@ def image_has_data(path):
     reports it."""
     try:
         with open(path, "rb") as f:
-            head = f.read(16)
+            head = f.read(18)
     except OSError:
         return True
     if not head:
         return False
     if os.path.splitext(path)[1].lower() not in _SIGNED:
         return True
-    return head.startswith(_SIGNATURES) or (head[:4] == b"RIFF" and head[8:12] == b"WEBP")
+    return head.startswith(_SIGNATURES) or (head[:4] == b"RIFF" and head[8:12] == b"WEBP") or _targa(head)
 
 
 def uv_layer_name(channel):
