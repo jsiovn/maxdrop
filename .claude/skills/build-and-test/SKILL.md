@@ -78,7 +78,7 @@ git diff --name-only "$base...HEAD"; git status --short
 | Docs only (`*.md`, `docs/`, `.claude/`, `.beads` metadata) | 1 (the site and license tests read some of these files) |
 | `maxdrop/*.py` (operator, prefs, compat) | 1, 2, 5 (= 3 and 4 on all three versions), 6 for a fix |
 | `maxdrop/__init__.py` (`_NAMES`, `_purge`, reload), `maxdrop/update.py` | the row above, plus 7 on 5.2 and 4.2 |
-| `maxdrop/intake/` | 1 (its tests load it by path), 2, 5, 6 for a fix |
+| `maxdrop/intake/` | 1 (its tests load it without Blender), 2, 5, 6 for a fix |
 | `maxdrop/reader/`, `maxdrop/convert/`, `maxdrop/build/` | the `maxdrop/*.py` row, plus 8 when the plan measures (fixture, then the corpus scenes it names) |
 | `maxdrop/blender_manifest.toml` `version` | 1, 2, 3 on all three versions, and the CHANGELOG check below; `docs/SUPPORT.md` says what that version imports |
 | `maxdrop/blender_manifest.toml` other fields (permissions, `blender_version_min`, ...) | 1, 2, 5, and 7 on 5.2 and 4.2 |

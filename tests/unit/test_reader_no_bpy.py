@@ -84,13 +84,16 @@ def forbidden_imports(path, root=ROOT):
     with open(path, encoding="utf-8") as f:
         tree = ast.parse(f.read(), path)
     package = _package_of(path, root)
+    # a shared module imports nothing of the add-on: the packages import it, an import back could be a cycle
+    shared = package == [ADDON] and os.path.splitext(os.path.basename(path))[0] in SHARED
     found = []
     for node in ast.walk(tree):
         names = _targets(node, package)
         if names is None:
             found.append("%s:%d relative import above %s" % (path, node.lineno, ".".join(package)))
             continue
-        found += ["%s:%d %s" % (path, node.lineno, n) for n, relative in names if _refused(n, relative)]
+        found += ["%s:%d %s" % (path, node.lineno, n) for n, relative in names
+                  if _refused(n, relative) or (shared and n.split(".")[0] == ADDON)]
     return found
 
 
@@ -139,9 +142,11 @@ class NoBpy(unittest.TestCase):
             os.makedirs(os.path.join(tmp, ADDON))
             path = os.path.join(tmp, ADDON, "pathnames.py")
             with open(path, "w", encoding="utf-8") as f:
-                f.write("import bpy\nfrom . import compat\nfrom .. import x\nfrom .reader import cfb\n")
+                f.write("import bpy\nfrom . import compat\nfrom .. import x\nfrom .reader import cfb\n"
+                        "import os\n")
             self.assertEqual([hit.split(":")[-1] for hit in forbidden_imports(path, tmp)],
-                             ["1 bpy", "2 maxdrop.compat", "3 relative import above maxdrop"])
+                             ["1 bpy", "2 maxdrop.compat", "3 relative import above maxdrop",
+                              "4 maxdrop.reader"])
 
 
 if __name__ == "__main__":
