@@ -47,7 +47,9 @@ from its authoring script, texture nodes without an image and each missing file 
 texmap_rules, corona_maps, corona_light and vray_texmaps copied beside generated PNGs load every image in its color
 space, one datablock per file and color space, the report counts every file as found; hand-made IRs check shared
 images, a missing file, the materials counted by class, Thin Wall (set on 5.x, counted on 4.x), a name clash,
-BLENDED / DITHERED and every node kind.
+BLENDED / DITHERED and every node kind; a crop repeating per axis (wrap, ping-pong, clip), map channel 0 drawn on
+channel 1 and reported, a texture file without image data reported, a material whose build raises removed and
+reported; a material conversion that raises leaves the scene imported without materials, the report says why.
 Prints `FIXTURES PASSED` (exit 0) or `FIXTURES FAILED` (exit 1).
 """
 import collections
@@ -969,10 +971,17 @@ def check_found_textures():
                 cropped = next(n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage"
                                and n.label == "place_crop.png")
                 uv = [n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeUVMap"]
-                check("texmap_rules: place_crop.png mirrored, on map channel 3, cropped",
-                      cropped.extension == 'MIRROR' and any(n.uv_map == "UVChannel_3" for n in uv)
-                      and any(n.bl_idname == "ShaderNodeVectorMath" and n.operation == 'FRACTION'
-                              for n in m.node_tree.nodes), "%s %s" % (cropped.extension, [n.uv_map for n in uv]))
+                comb = _from(_from(cropped.inputs["Vector"]).inputs["Vector"])
+                ops = [getattr(_from(comb.inputs[a]), "operation", None) for a in ("X", "Y")] if comb else []
+                check("texmap_rules: place_crop.png on map channel 3, cropped, mirrored in U and clipped in V",
+                      cropped.extension == 'CLIP' and any(n.uv_map == "UVChannel_3" for n in uv)
+                      and ops == ['PINGPONG', 'MULTIPLY_ADD'],
+                      "%s %s %s" % (cropped.extension, [n.uv_map for n in uv], ops))
+                check("texmap_rules: place_place.png on map channel 0 drawn on UV channel 1, reported",
+                      not any(n.uv_map == "UVChannel_0" for mat in bpy.data.materials
+                              for n in mat.node_tree.nodes if n.bl_idname == "ShaderNodeUVMap")
+                      and "map channel 0 (vertex color) not imported: place_place.png on UV channel 1" in body,
+                      body[-600:])
                 keep = bpy.data.materials["FixtureTexKeep"]
                 kinds = {n.bl_idname for n in keep.node_tree.nodes}
                 check("texmap_rules: Mix with a mask, Multiply, Color Correction as nodes",
@@ -1081,6 +1090,165 @@ def check_builder():
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def _crop_case(builder, cm, tx, found, name, mapping, crop):
+    """A material whose base color is one cropped image: (its Image Texture node, the node feeding the crop
+    Mapping)."""
+    ir = cm.MaterialIR(20, name, "test", base_color=cm.Input((0.5, 0.5, 0.5), cm.MapRef(1)))
+    img = tx.Image(1, "shared.png", "shared.png", "", found, mapping=mapping, crop=crop)
+    ir.textures = {"base_color": tx.TextureGraphIR(img, tx.COLOR)}
+    m = builder.make(ir)
+    tex = _from(_principled(m).inputs["Base Color"])
+    return tex, _from(_from(tex.inputs["Vector"]).inputs["Vector"])
+
+
+def check_builder_debt():
+    """MaterialBuilder on hand-made IRs (bead maxdrop-em3.26): a crop repeats per axis as its tile and mirror say
+    (wrap, ping-pong, clip); map channel 0 drawn on channel 1 and reported; a texture file without image data
+    reported and left out; a material whose build raises is removed, its slot empty, the failure reported."""
+    import dataclasses
+    from maxdrop.build import materials as build_materials
+    from maxdrop.convert import materials as cm
+    from maxdrop.convert import texmaps as tx
+    from maxdrop.convert import textures as ct
+    empty_scene()
+    for img in list(bpy.data.images):
+        bpy.data.images.remove(img)
+    scratch = tempfile.mkdtemp(prefix="maxdrop-builder-debt-")
+    try:
+        png = os.path.join(scratch, "shared.png")
+        _write_png(png)
+        found = ct.Found(png, ct.SCENE)
+        builder = build_materials.MaterialBuilder()
+        crop = tx.Crop(0.25, 0.0, 0.5, 0.25)
+
+        tex, comb = _crop_case(builder, cm, tx, found, "CropClip", tx.Mapping(tile=(False, False)), crop)
+        chain = [_from(comb.inputs[a]) for a in ("X", "Y")]
+        floors = [_from(n.inputs[0]) for n in chain]
+        ks = [n.inputs[1].default_value for n in chain]
+        check("builder debt: a crop with tile off: c + K floor(c) per axis, K = 1/w + 1 and 1/h + 1, image CLIP",
+              tex.extension == 'CLIP' and all(n.operation == 'MULTIPLY_ADD' for n in chain)
+              and all(f.operation == 'FLOOR' for f in floors) and close(ks, [3.0, 5.0], 1e-6)
+              and all(_from(n.inputs[2]) == _from(f.inputs[0]) for n, f in zip(chain, floors))
+              and _from(chain[0].inputs[2]).bl_idname == "ShaderNodeSeparateXYZ",
+              "%s %s %s" % (tex.extension, [n.operation for n in chain], ks))
+        # the image coordinate the crop Mapping (POINT: c * size + location) gives each cell coordinate c
+        inside = []
+        for size, loc, k in ((0.5, 0.25, ks[0]), (0.25, 0.75, ks[1])):
+            for c in (-2.5, -0.01, 0.0, 0.3, 0.99, 1.0, 1.4, 7.0):
+                x = (c + k * math.floor(c)) * size + loc
+                inside.append((0.0 <= x <= 1.0) == (0.0 <= c < 1.0))
+        check("builder debt: a clipped crop axis keeps the 0..1 cell in the image and sends every other c out",
+              all(inside), str(inside))
+
+        tex, comb = _crop_case(builder, cm, tx, found, "CropMirrorU",
+                               tx.Mapping(tile=(True, True), mirror=(True, False)), crop)
+        chain = [_from(comb.inputs[a]) for a in ("X", "Y")]
+        check("builder debt: a crop mirrored in U, tiled in V: ping-pong on X, wrap 0..1 on Y, image EXTEND",
+              tex.extension == 'EXTEND' and chain[0].operation == 'PINGPONG'
+              and chain[0].inputs[1].default_value == 1.0 and chain[1].operation == 'WRAP'
+              and chain[1].inputs[1].default_value == 1.0 and chain[1].inputs[2].default_value == 0.0,
+              "%s %s" % (tex.extension, [n.operation for n in chain]))
+
+        tex, frac = _crop_case(builder, cm, tx, found, "CropTile", tx.Mapping(), crop)
+        check("builder debt: a crop tiled both ways: one Fraction, image EXTEND",
+              tex.extension == 'EXTEND' and frac.bl_idname == "ShaderNodeVectorMath" and frac.operation == 'FRACTION',
+              "%s %s" % (tex.extension, frac.bl_idname))
+
+        tex, uv = _crop_case(builder, cm, tx, found, "PlaceClip", tx.Mapping(tile=(False, False)),
+                             tx.Crop(0.25, 0.0, 0.5, 0.25, place=True))
+        check("builder debt: a placed image with tile off: the UV straight into the TEXTURE Mapping, image CLIP",
+              tex.extension == 'CLIP' and uv.bl_idname == "ShaderNodeTexCoord",
+              "%s %s" % (tex.extension, uv.bl_idname))
+
+        zero = tx.Image(5, "channel0.png", "channel0.png", "", found, mapping=tx.Mapping(channel=0))
+        ir = cm.MaterialIR(21, "ChannelZero", "test", base_color=cm.Input((0.5, 0.5, 0.5), cm.MapRef(1)))
+        ir.textures = {"base_color": tx.TextureGraphIR(zero, tx.COLOR),
+                       "normal": tx.TextureGraphIR(tx.NormalMap(dataclasses.replace(zero, colorspace=tx.NON_COLOR),
+                                                                1.0, channel=0), tx.NORMAL)}
+        before = len(builder.issues())
+        m = builder.make(ir)
+        nodes = m.node_tree.nodes
+        nm = next(n for n in nodes if n.bl_idname == "ShaderNodeNormalMap")
+        new = builder.issues()[before:]
+        check("builder debt: map channel 0 drawn on UV channel 1: no UV Map node, the normal map's default "
+              "tangents, one report line", not any(n.bl_idname == "ShaderNodeUVMap" for n in nodes)
+              and nm.uv_map == "" and new == [("material ChannelZero", "map channel 0 (vertex color) not imported: "
+                                                                       "channel0.png on UV channel 1")], str(new))
+
+        junk = os.path.join(scratch, "junk.png")
+        with open(junk, "wb") as f:
+            f.write(b"this is not an image at all")
+        empty = os.path.join(scratch, "empty.jpg")
+        open(empty, "wb").close()
+        tga = os.path.join(scratch, "any.tga")
+        with open(tga, "wb") as f:
+            f.write(b"\x00\x00\x02" + bytes(15))
+        renamed = os.path.join(scratch, "really_png.jpg")
+        shutil.copy(png, renamed)
+        has = [build_materials.image_has_data(p) for p in (png, renamed, tga, junk, empty)]
+        check("builder debt: image_has_data: a PNG yes, a PNG named .jpg yes, a TGA (no signature) yes, text named "
+              ".png no, an empty file no", has == [True, True, True, False, False], str(has))
+        images = len(bpy.data.images)
+        ir = cm.MaterialIR(22, "Undecodable", "test", base_color=cm.Input((0.2, 0.3, 0.4), cm.MapRef(1)))
+        lost = tx.Image(6, "junk.png", "junk.png", "", ct.Found(junk, ct.SCENE))
+        ir.textures = {"base_color": tx.TextureGraphIR(lost, tx.COLOR)}
+        before = len(builder.issues())
+        m = builder.make(ir)
+        node = next(n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage")
+        base = _principled(m).inputs["Base Color"]
+        new = builder.issues()[before:]
+        check("builder debt: a texture file without image data: node without image, no datablock, the swatch, one "
+              "report line", node.image is None and len(bpy.data.images) == images and not base.is_linked
+              and close(list(base.default_value)[:3], [0.2, 0.3, 0.4], 1e-6)
+              and new == [("material Undecodable", "texture not loaded: junk.png (no image data)")], str(new))
+
+        original = build_materials._Tree.build
+
+        def failing(self):
+            raise RuntimeError("maxdrop test: tree fails")
+
+        build_materials._Tree.build = failing
+        try:
+            materials = len(bpy.data.materials)
+            got = builder.make(cm.MaterialIR(23, "Broken", "test"))
+        finally:
+            build_materials._Tree.build = original
+        new = builder.issues()[-1]
+        check("builder debt: a material whose build raises: None, removed again, reported, not counted",
+              got is None and len(bpy.data.materials) == materials and "Broken" not in bpy.data.materials
+              and new == ("material Broken", "material not built (RuntimeError: maxdrop test: tree fails)")
+              and builder.classes["test"] == 6, "%s %s %s" % (got, new, dict(builder.classes)))
+    finally:
+        empty_scene()
+        for img in list(bpy.data.images):
+            bpy.data.images.remove(img)
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def check_conversion_failure(max_path):
+    """The material conversion raises: the operator imports the scene without materials and the report says so."""
+    import maxdrop.ops as ops
+    empty_scene()
+    original = ops._material_slots
+
+    def failing(*args, **kwargs):
+        raise RuntimeError("maxdrop test: conversion fails")
+
+    ops._material_slots = failing
+    try:
+        result = bpy.ops.import_scene.maxdrop(filepath=max_path)
+    finally:
+        ops._material_slots = original
+    text = bpy.data.texts.get("MaxDrop Report")
+    body = text.as_string() if text is not None else ""
+    check("conversion failure: the scene imported without materials, the report says why",
+          result == {'FINISHED'} and len(bpy.data.objects) > 0 and not bpy.data.materials
+          and "materials: not converted (RuntimeError: maxdrop test: conversion fails): the scene is imported "
+              "without materials" in body and "Material issues: 1" in body,
+          "%s %d objects %d materials | %s" % (result, len(bpy.data.objects), len(bpy.data.materials), body[-500:]))
+    empty_scene()
+
+
 def check_builder_wiring(ma, mb, builder, cm, tx, srgb, data, lost, gamma):
     """The links and values of the hand-made IRs' nodes, against numbers worked out by hand."""
     pa, pb = _principled(ma), _principled(mb)
@@ -1122,8 +1290,10 @@ def check_builder_wiring(ma, mb, builder, cm, tx, srgb, data, lost, gamma):
     out_inv = _from(level.inputs[0])
     tex = _from(out_inv.inputs["Color"])
     crop = _from(tex.inputs["Vector"])
-    frac = _from(crop.inputs["Vector"])
-    place = _from(frac.inputs[0])
+    comb = _from(crop.inputs["Vector"])
+    pings = [_from(comb.inputs[axis]) for axis in ("X", "Y")]
+    sep = _from(pings[0].inputs[0])
+    place = _from(sep.inputs["Vector"])
     uv = _from(place.inputs["Vector"])
     from maxdrop.build import materials as build_materials
     want = build_materials.uv_transform(tx.Mapping(tiling=(2.0, 1.0), angle=(0.0, 0.0, 0.5)))
@@ -1133,11 +1303,15 @@ def check_builder_wiring(ma, mb, builder, cm, tx, srgb, data, lost, gamma):
                                                           1e-6)
           and close(list(_input(level, "Vector_002").default_value), [0.1] * 3, 1e-6)
           and out_inv.bl_idname == "ShaderNodeInvert")
-    check("wiring: a placed crop: UVChannel_2 -> placement -> fraction -> Mapping TEXTURE at (0.1, 0.3) x 0.5",
+    check("wiring: a placed crop mirrored both ways: UVChannel_2 -> placement -> ping-pong per axis -> Mapping "
+          "TEXTURE at (0.1, 0.3) x 0.5",
           crop.bl_idname == "ShaderNodeMapping" and crop.vector_type == 'TEXTURE'
           and close(list(crop.inputs["Location"].default_value), [0.1, 0.3, 0.0], 1e-6)
           and close(list(crop.inputs["Scale"].default_value), [0.5, 0.5, 1.0], 1e-6)
-          and frac.operation == 'FRACTION' and place.bl_idname == "ShaderNodeMapping" and place.vector_type == 'POINT'
+          and comb.bl_idname == "ShaderNodeCombineXYZ" and sep.bl_idname == "ShaderNodeSeparateXYZ"
+          and all(n.operation == 'PINGPONG' and n.inputs[1].default_value == 1.0 for n in pings)
+          and _from(pings[1].inputs[0]) == sep
+          and place.bl_idname == "ShaderNodeMapping" and place.vector_type == 'POINT'
           and close(list(place.inputs["Location"].default_value), list(want[0]), 1e-6)
           and close(list(place.inputs["Rotation"].default_value), [0.0, 0.0, 0.5], 1e-6)
           and uv.bl_idname == "ShaderNodeUVMap" and uv.uv_map == "UVChannel_2")
@@ -1387,7 +1561,10 @@ def main():
             traceback.print_exc()
             check("modifiers ignored: no exception", False)
         for label, run_check in (("material slots", lambda: check_material_slots(modules)),
-                                 ("found textures", check_found_textures), ("builder", check_builder)):
+                                 ("found textures", check_found_textures), ("builder", check_builder),
+                                 ("builder debt", check_builder_debt),
+                                 ("conversion failure", lambda: check_conversion_failure(
+                                     os.path.join(ROOT, "tests", "fixtures", "vray_maps.max")))):
             try:
                 run_check()
             except Exception:

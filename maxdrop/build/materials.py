@@ -5,8 +5,8 @@
 """Blender materials from convert.materials.MaterialIR: a Principled BSDF, its texture graphs drawn as nodes.
 
     builder = MaterialBuilder()
-    material = builder.make(ir)         # a new Material; build.objects calls it once per Max material
-    builder.issues()                    # [(label, reason)]: textures that do not load
+    material = builder.make(ir)         # a new Material, None when it fails; build.objects: once per Max material
+    builder.issues()                    # [(label, reason)]: textures that do not load, channel 0, failed materials
     builder.classes                     # Counter {class name: materials made by a rule (grey ones not counted)}
     builder.sockets_skipped             # Counter {Principled input name: materials that needed it on this Blender}
 
@@ -34,11 +34,18 @@ and in a normal or alpha input it would wreck the shading or hide the object.
 
 Placement, the 3ds Max convention (StdUVGen: scaled and turned about the map's center, offset in UV fractions):
 sample = R(u, v, w angles) S(tiling) (uv - 0.5 - offset) + 0.5, one Mapping node (POINT): uv_transform(). Crop:
-the fraction of that, then a Mapping POINT into the cropped rectangle (TEXTURE, out of it, for a placed image).
+that brought into the 0..1 cell per axis as the map repeats there (crop_repeat: wrapped for tile, ping-ponged for
+mirror, outside the image for neither), then a Mapping POINT into the cropped rectangle (TEXTURE, out of it, for a
+placed image). Without a crop Blender's one extension for both axes stands for tile and mirror (extension()).
+Map channel 0 (the vertex color as UVW) has no UV layer: such a map is drawn on channel 1 and reported.
+A texture file that holds no image (empty, or not starting as its format does: image_has_data) is reported and
+left out as one that does not load. A material whose build raises is removed again and reported: its slot stays
+empty.
 Alpha: Material.surface_render_method only, BLENDED for a constant alpha below 1, DITHERED for an alpha map.
 """
 import collections
 import os
+import traceback
 
 import bpy
 from mathutils import Euler, Matrix, Vector
@@ -64,10 +71,18 @@ def uv_transform(mapping):
     return tuple(location), angle, (tiling[0], tiling[1], 1.0)
 
 
+def crop_axes(mapping):
+    """Per axis (U, V), how a cropped or placed image repeats: 'MIRROR' (mirror on, which tiles too, as in 3ds
+    Max), 'REPEAT' (tile) or 'CLIP'."""
+    return tuple('MIRROR' if m else 'REPEAT' if t else 'CLIP' for t, m in zip(mapping.tile, mapping.mirror))
+
+
 def extension(mapping, crop=None):
-    """The Image Texture extension of a placement: Blender has one for both axes."""
-    if crop is not None and crop.place:
-        return 'CLIP'
+    """The Image Texture extension of a placement: Blender has one for both axes. With a crop the nodes repeat
+    per axis and keep the coordinates inside the crop rectangle (EXTEND: no bleed from its opposite edge), unless
+    the image is placed or an axis clips (CLIP)."""
+    if crop is not None:
+        return 'CLIP' if crop.place or 'CLIP' in crop_axes(mapping) else 'EXTEND'
     if all(mapping.tile):
         return 'REPEAT'
     if any(mapping.mirror):
@@ -75,6 +90,31 @@ def extension(mapping, crop=None):
     if any(mapping.tile):
         return 'REPEAT'
     return 'CLIP'
+
+
+# the first bytes of every image format Blender reads that has a signature (TGA has none; WebP is checked apart)
+_SIGNATURES = (b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff", b"BM", b"II*\x00", b"MM\x00*", b"II+\x00", b"MM\x00+",
+               b"v/1\x01", b"#?", b"DDS ", b"8BPS", b"\x00\x00\x00\x0cjP  \r\n\x87\n", b"\xffO\xffQ", b"\x01\xda",
+               b"\x80\x2a\x5f\xd7", b"\xd7\x5f\x2a\x80", b"SDPX", b"XPDS")
+_SIGNED = frozenset((".png", ".jpg", ".jpeg", ".jpe", ".bmp", ".tif", ".tiff", ".exr", ".hdr", ".dds", ".psd",
+                     ".webp", ".jp2", ".j2k", ".j2c", ".sgi", ".rgb", ".rgba", ".bw", ".cin", ".dpx"))
+
+
+def image_has_data(path):
+    """False when the file at path cannot hold an image: empty, or named as a format with a signature but starting
+    with none Blender reads. Only the first bytes are read: Blender loads images lazily, and asking it
+    (Image.has_data) would decode every image during the import. A file that cannot be opened passes: its load
+    reports it."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(16)
+    except OSError:
+        return True
+    if not head:
+        return False
+    if os.path.splitext(path)[1].lower() not in _SIGNED:
+        return True
+    return head.startswith(_SIGNATURES) or (head[:4] == b"RIFF" and head[8:12] == b"WEBP")
 
 
 def uv_layer_name(channel):
@@ -134,10 +174,18 @@ class MaterialBuilder:
         return list(self._issues)
 
     def make(self, ir):
-        """A new Material for a MaterialIR."""
+        """A new Material for a MaterialIR; None (an empty slot, and an issue) when building it fails: one material
+        never costs the scene."""
         material = bpy.data.materials.new(ir.name or "Material")
-        tree = _Tree(self, material, ir)
-        tree.build()
+        try:
+            tree = _Tree(self, material, ir)
+            tree.build()
+        except Exception as e:
+            name = material.name
+            bpy.data.materials.remove(material)
+            print("MaxDrop: material %s not built:\n%s" % (name, traceback.format_exc()), end="")
+            self.issue("material %s" % name, "material not built (%s: %s)" % (type(e).__name__, e))
+            return None
         self.sockets_skipped.update(tree.skipped)
         if not ir.unknown:
             self.classes[ir.source] += 1
@@ -149,6 +197,10 @@ class MaterialBuilder:
             return None
         key = (os.path.normcase(os.path.abspath(img.found.path)), img.colorspace)
         if key not in self.images:
+            if not image_has_data(img.found.path):
+                self.issue(label, "texture not loaded: %s (no image data)" % img.name)
+                self.images[key] = None
+                return None
             try:
                 image = bpy.data.images.load(img.found.path, check_existing=False)
             except RuntimeError as e:
@@ -360,8 +412,9 @@ class _Tree:
             return None
         nm = self.node("ShaderNodeNormalMap", depth)
         nm.space = 'TANGENT'
-        if n.channel != 1:
-            nm.uv_map = uv_layer_name(n.channel)
+        channel = self.channel(n.channel, tx.first_image(n))
+        if channel != 1:
+            nm.uv_map = uv_layer_name(channel)
         _in(nm, "Strength").default_value = max(0.0, n.strength)
         if flips:
             sep = self.node("ShaderNodeSeparateColor", depth + 2)
@@ -382,6 +435,15 @@ class _Tree:
             color = _out(comb, "Color")
         self.links.new(color, _in(nm, "Color"))
         return _out(nm, "Normal")
+
+    def channel(self, channel, img):
+        """The map channel drawn for img: channel 0 (the vertex color as UVW) is no UV layer build.objects makes,
+        so UV channel 1, reported."""
+        if channel != 0:
+            return channel
+        self.builder.issue(self.label, "map channel 0 (vertex color) not imported: %s on UV channel 1"
+                           % (img.name if img is not None else "a normal map"))
+        return 1
 
     def uv(self, channel, depth):
         if channel not in self.uvs:
@@ -417,11 +479,12 @@ class _Tree:
         tex.label = img.name
         tex.extension = extension(img.mapping, img.crop)
         placed = uv_transform(img.mapping)
+        channel = self.channel(img.mapping.channel, img)
         vector = None
-        if placed is not None or img.crop is not None or img.mapping.channel != 1:
-            vector = self.uv(img.mapping.channel, depth + 3)
+        if placed is not None or img.crop is not None or channel != 1:
+            vector = self.uv(channel, depth + 5)
         if placed is not None:
-            m = self.node("ShaderNodeMapping", depth + 2)
+            m = self.node("ShaderNodeMapping", depth + 4)
             m.vector_type = 'POINT'
             _in(m, "Location").default_value = placed[0]
             _in(m, "Rotation").default_value = placed[1]
@@ -430,18 +493,57 @@ class _Tree:
             vector = _out(m, "Vector")
         if img.crop is not None:
             c = img.crop
-            frac = self.node("ShaderNodeVectorMath", depth + 1)
-            frac.operation = 'FRACTION'
-            self.links.new(vector, _in(frac, "Vector"))
+            vector = self.crop_repeat(vector, img.mapping, c, depth + 1)
             m = self.node("ShaderNodeMapping", depth + 1)
             m.vector_type = 'TEXTURE' if c.place else 'POINT'
             _in(m, "Location").default_value = (c.u, 1.0 - c.v - c.h, 0.0)
             _in(m, "Scale").default_value = (c.w, c.h, 1.0)
-            self.links.new(_out(frac, "Vector"), _in(m, "Vector"))
+            self.links.new(vector, _in(m, "Vector"))
             vector = _out(m, "Vector")
         if vector is not None:
             self.links.new(vector, _in(tex, "Vector"))
         return tex
+
+    def crop_repeat(self, vector, mapping, crop, depth):
+        """The UV of a crop's 0..1 cell, per axis: wrapped (tile), ping-ponged (mirror) or left as it is (clip).
+        A cropped image's clipped axis goes c + K floor(c), K = 1 / size + 1: 0 <= c < 1 stays, any other c lands
+        outside the image once the crop mapping scales it into the crop rectangle. A placed image needs nothing
+        there: its TEXTURE mapping already sends a c outside 0..1 out of the image."""
+        axes = crop_axes(mapping)
+        if axes == ('REPEAT', 'REPEAT'):
+            frac = self.node("ShaderNodeVectorMath", depth + 1)
+            frac.operation = 'FRACTION'
+            self.links.new(vector, _in(frac, "Vector"))
+            return _out(frac, "Vector")
+        if crop.place and axes == ('CLIP', 'CLIP'):
+            return vector
+        sep = self.node("ShaderNodeSeparateXYZ", depth + 2)
+        comb = self.node("ShaderNodeCombineXYZ", depth)
+        self.links.new(vector, _in(sep, "Vector"))
+        for axis, how, size in (("X", axes[0], crop.w), ("Y", axes[1], crop.h)):
+            v = _out(sep, axis)
+            if how == 'CLIP' and not crop.place:
+                fl = self.node("ShaderNodeMath", depth + 1)
+                fl.operation = 'FLOOR'
+                self.links.new(v, fl.inputs[0])
+                n = self.node("ShaderNodeMath", depth + 1)
+                n.operation = 'MULTIPLY_ADD'
+                self.links.new(fl.outputs[0], n.inputs[0])
+                n.inputs[1].default_value = 1.0 / max(size, _EPS) + 1.0
+                self.links.new(v, n.inputs[2])
+                v = n.outputs[0]
+            elif how != 'CLIP':
+                n = self.node("ShaderNodeMath", depth + 1)
+                self.links.new(v, n.inputs[0])
+                if how == 'REPEAT':
+                    n.operation = 'WRAP'
+                    n.inputs[1].default_value, n.inputs[2].default_value = 1.0, 0.0
+                else:
+                    n.operation = 'PINGPONG'
+                    n.inputs[1].default_value = 1.0
+                v = n.outputs[0]
+            self.links.new(v, _in(comb, axis))
+        return _out(comb, "Vector")
 
     def output(self, o, out, depth):
         """A map's Output: inverted, then times level plus offset, then times amount."""

@@ -22,6 +22,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   issues instead of the other issues.
 - Import report: the Unpacker line of a `.rar` or `.7z` scene pack names the program that wrote the files when the
   first one failed and another took over, not the one that only listed the pack.
+- Materials: a cropped or placed Bitmap with tiling off no longer repeats over the whole surface, and its mirror
+  setting now applies, per direction; a map on map channel 0 (vertex colors) is drawn on UV channel 1 and named in
+  the import report instead of sampling a UV map that does not exist; a texture file that holds no image is named
+  in the report instead of rendering magenta; a material whose conversion or build fails no longer stops the whole
+  scene from importing: the scene comes in without it and the report says so.
 
 ## [0.0.5] - 2026-11-18
 

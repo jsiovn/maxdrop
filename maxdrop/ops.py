@@ -38,6 +38,8 @@
 # MeshSmooth, Shell and Symmetry become Subdivision Surface, Solidify and Mirror (build.modifiers).
 # Modified for MaxDrop, 2026-11-18 (jsiovn). The material builder's issues are material issues of the import report,
 # and build.report writes the text of a run of several files (publish_run).
+# Modified for MaxDrop, 2026-11-18 (jsiovn). A failure of the material conversion imports the scene without
+# materials and says so in the import report; materials the builder could not make are not counted as made.
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -46,6 +48,7 @@ __author__ = "Sebastian Sille <nrgsille@gmail.com>"
 import os
 import re
 import struct
+import traceback
 
 import bpy
 from bpy_extras.io_utils import (
@@ -557,8 +560,14 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
             unit = units.system_unit(sc)
             meters, note = _meters(self.units, unit, self.scale_objects)
             desc = convert_scene.describe(sc, meters, unit, convert_modifiers=self.modifiers == 'KEEP')
-            slots, counts = (_material_slots(cf, sc, desc, max_path, context, self.use_image_search) if materials
-                             else (None, None))
+            slots, counts, failed = None, None, []
+            if materials:
+                try:
+                    slots, counts = _material_slots(cf, sc, desc, max_path, context, self.use_image_search)
+                except Exception as e:  # a material rule's bug costs the materials, never the scene
+                    print("MaxDrop: materials of %s not converted:\n%s" % (name, traceback.format_exc()), end="")
+                    failed.append(("materials", "not converted (%s: %s): the scene is imported without materials"
+                                   % (type(e).__name__, e)))
             del sc  # the Scene holds the inflated stream of a compressed file
         if 'UV' not in self.object_filter:
             for md in desc.meshes.values():
@@ -584,11 +593,12 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
             rep.issues.append(("modifiers", "%d settings not on Blender %s, not set" % (settings_skipped,
                                                                                        bpy.app.version_string)))
         if materials:
-            conv_stats, tex_stats, lookup, swatches = counts
-            convert_report.add_materials(rep, len(built.materials), builder.classes, conv_stats=conv_stats,
+            conv_stats, tex_stats, lookup, swatches = counts or (None, None, None, None)
+            made = sum(m is not None for m in built.materials.values())
+            convert_report.add_materials(rep, made, builder.classes, conv_stats=conv_stats,
                                          tex_stats=tex_stats, lookup=lookup, sockets=builder.sockets_skipped,
                                          blender=bpy.app.version_string, swatches=swatches,
-                                         build_issues=builder.issues())
+                                         build_issues=failed + builder.issues())
         del desc
         axis = axis_conversion(from_forward=self.axis_forward, from_up=self.axis_up).to_4x4()
         if axis != Matrix.Identity(4):
