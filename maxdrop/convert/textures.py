@@ -31,7 +31,7 @@ folders deep. The bound on work is a count, no time limit: a rule reads at most 
 more to see the budget run out), the SIBLING rule's listing of the scene's folder and its parent included, and a
 folder's listing is read no further than the budget left, so a folder of millions of entries costs no more than
 the budget. The report says where a rule stopped; of the folder it stopped in, the entries taken follow the order
-the file system lists them (name order on NTFS), then names sorted. A link is a symbolic link or a name-surrogate
+the file system lists them (case-insensitive name order on NTFS), then names sorted. A link is a symbolic link or a name-surrogate
 reparse point (junction, mount point): never entered, never taken, in any rule; other reparse points (cloud
 placeholders, deduplicated files) are ordinary files and folders. Unreadable folders are skipped. No bpy, no reader
 import: this takes the stored strings.
@@ -198,7 +198,7 @@ class TextureReport:
 
     def __init__(self):
         self.found = dict.fromkeys(RULES, 0)
-        self.truncated = []  # (rule, folder, max_entries): the walk of that rule stopped in folder
+        self.truncated = []  # (rule, folder, max_entries): the search of that rule stopped in folder
         self._found = set()
         self._missing = {}
 
@@ -234,32 +234,35 @@ class TextureIndex:
         self.report = TextureReport()
 
     def _roots(self, rule, budget):
-        """(the folders rule walks, each with whether its subfolders too; the folder where the budget ran out while
-        finding them, None when it did not)."""
+        """The folders rule walks, in order, as (folder, whether its subfolders too); (folder, None) when the budget
+        ran out while listing folder to find them."""
         if rule == SCENE:
-            return [(self.scene_dir, self.scene_subfolders)], None
-        if rule == SIBLING:
-            roots = []
+            yield self.scene_dir, self.scene_subfolders
+        elif rule == SIBLING:
+            # lazy: the scene folder's maps are walked before its parent is listed, so a crowded parent (a
+            # download folder) cannot spend the budget they need
             for folder in dict.fromkeys((self.scene_dir, os.path.dirname(self.scene_dir))):
                 named, cut = _named(folder, SIBLING_NAMES, budget)
                 if cut:
-                    return roots, folder
-                roots.extend((e.path, True) for e in named if _kind(e) == "dir")
-            return roots, None
-        return [(d, True) for d in self.user_dirs], None
+                    yield folder, None
+                    return
+                for e in named:
+                    if _kind(e) == "dir":
+                        yield e.path, True
+        else:
+            for d in self.user_dirs:
+                yield d, True
 
     def _tier(self, rule):
         index = self._tiers.get(rule)
         if index is None:
             index = self._tiers[rule] = {}
             budget = [self.max_entries]
-            roots, stopped = self._roots(rule, budget)
-            for root, recursive in roots if stopped is None else ():
-                stopped = self._walk(root, recursive, index, budget)
+            for root, recursive in self._roots(rule, budget):
+                stopped = root if recursive is None else self._walk(root, recursive, index, budget)
                 if stopped is not None:
+                    self.report.truncated.append((rule, stopped, self.max_entries))
                     break
-            if stopped is not None:
-                self.report.truncated.append((rule, stopped, self.max_entries))
         return index
 
     def _walk(self, root, recursive, index, budget):

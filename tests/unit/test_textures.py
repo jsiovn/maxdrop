@@ -247,7 +247,9 @@ class BoundsTest(Tree):
         lib = os.path.join(self.root, "lib")
         cut = [e.name for e in textures._entries(lib, 3)]
         # which three depends on the file system's order (name order on NTFS, hash order on ext4)
-        self.assertEqual((len(cut), cut, set(cut) <= set(names)), (3, sorted(cut), True))
+        self.assertEqual(len(cut), 3)
+        self.assertEqual(cut, sorted(cut))
+        self.assertLessEqual(set(cut), set(names))
         self.assertEqual([e.name for e in textures._entries(lib, 10)], sorted(names))
         real = textures._entries
         with mock.patch.object(textures, "_entries", side_effect=real) as entries:
@@ -311,6 +313,15 @@ class WorkBoundTest(Tree):
         self.assertLessEqual(self.read(idx, "t.png"), 1 + 11)  # rule 1: the scene's folder, 1 entry
         self.assertIsNone(idx.find("t.png"))
         self.assertEqual(idx.report.truncated, [(SIBLING, proj, 10)])
+
+    def test_a_crowded_parent_does_not_hide_the_scene_folders_maps(self):
+        for n in range(50):
+            self.touch("proj", "f%02d.png" % n)
+        wood = self.touch("proj", "scene", "maps", "wood.jpg")
+        proj = os.path.join(self.root, "proj")
+        idx = self.index(max_entries=20)
+        self.assertEqual(idx.find("wood.jpg"), Found(wood, SIBLING))
+        self.assertEqual(idx.report.truncated, [(SIBLING, proj, 20)])
 
     def test_the_sibling_listing_leaves_less_for_the_walk(self):
         for n in range(3):
