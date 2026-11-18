@@ -42,6 +42,12 @@ LAMBERT = math.pi / 683.0  # watts per cd of a uniform diffuse light
 KELVIN = {3000: (255.0, 177.2, 109.917), 4000: (255.0, 205.816, 166.081)}  # ocbaby_exsKelvinRGB in 3ds Max
 
 
+def blend(falloff, hotspot):
+    """Blender's spot blend whose full intensity ends at the hotspot: it blends in cosine space."""
+    edge = math.cos(math.radians(falloff) / 2.0)
+    return (math.cos(math.radians(hotspot) / 2.0) - edge) / (1.0 - edge)
+
+
 def decoded(rgb):
     return tuple(colors.srgb_to_linear(c / 255.0) for c in rgb)
 
@@ -109,11 +115,14 @@ class Standard(unittest.TestCase):
                                        start=1000.0))
         self.assertEqual((ld.kind, issues), ("SPOT", []))
         self.assertAlmostEqual(ld.spot_size, math.radians(50.0), delta=1e-12)
-        self.assertAlmostEqual(ld.spot_blend, 0.4, delta=1e-12)
+        self.assertAlmostEqual(ld.spot_blend, blend(50.0, 30.0), delta=1e-12)
+        self.assertAlmostEqual(ld.spot_blend, 0.636318, delta=1e-6)
 
     def test_cone_limits(self):
         self.assertEqual(L._cone(200.0, 10.0)[0], math.pi)
-        self.assertEqual(L._cone(0.5, 0.5), (L.MIN_CONE, 0.0))
+        size, b = L._cone(0.5, 0.5)  # below Blender's smallest spot: a hotspot half of it
+        self.assertEqual(size, L.MIN_CONE)
+        self.assertAlmostEqual(b, blend(1.0, 0.5), delta=1e-9)
         self.assertEqual(L._cone(0.0, 10.0), (L.MIN_CONE, 0.0))
         self.assertEqual(L._cone(40.0, 60.0)[1], 0.0)  # a hotspot past the falloff
 
@@ -172,7 +181,7 @@ class Photometric(unittest.TestCase):
     def test_web_names_its_file(self):
         ld, issues = describe(photometric(distribution=L.WEB, file="lamp.ies"))
         self.assertEqual((ld.spot_size, issues), (L.WEB_CONE, [L.WEB_FILE % "lamp.ies"]))
-        self.assertAlmostEqual(ld.spot_blend, 1.0 - 100.0 / 170.0, delta=1e-12)
+        self.assertAlmostEqual(ld.spot_blend, blend(170.0, 100.0), delta=1e-12)
         _ld, issues = describe(photometric(distribution=L.WEB))
         self.assertEqual(issues, [L.WEB_FILE % L.NO_FILE])
 
@@ -213,6 +222,8 @@ class SunAndIes(unittest.TestCase):
         self.assertAlmostEqual(ld.watts, 300.0 * CD, delta=1e-12)
         ld, _ = describe(ies(power=300.0, override=1, intensity_type=0))
         self.assertAlmostEqual(ld.watts, 300.0 / 683.0, delta=1e-12)
+        ld, issues = describe(ies(power=0.0))
+        self.assertEqual((ld.watts, issues), (0.0, [L.IES_ZERO, L.IES_FILE % "a.ies"]))
 
     def test_ies_color(self):
         ld, _ = describe(ies(color_mode=1, temperature=4000.0))
@@ -243,7 +254,7 @@ class Params(unittest.TestCase):
                 return types.SimpleNamespace(class_id=classids.FREE_DISC_LIGHT)
 
         orig = L._blocks
-        L._blocks = lambda scene, i: blocks
+        L._blocks = lambda scene, i: (blocks, [])
         try:
             values, issues = L._read_blocks(Scene(), 0, L.PHOTOMETRIC, None)
         finally:
@@ -253,12 +264,95 @@ class Params(unittest.TestCase):
         self.assertEqual(issues, ["intensity is animated: 1500.0 is used",
                                   "parameter block 2 is missing: its defaults are used",
                                   "parameter block 4 is missing: its defaults are used"])
-        L._blocks = lambda scene, i: {}
+        L._blocks = lambda scene, i: ({}, ["damaged"])
         try:
             with self.assertRaises(L.LightError):
                 L._read_blocks(Scene(), 0, L.SUN, None)
         finally:
             L._blocks = orig
+
+
+class _Chunk:
+    container, offset = False, 0
+
+    def first(self, cid):
+        return None
+
+
+class _Scene:
+    """A light object 0 whose references are given; objects past 0 are of the given entries."""
+
+    def __init__(self, entries, refs, bad_refs=()):
+        self.entries, self._refs, self.bad_refs = entries, refs, bad_refs
+        self.classes = []
+
+    def __len__(self):
+        return len(self.entries)
+
+    def entry(self, i):
+        return self.entries[i]
+
+    def refs(self, i):
+        if i in self.bad_refs:
+            raise L.ChunkError("damaged references")
+        return self._refs.get(i, {})
+
+    def chunk(self, i):
+        return _Chunk()
+
+    def is_a(self, i, superclass, class_id):
+        e = self.entries[i]
+        return e.superclass == superclass and e.class_id == class_id
+
+    def class_index(self, i):
+        return i
+
+
+def _entry(superclass, class_id, index=0):
+    return types.SimpleNamespace(superclass=superclass, class_id=class_id, index=index)
+
+
+class Malformed(unittest.TestCase):
+    def test_damaged_environment_references_are_skipped(self):
+        env = _entry(classids.SC_RENDER_ENVIRONMENT, classids.RENDER_ENVIRONMENT, 0)
+        sky = _entry(classids.SC_TEXMAP, classids.VRAY_SKY, 1)
+        sc = _Scene([env, sky], {0: {L.ENVIRONMENT_MAP_SLOT: 1}})
+        sc.classes = [env]
+        self.assertEqual(L.environment_sky(sc), 1)
+        sc.bad_refs = (0,)
+        self.assertIsNone(L.environment_sky(sc))
+        sc = _Scene([env, sky], {0: {L.ENVIRONMENT_MAP_SLOT: 7}})  # past the objects
+        sc.classes = [env]
+        self.assertIsNone(L.environment_sky(sc))
+
+    def test_a_standard_light_without_its_block_raises(self):
+        omni = _entry(classids.SC_LIGHT, classids.OMNI)
+        for refs in ({}, {0: 5}, {0: 1}):  # no slot 0, past the objects, not an old ParamBlock
+            sc = _Scene([omni, _entry(classids.SC_LIGHT, classids.OMNI)], {0: refs})
+            with self.assertRaises(L.LightError, msg=refs):
+                L.read_params(sc, 0)
+
+    def test_a_short_chunk_takes_the_default(self):
+        class Leaf:
+            container, payload_size = False, 1
+        class Holder:
+            container = True
+
+            def first(self, cid):
+                return Leaf()
+        self.assertEqual(L._u16(Holder(), L._DECAY, 7), 7)
+        self.assertEqual(L._u16(_Chunk(), L._DECAY, 7), 7)
+
+    def test_a_damaged_block_is_skipped(self):
+        light = _entry(classids.SC_LIGHT, classids.VRAY_SUN)
+        block = _entry(classids.SC_PARAMETER_BLOCK2, classids.PARAM_BLOCK2)
+        sc = _Scene([light, block], {0: {0: 1}})
+        blocks, issues = L._blocks(sc, 0)
+        self.assertEqual(blocks, {})
+        self.assertEqual(len(issues), 1)
+        self.assertTrue(issues[0].startswith("the parameter block of reference 0 cannot be read: "), issues)
+        with self.assertRaises(L.LightError):
+            L.read_params(sc, 0)
 
 
 @unittest.skipIf(conv is None, "numpy missing")
@@ -294,9 +388,9 @@ class Fixtures(unittest.TestCase):
             "StdOmniInverse": ("POINT", None, 0.0, 0.0, 0.0, 0.0, 0.0, 375.0 * CD, False, both),
             "StdOmniNoDiffuse": ("POINT", None, 0.0, 0.0, 0.0, 0.0, 0.0, 1500.0 * CD, True, (False, True)),
             "StdOmniAmbient": ("POINT", None, 0.0, 0.0, 0.0, 0.0, 0.0, 750.0 * CD, True, both),
-            "StdSpot": ("SPOT", None, 0.0, 0.0, 0.0, 50.0, 0.4, 4500.0 * CD, True, both),
-            "StdSpotRect": ("SPOT", None, 0.0, 0.0, 0.0, 45.0, 1 - 40 / 45, 1500.0 * CD, True, (True, False)),
-            "StdTargetSpot": ("SPOT", None, 0.0, 0.0, 0.0, 60.0, 1 - 20 / 60, 3000.0 * CD, True, both),
+            "StdSpot": ("SPOT", None, 0.0, 0.0, 0.0, 50.0, blend(50, 30), 4500.0 * CD, True, both),
+            "StdSpotRect": ("SPOT", None, 0.0, 0.0, 0.0, 45.0, blend(45, 40), 1500.0 * CD, True, (True, False)),
+            "StdTargetSpot": ("SPOT", None, 0.0, 0.0, 0.0, 60.0, blend(60, 20), 3000.0 * CD, True, both),
             "StdTargetDirect": ("SUN", None, 0.0, 0.0, 0.0, 0.0, 0.0, 1500.0 * 0.8 / 683.0, True, both),
             "StdDirect": ("SUN", None, 0.0, 0.0, 0.0, 0.0, 0.0, 1500.0 * 1.2 / 683.0, True, both),
             "StdSun": ("SUN", None, 0.0, 0.0, 0.0, 0.0, 0.0, 73.2, True, both)})
@@ -312,11 +406,11 @@ class Fixtures(unittest.TestCase):
     def test_photometric(self):
         both = (True, True)
         point = ("POINT", None, 0.0, 0.0)
-        web = (170.0, 1 - 100 / 170)
+        web = (170.0, blend(170, 100))
         self.check("lights_photometric", {
             "PhPoint": point + (0.0, 0.0, 0.0, 1200.0 * CD, True, both),
             "PhPointInst": point + (0.0, 0.0, 0.0, 1200.0 * CD, True, both),
-            "PhSpot": ("SPOT", None, 0.0, 0.0, 0.0, 70.0, 1 - 40 / 70, 1000.0 * CD, True, both),
+            "PhSpot": ("SPOT", None, 0.0, 0.0, 0.0, 70.0, blend(70, 40), 1000.0 * CD, True, both),
             "PhRect": ("AREA", "RECTANGLE", 0.2, 0.6, 0.0, 0.0, 0.0, 800.0 * LAMBERT, True, both),
             "PhDisc": ("AREA", "DISK", 0.3, 0.3, 0.0, 0.0, 0.0, 500.0 * LAMBERT, True, both),
             "PhLine": ("AREA", "RECTANGLE", 0.01, 1.0, 0.0, 0.0, 0.0, 300.0 * LAMBERT, True, both),

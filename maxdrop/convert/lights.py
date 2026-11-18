@@ -58,20 +58,22 @@ watts at 683 lm/W: 4 pi I / 683 for a point or spot light of on-axis intensity I
   V-Ray lights the floor at distance d with m x 1500 lx (m the multiplier) without decay, m (d0 / d)^2 x 1500 lx with
   inverse-square decay from d0, m d0 / d x 1500 lx with inverse decay: the intensity is 1500 m d0^2 cd, d0 the decay
   start (exact past it with inverse-square decay; at it with inverse decay, an issue), REFERENCE_DISTANCE without
-  decay (an issue: Blender's light falls off). Omni -> POINT, Spot -> SPOT (size the falloff, blend 1 - hotspot /
-  falloff), Direct -> SUN of 1500 m lx (its beam, the falloff's cylinder, is not: an issue, but with overshoot).
-  Radius and angle 0: they are point sources with hard shadows.
+  decay (an issue: Blender's light falls off). Omni -> POINT, Spot -> SPOT (_cone: size the falloff, the blend
+  that puts Blender's full-intensity edge on the hotspot; Blender blends in cosine space, (cos theta - cos(size / 2))
+  / ((1 - cos(size / 2)) blend)), Direct -> SUN of 1500 m lx (its beam, the falloff's cylinder, is not: an issue,
+  but with overshoot). Radius and angle 0: they are point sources with hard shadows.
 - Photometric (Free / Target Light in its six shapes, one class each; ParamBlock2s 0, 2, 3, 4): the intensity is
-  always cd, times the dimmer. Isotropic -> POINT, spotlight -> SPOT (block 2's cone), web -> SPOT of WEB_CONE (the
-  rules source's wide spot; the web file named in an issue), uniform diffuse -> AREA (a rectangle or disc as it is;
-  a line a rectangle LINE_WIDTH wide, a point a disc LINE_WIDTH across, a sphere or cylinder a disc of its
-  diameter). A point or spot light gets the radius of a disc, sphere or cylinder. The color is white, or in Kelvin
-  mode kelvin_rgb decoded from sRGB, times the filter color.
+  always cd, times the dimmer. Isotropic -> POINT, spotlight -> SPOT (block 2's cone), web -> SPOT of WEB_CONE
+  (the rules source's wide spot, falloff 170 and hotspot 100 degrees; the web file named in an issue), uniform
+  diffuse -> AREA (a rectangle or disc as it is; a line a rectangle LINE_WIDTH wide, a point a disc LINE_WIDTH
+  across, a sphere or cylinder a disc of its diameter). A point or spot light gets the radius of a disc, sphere or
+  cylinder. The color is white, or in Kelvin mode kelvin_rgb decoded from sRGB, times the filter color.
 - VRaySun -> SUN of SUN_IRRADIANCE W/m^2 per unit of its multiplier (the rules source's 100 klx / 683; V-Ray 5.2
   measured 102.7 klx at the zenith), angle SUN_ANGLE x its size multiplier, its filter color; the sky model's
   dimming and color are not imported (issues).
 - VRayIES: its power in lm (with the intensity overridden in cd, the power is that intensity: x 4 pi) -> SPOT of
-  WEB_CONE, power lm / 683, its color or temperature, the IES file named in an issue.
+  WEB_CONE, power lm / 683, its color or temperature, the IES file named in an issue; a power of 0 (V-Ray then takes
+  the file's own) is 0 W, an issue.
 - Skylight: not built (the reason; World is later work). environment_sky finds a VRaySky as the environment map
   (RenderEnvironment reference ENVIRONMENT_MAP_SLOT) for convert.scene's report line.
 
@@ -81,8 +83,10 @@ issues. A negative multiplier or intensity is 0 W (an issue). Their instances sh
 but for VRayLights).
 
 The file comes from anywhere: a parameter that is animated, missing or no finite number takes its default (the
-animated one an issue; for a standard light a missing one too); a block that cannot be read raises LightError; a
-power past the float32 range (sizes near the float range) is 0 W, an issue. No bpy.
+animated one an issue; for a standard light a missing one too); a block that cannot be read raises LightError (a
+photometric light's, VRaySun's or VRayIES's other blocks are skipped, an issue, their parameters take defaults);
+a power past the float32 range (sizes near the float range) is 0 W, an issue; environment_sky skips a
+RenderEnvironment whose references cannot be read. No bpy.
 """
 import math
 
@@ -130,7 +134,7 @@ LUX_PER_UNIT = 1500.0
 REFERENCE_DISTANCE = 1.0  # m: where a standard light without decay is as bright as in V-Ray
 SUN_IRRADIANCE = 146.4  # W/m^2 per unit of a VRaySun's multiplier (the rules source's 100 klx / 683)
 SUN_ANGLE = math.radians(0.53)  # the sun's angular diameter at size multiplier 1
-WEB_CONE, WEB_HOTSPOT = math.radians(170.0), math.radians(100.0)  # the rules source's wide spot for a web or IES
+WEB_FALLOFF, WEB_HOTSPOT = 170.0, 100.0  # degrees: the rules source's wide spot for a web or IES
 LINE_WIDTH = 0.01  # m: the width of the area light of a diffuse line, the diameter of a diffuse point
 MIN_CONE = math.radians(1.0)  # Blender's smallest spot size
 ENVIRONMENT_MAP_SLOT = 5  # RenderEnvironment's reference to the environment map
@@ -196,6 +200,7 @@ NEGATIVE = "%s %g is negative: 0 W"
 SHAPE = "its %s shape is %s"
 WEB_FILE = "its photometric web %s is approximated by a spot of 170 degrees"
 IES_FILE = "its IES file %s is approximated by a spot of 170 degrees"
+IES_ZERO = "power 0: V-Ray takes the IES file's own intensity, which is not read: 0 W"
 NO_FILE = "(no file)"
 SUN_ZENITH = "its strength is the sun's at the zenith: the sky model's dimming toward the horizon is not imported"
 SUN_COLOR = "its color is its filter color: the sky model's sun color is not imported"
@@ -264,7 +269,10 @@ def environment_sky(scene):
         return None
     for i in range(len(scene)):
         if scene.class_index(i) in holders:
-            sky = scene.refs(i).get(ENVIRONMENT_MAP_SLOT)
+            try:
+                sky = scene.refs(i).get(ENVIRONMENT_MAP_SLOT)
+            except ChunkError:
+                continue
             if sky is not None and 0 <= sky < len(scene) and scene.is_a(sky, classids.SC_TEXMAP, classids.VRAY_SKY):
                 return sky
     return None
@@ -358,19 +366,24 @@ def read_params(scene, i, assets=None):
 
 
 def _blocks(scene, i):
-    """{block id: ParamBlock2} of the ParamBlock2s light object i references (the first of each id)."""
+    """({block id: ParamBlock2} of the ParamBlock2s light object i references (the first of each id), issues): a
+    block that cannot be read is skipped, an issue (its id is unknown: a needed one then counts as missing)."""
     entry = scene.entry(i)
     refs = scene.refs(i)
-    found = {}
+    found, issues = {}, []
     for slot in sorted(refs):
         target = refs[slot]
         te = scene.entry(target) if target is not None and 0 <= target < len(scene) else None
         if te is None or te.superclass != classids.SC_PARAMETER_BLOCK2:
             continue
-        block = pblock.ParamBlock2.from_chunk(scene.chunk(target), scene.refs(target), refs, len(scene),
-                                              (entry.superclass, entry.class_id))
+        try:
+            block = pblock.ParamBlock2.from_chunk(scene.chunk(target), scene.refs(target), refs, len(scene),
+                                                  (entry.superclass, entry.class_id))
+        except ChunkError as exc:
+            issues.append("the parameter block of reference %d cannot be read: %s" % (slot, exc))
+            continue
         found.setdefault(block.block_id, block)
-    return found
+    return found, issues
 
 
 def _file_name(blocks, where, assets):
@@ -386,10 +399,10 @@ def _read_blocks(scene, i, family, assets):
     """The values of a photometric light, VRaySun or VRayIES: its parameters by name, its file's name."""
     spec, where = {PHOTOMETRIC: (_PHOTOMETRIC_PARAMS, _PHOTOMETRIC_FILE), SUN: (_SUN_PARAMS, None),
                    IES: (_IES_PARAMS, _IES_FILE)}[family]
-    blocks = _blocks(scene, i)
+    blocks, issues = _blocks(scene, i)
     if 0 not in blocks:
-        raise LightError("no parameter block 0")
-    issues = [x for b in blocks.values() for x in b.issues]
+        raise LightError("no parameter block 0" + ("".join("; " + x for x in issues)))
+    issues += [x for b in blocks.values() for x in b.issues]
     values = {CLASS: family}
     for name, (bid, pid, default) in spec.items():
         block = blocks.get(bid)
@@ -441,10 +454,12 @@ def _read_standard(scene, i):
         return chunk.container and chunk.first(cid) is not None
 
     values = {CLASS: STANDARD, "shape": kind, "on": _u16(chunk, _ON, 1), "decay": _u16(chunk, _DECAY, DECAY_NONE),
-              "color": old(_OLD_COLOR), "multiplier": old(_OLD_MULTIPLIER), "start": old(_OLD_START[kind]),
+              "color": old(_OLD_COLOR), "multiplier": old(_OLD_MULTIPLIER), "start": 0.0,
               "rectangle": kind != OMNI and _u16(chunk, _CONE, 1) == 0, "overshoot": present(_OVERSHOOT),
               "diffuse": not present(_NO_DIFFUSE), "specular": not present(_NO_SPECULAR),
               "ambient": present(_AMBIENT)}
+    if kind != DIRECT and values["decay"] != DECAY_NONE:  # unused otherwise: no issue when it is missing
+        values["start"] = old(_OLD_START[kind])
     if kind != OMNI:
         values["hotspot"], values["falloff"] = old(_OLD_HOTSPOT), old(_OLD_FALLOFF)
     return values, issues
@@ -548,10 +563,16 @@ def _nonnegative(label, value, issues):
 
 
 def _cone(falloff, hotspot):
-    """(spot_size, spot_blend) of a cone of falloff and hotspot in degrees (full angles)."""
+    """(spot_size, spot_blend) of a cone of falloff and hotspot in degrees (full angles): Blender's full intensity
+    ends at the hotspot, as 3ds Max's does (Blender blends between cos(size / 2) and that plus (1 - cos(size / 2))
+    blend)."""
     size = min(math.pi, max(MIN_CONE, math.radians(falloff)))
-    blend = 1.0 - hotspot / falloff if falloff > 0 else 0.0
-    return size, min(1.0, max(0.0, blend))
+    edge = math.cos(size / 2.0)
+    hot = math.cos(math.radians(min(max(hotspot, 0.0), math.degrees(size))) / 2.0)
+    return size, min(1.0, max(0.0, (hot - edge) / (1.0 - edge)))
+
+
+WEB_CONE, WEB_BLEND = _cone(WEB_FALLOFF, WEB_HOTSPOT)
 
 
 def point_watts(cd):
@@ -627,7 +648,7 @@ def _describe_photometric(key, name, v, meters, swatches, issues):
             ld.spot_size, ld.spot_blend = _cone(v["falloff"], v["hotspot"])
         elif dist != ISOTROPIC:
             ld.kind = SPOT
-            ld.spot_size, ld.spot_blend = WEB_CONE, 1.0 - WEB_HOTSPOT / WEB_CONE
+            ld.spot_size, ld.spot_blend = WEB_CONE, WEB_BLEND
             issues.append(WEB_FILE % (v["file"] or NO_FILE))
     if v["far"]:
         issues.append(FAR)
@@ -652,10 +673,12 @@ def _describe_ies(key, name, v, meters, swatches, issues):
     # power holds the override's value in its own unit (the stored intensity_value is a stale alias)
     lm = v["power"] * (4.0 * math.pi if v["override"] and v["intensity_type"] == 1 else 1.0)
     lm = _nonnegative("power", lm, issues)
+    if v["power"] == 0:
+        issues.append(IES_ZERO)
     color = colors.GAMMA_OFF.color(texmaps.kelvin_rgb(v["temperature"])) if v["color_mode"] == 1 else \
         swatches.color(v["color"])
     ld = LightDescription(key, name, SPOT, watts=lm / LUMENS_PER_WATT, power=lm / LUMENS_PER_WATT, color=color,
-                          on=bool(v["on"]), spot_size=WEB_CONE, spot_blend=1.0 - WEB_HOTSPOT / WEB_CONE)
+                          on=bool(v["on"]), spot_size=WEB_CONE, spot_blend=WEB_BLEND)
     _rays(ld, bool(v["diffuse"]), bool(v["specular"]), v["diffuse_contribution"], v["specular_contribution"], issues)
     issues.append(IES_FILE % (v["file"] or NO_FILE))
     return ld

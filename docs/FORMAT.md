@@ -703,8 +703,12 @@ as bright as V-Ray:
 - a standard Omni or Spot of multiplier m: I = 1500 m d², d the decay start with inverse-square decay (exact past
   it) or inverse decay (exact at it), 1 m without decay;
 - a standard Direct: a sun of 1500 m / 683 W/m²; a VRaySun: 146.4 m W/m² (the rules source's 100 klx / 683);
-- a VRayIES: its lumens / 683 W, on a spot of 170° with blend 1 − 100 / 170 (the rules source's wide spot), as a
+- a VRayIES: its lumens / 683 W, on a spot of 170° and hotspot 100° (the rules source's wide spot), as a
   photometric web.
+
+**Spot cones.** Blender's spot size is the falloff; its blend is set so that full intensity ends at the hotspot, as in
+3ds Max: Blender blends in cosine space (full intensity where cos θ ≥ cos(size / 2) + (1 − cos(size / 2)) · blend),
+so blend = (cos(hotspot / 2) − cos(falloff / 2)) / (1 − cos(falloff / 2)), 0.636 for 30° in 50°.
 
 ## System unit
 

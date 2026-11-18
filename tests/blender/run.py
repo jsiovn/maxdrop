@@ -43,7 +43,8 @@ the double-sided plane's half), its color, the off light hidden in viewport and 
 the camera and glossy rays; the instance shares the plane's light, the disc's instance scaled 2, 1.5, 1 has its
 own, three times as strong; imported again with Light Strength 2, twice the
 power. lights_standard, lights_photometric (and lookat's target spot): each light of the type, spot cone, power and
-color of the rules (STOCK_LIGHTS), its -Z axis along the oracle's, its flags; the Skylight an empty. Each fixture's import report is published (build.report) and must say nothing was left out; the one the
+color of the rules (STOCK_LIGHTS), its -Z axis along the oracle's, its flags; the Skylight an empty.
+Each fixture's import report is published (build.report) and must say nothing was left out; the one the
 operator published for vray_wrappers lists its three peeled wrappers by class. A changed layers_flags description
 checks a hidden, a frozen, a non-rendering and a nested layer, which no fixture has. A hand-made description with sheared local matrices (top-level and parented, hidden, a zero scale) checks that
 Blender's world matrices equal the products of the locals, through the helper empty for top-level ones. Material
@@ -171,18 +172,24 @@ VRAY_LIGHT_FLAGS = {"FixtureInvisible": (False, True, False, 0.5, 0.0)}  # camer
 # d the decay start or 1 m), a diffuse one pi I / 683, a standard Direct 1500 multiplier / 683 W/m^2, a VRaySun
 # 146.4 x its multiplier, a VRayIES lm / 683
 _CD, _LAMBERT = 4.0 * math.pi / 683.0, math.pi / 683.0
-_WEB = (170.0, 1.0 - 100.0 / 170.0)
+def _blend(falloff, hotspot):
+    """Blender's spot blend whose full intensity ends at the hotspot (Blender blends in cosine space)."""
+    edge = math.cos(math.radians(falloff) / 2.0)
+    return (math.cos(math.radians(hotspot) / 2.0) - edge) / (1.0 - edge)
+
+
+_WEB = (170.0, _blend(170.0, 100.0))
 STOCK_LIGHTS = {
     "StdOmni": ('POINT', 0.0, 0.0, 2250.0 * _CD), "StdOmniInst": ('POINT', 0.0, 0.0, 2250.0 * _CD),
     "StdOmniSquare": ('POINT', 0.0, 0.0, 1920.0 * _CD), "StdOmniInverse": ('POINT', 0.0, 0.0, 375.0 * _CD),
     "StdOmniNegative": ('POINT', 0.0, 0.0, 0.0), "StdOmniNoDiffuse": ('POINT', 0.0, 0.0, 1500.0 * _CD),
-    "StdOmniAmbient": ('POINT', 0.0, 0.0, 750.0 * _CD), "StdSpot": ('SPOT', 50.0, 0.4, 4500.0 * _CD),
-    "StdSpotRect": ('SPOT', 45.0, 1.0 - 40.0 / 45.0, 1500.0 * _CD),
-    "StdTargetSpot": ('SPOT', 60.0, 1.0 - 20.0 / 60.0, 3000.0 * _CD),
+    "StdOmniAmbient": ('POINT', 0.0, 0.0, 750.0 * _CD), "StdSpot": ('SPOT', 50.0, _blend(50.0, 30.0), 4500.0 * _CD),
+    "StdSpotRect": ('SPOT', 45.0, _blend(45.0, 40.0), 1500.0 * _CD),
+    "StdTargetSpot": ('SPOT', 60.0, _blend(60.0, 20.0), 3000.0 * _CD),
     "StdTargetDirect": ('SUN', 0.0, 0.0, 1500.0 * 0.8 / 683.0), "StdDirect": ('SUN', 0.0, 0.0, 1500.0 * 1.2 / 683.0),
-    "StdSun": ('SUN', 0.0, 0.0, 73.2), "FixtureSpot": ('SPOT', 45.0, 1.0 - 43.0 / 45.0, 1500.0 * _CD),
+    "StdSun": ('SUN', 0.0, 0.0, 73.2), "FixtureSpot": ('SPOT', 45.0, _blend(45.0, 43.0), 1500.0 * _CD),
     "PhPoint": ('POINT', 0.0, 0.0, 1200.0 * _CD), "PhPointInst": ('POINT', 0.0, 0.0, 1200.0 * _CD),
-    "PhSpot": ('SPOT', 70.0, 1.0 - 40.0 / 70.0, 1000.0 * _CD), "PhRect": ('AREA', 0.0, 0.0, 800.0 * _LAMBERT),
+    "PhSpot": ('SPOT', 70.0, _blend(70.0, 40.0), 1000.0 * _CD), "PhRect": ('AREA', 0.0, 0.0, 800.0 * _LAMBERT),
     "PhDisc": ('AREA', 0.0, 0.0, 500.0 * _LAMBERT), "PhLine": ('AREA', 0.0, 0.0, 300.0 * _LAMBERT),
     "PhSphere": ('POINT', 0.0, 0.0, 900.0 * _CD), "PhCylinder": ('POINT', 0.0, 0.0, 700.0 * _CD),
     "PhWeb": ('SPOT',) + _WEB + (400.0 * _CD,), "PhOff": ('POINT', 0.0, 0.0, 1000.0 * _CD),
