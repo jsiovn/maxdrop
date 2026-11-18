@@ -1018,6 +1018,32 @@ class Race(Base):
         self.assertEqual(os.listdir(self.out), [])
         self.assertEqual(moved, ["wood.jpg", "stone.png", "room.max"])
 
+    def test_a_pack_folder_that_cannot_be_made(self):
+        path = self.pack([("one.max", b"1"), ("two.max", b"2")])
+        before = files_under(self.tmp)
+        with mock.patch.object(archive.os, "mkdir", side_effect=PermissionError("denied")):
+            with self.assertRaisesRegex(PackError, "Could not unpack pack.zip into .*denied"):
+                archive.unpack(path, "two.max", dest_parent=self.out)
+        self.assert_clean(before)
+
+    def test_a_failure_keeps_the_pack_folder_once_another_scene_is_in_it(self):
+        path = self.pack([("one.max", b"1"), ("two.max", b"2")])
+        out = self.out
+
+        class Failing(archive.ZipBackend):
+            def extract(self, path, wanted, staging, budget):
+                # Another unpack of this pack finishes the first scene meanwhile.
+                archive._BACKENDS["zip"] = archive.ZipBackend()
+                archive.unpack(path, "one.max", dest_parent=out)
+                raise PackError("disk gone")
+        self.addCleanup(archive._BACKENDS.__setitem__, "zip", archive._BACKENDS["zip"])
+        archive._BACKENDS["zip"] = Failing()
+        with self.assertRaisesRegex(PackError, "disk gone"):
+            archive.unpack(path, "two.max", dest_parent=self.out)
+        top = os.path.join(self.out, "pack")
+        self.assertEqual(self.listing(top), sorted([archive.MARKER, "one"]))
+        self.assertEqual(self.listing(os.path.join(top, "one")), sorted([archive.MARKER, "one.max"]))
+
     def test_no_free_name_left(self):
         path = self.pack([("room.max", b"MAX")])
         self.racing_backend(os.path.join(self.out, "pack"), False)

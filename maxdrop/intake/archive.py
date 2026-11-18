@@ -317,7 +317,8 @@ def _zip_entry_count(path, cap):
         eocd_at = size - tail_len + pos
         declared, cd_size = _EOCD.unpack_from(tail, pos)[4:6]
         end = eocd_at
-        # As zipfile: the zip64 locator lies right before the end record, the zip64 record right before it.
+        # As zipfile: the zip64 locator lies right before the end record, the zip64 record right before it. Newer
+        # Pythons check more of these records; a count here only refuses early, zipfile still judges the archive.
         if eocd_at >= _EOCD64_LOCATOR.size + _EOCD64.size:
             f.seek(eocd_at - _EOCD64_LOCATOR.size - _EOCD64.size)
             head = f.read(_EOCD64.size + _EOCD64_LOCATOR.size)
@@ -709,6 +710,13 @@ def _reserve(path, folders):
     raise _no_free_folder(path, os.path.dirname(folders[0]))
 
 
+def _only_marker(folder):
+    try:
+        return set(os.listdir(folder)) <= {MARKER}
+    except OSError:
+        return False
+
+
 def _remove_stale_staging(parent, limits):
     """Remove the staging folders of unpacks that never finished (Blender stopped mid-way): only real folders
     (not links) named with STAGING_PREFIX and untouched for a long time. Nothing else in parent is looked at.
@@ -916,12 +924,17 @@ def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=Non
                 shutil.rmtree(reserved, ignore_errors=True)
             raise
         folder = reserved
-        shutil.rmtree(staging, ignore_errors=True)
+        try:
+            os.rmdir(staging)  # empty: _check_staging allowed only the files that were moved
+        except OSError:
+            pass  # removed as stale by a later unpack
     except BaseException as e:
-        if created is not None:
+        # Only while it holds nothing but its marker: another unpack of this pack may have put a scene in it.
+        if created is not None and _only_marker(created):
             shutil.rmtree(created, ignore_errors=True)
         if isinstance(e, OSError):
-            raise PackError("Could not unpack %s into %s (%s)." % (os.path.basename(path), parent, e)) from None
+            raise PackError("Could not unpack %s into %s (%s)." % (os.path.basename(path), os.path.dirname(folder),
+                                                                    e)) from None
         raise
     result.folder = folder
     result.max_path = os.path.join(folder, chosen.base)
