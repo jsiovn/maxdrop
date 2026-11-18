@@ -293,13 +293,14 @@ class References(Base):
         narrow, _ = self.asker(["a.jpg"])
         first = archive.unpack(path, dest_parent=self.out, references=narrow)
         asked, calls = self.asker(["A.JPG"])
-        self.assertEqual(archive.existing_folder(path, "room.max", False, self.out, references=asked),
+        self.assertEqual(archive.preview(path, "room.max", False, self.out, references=asked),
                          ("reused", first.max_path))
         again = archive.unpack(path, dest_parent=self.out, references=asked)
         self.assertEqual((again.mode, again.folder, again.reused), ("reused", first.folder, 2))
         self.assertEqual([c[0] for c in calls], [first.max_path, first.max_path])
         wide, _ = self.asker(["a.jpg", "b.jpg"])
-        self.assertIsNone(archive.existing_folder(path, "room.max", False, self.out, references=wide))
+        self.assertEqual(archive.preview(path, "room.max", False, self.out, references=wide),
+                         ("unpacked", os.path.join(self.out, "pack (2)", "room.max")))
         wider = archive.unpack(path, dest_parent=self.out, references=wide)
         self.assertEqual((wider.mode, wider.folder), ("unpacked", os.path.join(self.out, "pack (2)")))
         unreadable, _ = self.asker(None)
@@ -356,7 +357,7 @@ class References(Base):
         self.assertEqual(os.path.dirname(os.path.dirname(calls[0][0])), os.path.join(self.out, "pack"))
         self.assertEqual(self.listing(r.folder), sorted([archive.MARKER, "two.max", "b.jpg"]))
         self.assertEqual(self.listing(os.path.join(self.out, "pack")), sorted([archive.MARKER, "two"]))
-        self.assertEqual(archive.existing_folder(path, "two/two.max", True, self.out, references=references),
+        self.assertEqual(archive.preview(path, "two/two.max", True, self.out, references=references),
                          ("reused", r.max_path))
 
     def test_the_marker_keeps_only_names_of_files_a_pack_writes(self):
@@ -736,27 +737,68 @@ class Destination(Base):
         r = archive.unpack(path, "one.max", dest_parent=self.out)
         self.assertEqual((r.mode, r.max_path), ("in_place", os.path.join(mine, "one.max")))
 
-    def test_existing_folder_says_what_unpack_will_use(self):
+    def test_preview_says_what_unpack_will_use(self):
         path = self.pack([("Pack/room.max", b"MAX"), ("Pack/wood.jpg", b"J")])
         before = files_under(self.tmp)
-        self.assertIsNone(archive.existing_folder(path, "Pack/room.max", False, self.out))
+        self.assertEqual(archive.preview(path, "Pack/room.max", False, self.out),
+                         ("unpacked", os.path.join(self.out, "pack", "room.max")))
         self.assertEqual(files_under(self.tmp), before)
         mine = os.path.join(self.out, "pack", "Pack")
         os.makedirs(mine)
         write(os.path.join(mine, "room.max"))
-        self.assertEqual(archive.existing_folder(path, "Pack/room.max", False, self.out),
+        self.assertEqual(archive.preview(path, "Pack/room.max", False, self.out),
                          ("in_place", os.path.join(mine, "room.max")))
         shutil.rmtree(os.path.join(self.out, "pack"))
         r = archive.unpack(path, dest_parent=self.out)
-        self.assertEqual(archive.existing_folder(path, "Pack/room.max", False, self.out), ("reused", r.max_path))
-        self.assertIsNone(archive.existing_folder(os.path.join(self.tmp, "gone.zip"), "room.max", False, self.out))
+        self.assertEqual(archive.preview(path, "Pack/room.max", False, self.out), ("reused", r.max_path))
+        self.assertIsNone(archive.preview(os.path.join(self.tmp, "gone.zip"), "room.max", False, self.out))
 
-    def test_existing_folder_of_one_scene_among_several(self):
+    def test_preview_of_one_scene_among_several(self):
         path = self.pack([("one.max", b"1"), ("two.max", b"2")])
-        self.assertIsNone(archive.existing_folder(path, "two.max", True, self.out))
+        self.assertEqual(archive.preview(path, "two.max", True, self.out),
+                         ("unpacked", os.path.join(self.out, "pack", "two", "two.max")))
         r = archive.unpack(path, "two.max", dest_parent=self.out)
-        self.assertEqual(archive.existing_folder(path, "two.max", True, self.out), ("reused", r.max_path))
-        self.assertIsNone(archive.existing_folder(path, "one.max", True, self.out))
+        self.assertEqual(archive.preview(path, "two.max", True, self.out), ("reused", r.max_path))
+        self.assertEqual(archive.preview(path, "one.max", True, self.out),
+                         ("unpacked", os.path.join(self.out, "pack", "one", "one.max")))
+
+    def assert_preview_is_unpack(self, path, scene, several, expected):
+        """preview() names expected, writes nothing, and unpack() then does exactly that."""
+        before = files_under(self.tmp)
+        found = archive.preview(path, scene, several, self.out)
+        self.assertEqual(files_under(self.tmp), before)
+        r = archive.unpack(path, scene, dest_parent=self.out)
+        self.assertEqual(found, (r.mode, r.max_path))
+        self.assertEqual(found, expected)
+
+    def test_preview_equals_unpack_with_one_scene(self):
+        path = self.pack([("room.max", b"MAX"), ("wood.jpg", b"J")])
+        free = os.path.join(self.out, "pack", "room.max")
+        self.assert_preview_is_unpack(path, "room.max", False, ("unpacked", free))
+        self.assert_preview_is_unpack(path, "room.max", False, ("reused", free))
+        shutil.rmtree(os.path.join(self.out, "pack"))
+        os.makedirs(os.path.join(self.out, "pack"))
+        write(os.path.join(self.out, "pack", "notes.txt"))
+        self.assert_preview_is_unpack(path, "room.max", False,
+                                      ("unpacked", os.path.join(self.out, "pack (2)", "room.max")))
+        mine = os.path.join(self.out, "pack", "by hand")
+        os.makedirs(mine)
+        write(os.path.join(mine, "room.max"))
+        self.assert_preview_is_unpack(path, "room.max", False, ("in_place", os.path.join(mine, "room.max")))
+
+    def test_preview_equals_unpack_with_several_scenes(self):
+        path = self.pack([("one/one.max", b"1"), ("two/two.max", b"2")])
+        self.assert_preview_is_unpack(path, "two/two.max", True,
+                                      ("unpacked", os.path.join(self.out, "pack", "two", "two.max")))
+        self.assert_preview_is_unpack(path, "one/one.max", True,
+                                      ("unpacked", os.path.join(self.out, "pack", "one", "one.max")))
+        self.assert_preview_is_unpack(path, "one/one.max", True,
+                                      ("reused", os.path.join(self.out, "pack", "one", "one.max")))
+        shutil.rmtree(os.path.join(self.out, "pack"))
+        os.makedirs(os.path.join(self.out, "pack"))
+        write(os.path.join(self.out, "pack", "notes.txt"))
+        self.assert_preview_is_unpack(path, "two/two.max", True,
+                                      ("unpacked", os.path.join(self.out, "pack (2)", "two", "two.max")))
 
     def test_unsafe_archive_or_scene_stem_falls_back(self):
         path = self.pack([("a/CON .max", b"x"), ("good.max", b"1"), ("b/end..max", b"2")], name="pack.zip")
@@ -846,7 +888,8 @@ class Links(Base):
         path = self.pack([("room.max", b"MAX")])
         target = self.elsewhere()
         self.link(target, os.path.join(self.out, "pack"))
-        self.assertIsNone(archive.existing_folder(path, "room.max", False, self.out))
+        self.assertEqual(archive.preview(path, "room.max", False, self.out),
+                         ("unpacked", os.path.join(self.out, "pack (2)", "room.max")))
         r = archive.unpack(path, dest_parent=self.out)
         self.assertEqual((r.mode, r.folder), ("unpacked", os.path.join(self.out, "pack (2)")))
         self.assertEqual(os.listdir(target), ["room.max"])
