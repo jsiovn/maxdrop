@@ -31,3 +31,16 @@ Bead: maxdrop-em3.65
 - [ ] build-and-test skill: build.ps1 + smoke on 4.2 / 4.5 / 5.2 (archive.py is imported on demand by
       the operator; smoke_import exercises the import path).
 - [ ] Commit: `Import external.py at the top of archive.py`.
+
+## Verification
+
+Changed: `maxdrop/intake/` (build-and-test row: blocks 1, 2, 5 = 3 and 4 on 4.2 / 4.5 / 5.2, 6 for a fix).
+
+- Lint (the failing CI step): `ruff check .` with ruff 0.17.5 (a scratch venv) -> `All checks passed!`.
+- Red check (block 6): the same `ruff check .` on the base tree (`git archive origin/epic/maxdrop-cyn`) ->
+  `E402` at `maxdrop/intake/archive.py:419`, exit 1. The bug is a lint failure, so ruff is the test.
+- Block 1: `python -I -m unittest discover tests` -> `OK` (tests/test_intake*.py included).
+- Block 2: `powershell -ExecutionPolicy Bypass -File build.ps1` -> `Built ...`.
+- Blocks 3 and 4 on 5.2, 4.2 and 4.5: `tests/smoke_register.py` -> `SMOKE PASSED`; `tests/smoke_import.py`
+  (no arguments: `tests/fixtures/*.max`, plus its `.zip` pack passes, which import intake/archive.py)
+  -> `IMPORT PASSED`, equal `COUNTS` lines.
