@@ -7,8 +7,9 @@
 A name stored in an archive never decides where a file is written. Of every entry only the base name is used, it
 must pass the name policy (refused_reason) and the allow-list (the chosen .max, images, .ies), and the output is
 flat: the .max and its maps side by side. Directory parts only rank duplicates. Everything is written into a
-staging folder beside the destination, which is renamed to the destination once complete and removed on any
-failure.
+staging folder beside the destination; once complete, the destination is created (never an existing folder) and
+the files move into it, the marker last. Staging is removed on any failure, and one a crash left behind is removed
+by a later unpack.
 
 Formats are recognised by their magic bytes. A backend lists the entries (names) and writes chosen entries into
 the staging folder (extract); the rules here are the same for every backend. Self-contained on purpose: the tests
@@ -72,6 +73,11 @@ ZIP_NAME_GUESSES = ("gbk", "shift_jis", "cp1252")
 _COPY_DEPTH = 3
 _COPY_VISIT_MAX = 20000
 _CANDIDATES = 99
+# An unpack is stopped after Limits.seconds (15 minutes by default): a staging folder untouched for this long was
+# left by one that never finished.
+_STALE_SECONDS = 6 * 3600
+# Times a pack folder another unpack created first sends the destination search round again.
+_RACE_RETRIES = 3
 _CHUNK = 1 << 20
 # A marker lists the asset names a filtered unpack wrote for: thousands of escaped CJK names fit.
 _MARKER_READ_MAX = 4 << 20
@@ -217,6 +223,14 @@ _ZIP_FLAG_STRONG = 0x40
 _ZIP_FLAG_UTF8 = 0x800
 _WIN_DIRECTORY = 0x10
 _WIN_REPARSE_POINT = 0x400
+# IO_REPARSE_TAG_MOUNT_POINT (a junction) and IO_REPARSE_TAG_SYMLINK. Not every reparse point: OneDrive
+# placeholders are reparse points too, and are plain folders to the user.
+_WIN_LINK_TAGS = (0xA0000003, 0xA000000C)
+
+_EOCD = struct.Struct("<4s4H2LH")
+_EOCD64_LOCATOR = struct.Struct("<4sLQL")
+_EOCD64 = struct.Struct("<4sQ2H2L4Q")
+_CENTRAL_HEAD = 46
 
 
 def _zip_methods():
@@ -287,8 +301,54 @@ def _zip_unsupported(info, methods):
     return ""
 
 
+def _zip_entry_count(path, cap):
+    """The entries of a zip, without building them: the count its end record declares (zip64 too), or the
+    records of its central directory counted one by one when that is more (zipfile walks the directory by its
+    size, so a count can lie). Stops counting above cap; 0 when the end record is not found (zipfile then says
+    what is wrong)."""
+    with open(path, "rb") as f:
+        size = f.seek(0, 2)
+        tail_len = min(size, _EOCD.size + 0xFFFF)
+        f.seek(size - tail_len)
+        tail = f.read(tail_len)
+        pos = tail.rfind(b"PK\x05\x06")
+        if pos < 0 or len(tail) - pos < _EOCD.size:
+            return 0
+        eocd_at = size - tail_len + pos
+        declared, cd_size = _EOCD.unpack_from(tail, pos)[4:6]
+        end = eocd_at
+        # As zipfile: the zip64 locator lies right before the end record, the zip64 record right before it.
+        if eocd_at >= _EOCD64_LOCATOR.size + _EOCD64.size:
+            f.seek(eocd_at - _EOCD64_LOCATOR.size - _EOCD64.size)
+            head = f.read(_EOCD64.size + _EOCD64_LOCATOR.size)
+            if head[:4] == b"PK\x06\x06" and head[_EOCD64.size:_EOCD64.size + 4] == b"PK\x06\x07":
+                declared, cd_size = _EOCD64.unpack_from(head)[7:9]
+                end = eocd_at - _EOCD64_LOCATOR.size - _EOCD64.size
+        if declared > cap or cd_size > end:
+            return declared
+        # From the end, not from the stored offset: data before the archive (a self-extractor) shifts that.
+        at = f.seek(end - cd_size)
+        count = 0
+        while at + _CENTRAL_HEAD <= end:
+            head = f.read(_CENTRAL_HEAD)
+            if len(head) < _CENTRAL_HEAD or head[:4] != b"PK\x01\x02":
+                break
+            count += 1
+            if count > cap:
+                break
+            at = f.seek(sum(struct.unpack_from("<3H", head, 28)), 1)
+        return max(declared, count)
+
+
 class ZipBackend:
     name = "zipfile"
+
+    def entry_count(self, path, cap):
+        """Read before names(): ZipFile builds every entry of the directory at once."""
+        try:
+            return _zip_entry_count(path, cap)
+        except (OSError, struct.error):
+            return 0
 
     def _open(self, path):
         label = os.path.basename(path)
@@ -365,10 +425,14 @@ def backend_for(path):
 
 
 def _read_entries(backend, path, limits):
+    too_many = PackError("%s lists more than the %d entries MaxDrop reads. Extract it by hand."
+                         % (os.path.basename(path), limits.entries))
+    count = getattr(backend, "entry_count", None)
+    if count is not None and count(path, limits.entries) > limits.entries:
+        raise too_many
     entries = backend.names(path)
     if len(entries) > limits.entries:
-        raise PackError("%s lists %d entries, more than the %d MaxDrop reads. Extract it by hand."
-                        % (os.path.basename(path), len(entries), limits.entries))
+        raise too_many
     return entries
 
 
@@ -519,6 +583,19 @@ def _write_marker(folder, ident, scene_name, files, wanted=None):
         json.dump(data, f, indent=1, sort_keys=True)
 
 
+def _is_link(path):
+    """A symbolic link, or on Windows a junction (os.path.islink does not see one; os.path.isjunction exists
+    from Python 3.12 only). False when path cannot be read."""
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return False
+    if stat.S_ISLNK(st.st_mode):
+        return True
+    return (bool(getattr(st, "st_file_attributes", 0) & _WIN_REPARSE_POINT)
+            and getattr(st, "st_reparse_tag", 0) in _WIN_LINK_TAGS)
+
+
 def _find_copy(root, base):
     """A file named like the scene in root or up to _COPY_DEPTH folders below it, shallowest first; links are
     not followed."""
@@ -539,7 +616,8 @@ def _find_copy(root, base):
                 try:
                     if item.is_file(follow_symlinks=False) and name_key(item.name) == key:
                         return item.path
-                    if item.is_dir(follow_symlinks=False) and not item.name.startswith(STAGING_PREFIX):
+                    if (item.is_dir(follow_symlinks=False) and not item.name.startswith(STAGING_PREFIX)
+                            and not _is_link(item.path)):
                         below.append(item.path)
                 except OSError:
                     continue
@@ -558,7 +636,7 @@ def _probe(folder, scene, ident, wanted):
     never written into)."""
     if not os.path.lexists(folder):
         return "free"
-    if os.path.islink(folder) or not os.path.isdir(folder):
+    if _is_link(folder) or not os.path.isdir(folder):
         return None
     marker = _read_marker(folder)
     if marker is not None:
@@ -576,21 +654,24 @@ def _safe_stem(name, fallback):
 
 
 def _destination(path, dest_parent, scene, several, ident, wanted):
-    """("free", folder, container to create or None) or ("reused" | "in_place", .max path)."""
+    """("free", folder, container to create or None, the candidate folders from folder on) or ("reused" |
+    "in_place", .max path)."""
     stem = _safe_stem(os.path.basename(path), "pack")
     if not several:
-        for folder in _candidates(dest_parent, stem):
+        folders = list(_candidates(dest_parent, stem))
+        for i, folder in enumerate(folders):
             found = _probe(folder, scene, ident, wanted)
             if found == "free":
-                return ("free", folder, None)
+                return ("free", folder, None, folders[i:])
             if found:
                 return found
     else:
         sub = _safe_stem(scene.base, "scene")
         for top in _candidates(dest_parent, stem):
             if not os.path.lexists(top):
-                return ("free", os.path.join(top, sub), top)
-            if os.path.islink(top) or not os.path.isdir(top):
+                folders = list(_candidates(top, sub))
+                return ("free", folders[0], top, folders)
+            if _is_link(top) or not os.path.isdir(top):
                 continue
             marker = _read_marker(top)
             if marker is None:
@@ -600,15 +681,51 @@ def _destination(path, dest_parent, scene, several, ident, wanted):
                 continue
             if not _marker_matches(marker, ident, None):
                 continue
-            for folder in _candidates(top, sub):
+            folders = list(_candidates(top, sub))
+            for i, folder in enumerate(folders):
                 found = _probe(folder, scene, ident, wanted)
                 if found == "free":
-                    return ("free", folder, None)
+                    return ("free", folder, None, folders[i:])
                 if found:
                     return found
             break
-    raise PackError("No free folder for %s in %s: too many folders of that name exist."
-                    % (os.path.basename(path), dest_parent))
+    raise _no_free_folder(path, dest_parent)
+
+
+def _no_free_folder(path, parent):
+    return PackError("No free folder for %s in %s: too many folders of that name exist."
+                     % (os.path.basename(path), parent))
+
+
+def _reserve(path, folders):
+    """Create the first of folders that does not exist yet. One that appeared since _destination looked (another
+    unpack of the same pack, or anything else) is never written into: the next name is taken."""
+    for folder in folders:
+        try:
+            os.mkdir(folder)
+        except FileExistsError:
+            continue
+        return folder
+    raise _no_free_folder(path, os.path.dirname(folders[0]))
+
+
+def _remove_stale_staging(parent, limits):
+    """Remove the staging folders of unpacks that never finished (Blender stopped mid-way): only real folders
+    (not links) named with STAGING_PREFIX and untouched for a long time. Nothing else in parent is looked at.
+    Best effort."""
+    cutoff = time.time() - max(_STALE_SECONDS, 2 * limits.seconds)
+    try:
+        with os.scandir(parent) as it:
+            stale = [item.path for item in it if item.name.startswith(STAGING_PREFIX)]
+    except OSError:
+        return
+    for folder in stale:
+        try:
+            st = os.lstat(folder)
+        except OSError:
+            continue
+        if stat.S_ISDIR(st.st_mode) and not _is_link(folder) and st.st_mtime < cutoff:
+            shutil.rmtree(folder, ignore_errors=True)
 
 
 def _ident(path, st):
@@ -711,9 +828,9 @@ def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=Non
     result = UnpackResult(max_path="", folder="", mode="unpacked", backend=backend.name)
     result.guessed = [e.name for e in entries if e.guessed]
     wanted = None if wanted is None else {name_key(w) for w in wanted}
-    found = _destination(path, dest_parent, chosen, len(scenes) > 1, ident,
-                         wanted if references is None else references)
-    if found[0] in ("reused", "in_place"):
+    asked = wanted if references is None else references
+
+    def existing(found):
         result.mode, result.max_path = found
         result.folder = os.path.dirname(result.max_path)
         if result.mode == "reused":
@@ -721,9 +838,12 @@ def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=Non
             result.reused = files if isinstance(files, int) else 0
         return result
 
-    _free, folder, container = found
-    parent = os.path.dirname(folder)
-    space_at = container and os.path.dirname(container) or parent
+    found = _destination(path, dest_parent, chosen, len(scenes) > 1, ident, asked)
+    if found[0] in ("reused", "in_place"):
+        return existing(found)
+
+    _free, folder, container, folders = found
+    space_at = os.path.dirname(container or folder)
     scene_plan = [(chosen, chosen.base)]
     _refuse_unreadable([chosen])
 
@@ -748,11 +868,27 @@ def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=Non
 
     created = None
     try:
-        if container is not None:
-            os.mkdir(container)
+        retries = 0
+        while container is not None:
+            try:
+                os.mkdir(container)
+            except FileExistsError:
+                # Another unpack of this pack made it first: it may hold the folder to reuse.
+                retries += 1
+                if retries > _RACE_RETRIES:
+                    raise _no_free_folder(path, dest_parent) from None
+                found = _destination(path, dest_parent, chosen, True, ident, asked)
+                if found[0] in ("reused", "in_place"):
+                    return existing(found)
+                _free, folder, container, folders = found
+                continue
             created = container
             _write_marker(container, ident, None, 0)
+            break
+        parent = os.path.dirname(folder)
+        _remove_stale_staging(parent, limits)
         staging = tempfile.mkdtemp(prefix=STAGING_PREFIX, dir=parent)
+        reserved = None
         try:
             budget = _Budget(limits)
             if references is None:
@@ -768,11 +904,19 @@ def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=Non
                     backend.extract(path, maps, staging, budget)
                 plan = scene_plan + maps
             _check_staging(staging, [t for _e, t in plan], path)
-            _write_marker(staging, ident, chosen.name, len(plan), wanted)
-            os.rename(staging, folder)
+            reserved = _reserve(path, folders)
+            # The maps, then the scene, then the marker: a folder seen half-filled has no .max to import yet,
+            # and only a complete one carries the marker that lets it be reused.
+            for target in [t for _e, t in plan[1:]] + [chosen.base]:
+                os.rename(os.path.join(staging, target), os.path.join(reserved, target))
+            _write_marker(reserved, ident, chosen.name, len(plan), wanted)
         except BaseException:
             shutil.rmtree(staging, ignore_errors=True)
+            if reserved is not None:
+                shutil.rmtree(reserved, ignore_errors=True)
             raise
+        folder = reserved
+        shutil.rmtree(staging, ignore_errors=True)
     except BaseException as e:
         if created is not None:
             shutil.rmtree(created, ignore_errors=True)

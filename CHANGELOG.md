@@ -12,6 +12,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 - A damaged `.max` whose objects reference objects that do not exist no longer risks crashing Blender 4.2 and 4.5
   (Python 3.11) after the import is refused.
+- Scene packs: a hidden `.maxdrop-staging-*` folder left by an unpack that never finished (Blender closed or crashed
+  mid-way) is removed by the next unpack into that folder once it is hours old; two imports of the same pack at
+  once no longer make the second fail or replace a folder made in between: it takes the next free folder name (or
+  reuses the first one's folder); a `.zip` listing more entries than MaxDrop reads is refused before its directory
+  is loaded into memory; a Windows junction is no longer searched or written into, like a link.
 
 ## [0.0.5] - 2026-11-18
 

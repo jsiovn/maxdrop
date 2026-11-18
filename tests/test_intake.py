@@ -17,9 +17,11 @@ import stat
 import struct
 import sys
 import tempfile
+import time
 import unittest
 import zipfile
 import zlib
+from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INTAKE = os.path.join(ROOT, "maxdrop", "intake")
@@ -80,6 +82,36 @@ def replace_bytes(path, old, new):
     data = read(path)
     assert data.count(old) == 2  # local header and central directory
     write(path, data.replace(old, new))
+
+
+def to_zip64(path, declared=None):
+    """Rewrite a zip with zip64 end records (zipfile writes them only past 65535 entries or 4 GiB): the zip64
+    record and its locator before the end record, whose counts then say 0xFFFF. declared: the zip64 count, the
+    real one when None."""
+    data = read(path)
+    at = data.rfind(b"PK\x05\x06")
+    n, cd_size, cd_offset = struct.unpack_from("<HLL", data, at + 10)
+    n = n if declared is None else declared
+    record = struct.pack("<4sQ2H2L4Q", b"PK\x06\x06", 44, 45, 45, 0, 0, n, n, cd_size, cd_offset)
+    locator = struct.pack("<4sLQL", b"PK\x06\x07", 0, at, 1)
+    end = struct.pack("<4s4H2LH", b"PK\x05\x06", 0, 0, 0xFFFF, 0xFFFF, cd_size, cd_offset, 0)
+    write(path, data[:at] + record + locator + end)
+
+
+def set_declared_count(path, n):
+    """The entry counts of the end record (this disk and total), the central directory left as it is."""
+    data = bytearray(read(path))
+    at = data.rfind(b"PK\x05\x06")
+    struct.pack_into("<HH", data, at + 8, n, n)
+    write(path, bytes(data))
+
+
+def junction(target, link):
+    """A Windows directory junction, or SkipTest elsewhere."""
+    if os.name != "nt":
+        raise unittest.SkipTest("junctions exist on Windows only")
+    import _winapi
+    _winapi.CreateJunction(os.path.abspath(target), os.path.abspath(link))
 
 
 def read(path):
@@ -515,7 +547,7 @@ class LimitTests(Base):
         for limits, message in ((archive.Limits(total_bytes=1000), "unpacks to more than"),
                                 (archive.Limits(file_bytes=500), "room.max is larger than"),
                                 (archive.Limits(files=2), "needs 3 files"),
-                                (archive.Limits(entries=2), "lists 3 entries"),
+                                (archive.Limits(entries=2), "lists more than the 2 entries"),
                                 (archive.Limits(free_margin=1 << 62), "Not enough free space")):
             with self.subTest(limits=limits):
                 with self.assertRaisesRegex(PackError, message):
@@ -732,6 +764,269 @@ class Destination(Base):
         self.assertEqual(r.folder, os.path.join(self.out, "pack", "good"))
         self.assertEqual(archive._safe_stem("end..max", "scene"), "scene")
         self.assertEqual(archive._safe_stem("CON.zip", "pack"), "pack")
+
+
+THREE = [("room.max", b"MAX"), ("wood.jpg", b"W"), ("stone.png", b"S")]
+
+
+class EntryCount(Base):
+    """The entry count comes from the end records, before ZipFile builds the whole directory."""
+
+    def assert_refused_unparsed(self, path, limit=2):
+        limits = archive.Limits(entries=limit)
+        message = "lists more than the %d entries" % limit
+        before = files_under(self.tmp)
+        with mock.patch.object(archive.ZipBackend, "_open", side_effect=AssertionError("ZipFile parsed it")):
+            with self.assertRaisesRegex(PackError, message):
+                archive.list_pack(path, limits=limits)
+            with self.assertRaisesRegex(PackError, message):
+                archive.unpack(path, dest_parent=self.out, limits=limits)
+        self.assert_clean(before)
+
+    def test_the_declared_count(self):
+        path = self.pack(THREE)
+        self.assertEqual(archive._zip_entry_count(path, 100), 3)
+        self.assert_refused_unparsed(path)
+        self.assertEqual(archive.list_pack(path, limits=archive.Limits(entries=3)).scenes, ["room.max"])
+
+    def test_a_lying_count_is_counted_record_by_record(self):
+        path = self.pack(THREE)
+        set_declared_count(path, 1)
+        self.assertEqual(len(archive.ZipBackend().names(path)), 3)  # zipfile reads all three anyway
+        self.assert_refused_unparsed(path)
+
+    def test_data_before_the_archive(self):
+        # A self-extractor: kind() does not take it (its magic is not a zip's), the count still holds.
+        path = self.pack(THREE)
+        set_declared_count(path, 1)
+        write(path, b"MZ" + b"\0" * 1000 + read(path))
+        self.assertEqual(len(archive.ZipBackend().names(path)), 3)
+        self.assertEqual(archive._zip_entry_count(path, 2), 3)
+
+    def test_zip64_end_records(self):
+        path = self.pack(THREE)
+        to_zip64(path)
+        self.assertEqual(archive.list_pack(path).scenes, ["room.max"])
+        self.assertEqual(archive._zip_entry_count(path, 100), 3)
+        self.assert_refused_unparsed(path)
+        lying = self.pack(THREE, name="lying.zip")
+        to_zip64(lying, declared=1)
+        self.assertEqual(len(archive.ZipBackend().names(lying)), 3)
+        self.assert_refused_unparsed(lying)
+
+    def test_counting_stops_above_the_cap(self):
+        path = self.pack([("f%d.jpg" % i, b"") for i in range(50)])
+        set_declared_count(path, 1)
+        self.assertEqual(archive._zip_entry_count(path, 10), 11)
+        self.assertEqual(archive._zip_entry_count(path, 100), 50)
+
+    def test_without_an_end_record_zipfile_says_what_is_wrong(self):
+        path = os.path.join(self.tmp, "broken.zip")
+        write(path, b"PK\x03\x04" + b"\0" * 100)
+        self.assertEqual(archive._zip_entry_count(path, 10), 0)
+        with self.assertRaisesRegex(PackError, "not a readable .zip"):
+            archive.list_pack(path)
+
+
+class Links(Base):
+    """A link or a junction at a candidate folder or below it is never followed."""
+
+    def elsewhere(self):
+        folder = os.path.join(self.tmp, "elsewhere")
+        os.mkdir(folder)
+        write(os.path.join(folder, "room.max"), b"theirs")
+        return folder
+
+    def link(self, target, link):
+        junction(target, link)
+        self.addCleanup(os.rmdir, link)  # removes the junction, not what it points to
+        self.assertTrue(archive._is_link(link))
+
+    def test_a_junction_at_the_destination_is_not_used(self):
+        path = self.pack([("room.max", b"MAX")])
+        target = self.elsewhere()
+        self.link(target, os.path.join(self.out, "pack"))
+        self.assertIsNone(archive.existing_folder(path, "room.max", False, self.out))
+        r = archive.unpack(path, dest_parent=self.out)
+        self.assertEqual((r.mode, r.folder), ("unpacked", os.path.join(self.out, "pack (2)")))
+        self.assertEqual(os.listdir(target), ["room.max"])
+
+    def test_a_junction_below_a_candidate_is_not_searched(self):
+        path = self.pack([("room.max", b"MAX")])
+        target = self.elsewhere()
+        mine = os.path.join(self.out, "pack")
+        os.mkdir(mine)
+        self.link(target, os.path.join(mine, "sub"))
+        r = archive.unpack(path, dest_parent=self.out)
+        self.assertEqual((r.mode, r.folder), ("unpacked", os.path.join(self.out, "pack (2)")))
+
+    def test_a_junction_as_the_pack_folder_of_several_scenes(self):
+        path = self.pack([("one.max", b"1"), ("room.max", b"2")])
+        target = self.elsewhere()
+        self.link(target, os.path.join(self.out, "pack"))
+        r = archive.unpack(path, "room.max", dest_parent=self.out)
+        self.assertEqual((r.mode, r.folder), ("unpacked", os.path.join(self.out, "pack (2)", "room")))
+
+    def test_a_symbolic_link(self):
+        target = self.elsewhere()
+        link = os.path.join(self.out, "pack")
+        try:
+            os.symlink(target, link, target_is_directory=True)
+        except (OSError, NotImplementedError) as e:
+            self.skipTest("cannot create a symbolic link here (%s)" % e)
+        self.addCleanup(os.remove if os.name != "nt" else os.rmdir, link)
+        self.assertTrue(archive._is_link(link))
+        r = archive.unpack(self.pack([("room.max", b"MAX")]), dest_parent=self.out)
+        self.assertEqual(r.folder, os.path.join(self.out, "pack (2)"))
+
+    def test_plain_folders_and_files_are_not_links(self):
+        self.assertFalse(archive._is_link(self.out))
+        self.assertFalse(archive._is_link(self.pack([("room.max", b"MAX")])))
+        self.assertFalse(archive._is_link(os.path.join(self.tmp, "missing")))
+
+
+class StaleStaging(Base):
+    """Staging folders an interrupted unpack left behind are removed by the next unpack into that folder."""
+
+    OLD = 7 * 3600
+
+    def aged(self, path):
+        then = time.time() - self.OLD
+        os.utime(path, (then, then))
+        return os.path.basename(path)
+
+    def test_only_old_staging_folders_are_removed(self):
+        prefix = archive.STAGING_PREFIX
+        stale = os.path.join(self.out, prefix + "old")
+        os.makedirs(os.path.join(stale, "sub"))
+        write(os.path.join(stale, "room.max"), b"half")
+        self.aged(stale)
+        fresh = os.path.join(self.out, prefix + "new")
+        os.mkdir(fresh)
+        write(os.path.join(fresh, "room.max"), b"running")
+        keep = os.path.join(self.out, "keep-old")
+        os.mkdir(keep)
+        self.aged(keep)
+        a_file = os.path.join(self.out, prefix + "file")
+        write(a_file, b"not a folder")
+        self.aged(a_file)
+        r = archive.unpack(self.pack([("room.max", b"MAX")]), dest_parent=self.out)
+        self.assertEqual(self.listing(self.out), sorted([prefix + "new", "keep-old", prefix + "file", "pack"]))
+        self.assertEqual(r.folder, os.path.join(self.out, "pack"))
+        self.assertEqual(os.listdir(fresh), ["room.max"])
+
+    def test_only_the_staging_parent_is_cleaned(self):
+        path = self.pack([("one.max", b"1"), ("two.max", b"2")])
+        archive.unpack(path, "one.max", dest_parent=self.out)
+        beside = os.path.join(self.out, archive.STAGING_PREFIX + "beside")
+        os.mkdir(beside)
+        self.aged(beside)
+        inside_pack = os.path.join(self.out, "pack", archive.STAGING_PREFIX + "inside")
+        os.mkdir(inside_pack)
+        self.aged(inside_pack)
+        archive.unpack(path, "two.max", dest_parent=self.out)
+        self.assertTrue(os.path.isdir(beside))
+        self.assertFalse(os.path.lexists(inside_pack))
+
+    def test_a_linked_staging_folder_is_not_followed(self):
+        target = os.path.join(self.tmp, "target")
+        os.mkdir(target)
+        write(os.path.join(target, "keep.jpg"), b"K")
+        link = os.path.join(self.out, archive.STAGING_PREFIX + "link")
+        junction(target, link)
+        self.addCleanup(os.rmdir, link)
+        stale = os.path.join(self.out, archive.STAGING_PREFIX + "old")
+        os.mkdir(stale)
+        with mock.patch.object(archive, "_STALE_SECONDS", -60):  # everything counts as old
+            archive._remove_stale_staging(self.out, archive.Limits(seconds=-60))
+        self.assertFalse(os.path.lexists(stale))
+        self.assertTrue(archive._is_link(link))
+        self.assertEqual(os.listdir(target), ["keep.jpg"])
+
+
+class Race(Base):
+    """Two unpacks of one pack at once: the later one takes the next folder name, never an existing folder."""
+
+    def racing_backend(self, folder, user_file):
+        class Racer(archive.ZipBackend):
+            def extract(self, path, wanted, staging, budget):
+                super().extract(path, wanted, staging, budget)
+                if not os.path.lexists(folder):
+                    os.mkdir(folder)
+                    if user_file:
+                        write(os.path.join(folder, "notes.txt"), b"mine")
+        self.addCleanup(archive._BACKENDS.__setitem__, "zip", archive._BACKENDS["zip"])
+        archive._BACKENDS["zip"] = Racer()
+
+    def test_a_folder_made_during_the_unpack_is_left_alone(self):
+        for user_file in (False, True):
+            with self.subTest(user_file=user_file):
+                out = tempfile.mkdtemp(dir=self.tmp)
+                path = self.pack([("room.max", b"MAX"), ("wood.jpg", b"W")])
+                self.racing_backend(os.path.join(out, "pack"), user_file)
+                r = archive.unpack(path, dest_parent=out)
+                self.assertEqual((r.mode, r.folder), ("unpacked", os.path.join(out, "pack (2)")))
+                self.assertEqual(self.listing(r.folder), sorted([archive.MARKER, "room.max", "wood.jpg"]))
+                self.assertEqual(os.listdir(os.path.join(out, "pack")), ["notes.txt"] if user_file else [])
+                self.assertEqual(self.listing(out), ["pack", "pack (2)"])
+
+    def test_a_pack_folder_made_first_by_someone_else(self):
+        path = self.pack([("one.max", b"1"), ("two.max", b"2")])
+        real, calls = archive._destination, []
+
+        def racing(*args):
+            found = real(*args)
+            if not calls:
+                os.mkdir(os.path.join(self.out, "pack"))
+            calls.append(found[0])
+            return found
+        with mock.patch.object(archive, "_destination", racing):
+            r = archive.unpack(path, "two.max", dest_parent=self.out)
+        self.assertEqual(r.folder, os.path.join(self.out, "pack (2)", "two"))
+        self.assertEqual(calls, ["free", "free"])
+        self.assertEqual(os.listdir(os.path.join(self.out, "pack")), [])
+
+    def test_the_same_scene_unpacked_first_by_another_unpack_is_reused(self):
+        path = self.pack([("one.max", b"1"), ("two.max", b"2")])
+        real, done = archive._destination, []
+
+        def racing(*args):
+            found = real(*args)
+            if not done:
+                done.append(None)
+                done[0] = archive.unpack(path, "two.max", dest_parent=self.out)
+            return found
+        with mock.patch.object(archive, "_destination", racing):
+            r = archive.unpack(path, "two.max", dest_parent=self.out)
+        self.assertEqual((done[0].mode, r.mode, r.folder), ("unpacked", "reused", done[0].folder))
+        self.assertEqual(self.listing(os.path.join(self.out, "pack")), sorted([archive.MARKER, "two"]))
+
+    def test_the_marker_comes_last_and_a_failed_move_leaves_nothing(self):
+        path = self.pack([("room.max", b"MAX"), ("wood.jpg", b"W"), ("stone.png", b"S")])
+        real, moved = os.rename, []
+
+        def failing(src, dst):
+            moved.append(os.path.basename(dst))
+            if len(moved) == 3:
+                raise OSError("disk gone")
+            return real(src, dst)
+        before = files_under(self.tmp)
+        with mock.patch.object(archive.os, "rename", failing):
+            with self.assertRaisesRegex(PackError, "disk gone"):
+                archive.unpack(path, dest_parent=self.out)
+        self.assert_clean(before)
+        self.assertEqual(os.listdir(self.out), [])
+        self.assertEqual(moved, ["wood.jpg", "stone.png", "room.max"])
+
+    def test_no_free_name_left(self):
+        path = self.pack([("room.max", b"MAX")])
+        self.racing_backend(os.path.join(self.out, "pack"), False)
+        with mock.patch.object(archive, "_CANDIDATES", 1):
+            before = files_under(self.tmp)
+            with self.assertRaisesRegex(PackError, "No free folder"):
+                archive.unpack(path, dest_parent=self.out)
+        self.assert_clean(before)
+        self.assertEqual(os.listdir(self.out), ["pack"])
 
 
 class NoBlender(unittest.TestCase):
