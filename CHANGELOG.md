@@ -18,7 +18,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   with `/` on every backend, and no message says "drop the .max" any more.
 - Materials: importing a scene again, or a scene that shares texture files with one already imported, uses the
   images already in the `.blend` for the same file and color space instead of loading copies (`name.001`); an
-  image that was painted on, packed or linked from a library is left alone and the file loaded anew.
+  image that was painted on, packed, linked from a library or given another alpha mode is left alone and the file
+  loaded anew.
 
 ### Fixed
 

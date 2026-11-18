@@ -139,8 +139,9 @@ Texture node, without an image and not connected, so the channel keeps its plain
 surface, in EEVEE or Cycles), and is named in the import report. A file that is found but holds no image (empty,
 or not starting as its format does) is left out the same way and named in the report. Each file is loaded once per
 color space; an image of the same file and color space already in the `.blend` (an earlier import's) is used
-again, unless it was painted on, packed or linked from a library. A material that fails to convert or build is
-named in the report and the scene comes in without it (its faces without a material) instead of failing.
+again, unless it was painted on, packed, linked from a library or given another alpha mode. A material that fails
+to convert or build is named in the report and the scene comes in without it (its faces without a material) instead
+of failing.
 
 From a scene pack, the image and `.ies` files the scene names are unpacked flat into the folder of the `.max`, so
 the lookup above finds them wherever they were in the archive; the pack's other images are left out (all of them
