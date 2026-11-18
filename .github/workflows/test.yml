@@ -86,8 +86,8 @@ jobs:
           ruff check --output-format=github .
 
   # Branch protection on main requires a check named "Plain Python": the matrix jobs above carry the operating
-  # system and the numpy version in their names, so this job keeps that name and passes only when every one of
-  # them passed.
+  # system, the Python and the numpy version in their names, so this job keeps that name and passes only when
+  # every one of them passed.
   python-gate:
     name: Plain Python
     needs: python
