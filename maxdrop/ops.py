@@ -40,6 +40,8 @@
 # and build.report writes the text of a run of several files (publish_run).
 # Modified for MaxDrop, 2026-11-18 (jsiovn). A failure of the material conversion imports the scene without
 # materials and says so in the import report; materials the builder could not make are not counted as made.
+# Modified for MaxDrop, 2026-11-18 (jsiovn). The popup names the exact folder a pack unpacks into
+# (archive.preview), also after the Scene field names another scene of the pack.
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -72,6 +74,7 @@ _ARCHIVE_EXTENSIONS = (".zip", ".rar", ".7z")
 # Listings of the packs a drop or a script named, for the popup and the Scene search. Keyed by path, size and
 # modification time, so that a changed archive is listed again.
 _LISTINGS = {}
+# Per pack of the popup, by normalized path: (parent folder, the reason there is none, {scene: archive.preview()}).
 _TARGETS = {}
 _CACHE_MAX = 16
 _SHOWN_SCENES = 10
@@ -201,7 +204,8 @@ def _choose(path, scenes, text):
 
 def _target(path, context):
     """(the folder the pack folder will be made in, None), or (None, the reason there is none). The pack folder's
-    own name is archive.unpack()'s choice (a free name, an earlier unpack, a copy extracted by hand)."""
+    own name is archive.unpack()'s choice (a free name, an earlier unpack, a copy extracted by hand), which
+    archive.preview() tells beforehand."""
     try:
         return prefs.pack_parent(path, context), None
     except ValueError as e:
@@ -230,9 +234,14 @@ def _referenced_maps(max_path):
     return {e.name for e in table if e.name}
 
 
-def _existing(path, scenes, text, parent):
-    """("reused" | "in_place", .max path) when the import will use a folder already on disk, None when it will
-    unpack, or when the scene is not chosen yet."""
+def _preview(path, scenes, text):
+    """archive.preview() of the scene text chooses, ("unpacked" | "reused" | "in_place", .max path), computed once
+    per pack and scene since invoke() and kept in _TARGETS; None when there is no parent folder, the scene is not
+    chosen yet, its name matches none, or there is no free folder. A .max on disk gets its pre-flight line read."""
+    found = _TARGETS.get(_norm(path))
+    if found is None or found[0] is None:
+        return None
+    parent, _problem, previews = found
     archive = _archive()
     try:
         scene = _choose(path, scenes, text)
@@ -240,7 +249,23 @@ def _existing(path, scenes, text, parent):
         return None
     if scene is None:
         return None
-    return archive.existing_folder(path, scene, len(scenes) > 1, parent, references=_referenced_maps)
+    if scene not in previews:
+        if len(previews) >= _CACHE_MAX:
+            previews.clear()
+        previews[scene] = archive.preview(path, scene, len(scenes) > 1, parent, references=_referenced_maps)
+        if previews[scene] and previews[scene][0] != "unpacked":
+            _remember_preflight(previews[scene][1])
+    return previews[scene]
+
+
+def _drawn_preview(operator, path, listing):
+    """_preview() for draw(), which must never raise; the Scene field may have named another scene since
+    invoke()."""
+    try:
+        return _preview(path, listing.scenes, operator.pack_scene)
+    except Exception as e:
+        print("MaxDrop: could not preview the pack folder of %s (%s)" % (os.path.basename(path), e))
+        return None
 
 
 def _scene_search(self, context, edit_text):
@@ -624,14 +649,12 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
                     window.cursor_set('DEFAULT')
             if len(_TARGETS) >= _CACHE_MAX:
                 _TARGETS.clear()
-            # Here, not in draw(): finding the folder probes it by creating a folder, and an existing copy is
-            # searched for on disk.
+            # Here, not in draw(): finding the parent folder probes it by creating a folder. The folder of the scene
+            # known now is previewed here too; draw() previews another one the Scene field names (read only).
             for path, found in packs:
                 parent, problem = _target(path, context)
-                existing = _existing(path, found.scenes, self.pack_scene, parent) if parent else None
-                _TARGETS[_norm(path)] = (parent, problem, existing)
-                if existing:  # a pack is never unpacked here: only a folder already on disk is read
-                    _remember_preflight(existing[1])
+                _TARGETS[_norm(path)] = (parent, problem, {})
+                _preview(path, found.scenes, self.pack_scene)  # a pack is never unpacked here
             listed = {_norm(path) for path, _found in packs}
             for path in _paths(self)[:_SHOWN_FILES]:
                 if _norm(path) not in listed and os.path.isfile(path):
@@ -659,12 +682,15 @@ def import_pack(layout, operator, packs):
         else:
             body.label(text="Scene: " + _base(listing.scenes[0]))
         body.label(text=_plural(listing.assets, "texture file"))
-        parent, problem, existing = _TARGETS.get(_norm(path), (None, None, None))
+        parent, problem, _previews = _TARGETS.get(_norm(path), (None, None, None))
+        found = None if problem else _drawn_preview(operator, path, listing)
         if problem:
             body.label(text=problem, icon='ERROR')
-        elif existing:
-            mode, max_path = existing
-            if mode == "reused":
+        elif found:
+            mode, max_path = found
+            if mode == "unpacked":
+                body.label(text="Unpacks into")
+            elif mode == "reused":
                 body.label(text="Unpacked before: imports from")
             else:
                 body.label(text="Not unpacked: imports the scene already in", icon='INFO')
@@ -680,8 +706,9 @@ def import_files(layout, operator):
     """The pre-flight line of each .max invoke() read: a drop's or a script's, or a pack's folder on disk."""
     rows = []
     for path in _paths(operator):
-        found = _TARGETS.get(_norm(path))
-        target = found[2][1] if found and found[2] else path
+        listing = _cached(path)
+        found = _drawn_preview(operator, path, listing) if listing is not None else None
+        target = found[1] if found and found[0] != "unpacked" else path
         line = _preflight_of(target)
         if line is not None:
             rows.append((os.path.basename(target), line))
