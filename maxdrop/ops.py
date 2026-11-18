@@ -44,6 +44,8 @@
 # (archive.preview), also after the Scene field names another scene of the pack.
 # Modified for MaxDrop, 2026-11-18 (jsiovn). New option Keep Targets: objects aimed by a Look At controller get a
 # Track To constraint to their target; the ones it cannot aim, and an axis conversion, are named in the report.
+# Modified for MaxDrop, 2026-11-19 (jsiovn). The scene description gets the asset table: the report names the web
+# and IES files of the lights.
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -603,7 +605,7 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
         from .convert import colors
         from .convert import report as convert_report
         from .convert import scene as convert_scene
-        from .reader import cfb, units
+        from .reader import assets, cfb, units
         from .reader import scene as reader_scene
         name = os.path.basename(max_path)
         materials = 'MATERIAL' in self.object_filter
@@ -611,7 +613,8 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
             sc = reader_scene.Scene.from_file(cf)
             unit = units.system_unit(sc)
             meters, note = _meters(self.units, unit, self.scale_objects)
-            desc = convert_scene.describe(sc, meters, unit, convert_modifiers=self.modifiers == 'KEEP')
+            desc = convert_scene.describe(sc, meters, unit, convert_modifiers=self.modifiers == 'KEEP',
+                                          assets=assets.AssetTable.from_file(cf))
             slots, counts, failed = None, None, []
             if materials:
                 try:

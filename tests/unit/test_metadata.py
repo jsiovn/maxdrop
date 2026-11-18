@@ -19,6 +19,8 @@ import uuid
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 FIXTURES = sorted(glob.glob(os.path.join(ROOT, "tests", "fixtures", "*.max")))
+# 3ds Max lists the environment map among the summary's materials: lights_standard's VRaySky
+SUMMARY_MAPS = {"lights_standard.max": 1}
 
 
 def _load(name, path, package_dir=None):
@@ -160,7 +162,8 @@ class TestFixtures(unittest.TestCase):
                 self.assertEqual(info["renderer"]["class_id"],
                                  tuple(int(x, 16) for x in oracle["renderer"]["class_id"]))
                 self.assertEqual(info["counts"]["total"], oracle["node_count"])
-                self.assertEqual(info["counts"]["materials"], len(oracle["materials"]))
+                self.assertEqual(info["counts"]["materials"],
+                                 len(oracle["materials"]) + SUMMARY_MAPS.get(os.path.basename(path), 0))
                 # the evaluated meshes, after the modifiers (modifier_pivot's TurboSmooth: 74, not 20)
                 self.assertEqual(info["counts"]["vertices"], sum(n.get("eval_verts") or 0 for n in oracle["nodes"]))
                 self.assertIn("ctrl.dlc", info["plugins"])

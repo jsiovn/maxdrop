@@ -59,6 +59,29 @@ TARGET_OBJECT = ClassId(0x00001020, 0)  # the node a Look At controller aims at 
 
 # Lights (convert/lights.py).
 VRAY_LIGHT = ClassId(0x3C5575A1, 0x5FD602DF)
+VRAY_SUN = ClassId(0x732C0383, 0x7D993776)
+VRAY_IES = ClassId(0x2EAF2F07, 0x7EC44F31)
+VRAY_SKY = ClassId(0x48480B4E, 0x62FF5A90)  # a map (superclass Texmap), the environment's
+SKYLIGHT = ClassId(0x7BF61478, 0x522E4705)
+# Standard lights: their parameters in an old ParamBlock
+OMNI = ClassId(0x00001011, 0)
+TARGET_SPOT = ClassId(0x00001012, 0)
+FREE_DIRECT = ClassId(0x00001013, 0)
+FREE_SPOT = ClassId(0x00001014, 0)
+TARGET_DIRECT = ClassId(0x00001015, 0)
+# Photometric lights: one class per shape, the same ParamBlock2s
+FREE_POINT_LIGHT = ClassId(0x32375FCC, 0x0B025CF0)  # "Free Light"
+FREE_LINE_LIGHT = ClassId(0x78207401, 0x357F1D58)
+FREE_RECTANGLE_LIGHT = ClassId(0x36507D92, 0x105A1A47)
+FREE_DISC_LIGHT = ClassId(0x5BCC6D42, 0x0C4F430E)
+FREE_SPHERE_LIGHT = ClassId(0x7CA93582, 0x1ABB6B32)
+FREE_CYLINDER_LIGHT = ClassId(0x46F634E3, 0x0A327AAF)
+TARGET_POINT_LIGHT = ClassId(0x658D4F97, 0x72CD4259)  # "Target Light"
+TARGET_LINE_LIGHT = ClassId(0x45076885, 0x40791449)
+TARGET_RECTANGLE_LIGHT = ClassId(0x71794F9D, 0x70AE52F2)
+TARGET_DISC_LIGHT = ClassId(0x38732348, 0x201758B3)
+TARGET_SPHERE_LIGHT = ClassId(0x33FC7AE9, 0x54433DC5)
+TARGET_CYLINDER_LIGHT = ClassId(0x7C8B5B10, 0x4BD33E86)
 
 # Primitives (convert/primitives.py).
 BOX = ClassId(0x00000010, 0)
@@ -161,6 +184,27 @@ CLASSES = {
     (SC_GEOMOBJECT, PLANE): "Plane",
     (SC_GEOMOBJECT, PYRAMID): "Pyramid",
     (SC_LIGHT, VRAY_LIGHT): "VRayLight",
+    (SC_LIGHT, VRAY_SUN): "VRaySun",
+    (SC_LIGHT, VRAY_IES): "VRayIES",
+    (SC_TEXMAP, VRAY_SKY): "VRaySky",
+    (SC_LIGHT, SKYLIGHT): "Skylight",
+    (SC_LIGHT, OMNI): "Omni",
+    (SC_LIGHT, TARGET_SPOT): "Target Spot",
+    (SC_LIGHT, FREE_DIRECT): "Free Direct",
+    (SC_LIGHT, FREE_SPOT): "Free Spot",
+    (SC_LIGHT, TARGET_DIRECT): "Target Direct",
+    (SC_LIGHT, FREE_POINT_LIGHT): "Free Light",
+    (SC_LIGHT, FREE_LINE_LIGHT): "Free Line",
+    (SC_LIGHT, FREE_RECTANGLE_LIGHT): "Free Rectangle",
+    (SC_LIGHT, FREE_DISC_LIGHT): "Free Disc",
+    (SC_LIGHT, FREE_SPHERE_LIGHT): "Free Sphere",
+    (SC_LIGHT, FREE_CYLINDER_LIGHT): "Free Cylinder",
+    (SC_LIGHT, TARGET_POINT_LIGHT): "Target Light",
+    (SC_LIGHT, TARGET_LINE_LIGHT): "Target Line",
+    (SC_LIGHT, TARGET_RECTANGLE_LIGHT): "Target Rectangle",
+    (SC_LIGHT, TARGET_DISC_LIGHT): "Target Disc",
+    (SC_LIGHT, TARGET_SPHERE_LIGHT): "Target Sphere",
+    (SC_LIGHT, TARGET_CYLINDER_LIGHT): "Target Cylinder",
     (SC_SHAPE, SPLINE_SHAPE): "SplineShape",
     (SC_SHAPE, LINE): "Line",
     (SC_SHAPE, RECTANGLE): "Rectangle",

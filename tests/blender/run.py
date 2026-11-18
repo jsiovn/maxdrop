@@ -42,7 +42,8 @@ energy the watts 3ds Max computed with the rules source's function times the def
 the double-sided plane's half), its color, the off light hidden in viewport and render, the invisible one unseen by
 the camera and glossy rays; the instance shares the plane's light, the disc's instance scaled 2, 1.5, 1 has its
 own, three times as strong; imported again with Light Strength 2, twice the
-power. Each fixture's import report is published (build.report) and must say nothing was left out; the one the
+power. lights_standard, lights_photometric (and lookat's target spot): each light of the type, spot cone, power and
+color of the rules (STOCK_LIGHTS), its -Z axis along the oracle's, its flags; the Skylight an empty. Each fixture's import report is published (build.report) and must say nothing was left out; the one the
 operator published for vray_wrappers lists its three peeled wrappers by class. A changed layers_flags description
 checks a hidden, a frozen, a non-rendering and a nested layer, which no fixture has. A hand-made description with sheared local matrices (top-level and parented, hidden, a zero scale) checks that
 Blender's world matrices equal the products of the locals, through the helper empty for top-level ones. Material
@@ -110,6 +111,8 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1; kept literal: tes
     "vray_maps": ["UVMap"],
     "vray_texmaps": ["UVMap"],
     "vray_lights": [],  # lights and a target: no mesh
+    "lights_standard": [],
+    "lights_photometric": [],
     "vray_wrappers": ["UVMap"],
     "uvwmap": {"FixtureUVWGizmo": ["UVMap", "UVChannel_2"], "FixtureUVWTwo": ["UVMap", "UVChannel_3"]},  # else UVMap
     "uvwmap_oblique": ["UVMap"],
@@ -133,7 +136,7 @@ SHARP_EDGES = {"editable_mesh": 8, "modifier_pivot": {"FixtureSmooth": 0, None: 
                               "FixtureCylinderReal": 14, "FixtureTubeDown": 28, None: 0}}
 SHARP_EDGES_DEFAULT = 12
 # the class directory's name of a placeholder (maxdrop_class) where it is not MAXScript's (the oracle's)
-CLASS_NAMES = {"Targetobject": "Target", "Targetcamera": "Target", "targetSpot": "Target Spot"}
+CLASS_NAMES = {"Targetobject": "Target", "Targetcamera": "Target"}
 FLAT_SHADED = {"FixtureGeoOcta"}  # a GeoSphere not smoothed: no smoothing group, every face flat
 # primitives whose normals are not "away from the box center": a Plane's point up or down (by its sizes' signs), and
 # a Box of width -12 keeps 3ds Max's faces, which point in
@@ -162,6 +165,41 @@ VRAY_LIGHT_COLORS = {"FixturePlane": (1.0, 0.57758, 0.304987), "FixturePlaneInst
                      "FixtureDisc": (0.187821, 0.351533, 1.0), "FixtureDiscScaled": (0.187821, 0.351533, 1.0),
                      "FixtureSphereKelvin": (1.0, 0.5304, 0.265643)}
 VRAY_LIGHT_FLAGS = {"FixtureInvisible": (False, True, False, 0.5, 0.0)}  # camera, diffuse, glossy, factors
+# lights_standard, lights_photometric (tools/fixtures/*.ms) and lookat's target spot: Blender's light type, spot
+# size in degrees and blend, and the watts of the rules (docs/FORMAT.md, "Standard and photometric lights") from
+# what the scripts set: a point or spot light 4 pi I / 683 W for I cd (a standard light's I = 1500 multiplier d^2,
+# d the decay start or 1 m), a diffuse one pi I / 683, a standard Direct 1500 multiplier / 683 W/m^2, a VRaySun
+# 146.4 x its multiplier, a VRayIES lm / 683
+_CD, _LAMBERT = 4.0 * math.pi / 683.0, math.pi / 683.0
+_WEB = (170.0, 1.0 - 100.0 / 170.0)
+STOCK_LIGHTS = {
+    "StdOmni": ('POINT', 0.0, 0.0, 2250.0 * _CD), "StdOmniInst": ('POINT', 0.0, 0.0, 2250.0 * _CD),
+    "StdOmniSquare": ('POINT', 0.0, 0.0, 1920.0 * _CD), "StdOmniInverse": ('POINT', 0.0, 0.0, 375.0 * _CD),
+    "StdOmniNegative": ('POINT', 0.0, 0.0, 0.0), "StdOmniNoDiffuse": ('POINT', 0.0, 0.0, 1500.0 * _CD),
+    "StdOmniAmbient": ('POINT', 0.0, 0.0, 750.0 * _CD), "StdSpot": ('SPOT', 50.0, 0.4, 4500.0 * _CD),
+    "StdSpotRect": ('SPOT', 45.0, 1.0 - 40.0 / 45.0, 1500.0 * _CD),
+    "StdTargetSpot": ('SPOT', 60.0, 1.0 - 20.0 / 60.0, 3000.0 * _CD),
+    "StdTargetDirect": ('SUN', 0.0, 0.0, 1500.0 * 0.8 / 683.0), "StdDirect": ('SUN', 0.0, 0.0, 1500.0 * 1.2 / 683.0),
+    "StdSun": ('SUN', 0.0, 0.0, 73.2), "FixtureSpot": ('SPOT', 45.0, 1.0 - 43.0 / 45.0, 1500.0 * _CD),
+    "PhPoint": ('POINT', 0.0, 0.0, 1200.0 * _CD), "PhPointInst": ('POINT', 0.0, 0.0, 1200.0 * _CD),
+    "PhSpot": ('SPOT', 70.0, 1.0 - 40.0 / 70.0, 1000.0 * _CD), "PhRect": ('AREA', 0.0, 0.0, 800.0 * _LAMBERT),
+    "PhDisc": ('AREA', 0.0, 0.0, 500.0 * _LAMBERT), "PhLine": ('AREA', 0.0, 0.0, 300.0 * _LAMBERT),
+    "PhSphere": ('POINT', 0.0, 0.0, 900.0 * _CD), "PhCylinder": ('POINT', 0.0, 0.0, 700.0 * _CD),
+    "PhWeb": ('SPOT',) + _WEB + (400.0 * _CD,), "PhOff": ('POINT', 0.0, 0.0, 1000.0 * _CD),
+    "IesPower": ('SPOT',) + _WEB + (1500.0 / 683.0,), "IesOverride": ('SPOT',) + _WEB + (300.0 * _CD,),
+    "PhTPoint": ('POINT', 0.0, 0.0, 100.0 * _CD), "PhTLine": ('POINT', 0.0, 0.0, 100.0 * _CD),
+    "PhTRectangle": ('POINT', 0.0, 0.0, 100.0 * _CD), "PhTSphere": ('POINT', 0.0, 0.0, 100.0 * _CD),
+    "PhTCylinder": ('POINT', 0.0, 0.0, 100.0 * _CD)}
+# swatches (0..255, decoded from sRGB: the fixtures are saved with the gamma off), the Kelvin colors 3ds Max computed
+# with the rules source's ocbaby_exsKelvinRGB; white when not listed
+STOCK_COLORS = {"StdOmni": (255, 200, 150), "StdOmniInst": (255, 200, 150), "StdSpot": (120, 160, 255),
+                "StdDirect": (255, 240, 220), "StdSun": (255, 230, 200), "PhOff": (255, 128, 0),
+                "PhPoint": (255, 177.2, 109.917), "PhPointInst": (255, 177.2, 109.917),
+                "IesOverride": (255, 205.816, 166.081)}
+STOCK_GREY = ("StdOmniSquare", "StdOmniInverse", "StdOmniNegative", "StdOmniNoDiffuse", "StdOmniAmbient",
+              "StdSpotRect", "StdTargetSpot", "StdTargetDirect", "FixtureSpot")  # a standard light's default 180
+STOCK_FLAGS = {"StdOmniNoDiffuse": (True, False, True, 0.0, 1.0), "StdSpotRect": (True, True, False, 1.0, 0.0),
+               "PhCylinder": (True, True, False, 1.0, 0.0), "IesOverride": (True, True, False, 1.0, 0.0)}
 # hollow: a tube's inner side and a torus's inner half face the box center; closed, they enclose a positive volume
 # the oracle's base_class_id of the primitives MaxDrop builds (convert/primitives.py)
 PRIMITIVE_CLASSES = {("0x00000010", "0x00000000"), ("0x00000011", "0x00000000"), ("0x00000012", "0x00000000"),
@@ -468,16 +506,27 @@ def run_fixture(path, modules):
               bpy.data.objects["FixturePlaneInst"].data and bpy.data.objects["FixtureDisc"].data !=
               bpy.data.objects["FixtureDiscScaled"].data, "%s, %d lights" % (lit, len(bpy.data.lights)))
         check_light_strength(path)
+    if name in ("lights_standard", "lights_photometric"):
+        lit = [ob for ob in obs if ob.type == 'LIGHT']
+        shared = {"lights_standard": ("StdOmni", "StdOmniInst"), "lights_photometric": ("PhPoint", "PhPointInst")}
+        a, b = (bpy.data.objects[n] for n in shared[name])
+        count = {"lights_standard": 13, "lights_photometric": 17}[name]
+        check("%s: %d light objects, the instance shares its light" % (name, count),
+              len(lit) == count and len(bpy.data.lights) == count - 1 and a.data == b.data, "%d, %d lights" % (
+                  len(lit), len(bpy.data.lights)))
 
 
 def check_light(label, ob, ld, o):
     """vray_lights: a LIGHT node's object holds its light: the description's type, shape and size; its -Z axis
     (where a V-Ray plane and a Blender area light shine) along the oracle's; its energy the watts 3ds Max computed
     with the rules source's own function (VRAY_LIGHT_WATTS) times the operator's default Light Strength, halved for
-    the double-sided plane; its color and its object flags."""
+    the double-sided plane; its color and its object flags. Any other light: check_stock_light."""
     light = ob.data
     check(label + ": a light object", ob.type == 'LIGHT', ob.type)
     if ob.type != 'LIGHT':
+        return
+    if o["name"] not in VRAY_LIGHT_WATTS:
+        check_stock_light(label, ob, ld, o)
         return
     size = (light.type, getattr(light, "shape", None) if light.type == 'AREA' else None,
             light.size if light.type == 'AREA' else 0.0,
@@ -503,6 +552,41 @@ def check_light(label, ob, ld, o):
     flags = (ob.visible_camera, ob.visible_diffuse, ob.visible_glossy, round(light.diffuse_factor, 6),
              round(light.specular_factor, 6))
     want = VRAY_LIGHT_FLAGS.get(o["name"], (True, True, True, 1.0, 1.0))
+    check(label + ": camera, diffuse and glossy visibility, diffuse and specular factors", flags == want, str(flags))
+
+
+def check_stock_light(label, ob, ld, o):
+    """lights_standard, lights_photometric, lookat's target spot: the light's type, spot cone, size or radius as the
+    description says, energy the watts of STOCK_LIGHTS times the default Light Strength, color, flags; its -Z axis
+    (where a spot, an area light and a sun shine in both programs) along the oracle's."""
+    from maxdrop import ops
+    light = ob.data
+    kind, cone, blend, watts = STOCK_LIGHTS[o["name"]]
+    check(label + ": type", light.type == kind == ld.kind, "%s vs %s" % (light.type, kind))
+    if light.type == 'SPOT':
+        check(label + ": spot size and blend", abs(math.degrees(light.spot_size) - cone) < 1e-4 and
+              abs(light.spot_blend - blend) < 1e-6, "%g, %g" % (math.degrees(light.spot_size), light.spot_blend))
+    if light.type == 'AREA':
+        got = (light.shape, light.size, light.size_y if light.shape == 'RECTANGLE' else light.size)
+        check(label + ": area shape and size", got[0] == ld.shape and close(got[1:], (ld.size, ld.size_y), 1e-7),
+              str(got))
+    elif light.type == 'SUN':
+        check(label + ": sun angle", abs(light.angle - ld.angle) < 1e-7, "%g" % light.angle)
+    else:
+        check(label + ": radius", abs(light.shadow_soft_size - ld.radius) < 1e-7, "%g" % light.shadow_soft_size)
+    want = watts * ops.LIGHT_STRENGTH
+    check(label + ": power = the rules' watts x Light Strength", abs(light.energy - want) <= max(want, 1.0) * 1e-5,
+          "%g vs %g" % (light.energy, want))
+    rgb = STOCK_COLORS.get(o["name"], (180, 180, 180) if o["name"] in STOCK_GREY else (255, 255, 255))
+    color = tuple(c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in (v / 255.0 for v in rgb))
+    check(label + ": color", close(tuple(light.color), color, 1e-5), str(tuple(light.color)))
+    rows = o["transform"]
+    z = Vector(rows[6:9]).normalized()
+    got = -(ob.matrix_world.to_3x3() @ Vector((0.0, 0.0, 1.0))).normalized()
+    check(label + ": shines along the oracle's -Z", (got + z).length < 1e-5, "%s vs %s" % (tuple(got), tuple(-z)))
+    flags = (ob.visible_camera, ob.visible_diffuse, ob.visible_glossy, round(light.diffuse_factor, 6),
+             round(light.specular_factor, 6))
+    want = STOCK_FLAGS.get(o["name"], (True, True, True, 1.0, 1.0))
     check(label + ": camera, diffuse and glossy visibility, diffuse and specular factors", flags == want, str(flags))
 
 
@@ -708,7 +792,7 @@ def check_lookat(path, desc, obs, nodes, meters):
     # the target cameras' class is named "Target" too: four placeholders of that name are the cameras
     check("lookat: the five targets are empties, no placeholders", len(targets) == 5 and all(
         bpy.data.objects[t].type == 'EMPTY' for t in targets) and dict(desc.placeholders) ==
-        {"Target": 4, "Target Spot": 1, "Point": 1}, str(dict(desc.placeholders)))
+        {"Target": 4, "Point": 1}, str(dict(desc.placeholders)))  # the target spot is a light
     check("lookat: no constraint without Keep Targets", not any(ob.constraints for ob in obs))
     empty_scene()
     result = bpy.ops.import_scene.maxdrop(filepath=path, keep_targets=True)

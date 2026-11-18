@@ -635,6 +635,77 @@ discs, 1.448 and 1.470 for its two small spheres. The default Light Strength is 
 diffuse and specular factors (EEVEE uses them): the fixture's disc with diffuse contribution 0.5 is half as bright in
 V-Ray as in Cycles.
 
+## Standard and photometric lights
+
+`convert/lights.py`, 3ds Max 2020 + V-Ray 5.2; ids read through the SDK's .NET wrapper (ParamBlock2 descriptors) and
+by changing one setting at a time on scratch scenes, then the lights_standard and lights_photometric fixtures read
+back by the reader. All superclass `0x30`; every one shines along its local -Z.
+
+**Standard lights.** Omni `(0x1011, 0)`, Target Spot `(0x1012, 0)`, Free Direct `(0x1013, 0)`, Free Spot `(0x1014,
+0)`, Target Direct `(0x1015, 0)`. Reference 0 is an old ParamBlock, by index (colors 0..1): Omni 0 color, 1
+multiplier, 2 contrast, 3 soften diffuse edge, 4 to 7 near and far attenuation start and end, 8 decay start; Spot
+and Direct 0 color, 1 multiplier, 2, 3 the same, 4 hotspot, 5 falloff (a Spot's in degrees, a Direct's a radius in
+world units), 6 aspect, 7 to 10 attenuation, 11 decay start. Reference 3 is the shadow generator, 4 an old
+ParamBlock of shadow settings. The light object's own chunks:
+
+| Chunk | Meaning |
+|---|---|
+| `0x2580` u16 | on |
+| `0x25D0` u16 | decay: 0 none, 1 inverse, 2 inverse square (absent: none) |
+| `0x2573` u16 | cone shape (Spot, Direct): 1 circle, 0 rectangle |
+| `0x2575` (empty) | overshoot |
+| `0x25B0`, `0x25B1` (empty) | affect diffuse off, affect specular off |
+| `0x2600` (empty) | ambient only |
+
+**Photometric lights.** One class per shape (MAXScript's `type` changes the class): Free Light (point)
+`(0x32375FCC, 0x0B025CF0)`, Free Line `(0x78207401, 0x357F1D58)`, Free Rectangle `(0x36507D92, 0x105A1A47)`, Free
+Disc `(0x5BCC6D42, 0x0C4F430E)`, Free Sphere `(0x7CA93582, 0x1ABB6B32)`, Free Cylinder `(0x46F634E3, 0x0A327AAF)`;
+Target Light (point) `(0x658D4F97, 0x72CD4259)`, Target Line `(0x45076885, 0x40791449)`, Target Rectangle
+`(0x71794F9D, 0x70AE52F2)`, Target Disc `(0x38732348, 0x201758B3)`, Target Sphere `(0x33FC7AE9, 0x54433DC5)`,
+Target Cylinder `(0x7C8B5B10, 0x4BD33E86)`. ParamBlock2s by block id (references 0, 1, 2, 3, 5; 4 is the shadow
+generator):
+
+| Block | Parameters |
+|---|---|
+| 0 | 1 distribution (0 isotropic, 1 spotlight, 2 uniform diffuse, 3 photometric web), 2 on, 3 cast shadows, 5 filter color, 6 intensity (always cd, whatever the units the panel shows: 2000 lm is stored as 159.15), 8 Kelvin, 10 use Kelvin, 13 intensity at (lux distance), 14 units shown, 18 use dimmer, 19 dimmer (%), 21 use far attenuation, 23 / 24 far start / end |
+| 1 | shadows (atmosphere, color, ...) |
+| 2 | 0 hotspot, 1 falloff (degrees) |
+| 3 | 0 web file (an asset of type `Photometric`), 1 to 3 its X, Y, Z rotation |
+| 4 | 4 affect diffuse, 5 affect specular, 6 ambient only, 11 length (a line and a rectangle along local Y, a cylinder), 12 width (a rectangle, along local X), 13 radius (disc, sphere, cylinder) |
+
+The lamp color without Kelvin is a preset MAXScript does not reach and the fixtures do not store: white is taken.
+3ds Max 2020 refuses a spotlight distribution on a cylinder.
+
+**VRaySun** `(0x732C0383, 0x7D993776)`, block 0: 0 enabled, 1 turbidity, 2 intensity multiplier, 3 size multiplier,
+5 ozone, 9 invisible, 12 sky model, 14 / 19 affect diffuse / its contribution, 15 / 20 affect specular / its
+contribution, 17 filter color, 18 color mode (0 filter, 1 direct, 2 override). A targeted VRaySun is a Look At
+node. **VRayIES** `(0x2EAF2F07, 0x7EC44F31)`, block 0: 0 enabled, 1 IES file (an asset of type `Photometric`), 7
+color temperature, 8 color, 9 color mode (1 temperature), 10 power, 11 targeted, 14 / 30 affect diffuse /
+contribution, 15 / 31 affect specular / contribution, 32 intensity type (0 lm, 1 cd), 34 override intensity. With
+the intensity overridden, 10 holds the override's value in its unit; 33 (`intensity_value`) is stored stale (0).
+Reference 1 is a Target Light object of its own (no node). **Skylight** `(0x7BF61478, 0x522E4705)`: not built.
+**VRaySky** `(0x48480B4E, 0x62FF5A90)` (superclass Texmap): the environment map is RenderEnvironment's reference 5
+(the lights_standard fixture).
+
+**Power, measured.** The calibration scene of [VRayLight](#vraylight) (a white VRayMtl floor, one light 1 m above it
+pointing down, V-Ray linear, gamma off, no GI, the mean of the 8 × 8 center pixels): V-Ray's pixel is the floor's
+illuminance in lx / 1500 for every class: a 1 W VRayLight sphere 0.0362 (683 / 4π lx); a Free Light of 1000 cd,
+isotropic, spotlight or uniform diffuse, 0.667; a Free Rectangle 100 × 100 mm of 1000 cd 0.651; a VRayIES of 1000
+lm with an isotropic IES file 0.0531; an Omni, a Free Spot and a Direct of multiplier 1 without decay 1.0 (the same
+at any distance), an Omni with inverse-square decay from 1 m 1.0, from 0.5 m 0.25, with inverse decay from 0.5 m
+0.5; a VRaySun of multiplier 1 at the zenith 68.5 (102.7 klx). Cycles (Blender 5.2, a Diffuse BSDF of 1.0): a
+point or spot light of 1 W at 1 m 0.02526 (1 / 4π²), a disk area light of 1 W 0.1010 (1 / π² on its axis), a sun
+of strength 1 0.3176 (1 / π). So Light Strength 1.43 is π · 683 / 1500 (1.4305), and with it these powers render
+as bright as V-Ray:
+
+- a point or spot light of on-axis intensity I cd: 4π I / 683 W (the rules source's for photometric lights); a
+  uniform diffuse one: π I / 683 W on an area light;
+- a standard Omni or Spot of multiplier m: I = 1500 m d², d the decay start with inverse-square decay (exact past
+  it) or inverse decay (exact at it), 1 m without decay;
+- a standard Direct: a sun of 1500 m / 683 W/m²; a VRaySun: 146.4 m W/m² (the rules source's 100 klx / 683);
+- a VRayIES: its lumens / 683 W, on a spot of 170° with blend 1 − 100 / 170 (the rules source's wide spot), as a
+  photometric web.
+
 ## System unit
 
 `maxdrop/reader/units.py` reads it; `tests/unit/test_units.py` checks every fixture against the oracle's

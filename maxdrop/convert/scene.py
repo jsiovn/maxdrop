@@ -49,11 +49,15 @@ counts them by the class name of the file's class directory ("" when there is no
 one) and a Target (the node a target camera or light aims at) are EMPTYs too, but that is their conversion, not a
 placeholder. A group head keeps its members as children: that is how 3ds Max stores a group.
 
-A VRayLight becomes a LIGHT (convert.lights): plane and disc an area light, sphere a point light, keyed by its base
-object index and the factor the node's world scale puts on its area (lights.area_scale), so instances of one scale
-share it; the issues of its parameters are named on its first node, those of a description on the first node of
-that key. A mesh or dome light (not built yet) or one whose parameters cannot be read is an EMPTY with the reason as
-an issue, on every node, not counted as a placeholder.
+A light becomes a LIGHT (convert.lights): a VRayLight's plane and disc an area light, its sphere a point light; a
+standard Omni, Spot and Direct a point, spot and sun light; a photometric light a point, spot or area light by its
+distribution; a VRaySun a sun; a VRayIES a spot. It is keyed by its base object index and the factor the node's
+world scale puts on its area (lights.area_scale, 1 but for a VRayLight), so instances of one scale share it; the
+issues of its parameters are named on its first node, those of a description on the first node of that key. A
+VRayLight's mesh or dome light or a Skylight (not built yet), or a light whose parameters cannot be read, is an EMPTY
+with the reason as an issue, on every node, not counted as a placeholder. A VRaySky as the environment map is an
+issue on its own object index. describe(..., assets) takes the scene's reader.assets.AssetTable for the names of the
+web and IES files (read() reads it).
 
 Look At: the matrices of a node aimed by a Look At controller or a LookAt Constraint are the ones 3ds Max computes
 at frame 0 (reader.controllers), baked. A node with a Look At controller aimed at a node also gets node.look_at, a
@@ -96,6 +100,7 @@ Nothing here imports bpy; numpy is imported when a scene is described.
 import collections
 import math
 
+from ..reader import assets as reader_assets
 from ..reader import cfb, chunks, classids, controllers, geometry, modifiers as reader_modifiers, shapes, units
 from ..reader import scene as reader_scene
 from . import colors, extrude, lights, modifiers as rules, primitives, uvwmap
@@ -434,9 +439,10 @@ def sheared(m):
     return False
 
 
-def describe(scene, meters=1.0, unit=None, convert_modifiers=True):
+def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None):
     """The SceneDescription of a reader.scene.Scene; meters is the length of one file unit; convert_modifiers False
-    leaves the modifiers Blender has an equivalent for in node.modifiers, unconverted and unreported."""
+    leaves the modifiers Blender has an equivalent for in node.modifiers, unconverted and unreported; assets, the
+    scene's reader.assets.AssetTable, names the files of web and IES lights (None: not named)."""
     if not (math.isfinite(meters) and meters > 0):
         raise ValueError("meters per unit must be a positive number, not %r" % (meters,))
     t = controllers.Transforms(scene)
@@ -461,8 +467,8 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True):
     mapped = {}  # UVW Map modifier index -> (Params, gizmo matrix), or None when it is not evaluated
     told = set()  # modifier indices whose conversion issues were named (on the first node only)
     layers = {}  # layer object index -> reader Layer, or None when its record cannot be read
-    unlit = {}  # VRayLight base object index -> why it is not built
-    light_params = {}  # VRayLight base object index -> its parameter values
+    unlit = {}  # light base object index -> why it is not built
+    light_params = {}  # light base object index -> its values (convert.lights.read_params)
     swatches = None  # the scene's swatch rule, read for the first light
     for i in order:
         local, world = t.local(i), t.world(i)
@@ -498,11 +504,11 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True):
                 remaining[base] -= 1
                 if not remaining[base]:
                     extruded.pop(base, None)
-            elif base is not None and lights.is_vray_light(scene, base):
+            elif base is not None and lights.light_class(scene, base) is not None:
                 class_name = _class_name(scene, base)
                 if swatches is None:
                     swatches = colors.of_scene(scene)
-                light = _light(scene, desc, unlit, light_params, base, i, name, meters, swatches, world)
+                light = _light(scene, desc, unlit, light_params, base, i, name, meters, swatches, world, assets)
                 kind = LIGHT if light is not None else EMPTY
             elif base is not None:
                 class_name = _class_name(scene, base)
@@ -543,6 +549,9 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True):
                                           determinant3(world) < 0, modifiers, layer, sheared=sheared(local),
                                           curve=curve, applied=applied, converted=converted,
                                           look_at=look_at_description(t.look_at(i)), light=light, **flags))
+    sky = lights.environment_sky(scene)
+    if sky is not None:
+        desc.issues.append((sky, "light: %s" % lights.SKY))
     desc.issues.extend((issue.node, "transform: %s" % issue.reason) for issue in t.issues)
     desc.unknown_controllers.update(
         _class_name(scene, issue.controller) if issue.controller is not None else ""
@@ -551,13 +560,13 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True):
     return desc
 
 
-def _light(scene, desc, unlit, params, base, node, name, meters, swatches, world):
-    """The key in desc.lights of VRayLight base on node (world: its reader world matrix), made on first use; None
-    when it is not built (unlit caches the reason, an issue on every node). params caches the parameter values, whose
-    issues are named on the first node; a description's on the first node of its key."""
+def _light(scene, desc, unlit, params, base, node, name, meters, swatches, world, assets=None):
+    """The key in desc.lights of light base on node (world: its reader world matrix), made on first use; None when it
+    is not built (unlit caches the reason, an issue on every node). params caches the light's values, whose issues
+    are named on the first node; a description's on the first node of its key."""
     if base not in params and base not in unlit:
         try:
-            values, issues = lights.read_params(scene, base)
+            values, issues = lights.read_params(scene, base, assets)
             reason = lights.not_built(values)
         except ChunkError as exc:
             values, issues, reason = None, [], "parameters cannot be read: %s" % exc
@@ -863,4 +872,4 @@ def read(path, meters=None, convert_modifiers=True):
         unit = units.system_unit(sc)
         if meters is None:
             meters = unit.meters if unit is not None else 1.0
-        return describe(sc, meters, unit, convert_modifiers)
+        return describe(sc, meters, unit, convert_modifiers, reader_assets.AssetTable.from_file(cf))

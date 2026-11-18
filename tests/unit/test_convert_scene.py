@@ -75,6 +75,8 @@ UV_LAYERS = {
     "vray_maps": ["UVMap"],
     "vray_texmaps": ["UVMap"],
     "vray_lights": [],  # lights and a target: no mesh
+    "lights_standard": [],
+    "lights_photometric": [],
     "vray_wrappers": ["UVMap"],
     # per mesh: every box, the cylinder and the sphere have channel 1; two UVW Maps write channels 2 and 3
     "uvwmap": collections.defaultdict(lambda: ["UVMap"], {"FixtureUVWGizmo": ["UVMap", "UVChannel_2"],
@@ -111,18 +113,53 @@ PRIMITIVE_CLASSES = {("0x00000010", "0x00000000"), ("0x00000011", "0x00000000"),
                      ("0x00000020", "0x00000000"), ("0xa86c23dd", "0x00000000"), ("0x00007b21", "0x00000000"),
                      ("0x00000000", "0x00007f9e"), ("0x081f1dfc", "0x77566f65"), ("0x76bf318a", "0x4bf37b10")}
 # placeholders the fixtures hold: lookat's target cameras (their class directory names the class "Target", as it
-# does the Target objects they aim at, which are converted), its target spot and its Point helper
-PLACEHOLDERS = {"lookat": {"Target": 4, "Target Spot": 1, "Point": 1}}
+# does the Target objects they aim at, which are converted) and its Point helper
+PLACEHOLDERS = {"lookat": {"Target": 4, "Point": 1}}
+NO_DECAY = "light: no decay: Blender's light falls off with the square of the distance; as bright as in 3ds Max at 1 m"
 # the issues the fixtures are made to raise
 ISSUES = {"uvwmap": ["uvw map: a UVW Map above Bend is not evaluated",
                      "uvw map: shrink-wrap mapping is not evaluated: the stored channel stays"],
           "stack_convert": ["modifiers: TurboSmooth above Bend is not converted"],
+          "lookat": [NO_DECAY],  # its target spot
+          "lights_standard": [
+              "light: ambient only is not imported: it lights as any light",
+              "light: inverse decay: Blender's light falls off with the square of the distance; as bright as in 3ds "
+              "Max at 0.5 m",
+              "light: its beam (0.8 m across) is not imported: the sun lights the whole scene",
+              "light: its beam (1.4 m across) is not imported: the sun lights the whole scene",
+              "light: its color is its filter color: the sky model's sun color is not imported",
+              "light: its rectangular cone is drawn round",
+              "light: its strength is the sun's at the zenith: the sky model's dimming toward the horizon is not "
+              "imported",
+              "light: multiplier -1 is negative: 0 W"] + [NO_DECAY] * 6 + [
+              "light: not built: a Skylight is not imported yet (Skylight -> World is later work)",
+              "light: overshoot is not imported: the spot lights its cone only",
+              "light: the environment map is a VRaySky: not imported yet (environment -> World is later work)"],
+          "lights_photometric": [
+              "light: its IES file fixture_web.ies is approximated by a spot of 170 degrees",
+              "light: its IES file fixture_web.ies is approximated by a spot of 170 degrees",
+              "light: its cylinder shape is a sphere of its radius",
+              "light: its cylinder shape is a sphere of its radius",
+              "light: its disc shape is a sphere of its radius",
+              "light: its line shape is a rectangle 0.01 m wide",
+              "light: its line shape is not imported: a point",
+              "light: its photometric web fixture_web.ies is approximated by a spot of 170 degrees",
+              "light: its rectangle shape is not imported: a point"],
           "vray_lights": ["light: diffuse contribution 0.5: Blender's diffuse factor, which only EEVEE uses",
                           "light: double-sided: Blender's area light shines on one side, with half the power",
                           "light: not built: a dome light is not imported yet (dome -> World is later work)",
                           "light: not built: a mesh light is not imported yet"]}
-VRAY_LIGHT_CLASS = ["0x3c5575a1", "0x5fd602df"]  # the oracle's base_class_id of a VRayLight
-UNBUILT_LIGHTS = {"FixtureMesh", "FixtureDome"}  # vray_lights' mesh and dome lights: not built yet
+# the oracle's base_class_id of the lights MaxDrop builds: VRayLight, VRaySun, VRayIES, the standard and the
+# photometric lights
+LIGHT_CLASSES = {("0x3c5575a1", "0x5fd602df"), ("0x732c0383", "0x7d993776"), ("0x2eaf2f07", "0x7ec44f31"),
+                 ("0x00001011", "0x00000000"), ("0x00001012", "0x00000000"), ("0x00001013", "0x00000000"),
+                 ("0x00001014", "0x00000000"), ("0x00001015", "0x00000000"), ("0x32375fcc", "0x0b025cf0"),
+                 ("0x78207401", "0x357f1d58"), ("0x36507d92", "0x105a1a47"), ("0x5bcc6d42", "0x0c4f430e"),
+                 ("0x7ca93582", "0x1abb6b32"), ("0x46f634e3", "0x0a327aaf"), ("0x658d4f97", "0x72cd4259"),
+                 ("0x45076885", "0x40791449"), ("0x71794f9d", "0x70ae52f2"), ("0x38732348", "0x201758b3"),
+                 ("0x33fc7ae9", "0x54433dc5"), ("0x7c8b5b10", "0x4bd33e86")}
+# not built yet: vray_lights' mesh and dome lights, lights_standard's Skylight (not in LIGHT_CLASSES)
+UNBUILT_LIGHTS = {"FixtureMesh", "FixtureDome"}
 # meshes under a converted smoother with Smooth Result: no sharp edge (modifier_pivot's reference, stack_basic's box)
 SHARP_EDGES_SMOOTHED = {"FixtureSmooth": 0, "FixtureTurbo": 0, "FixtureTurboOne": 0, "FixtureMeshSmooth": 0,
                         "FixtureOrder": 0}
@@ -577,7 +614,7 @@ class Fixtures(unittest.TestCase):
             for node, o in zip(desc.nodes, oracle["nodes"]):
                 extruded = o["shape"] is not None and o["eval_verts"] is not None  # an Extrude on the shape
                 primitive = tuple(o["base_class_id"]) in PRIMITIVE_CLASSES
-                light = o["base_class_id"] == VRAY_LIGHT_CLASS and o["name"] not in UNBUILT_LIGHTS
+                light = tuple(o["base_class_id"] or ()) in LIGHT_CLASSES and o["name"] not in UNBUILT_LIGHTS
                 kind = conv.MESH if o["base_verts"] is not None or extruded or primitive else \
                     conv.CURVE if o["shape"] else conv.LIGHT if light else conv.EMPTY
                 self.assertEqual(node.kind, kind, "%s %s" % (name, node.name))

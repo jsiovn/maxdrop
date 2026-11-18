@@ -59,7 +59,11 @@ your computer.
 | Star, Text, Helix, Donut, Section, NURBS curves and surfaces | Not yet: placeholder |
 | V-Ray lights: plane, disc, sphere | **Imported**: plane as a rectangular area light, disc as a disk area light, sphere as a point light with its radius, where 3ds Max has them (a plane shines along its -Z in both). Power in watts from each units mode (default, lm, lm/m²/sr, W, W/m²/sr) by the rules of a 3ds Max to FBX exporter, times the import option **Light Strength** (default 1.43: Cycles then renders them as bright as V-Ray 5.2, measured), color or color temperature, on / off (off: hidden in viewport and render), invisible (not seen by the camera), affect diffuse, specular and reflections (Cycles: the light hidden from diffuse or glossy rays; a contribution below 1 only in EEVEE, a line in the report). A scaled light is as bright as V-Ray makes it (its area grows with the scale). Instances share one light. A double-sided plane or disc shines on one side with half the power; a light's texture and directional spread are left out (each a line in the report) |
 | V-Ray mesh and dome lights | Not yet: an empty, a line in the report |
-| Standard and photometric lights, VRaySun, VRayIES, sky | Not yet: placeholder |
+| Standard lights: Omni, Free / Target Spot, Free / Target Direct | **Imported**: Omni as a point light, Spot as a spot light (cone from falloff and hotspot), Direct as a sun, with color, on / off and affect diffuse / specular. Power as bright as V-Ray 5.2 lights them (measured), times **Light Strength**: with inverse-square decay as bright at every distance past the decay start; without decay or with inverse decay as bright at 1 m or at the decay start only (Blender's lights fall off with the square of the distance; a line in the report). A Direct's beam, a rectangular cone, overshoot and ambient only are left out (a line each) |
+| Photometric lights (Free / Target Light, every shape) | **Imported**: isotropic as a point light, spotlight as a spot light with its cone, uniform diffuse as an area light of its rectangle or disc (a line, point, sphere or cylinder the nearest area light, a line in the report), photometric web as a wide spot (the web file named in the report); intensity in cd with the dimmer, Kelvin and filter color, on / off, affect diffuse / specular; disc, sphere and cylinder radius on point and spot lights. Power as bright as V-Ray 5.2, times **Light Strength** |
+| VRaySun | **Imported** as a sun: strength from the intensity multiplier (100 klx per unit, V-Ray's at the zenith), angle from the size multiplier, its filter color (the sky model's color and dimming toward the horizon are left out: a line in the report) |
+| VRayIES | **Imported** as a wide spot: power from its lumens or its intensity override, color or temperature, affect diffuse / specular; the IES file is named in the report, its distribution not imported |
+| Skylight, VRaySky (environment) | Not yet: the Skylight an empty, each a line in the report |
 | Cameras | Not yet: placeholder, aimed where 3ds Max aims it |
 | Targets (of target cameras and lights) | **Imported** as empties where 3ds Max has them, not placeholders |
 | Everything else: other lights, hair, proxies (`.vrmesh`, Corona proxy), XRefs, particles, bones… | Not yet: placeholder |
@@ -177,5 +181,5 @@ the scene in the archive is kept.
 
 ## What comes next
 
-Lights and cameras: Corona and standard lights, V-Ray mesh and dome lights, the sun and sky, cameras with their
-targets.
+Lights and cameras: Corona lights, V-Ray mesh and dome lights, IES distributions, the sky and Skylight as the World,
+cameras with their targets.

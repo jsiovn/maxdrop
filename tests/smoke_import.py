@@ -71,11 +71,12 @@ FIXTURE = {"modifiers": 0, "issues": 0, "placeholders": 0, "lights_only": False}
 # What the oracle does not tell: a UVW Map of a type MaxDrop does not evaluate (shrink-wrap), and the issues each
 # fixture is made to raise (ISSUES in tests/unit/test_convert_scene.py)
 NOT_EVALUATED = {"FixtureUVWShrink"}
-FIXTURE_ISSUES = {"uvwmap.max": 2, "stack_convert.max": 1, "vray_lights.max": 4}
-# placeholders of classes MaxDrop does not build yet: lookat's four target cameras, its target spot, its Point
-FIXTURE_PLACEHOLDERS = {"lookat.max": 6}
+FIXTURE_ISSUES = {"uvwmap.max": 2, "stack_convert.max": 1, "vray_lights.max": 4, "lookat.max": 1,
+                  "lights_standard.max": 17, "lights_photometric.max": 9}
+# placeholders of classes MaxDrop does not build yet: lookat's four target cameras, its Point
+FIXTURE_PLACEHOLDERS = {"lookat.max": 5}
 # fixtures without a mesh: a light must arrive instead of a mesh with a material
-LIGHTS_ONLY = {"vray_lights.max"}
+LIGHTS_ONLY = {"vray_lights.max", "lights_standard.max", "lights_photometric.max"}
 
 
 def oracle_modifiers(path):

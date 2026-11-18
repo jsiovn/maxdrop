@@ -233,7 +233,7 @@ class SceneHook(unittest.TestCase):
         return desc, keys
 
     def test_a_damaged_light_is_named_on_every_node(self):
-        def read(scene, i):
+        def read(scene, i, assets=None):
             raise L.LightError("damaged")
         desc, keys = self.hook(read, [self.IDENTITY, self.IDENTITY])
         self.assertEqual(keys, [None, None])
@@ -242,13 +242,14 @@ class SceneHook(unittest.TestCase):
         self.assertEqual((desc.lights, dict(desc.placeholders)), ({}, {}))
 
     def test_a_dome_is_named_on_every_node(self):
-        desc, keys = self.hook(lambda scene, i: (values(type=L.DOME), ["read"]), [self.IDENTITY, self.IDENTITY])
+        desc, keys = self.hook(lambda scene, i, assets=None: (values(type=L.DOME), ["read"]),
+                               [self.IDENTITY, self.IDENTITY])
         self.assertEqual(keys, [None, None])
         self.assertEqual(desc.issues, [(10, "light: read"), (10, "light: not built: " + L.NOT_YET[L.DOME]),
                                        (11, "light: not built: " + L.NOT_YET[L.DOME])])
 
     def test_issues_once_per_light_and_per_scale(self):
-        desc, keys = self.hook(lambda scene, i: (values(double_sided=1), ["read"]),
+        desc, keys = self.hook(lambda scene, i, assets=None: (values(double_sided=1), ["read"]),
                                [self.IDENTITY, self.IDENTITY, self.BIG])
         self.assertEqual(keys, [(0, 1.0), (0, 1.0), (0, 4.0)])
         self.assertEqual(desc.issues, [(10, "light: read"), (10, "light: " + L.DOUBLE_SIDED),

@@ -19,6 +19,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   from their units. The new import option **Light Strength** (default 1.43, calibrated so that Cycles matches V-Ray's
   brightness) scales every light. A scaled light is as bright as in V-Ray. Instances share one light. Mesh and dome lights are not imported yet (a line in
   the report).
+- Standard lights (Omni, Spot, Direct), photometric lights (every shape and distribution), VRaySun and VRayIES
+  arrive as Blender point, spot, area and sun lights, as bright as V-Ray 5.2 renders them (measured), with their
+  cones, colors, Kelvin temperatures, on / off and diffuse / specular switches. What Blender cannot hold is a line
+  in the report: decay other than inverse square, a Direct's beam, IES and web distributions (a wide spot, the file
+  named), the sky model's sun color. A Skylight and a VRaySky environment are not imported yet (a line each).
 
 ### Changed
 
