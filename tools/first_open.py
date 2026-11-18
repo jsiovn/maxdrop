@@ -5,7 +5,7 @@
 """First open of a scene: import it as a user would, look through its camera, answer the gate's questions.
 
     python tools/first_open.py --blender <blender.exe> --profile <scratch dir> --label "scene A" --out <folder>
-                               [--size 640] [--limit-minutes 30] <file.max | scene pack>
+                               [--size 640] [--pack-scene <name.max>] [--limit-minutes 30] <file.max | pack>
 
 Blender runs headless with --factory-startup and its own profile (--profile becomes BLENDER_USER_RESOURCES) and
 runs this file inside it: the dev package of this checkout imports the file with the operator's default options
@@ -102,7 +102,7 @@ def safe_label(label):
 
 # --- inside Blender ------------------------------------------------------------------------------------------------
 
-def inside(root, path, out_json, png, size):
+def inside(root, path, out_json, png, size, pack_scene=""):
     import bpy
     from mathutils import Vector
 
@@ -129,7 +129,7 @@ def inside(root, path, out_json, png, size):
     build_report.publish = keep
     start = time.perf_counter()
     try:
-        result = bpy.ops.import_scene.maxdrop(filepath=path)
+        result = bpy.ops.import_scene.maxdrop(filepath=path, **({"pack_scene": pack_scene} if pack_scene else {}))
     finally:
         build_report.publish = publish
     seconds = time.perf_counter() - start
@@ -330,7 +330,7 @@ def run(args):
     env = dict(os.environ, BLENDER_USER_RESOURCES=os.path.abspath(args.profile), PYTHONIOENCODING="utf-8")
     command = [args.blender, "--background", "--factory-startup", "--python-exit-code", "1",
                "--python", os.path.abspath(__file__), "--", "inside", ROOT, os.path.abspath(args.file), inner, png,
-               str(args.size)]
+               str(args.size), args.pack_scene]
     start = time.monotonic()
     outcome = "finished"
     with open(log, "wb") as sink:
@@ -363,6 +363,7 @@ def main(argv=None):
     parser.add_argument("--tag", default="blender", help="the Blender version in the result's file names")
     parser.add_argument("--out", required=True, help="folder for the JSON, the image and the log")
     parser.add_argument("--size", type=int, default=640, help="pixels along the long side of the image")
+    parser.add_argument("--pack-scene", default="", help="the .max to import from a pack that holds several")
     parser.add_argument("--limit-minutes", type=float, default=30.0)
     args = parser.parse_args(argv)
     found = run(args)
@@ -372,8 +373,8 @@ def main(argv=None):
 
 def _inside_main():
     argv = sys.argv[sys.argv.index("--") + 1:]
-    _mode, root, path, out_json, png, size = argv[:6]
-    found = inside(root, path, out_json, png, int(size))
+    _mode, root, path, out_json, png, size, pack_scene = argv[:7]
+    found = inside(root, path, out_json, png, int(size), pack_scene)
     with open(out_json, "w", encoding="utf-8") as f:
         json.dump(found, f, indent=1)
     print("FIRST OPEN DONE")
