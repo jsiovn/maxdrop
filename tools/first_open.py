@@ -81,6 +81,8 @@ def issue_kind(reason):
     parts = _NUMBER.sub("N", _FILE.sub("<file>", _QUOTED.sub("<name>", reason))).split(": ")
     if len(parts) > 1 and parts[0] not in TOPICS and "<name>" not in parts[0]:
         parts[0] = "<name>"
+    if parts[0] == NOT_LOADED and len(parts) > 1:  # its second part is the image's name, whatever its extension
+        parts[1] = "<file>" + (" (" + parts[1].split(" (", 1)[1] if " (" in parts[1] else "")
     keep = 3 if len(parts) > 2 and parts[1] == "not built" else 2
     return ": ".join(parts[:keep]).strip()
 

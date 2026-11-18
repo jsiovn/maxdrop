@@ -28,6 +28,10 @@ classids = importlib.import_module(_PKG + ".reader.classids")
 reader_scene = importlib.import_module(_PKG + ".reader.scene")
 chunks = importlib.import_module(_PKG + ".reader.chunks")
 convert_scene = importlib.import_module(_PKG + ".convert.scene")
+try:
+    import numpy
+except ImportError:  # the plain tests skip what needs numpy (mesh reading), as tests/unit/test_convert_scene.py does
+    numpy = None
 FIXTURES = os.path.join(ROOT, "tests", "fixtures")
 
 
@@ -108,6 +112,12 @@ class IssueKind(unittest.TestCase):
         self.assertEqual(first_open.issue_kind("map 12: graph cut"), "map N: graph cut")
         self.assertEqual(first_open.issue_kind("texture not loaded: wood.jpg (no image data)"),
                          "texture not loaded: <file> (no image data)")
+
+    def test_a_texture_not_loaded_hides_any_file_name(self):
+        self.assertEqual(first_open.issue_kind("texture not loaded: wall_diffuse.webp (no image data)"),
+                         "texture not loaded: <file> (no image data)")
+        self.assertEqual(first_open.issue_kind("texture not loaded: Wall Diffuse (cannot read)"),
+                         "texture not loaded: <file> (cannot read)")
 
     def test_not_built_keeps_its_reason(self):
         self.assertEqual(first_open.issue_kind("light: not built: VRayLight mesh lights are not imported yet"),
@@ -238,6 +248,7 @@ class Accounting(unittest.TestCase):
         self.assertFalse(self.checks(report(**MODIFIERS), missing_files=1)["textures"])
 
 
+@unittest.skipIf(numpy is None, "numpy is not installed: convert.scene.read needs it")
 class FileCensus(unittest.TestCase):
     """The census reads the file again; on the fixtures it agrees with the scene description MaxDrop builds from."""
 

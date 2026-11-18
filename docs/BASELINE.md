@@ -286,13 +286,15 @@ and a file with a camera sets the scene camera and the render size. Measured as 
 The v0.1.0 gate: drop each scene and look through its own camera. `tools/first_open.py` imports the file with the
 operator's default options (Units: Auto) in a fresh headless Blender, renders one frame through `scene.camera` with
 EEVEE at 640 pixels across, the world dark so that only the imported lights light it (and once more with those
-lights off: the brightness must come from them, not from glowing materials alone), and answers the gate's questions. Run on Blender 5.2.0 and 4.2.23 on 2026-11-19; both versions gave the same answers and counts.
+lights off: the brightness must come from them, not from glowing materials alone), and answers the gate's questions.
+Run on Blender 5.2.0 and 4.2.23 on 2026-11-19: both versions gave the same answers and counts; the luminances below are
+5.2's (4.2.23's within 0.002).
 
 | | Scene A | Scene B |
 |---|---|---|
 | No traceback | yes | yes |
 | No magenta, every texture found and loaded | yes: 0 % of the pixels; 118 textures found, 0 not found or not loaded | yes: 0 %; 132 found, 0 not found or not loaded |
-| Lit by its own lights (mean luminance; with its lights off) | yes: 0.35 (0.001) | yes: 0.44 (0.000) |
+| Lit by its own lights (mean luminance; with its lights off) | yes: 0.35 (0.001) | yes: 0.44 (0.0004) |
 | Closed: rays through each quarter of the frame hit geometry | yes: 98 %, 100 %, 94 %, 94 % | yes: 100 % in each |
 | Right scale: floor to ceiling in front of the camera | yes: 3.4 m | yes: 3.3 m |
 | The report accounts for every node, light, camera and modifier class | yes: 746 nodes, 289 lights, 1 camera | yes: 2,251 nodes, 25 lights, 1 camera |
@@ -306,8 +308,8 @@ lights off: the brightness must come from them, not from glowing materials alone
   windows by its VRaySun.
 - "Accounts for" is checked against the file read again: its node count, each light or camera node a Blender light or
   camera, a placeholder of its class or an issue that says it was not built, and each modifier class of a node
-  counted as applied, converted or not applied. What was simplified (wrappers and maps peeled, maps without a usable map below,
-  lights' and cameras' settings Blender has no place for) is listed by class in the report.
+  counted as applied, converted or not applied. What was simplified (wrappers and maps peeled, maps without a usable
+  map below, lights' and cameras' settings Blender has no place for) is listed by class in the report.
 - Scene A from a `.zip` and from a `.rar` of its folder: the same objects (747), materials (158) and images (127)
   as from the `.max` itself, and the same answers.
 
