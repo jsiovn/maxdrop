@@ -42,6 +42,8 @@ import os
 import stat
 import unicodedata
 
+from .. import pathnames
+
 SCENE, SIBLING, USER, ORIGINAL = 1, 2, 3, 4
 RULES = (SCENE, SIBLING, USER, ORIGINAL)
 RULE_NAMES = {SCENE: "the scene's folder", SIBLING: "maps or textures folders", USER: "texture search folders",
@@ -52,16 +54,6 @@ DEFAULT_MAX_ENTRIES = 200_000  # files and folders, per rule
 
 _NAME_SURROGATE = 0x20000000  # reparse tag bit of symbolic links, junctions and mount points
 _LOCAL_DRIVE_TYPES = frozenset((2, 3, 5, 6))  # GetDriveTypeW: removable, fixed, CD-ROM, RAM disk (4 = network)
-# the same set as intake/archive.py: Windows also reserves COM and LPT with a superscript digit
-_RESERVED = frozenset(["CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"]
-                      + ["COM%s" % d for d in "123456789¹²³"]
-                      + ["LPT%s" % d for d in "123456789¹²³"])
-
-
-def base_name(path):
-    """The last part of a stored path, with both separators 3ds Max may write. (reader/assets.py has the same:
-    convert/ takes strings and does not import the reader.)"""
-    return path.replace("\\", "/").rsplit("/", 1)[-1]
 
 
 def name_key(name):
@@ -99,7 +91,7 @@ def refused_reason(path):
     parts = path[3:].replace("\\", "/").split("/")
     if ".." in parts:
         return "climbs out with .."
-    if any(p.split(".", 1)[0].rstrip(" ").upper() in _RESERVED for p in parts):
+    if any(pathnames.is_reserved(p) for p in parts):
         return "device name"
     return None
 
@@ -282,7 +274,7 @@ class TextureIndex:
         return None
 
     def _find(self, path, resolved):
-        name = base_name(path) or base_name(resolved)
+        name = pathnames.base_name(path) or pathnames.base_name(resolved)
         if name_refused(name) is None:
             key = name_key(name)
             for rule in (SCENE, SIBLING, USER):
@@ -301,5 +293,5 @@ class TextureIndex:
         key = (path, resolved)
         if key not in self._cache:
             found = self._cache[key] = self._find(path, resolved)
-            self.report.add(base_name(path) or base_name(resolved), found)
+            self.report.add(pathnames.base_name(path) or pathnames.base_name(resolved), found)
         return self._cache[key]

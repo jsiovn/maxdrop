@@ -13,7 +13,7 @@ The listing only builds archive.py's plan. Extraction asks for the exact archive
 private work folder inside the staging folder; a non-zero exit, a timeout or a limit discards that folder. Then
 every file is checked (a regular file with one link, inside the work folder, no link or reparse point, a name the
 policy accepts, exactly the planned names) and moved flat into staging. archive.py registers these backends
-through install(); this file never imports archive.py, so both load on their own (the tests load them by path).
+through install(); this file never imports archive.py, so it loads on its own.
 """
 
 import dataclasses

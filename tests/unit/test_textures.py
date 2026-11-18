@@ -7,31 +7,25 @@ bounds, the report, and the stored paths that are never opened (network, device,
 
     python -I -m unittest discover tests
 """
-import importlib.util
+import importlib
 import os
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-def _load(name, path, package_dir=None):
-    if name in sys.modules:
-        return sys.modules[name]
-    kw = {"submodule_search_locations": [package_dir]} if package_dir else {}
-    spec = importlib.util.spec_from_file_location(name, path, **kw)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-_CONVERT = os.path.join(ROOT, "maxdrop", "convert")
-_load("maxdrop_convert", os.path.join(_CONVERT, "__init__.py"), _CONVERT)
-textures = _load("maxdrop_convert.textures", os.path.join(_CONVERT, "textures.py"))
+# the package the convert tests make (textures.py imports ..pathnames): maxdrop/__init__.py (bpy) never runs
+_PKG = "maxdrop_convert_test"
+if _PKG not in sys.modules:
+    _pkg = types.ModuleType(_PKG)
+    _pkg.__path__ = [os.path.join(ROOT, "maxdrop")]
+    sys.modules[_PKG] = _pkg
+textures = importlib.import_module(_PKG + ".convert.textures")
 TextureIndex, Found = textures.TextureIndex, textures.Found
 SCENE, SIBLING, USER, ORIGINAL = textures.SCENE, textures.SIBLING, textures.USER, textures.ORIGINAL
 WINDOWS = os.name == "nt"
@@ -413,22 +407,6 @@ class ReportTest(Tree):
         idx = self.index()
         self.assertIsNone(idx.find("", ""))
         self.assertEqual(idx.report.missing, ["(no file name)"])
-
-
-class CopiesTest(unittest.TestCase):
-    """convert/ does not import the reader or intake/, so these helpers are copies: they must stay equal."""
-
-    def test_base_name_matches_reader_assets(self):
-        reader = os.path.join(ROOT, "maxdrop", "reader")
-        _load("maxdrop_reader", os.path.join(reader, "__init__.py"), reader)
-        assets = _load("maxdrop_reader.assets", os.path.join(reader, "assets.py"))
-        for path in ("", "a.jpg", r"C:\x\a.jpg", "C:/x/a.jpg", r"\\host\share\a.jpg", "x/", r"mixed/x\a.jpg", "C:a"):
-            with self.subTest(path=path):
-                self.assertEqual(textures.base_name(path), assets.base_name(path))
-
-    def test_reserved_names_match_intake_archive(self):
-        archive = _load("maxdrop_intake_archive", os.path.join(ROOT, "maxdrop", "intake", "archive.py"))
-        self.assertEqual(textures._RESERVED, archive._RESERVED)
 
 
 if __name__ == "__main__":

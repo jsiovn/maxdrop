@@ -3,14 +3,16 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """maxdrop/reader, maxdrop/convert and maxdrop/intake run under plain Python: no module there imports bpy or
-mathutils, nor another module of the add-on outside these packages (those may import bpy), nor the add-on by
-its absolute name (that runs maxdrop/__init__.py)."""
+mathutils, nor another module of the add-on outside these packages (those may import bpy) except the shared
+bpy-free modules (maxdrop/pathnames.py), which are held to the same rules, nor the add-on by its absolute name
+(that runs maxdrop/__init__.py)."""
 import ast
 import os
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PACKAGES = ("reader", "convert", "intake")
+SHARED = ("pathnames",)  # top-level modules of the add-on these packages may import
 FORBIDDEN = {"bpy", "mathutils"}
 ADDON = "maxdrop"
 
@@ -22,6 +24,8 @@ def modules(root=ROOT):
             for name in files:
                 if name.endswith(".py"):
                     yield os.path.join(folder, name)
+    for name in SHARED:
+        yield os.path.join(root, ADDON, name + ".py")
 
 
 def _package_of(path, root):
@@ -73,7 +77,7 @@ def _refused(name, relative):
         return True
     if parts[0] != ADDON:
         return False
-    return not relative or len(parts) < 2 or parts[1] not in PACKAGES
+    return not relative or len(parts) < 2 or parts[1] not in PACKAGES + SHARED
 
 
 def forbidden_imports(path, root=ROOT):
@@ -93,7 +97,7 @@ def forbidden_imports(path, root=ROOT):
 class NoBpy(unittest.TestCase):
     def test_reader_convert_and_intake_never_import_bpy(self):
         paths = list(modules())
-        for seen in (("reader", "cfb.py"), ("intake", "archive.py")):  # the scan saw each package
+        for seen in (("reader", "cfb.py"), ("intake", "archive.py"), ("pathnames.py",)):  # the scan saw each part
             self.assertIn(os.path.join(ROOT, ADDON, *seen), paths)
         found = [hit for p in paths for hit in forbidden_imports(p)]
         self.assertEqual(found, [])
@@ -121,12 +125,23 @@ class NoBpy(unittest.TestCase):
                         "import maxdrop.reader.cfb\nfrom maxdrop.reader import cfb\n"
                         "importlib.import_module('..compat', 'maxdrop.reader')\n"
                         "importlib.import_module('..reader.cfb', __package__)\n"
-                        "importlib.import_module('.cfb', 'maxdrop.reader')\n")
+                        "importlib.import_module('.cfb', 'maxdrop.reader')\n"
+                        "from .. import pathnames\nfrom ..pathnames import base_name\nimport maxdrop.pathnames\n")
             found = forbidden_imports(path, tmp)
             self.assertEqual([hit.split(":")[-1] for hit in found],
                              ["1 maxdrop.compat", "2 maxdrop.ops", "3 maxdrop.update", "4 maxdrop",
                               "5 relative import above maxdrop.intake", "9 maxdrop.reader.cfb",
-                              "10 maxdrop.reader", "11 maxdrop.compat"], found)
+                              "10 maxdrop.reader", "16 maxdrop.pathnames", "11 maxdrop.compat"], found)
+
+    def test_a_shared_module_is_held_to_the_same_rules(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, ADDON))
+            path = os.path.join(tmp, ADDON, "pathnames.py")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("import bpy\nfrom . import compat\nfrom .. import x\nfrom .reader import cfb\n")
+            self.assertEqual([hit.split(":")[-1] for hit in forbidden_imports(path, tmp)],
+                             ["1 bpy", "2 maxdrop.compat", "3 relative import above maxdrop"])
 
 
 if __name__ == "__main__":

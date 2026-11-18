@@ -12,8 +12,9 @@ the files move into it, the marker last. Staging is removed on any failure, and 
 by a later unpack.
 
 Formats are recognised by their magic bytes. A backend lists the entries (names) and writes chosen entries into
-the staging folder (extract); the rules here are the same for every backend. Self-contained on purpose: the tests
-load this file by path, without the add-on package (which needs bpy).
+the staging folder (extract); the rules here are the same for every backend. Of the add-on it imports only
+external.py and the bpy-free pathnames.py: the tests load it under a package of their own, without the add-on's
+__init__ (which needs bpy).
 """
 
 import dataclasses
@@ -30,6 +31,8 @@ import unicodedata
 import zipfile
 import zlib
 from typing import Dict, List, Optional, Tuple
+
+from .. import pathnames
 
 KIND_ZIP = "zip"
 KIND_RAR = "rar"
@@ -57,9 +60,6 @@ MAX_NAME_LENGTH = 200
 # NTFS stores 255 UTF-16 units per name, ext4 and APFS 255 UTF-8 bytes: a name within 200 characters can still
 # exceed either.
 _NAME_UNITS_MAX = 255
-_RESERVED = frozenset(
-    ["CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"]
-    + ["%s%s" % (p, d) for p in ("COM", "LPT") for d in "123456789¹²³"])
 # Besides ":" (an NTFS stream), the characters Windows cannot store in a name: refused everywhere, so that a
 # flat write never fails half-way on one system and works on another.
 _FORBIDDEN = frozenset(':<>"|?*')
@@ -200,7 +200,7 @@ def refused_reason(base):
         return "control character"
     if any(c in _FORBIDDEN for c in base):
         return "character Windows cannot store"
-    if base.split(".", 1)[0].rstrip(" ").upper() in _RESERVED:
+    if pathnames.is_reserved(base):
         return "reserved device name"
     if base[-1] in ". ":
         return "ends in a dot or a space"
@@ -415,11 +415,9 @@ class ZipBackend:
 
 _BACKENDS = {KIND_ZIP: ZipBackend()}
 
-# .rar and .7z go through a program already on the computer (external.py), which registers itself here. Not when
-# this file is loaded by path without its package, as tests/test_intake.py does: then only .zip is read.
-if __package__:
-    from . import external as _external
-    _external.install(sys.modules[__name__])
+# .rar and .7z go through a program already on the computer (external.py), which registers itself here.
+from . import external as _external
+_external.install(sys.modules[__name__])
 
 
 def backend_for(path):

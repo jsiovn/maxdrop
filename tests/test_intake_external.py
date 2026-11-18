@@ -12,7 +12,7 @@ portable copy) for the 7-Zip cases.
 
     python -I -m unittest discover tests
 """
-import importlib.util
+import importlib
 import os
 import shutil
 import struct
@@ -20,6 +20,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 import unittest
 import zipfile
 
@@ -28,18 +29,15 @@ INTAKE = os.path.join(ROOT, "maxdrop", "intake")
 PACKS = os.path.join(ROOT, "tests", "fixtures", "packs")
 
 
-def _load(name, file):
-    spec = importlib.util.spec_from_file_location(name, os.path.join(INTAKE, file))
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-# By path: `import maxdrop` would pull bpy. A name of its own, so tests/test_intake.py keeps a zip-only archive.py.
-archive = _load("maxdrop_intake_archive_ext", "archive.py")
-external = _load("maxdrop_intake_external", "external.py")
-external.install(archive)
+# Under a package whose path is maxdrop/ (`import maxdrop` would pull bpy), not tests/test_intake.py's: that one
+# keeps a zip-only archive.py. archive.py installs the external backends of this package itself.
+_PKG = "maxdrop_intake_ext_test"
+if _PKG not in sys.modules:
+    _pkg = types.ModuleType(_PKG)
+    _pkg.__path__ = [os.path.join(ROOT, "maxdrop")]
+    sys.modules[_PKG] = _pkg
+archive = importlib.import_module(_PKG + ".intake.archive")
+external = importlib.import_module(_PKG + ".intake.external")
 
 PackError = archive.PackError
 Tool = external.Tool
@@ -1023,8 +1021,9 @@ class RegistrationTests(unittest.TestCase):
         the external backends itself."""
         code = ("import importlib.util, sys, types\n"
                 "pkg = types.ModuleType('mdpkg'); pkg.__path__ = [%r]; sys.modules['mdpkg'] = pkg\n"
-                "import mdpkg.archive as a\n"
-                "print(type(a._BACKENDS['rar']).__name__, type(a._BACKENDS['7z']).__name__)\n" % INTAKE)
+                "import mdpkg.intake.archive as a\n"
+                "print(type(a._BACKENDS['rar']).__name__, type(a._BACKENDS['7z']).__name__)\n"
+                % os.path.join(ROOT, "maxdrop"))
         out = subprocess.run([PY, "-I", "-c", code], capture_output=True, text=True, timeout=60)
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertEqual(out.stdout.split(), ["ExternalBackend", "ExternalBackend"])

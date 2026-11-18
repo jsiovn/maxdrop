@@ -34,6 +34,7 @@ repository. Lists are cut after MAX_LISTED entries. No bpy.
 import collections
 import os
 
+from .. import pathnames
 from ..reader import controllers
 from . import textures
 
@@ -251,7 +252,7 @@ def _in_pack(pack):
 
 
 def _key(path):
-    return textures.name_key(textures.base_name(path))
+    return textures.name_key(pathnames.base_name(path))
 
 
 def _plural(n, word, plural=None):

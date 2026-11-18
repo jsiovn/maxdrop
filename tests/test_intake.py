@@ -9,7 +9,7 @@ several disks) its bytes are patched.
     python -I -m unittest discover tests
 """
 import ast
-import importlib.util
+import importlib
 import json
 import os
 import shutil
@@ -18,6 +18,7 @@ import struct
 import sys
 import tempfile
 import time
+import types
 import unittest
 import zipfile
 import zlib
@@ -26,11 +27,16 @@ from unittest import mock
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INTAKE = os.path.join(ROOT, "maxdrop", "intake")
 
-# By path: `import maxdrop` would pull bpy.
-_spec = importlib.util.spec_from_file_location("maxdrop_intake_archive", os.path.join(INTAKE, "archive.py"))
-archive = importlib.util.module_from_spec(_spec)
-sys.modules[_spec.name] = archive
-_spec.loader.exec_module(archive)
+# Under a package of its own whose path is maxdrop/: `import maxdrop` would pull bpy, and archive.py imports
+# ..pathnames. Zip only: the .rar and .7z backends archive.py registers are tests/test_intake_external.py's.
+_PKG = "maxdrop_intake_zip_test"
+if _PKG not in sys.modules:
+    _pkg = types.ModuleType(_PKG)
+    _pkg.__path__ = [os.path.join(ROOT, "maxdrop")]
+    sys.modules[_PKG] = _pkg
+archive = importlib.import_module(_PKG + ".intake.archive")
+for _kind in (archive.KIND_RAR, archive.KIND_7Z):
+    archive._BACKENDS.pop(_kind, None)
 
 PackError = archive.PackError
 

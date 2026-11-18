@@ -9,11 +9,12 @@ reports in the oracle. No Blender.
     python -I -m unittest discover tests
 """
 import glob
-import importlib.util
+import importlib
 import json
 import os
 import struct
 import sys
+import types
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -23,25 +24,18 @@ ASSET_COUNTS = {"vray_maps": 7, "standard_physical": 1, "texmap_rules": 22, "cor
                 "corona_light": 3, "vray_texmaps": 12}  # every other fixture names no file
 
 
-def _load(name, path, package_dir=None):
-    if name in sys.modules:
-        return sys.modules[name]
-    kw = {"submodule_search_locations": [package_dir]} if package_dir else {}
-    spec = importlib.util.spec_from_file_location(name, path, **kw)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-_READER = os.path.join(ROOT, "maxdrop", "reader")
-_load("maxdrop_reader", os.path.join(_READER, "__init__.py"), _READER)
-cfb = _load("maxdrop_reader.cfb", os.path.join(_READER, "cfb.py"))
-classids = _load("maxdrop_reader.classids", os.path.join(_READER, "classids.py"))
-scene = _load("maxdrop_reader.scene", os.path.join(_READER, "scene.py"))
-pblock = _load("maxdrop_reader.pblock", os.path.join(_READER, "pblock.py"))
-materials = _load("maxdrop_reader.materials", os.path.join(_READER, "materials.py"))
-assets = _load("maxdrop_reader.assets", os.path.join(_READER, "assets.py"))
+_PKG = "maxdrop_convert_test"  # the package the convert tests make: maxdrop/__init__.py (bpy) never runs
+if _PKG not in sys.modules:
+    _pkg = types.ModuleType(_PKG)
+    _pkg.__path__ = [os.path.join(ROOT, "maxdrop")]
+    sys.modules[_PKG] = _pkg
+# assets.py imports ..pathnames: the reader needs its parent package
+cfb = importlib.import_module(_PKG + ".reader.cfb")
+classids = importlib.import_module(_PKG + ".reader.classids")
+scene = importlib.import_module(_PKG + ".reader.scene")
+pblock = importlib.import_module(_PKG + ".reader.pblock")
+materials = importlib.import_module(_PKG + ".reader.materials")
+assets = importlib.import_module(_PKG + ".reader.assets")
 AssetTable, AssetEntry = assets.AssetTable, assets.AssetEntry
 FILE_PARAMS = {"fileName": (classids.BITMAP_TEX, assets.BITMAP_FILE),
                "filename": (classids.CORONA_BITMAP, assets.CORONA_BITMAP_FILE),

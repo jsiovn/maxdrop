@@ -28,6 +28,7 @@ be looked up). No bpy.
 import collections
 import struct
 
+from .. import pathnames
 from . import cfb, classids, pblock
 
 STREAMS = (("FileAssetMetaData3", 3), ("FileAssetMetaData2", 2))
@@ -50,12 +51,7 @@ class AssetEntry(collections.namedtuple("AssetEntry", "guid type path resolved")
 
     @property
     def name(self):
-        return base_name(self.path) or base_name(self.resolved)
-
-
-def base_name(path):
-    """The last part of a stored path, with both separators 3ds Max may write."""
-    return path.replace("\\", "/").rsplit("/", 1)[-1]
+        return pathnames.base_name(self.path) or pathnames.base_name(self.resolved)
 
 
 class _Damaged(Exception):
