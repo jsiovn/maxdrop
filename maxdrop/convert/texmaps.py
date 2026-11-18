@@ -92,6 +92,7 @@ from ..reader import chunks, classids, pblock
 from ..reader import materials as reader_materials
 from ..reader.classdir import ClassId
 from . import colors, params
+from .params import finite as _finite
 
 ChunkError = chunks.ChunkError
 
@@ -363,9 +364,6 @@ def first_image(node):
             return n
         stack.extend(reversed(_children(n)))
     return None
-
-
-_finite = params.finite
 
 
 def _num(m, pid, default):

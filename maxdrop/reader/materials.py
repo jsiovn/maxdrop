@@ -36,7 +36,8 @@ Some parts keep settings in chunks of their own, read into values here (3ds Max 
     output_invert(scene, out.index)     # an Output (TexOutput) part's invert flag
     bitmap_gamma(scene, m)              # a Bitmap's gamma override as stored, None for automatic
 
-Unreadable chunks give the defaults (as 3ds Max writes a new map). No bpy.
+An unreadable flags chunk gives 3ds Max's defaults (both axes tiled, nothing mirrored, not inverted); a Placement's
+axis, source and channel are None without their chunk, for convert to default. No bpy.
 """
 import collections
 import struct
@@ -243,9 +244,11 @@ def placement(scene, index):
     """The Placement of the UVGen object index; a missing flags chunk means both axes tiled, nothing mirrored."""
     raw = _leaf_u32s(scene, index, (_UV_FLAGS, _UV_AXIS, _UV_MAPPING_TYPE, _UV_SOURCE, _UV_CHANNEL))
     flags = raw.get(_UV_FLAGS, _U_TILE | _V_TILE)
-    return Placement((bool(flags & _U_TILE), bool(flags & _V_TILE)), (bool(flags & _U_MIRROR), bool(flags & _V_MIRROR)),
-                     bool(flags & _REAL_WORLD), raw.get(_UV_AXIS), raw.get(_UV_MAPPING_TYPE, 0) != 0,
-                     raw.get(_UV_SOURCE), raw.get(_UV_CHANNEL))
+    return Placement(tile=(bool(flags & _U_TILE), bool(flags & _V_TILE)),
+                     mirror=(bool(flags & _U_MIRROR), bool(flags & _V_MIRROR)),
+                     real_world=bool(flags & _REAL_WORLD), axis=raw.get(_UV_AXIS),
+                     environment=raw.get(_UV_MAPPING_TYPE, 0) != 0, source=raw.get(_UV_SOURCE),
+                     channel=raw.get(_UV_CHANNEL))
 
 
 def output_invert(scene, index):
@@ -255,7 +258,7 @@ def output_invert(scene, index):
 
 def bitmap_gamma(scene, m):
     """The gamma override of Bitmap m as stored (any float, NaN included), None for automatic or when its
-    BitmapInfo cannot be read: the one in the object of its block 0."""
+    BitmapInfo cannot be read: read from the chunk of the first reference that holds a block with id 0."""
     for slot, block in sorted(m.blocks.items()):
         if block.block_id != 0 or slot not in m.refs:
             continue
