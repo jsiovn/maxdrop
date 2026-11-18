@@ -70,7 +70,7 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
   Bitmap without a file, a cut branch) is an issue on its wrapper naming its class, and never stands in as the
   wrapper's own color for it (3ds Max uses that color only without a map or with the map off): a Color Correction,
   Falloff, VRayDirt, Output, RGB Tint or VRayColor2Bump over it gives no graph and is not counted (the lost map
-  is), so the input keeps its own value.
+  is reported), so the input keeps its own value.
   A Mix or CoronaMix weighs it by its amount: a side that does not show is drawn as its color (exact), a side that
   fills the result gives no graph, any other weight (or a mask) peels the wrapper to its other side's map, or no
   graph; an RGB Multiply is always peeled that way. A lost mask leaves the mix amount, a lost Composite layer is
