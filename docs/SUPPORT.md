@@ -10,8 +10,9 @@ imported (see [Files](#files)), and several `.max` files chosen at once are impo
 How far to trust the list: MaxDrop's test files (`tests/fixtures/`, saved by 3ds Max 2020) are compared with what
 3ds Max itself reports for every node: world matrix, bounding box, vertex and face counts, parents, instances,
 layers and the hidden, frozen and renderable flags. Two commercial interior scenes (3ds Max 2015 and 2020) import
-without an error, and all their objects without modifiers get the world matrix and bounding box 3ds Max reports,
-the camera and the light aimed by a Look At controller in each included (see [BASELINE.md](BASELINE.md)). Materials are checked on the test files (VRayMtl, its wrappers, Multi/Sub-Object,
+without an error, and all their objects without modifiers get the world matrix and bounding box 3ds Max
+reports, the camera and the light aimed by a Look At controller in each included ([BASELINE.md](BASELINE.md) has
+the measurement of version 0.0.3: 99.7 % and 99.9 %, before Look At was evaluated). Materials are checked on the test files (VRayMtl, its wrappers, Multi/Sub-Object,
 Standard, Physical Material and the texture maps below): the parameters MaxDrop reads are compared with what 3ds Max
 reports, and the Blender material with those parameters, on Blender 4.2, 4.5 and 5.2. In the two commercial scenes,
 the conversion of 214 of 214 and 220 of 220 materials (100 %) gives what the same rules give from the
@@ -66,7 +67,7 @@ your computer.
 | | This version |
 |---|---|
 | Position, rotation, scale | **Imported** as 3ds Max computes them at frame 0: Position / Rotation / Scale controllers (Bezier, TCB, Euler XYZ and the other Tait-Bryan orders, Position XYZ, list controllers with their weights), negative scale, pivot offsets, the Look At controller of target cameras and lights (axis, flip, roll, the target as up node) and the LookAt Constraint (weighted targets, axes, an up node looked at or aligned with). The constraint's Keep Initial Offset and Set Orientation are left out (a line in the report). Another controller (other constraints, expressions, scripts…) counts as no transform for that node |
-| Look At targets | The rotation 3ds Max computes, fixed. With the import option **Keep Targets** an object with a Look At controller gets a Track To constraint aimed at its target's object instead, so it follows when the target moves; one with a roll or aimed along its Y axis keeps the fixed rotation (a line in the report: Track To has no roll and no downward up axis). Track To takes Blender's Z as up: with Forward and Up other than 3ds Max's (Y forward, Z up) a line in the report says so. LookAt Constraints stay fixed |
+| Look At targets | The rotation 3ds Max computes, fixed. With the import option **Keep Targets** an object with a Look At controller gets a Track To constraint aimed at its target's object instead, so it follows when the target moves; one with a roll or aimed along its Y axis keeps the fixed rotation (a line in the report: Track To has no roll and no downward up axis). Track To takes Blender's Z as up: with Forward and Up other than 3ds Max's (Y forward, Z up) a line in the report says so. A camera straight below its target, and a Look At with a scale along a turned axis, are not checked against 3ds Max with Track To (the fixed rotation is). LookAt Constraints stay fixed |
 | Parent and child | **Imported** through the whole chain, by the file's object references: objects with the same name stay apart |
 | Scene units | **Imported**: **Units: Auto** takes the system unit the file was saved with (inches, feet, miles, millimeters, centimeters, meters, kilometers, and a custom scale of those), so the scene arrives in meters. **Units** can name the unit instead, and **Scale** multiplies every length. A file that does not state its unit is imported at one meter per unit, times Scale, with a warning |
 | Layers | **Imported** as collections below a collection named after the file, nested like the layers. A hidden layer is excluded from the view layer, a frozen one is not selectable, one that does not render has rendering off |

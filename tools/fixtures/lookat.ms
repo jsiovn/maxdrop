@@ -16,7 +16,8 @@
 	local roll = makeTargetCamera "FixtureCamRoll" [-120,-80,60] [20,30,10]
 	roll.transform.controller.roll_angle = 30
 	local down = makeTargetCamera "FixtureCamDown" [0,100,200] [0,100,0]
-	local spot = targetSpot name:"FixtureSpot" pos:[-50,50,150] target:(Targetobject name:"FixtureSpot.Target" pos:[10,10,0])
+	local spot = targetSpot name:"FixtureSpot" pos:[-50,50,150] \
+		target:(Targetobject name:"FixtureSpot.Target" pos:[10,10,0])
 	local rig = Dummy name:"FixtureRig" pos:[60,0,0]
 	rotate rig (eulerAngles 0 0 40)
 	rig.scale = [1.5,1.5,1.5]

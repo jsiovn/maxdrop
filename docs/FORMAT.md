@@ -263,9 +263,11 @@ controller's, the scale is relative: world = own scale * the lengths of the pare
 `[1, 2, 3]` and turned gives rows of length 1, 2, 3) * frame * translation(`P`). FixtureConstrainedAxis (own scale
 stored `0.6667` under the Dummy scaled 1.5) has unit rows.
 
-A Look At or a constraint whose evaluation comes back to its own node (a cycle) or waits on more than 64 others
-is damaged (identity, an issue); a constraint outside a Position/Rotation/Scale's rotation slot is an unknown
-class.
+Look-ats that depend on one another in a cycle (3ds Max refuses such a loop) are damaged at the node where the
+evaluation comes back round, which depends on the order the nodes are asked for: that node gets identity and an
+issue, the others aim at it. So does the node at which a chain waits on more than 64 others. A constraint outside
+a Position/Rotation/Scale's rotation slot is an unknown class; a damaged constraint block uses the defaults of
+what it cannot read (an issue).
 
 ## Geometry
 

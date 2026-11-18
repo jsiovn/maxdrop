@@ -12,8 +12,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 - Target cameras, target lights and other objects aimed by a Look At controller or a LookAt Constraint point where
   they point in 3ds Max (they kept the rotation of no controller before); their targets arrive as empties, not
-  placeholders. The new import option **Keep Targets** aims them at their targets with a Track To constraint, so
-  they follow when a target moves.
+  placeholders. The new import option **Keep Targets** aims the ones with a Look At controller at their targets
+  with a Track To constraint, so they follow when a target moves (a roll or the Y axis keeps the fixed rotation).
 
 ### Changed
 

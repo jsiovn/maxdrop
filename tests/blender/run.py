@@ -270,8 +270,9 @@ def run_fixture(path, modules):
             continue
         primitive = tuple(o["base_class_id"]) in PRIMITIVE_CLASSES  # built from its parameters
         if o["base_verts"] is None and not primitive:
-            check(label + ": placeholder empty", ob.type == 'EMPTY' and ob.get("maxdrop_class") ==
-                  CLASS_NAMES.get(o["base_class_name"], o["base_class_name"]), "%s %r" % (ob.type, ob.get("maxdrop_class")))
+            want = CLASS_NAMES.get(o["base_class_name"], o["base_class_name"])
+            check(label + ": placeholder empty", ob.type == 'EMPTY' and ob.get("maxdrop_class") == want,
+                  "%s %r" % (ob.type, ob.get("maxdrop_class")))
             continue
         check(label + ": mesh object", ob.type == 'MESH', ob.type)
         if ob.type != 'MESH':

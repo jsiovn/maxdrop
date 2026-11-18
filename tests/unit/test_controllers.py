@@ -763,11 +763,11 @@ class TestLookAt(MatrixCase):
         self.assertEqual(other, a)
         second = b.look_at(a, pos=(0, 10, 0))
         t = b.transforms()
-        self.assertEqual(t.world(second), t.world(second))
         world = t.world(a)
         self.assertTrue(all(math.isfinite(v) for row in world for v in row))
-        self.assertEqual(len(t.issues), 1)
-        self.assertTrue(t.issues[0].reason.startswith(ct.DAMAGED))
+        self.assertEqual([(i.node, i.reason[:len(ct.DAMAGED)]) for i in t.issues], [(second, ct.DAMAGED)])
+        self.assertEqual(t.world(second), ct.IDENTITY)
+        self.assertIsNotNone(t.look_at(a))
 
     def test_long_chain(self):
         b = LookAtBuild()
@@ -867,6 +867,27 @@ class TestConstraint(MatrixCase):
         t = b.transforms()
         self.assertMatrix(t.world(n), ct.translation((-50, 50, 0)))
         self.assertEqual([i.reason for i in t.issues], [ct.CONSTRAINT_DEGENERATE])
+
+    def test_missing_or_damaged_parameters(self):
+        b = LookAtBuild()  # an empty block: no target, no other issue
+        block = b.add(node(C_PB2, leaf(0x0009, struct.pack("<IHIHI", 0x1B, 0, 0x55F03700, 0, 0))))
+        lc = b.add(node(C_LOOKAT_CONSTRAINT, refs34(block)))
+        n = b.node(b.prs(b.xyz(C_POSXYZ, (1, 2, 3)), lc, b.bscale()))
+        t = b.transforms()
+        self.assertMatrix(t.world(n), ct.translation((1, 2, 3)))
+        self.assertEqual([i.reason for i in t.issues], [ct.CONSTRAINT_EMPTY])
+        b = LookAtBuild()  # a damaged target axis entry (3 bytes of value): reported, its default used
+        target = b.target((0, 0, 20))
+        start = len(b.objects)
+        good = constraint_block(start + 1, [50.0], 1, None, (target,))
+        bad = pb2_entry(5, 1, 0x920020, struct.pack("<B", 0x40) + b"\x01\x00\x00")
+        raw = good[6:] + bad
+        b.add(struct.pack("<HI", C_PB2, (6 + len(raw)) | 0x80000000) + raw)
+        lc = b.add(node(C_LOOKAT_CONSTRAINT, refs34(start)))
+        n = b.node(b.prs(b.xyz(C_POSXYZ, (-50, 50, 0)), lc, b.bscale()))
+        t = b.transforms()
+        self.assertMatrix(t.world(n), MAX_CONSTRAINT[(0, False, 2, False, 2, 1)][:3] + ((-50, 50, 0, 1),), places=5)
+        self.assertEqual([i.reason.split(":")[0] for i in t.issues], [ct.CONSTRAINT_BLOCK])
 
     def test_not_under_a_prs(self):
         b = LookAtBuild()

@@ -76,6 +76,7 @@ CONSTRAINT_EMPTY = "LookAt Constraint without a target of any weight, no rotatio
 CONSTRAINT_OFFSET = "LookAt Constraint offset (Keep Initial Offset, Set Orientation) not applied"
 CONSTRAINT_DEGENERATE = "LookAt Constraint that cannot be aimed (on its target, up along the view), no rotation"
 CONSTRAINT_SETTING = "animated or damaged LookAt Constraint setting, its default used"
+CONSTRAINT_BLOCK = "damaged LookAt Constraint parameters, the defaults used where unread"
 
 
 class Issue(collections.namedtuple("Issue", "node controller superclass class_id reason")):
@@ -644,7 +645,8 @@ class _Eval:
         self.world = True
         parent = self.transforms.parent_world(self.node)
         inherited = scale_matrix([math.sqrt(_dot(row[:3], row[:3])) for row in parent[:3]])
-        return multiply(multiply(self.scale(refs.get(2)), inherited), _mat3(frame or IDENTITY[:3], position))
+        rotation = _mat3(frame, position) if frame is not None else translation(position)
+        return multiply(multiply(self.scale(refs.get(2)), inherited), rotation)
 
     def _setting(self, c, pb, pid, default):
         """An int or bool setting of constraint c's block; its default (and an issue) when animated or damaged."""
@@ -663,12 +665,14 @@ class _Eval:
             self.issue(c, CONSTRAINT_EMPTY)
             return None
         pb = pblock.ParamBlock2.from_chunk(self.scene.chunk(block), self.scene.refs(block), self.scene.refs(c),
-                                           len(self.scene))
+                                           len(self.scene), self.kind(c))
+        if pb.issues:  # a damaged entry reads as missing: its default is used
+            self.issue(c, "%s: %s" % (CONSTRAINT_BLOCK, pb.issues[0]))
         if self._setting(c, pb, _LC_RELATIVE, 0) or self._setting(c, pb, _LC_SET_ORIENTATION, 0):
             self.issue(c, CONSTRAINT_OFFSET)
-        weights = pb.value(_LC_WEIGHTS)
+        weights = pb.value(_LC_WEIGHTS, [])
         weights = weights if isinstance(weights, list) else [weights]
-        targets = pb.value(_LC_TARGETS)
+        targets = pb.value(_LC_TARGETS, [])
         targets = targets if isinstance(targets, list) else [targets]
         total, point = 0.0, [0.0, 0.0, 0.0]
         for k, ref in enumerate(targets):

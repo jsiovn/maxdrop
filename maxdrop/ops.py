@@ -635,7 +635,6 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
         names = {node.index: node.name or "object %d" % node.index for node in desc.nodes}
         rep.issues.extend((names[i], "Keep Targets: no Track To, the rotation stays fixed: %s" % reason)
                           for i, reason in kept)
-        aimed = self.keep_targets and any(n.look_at is not None and n.look_at.track for n in desc.nodes)
         if materials:
             conv_stats, tex_stats, lookup, swatches = counts or (None, None, None, None)
             made = sum(m is not None for m in built.materials.values())
@@ -648,7 +647,9 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
         if axis != Matrix.Identity(4):
             for ob in built.roots():
                 ob.matrix_basis = axis @ ob.matrix_basis
-            if aimed:
+            # the target's own Z (use_target_z) turns with the scene; the world's does not
+            if any(c.name == build_objects.TRACK_TO_NAME and not c.use_target_z
+                   for ob in built.objects.values() for c in ob.constraints):
                 rep.issues.append(("Keep Targets", "Track To keeps Blender's Z up, not the converted axes' up"))
         lines = [('WARNING', "%s %s" % (name, note))] if note else []
         lines.append(build_report.publish(rep))
