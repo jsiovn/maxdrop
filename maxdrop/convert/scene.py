@@ -45,8 +45,13 @@ not built (Slice, a hemisphere) is a placeholder (an issue).
 A node becomes an EMPTY placeholder when its base object is not an Editable Mesh, Editable Poly, a primitive built
 here or a shape read here, when it has no object, or when the reader refuses its geometry or its record; placeholders
 counts them by the class name of the file's class directory ("" when there is none). A Dummy helper (a group head is
-one) is an EMPTY too, but that is its conversion, not a placeholder. A group head keeps its members as children: that
-is how 3ds Max stores a group.
+one) and a Target (the node a target camera or light aims at) are EMPTYs too, but that is their conversion, not a
+placeholder. A group head keeps its members as children: that is how 3ds Max stores a group.
+
+Look At: the matrices of a node aimed by a Look At controller or a LookAt Constraint are the ones 3ds Max computes
+at frame 0 (reader.controllers), baked. A node with a Look At controller aimed at a node also gets node.look_at, a
+LookAtDescription: the Track To constraint that keeps it aimed in Blender (built only on request, build.objects),
+or why none can (a roll, the Y axis: Track To has no roll and no downward up axis).
 Modifiers are listed, not evaluated: the base mesh is built, but for an Extrude on a shape and UVW Maps, and the
 modifiers converted to Blender modifiers.
 
@@ -110,23 +115,49 @@ class NodeDescription:
     top first, applied those evaluated into its mesh (an Extrude); layer the layer's object index (None without
     one); hidden, frozen, renderable, group_head and group_member the node's own flags; sheared whether matrix has
     shear (see sheared()); converted the modifiers that become Blender modifiers (convert.modifiers
-    ModifierDescriptions, bottom first)."""
+    ModifierDescriptions, bottom first); look_at the LookAtDescription of a Look At controller aimed at a node, else
+    None."""
     __slots__ = ("index", "name", "parent", "matrix", "world", "kind", "mesh", "class_name", "mirrored",
                  "modifiers", "layer", "hidden", "frozen", "renderable", "group_head", "group_member", "sheared",
-                 "curve", "applied", "converted")
+                 "curve", "applied", "converted", "look_at")
 
     def __init__(self, index, name, parent, matrix, world, kind, mesh, class_name, mirrored, modifiers, layer=None,
                  hidden=False, frozen=False, renderable=True, group_head=False, group_member=False, sheared=False,
-                 curve=None, applied=(), converted=()):
+                 curve=None, applied=(), converted=(), look_at=None):
         self.index, self.name, self.parent, self.matrix, self.world = index, name, parent, matrix, world
         self.kind, self.mesh, self.class_name, self.mirrored, self.modifiers = kind, mesh, class_name, mirrored, \
             modifiers
         self.layer, self.hidden, self.frozen, self.renderable = layer, hidden, frozen, renderable
         self.group_head, self.group_member, self.sheared = group_head, group_member, sheared
-        self.curve, self.applied, self.converted = curve, applied, converted
+        self.curve, self.applied, self.converted, self.look_at = curve, applied, converted, look_at
 
     def __repr__(self):
         return "NodeDescription(%d, %r, %s, parent=%r)" % (self.index, self.name, self.kind, self.parent)
+
+
+class LookAtDescription(collections.namedtuple("LookAtDescription", "target track up target_z reason")):
+    """How a node's Look At controller aims it, as a Blender Track To: target the target node's object index; track
+    and up Blender's track_axis and up_axis, target_z its use_target_z (the target's Z is up). track and up are None
+    when no Track To gives 3ds Max's frame, and reason says why."""
+    __slots__ = ()
+
+
+# Look At axis -> Track To axis that looks (unflipped: -axis looks at the target). The up axis is Y for X and Z;
+# for Y it is -Z, which Track To cannot take.
+_TRACK = {(0, False): "TRACK_NEGATIVE_X", (0, True): "TRACK_X", (2, False): "TRACK_NEGATIVE_Z", (2, True): "TRACK_Z"}
+NO_TRACK_ROLL = "a roll, which Track To cannot hold"
+NO_TRACK_AXIS = "aimed along Y with -Z up, which Track To cannot hold"
+
+
+def look_at_description(look):
+    """The LookAtDescription of a reader.controllers.LookAt aimed at a node; None without a target node."""
+    if look is None or look.target is None:
+        return None
+    if look.axis == 1:
+        return LookAtDescription(look.target, None, None, look.target_up, NO_TRACK_AXIS)
+    if look.roll:
+        return LookAtDescription(look.target, None, None, look.target_up, NO_TRACK_ROLL)
+    return LookAtDescription(look.target, _TRACK[(look.axis, look.flip)], "UP_Y", look.target_up, None)
 
 
 class MeshDescription:
@@ -483,14 +514,17 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True):
                 remaining[base] -= 1
                 if not remaining[base]:
                     del data_of[base]
-        if kind == EMPTY and not (base is not None and scene.is_a(base, classids.SC_HELPER, classids.DUMMY)):
+        if kind == EMPTY and not (base is not None and (scene.is_a(base, classids.SC_HELPER, classids.DUMMY) or
+                                                        scene.is_a(base, classids.SC_GEOMOBJECT,
+                                                                   classids.TARGET_OBJECT))):
             desc.placeholders[class_name] += 1
         flags = {} if node is None else dict(hidden=node.hidden, frozen=node.frozen, renderable=node.renderable,
                                              group_head=node.group_head, group_member=node.group_member)
         desc.nodes.append(NodeDescription(i, name, scene.parent(i), blender_matrix(local, meters),
                                           blender_matrix(world, meters), kind, key, class_name,
                                           determinant3(world) < 0, modifiers, layer, sheared=sheared(local),
-                                          curve=curve, applied=applied, converted=converted, **flags))
+                                          curve=curve, applied=applied, converted=converted,
+                                          look_at=look_at_description(t.look_at(i)), **flags))
     desc.issues.extend((issue.node, "transform: %s" % issue.reason) for issue in t.issues)
     desc.unknown_controllers.update(
         _class_name(scene, issue.controller) if issue.controller is not None else ""

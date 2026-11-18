@@ -35,6 +35,12 @@ Curve, which gets no material.
 With collections (build.collections.make), each object goes into its layer's collection, else into collection.
 A node hidden in 3ds Max gets hide_viewport and is hidden in view_layer (hide_set), one that does not render
 hide_render, a frozen one hide_select.
+
+    kept = track_targets(desc, built)   # "Keep Targets": a Track To to each look-at's target, [(node, reason)]
+
+A node aimed by a Look At controller is built with the rotation 3ds Max computed (convert.scene); track_targets
+adds a Track To constraint (named TRACK_TO_NAME) aiming it at its target's object instead, so it follows when the
+target moves. The ones no Track To can aim as 3ds Max does keep the baked rotation and are returned with the reason.
 """
 import bpy
 from mathutils import Matrix
@@ -46,6 +52,7 @@ MAX_UV_LAYERS = 8
 CLASS_PROPERTY = "maxdrop_class"
 HELPER_PROPERTY = "maxdrop_helper"
 SHEAR_HELPER = "MaxDrop Shear"
+TRACK_TO_NAME = "MaxDrop Target"
 
 
 class Built:
@@ -209,3 +216,26 @@ def build(desc, collection, collections=None, view_layer=None, slots=None, mater
         except RuntimeError:  # not in that view layer (collection not linked there): hide_viewport still holds
             pass
     return built
+
+
+def track_targets(desc, built):
+    """A Track To constraint on the object of every node with a look_at, aiming at its target's object; the
+    [(node index, reason)] of those left with their baked rotation."""
+    kept = []
+    for node in desc.nodes:
+        look = node.look_at
+        if look is None:
+            continue
+        ob, target = built.objects.get(node.index), built.objects.get(look.target)
+        if ob is None or target is None or target is ob:
+            continue
+        if look.track is None:
+            kept.append((node.index, look.reason))
+            continue
+        c = ob.constraints.new('TRACK_TO')
+        c.name = TRACK_TO_NAME
+        c.target = target
+        c.track_axis = look.track
+        c.up_axis = look.up
+        c.use_target_z = look.target_z
+    return kept

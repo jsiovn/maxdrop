@@ -80,14 +80,16 @@ Reference slots of a node, checked on every node of every fixture (`test_scene.p
 
 Flags in `0x0960` seen so far: `0x800` on most nodes, `0` on the three instances and the copy in instances (the
 source has `0x800`) and on the two references in modifier_pivot, `0x100800` on the hidden node of layers_flags,
-`0x40` on its group head and `0x900` on the two group members (`test_scene.py`, `test_flags_and_pair_heads`,
-which also checks the first `0x2035` values above). Decoded from layers_flags:
+`0x40` on its group head, `0x900` on the two group members and `0x4800` on the six nodes of lookat a Look At
+controller aims at (`test_scene.py`, `test_flags_and_pair_heads`, which also checks the first `0x2035` values
+above). Decoded from layers_flags and lookat:
 
 | Bit | Meaning |
 |---|---|
 | `0x100000` | hidden (FixtureHidden; that node also has an empty `0x0975` chunk) |
 | `0x40` | group head (FixtureGroup, a Dummy whose children are the members) |
 | `0x100` | group member (FixtureGroupA and FixtureGroupB) |
+| `0x4000` | the target of a Look At controller (the five Target objects and FixtureAim; not on a node only a LookAt Constraint aims at). Not read: the controller names its target |
 
 `0x800` is not decoded. Renderable is not in `0x0960` (FixtureNoRender has `0x800`) but in `0x099C`, a `u32` on
 every node of every fixture: `0x0F00D600` on each node, `0x0F005600` on FixtureNoRender, so bit `0x8000` is
@@ -175,7 +177,8 @@ names, order and flags of every fixture's layers against the oracle).
 
 - Matrices are in Max's row-vector convention: a point times the matrix, row 4 = translation, `A * B` applies `A`
   first; this is the oracle's 12-float layout.
-- Every fixture node's controller is a Position/Rotation/Scale `(0x2005, 0)` with reference slots 0 = Position XYZ
+- Every fixture node's controller is a Position/Rotation/Scale `(0x2005, 0)` (but lookat's, see
+  [Look At](#look-at)) with reference slots 0 = Position XYZ
   `(0x118F7E02, 0xFFEE238A)`, 1 = Euler XYZ `(0x2012, 0)`, 2 = Bezier Scale `(0x2010, 0)`. Position XYZ and Euler
   XYZ reference three Bezier Float `(0x2007, 0)` in slots 0, 1, 2 (x, y, z).
 - A Bezier Float's value is an `f32` in `0x2501`, inside a `0x7127` container in every fixture.
@@ -192,6 +195,77 @@ names, order and flags of every fixture's layers against the oracle).
   modifier_pivot's FixtureBent (pivot alone turned +30° about Z) stores `[0, 0, 0.258819, 0.965926]`, a -30° turn
   read as row 1 = `[0.866025, -0.5, 0]` (`controllers.quat_matrix`), and offset * world is then the identity
   rotation of the oracle's `object_transform`.
+
+## Look At
+
+lookat (`tools/fixtures/lookat.ms`): target cameras (one rolled 30°, one straight above its target, one under a
+Dummy turned 40° and scaled 1.5), a target spot, boxes with a Look At controller (X axis flipped with the target as
+up node and a scale of its own; Y axis rolled 15°) and boxes with a LookAt Constraint (two weighted targets and the
+Y axis flipped with a scale of its own; an up node looked at; an up node's X axis aligned with, under the Dummy).
+Every node's world and object transform equals the oracle within 1e-4 (`test_controllers.py`). The frames were
+found on scratch files saved by 3ds Max 2020 (one setting changed per file, compared with `tools/maxdiff.py`, and
+`node.transform` read in MAXScript); `look_frame` and `constraint_frame` are tested against those numbers.
+
+**Look At controller** `(0x2006, 0)`, superclass `0x9008`, a target camera's or light's transform controller (and a
+node's whose controller is set to `lookat()`):
+
+| Reference slot | Content |
+|---|---|
+| 0 | the target node (empty: none) |
+| 1 | the position controller (Position XYZ) |
+| 2 | the roll: a Bezier Float, radians (FixtureCamRoll: `0.523599`) |
+| 3 | the scale controller (Bezier Scale) |
+
+| Chunk | Content |
+|---|---|
+| `0x0100` | `u32` axis: 0 X, 1 Y, 2 Z (2 on every camera and light) |
+| `0x0110` | present: flip |
+| `0x0201` | `u8` 1: the target's Z axis is the up direction (FixtureLooker) |
+
+The world position `P` is the position controller's value times the parent's world matrix; the parent's rotation and
+scale do not reach the frame (FixtureCamChild's rows have unit length under a Dummy scaled 1.5, its own scale
+stored 1). With `n` the unit vector from `P` to the target's world position (the world origin without a target):
+`z = -n`, `x = normalize(up x z)`, `y = z x x`, `up` = world Z or the target's world Z axis. Then flip turns the
+frame half round `y` (`x, z -> -x, -z`), roll turns it about `z` (`x' = cos r x + sin r y`, `y' = -sin r x +
+cos r y`), and the axis picks the rows: Z `(x, y, z)`, X `(z, y, -x)`, Y `(x, z, -y)`. So `-Z` (or `-X`, `-Y`)
+looks at the target, `+` when flipped. Degenerate, as 3ds Max computes it: `z` along `up` gives `x = +X`
+(FixtureCamDown, straight above its target, has the identity rotation); on the target `z = +X`. World matrix =
+scale (along its axis) * frame * translation(`P`); the local matrix is that times the parent's inverse.
+
+**LookAt Constraint** `(0x2021, 0)`, superclass `0x900C`, in a Position/Rotation/Scale's rotation slot. Its one
+reference is a ParamBlock2:
+
+| Id | Parameter (MAXScript) | Type |
+|---|---|---|
+| 0 | `weight` | float table, one per target |
+| 1 | targets (`appendTarget`) | node table, no value: the block's reference slots |
+| 2 | `relative` (Keep Initial Offset) | bool |
+| 3 | `lookat_vector_length` | float (display) |
+| 4 | `set_orientation` | bool |
+| 5 | `target_axis` (0 X, 1 Y, 2 Z) | int |
+| 6 | `target_axisFlip` | bool |
+| 7 | `upnode_axis` | int |
+| 8 | `upnode_world` | bool |
+| 9 | `pickUpNode` | node, no value: the next reference slot |
+| 10 | `StoUP_axis` (the source's up axis) | int |
+| 11 | `StoUP_axisFlip` | bool |
+| 12 | `viewline_length_abs` | bool (display) |
+| 13 | `upnode_ctrl`: 0 look at, 1 axis alignment | int |
+
+The ids were matched by the values of the three constraints and by saves that set `relative` or `set_orientation`
+alone. The constraint's own chunks `0x1001`-`0x1004` (4 x `f32`) and `0x1005` (`u32`) are not decoded (the offsets of
+`relative` and `set_orientation`, presumably: an issue when either is on). The target point is the weighted average
+of the targets' world positions. Row `target_axis` = `n` (`-n` flipped). The up vector: axis alignment = row
+`upnode_axis` of the up node's world matrix (the world's: that unit axis); look at = from `P` to the up node's world
+position (the world's: the origin). Row `StoUP_axis` = the up vector without its part along `n`, normalized
+(negated when flipped); the third row completes a right-handed frame (`row[t] = row[t+1] x row[t+2]`). Unlike the
+controller's, the scale is relative: world = own scale * the lengths of the parent's rows (a probe: a Dummy scaled
+`[1, 2, 3]` and turned gives rows of length 1, 2, 3) * frame * translation(`P`). FixtureConstrainedAxis (own scale
+stored `0.6667` under the Dummy scaled 1.5) has unit rows.
+
+A Look At or a constraint whose evaluation comes back to its own node (a cycle) or waits on more than 64 others
+is damaged (identity, an issue); a constraint outside a Position/Rotation/Scale's rotation slot is an unknown
+class.
 
 ## Geometry
 
@@ -843,7 +917,8 @@ Not shown by any fixture yet, so not stated above:
   - Position List `(0x4B4B1002, 0)` and Rotation List `(0x4B4B1003, 0)`: `0x1010` = entry count, `0x1020` = active
     entry, entries at reference slots 0..n-1, a ParamBlock2 at a later slot whose reference slots 0..n-1 are the
     weights (Bezier Float); only weights 1 and 0 occur, so how entries combine is not pinned down;
-  - Look At `(0x2006, 0)` on the camera nodes: not evaluated (identity and an issue) until M4.
+  - Look At `(0x2006, 0)` on a camera and a light of each scene: evaluated as [Look At](#look-at) says, their
+    world matrices equal the oracle's (all 662 nodes without modifiers of scene A, all 2,042 of scene B).
 - Controllers taken from the 3ds Max SDK without any file showing them: Linear Position, Rotation and Scale
   (`0x2002`, `0x2003`, `0x2004`), Bezier Position and Rotation (`0x2008`, `0x2009`), TCB Position, Rotation and
   Scale (`0x442312`, `0x442313`, `0x442315`), their value chunks (`0x2503` point, `0x2504` quaternion, `0x2505`

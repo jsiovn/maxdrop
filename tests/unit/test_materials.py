@@ -27,8 +27,8 @@ TOLERANCE = 1e-5  # relative above 1: the oracle prints 6 significant digits
 # that compares nothing. A fixture whose graph is one Standard material compares 125.
 FLOORS = {"box_poly_standard": 120, "corona_layered": 630, "corona_legacy": 370, "corona_light": 180,
           "corona_maps": 950, "corona_physical": 500, "editable_mesh": 380, "extrude": 120, "gamma_swatches": 540,
-          "hierarchy": 120, "instances": 120, "layers_flags": 120, "modifier_pivot": 120, "multi_uv": 120,
-          "primitives": 120, "shapes": 120, "stack_basic": 120, "stack_convert": 120, "standard_physical": 290,
+          "hierarchy": 120, "instances": 120, "layers_flags": 120, "lookat": 120, "modifier_pivot": 120,
+          "multi_uv": 120, "primitives": 120, "shapes": 120, "stack_basic": 120, "stack_convert": 120, "standard_physical": 290,
           "texmap_rules": 1570, "units_cm": 120, "units_in": 120, "units_mm": 120, "uvwmap": 120,
           "uvwmap_oblique": 120, "vray_basic": 190, "vray_maps": 630, "vray_texmaps": 2900, "vray_wrappers": 2000}
 

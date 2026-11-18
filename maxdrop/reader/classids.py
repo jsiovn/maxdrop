@@ -54,6 +54,7 @@ PARAM_BLOCK2 = ClassId(0x00000082, 0)
 EDITABLE_MESH = ClassId(0xE44F10B3, 0)
 EDITABLE_POLY = ClassId(0x1BF8338D, 0x192F6098)
 DUMMY = ClassId(0x00876234, 0)
+TARGET_OBJECT = ClassId(0x00001020, 0)  # the node a Look At controller aims at (a target camera's, light's)
 
 # Primitives (convert/primitives.py).
 BOX = ClassId(0x00000010, 0)
@@ -130,6 +131,8 @@ POSITION_LIST = ClassId(0x4B4B1002, 0)
 ROTATION_LIST = ClassId(0x4B4B1003, 0)
 SCALE_LIST = ClassId(0x4B4B1004, 0)
 MASTER_POINT = ClassId(0x0D9C20FF, 0)
+LOOK_AT = ClassId(0x00002006, 0)  # a Matrix3 controller: target cameras and lights
+LOOKAT_CONSTRAINT = ClassId(0x00002021, 0)  # a rotation controller
 
 CLASSES = {
     (SC_BASENODE, NODE): "Node",
@@ -143,6 +146,7 @@ CLASSES = {
     (SC_GEOMOBJECT, EDITABLE_MESH): "Editable Mesh",
     (SC_GEOMOBJECT, EDITABLE_POLY): "Editable Poly",
     (SC_HELPER, DUMMY): "Dummy",
+    (SC_GEOMOBJECT, TARGET_OBJECT): "Target",
     (SC_GEOMOBJECT, BOX): "Box",
     (SC_GEOMOBJECT, SPHERE): "Sphere",
     (SC_GEOMOBJECT, CYLINDER): "Cylinder",
@@ -209,6 +213,8 @@ CLASSES = {
     (SC_CTRL_ROTATION, ROTATION_LIST): "Rotation List",
     (SC_CTRL_SCALE, SCALE_LIST): "Scale List",
     (SC_CTRL_MASTERPOINT, MASTER_POINT): "Master Point Controller",
+    (SC_CTRL_MATRIX3, LOOK_AT): "Look At",
+    (SC_CTRL_ROTATION, LOOKAT_CONSTRAINT): "LookAt Constraint",
 }
 
 

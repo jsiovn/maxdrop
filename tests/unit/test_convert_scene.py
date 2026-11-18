@@ -59,6 +59,7 @@ UV_LAYERS = {
     "hierarchy": [],
     "instances": ["UVMap"],
     "layers_flags": [],
+    "lookat": [],  # boxes without Generate Mapping Coords
     "modifier_pivot": ["UVMap"],  # FixtureBent's UVW Map writes channel 1 (applied, the Bend above it is not)
     "multi_uv": ["UVMap", "UVChannel_2", "UVChannel_3"],
     "primitives": collections.defaultdict(lambda: ["UVMap"], {"FixtureBoxNoMap": []}),  # Generate Mapping Coords
@@ -108,6 +109,9 @@ FLAT_MESHES = {"FixtureGeoOcta"}
 PRIMITIVE_CLASSES = {("0x00000010", "0x00000000"), ("0x00000011", "0x00000000"), ("0x00000012", "0x00000000"),
                      ("0x00000020", "0x00000000"), ("0xa86c23dd", "0x00000000"), ("0x00007b21", "0x00000000"),
                      ("0x00000000", "0x00007f9e"), ("0x081f1dfc", "0x77566f65"), ("0x76bf318a", "0x4bf37b10")}
+# placeholders the fixtures hold: lookat's target cameras (their class directory names the class "Target", as it
+# does the Target objects they aim at, which are converted), its target spot and its Point helper
+PLACEHOLDERS = {"lookat": {"Target": 4, "Target Spot": 1, "Point": 1}}
 # the issues the fixtures are made to raise
 ISSUES = {"uvwmap": ["uvw map: a UVW Map above Bend is not evaluated",
                      "uvw map: shrink-wrap mapping is not evaluated: the stored channel stays"],
@@ -454,6 +458,40 @@ def _run_py_table(name):
     raise AssertionError("no %s in tests/blender/run.py" % name)
 
 
+class LookAt(unittest.TestCase):
+    def test_track_to_of_each_look_at(self):
+        look_at = importlib.import_module(_PKG + ".reader.controllers").LookAt
+        describe = conv.look_at_description
+        self.assertIsNone(describe(None))
+        self.assertIsNone(describe(look_at(None, 2, False, 0.0, False)))  # aims at the origin: nothing to track
+        self.assertEqual(describe(look_at(7, 2, False, 0.0, False)),
+                         conv.LookAtDescription(7, "TRACK_NEGATIVE_Z", "UP_Y", False, None))
+        self.assertEqual(describe(look_at(7, 2, True, 0.0, True)),
+                         conv.LookAtDescription(7, "TRACK_Z", "UP_Y", True, None))
+        self.assertEqual(describe(look_at(7, 0, False, 0.0, False)).track, "TRACK_NEGATIVE_X")
+        self.assertEqual(describe(look_at(7, 0, True, 0.0, False)).track, "TRACK_X")
+        for look, reason in ((look_at(7, 1, False, 0.0, False), conv.NO_TRACK_AXIS),
+                             (look_at(7, 1, True, 0.0, False), conv.NO_TRACK_AXIS),
+                             (look_at(7, 2, False, 0.1, False), conv.NO_TRACK_ROLL)):
+            self.assertEqual(describe(look), conv.LookAtDescription(7, None, None, False, reason))
+
+    def test_lookat_fixture(self):
+        desc = conv.read(os.path.join(ROOT, "tests", "fixtures", "lookat.max"))
+        index = {n.index: n.name for n in desc.nodes}
+        looks = {n.name: (index[n.look_at.target], n.look_at.track, n.look_at.up, n.look_at.target_z,
+                          n.look_at.reason) for n in desc.nodes if n.look_at is not None}
+        self.assertEqual(looks, {  # the boxes with a LookAt Constraint have none
+            "FixtureCam": ("FixtureCam.Target", "TRACK_NEGATIVE_Z", "UP_Y", False, None),
+            "FixtureCamRoll": ("FixtureCamRoll.Target", None, None, False, conv.NO_TRACK_ROLL),
+            "FixtureCamDown": ("FixtureCamDown.Target", "TRACK_NEGATIVE_Z", "UP_Y", False, None),
+            "FixtureSpot": ("FixtureSpot.Target", "TRACK_NEGATIVE_Z", "UP_Y", False, None),
+            "FixtureCamChild": ("FixtureCamChild.Target", "TRACK_NEGATIVE_Z", "UP_Y", False, None),
+            "FixtureLooker": ("FixtureAim", "TRACK_X", "UP_Y", True, None),
+            "FixtureLookerY": ("FixtureAim", None, None, False, conv.NO_TRACK_AXIS)})
+        targets = [n for n in desc.nodes if n.name.endswith(".Target")]
+        self.assertEqual([(n.kind, n.class_name) for n in targets], [(conv.EMPTY, "Target")] * 5)
+
+
 class FixtureTables(unittest.TestCase):
     """Every committed fixture has an entry in the per-fixture tables, here and in tests/blender/run.py, so a new
     fixture fails the plain suite instead of only the Blender run."""
@@ -623,7 +661,8 @@ class Fixtures(unittest.TestCase):
 
     def test_placeholders(self):
         for name, desc, _o in self.cases:
-            self.assertEqual(dict(desc.placeholders), {}, name)  # the group head is a Dummy: converted, an empty
+            # the group head is a Dummy: converted, an empty
+            self.assertEqual(dict(desc.placeholders), PLACEHOLDERS.get(name, {}), name)
             self.assertEqual(sorted(r for _i, r in desc.issues), ISSUES.get(name, []), name)
             self.assertEqual(dict(desc.unknown_controllers), {}, name)
         desc = dict((n, d) for n, d, _o in self.cases)["layers_flags"]

@@ -42,6 +42,8 @@
 # materials and says so in the import report; materials the builder could not make are not counted as made.
 # Modified for MaxDrop, 2026-11-18 (jsiovn). The popup names the exact folder a pack unpacks into
 # (archive.preview), also after the Scene field names another scene of the pack.
+# Modified for MaxDrop, 2026-11-18 (jsiovn). New option Keep Targets: objects aimed by a Look At controller get a
+# Track To constraint to their target; the ones it cannot aim, and an axis conversion, are named in the report.
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -438,6 +440,13 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
         items=MODIFIERS,
         default='KEEP',
     )
+    keep_targets: BoolProperty(
+        name="Keep Targets",
+        description="Aim target cameras, target lights and other objects with a Look At controller at their "
+        "target with a Track To constraint, so they follow when the target moves. Off: the rotation 3ds Max "
+        "had, fixed",
+        default=False,
+    )
     # SKIP_PRESET as well as SKIP_SAVE: the operator has presets, and a scene name belongs to one pack.
     pack_scene: StringProperty(
         name="Scene",
@@ -610,6 +619,7 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
             built = build_objects.build(desc, cols.root, cols, view_layer, slots=slots,
                                         material=builder.make if materials else None)
             settings_skipped = build_modifiers.add(desc, built)
+            kept = build_objects.track_targets(desc, built) if self.keep_targets else []
             build_collections.finish(cols, view_layer)
         except BaseException:
             _remove(cols, before)
@@ -622,6 +632,10 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
         if settings_skipped:
             rep.issues.append(("modifiers", "%d settings not on Blender %s, not set" % (settings_skipped,
                                                                                        bpy.app.version_string)))
+        names = {node.index: node.name or "object %d" % node.index for node in desc.nodes}
+        rep.issues.extend((names[i], "Keep Targets: no Track To, the rotation stays fixed: %s" % reason)
+                          for i, reason in kept)
+        aimed = self.keep_targets and any(n.look_at is not None and n.look_at.track for n in desc.nodes)
         if materials:
             conv_stats, tex_stats, lookup, swatches = counts or (None, None, None, None)
             made = sum(m is not None for m in built.materials.values())
@@ -634,6 +648,8 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
         if axis != Matrix.Identity(4):
             for ob in built.roots():
                 ob.matrix_basis = axis @ ob.matrix_basis
+            if aimed:
+                rep.issues.append(("Keep Targets", "Track To keeps Blender's Z up, not the converted axes' up"))
         lines = [('WARNING', "%s %s" % (name, note))] if note else []
         lines.append(build_report.publish(rep))
         return lines, rep
@@ -749,6 +765,7 @@ def import_transform(layout, operator):
         layout.prop(operator, "scale_objects")
         layout.prop(operator, "axis_forward")
         layout.prop(operator, "axis_up")
+        layout.prop(operator, "keep_targets")
 
 
 class IO_FH_maxdrop(bpy.types.FileHandler):

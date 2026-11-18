@@ -8,6 +8,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ## [Unreleased]
 
+### Added
+
+- Target cameras, target lights and other objects aimed by a Look At controller or a LookAt Constraint point where
+  they point in 3ds Max (they kept the rotation of no controller before); their targets arrive as empties, not
+  placeholders. The new import option **Keep Targets** aims them at their targets with a Track To constraint, so
+  they follow when a target moves.
+
 ### Changed
 
 - Scene packs: the import popup names the exact folder a pack unpacks into (`<archive> (2)` when that name is

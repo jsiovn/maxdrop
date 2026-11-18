@@ -33,7 +33,10 @@ makes it); the instance shares FixtureBox's mesh; the TurboSmooth over a Box eva
 layers_flags: two layer collections, one hidden object, one with hide_render, the group head as the parent of its two
 members. modifier_pivot: a node with modifiers gets its base mesh (no bounding box check, the oracle's is after the
 modifiers), the report names the modifiers not applied, and the node whose pivot alone is rotated keeps its object
-in place. Each fixture's import report is published (build.report) and must say nothing was left out; the one the
+in place. lookat: the nodes aimed by a Look At controller or a LookAt Constraint have 3ds Max's world matrices (above),
+the Target objects are empties; imported again with Keep Targets, each Look At a Track To can follow gets one aimed at
+its target's object, with the same evaluated world matrix, and the report names the two it cannot follow (a roll, the
+Y axis). Each fixture's import report is published (build.report) and must say nothing was left out; the one the
 operator published for vray_wrappers lists its three peeled wrappers by class. A changed layers_flags description
 checks a hidden, a frozen, a non-rendering and a nested layer, which no fixture has. A hand-made description with sheared local matrices (top-level and parented, hidden, a zero scale) checks that
 Blender's world matrices equal the products of the locals, through the helper empty for top-level ones. Material
@@ -85,6 +88,7 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1; kept literal: tes
     "hierarchy": [],
     "instances": ["UVMap"],
     "layers_flags": [],
+    "lookat": [],  # boxes without Generate Mapping Coords
     "modifier_pivot": ["UVMap"],  # FixtureBent's UVW Map writes channel 1 (applied, the Bend above it is not)
     "multi_uv": ["UVMap", "UVChannel_2", "UVChannel_3"],
     "primitives": {"FixtureBoxNoMap": []},  # else UVMap: Generate Mapping Coords
@@ -121,6 +125,8 @@ SHARP_EDGES = {"editable_mesh": 8, "modifier_pivot": {"FixtureSmooth": 0, None: 
                               "FixtureTubeSwap": 28, "FixtureTorusOdd": 35, "FixturePyramidDown": 14,
                               "FixtureCylinderReal": 14, "FixtureTubeDown": 28, None: 0}}
 SHARP_EDGES_DEFAULT = 12
+# the class directory's name of a placeholder (maxdrop_class) where it is not MAXScript's (the oracle's)
+CLASS_NAMES = {"Targetobject": "Target", "Targetcamera": "Target", "targetSpot": "Target Spot"}
 FLAT_SHADED = {"FixtureGeoOcta"}  # a GeoSphere not smoothed: no smoothing group, every face flat
 # primitives whose normals are not "away from the box center": a Plane's point up or down (by its sizes' signs), and
 # a Box of width -12 keeps 3ds Max's faces, which point in
@@ -264,8 +270,8 @@ def run_fixture(path, modules):
             continue
         primitive = tuple(o["base_class_id"]) in PRIMITIVE_CLASSES  # built from its parameters
         if o["base_verts"] is None and not primitive:
-            check(label + ": placeholder empty", ob.type == 'EMPTY' and ob.get("maxdrop_class") == o["base_class_name"],
-                  "%s %r" % (ob.type, ob.get("maxdrop_class")))
+            check(label + ": placeholder empty", ob.type == 'EMPTY' and ob.get("maxdrop_class") ==
+                  CLASS_NAMES.get(o["base_class_name"], o["base_class_name"]), "%s %r" % (ob.type, ob.get("maxdrop_class")))
             continue
         check(label + ": mesh object", ob.type == 'MESH', ob.type)
         if ob.type != 'MESH':
@@ -404,10 +410,16 @@ def run_fixture(path, modules):
                   modified, "" if modified == 1 else "s", ", %d issue%s" % (issues, "" if issues == 1 else "s")
                   if issues else "", build_report.TEXT_NAME)),
               line)
+    elif desc.placeholders:
+        held = sum(desc.placeholders.values())
+        check("%s: report published, nothing left out but the %d placeholders and %d issues" % (name, held, issues),
+              level == "WARNING" and published and rep.left_out == held + issues, line)
     else:
         check("%s: report published, nothing left out" % name, level == "INFO" and published, line)
     print("COUNTS %s: objects=%d meshes=%d placeholders=%d issues=%d" % (
         name, len(bpy.data.objects), len(bpy.data.meshes), sum(desc.placeholders.values()), len(desc.issues)))
+    if name == "lookat":  # imports the file again: last
+        check_lookat(path, desc, obs, nodes, meters)
 
 
 def check_extruded(label, ob, node, o, meters, plan):
@@ -591,6 +603,49 @@ def check_modifier_pivot(obs, meters):
     b = [c / meters for v in bent.data.vertices for c in bent.matrix_world @ v.co - Vector((30 * meters, 0, 0))]
     check("modifier_pivot: FixtureBent has a mesh of its own", src.data != bent.data)
     check("modifier_pivot: the rotated pivot leaves the object in place", close(b, a, BBOX_TOLERANCE))
+
+
+def check_lookat(path, desc, obs, nodes, meters):
+    """lookat: the Target objects are empties, not placeholders; by default nothing is constrained (the rotation is
+    baked, checked with every world matrix above). With Keep Targets each node whose Look At a Track To can follow
+    gets one, aimed at its target's object, and its evaluated world matrix is still 3ds Max's; a roll and the Y axis
+    keep the baked rotation and the report names them."""
+    targets = [ob.name for ob, o in zip(obs, nodes) if o["base_class_name"] == "Targetobject"]
+    # the target cameras' class is named "Target" too: four placeholders of that name are the cameras
+    check("lookat: the five targets are empties, no placeholders", len(targets) == 5 and all(
+        bpy.data.objects[t].type == 'EMPTY' for t in targets) and dict(desc.placeholders) ==
+        {"Target": 4, "Target Spot": 1, "Point": 1}, str(dict(desc.placeholders)))
+    check("lookat: no constraint without Keep Targets", not any(ob.constraints for ob in obs))
+    empty_scene()
+    result = bpy.ops.import_scene.maxdrop(filepath=path, keep_targets=True)
+    check("lookat Keep Targets: the operator finishes", result == {'FINISHED'}, str(result))
+    bpy.context.view_layer.update()
+    obs = objects_of(desc)
+    by_index = {node.index: ob for node, ob in zip(desc.nodes, obs)}
+    tracked = []
+    for ob, node, o in zip(obs, desc.nodes, nodes):
+        label = "lookat Keep Targets/%s" % o["name"]
+        look = node.look_at
+        cons = [(c.type, c.name) for c in ob.constraints]
+        if look is None or look.track is None:
+            check(label + ": no constraint", cons == [], str(cons))
+            continue
+        tracked.append(o["name"])
+        c = ob.constraints.get("MaxDrop Target")
+        check(label + ": one Track To aimed at its target", cons == [('TRACK_TO', "MaxDrop Target")] and
+              c.target == by_index[look.target] and (c.track_axis, c.up_axis, c.use_target_z) ==
+              (look.track, look.up, look.target_z), "%s %s" % (cons, c and (c.track_axis, c.up_axis)))
+        got = max_rows(ob.matrix_world, meters)
+        check(label + ": evaluated world matrix = 3ds Max's", close(got, o["transform"], MATRIX_TOLERANCE),
+              "%s vs %s" % (["%.6g" % v for v in got], o["transform"]))
+    check("lookat Keep Targets: the Look At nodes a Track To can aim", tracked == [
+        "FixtureCam", "FixtureCamDown", "FixtureSpot", "FixtureCamChild", "FixtureLooker"], str(tracked))
+    text = bpy.data.texts.get("MaxDrop Report")
+    body = text.as_string() if text is not None else ""
+    named = [n for n in ("FixtureCamRoll", "FixtureLookerY") if any(
+        n in line and "Keep Targets" in line for line in body.splitlines())]
+    check("lookat Keep Targets: the report names the two kept fixed", named == ["FixtureCamRoll", "FixtureLookerY"],
+          str(named))
 
 
 def _irs(path):

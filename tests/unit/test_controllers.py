@@ -67,9 +67,11 @@ _CLASSES = [
     (0x4B4B1004, 0, 0x900D, "Scale List"), (0x2006, 0, 0x9008, "Look At"),
     (0x118F7C01, 0xFEEE238B, 0x900D, "ScaleXYZ"), (0x442313, 0, 0x900C, "TCB Rotation"),
     (0x2008, 0, 0x900B, "Bezier Position"), (0x442315, 0, 0x900D, "TCB Scale"), (0x442311, 0, 0x9003, "TCB Float"),
+    (0x2021, 0, 0x900C, "LookAt Constraint"), (0x7777, 0, 0x9008, "Some Matrix3"),
 ]
 (C_NODE, C_ROOT, C_PRS, C_POSXYZ, C_EULER, C_BSCALE, C_BFLOAT, C_PB2, C_POSLIST, C_ROTLIST, C_SCALELIST,
- C_LOOKAT, C_SCALEXYZ, C_TCBROT, C_BPOS, C_TCBSCALE, C_TCBFLOAT) = range(len(_CLASSES))
+ C_LOOKAT, C_SCALEXYZ, C_TCBROT, C_BPOS, C_TCBSCALE, C_TCBFLOAT, C_LOOKAT_CONSTRAINT, C_UNKNOWN_M3) = \
+    range(len(_CLASSES))
 CLASSES = classdir.ClassDirectory.parse(b"".join(class_entry(*c) for c in _CLASSES))
 
 
@@ -412,13 +414,14 @@ class TestLists(MatrixCase):
 class TestUnsupportedAndDamaged(MatrixCase):
     def test_unknown_transform_controller_is_identity(self):
         b = Build()
-        look = b.add(node(C_LOOKAT, refs34(b.xyz(C_POSXYZ, (1, 2, 3)))))
-        n = b.node(look)
+        other = b.add(node(C_UNKNOWN_M3, refs34(b.xyz(C_POSXYZ, (1, 2, 3)))))
+        n = b.node(other)
         child = b.node(b.simple_prs((0, 0, 1)), parent=n)
         t = b.transforms()
         self.assertEqual(t.world(n), ct.IDENTITY)
         self.assertMatrix(t.world(child), ct.translation((0, 0, 1)))
-        self.assertEqual(t.issues, [ct.Issue(n, look, classids.SC_CTRL_MATRIX3, ct.LOOK_AT, ct.UNKNOWN_CLASS)])
+        self.assertEqual(t.issues, [ct.Issue(n, other, classids.SC_CTRL_MATRIX3, classdir.ClassId(0x7777, 0),
+                                             ct.UNKNOWN_CLASS)])
 
     def test_unknown_sub_controller(self):
         b = Build()
@@ -575,6 +578,305 @@ class TestMatrixAlone(MatrixCase):
         other = b.xyz(C_POSXYZ, (1, 0, 0))  # a position controller where a Matrix3 one belongs
         m, issues = ct.matrix(self.scene_of(b), other)
         self.assertEqual((m, [i.reason for i in issues]), (ct.IDENTITY, [ct.UNKNOWN_CLASS]))
+
+
+def rows3(frame):
+    """A frame of three row vectors as a 4x4 matrix without translation."""
+    return tuple(tuple(r) + (0.0,) for r in frame) + ((0.0, 0.0, 0.0, 1.0),)
+
+
+def m3(*rows):
+    return rows3(rows)
+
+
+# 3ds Max 2020 (MAXScript, node.transform) for a box at [50, 50, 0] with a Look At controller aiming at a target
+# at [0, 0, 20]; rows rounded to 6 digits as Max prints them.
+MAX_LOOK_AT = {
+    (2, False, 0): m3((-0.707107, 0.707107, 0), (0.19245, 0.19245, 0.96225), (0.680414, 0.680414, -0.272166)),
+    (0, False, 0): m3((0.680414, 0.680414, -0.272166), (0.19245, 0.19245, 0.96225), (0.707107, -0.707107, 0)),
+    (1, False, 0): m3((-0.707107, 0.707107, 0), (0.680414, 0.680414, -0.272166), (-0.19245, -0.19245, -0.96225)),
+    (2, True, 0): m3((0.707107, -0.707107, 0), (0.19245, 0.19245, 0.96225), (-0.680414, -0.680414, 0.272166)),
+    (0, True, 0): m3((-0.680414, -0.680414, 0.272166), (0.19245, 0.19245, 0.96225), (-0.707107, 0.707107, 0)),
+    (1, True, 0): m3((0.707107, -0.707107, 0), (-0.680414, -0.680414, 0.272166), (-0.19245, -0.19245, -0.96225)),
+    (2, False, 30): m3((-0.516147, 0.708597, 0.481125), (0.52022, -0.186887, 0.833333),
+                       (0.680414, 0.680414, -0.272166)),
+    (0, False, 30): m3((0.680414, 0.680414, -0.272166), (0.52022, -0.186887, 0.833333),
+                       (0.516147, -0.708597, -0.481125)),
+    (1, True, 30): m3((0.708597, -0.516147, 0.481125), (-0.680414, -0.680414, 0.272166),
+                      (0.186887, -0.52022, -0.833333)),
+}
+# The same LookAt Constraint box at [-50, 50, 0], target at [0, 0, 20]: (target axis, flip, source up axis, source
+# up flip, up node axis, up control) -> node.transform.
+MAX_CONSTRAINT = {
+    (0, False, 2, False, 2, 1): m3((0.680414, -0.680414, 0.272166), (0.707107, 0.707107, 0),
+                                   (-0.19245, 0.19245, 0.96225)),
+    (1, False, 0, False, 0, 1): m3((0.732828, 0.631748, -0.252699), (0.680414, -0.680414, 0.272166),
+                                   (0, -0.371391, -0.928477)),
+    (0, True, 2, False, 2, 1): m3((-0.680414, 0.680414, -0.272166), (-0.707107, -0.707107, 0),
+                                  (-0.19245, 0.19245, 0.96225)),
+    (0, False, 1, False, 2, 1): m3((0.680414, -0.680414, 0.272165), (-0.19245, 0.19245, 0.96225),
+                                   (-0.707107, -0.707107, 0)),
+    (0, False, 2, True, 2, 1): m3((0.680414, -0.680414, 0.272166), (-0.707107, -0.707107, 0),
+                                  (0.19245, -0.19245, -0.96225)),
+    (0, False, 2, False, 0, 1): m3((0.680414, -0.680414, 0.272166), (0, -0.371391, -0.928477),
+                                   (0.732828, 0.631748, -0.252699)),
+    (0, False, 2, False, 2, 0): m3((0.680414, -0.680414, 0.272166), (-0.707107, -0.707107, 0),
+                                   (0.19245, -0.19245, -0.96225)),
+    (1, False, 0, False, 0, 0): m3((0.19245, -0.19245, -0.96225), (0.680414, -0.680414, 0.272165),
+                                   (-0.707107, -0.707107, 0)),
+}
+
+
+def pb2_entry(pid, ptype, flags, body):
+    return leaf(0x100E, struct.pack("<HIII", pid, ptype, flags, 0) + body)
+
+
+def constraint_block(owner, weights, targets=0, settings=None, slots=()):
+    """A LookAt Constraint's ParamBlock2 as 3ds Max 2020 writes it: weights (floats), as many node elements as
+    targets (no value: the block's reference slots, slots), {param id: int} settings; the up node (9) with a
+    setting 9."""
+    entries = [pb2_entry(0, 0x800, 0x121081, struct.pack("<BI", 0, len(weights)) +
+                         b"".join(struct.pack("<Bf", 0xC0, w) for w in weights)),
+               pb2_entry(1, 0x811, 0x811000, struct.pack("<BI", 0, targets) + b"\x40" * targets)]
+    for pid, value in sorted((settings or {}).items()):
+        if pid == 9:
+            entries.append(pb2_entry(9, 0x11, 0x1810000, b"\x40"))
+        else:
+            entries.append(pb2_entry(pid, 4 if pid in (2, 4, 6, 8, 11) else 1, 0x920020,
+                                     struct.pack("<Bi", 0x40, value)))
+    head = leaf(0x0009, struct.pack("<IHIHI", 0x1B, 0, 0x55F03700, len(entries), owner))
+    return node(C_PB2, *([refs34(*slots)] if slots else []), head, *entries)
+
+
+class LookAtBuild(Build):
+    def target(self, pos):
+        return self.node(self.simple_prs(pos))
+
+    def look_at(self, target, pos=(50, 50, 0), axis=None, flip=False, target_up=False, roll=0.0, scale=(1, 1, 1),
+                parent=0):
+        parts = [refs34(target, self.xyz(C_POSXYZ, pos), self.flt(roll), self.bscale(scale))]
+        if axis is not None:
+            parts.append(leaf(0x0100, struct.pack("<I", axis)))
+        if flip:
+            parts.append(leaf(0x0110))
+        parts.append(leaf(0x0201, struct.pack("<B", 1 if target_up else 0)))
+        return self.node(self.add(node(C_LOOKAT, *parts)), parent=parent)
+
+    def constrained(self, targets, weights, settings=None, pos=(-50, 50, 0), scale=(1, 1, 1), parent=0, up=None):
+        """A node whose PRS rotation is a LookAt Constraint; its block is the object right before the
+        constraint."""
+        block = len(self.objects)
+        slots = list(targets) + ([up] if up is not None else [])
+        settings = dict(settings or {})
+        if up is not None:
+            settings[9] = 1
+        self.add(constraint_block(block + 1, weights, len(targets), settings, slots))
+        lc = self.add(node(C_LOOKAT_CONSTRAINT, refs34(block)))
+        prs = self.prs(self.xyz(C_POSXYZ, pos), lc, self.bscale(scale))
+        return self.node(prs, parent=parent)
+
+
+class TestLookAt(MatrixCase):
+    def test_frame_equals_max(self):
+        for (axis, flip, roll), expected in MAX_LOOK_AT.items():
+            got = rows3(ct.look_frame((50, 50, 0), (0, 0, 20), axis=axis, flip=flip, roll=math.radians(roll)))
+            self.assertMatrix(got, expected, places=5)
+
+    def test_degenerate_frames_equal_max(self):
+        self.assertMatrix(rows3(ct.look_frame((50, 50, 0), (50, 50, 100))), m3((1, 0, 0), (0, -1, 0), (0, 0, -1)))
+        self.assertMatrix(rows3(ct.look_frame((50, 50, 0), (50, 50, -100))), ct.IDENTITY)
+        self.assertMatrix(rows3(ct.look_frame((50, 50, 0), (50, 50, 0))), m3((0, 1, 0), (0, 0, 1), (1, 0, 0)))
+        frame = ct.look_frame((0, 0, 0), (-10, 0, 0), up=(1, 0, 0))  # up along the view: still a rotation
+        self.assertAlmostEqual(_det(frame), 1.0, places=9)
+        self.assertMatrix(ct.multiply(rows3(frame), ct._transpose3(rows3(frame))), ct.IDENTITY)
+
+    def test_target_as_up_node(self):
+        # the target turned 40 degrees about Y (and moved by it): Max's rows for the box
+        target = m3((0.766045, 0, 0.642788), (0, 1, 0), (-0.642788, 0, 0.766045))
+        got = rows3(ct.look_frame((50, 50, 0), (-12.8558, 0, 15.3209), up=target[2][:3]))
+        self.assertMatrix(got, m3((-0.60812, 0.60812, -0.510274), (-0.198088, 0.506212, 0.839352),
+                                  (0.768733, 0.611506, -0.187376)), places=5)
+
+    def test_controller_in_a_file(self):
+        for (axis, flip, roll), expected in MAX_LOOK_AT.items():
+            b = LookAtBuild()
+            target = b.target((0, 0, 20))
+            n = b.look_at(target, axis=axis, flip=flip, roll=math.radians(roll), scale=(2, 1, 1))
+            t = b.transforms()
+            want = ct.multiply(ct.scale_matrix((2, 1, 1)), expected[:3] + ((50, 50, 0, 1),))
+            self.assertMatrix(t.world(n), want, places=5)
+            self.assertMatrix(t.local(n), want, places=5)
+            self.assertEqual(t.look_at(n), ct.LookAt(target, axis, flip, t.look_at(n).roll, False))
+            self.assertAlmostEqual(t.look_at(n).roll, math.radians(roll), places=6)
+            self.assertEqual(t.issues, [])
+
+    def test_without_target_aims_at_the_origin(self):
+        b = LookAtBuild()
+        n = b.look_at(None)
+        t = b.transforms()
+        self.assertMatrix(t.world(n), m3((-0.707107, 0.707107, 0), (0, 0, 1), (0.707107, 0.707107, 0))[:3] +
+                          ((50, 50, 0, 1),), places=5)
+        self.assertEqual(t.look_at(n), ct.LookAt(None, 2, False, 0.0, False))
+        b = LookAtBuild()  # a target that is no node: an issue, the origin
+        n = b.look_at(b.xyz(C_POSXYZ, (0, 0, 20)))
+        t = b.transforms()
+        self.assertMatrix(t.world(n), m3((-0.707107, 0.707107, 0), (0, 0, 1), (0.707107, 0.707107, 0))[:3] +
+                          ((50, 50, 0, 1),), places=5)
+        self.assertEqual([i.reason for i in t.issues], [ct.LOOK_AT_NODE])
+
+    def test_parented(self):
+        """The parent places the position; its rotation and scale do not reach the frame. Children follow the
+        world matrix, and local * parent world = world."""
+        b = LookAtBuild()
+        rig = b.node(b.simple_prs((200, 0, 0), (0, 0, math.radians(40)), (1.5, 1.5, 1.5)))
+        target = b.target((150, 60, 0))
+        cam = b.look_at(target, pos=(30, 0, 50), parent=rig)
+        child = b.node(b.simple_prs((0, 0, 10)), parent=cam)
+        t = b.transforms()
+        # what 3ds Max 2020 reports for this camera (a probe; the fixture's Dummy is at [60, 0, 0])
+        want = m3((0.345248, 0.938511, 0), (-0.600795, 0.221013, 0.768243), (0.721005, -0.265235, 0.640158))
+        want = want[:3] + ((234.472, 28.9254, 75, 1),)
+        self.assertMatrix(t.world(cam), want, places=3)
+        self.assertMatrix(ct.multiply(t.local(cam), t.world(rig)), t.world(cam))
+        self.assertMatrix(t.world(child), ct.multiply(ct.translation((0, 0, 10)), t.world(cam)))
+        self.assertEqual(t.issues, [])
+
+    def test_axis_out_of_range(self):
+        b = LookAtBuild()
+        n = b.look_at(b.target((0, 0, 20)), axis=7)
+        t = b.transforms()
+        self.assertMatrix(t.world(n), MAX_LOOK_AT[(2, False, 0)][:3] + ((50, 50, 0, 1),), places=5)
+        self.assertEqual([i.reason for i in t.issues], [ct.LOOK_AT_AXIS])
+
+    def test_cycles(self):
+        b = LookAtBuild()  # aims at itself
+        n = len(b.objects) + 7  # the node look_at adds: position (4), roll, scale, controller, then the node
+        self.assertEqual(b.look_at(n), n)
+        t = b.transforms()
+        self.assertEqual(t.world(n), ct.IDENTITY)
+        self.assertEqual([(i.node, i.reason[:len(ct.DAMAGED)]) for i in t.issues], [(n, ct.DAMAGED)])
+        self.assertIn("depends on itself", t.issues[0].reason)
+        self.assertIsNone(t.look_at(n))
+        b = LookAtBuild()  # two aiming at each other: the one evaluated second is damaged, the first aims at it
+        a = len(b.objects) + 7
+        other = b.look_at(a + 8, pos=(10, 0, 0))
+        self.assertEqual(other, a)
+        second = b.look_at(a, pos=(0, 10, 0))
+        t = b.transforms()
+        self.assertEqual(t.world(second), t.world(second))
+        world = t.world(a)
+        self.assertTrue(all(math.isfinite(v) for row in world for v in row))
+        self.assertEqual(len(t.issues), 1)
+        self.assertTrue(t.issues[0].reason.startswith(ct.DAMAGED))
+
+    def test_long_chain(self):
+        b = LookAtBuild()
+        first = len(b.objects) + 7
+        for k in range(ct.MAX_LOOK_AT_DEPTH + 10):  # each node aims at the next (8 objects each)
+            self.assertEqual(b.look_at(first + 8 * (k + 1), pos=(k, 0, 0)), first + 8 * k)
+        b.target((0, 0, 0))
+        t = b.transforms()
+        world = t.world(first)
+        self.assertTrue(all(math.isfinite(v) for row in world for v in row))
+        self.assertTrue(any("more than %d" % ct.MAX_LOOK_AT_DEPTH in i.reason for i in t.issues))
+
+    def test_parent_that_cannot_be_inverted(self):
+        b = LookAtBuild()
+        flat = b.node(b.simple_prs((0, 0, 0), (0, 0, 0), (1, 1, 0)))
+        n = b.look_at(b.target((0, 0, 20)), parent=flat)
+        t = b.transforms()
+        self.assertEqual(t.local(n), ct.IDENTITY)
+        self.assertEqual([i.reason for i in t.issues], [ct.LOOK_AT_PARENT])
+
+    def test_outside_a_node(self):
+        b = LookAtBuild()
+        look = b.add(node(C_LOOKAT, refs34(None, b.xyz(C_POSXYZ, (1, 2, 3)))))
+        m, issues = ct.matrix(scene.Scene(node(0x2025, *b.objects), CLASSES), look)
+        self.assertEqual((m, [i.reason for i in issues]), (ct.IDENTITY, [ct.UNKNOWN_CLASS]))
+
+
+def _det(f):
+    return (f[0][0] * (f[1][1] * f[2][2] - f[1][2] * f[2][1]) - f[0][1] * (f[1][0] * f[2][2] - f[1][2] * f[2][0]) +
+            f[0][2] * (f[1][0] * f[2][1] - f[1][1] * f[2][0]))
+
+
+class TestConstraint(MatrixCase):
+    def test_frame_equals_max(self):
+        for (axis, flip, source, source_flip, up_axis, control), expected in MAX_CONSTRAINT.items():
+            p = (-50, 50, 0)
+            up = ct.IDENTITY[up_axis][:3] if control else tuple(-v for v in p)
+            got = rows3(ct.constraint_frame(p, (0, 0, 20), up, axis, flip, source, source_flip))
+            self.assertMatrix(got, expected, places=5)
+
+    def test_cannot_be_aimed(self):
+        self.assertIsNone(ct.constraint_frame((0, 0, 0), (0, 0, 0), (0, 0, 1)))
+        self.assertIsNone(ct.constraint_frame((0, 0, 0), (0, 0, 5), (0, 0, 1)))
+        self.assertIsNone(ct.constraint_frame((0, 0, 0), (5, 0, 0), (0, 0, 1), axis=2, source_up=2))
+        self.assertIsNone(ct.constraint_frame((0, 0, 0), (5, 0, 0), (0, 0, 1), axis=3))
+
+    def test_weighted_targets_in_a_file(self):
+        b = LookAtBuild()
+        targets = [b.target((0, 0, 20)), b.target((100, 0, 0))]
+        n = b.constrained(targets, [50.0, 100.0], scale=(1, 2, 1))
+        t = b.transforms()
+        two = m3((0.91788, -0.393377, 0.0524503), (0.393919, 0.919145, 0), (-0.0482094, 0.0206612, 0.998624))
+        want = ct.multiply(ct.scale_matrix((1, 2, 1)), two[:3] + ((-50, 50, 0, 1),))
+        self.assertMatrix(t.world(n), want, places=5)
+        self.assertIsNone(t.look_at(n))
+        self.assertEqual(t.issues, [])
+
+    def test_settings_and_up_node(self):
+        for (axis, flip, source, source_flip, up_axis, control), expected in MAX_CONSTRAINT.items():
+            b = LookAtBuild()
+            target = b.target((0, 0, 20))
+            n = b.constrained([target], [50.0], {5: axis, 6: int(flip), 7: up_axis, 10: source, 11: int(source_flip),
+                                                 13: control})
+            t = b.transforms()
+            self.assertMatrix(t.world(n), expected[:3] + ((-50, 50, 0, 1),), places=5)
+            self.assertEqual(t.issues, [])
+        b = LookAtBuild()  # an up node instead of the world: its position, looked at, is the origin's here
+        target, up = b.target((0, 0, 20)), b.target((0, 0, 0))
+        n = b.constrained([target], [50.0], {8: 0, 13: 0}, up=up)
+        t = b.transforms()
+        self.assertMatrix(t.world(n), MAX_CONSTRAINT[(0, False, 2, False, 2, 0)][:3] + ((-50, 50, 0, 1),),
+                          places=5)
+
+    def test_parent_scale_still_applies(self):
+        """3ds Max: a constrained box (own scale 1) under a Dummy rotated (10, 0, 40) and scaled (1, 2, 3)."""
+        b = LookAtBuild()
+        rig = b.node(b.simple_prs((200, 0, 0), (math.radians(10), 0, math.radians(40)), (1, 2, 3)))
+        n = b.constrained([b.target((150, 60, 0))], [50.0], pos=(-20, 10, 5), parent=rig)
+        t = b.transforms()
+        want = m3((-0.354542, 0.894293, -0.27302), (-1.85922, -0.737086, 0), (-0.301858, 0.761406, 2.88603))
+        self.assertMatrix(t.world(n), want[:3] + ((173.693, 0.237043, 18.2451, 1),), places=3)
+        self.assertMatrix(ct.multiply(t.local(n), t.world(rig)), t.world(n))
+
+    def test_without_weight_or_with_an_offset(self):
+        b = LookAtBuild()
+        n = b.constrained([b.target((0, 0, 20))], [0.0])
+        t = b.transforms()
+        self.assertMatrix(t.world(n), ct.translation((-50, 50, 0)))
+        self.assertEqual([i.reason for i in t.issues], [ct.CONSTRAINT_EMPTY])
+        b = LookAtBuild()
+        n = b.constrained([b.target((0, 0, 20))], [50.0], {2: 1})
+        t = b.transforms()
+        self.assertMatrix(t.world(n), MAX_CONSTRAINT[(0, False, 2, False, 2, 1)][:3] + ((-50, 50, 0, 1),), places=5)
+        self.assertEqual([i.reason for i in t.issues], [ct.CONSTRAINT_OFFSET])
+        b = LookAtBuild()  # target on the node: no rotation
+        n = b.constrained([b.target((-50, 50, 0))], [50.0])
+        t = b.transforms()
+        self.assertMatrix(t.world(n), ct.translation((-50, 50, 0)))
+        self.assertEqual([i.reason for i in t.issues], [ct.CONSTRAINT_DEGENERATE])
+
+    def test_not_under_a_prs(self):
+        b = LookAtBuild()
+        block = b.add(constraint_block(0, [50.0], 0))
+        lc = b.add(node(C_LOOKAT_CONSTRAINT, refs34(block)))
+        lst = b.add(node(C_ROTLIST, refs34(lc), leaf(0x1010, struct.pack("<i", 1))))
+        n = b.node(b.prs(None, lst))
+        t = b.transforms()
+        self.assertEqual(t.world(n), ct.IDENTITY)
+        self.assertIn((lc, ct.UNKNOWN_CLASS), [(i.controller, i.reason) for i in t.issues])
 
 
 @unittest.skipUnless(FIXTURES, "no fixtures")

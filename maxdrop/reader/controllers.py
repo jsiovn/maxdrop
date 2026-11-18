@@ -28,10 +28,19 @@ standard column-vector formula applied to it gives the row-vector matrix. List c
 count in 0x1010 and the entries at reference slots 0..n-1; their weights are the float controllers at reference
 slots 0..n-1 of the list's ParamBlock2.
 
+A Look At controller (a Matrix3 controller: target cameras and lights) and a LookAt Constraint (a rotation
+controller in a PRS) give the node's world matrix from the world positions of other nodes (the target, the
+constraint's targets and up node): scale * aim frame * translation(P), P the position controller's value times the
+parent's world matrix; the parent's rotation and scale do not reach the frame. The node's local matrix is that
+world matrix times the parent's inverse, and its children follow the world matrix. look_frame() and
+constraint_frame() say how a frame is aimed, look_at(i) describes a node's Look At controller. A look-at whose
+evaluation comes back to itself (a cycle) or waits on more than MAX_LOOK_AT_DEPTH others is damaged.
+
 Anything not supported gives identity (zero position, no rotation, unit scale) for that controller and an Issue:
-an unknown class (Look At until M4), keys of an unknown layout, a list weight without a controller, an Euler order
-other than the six Tait-Bryan ones, a damaged controller (a reference cycle, a chain deeper than MAX_DEPTH, a
-payload too short) or a non-finite result. The file comes from anywhere: one bad controller poisons only its own
+an unknown class (also a Look At or a constraint outside a node, as a modifier's gizmo, and a constraint anywhere
+but a PRS's rotation), keys of an unknown layout, a list weight without a controller, an Euler order other than
+the six Tait-Bryan ones, a damaged controller (a reference cycle, a chain deeper than MAX_DEPTH, a payload too
+short) or a non-finite result. The file comes from anywhere: one bad controller poisons only its own
 node's local matrix. Classes without a committed fixture are 3ds Max SDK ids, named in docs/FORMAT.md as
 unverified. No bpy, no mathutils, no numpy.
 """
@@ -40,13 +49,14 @@ import collections
 import math
 import struct
 
-from . import chunks, classids
+from . import chunks, classids, pblock
 from .classdir import ClassId
 
 ChunkError = chunks.ChunkError
 
 MAX_DEPTH = 32  # controllers below one node's transform controller
 MAX_KEYS = 1 << 20  # per key chunk, read only without a saved value
+MAX_LOOK_AT_DEPTH = 64  # nodes whose matrices wait on one another: a look-at's target aimed at another target...
 
 IDENTITY = ((1.0, 0.0, 0.0, 0.0), (0.0, 1.0, 0.0, 0.0), (0.0, 0.0, 1.0, 0.0), (0.0, 0.0, 0.0, 1.0))
 
@@ -59,6 +69,13 @@ EULER_ORDER = "unsupported Euler order, XYZ used"
 NO_CONTROLLER = "node without a transform controller"
 DAMAGED = "damaged controller"
 NON_FINITE = "non-finite transform"
+LOOK_AT_AXIS = "Look At axis out of range, Z used"
+LOOK_AT_NODE = "look-at target or up node that is no node, none used"
+LOOK_AT_PARENT = "look-at under a parent that cannot be inverted"
+CONSTRAINT_EMPTY = "LookAt Constraint without a target of any weight, no rotation"
+CONSTRAINT_OFFSET = "LookAt Constraint offset (Keep Initial Offset, Set Orientation) not applied"
+CONSTRAINT_DEGENERATE = "LookAt Constraint that cannot be aimed (on its target, up along the view), no rotation"
+CONSTRAINT_SETTING = "animated or damaged LookAt Constraint setting, its default used"
 
 
 class Issue(collections.namedtuple("Issue", "node controller superclass class_id reason")):
@@ -67,11 +84,17 @@ class Issue(collections.namedtuple("Issue", "node controller superclass class_id
     __slots__ = ()
 
 
+class LookAt(collections.namedtuple("LookAt", "target axis flip roll target_up")):
+    """A node's Look At controller: target the target node's object index (None without one), axis 0, 1 or 2 (-X,
+    -Y or -Z looks at the target), flip (+ that axis looks instead), roll in radians, target_up whether the
+    target's Z axis is the up direction (else the world's)."""
+    __slots__ = ()
+
+
 # Controllers no committed fixture has: 3ds Max SDK class ids (all with classB 0), unverified (docs/FORMAT.md).
 LINEAR_POSITION = ClassId(0x00002002, 0)
 LINEAR_ROTATION = ClassId(0x00002003, 0)
 LINEAR_SCALE = ClassId(0x00002004, 0)
-LOOK_AT = ClassId(0x00002006, 0)
 BEZIER_POSITION = ClassId(0x00002008, 0)
 BEZIER_ROTATION = ClassId(0x00002009, 0)
 TCB_POSITION = ClassId(0x00442312, 0)
@@ -88,6 +111,11 @@ _FLOAT_KEY = struct.Struct("<iIf")  # time, flags, value; 16 more bytes of tange
 _FLOAT_KEY_SIZE = 28
 _SCALE_KEY_SIZE = 148
 _TIME = struct.Struct("<i")
+_LOOK_AXIS, _LOOK_FLIP, _LOOK_TARGET_UP = 0x0100, 0x0110, 0x0201
+# the LookAt Constraint's ParamBlock2 (3 viewline length, 12 viewline length absolute: display only)
+(_LC_WEIGHTS, _LC_TARGETS, _LC_RELATIVE, _LC_SET_ORIENTATION, _LC_AXIS, _LC_AXIS_FLIP, _LC_UP_AXIS, _LC_UP_WORLD,
+ _LC_UP_NODE, _LC_SOURCE_UP, _LC_SOURCE_UP_FLIP, _LC_UP_CONTROL) = 0, 1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 13
+_TINY = 1e-12
 
 
 def multiply(a, b):
@@ -191,6 +219,94 @@ def _finite(m):
     return all(math.isfinite(v) for row in m for v in row)
 
 
+def _sub(a, b):
+    return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
+
+
+def _dot(a, b):
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+
+def _cross(a, b):
+    return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
+
+
+def _neg(v):
+    return (-v[0], -v[1], -v[2])
+
+
+def _unit(v):
+    """v normalized; None when it has (almost) no length or is not finite."""
+    n = math.sqrt(_dot(v, v))
+    if not (n > _TINY and math.isfinite(n)):
+        return None
+    return (v[0] / n, v[1] / n, v[2] / n)
+
+
+def _point(p, m):
+    """Point p times matrix m."""
+    return tuple(p[0] * m[0][c] + p[1] * m[1][c] + p[2] * m[2][c] + m[3][c] for c in range(3))
+
+
+def _inverse(m):
+    """The inverse of an affine matrix; None when its 3x3 part cannot be inverted."""
+    a = m
+    cof = ((a[1][1] * a[2][2] - a[1][2] * a[2][1], a[0][2] * a[2][1] - a[0][1] * a[2][2],
+            a[0][1] * a[1][2] - a[0][2] * a[1][1]),
+           (a[1][2] * a[2][0] - a[1][0] * a[2][2], a[0][0] * a[2][2] - a[0][2] * a[2][0],
+            a[0][2] * a[1][0] - a[0][0] * a[1][2]),
+           (a[1][0] * a[2][1] - a[1][1] * a[2][0], a[0][1] * a[2][0] - a[0][0] * a[2][1],
+            a[0][0] * a[1][1] - a[0][1] * a[1][0]))
+    det = a[0][0] * cof[0][0] + a[0][1] * cof[1][0] + a[0][2] * cof[2][0]
+    if not (math.isfinite(det) and abs(det) > 1e-30):
+        return None
+    inv = tuple(tuple(v / det for v in row) for row in cof)
+    return _mat3(inv, _neg(_point(m[3][:3], _mat3(inv))))
+
+
+def look_frame(position, target, up=(0.0, 0.0, 1.0), axis=2, flip=False, roll=0.0):
+    """The rotation rows (x, y, z) of a Look At controller at position aiming at target, as 3ds Max 2020 computes
+    them: z points from the target to the position (-Z looks at it), x = up x z, y = z x x; flip turns that half
+    round y (+Z looks), roll turns it about z, then axis 0 makes it (z, y, -x) and axis 1 (x, z, -y), so that -X or
+    -Y looks. Degenerate: on the target z is +X; z along up gives x = +X."""
+    z = _unit(_sub(position, target)) or (1.0, 0.0, 0.0)
+    x = _unit(_cross(up, z)) or (1.0, 0.0, 0.0)
+    y = _unit(_cross(z, x))
+    if y is None:  # z along +-X as well (an up node of the target's along the view): any x across z
+        y = _unit(_cross(z, (0.0, 1.0, 0.0)))
+        x = _cross(y, z)
+    if flip:
+        x, z = _neg(x), _neg(z)
+    if roll:
+        c, s = math.cos(roll), math.sin(roll)
+        x, y = (tuple(c * a + s * b for a, b in zip(x, y)), tuple(c * b - s * a for a, b in zip(x, y)))
+    if axis == 0:
+        return (z, y, _neg(x))
+    if axis == 1:
+        return (x, z, _neg(y))
+    return (x, y, z)
+
+
+def constraint_frame(position, target, up, axis=0, flip=False, source_up=2, source_flip=False):
+    """The rotation rows of a LookAt Constraint at position: row axis points at target (away with flip), row
+    source_up along up without its part along the view (negated with source_flip), the third row completes a
+    right-handed frame. None when it cannot be aimed: on the target, up along the view, the two axes the same."""
+    if axis == source_up or axis not in (0, 1, 2) or source_up not in (0, 1, 2):
+        return None
+    n = _unit(_sub(target, position))
+    if n is None:
+        return None
+    s = _unit(_sub(up, tuple(_dot(up, n) * v for v in n)))
+    if s is None:
+        return None
+    rows = [None, None, None]
+    rows[axis] = _neg(n) if flip else n
+    rows[source_up] = _neg(s) if source_flip else s
+    t = 3 - axis - source_up
+    rows[t] = _cross(rows[(t + 1) % 3], rows[(t + 2) % 3])
+    return tuple(rows)
+
+
 class _At:
     __slots__ = ("ev", "i")
 
@@ -217,11 +333,13 @@ class _Eval:
     """Evaluation of one node's controller tree, with its issues; references are followed with a depth and a
     cycle guard."""
 
-    def __init__(self, scene, node, issues):
-        self.scene, self.node, self.issues = scene, node, issues
+    def __init__(self, scene, node, issues, transforms=None):
+        self.scene, self.node, self.issues, self.transforms = scene, node, issues, transforms
         self.path = []
         self.failed = None
         self.memo = {}  # (kind, controller) -> value: a shared sub-controller is evaluated once per node
+        self.world = False  # matrix() gave the node's world matrix (a look-at), not its local one
+        self.look = None  # the LookAt of a Look At controller node
 
     def where(self):
         return "node %d" % self.node if self.node is not None else "the controller"
@@ -464,13 +582,133 @@ class _Eval:
     def matrix(self, i):
         with self.at(i):
             sc, cid = self.kind(i)
+            in_node = self.transforms is not None and self.node is not None
+            if in_node and sc == classids.SC_CTRL_MATRIX3 and cid == classids.LOOK_AT:
+                return self._look_at(i)
             if sc == classids.SC_CTRL_MATRIX3 and cid == classids.PRS:
                 refs = self.scene.refs(i)
+                if in_node and refs.get(1) is not None and \
+                        self.kind(refs[1]) == (classids.SC_CTRL_ROTATION, classids.LOOKAT_CONSTRAINT):
+                    return self._constrained(refs)
                 rot = self.rotation(refs.get(1))
                 rot_pos = _mat3([row[:3] for row in rot[:3]], self.position(refs.get(0)))
                 return multiply(self.scale(refs.get(2)), rot_pos)
             self.issue(i, UNKNOWN_CLASS)
             return IDENTITY
+
+    def _node_world(self, i, j):
+        """The world matrix of node j, which controller i aims with; None when j is empty or no node (an issue)."""
+        if j is None:
+            return None
+        if not self.scene.is_a(j, classids.SC_BASENODE, classids.NODE):
+            self.issue(i, LOOK_AT_NODE)
+            return None
+        return self.transforms.world(j)
+
+    def _world_position(self, i):
+        """Position controller i's value placed by the node's parent: where the node is in the world."""
+        return _point(self.position(i), self.transforms.parent_world(self.node))
+
+    def _look_at(self, i):
+        chunk = self.scene.chunk(i)
+        refs = self.scene.refs(i)
+        axis, flip, target_up = 2, False, False
+        if chunk.container:
+            value = chunk.first(_LOOK_AXIS)
+            if value is not None:
+                axis = value.unpack("<I")[0]
+            flip = chunk.first(_LOOK_FLIP) is not None
+            value = chunk.first(_LOOK_TARGET_UP)
+            target_up = value is not None and value.unpack("<B")[0] != 0
+        if axis not in (0, 1, 2):
+            self.issue(i, LOOK_AT_AXIS)
+            axis = 2
+        position = self._world_position(refs.get(1))
+        target = refs.get(0)
+        tw = self._node_world(i, target)
+        if tw is None:
+            target = None  # 3ds Max aims at the world origin then
+        up = (_unit(tw[2][:3]) if tw is not None and target_up else None) or (0.0, 0.0, 1.0)
+        roll = self.scalar(refs.get(2), 0.0)
+        frame = look_frame(position, tw[3][:3] if tw is not None else (0.0, 0.0, 0.0), up, axis, flip, roll)
+        self.world = True
+        self.look = LookAt(target, axis, flip, roll, target_up)
+        return multiply(self.scale(refs.get(3)), _mat3(frame, position))
+
+    def _constrained(self, refs):
+        """A PRS whose rotation is a LookAt Constraint: the world matrix. Unlike a Look At controller's, its
+        scale is relative: the parent's (the lengths of its rows) still scales it."""
+        position = self._world_position(refs.get(0))
+        with self.at(refs[1]):
+            frame = self._constraint(refs[1], position)
+        self.world = True
+        parent = self.transforms.parent_world(self.node)
+        inherited = scale_matrix([math.sqrt(_dot(row[:3], row[:3])) for row in parent[:3]])
+        return multiply(multiply(self.scale(refs.get(2)), inherited), _mat3(frame or IDENTITY[:3], position))
+
+    def _setting(self, c, pb, pid, default):
+        """An int or bool setting of constraint c's block; its default (and an issue) when animated or damaged."""
+        value = pb.get(pid)
+        if value is None:
+            return default
+        if isinstance(value, (int, float)) and math.isfinite(value):
+            return int(value)
+        self.issue(c, CONSTRAINT_SETTING)
+        return default
+
+    def _constraint(self, c, position):
+        """The frame of LookAt Constraint c at position, None (and an issue) when it has none."""
+        block = self.scene.refs(c).get(0)
+        if block is None or self.kind(block)[0] != classids.SC_PARAMETER_BLOCK2:
+            self.issue(c, CONSTRAINT_EMPTY)
+            return None
+        pb = pblock.ParamBlock2.from_chunk(self.scene.chunk(block), self.scene.refs(block), self.scene.refs(c),
+                                           len(self.scene))
+        if self._setting(c, pb, _LC_RELATIVE, 0) or self._setting(c, pb, _LC_SET_ORIENTATION, 0):
+            self.issue(c, CONSTRAINT_OFFSET)
+        weights = pb.value(_LC_WEIGHTS)
+        weights = weights if isinstance(weights, list) else [weights]
+        targets = pb.value(_LC_TARGETS)
+        targets = targets if isinstance(targets, list) else [targets]
+        total, point = 0.0, [0.0, 0.0, 0.0]
+        for k, ref in enumerate(targets):
+            w = weights[k] if k < len(weights) else None
+            if isinstance(w, pblock.Animated):
+                w = self.scalar(w.index, 1.0)
+            if not (isinstance(w, (int, float)) and math.isfinite(w)):
+                self.issue(c, CONSTRAINT_SETTING)
+                w = 1.0
+            tw = self._node_world(c, ref.index if isinstance(ref, pblock.Reference) else None)
+            if tw is None or w == 0.0:
+                continue
+            total += w
+            for a in range(3):
+                point[a] += w * tw[3][a]
+        if not abs(total) > _TINY:
+            self.issue(c, CONSTRAINT_EMPTY)
+            return None
+        target = tuple(v / total for v in point)
+        up_axis = self._setting(c, pb, _LC_UP_AXIS, 2)
+        if up_axis not in (0, 1, 2):
+            self.issue(c, CONSTRAINT_SETTING)
+            up_axis = 2
+        up_node = IDENTITY  # the world: its axes, its origin
+        if not self._setting(c, pb, _LC_UP_WORLD, 1):
+            ref = pb.get(_LC_UP_NODE)
+            j = ref.index if isinstance(ref, pblock.Reference) else None
+            if j is None:
+                self.issue(c, LOOK_AT_NODE)
+            up_node = self._node_world(c, j) or IDENTITY
+        if self._setting(c, pb, _LC_UP_CONTROL, 1):  # axis alignment
+            up = up_node[up_axis][:3]
+        else:  # the up axis looks at the up node
+            up = _sub(up_node[3][:3], position)
+        frame = constraint_frame(position, target, up, self._setting(c, pb, _LC_AXIS, 0),
+                                 bool(self._setting(c, pb, _LC_AXIS_FLIP, 0)), self._setting(c, pb, _LC_SOURCE_UP, 2),
+                                 bool(self._setting(c, pb, _LC_SOURCE_UP_FLIP, 0)))
+        if frame is None:
+            self.issue(c, CONSTRAINT_DEGENERATE)
+        return frame
 
 
 class Transforms:
@@ -482,39 +720,75 @@ class Transforms:
         self._local = {}
         self._world = {}
         self._offset = {}
+        self._direct = {}  # node -> world matrix of a look-at node, which its local matrix only approximates
+        self._look = {}  # node -> LookAt
+        self._busy = []  # nodes whose local matrix is being computed: a look-at waits on other nodes
 
     def local(self, i):
-        """Node i's transform relative to its parent: scale * rotation * position."""
+        """Node i's transform relative to its parent: scale * rotation * position (a look-at node: its world
+        matrix times the parent's inverse)."""
         m = self._local.get(i)
         if m is not None:
             return m
-        ev = _Eval(self.scene, i, self.issues)
+        if i in self._busy:  # only reached from a look-at below local(i): raised into that node's evaluation
+            raise ChunkError("node %d: its look-at depends on itself" % i)
+        if len(self._busy) >= MAX_LOOK_AT_DEPTH:
+            raise ChunkError("look-at nodes waiting on more than %d others" % MAX_LOOK_AT_DEPTH)
+        self._busy.append(i)
+        try:
+            m = self._evaluate(i)
+        finally:
+            self._busy.pop()
+        self._local[i] = m
+        return m
+
+    def _evaluate(self, i):
+        ev = _Eval(self.scene, i, self.issues, self)
         try:
             node = self.scene.node(i)
         except ChunkError as exc:  # a damaged node record: identity, its children still placed
             ev.issue(None, "%s: %s" % (DAMAGED, exc))
-            self._local[i] = IDENTITY
             return IDENTITY
         if node.tm is None:
             ev.issue(None, NO_CONTROLLER)
-            m = IDENTITY
-        else:
-            mark = len(self.issues)
-            try:
-                m = ev.matrix(node.tm)
-            except (ValueError, OverflowError, IndexError, struct.error) as exc:  # ChunkError is a ValueError
-                del self.issues[mark:]
-                bad = ev.failed if ev.failed is not None else node.tm
-                ev.issue(bad, "%s: %s" % (DAMAGED, exc))
-                m = IDENTITY
-            if not _finite(m):
-                ev.issue(node.tm, NON_FINITE)
-                m = IDENTITY
-        self._local[i] = m
+            return IDENTITY
+        mark = len(self.issues)
+        try:
+            m = ev.matrix(node.tm)
+            if ev.world and _finite(m):
+                inverse = _inverse(self.parent_world(i))
+                if inverse is None:
+                    ev.issue(node.tm, LOOK_AT_PARENT)
+                    return IDENTITY
+                world, m = m, multiply(m, inverse)
+                if _finite(m):
+                    self._direct[i] = world
+        except (ValueError, OverflowError, IndexError, struct.error) as exc:  # ChunkError is a ValueError
+            # this node's issues only: a look-at may have evaluated other nodes, whose issues stay
+            self.issues[mark:] = [x for x in self.issues[mark:] if x.node != i]
+            bad = ev.failed if ev.failed is not None else node.tm
+            ev.issue(bad, "%s: %s" % (DAMAGED, exc))
+            return IDENTITY
+        if not _finite(m):
+            ev.issue(node.tm, NON_FINITE)
+            return IDENTITY
+        if ev.look is not None:
+            self._look[i] = ev.look
         return m
 
+    def parent_world(self, i):
+        """The world matrix of node i's parent, identity at the top level."""
+        p = self.scene.parent(i)
+        return self.world(p) if p is not None else IDENTITY
+
+    def look_at(self, i):
+        """The LookAt of node i's Look At controller; None when its controller is none or cannot be evaluated."""
+        self.local(i)
+        return self._look.get(i)
+
     def world(self, i):
-        """Node i's world transform: its local matrix times every parent's, up to the top level."""
+        """Node i's world transform: its local matrix times every parent's, up to the top level (a look-at node:
+        the world matrix its controller gives)."""
         m = self._world.get(i)
         if m is not None:
             return m
@@ -525,7 +799,8 @@ class Transforms:
             j = self.scene.parent(j)
         parent = self._world[j] if j is not None else IDENTITY
         for j in reversed(chain):
-            parent = multiply(self.local(j), parent)
+            local = self.local(j)  # a look-at may have computed this world matrix meanwhile
+            parent = self._direct.get(j) or self._world.get(j) or multiply(local, parent)
             self._world[j] = parent
         return self._world[i]
 
