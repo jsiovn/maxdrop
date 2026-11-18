@@ -650,8 +650,30 @@ class StandInTests(TempCase):
         self.scripts[SEVENZIP] = self.WRITE
         result = self.use(self.first, self.second)()
         self.assertEqual(folder_files(result.folder), {"scene.max": b"MAX", "wood.jpg": b"WOOD"})
-        # The result names the program that listed the pack; the backend names the one that unpacked it.
-        self.assertEqual(archive._BACKENDS["rar"].name, "7-Zip 26.06")
+        self.assertEqual(result.backend, "7-Zip 26.06")
+        # No per-pack state: the backend's own name stays the program chain.
+        self.assertEqual(archive._BACKENDS["rar"].name, external.ExternalBackend("rar").name)
+
+    def test_listing_names_the_lister(self):
+        self.use(self.first, self.second)
+        listing = archive.list_pack(self.pack)
+        self.assertEqual(listing.backend, "UnRAR 7.23")
+        self.assertEqual(archive._BACKENDS["rar"].name, external.ExternalBackend("rar").name)
+
+    # Writes each name of its list file into out, under its base name.
+    WRITE_LISTED = ("import os, sys\nout, names = sys.argv[1], sys.argv[2]\n"
+                    "for n in open(names, encoding='utf-8').read().split('\\n'):\n"
+                    "    if n:\n"
+                    "        open(os.path.join(out, n.replace('\\\\', '/').rsplit('/', 1)[-1]), 'wb').write(b'X')\n")
+
+    def test_scene_and_maps_by_different_programs(self):
+        self.scripts[UNRAR] = ("import sys\nif 'scene.max' in open(sys.argv[2], encoding='utf-8').read():\n"
+                               "    sys.exit(2)\n" + self.WRITE_LISTED)
+        self.scripts[SEVENZIP] = self.WRITE_LISTED
+        archive._BACKENDS["rar"] = external.ExternalBackend("rar", tools=[self.first, self.second])
+        result = archive.unpack(self.pack, references=lambda p: ["wood.jpg"])
+        self.assertEqual(folder_files(result.folder), {"scene.max": b"X", "wood.jpg": b"X"})
+        self.assertEqual(result.backend, "7-Zip 26.06 and UnRAR 7.23")
 
     def test_other_files_than_asked(self):
         self.scripts[UNRAR] = self.WRITE + "open(os.path.join(out, 'evil.jpg'), 'wb').write(b'x')\n"

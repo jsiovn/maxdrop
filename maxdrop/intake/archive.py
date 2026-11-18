@@ -380,8 +380,8 @@ class ZipBackend:
         return entries
 
     def extract(self, path, wanted, staging, budget):
-        """Write each (entry, target base name) of wanted into staging/<target>. Never extract(): the names
-        stored in the archive are not used."""
+        """Write each (entry, target base name) of wanted into staging/<target>; returns the label of what wrote
+        them. Never extract(): the names stored in the archive are not used."""
         with self._open(path) as zf:
             infos = zf.infolist()
             for entry, target in wanted:
@@ -403,6 +403,7 @@ class ZipBackend:
                 except Exception as e:  # damaged data (CRC, zlib, bz2, lzma) or a failed write
                     raise PackError("Could not unpack %s (%s). Extract the archive by hand." % (entry.name, e)) \
                         from None
+        return self.name
 
 
 _BACKENDS = {KIND_ZIP: ZipBackend()}
@@ -435,6 +436,12 @@ def _read_entries(backend, path, limits):
     if len(entries) > limits.entries:
         raise too_many
     return entries
+
+
+def _listed_by(backend, entries):
+    """The label of the program that listed the entries: a backend may go through several programs."""
+    listed_by = getattr(backend, "listed_by", None)
+    return backend.name if listed_by is None else listed_by(entries)
 
 
 def _is_scene(e):
@@ -481,7 +488,7 @@ def list_pack(path, limits=DEFAULT_LIMITS):
     if guessed:
         problems.append("%d name%s stored without a known encoding, read as a guess"
                         % (len(guessed), "" if len(guessed) == 1 else "s"))
-    return PackListing(k, backend.name, scenes, len(assets), skipped, problems, encrypted, guessed)
+    return PackListing(k, _listed_by(backend, entries), scenes, len(assets), skipped, problems, encrypted, guessed)
 
 
 @dataclasses.dataclass
@@ -833,7 +840,8 @@ def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=Non
         raise PackError("%s could not be read (%s)." % (os.path.basename(path), e)) from None
     ident = _ident(path, st)
 
-    result = UnpackResult(max_path="", folder="", mode="unpacked", backend=backend.name)
+    # Nothing is written for a reused or in-place result: it names the program that listed the pack.
+    result = UnpackResult(max_path="", folder="", mode="unpacked", backend=_listed_by(backend, entries))
     result.guessed = [e.name for e in entries if e.guessed]
     wanted = None if wanted is None else {name_key(w) for w in wanted}
     asked = wanted if references is None else references
@@ -897,19 +905,27 @@ def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=Non
         _remove_stale_staging(parent, limits)
         staging = tempfile.mkdtemp(prefix=STAGING_PREFIX, dir=parent)
         reserved = None
+        labels = []
+
+        def extract(part):
+            # A backend that tries several programs may write the scene with one and its maps with another.
+            label = backend.extract(path, part, staging, budget) or backend.name
+            if label not in labels:
+                labels.append(label)
+
         try:
             budget = _Budget(limits)
             if references is None:
-                backend.extract(path, plan, staging, budget)
+                extract(plan)
             else:
                 # The scene alone first: only its own asset table says which maps it needs. A solid .rar or .7z
                 # is then decompressed twice, within the one time limit.
-                backend.extract(path, scene_plan, staging, budget)
+                extract(scene_plan)
                 _check_staging(staging, [chosen.base], path)
                 wanted = _wanted_at(references, os.path.join(staging, chosen.base))
                 maps = asset_plan(wanted, scene_written=budget.total)
                 if maps:
-                    backend.extract(path, maps, staging, budget)
+                    extract(maps)
                 plan = scene_plan + maps
             _check_staging(staging, [t for _e, t in plan], path)
             reserved = _reserve(path, folders)
@@ -939,4 +955,5 @@ def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=Non
     result.folder = folder
     result.max_path = os.path.join(folder, chosen.base)
     result.written = len(plan)
+    result.backend = " and ".join(labels)
     return result

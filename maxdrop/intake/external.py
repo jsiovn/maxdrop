@@ -831,6 +831,7 @@ class ExternalBackend:
     def __init__(self, kind, tools=None):
         self.kind = kind
         self._fixed = tools                 # tests: these tools instead of the discovery
+        # Fixed: one backend serves every pack of its kind, so the program used for one pack is never kept here.
         self.name = " / ".join(LABELS[f] for f in _ORDER[kind])
 
     def _tools(self, archive, order_kind):
@@ -879,9 +880,12 @@ class ExternalBackend:
             except ToolFailed as e:
                 failures.append(e)
                 continue
-            self.name = tool.label
             return entries
         raise _error(self._failure(path, failures))
+
+    def listed_by(self, entries):
+        """The label of the program that listed these entries (each key holds its tool)."""
+        return entries[0].key[0].label if entries else self.name
 
     def _names_for(self, tool, path, wanted):
         """The names to ask this tool for, one per planned entry; None when it cannot be asked for all of them."""
@@ -895,6 +899,7 @@ class ExternalBackend:
         return None if None in names else names
 
     def extract(self, path, wanted, staging, budget):
+        """Returns the label of the program that wrote the files: the next one is tried when one fails."""
         first = wanted[0][0].key[0]
         tools = [first] + [t for t in self._usable(path) if t != first]
         failures = []
@@ -910,8 +915,7 @@ class ExternalBackend:
             work = tempfile.mkdtemp(prefix=WORK_PREFIX, dir=staging)
             try:
                 self._extract_with(tool, path, wanted, names, work, staging, budget)
-                self.name = tool.label
-                return
+                return tool.label
             except ToolFailed as e:
                 failures.append(e)
             finally:
