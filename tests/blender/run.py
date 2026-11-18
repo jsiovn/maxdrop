@@ -50,6 +50,8 @@ images, a missing file, the materials counted by class, Thin Wall (set on 5.x, c
 BLENDED / DITHERED and every node kind; a crop repeating per axis (wrap, ping-pong, clip), map channel 0 drawn on
 channel 1 and reported, a texture file without image data reported, a material whose build raises removed and
 reported; a material conversion that raises leaves the scene imported without materials, the report says why.
+Images already in the file (an earlier import's) are reused by file and color space, unless modified, packed,
+generated or linked from a library; vray_maps imported twice with its textures adds no image the second time.
 Prints `FIXTURES PASSED` (exit 0) or `FIXTURES FAILED` (exit 1).
 """
 import collections
@@ -1090,6 +1092,140 @@ def check_builder():
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def check_image_reuse():
+    """MaterialBuilder reuses an image already in the file (an earlier import's) of the same file and color space,
+    untouched (bead maxdrop-em3.43): a second builder adds no image; the same file in another color space is a new
+    image and the first keeps its color space; a modified, a packed, a generated or a library image is not reused;
+    vray_maps imported twice with its textures adds no image the second time."""
+    from maxdrop.build import materials as build_materials
+    from maxdrop.convert import materials as cm
+    from maxdrop.convert import texmaps as tx
+    from maxdrop.convert import textures as ct
+    empty_scene()
+    for img in list(bpy.data.images):
+        bpy.data.images.remove(img)
+    scratch = tempfile.mkdtemp(prefix="maxdrop-reuse-")
+    try:
+        png = os.path.join(scratch, "reuse.png")
+        _write_png(png)
+        found = ct.Found(png, ct.SCENE)
+        spaces = [i.identifier for i in bpy.types.ColorManagedInputColorspaceSettings.bl_rna.properties["name"]
+                  .enum_items if i.identifier not in (tx.SRGB, tx.NON_COLOR)]
+        other = next((c for c in spaces if c.startswith("Linear")), spaces[0])
+
+        def build(name, *colorspaces):
+            """The images of a material whose base color and roughness are reuse.png in these color spaces, made by
+            a builder of its own (another import)."""
+            ir = cm.MaterialIR(30, name, "test", base_color=cm.Input((0.5, 0.5, 0.5), cm.MapRef(1)),
+                               roughness=cm.Input(0.5, cm.MapRef(2)))
+            a, b = (tx.Image(k + 1, "reuse.png", "reuse.png", "", found, colorspace=c)
+                    for k, c in enumerate(colorspaces))
+            ir.textures = {"base_color": tx.TextureGraphIR(a, tx.COLOR), "roughness": tx.TextureGraphIR(b, tx.DATA)}
+            m = build_materials.MaterialBuilder().make(ir)
+            return _from(_principled(m).inputs["Base Color"]).image, _from(_principled(m).inputs["Roughness"]).image
+
+        def names():
+            return [(i.name, i.colorspace_settings.name, i.is_dirty, i.source, bool(i.packed_file), bool(i.library))
+                    for i in bpy.data.images]
+
+        base, rough = build("ReuseA", tx.SRGB, tx.NON_COLOR)
+        check("reuse: the first builder loads the file in sRGB and Non-Color", len(bpy.data.images) == 2
+              and base.colorspace_settings.name == tx.SRGB and rough.colorspace_settings.name == tx.NON_COLOR,
+              str(names()))
+        base2, rough2 = build("ReuseB", tx.SRGB, tx.NON_COLOR)
+        check("reuse: a second builder reuses both images, adds none", len(bpy.data.images) == 2
+              and base2.as_pointer() == base.as_pointer() and rough2.as_pointer() == rough.as_pointer(),
+              str(names()))
+        base3, rough3 = build("ReuseC", other, tx.SRGB)
+        check("reuse: the same file in %s is a new image, the sRGB one reused and still sRGB" % other,
+              len(bpy.data.images) == 3 and rough3.as_pointer() == base.as_pointer()
+              and base3.colorspace_settings.name == other and base.colorspace_settings.name == tx.SRGB,
+              str(names()))
+        base.pixels[0] = 0.25  # painted on: it no longer is the file
+        check("reuse: writing a pixel makes the image dirty", base.is_dirty)
+        base4, rough4 = build("ReuseD", tx.SRGB, tx.NON_COLOR)
+        check("reuse: a modified image is not reused, a new one loaded", len(bpy.data.images) == 4
+              and base4.as_pointer() != base.as_pointer() and base4.colorspace_settings.name == tx.SRGB
+              and not base4.is_dirty and rough4.as_pointer() == rough.as_pointer(), str(names()))
+        for img in (base, base4):
+            bpy.data.images.remove(img)
+        base5 = build("ReuseE", tx.SRGB, tx.NON_COLOR)[0]
+        base5.pack()
+        base6 = build("ReuseF", tx.SRGB, tx.NON_COLOR)[0]
+        check("reuse: a packed image is not reused", base6.as_pointer() != base5.as_pointer()
+              and base5.packed_file is not None and base6.packed_file is None, str(names()))
+        for img in list(bpy.data.images):
+            bpy.data.images.remove(img)
+        generated = bpy.data.images.new("Generated", 4, 4)
+        generated.filepath_raw = png  # a generated image with a file name, never loaded from it
+        base7 = build("ReuseG", tx.SRGB, tx.NON_COLOR)[0]
+        check("reuse: a generated image is not reused", generated.source == 'GENERATED'
+              and base7.as_pointer() != generated.as_pointer() and base7.source == 'FILE', str(names()))
+        for img in list(bpy.data.images):
+            bpy.data.images.remove(img)
+        blend = os.path.join(scratch, "library.blend")
+        own = bpy.data.images.load(png, check_existing=False)
+        own.colorspace_settings.name = tx.SRGB
+        bpy.data.libraries.write(blend, {own}, path_remap='ABSOLUTE')
+        library_name = own.name
+        bpy.data.images.remove(own)
+        with bpy.data.libraries.load(blend, link=True) as (_src, dst):
+            dst.images = [library_name]
+        linked = [i for i in bpy.data.images if i.library is not None]
+        base8 = build("ReuseH", tx.SRGB, tx.NON_COLOR)[0]
+        check("reuse: an image linked from a library is not reused", len(linked) == 1
+              and os.path.normcase(bpy.path.abspath(linked[0].filepath, library=linked[0].library)) ==
+              os.path.normcase(png) and linked[0].colorspace_settings.name == tx.SRGB
+              and base8.as_pointer() != linked[0].as_pointer() and base8.library is None, str(names()))
+    finally:
+        empty_scene()
+        for img in list(bpy.data.images):
+            bpy.data.images.remove(img)
+        for lib in list(bpy.data.libraries):
+            bpy.data.libraries.remove(lib)
+        shutil.rmtree(scratch, ignore_errors=True)
+    check_double_import()
+
+
+def check_double_import():
+    """vray_maps copied beside a PNG for each texture, imported twice into an emptied scene whose images stay: the
+    second import adds no image datablock and its nodes take the first import's images."""
+    fixtures = os.path.join(ROOT, "tests", "fixtures")
+    scratch = tempfile.mkdtemp(prefix="maxdrop-twice-")
+    try:
+        empty_scene()
+        for img in list(bpy.data.images):
+            bpy.data.images.remove(img)
+        src = os.path.join(fixtures, "vray_maps.max")
+        dst = os.path.join(scratch, "vray_maps.max")
+        shutil.copy(src, dst)
+        _desc, plan = _irs(src)
+        files = {img.name for s in plan.values() for irs in s.slots for ir in irs if ir is not None
+                 for img in _images_of(ir)}
+        os.makedirs(os.path.join(scratch, "maps"), exist_ok=True)
+        for file in files:
+            _write_png(os.path.join(scratch, "maps", file))
+
+        def used():
+            return {n.image.as_pointer() for m in bpy.data.materials for n in m.node_tree.nodes
+                    if n.bl_idname == "ShaderNodeTexImage" and n.image is not None}
+
+        check("twice: first import", bpy.ops.import_scene.maxdrop(filepath=dst) == {'FINISHED'})
+        before = {i.as_pointer() for i in bpy.data.images}
+        first = used()
+        empty_scene()
+        check("twice: second import", bpy.ops.import_scene.maxdrop(filepath=dst) == {'FINISHED'})
+        after = {i.as_pointer() for i in bpy.data.images}
+        check("twice: the second import adds no image datablock, its nodes use the first import's images",
+              bool(first) and after == before and used() == first,
+              "%d images before, %d after, %d used" % (len(before), len(after), len(first)))
+    finally:
+        empty_scene()
+        for img in list(bpy.data.images):
+            bpy.data.images.remove(img)
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def _crop_case(builder, cm, tx, found, name, mapping, crop):
     """A material whose base color is one cropped image: (its Image Texture node, the node feeding the crop
     Mapping)."""
@@ -1582,6 +1718,7 @@ def main():
         for label, run_check in (("material slots", lambda: check_material_slots(modules)),
                                  ("found textures", check_found_textures), ("builder", check_builder),
                                  ("builder debt", check_builder_debt),
+                                 ("image reuse", check_image_reuse),
                                  ("conversion failure", lambda: check_conversion_failure(
                                      os.path.join(ROOT, "tests", "fixtures", "vray_maps.max")))):
             try:

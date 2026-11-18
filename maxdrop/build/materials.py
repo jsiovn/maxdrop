@@ -23,7 +23,7 @@ transmission) goes through the mean of its channels, the measure convert/materia
 
 Texture graphs (convert/texmaps.py) become nodes, a node of the IR shared by several inputs once per material:
 Image -> Image Texture (its image datablock reused per file and color space: one file used in two color spaces is
-two datablocks), with its placement as a Mapping node and a UV Map node for a map channel other than 1; Invert,
+two datablocks; see Images below), with its placement as a Mapping node and a UV Map node for a map channel other than 1; Invert,
 Mix, Multiply, ColorCorrect (Hue/Saturation/Value, Bright/Contrast, gain, Gamma), Composite (Mix per layer),
 NormalMap (Normal Map node, flips through Separate / Combine Color), Bump (Bump node). A texture file that was not
 found (or does not load) keeps its Image Texture node, without an image and not connected. The texture lookup
@@ -42,6 +42,12 @@ A texture file that holds no image (empty, or not starting as its format does: i
 left out as one that does not load. A material whose build raises is removed again and reported: its slot stays
 empty.
 Alpha: Material.surface_render_method only, BLENDED for a constant alpha below 1, DITHERED for an alpha map.
+
+Images: an image already in the file (an earlier import's, or the user's) is reused for the same file and color
+space when it is still that file: a local image (no library), source FILE, not packed, not modified (is_dirty
+False). Its color space is never changed: images.load(check_existing=True) would hand back an image of that file
+in any color space, and setting ours on it would recolor whatever already uses it. A linked image is left out: its
+path is relative to its library and it goes away when the user drops the link. Otherwise the file is loaded anew.
 """
 import collections
 import os
@@ -166,6 +172,7 @@ class MaterialBuilder:
 
     def __init__(self):
         self.images = {}  # (normalized path, color space) -> Image or None (not loaded)
+        self._existing = None  # the same key -> an Image that was in the file before this builder: _existing_images
         self._issues = []
         self._seen = set()
         self.classes = collections.Counter()
@@ -202,12 +209,16 @@ class MaterialBuilder:
         """The Image of a texmaps.Image (None when its file was not found or does not load)."""
         if img.found is None:
             return None
-        key = (os.path.normcase(os.path.abspath(img.found.path)), img.colorspace)
+        key = _key(img.found.path, img.colorspace)
         if key not in self.images:
             if not image_has_data(img.found.path):
                 self.issue(label, "texture not loaded: %s (no image data)" % img.name)
                 self.images[key] = None
                 return None
+            existing = self._existing_images().get(key)
+            if existing is not None:
+                self.images[key] = existing
+                return existing
             try:
                 image = bpy.data.images.load(img.found.path, check_existing=False)
             except RuntimeError as e:
@@ -217,6 +228,29 @@ class MaterialBuilder:
                 image.colorspace_settings.name = img.colorspace
             self.images[key] = image
         return self.images[key]
+
+    def _existing_images(self):
+        """{key: Image} of the images in the file before this builder's first load that may be reused (_reusable),
+        the first by name for a key; read once, on the first texture."""
+        if self._existing is None:
+            self._existing = {}
+            for image in bpy.data.images:
+                if self._reusable(image):
+                    self._existing.setdefault(_key(bpy.path.abspath(image.filepath), image.colorspace_settings.name),
+                                              image)
+        return self._existing
+
+    @staticmethod
+    def _reusable(image):
+        """True for an image that still is its file: local (not from a library), loaded from a file, not packed,
+        not modified. Reads no pixels."""
+        return (image.library is None and image.source == 'FILE' and image.packed_file is None
+                and not image.is_dirty and bool(image.filepath))
+
+
+def _key(path, colorspace):
+    """The key of a texture file in one color space: its absolute path, normalized for case and separators."""
+    return os.path.normcase(os.path.abspath(path)), colorspace
 
 
 class _Tree:
