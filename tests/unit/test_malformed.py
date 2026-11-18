@@ -182,7 +182,8 @@ class DamagedInputTest(unittest.TestCase):
 
     def test_failed_reference_read_keeps_no_iterator(self):
         # A struct unpack iterator over a chunk's view holds a buffer export of it. Left in a frame of the
-        # traceback, it crashes Python <= 3.11 when the garbage collector clears that memoryview.
+        # traceback, it crashes Python <= 3.11 when the garbage collector clears that memoryview. 0x2034 is the
+        # case that crashed (a comprehension frame keeps its iterator); 0x2035 guards the pairs loop.
         unpack_iterator = type(struct.iter_unpack("<i", b""))
         for path in FIXTURES:
             scene, classes, dlls = _streams(path)
@@ -198,7 +199,8 @@ class DamagedInputTest(unittest.TestCase):
                     bad = struct.pack("<%di" % (len(raw) // 4), *[past] * (len(raw) // 4))
                 else:
                     bad = raw[:4] + struct.pack("<Ii", 0, past) * ((len(raw) - 4) // 8)
-                sc = reader_scene.Scene(_rewritten(scene, ref.offset, bad), classdir.ClassDirectory.parse(classes, dlls))
+                sc = reader_scene.Scene(_rewritten(scene, ref.offset, bad),
+                                        classdir.ClassDirectory.parse(classes, dlls))
                 held = None
                 for i in range(len(sc)):
                     try:

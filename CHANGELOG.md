@@ -8,6 +8,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ## [Unreleased]
 
+### Fixed
+
+- A damaged `.max` whose objects reference objects that do not exist no longer risks crashing Blender 4.2 and 4.5
+  (Python 3.11) after the import is refused.
+
 ## [0.0.5] - 2026-11-18
 
 ### Added

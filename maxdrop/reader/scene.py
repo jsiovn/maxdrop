@@ -276,7 +276,7 @@ class Scene:
             if n > MAX_REFS:
                 raise ChunkError("object %d: %d reference pairs, more than %d" % (i, n, MAX_REFS))
             view = pairs.view()
-            for k in range(n):  # unpack_from, not iter_unpack: see ref_list
+            for k in range(n):  # unpack_from like ref_list: no iterator over the view
                 slot, value = _PAIR.unpack_from(view, 4 + 8 * k)
                 if value != -1:
                     out[slot] = self._target(i, value)
