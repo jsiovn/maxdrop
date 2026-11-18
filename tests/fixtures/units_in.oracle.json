@@ -144,6 +144,7 @@
       "base_verts": 8,
       "bbox_max": [10, 10, 30],
       "bbox_min": [0, -10, 0],
+      "camera": null,
       "eval_faces": 12,
       "eval_maps": null,
       "eval_verts": 8,
@@ -166,7 +167,8 @@
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 5, 0, 0]
     }
   ],
-  "oracle_version": 5,
+  "oracle_version": 6,
+  "render": {"camera": null, "height": 480, "pixel_aspect": 1, "width": 640},
   "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
   "time": 0,
   "units": {"display_metric": "millimeters", "display_type": "metric", "display_us": "ft_Frac_In", "system_scale": 1, "system_type": "inches"}

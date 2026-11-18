@@ -515,7 +515,10 @@ class TestFixtures(unittest.TestCase):
                  "StdOmniInst": 0, "PhPointInst": 0, "StdTargetSpot.Target": 0x4800,
                  "StdTargetDirect.Target": 0x4800, "StdSun.Target": 0x4800, "PhWeb.Target": 0x4800,
                  "PhTPoint.Target": 0x4800, "PhTLine.Target": 0x4800, "PhTRectangle.Target": 0x4800,
-                 "PhTSphere.Target": 0x4800, "PhTCylinder.Target": 0x4800}
+                 "PhTSphere.Target": 0x4800, "PhTCylinder.Target": 0x4800,
+                 # cameras: the targets of the targeted cameras
+                 "CamTarget.Target": 0x4800, "CamTargetOrtho.Target": 0x4800, "CamPhysShift.Target": 0x4800,
+                 "CamVRayShift.Target": 0x4800, "CamVRayTarget.Target": 0x4800}
         heads = {"Node": 16, "RootNode": 16, "Texmaps": 48, "Bezier Float": 2, "Bezier Scale": 2, "Bezier Color": 2,
                  "Boolean Controller": 2, "Grid Reference": 2, "VRayMtl": 34, "MtlBaseLib": 2,
                  "": 2}  # Custom Curve Control's point class, nameless in the class directory (texmap_rules' Falloffs)

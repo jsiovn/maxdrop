@@ -24,6 +24,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   cones, colors, Kelvin temperatures, on / off and diffuse / specular switches. What Blender cannot hold is a line
   in the report: decay other than inverse square, a Direct's beam, IES and web distributions (a wide spot, the file
   named), the sky model's sun color. A Skylight and a VRaySky environment are not imported yet (a line each).
+- Cameras: Free, Target, Physical and VRayPhysicalCamera arrive as Blender cameras with 3ds Max's framing: the
+  horizontal field of view whatever the render aspect (zoom, lens breathing and a specified FOV included, as 3ds Max
+  and V-Ray render them), lens shift, clipping and orthographic width. The scene's render size becomes Blender's, and
+  the camera of the view 3ds Max renders (the locked render view, else the active viewport) is the scene camera,
+  else the first camera. Depth of field, distortion, tilt correction and V-Ray's exposure are lines in the report.
 
 ### Changed
 

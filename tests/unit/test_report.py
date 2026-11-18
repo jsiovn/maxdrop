@@ -374,6 +374,7 @@ class TestFixture(unittest.TestCase):
             "Units: millimeters (0.001 m per unit)",
             "Nodes read: 6",
             "Objects built: 6, meshes: 5",
+            "Render size: 640 x 480; scene camera: none",
             "Layers: 2 (0 hidden)",
             "Objects hidden: 1, not renderable: 1, frozen: 0",
             "Groups: 1",

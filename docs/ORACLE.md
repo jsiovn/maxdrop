@@ -60,7 +60,8 @@ Top level:
 | `max_version` | The Max that made the dump: `[release, year]`, e.g. `[22000, 2020]`. |
 | `node_count` | Number of entries in `nodes`. |
 | `nodes` | Every node of the scene, see below. |
-| `oracle_version` | Version of this layout (2: `material_graph` added; 3: the modifier context, switches and name of each modifier; 4: `shape`; 5: `eval_maps`). |
+| `oracle_version` | Version of this layout (2: `material_graph` added; 3: the modifier context, switches and name of each modifier; 4: `shape`; 5: `eval_maps`; 6: `camera` and `render`). |
+| `render` | The render settings: `width`, `height` (pixels), `pixel_aspect`, and `camera`: the handle of the camera of the view 3ds Max renders (the locked render view, `rendViewIndex`, else the active viewport; `viewport.getCamera`), `null` when that view looks through no camera. |
 | `renderer` | The current renderer: `class_id`, `class_name`. |
 | `time` | The frame every node was evaluated at: always 0. |
 | `units` | `system_type` (e.g. `millimeters`), `system_scale`, `display_type` (`Generic`, `Metric`, `US`, `Custom`), `display_metric`, `display_us`. |
@@ -85,6 +86,7 @@ parent always comes before its children):
 | `transform` | World node transform (`node.transform`, the pivot), 12 floats: rows 1 to 4, row 4 = translation. |
 | `offset_pos`, `offset_rot`, `offset_scale` | Object offset: where the object sits relative to the pivot. `offset_rot` is a quaternion `[x, y, z, w]` as MAXScript gives it, which is the conjugate of the usual right-handed one: a rotation of +30° about Z (row 1 = `[0.866, 0.5, 0]`) prints as `[0, 0, -0.258819, 0.965926]`. Negate x, y and z before using it as a standard quaternion. Shown by modifier_pivot: FixtureBent's pivot alone turned +30° about Z gives an offset of -30°, `[0, 0, 0.258819, 0.965926]` (`tests/test_oracle.py`). |
 | `object_transform` | World transform of the object (`node.objectTransform` = offset times node transform), 12 floats. Mesh vertices in object space times this matrix are world positions. |
+| `camera` | `null` unless the base object is a camera (superclass 32). Then 3ds Max's camera state at frame 0 (`CameraObject::EvalCameraState`, through the SDK's .NET wrapper): `fov` the horizontal field of view in degrees that 3ds Max and V-Ray render with (after zoom, lens breathing and a specified FOV), `ortho`, `hither` and `yon` (the clipping planes, in file units), `manual_clip`, `tdist` (the target distance; 0 on a Target camera, whose distance is its target's). A lens shift (Physical, VRayPhysicalCamera) changes the state's FOV but not the rendered one (renders of a marker scene show the image only translated): the state is read with `horizontal_shift` and `vertical_shift` at 0, then they are put back. |
 | `bbox_min`, `bbox_max` | World-aligned bounding box of the evaluated object: `nodeGetBoundingBox node (matrix3 1)`. This is the tight box of the evaluated points (checked against the vertex extremes of a rotated, bent, parented sphere); `node.min` / `node.max` would instead transform the object's local box and be larger under rotation. |
 | `layer` | Name of the node's layer. |
 | `hidden`, `frozen`, `renderable` | The node's own flags (a layer's flags are in `layers`). |

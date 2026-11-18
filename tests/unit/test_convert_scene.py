@@ -77,6 +77,7 @@ UV_LAYERS = {
     "vray_lights": [],  # lights and a target: no mesh
     "lights_standard": [],
     "lights_photometric": [],
+    "cameras": [],  # its box, without Generate Mapping Coords; the cameras are no mesh
     "vray_wrappers": ["UVMap"],
     # per mesh: every box, the cylinder and the sphere have channel 1; two UVW Maps write channels 2 and 3
     "uvwmap": collections.defaultdict(lambda: ["UVMap"], {"FixtureUVWGizmo": ["UVMap", "UVChannel_2"],
@@ -112,15 +113,19 @@ FLAT_MESHES = {"FixtureGeoOcta"}
 PRIMITIVE_CLASSES = {("0x00000010", "0x00000000"), ("0x00000011", "0x00000000"), ("0x00000012", "0x00000000"),
                      ("0x00000020", "0x00000000"), ("0xa86c23dd", "0x00000000"), ("0x00007b21", "0x00000000"),
                      ("0x00000000", "0x00007f9e"), ("0x081f1dfc", "0x77566f65"), ("0x76bf318a", "0x4bf37b10")}
-# placeholders the fixtures hold: lookat's target cameras (their class directory names the class "Target", as it
-# does the Target objects they aim at, which are converted) and its Point helper
-PLACEHOLDERS = {"lookat": {"Target": 4, "Point": 1}}
+# placeholders the fixtures hold: lookat's Point helper
+PLACEHOLDERS = {"lookat": {"Point": 1}}
 NO_DECAY = "light: no decay: Blender's light falls off with the square of the distance; as bright as in 3ds Max at 1 m"
 # the issues the fixtures are made to raise
 ISSUES = {"uvwmap": ["uvw map: a UVW Map above Bend is not evaluated",
                      "uvw map: shrink-wrap mapping is not evaluated: the stored channel stays"],
           "stack_convert": ["modifiers: TurboSmooth above Bend is not converted"],
-          "lookat": [NO_DECAY],  # its target spot
+          "lookat": [  # its target spot; it was saved with a Perspective viewport active
+              "camera: the view 3ds Max renders (viewport 4) looks through no camera: the first camera, FixtureCam, is "
+              "the scene camera", NO_DECAY],
+          "cameras": ["camera: depth of field is not imported"] * 2 + [
+              "camera: its exposure is not imported: Blender renders as if the camera had none"] * 3 + [
+              "camera: its tilt correction (0, 5) is not imported: Blender has no keystone correction"],
           "lights_standard": [
               "light: ambient only is not imported: it lights as any light",
               "light: inverse decay: Blender's light falls off with the square of the distance; as bright as in 3ds "
@@ -616,7 +621,8 @@ class Fixtures(unittest.TestCase):
                 primitive = tuple(o["base_class_id"]) in PRIMITIVE_CLASSES
                 light = tuple(o["base_class_id"] or ()) in LIGHT_CLASSES and o["name"] not in UNBUILT_LIGHTS
                 kind = conv.MESH if o["base_verts"] is not None or extruded or primitive else \
-                    conv.CURVE if o["shape"] else conv.LIGHT if light else conv.EMPTY
+                    conv.CURVE if o["shape"] else conv.LIGHT if light else \
+                    conv.CAMERA if o["camera"] is not None else conv.EMPTY
                 self.assertEqual(node.kind, kind, "%s %s" % (name, node.name))
                 if node.kind == conv.MESH:
                     md = desc.meshes[node.mesh]

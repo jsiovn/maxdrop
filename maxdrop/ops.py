@@ -46,6 +46,8 @@
 # Track To constraint to their target; the ones it cannot aim, and an axis conversion, are named in the report.
 # Modified for MaxDrop, 2026-11-19 (jsiovn). The scene description gets the asset table: the report names the web
 # and IES files of the lights.
+# Modified for MaxDrop, 2026-11-19 (jsiovn). Cameras: the scene description gets the file's saved views, the build
+# makes the cameras, sets the render size and the scene camera, and removes the cameras of a failed build.
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -90,7 +92,7 @@ _SHOWN_FILES = 5
 _UNREADABLE = (OSError, ValueError, IndexError, struct.error)
 # What a build makes besides objects and collections, in the order a failed build removes them. Addresses, not
 # names: a new datablock could reuse the address of one freed meanwhile, but the build frees none.
-_MADE = ("meshes", "curves", "lights", "materials", "images")
+_MADE = ("meshes", "curves", "lights", "cameras", "materials", "images")
 
 # The default Light Strength: V-Ray 5.2 renders against Cycles renders of the same lights (docs/FORMAT.md,
 # "VRayLight", where the measured ratios are).
@@ -376,8 +378,8 @@ def _material_slots(cf, sc, desc, max_path, context, image_search):
 
 def _remove(cols, before):
     """Remove what a failed build left: the objects of the file's collection tree, the collections, and the meshes,
-    curves, lights, materials and images made since before ({kind: the as_pointer() of each datablock before the
-    build}) that nothing uses."""
+    curves, lights, cameras, materials and images made since before ({kind: the as_pointer() of each datablock before
+    the build}) that nothing uses."""
     for ob in list(cols.root.all_objects):
         bpy.data.objects.remove(ob)
     for col in list(cols.layers.values()) + [cols.root]:
@@ -592,17 +594,18 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
 
     def _import_scene(self, context, max_path, pack=None, pack_name=""):
         """Read, describe and build one .max with its materials into a collection named after it in the active
-        collection, then publish its import report (console and the text "MaxDrop Report"). pack: archive.unpack()'s
-        result when the scene came from a scene pack, pack_name the archive's file name. ([(report level, line)],
-        the convert.report.Report), the report's summary last; one of _UNREADABLE when the file cannot be read. A
-        build that fails is removed again (objects, collections, meshes, curves, materials, images) before the
-        exception goes on."""
+        collection, set the scene's render size and camera, then publish its import report (console and the text
+        "MaxDrop Report"). pack: archive.unpack()'s result when the scene came from a scene pack, pack_name the
+        archive's file name. ([(report level, line)], the convert.report.Report), the report's summary last; one of
+        _UNREADABLE when the file cannot be read. A build that fails is removed again (objects, collections, meshes,
+        curves, lights, cameras, materials, images) before the exception goes on."""
         from .build import collections as build_collections
         from .build import materials as build_materials
         from .build import modifiers as build_modifiers
         from .build import objects as build_objects
         from .build import report as build_report
-        from .convert import colors
+        from .build import cameras as build_cameras
+        from .convert import cameras, colors
         from .convert import report as convert_report
         from .convert import scene as convert_scene
         from .reader import assets, cfb, units
@@ -614,7 +617,7 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
             unit = units.system_unit(sc)
             meters, note = _meters(self.units, unit, self.scale_objects)
             desc = convert_scene.describe(sc, meters, unit, convert_modifiers=self.modifiers == 'KEEP',
-                                          assets=assets.AssetTable.from_file(cf))
+                                          assets=assets.AssetTable.from_file(cf), views=cameras.saved_views(cf))
             slots, counts, failed = None, None, []
             if materials:
                 try:
@@ -639,6 +642,7 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
                                         light_strength=self.light_strength)
             settings_skipped = build_modifiers.add(desc, built)
             kept = build_objects.track_targets(desc, built) if self.keep_targets else []
+            build_cameras.set_render(context.scene, desc, built)
             build_collections.finish(cols, view_layer)
         except BaseException:
             _remove(cols, before)
@@ -646,7 +650,7 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
         del slots
         rep = convert_report.gather(desc, source=name, objects_built=len(built.objects),
                                     meshes_built=len(built.meshes), curves_built=len(built.curves),
-                                    lights_built=len(built.lights),
+                                    lights_built=len(built.lights), cameras_built=len(built.cameras),
                                     dropped_uv_layers=built.dropped_uv_layers,
                                     pack=pack, pack_name=pack_name)
         if settings_skipped:

@@ -37,7 +37,7 @@ only things listed are on the material side: wrappers and maps approximated, map
 Blender 4, Principled inputs that Blender lacks; and the modifiers not applied, as many as the oracle lists, in a
 fixture whose oracle lists some (modifier_pivot; the ones converted to Blender modifiers are not counted), the
 issues a fixture is made to raise (uvwmap, stack_convert, vray_lights) and the placeholders of classes not built
-yet (lookat's cameras, spot light and Point helper). Two scenes in one run: the text holds both reports; a file
+yet (lookat's Point helper). Two scenes in one run: the text holds both reports; a file
 that was not imported is named after them.
 Prints `IMPORT PASSED` (exit 0) or `IMPORT FAILED` (exit 1).
 """
@@ -71,10 +71,10 @@ FIXTURE = {"modifiers": 0, "issues": 0, "placeholders": 0, "lights_only": False}
 # What the oracle does not tell: a UVW Map of a type MaxDrop does not evaluate (shrink-wrap), and the issues each
 # fixture is made to raise (ISSUES in tests/unit/test_convert_scene.py)
 NOT_EVALUATED = {"FixtureUVWShrink"}
-FIXTURE_ISSUES = {"uvwmap.max": 2, "stack_convert.max": 1, "vray_lights.max": 4, "lookat.max": 1,
-                  "lights_standard.max": 17, "lights_photometric.max": 9}
-# placeholders of classes MaxDrop does not build yet: lookat's four target cameras, its Point
-FIXTURE_PLACEHOLDERS = {"lookat.max": 5}
+FIXTURE_ISSUES = {"uvwmap.max": 2, "stack_convert.max": 1, "vray_lights.max": 4, "lookat.max": 2,
+                  "lights_standard.max": 17, "lights_photometric.max": 9, "cameras.max": 6}
+# placeholders of classes MaxDrop does not build yet: lookat's Point
+FIXTURE_PLACEHOLDERS = {"lookat.max": 1}
 # fixtures without a mesh: a light must arrive instead of a mesh with a material
 LIGHTS_ONLY = {"vray_lights.max", "lights_standard.max", "lights_photometric.max"}
 

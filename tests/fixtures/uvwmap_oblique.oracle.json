@@ -144,6 +144,7 @@
       "base_verts": 42,
       "bbox_max": [7.23607, 7.60845, 8],
       "bbox_min": [-7.23607, -7.60845, -8],
+      "camera": null,
       "eval_faces": 80,
       "eval_maps": [
         {
@@ -419,6 +420,7 @@
       "base_verts": 42,
       "bbox_max": [47.2361, 7.60845, 8],
       "bbox_min": [32.7639, -7.60845, -8],
+      "camera": null,
       "eval_faces": 80,
       "eval_maps": [
         {
@@ -694,6 +696,7 @@
       "base_verts": 20,
       "bbox_max": [88, 7.60845, 12],
       "bbox_min": [72, -7.60845, 0],
+      "camera": null,
       "eval_faces": 36,
       "eval_maps": [
         {
@@ -837,6 +840,7 @@
       "base_verts": 42,
       "bbox_max": [7.23607, 47.6085, 8],
       "bbox_min": [-7.23607, 32.3915, -8],
+      "camera": null,
       "eval_faces": 80,
       "eval_maps": [
         {
@@ -1112,6 +1116,7 @@
       "base_verts": 42,
       "bbox_max": [47.2361, 47.6085, 8],
       "bbox_min": [32.7639, 32.3915, -8],
+      "camera": null,
       "eval_faces": 80,
       "eval_maps": [
         {
@@ -1380,7 +1385,8 @@
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 40, 40, 0]
     }
   ],
-  "oracle_version": 5,
+  "oracle_version": 6,
+  "render": {"camera": null, "height": 480, "pixel_aspect": 1, "width": 640},
   "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
   "time": 0,
   "units": {"display_metric": "meters", "display_type": "Generic", "display_us": "ft_Frac_In", "system_scale": 1, "system_type": "millimeters"}

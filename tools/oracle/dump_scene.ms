@@ -17,7 +17,7 @@ global MaxDropOracle
 
 struct MaxDropOracleStruct
 (
-	version = 5,
+	version = 6,
 
 	fn num v =
 	(
@@ -267,6 +267,36 @@ struct MaxDropOracleStruct
 		block items 6
 	),
 
+	-- a camera's state as 3ds Max (and V-Ray) render it: CameraObject::EvalCameraState at frame 0, the horizontal FOV in
+	-- degrees after zoom, lens breathing and a specified FOV. A lens shift changes the state's FOV (Physical and
+	-- VRayPhysicalCamera) but not the rendered one, which renders show: the state is read with the shift at 0, then
+	-- the shift is put back.
+	fn cameraJson n =
+	(
+		local b = n.baseObject
+		if superClassOf b != camera do return "null"
+		local g = (dotNetClass "Autodesk.Max.GlobalInterface").Instance
+		local a = g.Animatable.GetAnimByHandle (dotNetObject "System.UIntPtr" (getHandleByAnim b))
+		local cs = g.CameraState.Create()
+		local iv = g.Interval.Create()
+		iv.SetInfinite()
+		local shifts = for p in #(#horizontal_shift, #vertical_shift) where isProperty b p collect #(p, getProperty b p)
+		for s in shifts do setProperty b s[1] 0.0
+		a.EvalCameraState 0 iv cs
+		for s in shifts do setProperty b s[1] s[2]
+		local mc = cs.ManualClip
+		inline #(#("fov", num (radToDeg cs.Fov)), #("hither", num cs.Hither), #("manual_clip", bool (mc == true or mc == 1)), #("ortho", bool cs.IsOrtho), #("tdist", num cs.Tdist), #("yon", num cs.Yon))
+	),
+
+	-- the render size and the camera of the view 3ds Max renders: the locked render view, else the active viewport
+	fn renderJson =
+	(
+		local idx = if rendUseActiveView then viewport.activeViewport else rendViewIndex
+		local cam = try (viewport.getCamera index:idx) catch undefined
+		if cam != undefined and superClassOf cam.baseObject != camera do cam = undefined
+		inline #(#("camera", if cam == undefined then "null" else cam.handle as string), #("height", renderHeight as string), #("pixel_aspect", num renderPixelAspect), #("width", renderWidth as string))
+	),
+
 	fn nodeJson n index mats =
 	(
 		local b = n.baseObject
@@ -288,6 +318,7 @@ struct MaxDropOracleStruct
 			#("base_verts", intOrNull bc[1]), \
 			#("bbox_max", bmax), \
 			#("bbox_min", bmin), \
+			#("camera", cameraJson n), \
 			#("eval_faces", intOrNull ev[2]), \
 			#("eval_maps", evalMapsJson n), \
 			#("eval_verts", intOrNull ev[1]), \
@@ -570,6 +601,7 @@ struct MaxDropOracleStruct
 			#("node_count", nodes.count as string), \
 			#("nodes", block nodeItems 2), \
 			#("oracle_version", version as string), \
+			#("render", renderJson()), \
 			#("renderer", rend), \
 			#("time", "0"), \
 			#("units", units_) \

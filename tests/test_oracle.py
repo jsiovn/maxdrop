@@ -19,13 +19,15 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FIXTURE_DIR = os.path.join(ROOT, "tests", "fixtures")
 TOP_KEYS = ["file", "file_version", "layers", "material_graph", "materials", "max_version", "node_count", "nodes",
-            "oracle_version", "renderer", "time", "units"]
+            "oracle_version", "render", "renderer", "time", "units"]
 NODE_KEYS = ["base_class_id", "base_class_name", "base_faces", "base_superclass", "base_verts", "bbox_max",
-             "bbox_min", "eval_faces", "eval_maps", "eval_verts", "frozen", "handle", "hidden", "index", "instances",
-             "layer", "material", "modifiers", "name", "object_transform", "offset_pos", "offset_rot", "offset_scale",
-             "parent", "renderable", "shape", "transform"]
+             "bbox_min", "camera", "eval_faces", "eval_maps", "eval_verts", "frozen", "handle", "hidden", "index",
+             "instances", "layer", "material", "modifiers", "name", "object_transform", "offset_pos", "offset_rot",
+             "offset_scale", "parent", "renderable", "shape", "transform"]
 MODIFIER_KEYS = ["class_id", "class_name", "context_bbox_max", "context_bbox_min", "context_tm", "enabled",
                  "enabled_in_renders", "enabled_in_views", "name"]
+CAMERA_KEYS = ["fov", "hither", "manual_clip", "ortho", "tdist", "yon"]
+RENDER_KEYS = ["camera", "height", "pixel_aspect", "width"]
 SHAPE_KEYS = ["adaptive", "angle", "display_render_mesh", "length", "optimize", "rectangular", "renderable", "sides",
               "splines", "steps", "thickness", "width"]
 KNOT_KEYS = ["in", "mid", "out", "pos", "segment", "type"]
@@ -117,7 +119,9 @@ class OracleFiles(unittest.TestCase):
             with self.subTest(name):
                 o = _oracle(name)
                 self.assertEqual(list(o), TOP_KEYS)
-                self.assertEqual(o["oracle_version"], 5)
+                self.assertEqual(o["oracle_version"], 6)
+                self.assertEqual(list(o["render"]), RENDER_KEYS)
+                self.assertTrue(o["render"]["width"] > 0 and o["render"]["height"] > 0)
                 self.assertEqual(o["file"], name + ".max")
                 self.assertEqual(o["node_count"], len(o["nodes"]))
                 handles = {n["handle"] for n in o["nodes"]}
@@ -135,6 +139,10 @@ class OracleFiles(unittest.TestCase):
                     for h in n["instances"]:
                         self.assertEqual(groups[h], n["instances"])
                     self.assertEqual(n["shape"] is not None, n["base_superclass"] == 64, n["name"])
+                    self.assertEqual(n["camera"] is not None, n["base_superclass"] == 32, n["name"])
+                    if n["camera"] is not None:
+                        self.assertEqual(list(n["camera"]), CAMERA_KEYS)
+                        self.assertTrue(0 < n["camera"]["fov"] < 180, n["camera"])
                     if n["shape"] is not None:
                         self._check_shape(n["shape"])
                     uvw = any(m["class_name"] == "Uvwmap" for m in n["modifiers"])
@@ -150,6 +158,9 @@ class OracleFiles(unittest.TestCase):
                     self.assertTrue(set(n["instances"]) <= handles)
                     self.assertIn(n["layer"], [layer["name"] for layer in o["layers"]])
                 self.assertEqual([m["index"] for m in o["materials"]], list(range(len(o["materials"]))))
+                camera = o["render"]["camera"]
+                self.assertTrue(camera is None or any(n["handle"] == camera and n["camera"] is not None
+                                                      for n in o["nodes"]), camera)
 
     def _check_shape(self, shape):
         self.assertEqual(list(shape), SHAPE_KEYS)

@@ -64,7 +64,8 @@ your computer.
 | VRaySun | **Imported** as a sun: strength from the intensity multiplier (100 klx per unit, V-Ray's at the zenith), angle from the size multiplier, its filter color (the sky model's color and dimming toward the horizon are left out: a line in the report) |
 | VRayIES | **Imported** as a wide spot: power from its lumens or its intensity override, color or temperature, affect diffuse / specular; the IES file is named in the report, its distribution not imported (nor its own intensity, which V-Ray takes at power 0: then 0 W, a line in the report) |
 | Skylight, VRaySky (environment) | Not yet: the Skylight an empty, each a line in the report |
-| Cameras | Not yet: placeholder, aimed where 3ds Max aims it |
+| Cameras: Free, Target, Physical, VRayPhysicalCamera | **Imported** as Blender cameras where 3ds Max has them, framing what 3ds Max renders: the horizontal field of view for the scene's render aspect (Physical and V-Ray: zoom, lens breathing at the focus or target distance, a specified FOV; checked against 3ds Max within 0.05°), lens shift, clipping, orthographic width. Depth of field, distortion, tilt correction, a multi-pass effect and V-Ray's exposure are left out (a line each in the report) |
+| Render size, scene camera | **Imported**: the scene's render width, height and pixel aspect; the scene camera is the camera of the view 3ds Max renders (the locked render view, else the active viewport), else the first camera (a line in the report) |
 | Targets (of target cameras and lights) | **Imported** as empties where 3ds Max has them, not placeholders |
 | Everything else: other lights, hair, proxies (`.vrmesh`, Corona proxy), XRefs, particles, bones… | Not yet: placeholder |
 
@@ -182,4 +183,4 @@ the scene in the archive is kept.
 ## What comes next
 
 Lights and cameras: Corona lights, V-Ray mesh and dome lights, IES distributions, the sky and Skylight as the World,
-cameras with their targets.
+camera exposure.

@@ -42,6 +42,8 @@ MAX_LISTED = 50
 APPLIED, CONVERTED, IGNORED = "applied", "converted", "ignored"
 LEVEL_INFO, LEVEL_WARNING = "INFO", "WARNING"
 GEOMETRY = "geometry: "
+SCENE = "scene"  # the label of an issue of the whole scene (index None)
+NO_RENDER_SIZE = "not stored, Blender's kept"
 UNKNOWN_CONTROLLER = "transform: " + controllers.UNKNOWN_CLASS  # convert.scene's wording of that issue
 
 
@@ -50,7 +52,7 @@ class Report:
     a material or map object ("object <index>") or a Blender material. materials_built is None when the import made
     no materials."""
     __slots__ = ("source", "unit", "meters", "nodes", "objects_built", "meshes_built", "curves_built",
-                 "lights_built", "layers",
+                 "lights_built", "cameras_built", "scene_camera", "render_size", "layers",
                  "hidden_layers", "hidden", "unrenderable", "frozen", "groups", "placeholders", "unknown_controllers", "modifiers",
                  "modifiers_applied", "modifiers_converted",
                  "dropped_uv_layers", "unknown_controller_nodes", "geometry_errors", "issues", "pack", "pack_name",
@@ -61,7 +63,8 @@ class Report:
     def __init__(self, source=""):
         self.source, self.unit, self.meters = source, None, 1.0
         self.nodes = self.objects_built = self.meshes_built = self.layers = self.hidden_layers = 0
-        self.curves_built = self.lights_built = 0
+        self.curves_built = self.lights_built = self.cameras_built = 0
+        self.scene_camera = self.render_size = None  # the scene camera's name; "W x H" or NO_RENDER_SIZE
         self.hidden = self.unrenderable = self.frozen = self.groups = self.dropped_uv_layers = 0
         self.unknown_controller_nodes = 0  # their issues, listed by class in unknown_controllers instead
         self.placeholders = collections.Counter()
@@ -152,7 +155,11 @@ class Report:
         lines.append("Nodes read: %d" % self.nodes)
         lines.append("Objects built: %d, meshes: %d" % (self.objects_built, self.meshes_built)
                      + (", curves: %d" % self.curves_built if self.curves_built else "")
-                     + (", lights: %d" % self.lights_built if self.lights_built else ""))
+                     + (", lights: %d" % self.lights_built if self.lights_built else "")
+                     + (", cameras: %d" % self.cameras_built if self.cameras_built else ""))
+        if self.render_size is not None or self.scene_camera is not None:
+            lines.append("Render size: %s; scene camera: %s" % (self.render_size or NO_RENDER_SIZE,
+                                                                self.scene_camera or "none"))
         lines.append("Layers: %d (%d hidden)" % (self.layers, self.hidden_layers))
         lines.append("Objects hidden: %d, not renderable: %d, frozen: %d" % (self.hidden, self.unrenderable,
                                                                              self.frozen))
@@ -308,7 +315,7 @@ def _pack_lines(pack, pack_name):
 
 
 def gather(desc, source="", objects_built=None, meshes_built=None, dropped_uv_layers=0, pack=None, pack_name="",
-           curves_built=None, lights_built=None):
+           curves_built=None, lights_built=None, cameras_built=None):
     """The Report of one import from its SceneDescription and what build/ made of it."""
     rep = Report(source)
     rep.unit = desc.unit.name if desc.unit is not None else None
@@ -318,6 +325,11 @@ def gather(desc, source="", objects_built=None, meshes_built=None, dropped_uv_la
     rep.meshes_built = len(desc.meshes) if meshes_built is None else meshes_built
     rep.curves_built = len(desc.curves) if curves_built is None else curves_built
     rep.lights_built = len(getattr(desc, "lights", ())) if lights_built is None else lights_built
+    rep.cameras_built = len(getattr(desc, "cameras", ())) if cameras_built is None else cameras_built
+    render, camera = getattr(desc, "render", None), getattr(desc, "camera", None)
+    if render is not None:
+        size = "%d x %d" % (render.width, render.height) if render.width is not None else NO_RENDER_SIZE
+        rep.render_size = size + (", pixel aspect %g" % render.pixel_aspect if render.pixel_aspect != 1.0 else "")
     rep.dropped_uv_layers = dropped_uv_layers
     rep.layers = len(desc.layers)
     rep.hidden_layers = sum(1 for la in desc.layers if la.hidden)
@@ -332,8 +344,10 @@ def gather(desc, source="", objects_built=None, meshes_built=None, dropped_uv_la
     rep.placeholders.update(desc.placeholders)
     rep.unknown_controllers.update(desc.unknown_controllers)
     labels = {node.index: node.name or "object %d" % node.index for node in desc.nodes}
+    if camera is not None:
+        rep.scene_camera = labels.get(camera, "object %d" % camera)
     for index, reason in desc.issues:
-        label = labels.get(index, "object %d" % index)
+        label = SCENE if index is None else labels.get(index, "object %d" % index)
         if reason == UNKNOWN_CONTROLLER and desc.unknown_controllers:  # counted by class already
             rep.unknown_controller_nodes += 1
         elif reason.startswith(GEOMETRY):

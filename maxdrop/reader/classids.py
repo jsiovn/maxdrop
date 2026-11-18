@@ -15,6 +15,7 @@ from .classdir import ClassId
 SC_BASENODE = 0x0001
 SC_PARAMETER_BLOCK = 0x0008
 SC_GEOMOBJECT = 0x0010
+SC_CAMERA = 0x0020
 SC_LIGHT = 0x0030
 SC_SHAPE = 0x0040
 SC_HELPER = 0x0050
@@ -82,6 +83,12 @@ TARGET_RECTANGLE_LIGHT = ClassId(0x71794F9D, 0x70AE52F2)
 TARGET_DISC_LIGHT = ClassId(0x38732348, 0x201758B3)
 TARGET_SPHERE_LIGHT = ClassId(0x33FC7AE9, 0x54433DC5)
 TARGET_CYLINDER_LIGHT = ClassId(0x7C8B5B10, 0x4BD33E86)
+
+# Cameras (convert/cameras.py).
+FREE_CAMERA = ClassId(0x00001001, 0)
+TARGET_CAMERA = ClassId(0x00001002, 0)  # its class directory names it "Target", as it does the Target object
+PHYSICAL_CAMERA = ClassId(0x46697218, 0x28E8008D)
+VRAY_PHYSICAL_CAMERA = ClassId(0x405E3FEE, 0x4F6513BE)
 
 # Primitives (convert/primitives.py).
 BOX = ClassId(0x00000010, 0)
@@ -205,6 +212,10 @@ CLASSES = {
     (SC_LIGHT, TARGET_DISC_LIGHT): "Target Disc",
     (SC_LIGHT, TARGET_SPHERE_LIGHT): "Target Sphere",
     (SC_LIGHT, TARGET_CYLINDER_LIGHT): "Target Cylinder",
+    (SC_CAMERA, FREE_CAMERA): "Free",
+    (SC_CAMERA, TARGET_CAMERA): "Target",
+    (SC_CAMERA, PHYSICAL_CAMERA): "Physical",
+    (SC_CAMERA, VRAY_PHYSICAL_CAMERA): "VRayPhysicalCamera",
     (SC_SHAPE, SPLINE_SHAPE): "SplineShape",
     (SC_SHAPE, LINE): "Line",
     (SC_SHAPE, RECTANGLE): "Rectangle",

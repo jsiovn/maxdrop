@@ -9,6 +9,9 @@
     desc.meshes[node.mesh]              # MeshDescription, shared by the nodes of one base object
     desc.curves[node.curve]             # CurveDescription of a shape node, shared the same way
     desc.lights[node.light]             # convert.lights LightDescription of a LIGHT node, shared the same way
+    desc.cameras[node.camera]           # convert.cameras CameraDescription of a CAMERA node, shared the same way
+    desc.camera                         # the node index of the scene camera, None without a camera
+    desc.render                         # convert.cameras RenderSettings (render size), None when not stored
     desc.placeholders                   # Counter: class name -> nodes built as an empty
     desc.layers                         # LayerDescription per layer that holds a node, a parent before its children
     desc.unknown_controllers            # Counter: controller class name -> times met
@@ -59,6 +62,16 @@ with the reason as an issue, on every node, not counted as a placeholder. A VRay
 issue on its own object index. describe(..., assets) takes the scene's reader.assets.AssetTable for the names of the
 web and IES files (read() reads it).
 
+A camera (Free, Target, Physical, VRayPhysicalCamera) becomes a CAMERA (convert.cameras): the lens, sensor, shift,
+clipping and orthographic width that frame what 3ds Max renders. It is keyed by its base object index and, when its
+field of view or width depends on it, the distance to its target node (a targeted camera's), so instances share it;
+the issues of its parameters are named on its first node, those of a description on the first node of that key. A
+camera whose parameters cannot be read is an EMPTY with the reason as an issue, not counted as a placeholder; one with
+an object offset keeps the node transform (an issue: 3ds Max looks from the object). desc.render holds the render
+size (an issue when it is not stored) and desc.camera the camera of the view 3ds Max renders (convert.cameras
+render_camera, with describe(..., views) the file's saved views; read() reads them), else the first camera (an issue).
+Scene-level issues have the index None.
+
 Look At: the matrices of a node aimed by a Look At controller or a LookAt Constraint are the ones 3ds Max computes
 at frame 0 (reader.controllers), baked. A node with a Look At controller aimed at a node also gets node.look_at, a
 LookAtDescription: the Track To constraint that keeps it aimed in Blender (built only on request, build.objects),
@@ -103,9 +116,9 @@ import math
 from ..reader import assets as reader_assets
 from ..reader import cfb, chunks, classids, controllers, geometry, modifiers as reader_modifiers, shapes, units
 from ..reader import scene as reader_scene
-from . import colors, extrude, lights, modifiers as rules, primitives, uvwmap
+from . import cameras, colors, extrude, lights, modifiers as rules, primitives, uvwmap
 
-MESH, CURVE, EMPTY, LIGHT = "MESH", "CURVE", "EMPTY", "LIGHT"
+MESH, CURVE, EMPTY, LIGHT, CAMERA = "MESH", "CURVE", "EMPTY", "LIGHT", "CAMERA"
 ADAPTIVE = 12  # Blender's default curve resolution, for a shape 3ds Max interpolates adaptively
 UV_FIRST = "UVMap"
 UV_NAME = "UVChannel_%d"
@@ -116,14 +129,15 @@ MAX_EDGE_MASKS = 64  # distinct smoothing-group masks paired on one non-manifold
 MAX_BUILT_CORNERS = 1 << 24
 _SPENT = "the primitives and extrusions before it reach %d face corners, the budget for one scene"
 SHEAR_TOLERANCE = 1e-5  # |cos| between two rows of a local matrix
+OFFSET = "its object is offset from its pivot: the camera looks from the pivot, 3ds Max from the object"
 
 ChunkError = chunks.ChunkError
 
 
 class NodeDescription:
-    """One node: index is its object index, parent the parent's (None at the top level); kind MESH, CURVE, LIGHT or
-    EMPTY; mesh the key into SceneDescription.meshes, curve the key into SceneDescription.curves, light the key into
-    SceneDescription.lights (None when not one);
+    """One node: index is its object index, parent the parent's (None at the top level); kind MESH, CURVE, LIGHT,
+    CAMERA or EMPTY; mesh the key into SceneDescription.meshes, curve the key into SceneDescription.curves, light the
+    key into SceneDescription.lights, camera the key into SceneDescription.cameras (None when not one);
     class_name the base object's class ("" without one); modifiers the class names of its modifier stack not applied,
     top first, applied those evaluated into its mesh (an Extrude); layer the layer's object index (None without
     one); hidden, frozen, renderable, group_head and group_member the node's own flags; sheared whether matrix has
@@ -132,18 +146,18 @@ class NodeDescription:
     None."""
     __slots__ = ("index", "name", "parent", "matrix", "world", "kind", "mesh", "class_name", "mirrored",
                  "modifiers", "layer", "hidden", "frozen", "renderable", "group_head", "group_member", "sheared",
-                 "curve", "applied", "converted", "look_at", "light")
+                 "curve", "applied", "converted", "look_at", "light", "camera")
 
     def __init__(self, index, name, parent, matrix, world, kind, mesh, class_name, mirrored, modifiers, layer=None,
                  hidden=False, frozen=False, renderable=True, group_head=False, group_member=False, sheared=False,
-                 curve=None, applied=(), converted=(), look_at=None, light=None):
+                 curve=None, applied=(), converted=(), look_at=None, light=None, camera=None):
         self.index, self.name, self.parent, self.matrix, self.world = index, name, parent, matrix, world
         self.kind, self.mesh, self.class_name, self.mirrored, self.modifiers = kind, mesh, class_name, mirrored, \
             modifiers
         self.layer, self.hidden, self.frozen, self.renderable = layer, hidden, frozen, renderable
         self.group_head, self.group_member, self.sheared = group_head, group_member, sheared
         self.curve, self.applied, self.converted, self.look_at = curve, applied, converted, look_at
-        self.light = light
+        self.light, self.camera = light, camera
 
     def __repr__(self):
         return "NodeDescription(%d, %r, %s, parent=%r)" % (self.index, self.name, self.kind, self.parent)
@@ -239,15 +253,17 @@ class LayerDescription:
 
 
 class SceneDescription:
-    """nodes in walk order, meshes {key: MeshDescription}, curves {key: CurveDescription} and lights {key:
-    convert.lights.LightDescription} in order of first use, meters per file unit, unit the reader's SystemUnit
-    (None when the file does not say), layers, placeholders, unknown_controllers and issues."""
-    __slots__ = ("nodes", "meshes", "curves", "lights", "meters", "unit", "layers", "placeholders",
-                 "unknown_controllers", "issues")
+    """nodes in walk order, meshes {key: MeshDescription}, curves {key: CurveDescription}, lights {key:
+    convert.lights.LightDescription} and cameras {key: convert.cameras.CameraDescription} in order of first use,
+    camera the scene camera's node index, render the convert.cameras.RenderSettings (None when not stored), meters
+    per file unit, unit the reader's SystemUnit (None when the file does not say), layers, placeholders,
+    unknown_controllers and issues."""
+    __slots__ = ("nodes", "meshes", "curves", "lights", "cameras", "camera", "render", "meters", "unit", "layers",
+                 "placeholders", "unknown_controllers", "issues")
 
     def __init__(self, meters, unit=None):
         self.nodes, self.meshes, self.meters, self.unit, self.layers = [], {}, meters, unit, []
-        self.curves, self.lights = {}, {}
+        self.curves, self.lights, self.cameras, self.camera, self.render = {}, {}, {}, None, None
         self.placeholders = collections.Counter()
         self.unknown_controllers = collections.Counter()
         self.issues = []
@@ -439,10 +455,11 @@ def sheared(m):
     return False
 
 
-def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None):
+def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, views=None):
     """The SceneDescription of a reader.scene.Scene; meters is the length of one file unit; convert_modifiers False
     leaves the modifiers Blender has an equivalent for in node.modifiers, unconverted and unreported; assets, the
-    scene's reader.assets.AssetTable, names the files of web and IES lights (None: not named)."""
+    scene's reader.assets.AssetTable, names the files of web and IES lights (None: not named); views, the file's
+    convert.cameras.SavedViews, picks the scene camera (None: the first camera)."""
     if not (math.isfinite(meters) and meters > 0):
         raise ValueError("meters per unit must be a positive number, not %r" % (meters,))
     t = controllers.Transforms(scene)
@@ -470,10 +487,13 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None):
     unlit = {}  # light base object index -> why it is not built
     light_params = {}  # light base object index -> its values (convert.lights.read_params)
     swatches = None  # the scene's swatch rule, read for the first light
+    unseen = {}  # camera base object index -> why it is not built
+    camera_params = {}  # camera base object index -> its values (convert.cameras.read_params)
+    mm = unit.meters * 1000.0 if unit is not None else meters * 1000.0  # the thin lens is in the file's own unit
     for i in order:
         local, world = t.local(i), t.world(i)
         kind, key, class_name, modifiers, name, node, layer, base = EMPTY, None, "", (), "", None, None, None
-        curve, applied, converted, light = None, (), (), None
+        curve, applied, converted, light, camera = None, (), (), None, None
         if isinstance(found[i], ChunkError):  # a damaged node record or object stack: an empty, children placed
             desc.issues.append((i, "node: %s" % found[i]))
         else:
@@ -510,6 +530,10 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None):
                     swatches = colors.of_scene(scene)
                 light = _light(scene, desc, unlit, light_params, base, i, name, meters, swatches, world, assets)
                 kind = LIGHT if light is not None else EMPTY
+            elif base is not None and cameras.camera_class(scene, base) is not None:
+                class_name = _class_name(scene, base)
+                camera = _camera(scene, t, desc, unseen, camera_params, base, i, name, meters, mm)
+                kind = CAMERA if camera is not None else EMPTY
             elif base is not None:
                 class_name = _class_name(scene, base)
                 if base not in data_of:
@@ -540,7 +564,8 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None):
                     del data_of[base]
         if kind == EMPTY and not (base is not None and (scene.is_a(base, classids.SC_HELPER, classids.DUMMY) or
                                                         scene.is_a(base, classids.SC_GEOMOBJECT,
-                                                                   classids.TARGET_OBJECT) or base in unlit)):
+                                                                   classids.TARGET_OBJECT) or base in unlit
+                                                        or base in unseen)):
             desc.placeholders[class_name] += 1
         flags = {} if node is None else dict(hidden=node.hidden, frozen=node.frozen, renderable=node.renderable,
                                              group_head=node.group_head, group_member=node.group_member)
@@ -548,7 +573,15 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None):
                                           blender_matrix(world, meters), kind, key, class_name,
                                           determinant3(world) < 0, modifiers, layer, sheared=sheared(local),
                                           curve=curve, applied=applied, converted=converted,
-                                          look_at=look_at_description(t.look_at(i)), light=light, **flags))
+                                          look_at=look_at_description(t.look_at(i)), light=light, camera=camera,
+                                          **flags))
+    desc.render, issues = cameras.render_settings(scene)
+    desc.issues.extend((None, "render: %s" % x) for x in issues)
+    names = {node.index: node.name or "object %d" % node.index for node in desc.nodes}
+    desc.camera, reason = cameras.render_camera(desc.render, views, [n.index for n in desc.nodes if n.kind == CAMERA],
+                                                names)
+    if reason is not None:
+        desc.issues.append((desc.camera, "camera: %s" % reason))
     sky = lights.environment_sky(scene)
     if sky is not None:
         desc.issues.append((sky, "light: %s" % lights.SKY))
@@ -585,6 +618,40 @@ def _light(scene, desc, unlit, params, base, node, name, meters, swatches, world
         desc.lights[key] = ld
         desc.issues.extend((node, "light: %s" % x) for x in issues)
     desc.lights[key].users.append(node)
+    return key
+
+
+def _camera(scene, t, desc, unseen, params, base, node, name, meters, mm):
+    """The key in desc.cameras of camera base on node, made on first use; None when its parameters cannot be read
+    (unseen caches the reason, an issue on every node). params caches the camera's values, whose issues are named
+    on the first node; a description's on the first node of its key. The key holds the distance to the node's
+    target when the camera's framing depends on it."""
+    if base not in params and base not in unseen:
+        try:
+            values, issues = cameras.read_params(scene, base)
+            params[base] = values
+        except ChunkError as exc:
+            issues = []
+            unseen[base] = "parameters cannot be read: %s" % exc
+        desc.issues.extend((node, "camera: %s" % x) for x in issues)
+    if base in unseen:
+        desc.issues.append((node, "camera: not built: %s" % unseen[base]))
+        return None
+    values = params[base]
+    look = t.look_at(node)
+    target = None
+    if look is not None and look.target is not None:
+        a, b = t.world(node)[3], t.world(look.target)[3]
+        target = float("%.9g" % math.sqrt(sum((a[k] - b[k]) ** 2 for k in range(3))))
+    used = cameras.focus_target(values, target)
+    key = (base, used if target is not None and used == target and cameras.uses_target(values) else None)
+    if key not in desc.cameras:
+        cd, issues = cameras.describe(key, name, values, meters, mm, target)
+        desc.cameras[key] = cd
+        desc.issues.extend((node, "camera: %s" % x) for x in issues)
+    desc.cameras[key].users.append(node)
+    if t.offset(node) != controllers.IDENTITY:
+        desc.issues.append((node, "camera: " + OFFSET))
     return key
 
 
@@ -872,4 +939,5 @@ def read(path, meters=None, convert_modifiers=True):
         unit = units.system_unit(sc)
         if meters is None:
             meters = unit.meters if unit is not None else 1.0
-        return describe(sc, meters, unit, convert_modifiers, reader_assets.AssetTable.from_file(cf))
+        return describe(sc, meters, unit, convert_modifiers, reader_assets.AssetTable.from_file(cf),
+                        cameras.saved_views(cf))

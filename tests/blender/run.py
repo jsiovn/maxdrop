@@ -44,6 +44,12 @@ the camera and glossy rays; the instance shares the plane's light, the disc's in
 own, three times as strong; imported again with Light Strength 2, twice the
 power. lights_standard, lights_photometric (and lookat's target spot): each light of the type, spot cone, power and
 color of the rules (STOCK_LIGHTS), its -Z axis along the oracle's, its flags; the Skylight an empty.
+Cameras (cameras, lookat): each camera node a camera object of the description's type, sensor fit HORIZONTAL, sensor,
+lens, shift, clipping and orthographic width, Blender's horizontal field of view (angle_x) within 0.05 degrees of 3ds
+Max's (the oracle's EvalCameraState), depth of field off, its -Z axis and +Y up along the oracle's; cameras' shifts and
+sensors from its script (CAMERA_SHIFTS, CAMERA_SENSORS). Every fixture: the scene's render size is the oracle's, and
+scene.camera the oracle's render camera (cameras: CamTarget, the locked render view) or else the first camera (lookat:
+FixtureCam); cameras holds eleven camera objects with a Camera each.
 Each fixture's import report is published (build.report) and must say nothing was left out; the one the
 operator published for vray_wrappers lists its three peeled wrappers by class. A changed layers_flags description
 checks a hidden, a frozen, a non-rendering and a nested layer, which no fixture has. A hand-made description with sheared local matrices (top-level and parented, hidden, a zero scale) checks that
@@ -114,6 +120,7 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1; kept literal: tes
     "vray_lights": [],  # lights and a target: no mesh
     "lights_standard": [],
     "lights_photometric": [],
+    "cameras": [],  # its box, without Generate Mapping Coords
     "vray_wrappers": ["UVMap"],
     "uvwmap": {"FixtureUVWGizmo": ["UVMap", "UVChannel_2"], "FixtureUVWTwo": ["UVMap", "UVChannel_3"]},  # else UVMap
     "uvwmap_oblique": ["UVMap"],
@@ -166,6 +173,11 @@ VRAY_LIGHT_COLORS = {"FixturePlane": (1.0, 0.57758, 0.304987), "FixturePlaneInst
                      "FixtureDisc": (0.187821, 0.351533, 1.0), "FixtureDiscScaled": (0.187821, 0.351533, 1.0),
                      "FixtureSphereKelvin": (1.0, 0.5304, 0.265643)}
 VRAY_LIGHT_FLAGS = {"FixtureInvisible": (False, True, False, 0.5, 0.0)}  # camera, diffuse, glossy, factors
+# cameras (tools/fixtures/cameras.ms): Blender's shift (image widths) and sensor where they are not 0 and 36 mm
+CAMERA_SHIFTS = {"CamPhysShift": (-0.1, 0.15), "CamVRayShift": (-0.1, -0.25)}
+CAMERA_SENSORS = {"CamVRayTarget": 30.0}
+FOV_TOLERANCE = 0.05  # degrees
+
 # lights_standard, lights_photometric (tools/fixtures/*.ms) and lookat's target spot: Blender's light type, spot
 # size in degrees and blend, and the watts of the rules (docs/FORMAT.md, "Standard and photometric lights") from
 # what the scripts set: a point or spot light 4 pi I / 683 W for I cd (a standard light's I = 1500 multiplier d^2,
@@ -242,6 +254,8 @@ def empty_scene():
         bpy.data.curves.remove(curve)
     for light in list(bpy.data.lights):
         bpy.data.lights.remove(light)
+    for camera in list(bpy.data.cameras):
+        bpy.data.cameras.remove(camera)
     for col in list(bpy.data.collections):
         bpy.data.collections.remove(col)
     for text in list(bpy.data.texts):
@@ -343,6 +357,9 @@ def run_fixture(path, modules):
         check(label + ": hidden, renderable and frozen flags", flags == want, str(flags))
         if node.kind == convert_scene.LIGHT:
             check_light(label, ob, desc.lights[node.light], o)
+            continue
+        if o["camera"] is not None:
+            check_camera(label, ob, node, desc, o)
             continue
         if o["shape"] is not None and node.kind == convert_scene.MESH:
             check_extruded(label, ob, node, o, meters, plan)
@@ -504,6 +521,7 @@ def run_fixture(path, modules):
         check("%s: report published, nothing left out" % name, level == "INFO" and published, line)
     print("COUNTS %s: objects=%d meshes=%d placeholders=%d issues=%d" % (
         name, len(bpy.data.objects), len(bpy.data.meshes), sum(desc.placeholders.values()), len(desc.issues)))
+    check_render(name, oracle, obs, desc)
     if name == "lookat":  # imports the file again: last
         check_lookat(path, desc, obs, nodes, meters)
     if name == "vray_lights":
@@ -521,6 +539,64 @@ def run_fixture(path, modules):
         check("%s: %d light objects, the instance shares its light" % (name, count),
               len(lit) == count and len(bpy.data.lights) == count - 1 and a.data == b.data, "%d, %d lights" % (
                   len(lit), len(bpy.data.lights)))
+
+
+def check_camera(label, ob, node, desc, o):
+    """A camera node: a camera object whose Camera is the description's, frames 3ds Max's horizontal field of view
+    (the oracle's) and looks along the oracle's -Z with its +Y up."""
+    check(label + ": a camera object", ob.type == 'CAMERA' and node.kind == "CAMERA", ob.type)
+    if ob.type != 'CAMERA':
+        return
+    cam, cd = ob.data, desc.cameras[node.camera]
+    got = (cam.type, cam.sensor_fit, cam.sensor_width, cam.lens, cam.shift_x, cam.shift_y, cam.dof.use_dof)
+    want = (cd.kind, 'HORIZONTAL', cd.sensor, cd.lens, cd.shift_x, cd.shift_y, False)
+    check(label + ": type, sensor fit, sensor, lens, shift, no depth of field", got[:2] == want[:2] and
+          close(got[2:6], want[2:6], 1e-5) and got[6] == want[6], "%s vs %s" % (got, want))
+    sx, sy = CAMERA_SHIFTS.get(o["name"], (0.0, 0.0))
+    check(label + ": the shift and sensor the fixture script made", close((cam.shift_x, cam.shift_y), (sx, sy), 1e-6)
+          and abs(cam.sensor_width - CAMERA_SENSORS.get(o["name"], 36.0)) < 1e-5, "%g, %g, %g" % (
+              cam.shift_x, cam.shift_y, cam.sensor_width))
+    fov = math.degrees(cam.angle_x)
+    check(label + ": horizontal field of view = 3ds Max's", abs(fov - o["camera"]["fov"]) < FOV_TOLERANCE,
+          "%g vs %g" % (fov, o["camera"]["fov"]))
+    check(label + ": orthographic as in 3ds Max", (cam.type == 'ORTHO') == o["camera"]["ortho"], cam.type)
+    if cam.type == 'ORTHO':
+        check(label + ": orthographic width", abs(cam.ortho_scale - cd.ortho_scale) < 1e-6, "%g" % cam.ortho_scale)
+    if o["camera"]["manual_clip"]:
+        want = (o["camera"]["hither"] * desc.meters, o["camera"]["yon"] * desc.meters)
+        check(label + ": clipping = 3ds Max's", close((cam.clip_start, cam.clip_end), want, 1e-6),
+              "%g, %g" % (cam.clip_start, cam.clip_end))
+    rows = o["transform"]
+    m = ob.matrix_world.to_3x3()
+    for axis, k, sign in (("-Z", 6, -1.0), ("+Y", 3, 1.0)):
+        want = Vector(rows[k:k + 3]).normalized() * sign
+        got = (m @ Vector((0.0, 0.0, 1.0) if k == 6 else (0.0, 1.0, 0.0))).normalized() * sign
+        check(label + ": %s along the oracle's" % axis, (got - want).length < 1e-5, "%s vs %s" % (
+            tuple(got), tuple(want)))
+
+
+def check_render(name, oracle, obs, desc):
+    """Every fixture: the scene's render size is the oracle's, scene.camera the oracle's render camera or else the
+    first camera."""
+    scene = bpy.context.scene
+    r = oracle["render"]
+    got = (scene.render.resolution_x, scene.render.resolution_y, scene.render.resolution_percentage,
+           scene.render.pixel_aspect_x / scene.render.pixel_aspect_y)
+    check("%s: render size = 3ds Max's" % name, got[:3] == (r["width"], r["height"], 100) and
+          abs(got[3] - r["pixel_aspect"]) < 1e-6, str(got))
+    by_handle = {o["handle"]: ob for ob, o in zip(obs, oracle["nodes"])}
+    cams = [ob for ob, o in zip(obs, oracle["nodes"]) if o["camera"] is not None]
+    want = by_handle[r["camera"]] if r["camera"] is not None else (cams[0] if cams else None)
+    if want is not None:
+        check("%s: scene camera = %s" % (name, want.name), scene.camera == want,
+              scene.camera.name if scene.camera else "none")
+    if name == "cameras":
+        check("cameras: eleven camera objects, one Camera each, CamTarget the scene camera",
+              len(cams) == 11 and len(bpy.data.cameras) == 11 and scene.camera.name == "CamTarget",
+              "%d, %d" % (len(cams), len(bpy.data.cameras)))
+    if name == "lookat":
+        check("lookat: FixtureCam (the first camera) is the scene camera", scene.camera is not None and
+              scene.camera.name == "FixtureCam" and desc.camera is not None)
 
 
 def check_light(label, ob, ld, o):
@@ -796,10 +872,10 @@ def check_lookat(path, desc, obs, nodes, meters):
     gets one, aimed at its target's object, and its evaluated world matrix is still 3ds Max's; a roll and the Y axis
     keep the baked rotation and the report names them."""
     targets = [ob.name for ob, o in zip(obs, nodes) if o["base_class_name"] == "Targetobject"]
-    # the target cameras' class is named "Target" too: four placeholders of that name are the cameras
+    # the target cameras are cameras, the target spot a light: the Point helper is the one placeholder
     check("lookat: the five targets are empties, no placeholders", len(targets) == 5 and all(
-        bpy.data.objects[t].type == 'EMPTY' for t in targets) and dict(desc.placeholders) ==
-        {"Target": 4, "Point": 1}, str(dict(desc.placeholders)))  # the target spot is a light
+        bpy.data.objects[t].type == 'EMPTY' for t in targets) and dict(desc.placeholders) == {"Point": 1},
+        str(dict(desc.placeholders)))
     check("lookat: no constraint without Keep Targets", not any(ob.constraints for ob in obs))
     empty_scene()
     result = bpy.ops.import_scene.maxdrop(filepath=path, keep_targets=True)

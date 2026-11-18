@@ -144,6 +144,7 @@
       "base_verts": 34,
       "bbox_max": [15, 10, 10],
       "bbox_min": [-15, -10, 0],
+      "camera": null,
       "eval_faces": 64,
       "eval_maps": [
         {
@@ -371,6 +372,7 @@
       "base_verts": 34,
       "bbox_max": [75, 10, 10],
       "bbox_min": [45, -10, 0],
+      "camera": null,
       "eval_faces": 64,
       "eval_maps": [
         {
@@ -598,6 +600,7 @@
       "base_verts": 34,
       "bbox_max": [135, 10, 10],
       "bbox_min": [105, -10, 0],
+      "camera": null,
       "eval_faces": 64,
       "eval_maps": [
         {
@@ -825,6 +828,7 @@
       "base_verts": 48,
       "bbox_max": [8, 68, 16],
       "bbox_min": [-8, 52, 0],
+      "camera": null,
       "eval_faces": 92,
       "eval_maps": [
         {
@@ -1136,6 +1140,7 @@
       "base_verts": 34,
       "bbox_max": [75, 70, 10],
       "bbox_min": [45, 50, 0],
+      "camera": null,
       "eval_faces": 64,
       "eval_maps": [
         {
@@ -1363,6 +1368,7 @@
       "base_verts": 62,
       "bbox_max": [128, 68, 8],
       "bbox_min": [112, 52, -8],
+      "camera": null,
       "eval_faces": 120,
       "eval_maps": [
         {
@@ -1758,6 +1764,7 @@
       "base_verts": 34,
       "bbox_max": [15, 130, 10],
       "bbox_min": [-15, 110, 0],
+      "camera": null,
       "eval_faces": 64,
       "eval_maps": [
         {
@@ -1985,6 +1992,7 @@
       "base_verts": 34,
       "bbox_max": [75, 130, 10],
       "bbox_min": [45, 110, 0],
+      "camera": null,
       "eval_faces": 64,
       "eval_maps": [
         {
@@ -2212,6 +2220,7 @@
       "base_verts": 34,
       "bbox_max": [15, 190, 10],
       "bbox_min": [-15, 170, 0],
+      "camera": null,
       "eval_faces": 64,
       "eval_maps": [
         {
@@ -2439,6 +2448,7 @@
       "base_verts": 8,
       "bbox_max": [50, 195, 25],
       "bbox_min": [40, 185, 0],
+      "camera": null,
       "eval_faces": 12,
       "eval_maps": [
         {
@@ -2510,6 +2520,7 @@
       "base_verts": null,
       "bbox_max": [130, 195, 25],
       "bbox_min": [90, 165, 0],
+      "camera": null,
       "eval_faces": 12,
       "eval_maps": [
         {
@@ -2604,6 +2615,7 @@
       "base_verts": 34,
       "bbox_max": [15, 250, 10],
       "bbox_min": [-15, 230, 0],
+      "camera": null,
       "eval_faces": 64,
       "eval_maps": [
         {
@@ -3028,6 +3040,7 @@
       "base_verts": 34,
       "bbox_max": [75, 250, 10],
       "bbox_min": [45, 230, 0],
+      "camera": null,
       "eval_faces": 64,
       "eval_maps": [
         {
@@ -3255,6 +3268,7 @@
       "base_verts": 34,
       "bbox_max": [135, 250, 10],
       "bbox_min": [105, 230, 0],
+      "camera": null,
       "eval_faces": 64,
       "eval_maps": [
         {
@@ -3482,6 +3496,7 @@
       "base_verts": 34,
       "bbox_max": [17.4174, 310, 9.74392],
       "bbox_min": [-17.4174, 290, -1.95231],
+      "camera": null,
       "eval_faces": 64,
       "eval_maps": [
         {
@@ -3702,7 +3717,8 @@
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 300, 0]
     }
   ],
-  "oracle_version": 5,
+  "oracle_version": 6,
+  "render": {"camera": null, "height": 480, "pixel_aspect": 1, "width": 640},
   "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
   "time": 0,
   "units": {"display_metric": "meters", "display_type": "Generic", "display_us": "ft_Frac_In", "system_scale": 1, "system_type": "millimeters"}

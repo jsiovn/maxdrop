@@ -710,6 +710,75 @@ as bright as V-Ray:
 3ds Max: Blender blends in cosine space (full intensity where cos θ ≥ cos(size / 2) + (1 − cos(size / 2)) · blend),
 so blend = (cos(hotspot / 2) − cos(falloff / 2)) / (1 − cos(falloff / 2)), 0.636 for 30° in 50°.
 
+## Cameras
+
+`convert/cameras.py`, 3ds Max 2020 + V-Ray 5.2; ids read through the SDK's .NET wrapper and by changing one setting at
+a time on scratch scenes (maxdiff), the field of view from 3ds Max's own camera state (`EvalCameraState`, the oracle's
+`camera`), and lens shift, orthographic width and V-Ray's focus from renders of a marker scene (small self-lit spheres
+at known points, their image centroids). Superclass `0x20`; every camera looks down its local -Z with +Y up, as
+Blender's: the node transform stays (the cameras fixture: -Z and +Y of each camera object equal the oracle's).
+
+**Free** `(0x1001, 0)` and **Target** `(0x1002, 0)` (its class directory names it "Target", like the Target object).
+Reference 0 is an old ParamBlock, by index: 0 FOV (radians, horizontal, whatever FOV type the panel shows), 1 target
+distance (a Free camera's; 0 on a Target camera), 2 near clip, 3 far clip, 4 / 5 near / far environment range, 6
+multi-pass effect on, 7 effect per pass, 8 FOV type (0 horizontal, 1 vertical, 2 diagonal: shown only). The camera
+object's own chunks: `0x268C` (empty) orthographic, `0x2686` (empty) clip manually, `0x2684` (empty) show cone.
+Orthographic (render): the view is 2 · tdist · tan(FOV / 2) wide at any depth, tdist a Free camera's target distance
+or a Target camera's distance to its target.
+
+**Physical** `(0x46697218, 0x28E8008D)`, ParamBlock2 block 0 at reference 0: 0 targeted, 8 target distance (world), 4
+film width (mm), 5 focal length (mm), 19 specify FOV, 20 FOV (degrees), 7 zoom, 54 lens breathing, 10 specify focus,
+9 focus distance (world), 11 use depth of field, 39 / 40 horizontal / vertical shift (a fraction of the film width;
+the panel shows percent), 41 / 42 horizontal / vertical tilt correction, 44 distortion type, 47 clip on, 48 / 49
+near / far clip (world).
+
+**VRayPhysicalCamera** `(0x405E3FEE, 0x4F6513BE)`, ParamBlock2 block 0 at reference 0: 8 targeted, 5 target distance,
+0 film gate (mm), 1 focal length (mm), 3 zoom, 47 specify FOV, 48 FOV (degrees), 7 specify focus, 6 focus distance,
+25 use depth of field, 41 / 42 horizontal / vertical shift (a fraction of the film width), 18 / 40 vertical /
+horizontal tilt, 4 distortion, 10 exposure (0 off), 32 clip on, 33 / 34 near / far clip (world). The film gate and
+focal length are typed as world units but stay millimeters in a centimeter scene (probed).
+
+**The field of view they render with.** Free / Target: the FOV parameter. Physical with a specified FOV: that FOV
+(neither zoom nor breathing; 74.9996° for 75° at zoom 1.25). Otherwise a thin lens focused at d, the focus distance
+when specified, else the target distance, in millimeters through the system unit (100 cm and 1000 mm give the same):
+v = 1 / (1/f − 1/d), effective focal length zoom · (f + breathing · (v − f)), FOV = 2 atan(film / (2 · f_eff)) (40
+mm, 36 mm film at 5000 mm: 48.112°; breathing 0.5: 48.2832°; at 1000 mm 46.7287°, with zoom 1.5 32.1328°).
+VRayPhysicalCamera: the same with a breathing of 1 (its default 200 mm target distance gives 39.598°, not the
+48.455° of 2 atan(film / (2 f · zoom)) the 3ds Max to FBX rules source computes), a specified FOV without the zoom.
+A targeted Physical or V-Ray camera focuses at its distance to its target node, whatever its stored target distance
+(2376.92 stored, 2922.33 used in the fixture). A lens shift moves the image by that fraction of its width (20 % up:
+the image content 0.2 widths up) and leaves the rendered FOV as it is, but changes the FOV of `EvalCameraState`
+(73.29° renders, the state says 71.39°): the oracle reads the state with the shift at 0. The tilt corrections warp
+the image (keystone): Blender has nothing like it.
+
+**Blender.** sensor_fit HORIZONTAL, so Blender's horizontal FOV is 2 atan(sensor / (2 · lens)) at any render aspect;
+sensor 36 mm for Free and Target (3ds Max's render aperture width), the film width for the others; lens = sensor /
+(2 tan(FOV / 2)). shift_x / shift_y = minus the shift fractions (Blender moves the frame, both in image widths with
+a horizontal fit). Clipping when 3ds Max clips. Depth of field, distortion, tilt, a multi-pass effect and V-Ray's
+exposure are lines in the report.
+
+## Render settings and saved views
+
+**Render settings** live in the RenderEnvironment object `(0xEE448B23, 0)`, chunk `0x0110` / `0x2000` (maxdiff of
+saves that change one setting):
+
+| Chunk | Meaning |
+|---|---|
+| `0x0190` i32 | render width (pixels) |
+| `0x0200` i32 | render height |
+| `0x0210` f32 | pixel aspect |
+| `0x05F0` i32 | present when the render view is locked (`rendUseActiveView` off): the 0-based viewport index it renders |
+
+**Saved views** are in the `Config` stream, `0x2080` / `0x8200`: `0x8210` i32 the current layout tab, its position
+among the `0x8220` layouts that follow, each after an `0x8240` i32 (0, 1, 2, 3 in the fixtures, 0 on every tab of
+corpus scene B, whose current tab is the fifth: not the tab's index). A layout: `0x2800` the layout type, `0x2810` + k
+viewport k (80 bytes: u32 at byte 4 the view type, 8 = a camera view; i32 at byte 76 the object index of the node a
+camera view looks through), `0x2820` i32 the active viewport (−1 on a tab that is not current). In a file saved as
+3ds Max 2012 (corpus scene A) `0x2080` holds the layout itself, without `0x8200`. The view 3ds Max renders is the
+locked one, else the active viewport; the cameras fixture locks it on viewport 2 (CamTarget) while viewport 1
+(CamFree) is active, and the oracle's `render.camera` (3ds Max's `viewport.getCamera`) is CamTarget. Both corpus
+scenes are saved looking through their one camera; their cameras' fields of view equal 3ds Max's (EvalCameraState).
+
 ## System unit
 
 `maxdrop/reader/units.py` reads it; `tests/unit/test_units.py` checks every fixture against the oracle's
