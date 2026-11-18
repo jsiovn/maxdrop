@@ -149,7 +149,7 @@ VB_STANDARD, VB_INTENSITY, VB_ACESCG = 4, 2, 2
 # color_space (transfer function), measured with renderMap: 0 none (linear), 1 inverse gamma (pixel ^ (1 / gamma)),
 # 2 sRGB, 3 from 3ds Max (the input gamma, as a Bitmap's automatic), 4 auto (sRGB for an 8-bit file, the default)
 VB_LINEAR, VB_INVERSE_GAMMA, VB_SRGB, VB_AUTOMATIC = 0, 1, 2, (2, 3, 4)
-FLOAT_IMAGES = (".exr", ".hdr")  # files auto and from-3ds-Max read as linear
+FLOAT_IMAGES = (".exr", ".hdr")  # files an automatic gamma (Bitmap, CoronaBitmap, VRayBitmap auto) reads as linear
 MAX_MULTIPLIER = 1e6
 # image class -> (class name in issues, its file parameter in block 0); any other image class is a Bitmap
 _IMAGE_FILES = {classids.CORONA_BITMAP: ("CoronaBitmap", CB_FILE), classids.VRAY_BITMAP: ("VRayBitmap", VB_FILE)}
@@ -415,6 +415,12 @@ def colorspace(kind, gamma):
     return NON_COLOR
 
 
+def _auto_gamma(gamma, name):
+    """A Bitmap's or CoronaBitmap's gamma: automatic (None) reads a float file (EXR, HDR) as linear, as 3ds Max and
+    Corona do; an override is kept."""
+    return 1.0 if gamma is None and name.lower().endswith(FLOAT_IMAGES) else gamma
+
+
 class TexmapConverter:
     """Converts the maps of one MaterialGraph; assets: the scene's reader.assets.AssetTable (None: no file is
     known); textures: a convert.textures.TextureIndex to look each file up (None: no lookup); swatches: the
@@ -644,7 +650,7 @@ class TexmapConverter:
                                                      (BM_CLIP_H, 1.0)))
         if _flag(m, BM_APPLY, False) and clip != (0.0, 0.0, 1.0, 1.0):
             crop = Crop(*clip, place=m.param(BM_CROP_PLACE, 0) == 1)
-        gamma = self._gamma(m)
+        gamma = _auto_gamma(self._gamma(m), entry.name)
         alpha = m.param(BM_MONO if kind == DATA else BM_RGB, 0) == 1
         return Image(m.index, entry.name, entry.path, entry.resolved, found, mapping, crop, self._output(out),
                      colorspace(kind, gamma), gamma, alpha)
@@ -737,7 +743,7 @@ class TexmapConverter:
         if _flag(m, CB_CLIP_ON, False) and clip != (0.0, 0.0, 1.0, 1.0):
             crop = Crop(*clip, place=m.param(CB_CLIP_MODE, 0) == 1)
         gamma = _num(m, CB_GAMMA, -1.0)  # -1: automatic
-        gamma = gamma if 0.1 <= gamma <= 10.0 else None
+        gamma = _auto_gamma(gamma if 0.1 <= gamma <= 10.0 else None, entry.name)
         alpha = m.param(CB_MONO if kind == DATA else CB_RGB, 0) == 1
         return Image(m.index, entry.name, entry.path, entry.resolved, found, mapping, crop, self._output(out),
                      colorspace(kind, gamma), gamma, alpha)

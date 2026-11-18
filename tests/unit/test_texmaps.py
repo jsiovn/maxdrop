@@ -431,6 +431,21 @@ class Synthetic(Checks):
         self.assertIsNone(g.root.output)
         self.assertIsNone(g.root.gamma)
 
+    def test_float_files_under_automatic_gamma_are_linear(self):
+        for path in ("maps\\sky.EXR", "maps\\sky.hdr"):
+            table = assets.AssetTable([assets.AssetEntry(G1, "Bitmap", path, "")])
+            g = _tex(_bitmap(1), table=table).convert(mat.MapRef(1), tx.COLOR)
+            self.assertEqual((g.root.gamma, g.root.colorspace), (1.0, tx.NON_COLOR), path)
+        table = assets.AssetTable([assets.AssetEntry(G1, "Bitmap", "maps\\sky.exr", "")])
+        for info, gamma, space in ((_info(2.2, 5), 2.2, tx.SRGB), (_info(1.8, 5), 1.8, tx.NON_COLOR),
+                                   (_info(2.2, 4), 1.0, tx.NON_COLOR)):  # an override is kept; no flag: automatic
+            b, chunk_map = _placed(info=info)
+            g = tx.TexmapConverter(FakeGraph(b, chunk_map=chunk_map), table).convert(mat.MapRef(1), tx.COLOR)
+            self.close(g.root.gamma, gamma)
+            self.assertEqual(g.root.colorspace, space, info.hex())
+        g = _tex(_bitmap(1)).convert(mat.MapRef(1), tx.COLOR)
+        self.assertEqual((g.root.gamma, g.root.colorspace), (None, tx.SRGB), "an 8-bit file: still automatic")
+
     def test_bitmap_without_a_file(self):
         tex = _tex(_bitmap(1, guid=b"\xff" * 16))
         self.assertIsNone(tex.convert(mat.MapRef(1), tx.COLOR))
@@ -746,6 +761,19 @@ class CoronaSynthetic(Checks):
         self.assertTrue(g.root.mapping.real_world)
         self.assertEqual((g.root.mapping.tile, g.root.mapping.channel), ((True, True), 1), "bad values: defaults")
         self.assertIn("real-world", g.issues[0])
+
+    def test_float_files_under_automatic_gamma_are_linear(self):
+        table = assets.AssetTable([assets.AssetEntry(G1, "Bitmap", "maps\\sky.HDR", "")])
+        for params in ({}, {"p125": -1.0}, {"p125": 50.0}):  # automatic: -1 or outside 0.1 to 10
+            g = _tex(_cbitmap(1, **params), table=table).convert(mat.MapRef(1), tx.COLOR)
+            self.assertEqual((g.root.gamma, g.root.colorspace), (1.0, tx.NON_COLOR), params)
+        g = _tex(_cbitmap(1, p125=2.2), table=table).convert(mat.MapRef(1), tx.COLOR)
+        self.close(g.root.gamma, 2.2)
+        self.assertEqual(g.root.colorspace, tx.SRGB, "an override is kept")
+        g = _tex(_cbitmap(1), table=table).convert(mat.MapRef(1), tx.DATA)
+        self.assertEqual(g.root.colorspace, tx.NON_COLOR)
+        g = _tex(_cbitmap(1)).convert(mat.MapRef(1), tx.COLOR)
+        self.assertEqual((g.root.gamma, g.root.colorspace), (None, tx.SRGB), "an 8-bit file: still automatic")
 
     def test_corona_bitmap_without_a_file(self):
         tex = _tex(_cbitmap(1, guid=G2))

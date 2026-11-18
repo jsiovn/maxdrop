@@ -16,6 +16,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ### Fixed
 
+- Materials: a Bitmap or CoronaBitmap with automatic gamma reads an EXR or HDR file as linear, as 3ds Max and
+  Corona do, instead of as sRGB (too dark); a VRayBitmap already did.
 - A damaged `.max` whose objects reference objects that do not exist no longer risks crashing Blender 4.2 and 4.5
   (Python 3.11) after the import is refused.
 - Scene packs: a hidden `.maxdrop-staging-*` folder left by an unpack that never finished (Blender closed or crashed
