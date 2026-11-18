@@ -27,8 +27,10 @@ import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # The operator's summary of one scene (convert/report.py, Report.summary, printed with "MaxDrop: "). The name is
-# greedy, so a name holding ": " still parses; group 4 is what was left out, e.g. "3 placeholders, 2 issues".
-IMPORTED = re.compile(r"^MaxDrop: Imported .*: (\d+) objects?, (\d+) mesh(?:es)?(?:, (\d+) materials?)?"
+# greedy, so a name holding ": " still parses. Curves are named only when some were built; group 5 is what was
+# left out, e.g. "3 placeholders, 2 issues".
+IMPORTED = re.compile(r"^MaxDrop: Imported .*: (\d+) objects?, (\d+) mesh(?:es)?(?:, (\d+) curves?)?"
+                      r"(?:, (\d+) materials?)?"
                       r"(?:, nothing left out\.|; (.*)\. See the text MaxDrop Report\.)$")
 LEFT_OUT = re.compile(r"(\d+) (placeholder|modifier|texture|approximated|issue)")
 LEFT_OUT_KEYS = {"placeholder": "placeholders", "modifier": "modifiers_not_applied",
@@ -83,13 +85,14 @@ def read_log(path):
                 m = IMPORTED.match(line.rstrip("\r\n"))
                 if m:
                     if report is None:
-                        report = dict({"objects": 0, "meshes": 0, "materials": None},
+                        report = dict({"objects": 0, "meshes": 0, "curves": 0, "materials": None},
                                       **{key: 0 for key in LEFT_OUT_KEYS.values()})
                     report["objects"] += int(m.group(1))
                     report["meshes"] += int(m.group(2))
-                    if m.group(3) is not None:
-                        report["materials"] = (report["materials"] or 0) + int(m.group(3))
-                    for n, word in LEFT_OUT.findall(m.group(4) or ""):
+                    report["curves"] += int(m.group(3) or 0)
+                    if m.group(4) is not None:
+                        report["materials"] = (report["materials"] or 0) + int(m.group(4))
+                    for n, word in LEFT_OUT.findall(m.group(5) or ""):
                         report[LEFT_OUT_KEYS[word]] += int(n)
                 elif line.startswith("Traceback (most recent call last)"):
                     traceback = True
