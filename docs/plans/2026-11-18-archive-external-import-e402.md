@@ -37,7 +37,8 @@ Bead: maxdrop-em3.65
 Changed: `maxdrop/intake/` (build-and-test row: blocks 1, 2, 5 = 3 and 4 on 4.2 / 4.5 / 5.2, 6 for a fix).
 
 - Lint (the failing CI step): `ruff check .` with ruff 0.17.5 (a scratch venv) -> `All checks passed!`.
-- Red check (block 6): the same `ruff check .` on the base tree (`git archive origin/epic/maxdrop-cyn`) ->
+- Red check (block 6): the same `ruff check .` on the tree before the fix (`git archive c6fe12c`; `origin/epic/maxdrop-cyn` predates the
+  regression) ->
   `E402` at `maxdrop/intake/archive.py:419`, exit 1. The bug is a lint failure, so ruff is the test.
 - Block 1: `python -I -m unittest discover tests` -> `OK` (tests/test_intake*.py included).
 - Block 2: `powershell -ExecutionPolicy Bypass -File build.ps1` -> `Built ...`.

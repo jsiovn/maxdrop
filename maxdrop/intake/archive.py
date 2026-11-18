@@ -33,6 +33,7 @@ import zlib
 from typing import Dict, List, Optional, Tuple
 
 from .. import pathnames
+from . import external as _external
 
 KIND_ZIP = "zip"
 KIND_RAR = "rar"
@@ -416,7 +417,6 @@ class ZipBackend:
 _BACKENDS = {KIND_ZIP: ZipBackend()}
 
 # .rar and .7z go through a program already on the computer (external.py), which registers itself here.
-from . import external as _external
 _external.install(sys.modules[__name__])
 
 
