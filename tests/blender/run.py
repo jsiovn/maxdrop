@@ -1095,8 +1095,8 @@ def check_builder():
 def check_image_reuse():
     """MaterialBuilder reuses an image already in the file (an earlier import's) of the same file and color space,
     untouched (bead maxdrop-em3.43): a second builder adds no image; the same file in another color space is a new
-    image and the first keeps its color space; a modified, a packed, a generated or a library image is not reused;
-    vray_maps imported twice with its textures adds no image the second time."""
+    image and the first keeps its color space; a modified, a packed, a generated, a library image or one whose alpha
+    mode was changed is not reused."""
     from maxdrop.build import materials as build_materials
     from maxdrop.convert import materials as cm
     from maxdrop.convert import texmaps as tx
@@ -1156,6 +1156,33 @@ def check_image_reuse():
               and base5.packed_file is not None and base6.packed_file is None, str(names()))
         for img in list(bpy.data.images):
             bpy.data.images.remove(img)
+        straight = build("ReuseAlpha", tx.SRGB, tx.NON_COLOR)[0]
+        straight.alpha_mode = 'CHANNEL_PACKED'
+        packed_alpha = build("ReuseAlpha2", tx.SRGB, tx.NON_COLOR)[0]
+        check("reuse: an image whose alpha mode was changed is not reused",
+              packed_alpha.as_pointer() != straight.as_pointer() and packed_alpha.alpha_mode == 'STRAIGHT',
+              str(names()))
+        exr = os.path.join(scratch, "reuse.exr")
+        probe = bpy.data.images.new("maxdrop-probe", 4, 4, float_buffer=True)
+        probe.filepath_raw = exr
+        probe.file_format = 'OPEN_EXR'
+        probe.save()
+        bpy.data.images.remove(probe)
+
+        def build_exr(name):
+            ir = cm.MaterialIR(32, name, "test", base_color=cm.Input((0.5, 0.5, 0.5), cm.MapRef(1)))
+            ir.textures = {"base_color": tx.TextureGraphIR(
+                tx.Image(1, "reuse.exr", "reuse.exr", "", ct.Found(exr, ct.SCENE), colorspace=other), tx.COLOR)}
+            m = build_materials.MaterialBuilder().make(ir)
+            return _from(_principled(m).inputs["Base Color"]).image
+
+        first_exr = build_exr("ReuseExr")
+        count = len(bpy.data.images)
+        again_exr = build_exr("ReuseExr2")
+        check("reuse: an EXR (premultiplied on load) is reused too", first_exr.alpha_mode == 'PREMUL'
+              and again_exr.as_pointer() == first_exr.as_pointer() and len(bpy.data.images) == count, str(names()))
+        for img in list(bpy.data.images):
+            bpy.data.images.remove(img)
         generated = bpy.data.images.new("Generated", 4, 4)
         generated.filepath_raw = png  # a generated image with a file name, never loaded from it
         base7 = build("ReuseG", tx.SRGB, tx.NON_COLOR)[0]
@@ -1184,7 +1211,6 @@ def check_image_reuse():
         for lib in list(bpy.data.libraries):
             bpy.data.libraries.remove(lib)
         shutil.rmtree(scratch, ignore_errors=True)
-    check_double_import()
 
 
 def check_double_import():
@@ -1718,7 +1744,7 @@ def main():
         for label, run_check in (("material slots", lambda: check_material_slots(modules)),
                                  ("found textures", check_found_textures), ("builder", check_builder),
                                  ("builder debt", check_builder_debt),
-                                 ("image reuse", check_image_reuse),
+                                 ("image reuse", check_image_reuse), ("double import", check_double_import),
                                  ("conversion failure", lambda: check_conversion_failure(
                                      os.path.join(ROOT, "tests", "fixtures", "vray_maps.max")))):
             try:

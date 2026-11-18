@@ -21,16 +21,16 @@ Color and Strength, Coat Weight, Roughness, IOR and Tint, Subsurface Weight, Rad
 channel) and Scale (its radius in meters), Thin Wall, Normal. A color graph on a float input (specular,
 transmission) goes through the mean of its channels, the measure convert/materials.py uses.
 
-Texture graphs (convert/texmaps.py) become nodes, a node of the IR shared by several inputs once per material:
-Image -> Image Texture (its image datablock reused per file and color space: one file used in two color spaces is
-two datablocks; see Images below), with its placement as a Mapping node and a UV Map node for a map channel other than 1; Invert,
-Mix, Multiply, ColorCorrect (Hue/Saturation/Value, Bright/Contrast, gain, Gamma), Composite (Mix per layer),
-NormalMap (Normal Map node, flips through Separate / Combine Color), Bump (Bump node). A texture file that was not
-found (or does not load) keeps its Image Texture node, without an image and not connected. The texture lookup
-(convert.textures) reports a file not found by name; the builder reports a file that does not load. The graph
+Texture graphs (convert/texmaps.py) become nodes, a node of the IR shared by several inputs once per material: Image
+-> Image Texture (its image datablock reused per file and color space: one file used in two color spaces is two
+datablocks; see Images below), with its placement as a Mapping node and a UV Map node for a map channel other than
+1; Invert, Mix, Multiply, ColorCorrect (Hue/Saturation/Value, Bright/Contrast, gain, Gamma), Composite (Mix per
+layer), NormalMap (Normal Map node, flips through Separate / Combine Color), Bump (Bump node). A texture file that
+was not found (or does not load) keeps its Image Texture node, without an image and not connected. The texture
+lookup (convert.textures) reports a file not found by name; the builder reports a file that does not load. The graph
 above the node carries on without it (a Mix gives its other side, a normal map without its image nothing) and an
-input left without a map keeps the IR's value. An empty image node renders black in EEVEE and magenta in Cycles,
-and in a normal or alpha input it would wreck the shading or hide the object.
+input left without a map keeps the IR's value. An empty image node renders black in EEVEE and magenta in Cycles, and
+in a normal or alpha input it would wreck the shading or hide the object.
 
 Placement, the 3ds Max convention (StdUVGen: scaled and turned about the map's center, offset in UV fractions):
 sample = R(u, v, w angles) S(tiling) (uv - 0.5 - offset) + 0.5, one Mapping node (POINT): uv_transform(). Crop:
@@ -45,9 +45,12 @@ Alpha: Material.surface_render_method only, BLENDED for a constant alpha below 1
 
 Images: an image already in the file (an earlier import's, or the user's) is reused for the same file and color
 space when it is still that file: a local image (no library), source FILE, not packed, not modified (is_dirty
-False). Its color space is never changed: images.load(check_existing=True) would hand back an image of that file
-in any color space, and setting ours on it would recolor whatever already uses it. A linked image is left out: its
-path is relative to its library and it goes away when the user drops the link. Otherwise the file is loaded anew.
+False), its alpha mode the one a load gives (_load_alpha_mode), and its path absolute or the .blend saved (a
+relative path of an unsaved file has no folder to resolve against). Its color space is never changed:
+images.load(check_existing=True) would hand back an image of that file in any color space, and setting ours on it
+would recolor whatever already uses it. A linked image is left out: its path is relative to its library and it goes
+away when the user drops the link. Otherwise the file is loaded anew. A reused image keeps the pixels Blender read
+before: a file changed on disk since shows once the image is reloaded.
 """
 import collections
 import os
@@ -242,10 +245,21 @@ class MaterialBuilder:
 
     @staticmethod
     def _reusable(image):
-        """True for an image that still is its file: local (not from a library), loaded from a file, not packed,
-        not modified. Reads no pixels."""
+        """True for an image that still is its file as a load would give it: local (not from a library), loaded
+        from a file, not packed, not modified, the alpha mode of a load, its path resolvable. Reads no pixels."""
+        path = image.filepath
         return (image.library is None and image.source == 'FILE' and image.packed_file is None
-                and not image.is_dirty and bool(image.filepath))
+                and not image.is_dirty and bool(path) and image.alpha_mode == _load_alpha_mode(path)
+                and not (path.startswith("//") and not bpy.data.filepath))
+
+
+def _load_alpha_mode(path):
+    """The alpha mode images.load gives a file: premultiplied for the float formats, straight for the others
+    (Blender's BKE_image_alpha_mode_from_extension). A format it treats otherwise is only never reused."""
+    return 'PREMUL' if os.path.splitext(path)[1].lower() in _PREMUL_ON_LOAD else 'STRAIGHT'
+
+
+_PREMUL_ON_LOAD = (".exr", ".cin", ".dpx", ".hdr")
 
 
 def _key(path, colorspace):
