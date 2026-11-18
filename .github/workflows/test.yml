@@ -1,11 +1,11 @@
 name: Test
 
-# The plain job, on Ubuntu and Windows, each with the oldest and the newest numpy a supported Blender ships (no
-# Blender; the tests themselves use no network, only apt installs bsdtar and pip installs numpy and ruff): the unit
-# tests with the no-bpy guard, the tools, the landing page, the license files and the scene packs; the scan of
-# every file under tests/fixtures/ for user names, computer names and user paths; ruff. Then on each Blender of the
-# matrix: build, validate, the license text in the zip, the register smoke test, the import smoke test on
-# tests/fixtures/*.max and the fixture tests (tests/blender/run.py).
+# The plain job, on Ubuntu and Windows, each with the Python and numpy of the oldest and of the newest supported
+# Blender (no Blender; the tests themselves use no network, only apt installs bsdtar and pip installs numpy and
+# ruff): the unit tests with the no-bpy guard, the tools, the landing page, the license files and the scene
+# packs; the scan of every file under tests/fixtures/ for user names, computer names and user paths; ruff. Then on
+# each Blender of the matrix: build, validate, the license text in the zip, the register smoke test, the import
+# smoke test on tests/fixtures/*.max and the fixture tests (tests/blender/run.py).
 #
 # Runs on pull requests and by hand. On a push to main it runs as the first job of the Publish workflow, which
 # calls this file: nothing is published unless it passes, and the tests do not run twice.
@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   python:
-    name: Plain Python (${{ matrix.os }}, numpy ${{ matrix.numpy }})
+    name: Plain Python (${{ matrix.os }}, Python ${{ matrix.python }}, numpy ${{ matrix.numpy }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -30,15 +30,21 @@ jobs:
         # The numpy of Blender 4.2 (1.24.3) and of 5.2 (2.3.4); 4.5 ships 1.26.4, between the two. The geometry
         # readers return numpy arrays: without numpy their tests skip.
         numpy: ["1.24.3", "2.3.4"]
+        # Each numpy on the Python of the same Blender: 4.2 and 4.5 ship 3.11, 5.2 ships 3.13 (a stdlib call 3.13
+        # removed or changed fails here, not only in the Blender job's smoke tests).
+        include:
+          - numpy: "1.24.3"
+            python: "3.11"
+          - numpy: "2.3.4"
+            python: "3.13"
     defaults:
       run:
         shell: bash
     steps:
       - uses: actions/checkout@v7
-      # 3.11: the Python of Blender 4.2 and 4.5, the oldest the add-on runs on.
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python }}
       # bsdtar for the .rar and .7z tests of the scene packs: ubuntu-latest has no bsdtar and no unrar, and its
       # 7z is a shell wrapper or below the version MaxDrop accepts; those cases print SKIPPED. On Windows the
       # unpacker is the tar.exe of System32.
@@ -49,15 +55,23 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq libarchive-tools >/dev/null
           bsdtar --version
-      # Exactly the pinned version, imported the way the tests run (-I): a failed install fails here instead of
-      # turning the numpy tests into skips.
+      # Exactly the pinned Python and numpy, imported the way the tests run (-I): a failed install fails here
+      # instead of turning the numpy tests into skips.
       - name: numpy
         env:
           NUMPY: ${{ matrix.numpy }}
+          PYTHON: ${{ matrix.python }}
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check -q "numpy==$NUMPY"
-          python -I -c 'import os, numpy; v = numpy.__version__; print("numpy", v); assert v == os.environ["NUMPY"], v'
+          python -I -c '
+          import os, sys, numpy
+          p = "%d.%d" % sys.version_info[:2]
+          v = numpy.__version__
+          print("Python", sys.version, "numpy", v)
+          assert p == os.environ["PYTHON"], p
+          assert v == os.environ["NUMPY"], v
+          '
       # The real-tool tests of the scene packs print one RAN or SKIPPED line per case.
       - name: The unit tests and the no-bpy guard, the tools, the landing page, the license files, the scene packs
         run: python -I -m unittest discover tests
