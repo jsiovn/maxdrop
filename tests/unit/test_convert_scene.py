@@ -74,6 +74,7 @@ UV_LAYERS = {
     "vray_basic": ["UVMap"],
     "vray_maps": ["UVMap"],
     "vray_texmaps": ["UVMap"],
+    "vray_lights": [],  # lights and a target: no mesh
     "vray_wrappers": ["UVMap"],
     # per mesh: every box, the cylinder and the sphere have channel 1; two UVW Maps write channels 2 and 3
     "uvwmap": collections.defaultdict(lambda: ["UVMap"], {"FixtureUVWGizmo": ["UVMap", "UVChannel_2"],
@@ -115,7 +116,13 @@ PLACEHOLDERS = {"lookat": {"Target": 4, "Target Spot": 1, "Point": 1}}
 # the issues the fixtures are made to raise
 ISSUES = {"uvwmap": ["uvw map: a UVW Map above Bend is not evaluated",
                      "uvw map: shrink-wrap mapping is not evaluated: the stored channel stays"],
-          "stack_convert": ["modifiers: TurboSmooth above Bend is not converted"]}
+          "stack_convert": ["modifiers: TurboSmooth above Bend is not converted"],
+          "vray_lights": ["light: diffuse contribution 0.5: Blender's diffuse factor, which only EEVEE uses",
+                          "light: double-sided: Blender's area light shines on one side, with half the power",
+                          "light: not built: a dome light is not imported yet (dome -> World is later work)",
+                          "light: not built: a mesh light is not imported yet"]}
+VRAY_LIGHT_CLASS = ["0x3c5575a1", "0x5fd602df"]  # the oracle's base_class_id of a VRayLight
+UNBUILT_LIGHTS = {"FixtureMesh", "FixtureDome"}  # vray_lights' mesh and dome lights: not built yet
 # meshes under a converted smoother with Smooth Result: no sharp edge (modifier_pivot's reference, stack_basic's box)
 SHARP_EDGES_SMOOTHED = {"FixtureSmooth": 0, "FixtureTurbo": 0, "FixtureTurboOne": 0, "FixtureMeshSmooth": 0,
                         "FixtureOrder": 0}
@@ -570,8 +577,9 @@ class Fixtures(unittest.TestCase):
             for node, o in zip(desc.nodes, oracle["nodes"]):
                 extruded = o["shape"] is not None and o["eval_verts"] is not None  # an Extrude on the shape
                 primitive = tuple(o["base_class_id"]) in PRIMITIVE_CLASSES
+                light = o["base_class_id"] == VRAY_LIGHT_CLASS and o["name"] not in UNBUILT_LIGHTS
                 kind = conv.MESH if o["base_verts"] is not None or extruded or primitive else \
-                    conv.CURVE if o["shape"] else conv.EMPTY
+                    conv.CURVE if o["shape"] else conv.LIGHT if light else conv.EMPTY
                 self.assertEqual(node.kind, kind, "%s %s" % (name, node.name))
                 if node.kind == conv.MESH:
                     md = desc.meshes[node.mesh]

@@ -14,6 +14,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   they point in 3ds Max (they kept the rotation of no controller before); their targets arrive as empties, not
   placeholders. The new import option **Keep Targets** aims the ones with a Look At controller at their targets
   with a Track To constraint, so they follow when a target moves (a roll or the Y axis keeps the fixed rotation).
+- V-Ray lights: plane and disc lights arrive as area lights, sphere lights as point lights, with their size, color
+  or color temperature, on / off, invisibility and diffuse / specular / reflection switches, and a power in watts
+  from their units. The new import option **Light Strength** (default 1.43, calibrated so that Cycles matches V-Ray's
+  brightness) scales every light. Instances share one light. Mesh and dome lights are not imported yet (a line in
+  the report).
 
 ### Changed
 

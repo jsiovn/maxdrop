@@ -508,7 +508,9 @@ class TestFixtures(unittest.TestCase):
                  "FixtureBoxCopy": 0,  # instances and references: 0
                  # lookat: the nodes a Look At controller aims at (not those only a LookAt Constraint aims at)
                  "FixtureCam.Target": 0x4800, "FixtureCamRoll.Target": 0x4800, "FixtureCamDown.Target": 0x4800,
-                 "FixtureSpot.Target": 0x4800, "FixtureCamChild.Target": 0x4800, "FixtureAim": 0x4800}
+                 "FixtureSpot.Target": 0x4800, "FixtureCamChild.Target": 0x4800, "FixtureAim": 0x4800,
+                 "FixtureTargeted.Target": 0x4800,  # vray_lights: a targeted VRayLight's target
+                 "FixturePlaneInst": 0}  # vray_lights: an instance
         heads = {"Node": 16, "RootNode": 16, "Texmaps": 48, "Bezier Float": 2, "Bezier Scale": 2, "Bezier Color": 2,
                  "Boolean Controller": 2, "Grid Reference": 2, "VRayMtl": 34, "MtlBaseLib": 2,
                  "": 2}  # Custom Curve Control's point class, nameless in the class directory (texmap_rules' Falloffs)

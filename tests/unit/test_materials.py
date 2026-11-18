@@ -24,8 +24,8 @@ FIXTURE_DIR = os.path.join(ROOT, "tests", "fixtures")
 FIXTURES = sorted(glob.glob(os.path.join(FIXTURE_DIR, "*.max")))
 TOLERANCE = 1e-5  # relative above 1: the oracle prints 6 significant digits
 # compared values per fixture, every fixture listed (test_every_fixture_has_a_floor): guards against a parity test
-# that compares nothing. A fixture whose graph is one Standard material compares 125.
-FLOORS = {"box_poly_standard": 120, "corona_layered": 630, "corona_legacy": 370, "corona_light": 180,
+# that compares nothing. A fixture whose graph is one Standard material compares 125; vray_lights has no material.
+FLOORS = {"vray_lights": 0, "box_poly_standard": 120, "corona_layered": 630, "corona_legacy": 370, "corona_light": 180,
           "corona_maps": 950, "corona_physical": 500, "editable_mesh": 380, "extrude": 120, "gamma_swatches": 540,
           "hierarchy": 120, "instances": 120, "layers_flags": 120, "lookat": 120, "modifier_pivot": 120,
           "multi_uv": 120, "primitives": 120, "shapes": 120, "stack_basic": 120, "stack_convert": 120,

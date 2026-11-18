@@ -88,7 +88,11 @@ _SHOWN_FILES = 5
 _UNREADABLE = (OSError, ValueError, IndexError, struct.error)
 # What a build makes besides objects and collections, in the order a failed build removes them. Addresses, not
 # names: a new datablock could reuse the address of one freed meanwhile, but the build frees none.
-_MADE = ("meshes", "curves", "materials", "images")
+_MADE = ("meshes", "curves", "lights", "materials", "images")
+
+# The default Light Strength: Cycles renders of the ported watts against V-Ray 5.2 renders of the same lights
+# (docs/FORMAT.md, "VRayLight"): 1.430 to 1.432 for plane and disc lights in every units mode, 1.446 for spheres.
+LIGHT_STRENGTH = 1.43
 
 # Saved in presets by identifier; the numbers keep each item's value stable.
 UNITS = (
@@ -370,8 +374,8 @@ def _material_slots(cf, sc, desc, max_path, context, image_search):
 
 def _remove(cols, before):
     """Remove what a failed build left: the objects of the file's collection tree, the collections, and the meshes,
-    curves, materials and images made since before ({kind: the as_pointer() of each datablock before the build}) that
-    nothing uses."""
+    curves, lights, materials and images made since before ({kind: the as_pointer() of each datablock before the
+    build}) that nothing uses."""
     for ob in list(cols.root.all_objects):
         bpy.data.objects.remove(ob)
     for col in list(cols.layers.values()) + [cols.root]:
@@ -439,6 +443,14 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
         description="What becomes of the 3ds Max modifiers Blender has an equivalent for",
         items=MODIFIERS,
         default='KEEP',
+    )
+    light_strength: FloatProperty(
+        name="Light Strength",
+        description="Factor on the power of every light, in watts from the 3ds Max light's own units. "
+        "1.43 gives V-Ray's brightness in Cycles",
+        min=0.0, max=1000000.0,
+        soft_min=0.0, soft_max=1000.0,
+        default=LIGHT_STRENGTH,
     )
     keep_targets: BoolProperty(
         name="Keep Targets",
@@ -617,7 +629,8 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
         builder = build_materials.MaterialBuilder()
         try:
             built = build_objects.build(desc, cols.root, cols, view_layer, slots=slots,
-                                        material=builder.make if materials else None)
+                                        material=builder.make if materials else None,
+                                        light_strength=self.light_strength)
             settings_skipped = build_modifiers.add(desc, built)
             kept = build_objects.track_targets(desc, built) if self.keep_targets else []
             build_collections.finish(cols, view_layer)
@@ -756,6 +769,7 @@ def import_include(layout, operator):
         layrow.label(text="", icon='OUTLINER_OB_IMAGE' if operator.use_image_search else 'IMAGE_DATA')
         layout.column().prop(operator, "object_filter")
         layout.prop(operator, "modifiers")
+        layout.prop(operator, "light_strength")
 
 
 def import_transform(layout, operator):

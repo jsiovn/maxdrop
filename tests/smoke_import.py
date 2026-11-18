@@ -10,7 +10,7 @@ Run headless with an isolated profile so your own preferences are never touched:
 
 Without arguments it takes tests/fixtures/*.max; with no file at all it prints `IMPORT SKIPPED` and exits 0.
 Each file is imported into an emptied scene with the default options and must bring at least one mesh with faces and
-one material; the counts are printed so that runs on different Blender versions can be compared.
+one material (a fixture of lights only, LIGHTS_ONLY: a light); the counts are printed so that runs on different Blender versions can be compared.
 
 Every .max is then packed into a .zip in a scratch folder (the scene with the image and .ies files of its folder
 tree, plus one image no scene names) and imported from it: same checks, no fewer images, unpacked beside the zip;
@@ -35,9 +35,9 @@ only things listed are on the material side: wrappers and maps approximated, map
 (vray_texmaps' Noise), texture files not found (the fixtures carry no images), material issues or, on
 Blender 4, Principled inputs that Blender lacks; and the modifiers not applied, as many as the oracle lists, in a
 fixture whose oracle lists some (modifier_pivot; the ones converted to Blender modifiers are not counted), the
-issues a fixture is made to raise (uvwmap, stack_convert) and the placeholders of classes not built yet (lookat's
-cameras, spot light and Point helper). Two scenes
-in one run: the text holds both reports; a file that was not imported is named after them.
+issues a fixture is made to raise (uvwmap, stack_convert, vray_lights) and the placeholders of classes not built
+yet (lookat's cameras, spot light and Point helper). Two scenes in one run: the text holds both reports; a file
+that was not imported is named after them.
 Prints `IMPORT PASSED` (exit 0) or `IMPORT FAILED` (exit 1).
 """
 import glob
@@ -66,13 +66,15 @@ UVW_MAP = ("0x000f72b1", "0x00000000")
 CONVERTIBLE = {("0x0d727b3e", "0x491d29a7"), ("0x00000032", "0x00007f9e"), ("0x3b9b1a16", "0x6d84e8d0"),
                ("0x2d7e702b", "0x0be41a6e")}
 # modifiers the current fixture's report must name as not applied (modifier_pivot: 2), issues it must list
-FIXTURE = {"modifiers": 0, "issues": 0, "placeholders": 0}
+FIXTURE = {"modifiers": 0, "issues": 0, "placeholders": 0, "lights_only": False}
 # What the oracle does not tell: a UVW Map of a type MaxDrop does not evaluate (shrink-wrap), and the issues each
 # fixture is made to raise (ISSUES in tests/unit/test_convert_scene.py)
 NOT_EVALUATED = {"FixtureUVWShrink"}
-FIXTURE_ISSUES = {"uvwmap.max": 2, "stack_convert.max": 1}
+FIXTURE_ISSUES = {"uvwmap.max": 2, "stack_convert.max": 1, "vray_lights.max": 4}
 # placeholders of classes MaxDrop does not build yet: lookat's four target cameras, its target spot, its Point
 FIXTURE_PLACEHOLDERS = {"lookat.max": 6}
+# fixtures without a mesh: a light must arrive instead of a mesh with a material
+LIGHTS_ONLY = {"vray_lights.max"}
 
 
 def oracle_modifiers(path):
@@ -164,7 +166,7 @@ def check_report(name, max_name, pack_name=None):
         missing = summaries and all(kind == 'WARNING' for kind, _m in summaries) and only_known_gaps(body) \
             and (not modified or all("; %d modifier%s not applied" % (modified, "" if modified == 1 else "s") in m
                                      for _k, m in summaries)) \
-            and (not issues or all(", %d issue%s." % (issues, "" if issues == 1 else "s") in m
+            and (not issues or all(" %d issue%s." % (issues, "" if issues == 1 else "s") in m
                                    for _k, m in summaries)) \
             and (not held or all("; %d placeholder%s" % (held, "" if held == 1 else "s") in m for _k, m in summaries))
         check("%s: the operator reported INFO, nothing left out (or only the known gaps of the fixtures)" % name,
@@ -217,8 +219,12 @@ def import_one(path, label=None, max_name=None, pack_name=None, **options):
     meshes = [ob for ob in bpy.data.objects if ob.type == 'MESH']
     check("%s: the operator finishes" % name, result == {'FINISHED'}, str(result))
     check_report(name, max_name, pack_name)
-    check("%s: a mesh with faces arrives" % name, any(len(ob.data.polygons) for ob in meshes))
-    check("%s: a material arrives on a mesh" % name, any(slot.material for ob in meshes for slot in ob.material_slots))
+    if FIXTURE["lights_only"]:
+        check("%s: a light arrives" % name, any(ob.type == 'LIGHT' for ob in bpy.data.objects))
+    else:
+        check("%s: a mesh with faces arrives" % name, any(len(ob.data.polygons) for ob in meshes))
+        check("%s: a material arrives on a mesh" % name,
+              any(slot.material for ob in meshes for slot in ob.material_slots))
     print("COUNTS %s: objects=%d meshes=%d vertices=%d polygons=%d materials=%d images=%d" % (
         name, len(bpy.data.objects), len(meshes), sum(len(ob.data.vertices) for ob in meshes),
         sum(len(ob.data.polygons) for ob in meshes), len(bpy.data.materials), len(bpy.data.images)))
@@ -359,9 +365,9 @@ def selections(max_path, scratch):
         f.write(b"not an archive, whatever its name says")
 
     result, message = attempt(directory=folder, files=[{"name": name}, {"name": "one.zip"}])
-    meshes = [ob for ob in bpy.data.objects if ob.type == 'MESH' and len(ob.data.polygons)]
-    check("a .max and a one-scene .zip chosen together: both imported", result == {'FINISHED'} and len(meshes) >= 2,
-          "%s, %d meshes %s" % (result, len(meshes), message.strip()))
+    made = [ob for ob in bpy.data.objects if ob.type == 'MESH' and len(ob.data.polygons) or ob.type == 'LIGHT']
+    check("a .max and a one-scene .zip chosen together: both imported", result == {'FINISHED'} and len(made) >= 2,
+          "%s, %d meshes or lights %s" % (result, len(made), message.strip()))
     check("a .max and a one-scene .zip chosen together: the pack is unpacked",
           os.path.isfile(os.path.join(folder, "one", SECOND)))
     text = bpy.data.texts.get(TEXT_NAME)
@@ -540,12 +546,14 @@ def run():
             FIXTURE["modifiers"] = 0 if argv else oracle_modifiers(path)
             FIXTURE["issues"] = 0 if argv else FIXTURE_ISSUES.get(os.path.basename(path), 0)
             FIXTURE["placeholders"] = 0 if argv else FIXTURE_PLACEHOLDERS.get(os.path.basename(path), 0)
+            FIXTURE["lights_only"] = not argv and os.path.basename(path) in LIGHTS_ONLY
             images = import_one(path)
             work = os.path.join(scratch, str(n))
             as_pack(path, work, images, archive, ops)
             two_scenes(path, work, ops)
             selections(path, work)
         FIXTURE["modifiers"] = FIXTURE["issues"] = FIXTURE["placeholders"] = 0
+        FIXTURE["lights_only"] = False
         if not argv:
             units_and_preflight(ops)
             filters_and_failures(scratch)

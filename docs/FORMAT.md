@@ -585,6 +585,49 @@ and a Sphere's or GeoSphere's hemisphere. Plane's render scale and density act a
 viewport size, a line in the report). Teapot is not built. A primitive past 2^21 face corners (`MAX_CORNERS`) is
 refused: a file can ask for any number of segments.
 
+## VRayLight
+
+VRayLight `(0x3C5575A1, 0x5FD602DF)`, superclass `0x30` (light), V-Ray 5.2 in 3ds Max 2020 (`convert/lights.py`;
+ids read through the SDK's .NET wrapper on a scratch scene, then the vray_lights fixture read back by the reader).
+Reference 0 is a ParamBlock2 (block id 0), reference 2 the viewport icon object. Parameter ids, lengths in file
+units:
+
+| Id | Parameter |
+|---|---|
+| 0, 1 | on; type: 0 plane, 1 dome, 2 sphere, 3 mesh, 4 disc |
+| 2, 3, 4 | size0, size1, size2: a plane's HALF length along its local X and half width along local Y (a V-Ray render of size0 10, size1 30 from below is 20 by 60); a disc's and a sphere's radius in size0 |
+| 7, 8, 12 | color; multiplier; units (`normalizeColor`): 0 default (image), 1 lm, 2 lm/m²/sr, 3 W, 4 W/m²/sr |
+| 9, 10 | double-sided; invisible |
+| 18, 19 | texmap (a map reference), texmap on |
+| 25, 26, 30 | affect diffuse, affect specular, affect reflections |
+| 36 | directional (`lightDistribution`) |
+| 38, 39 | color temperature (K); color mode: 0 color, 1 temperature |
+| 43 | targeted (the node has a Look At controller and a Target, [Look At](#look-at)) |
+| 53, 54 | diffuse contribution, specular contribution |
+
+In temperature mode V-Ray also stores its own color of that temperature in 7 (3500 K: 1.0, 0.584, 0.256); MaxDrop
+takes the curve of the rules source instead (3500 K: 255, 192.5, 140.8 as an sRGB swatch). `on:false` given to the
+MAXScript constructor does not stick (the fixture script sets it afterwards), and `targeted:true` there makes no
+target.
+
+**Power.** The rules source's watts (its `ocbaby_exsVrayLightWatts`): emitting area `a` = plane 2 size0 × 2 size1,
+disc π size0², sphere 4π size0² (m², doubled for a double-sided plane or disc); 1 lm: `m / 683`, 2 lm/m²/sr:
+`π m a / 683`, 3 W: `m`, 4 W/m²/sr: `π m a`, default: `m a · 1500 / 683`. Compared with V-Ray 5.2 renders (below),
+one change: in lm/m²/sr and W/m²/sr V-Ray lights a disc as if `a` were (2 size0)², 4/π more than its area; in the
+default units it does not. Blender's area light shines on one side: a double-sided plane or disc gets half.
+
+**Calibration of Light Strength (1.43).** A scratch scene (not committed): a white Lambert floor (VRayMtl diffuse
+255, no reflection; in Blender a Diffuse BSDF of 1.0), an invisible VRayLight 1 m above it, plane, disc and sphere
+of 100 mm size0 in each of the five units modes, each rendered alone through an orthographic camera looking down at
+the floor below it, V-Ray 5.2 with color mapping linear, gamma 1, no clamp, no GI, 3ds Max's gamma off, into a float
+bitmap, and the same `.max` imported by MaxDrop (Light Strength 1) and rendered in Cycles (512 samples, Standard view
+transform): the mean of the 8 × 8 pixels at the center, V-Ray / Cycles, is 1.4313 to 1.4319 for every plane and disc
+in every units mode (with the disc rule above; 1.822 without it in lm/m²/sr and W/m²/sr) and 1.4456 for the spheres.
+The vray_lights fixture's own lights the same way, 0.05 to 0.09 m above the floor: 1.430 to 1.433 for its planes and
+discs, 1.448 and 1.470 for its two small spheres. The default Light Strength is 1.43. Cycles ignores a light's
+diffuse and specular factors (EEVEE uses them): the fixture's disc with diffuse contribution 0.5 is half as bright in
+V-Ray as in Cycles.
+
 ## System unit
 
 `maxdrop/reader/units.py` reads it; `tests/unit/test_units.py` checks every fixture against the oracle's
@@ -852,6 +895,10 @@ Bitmap's).
 ## Open
 
 Not shown by any fixture yet, so not stated above:
+
+- Of VRayLight ([VRayLight](#vraylight)): a mesh light's mesh (parameter 34, a node; none picked in the fixture),
+  the dome's parameters, size2, the texmap's use, the light units of a scene unit other than millimeters (the rules
+  scale lengths by the unit; the fixture is in millimeters), an animated parameter (its default is taken).
 
 - Asset metadata seen only in the corpus (`assets.py` relies on it): scene A (saved as 3ds Max 2012) has
   `FileAssetMetaData2` instead, its records without the third string (155 records: `Bitmap` and `Photometric`);

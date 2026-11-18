@@ -8,6 +8,7 @@
     desc.nodes                          # NodeDescription per node, pre-order: a parent before its children
     desc.meshes[node.mesh]              # MeshDescription, shared by the nodes of one base object
     desc.curves[node.curve]             # CurveDescription of a shape node, shared the same way
+    desc.lights[node.light]             # convert.lights LightDescription of a LIGHT node, shared the same way
     desc.placeholders                   # Counter: class name -> nodes built as an empty
     desc.layers                         # LayerDescription per layer that holds a node, a parent before its children
     desc.unknown_controllers            # Counter: controller class name -> times met
@@ -47,6 +48,11 @@ here or a shape read here, when it has no object, or when the reader refuses its
 counts them by the class name of the file's class directory ("" when there is none). A Dummy helper (a group head is
 one) and a Target (the node a target camera or light aims at) are EMPTYs too, but that is their conversion, not a
 placeholder. A group head keeps its members as children: that is how 3ds Max stores a group.
+
+A VRayLight becomes a LIGHT (convert.lights): plane and disc an area light, sphere a point light, keyed by its base
+object index, so instances share it; its issues are named on the first node only. A mesh or dome light (not built
+yet) or one whose parameters cannot be read is an EMPTY with the reason as an issue, on every node, not counted as a
+placeholder.
 
 Look At: the matrices of a node aimed by a Look At controller or a LookAt Constraint are the ones 3ds Max computes
 at frame 0 (reader.controllers), baked. A node with a Look At controller aimed at a node also gets node.look_at, a
@@ -91,9 +97,9 @@ import math
 
 from ..reader import cfb, chunks, classids, controllers, geometry, modifiers as reader_modifiers, shapes, units
 from ..reader import scene as reader_scene
-from . import extrude, modifiers as rules, primitives, uvwmap
+from . import colors, extrude, lights, modifiers as rules, primitives, uvwmap
 
-MESH, CURVE, EMPTY = "MESH", "CURVE", "EMPTY"
+MESH, CURVE, EMPTY, LIGHT = "MESH", "CURVE", "EMPTY", "LIGHT"
 ADAPTIVE = 12  # Blender's default curve resolution, for a shape 3ds Max interpolates adaptively
 UV_FIRST = "UVMap"
 UV_NAME = "UVChannel_%d"
@@ -109,8 +115,9 @@ ChunkError = chunks.ChunkError
 
 
 class NodeDescription:
-    """One node: index is its object index, parent the parent's (None at the top level); kind MESH, CURVE or EMPTY;
-    mesh the key into SceneDescription.meshes, curve the key into SceneDescription.curves (None when not one);
+    """One node: index is its object index, parent the parent's (None at the top level); kind MESH, CURVE, LIGHT or
+    EMPTY; mesh the key into SceneDescription.meshes, curve the key into SceneDescription.curves, light the key into
+    SceneDescription.lights (None when not one);
     class_name the base object's class ("" without one); modifiers the class names of its modifier stack not applied,
     top first, applied those evaluated into its mesh (an Extrude); layer the layer's object index (None without
     one); hidden, frozen, renderable, group_head and group_member the node's own flags; sheared whether matrix has
@@ -119,17 +126,18 @@ class NodeDescription:
     None."""
     __slots__ = ("index", "name", "parent", "matrix", "world", "kind", "mesh", "class_name", "mirrored",
                  "modifiers", "layer", "hidden", "frozen", "renderable", "group_head", "group_member", "sheared",
-                 "curve", "applied", "converted", "look_at")
+                 "curve", "applied", "converted", "look_at", "light")
 
     def __init__(self, index, name, parent, matrix, world, kind, mesh, class_name, mirrored, modifiers, layer=None,
                  hidden=False, frozen=False, renderable=True, group_head=False, group_member=False, sheared=False,
-                 curve=None, applied=(), converted=(), look_at=None):
+                 curve=None, applied=(), converted=(), look_at=None, light=None):
         self.index, self.name, self.parent, self.matrix, self.world = index, name, parent, matrix, world
         self.kind, self.mesh, self.class_name, self.mirrored, self.modifiers = kind, mesh, class_name, mirrored, \
             modifiers
         self.layer, self.hidden, self.frozen, self.renderable = layer, hidden, frozen, renderable
         self.group_head, self.group_member, self.sheared = group_head, group_member, sheared
         self.curve, self.applied, self.converted, self.look_at = curve, applied, converted, look_at
+        self.light = light
 
     def __repr__(self):
         return "NodeDescription(%d, %r, %s, parent=%r)" % (self.index, self.name, self.kind, self.parent)
@@ -225,15 +233,15 @@ class LayerDescription:
 
 
 class SceneDescription:
-    """nodes in walk order, meshes {key: MeshDescription} and curves {key: CurveDescription} in order of first use,
-    meters per file unit, unit the reader's SystemUnit (None when the file does not say), layers, placeholders,
-    unknown_controllers and issues."""
-    __slots__ = ("nodes", "meshes", "curves", "meters", "unit", "layers", "placeholders", "unknown_controllers",
-                 "issues")
+    """nodes in walk order, meshes {key: MeshDescription}, curves {key: CurveDescription} and lights {key:
+    convert.lights.LightDescription} in order of first use, meters per file unit, unit the reader's SystemUnit
+    (None when the file does not say), layers, placeholders, unknown_controllers and issues."""
+    __slots__ = ("nodes", "meshes", "curves", "lights", "meters", "unit", "layers", "placeholders",
+                 "unknown_controllers", "issues")
 
     def __init__(self, meters, unit=None):
         self.nodes, self.meshes, self.meters, self.unit, self.layers = [], {}, meters, unit, []
-        self.curves = {}
+        self.curves, self.lights = {}, {}
         self.placeholders = collections.Counter()
         self.unknown_controllers = collections.Counter()
         self.issues = []
@@ -452,10 +460,12 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True):
     mapped = {}  # UVW Map modifier index -> (Params, gizmo matrix), or None when it is not evaluated
     told = set()  # modifier indices whose conversion issues were named (on the first node only)
     layers = {}  # layer object index -> reader Layer, or None when its record cannot be read
+    unlit = {}  # VRayLight base object index -> why it is not built
+    swatches = None  # the scene's swatch rule, read for the first light
     for i in order:
         local, world = t.local(i), t.world(i)
         kind, key, class_name, modifiers, name, node, layer, base = EMPTY, None, "", (), "", None, None, None
-        curve, applied, converted = None, (), ()
+        curve, applied, converted, light = None, (), (), None
         if isinstance(found[i], ChunkError):  # a damaged node record or object stack: an empty, children placed
             desc.issues.append((i, "node: %s" % found[i]))
         else:
@@ -486,6 +496,12 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True):
                 remaining[base] -= 1
                 if not remaining[base]:
                     extruded.pop(base, None)
+            elif base is not None and lights.is_vray_light(scene, base):
+                class_name = _class_name(scene, base)
+                if swatches is None:
+                    swatches = colors.of_scene(scene)
+                light = _light(scene, desc, unlit, base, i, name, meters, swatches)
+                kind = LIGHT if light is not None else EMPTY
             elif base is not None:
                 class_name = _class_name(scene, base)
                 if base not in data_of:
@@ -516,7 +532,7 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True):
                     del data_of[base]
         if kind == EMPTY and not (base is not None and (scene.is_a(base, classids.SC_HELPER, classids.DUMMY) or
                                                         scene.is_a(base, classids.SC_GEOMOBJECT,
-                                                                   classids.TARGET_OBJECT))):
+                                                                   classids.TARGET_OBJECT) or base in unlit)):
             desc.placeholders[class_name] += 1
         flags = {} if node is None else dict(hidden=node.hidden, frozen=node.frozen, renderable=node.renderable,
                                              group_head=node.group_head, group_member=node.group_member)
@@ -524,13 +540,34 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True):
                                           blender_matrix(world, meters), kind, key, class_name,
                                           determinant3(world) < 0, modifiers, layer, sheared=sheared(local),
                                           curve=curve, applied=applied, converted=converted,
-                                          look_at=look_at_description(t.look_at(i)), **flags))
+                                          look_at=look_at_description(t.look_at(i)), light=light, **flags))
     desc.issues.extend((issue.node, "transform: %s" % issue.reason) for issue in t.issues)
     desc.unknown_controllers.update(
         _class_name(scene, issue.controller) if issue.controller is not None else ""
         for issue in t.issues if issue.reason == controllers.UNKNOWN_CLASS)
     desc.layers = _layer_descriptions(scene, layers)
     return desc
+
+
+def _light(scene, desc, unlit, base, node, name, meters, swatches):
+    """The key in desc.lights of VRayLight base, made on first use (its issues on that node); None when it is not
+    built (unlit caches the reason, an issue on every node)."""
+    if base not in desc.lights and base not in unlit:
+        try:
+            ld, issues = lights.describe_light(scene, base, name, meters, swatches)
+        except ChunkError as exc:
+            ld, issues = None, ["parameters cannot be read: %s" % exc]
+        if ld is None:
+            unlit[base] = issues[-1]
+            issues = issues[:-1]
+        else:
+            desc.lights[base] = ld
+        desc.issues.extend((node, "light: %s" % x) for x in issues)
+    if base in unlit:
+        desc.issues.append((node, "light: not built: %s" % unlit[base]))
+        return None
+    desc.lights[base].users.append(node)
+    return base
 
 
 def _primitive(scene, base, issues, node, built):

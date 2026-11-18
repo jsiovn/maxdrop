@@ -15,6 +15,7 @@ from .classdir import ClassId
 SC_BASENODE = 0x0001
 SC_PARAMETER_BLOCK = 0x0008
 SC_GEOMOBJECT = 0x0010
+SC_LIGHT = 0x0030
 SC_SHAPE = 0x0040
 SC_HELPER = 0x0050
 SC_PARAMETER_BLOCK2 = 0x0082
@@ -55,6 +56,9 @@ EDITABLE_MESH = ClassId(0xE44F10B3, 0)
 EDITABLE_POLY = ClassId(0x1BF8338D, 0x192F6098)
 DUMMY = ClassId(0x00876234, 0)
 TARGET_OBJECT = ClassId(0x00001020, 0)  # the node a Look At controller aims at (a target camera's, light's)
+
+# Lights (convert/lights.py).
+VRAY_LIGHT = ClassId(0x3C5575A1, 0x5FD602DF)
 
 # Primitives (convert/primitives.py).
 BOX = ClassId(0x00000010, 0)
@@ -156,6 +160,7 @@ CLASSES = {
     (SC_GEOMOBJECT, GEOSPHERE): "GeoSphere",
     (SC_GEOMOBJECT, PLANE): "Plane",
     (SC_GEOMOBJECT, PYRAMID): "Pyramid",
+    (SC_LIGHT, VRAY_LIGHT): "VRayLight",
     (SC_SHAPE, SPLINE_SHAPE): "SplineShape",
     (SC_SHAPE, LINE): "Line",
     (SC_SHAPE, RECTANGLE): "Rectangle",

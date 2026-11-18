@@ -36,7 +36,12 @@ modifiers), the report names the modifiers not applied, and the node whose pivot
 in place. lookat: the nodes aimed by a Look At controller or a LookAt Constraint have 3ds Max's world matrices (above),
 the Target objects are empties; imported again with Keep Targets, each Look At a Track To can follow gets one aimed at
 its target's object, with the same evaluated world matrix, and the report names the two it cannot follow (a roll, the
-Y axis). Each fixture's import report is published (build.report) and must say nothing was left out; the one the
+Y axis). vray_lights: each VRayLight node a light object (mesh and dome lights empties), its light of the
+description's type, shape and size and of the shape the fixture script made, its -Z axis along the oracle's, its
+energy the watts 3ds Max computed with the rules source's function times the default Light Strength (the disc's 4 / pi,
+the double-sided plane's half), its color, the off light hidden in viewport and render, the invisible one unseen by
+the camera and glossy rays; the instance shares the plane's light; imported again with Light Strength 2, twice the
+power. Each fixture's import report is published (build.report) and must say nothing was left out; the one the
 operator published for vray_wrappers lists its three peeled wrappers by class. A changed layers_flags description
 checks a hidden, a frozen, a non-rendering and a nested layer, which no fixture has. A hand-made description with sheared local matrices (top-level and parented, hidden, a zero scale) checks that
 Blender's world matrices equal the products of the locals, through the helper empty for top-level ones. Material
@@ -103,6 +108,7 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1; kept literal: tes
     "vray_basic": ["UVMap"],
     "vray_maps": ["UVMap"],
     "vray_texmaps": ["UVMap"],
+    "vray_lights": [],  # lights and a target: no mesh
     "vray_wrappers": ["UVMap"],
     "uvwmap": {"FixtureUVWGizmo": ["UVMap", "UVChannel_2"], "FixtureUVWTwo": ["UVMap", "UVChannel_3"]},  # else UVMap
     "uvwmap_oblique": ["UVMap"],
@@ -132,6 +138,25 @@ FLAT_SHADED = {"FixtureGeoOcta"}  # a GeoSphere not smoothed: no smoothing group
 # a Box of width -12 keeps 3ds Max's faces, which point in
 PLANE_NORMALS = {"FixturePlane": 1.0, "FixturePlaneDown": -1.0, "FixturePlaneReal": 1.0}
 INSIDE_OUT = {"FixtureBoxInside"}
+# vray_lights (tools/fixtures/vray_lights.ms): watts of the rules source's ocbaby_exsVrayLightWatts, run in 3ds Max
+# on each light; the factor MaxDrop changes them by (the disc in lm/m2/sr, measured against V-Ray; the double-sided
+# plane's one side); the shape and size in meters the script made; the linear colors (the fixture is saved with the
+# gamma off: swatches and the Kelvin curve decoded from sRGB); the object and light flags that are not the default
+VRAY_LIGHT_WATTS = {"FixturePlane": 0.0527086444, "FixturePlaneInst": 0.0527086444, "FixturePlaneLm": 2.19619322,
+                    "FixtureDisc": 0.00975400303, "FixtureSphere": 40.0, "FixtureSphereKelvin": 0.252661914,
+                    "FixtureOff": 0.00439238735, "FixtureInvisible": 20.0, "FixtureTargeted": 25.0}
+VRAY_LIGHT_POWER = {"FixtureDisc": 4.0 / math.pi, "FixturePlaneLm": 0.5}
+VRAY_LIGHT_SHAPES = {"FixturePlane": ('AREA', 'RECTANGLE', 0.04, 0.02, 0.0),
+                     "FixturePlaneInst": ('AREA', 'RECTANGLE', 0.04, 0.02, 0.0),
+                     "FixturePlaneLm": ('AREA', 'RECTANGLE', 0.03, 0.03, 0.0),
+                     "FixtureDisc": ('AREA', 'DISK', 0.03, 0.0, 0.0), "FixtureSphere": ('POINT', None, 0.0, 0.0, 0.005),
+                     "FixtureSphereKelvin": ('POINT', None, 0.0, 0.0, 0.008),
+                     "FixtureOff": ('AREA', 'RECTANGLE', 0.02, 0.02, 0.0), "FixtureInvisible": ('AREA', 'DISK', 0.02,
+                                                                                               0.0, 0.0),
+                     "FixtureTargeted": ('AREA', 'RECTANGLE', 0.02, 0.01, 0.0)}
+VRAY_LIGHT_COLORS = {"FixturePlane": (1.0, 0.57758, 0.304987), "FixturePlaneInst": (1.0, 0.57758, 0.304987),
+                     "FixtureDisc": (0.187821, 0.351533, 1.0), "FixtureSphereKelvin": (1.0, 0.5304, 0.265643)}
+VRAY_LIGHT_FLAGS = {"FixtureInvisible": (False, True, False, 0.5, 0.0)}  # camera, diffuse, glossy, factors
 # hollow: a tube's inner side and a torus's inner half face the box center; closed, they enclose a positive volume
 # the oracle's base_class_id of the primitives MaxDrop builds (convert/primitives.py)
 PRIMITIVE_CLASSES = {("0x00000010", "0x00000000"), ("0x00000011", "0x00000000"), ("0x00000012", "0x00000000"),
@@ -165,6 +190,8 @@ def empty_scene():
         bpy.data.meshes.remove(mesh)
     for curve in list(bpy.data.curves):
         bpy.data.curves.remove(curve)
+    for light in list(bpy.data.lights):
+        bpy.data.lights.remove(light)
     for col in list(bpy.data.collections):
         bpy.data.collections.remove(col)
     for text in list(bpy.data.texts):
@@ -260,8 +287,13 @@ def run_fixture(path, modules):
         homes = [c.name for c in ob.users_collection]
         check(label + ": in its layer's collection", homes == [o["layer"]], str(homes))
         flags = (ob.hide_viewport, ob.hide_get(view_layer=view_layer), ob.hide_render, ob.hide_select)
-        check(label + ": hidden, renderable and frozen flags",
-              flags == (o["hidden"], o["hidden"], not o["renderable"], o["frozen"]), str(flags))
+        want = (o["hidden"], o["hidden"], not o["renderable"], o["frozen"])
+        if node.kind == convert_scene.LIGHT and not desc.lights[node.light].on:  # a light switched off
+            want = (True, o["hidden"], True, o["frozen"])
+        check(label + ": hidden, renderable and frozen flags", flags == want, str(flags))
+        if node.kind == convert_scene.LIGHT:
+            check_light(label, ob, desc.lights[node.light], o)
+            continue
         if o["shape"] is not None and node.kind == convert_scene.MESH:
             check_extruded(label, ob, node, o, meters, plan)
             continue
@@ -415,12 +447,67 @@ def run_fixture(path, modules):
         held = sum(desc.placeholders.values())
         check("%s: report published, nothing left out but the %d placeholders and %d issues" % (name, held, issues),
               level == "WARNING" and published and rep.left_out == held + issues, line)
+    elif issues:
+        check("%s: report published, nothing left out but the %d issues" % (name, issues),
+              level == "WARNING" and published and rep.left_out == issues, line)
     else:
         check("%s: report published, nothing left out" % name, level == "INFO" and published, line)
     print("COUNTS %s: objects=%d meshes=%d placeholders=%d issues=%d" % (
         name, len(bpy.data.objects), len(bpy.data.meshes), sum(desc.placeholders.values()), len(desc.issues)))
     if name == "lookat":  # imports the file again: last
         check_lookat(path, desc, obs, nodes, meters)
+    if name == "vray_lights":
+        lit = sorted(ob.name for ob in obs if ob.type == 'LIGHT')
+        check("vray_lights: nine light objects, eight lights (the instance shares one)",
+              len(lit) == 9 and len(bpy.data.lights) == 8 and bpy.data.objects["FixturePlane"].data ==
+              bpy.data.objects["FixturePlaneInst"].data, "%s, %d lights" % (lit, len(bpy.data.lights)))
+        check_light_strength(path)
+
+
+def check_light(label, ob, ld, o):
+    """vray_lights: a LIGHT node's object holds its light: the description's type, shape and size; its -Z axis
+    (where a V-Ray plane and a Blender area light shine) along the oracle's; its energy the watts 3ds Max computed
+    with the rules source's own function (VRAY_LIGHT_WATTS) times the operator's default Light Strength, halved for
+    the double-sided plane; its color and its object flags."""
+    light = ob.data
+    check(label + ": a light object", ob.type == 'LIGHT', ob.type)
+    if ob.type != 'LIGHT':
+        return
+    size = (light.type, getattr(light, "shape", None) if light.type == 'AREA' else None,
+            light.size if light.type == 'AREA' else 0.0,
+            light.size_y if light.type == 'AREA' and light.shape == 'RECTANGLE' else 0.0,
+            light.shadow_soft_size if light.type == 'POINT' else 0.0)
+    want = (ld.kind, ld.shape, ld.size, ld.size_y if ld.shape == 'RECTANGLE' else 0.0, ld.radius)
+    check(label + ": type, shape and size", size[:2] == want[:2] and close(size[2:], want[2:], 1e-7),
+          "%s vs %s" % (size, want))
+    expected = VRAY_LIGHT_SHAPES.get(o["name"])
+    check(label + ": the shape the fixture script made", expected is not None and size[:2] == expected[:2] and
+          close(size[2:], expected[2:], 1e-7), str(expected))
+    rows = o["transform"]
+    z = Vector(rows[6:9]).normalized()
+    got = -(ob.matrix_world.to_3x3() @ Vector((0.0, 0.0, 1.0))).normalized()
+    check(label + ": shines along the oracle's -Z", (got + z).length < 1e-5, "%s vs %s" % (tuple(got), tuple(-z)))
+    from maxdrop import ops
+    watts = VRAY_LIGHT_WATTS[o["name"]] * VRAY_LIGHT_POWER.get(o["name"], 1.0)
+    check(label + ": power = 3ds Max's watts x Light Strength", abs(light.energy - watts * ops.LIGHT_STRENGTH) <=
+          watts * ops.LIGHT_STRENGTH * 1e-5, "%g vs %g" % (light.energy, watts * ops.LIGHT_STRENGTH))
+    color = VRAY_LIGHT_COLORS.get(o["name"], (1.0, 1.0, 1.0))
+    check(label + ": color", close(tuple(light.color), color, 1e-5) and close(tuple(light.color), ld.color, 1e-6),
+          str(tuple(light.color)))
+    flags = (ob.visible_camera, ob.visible_diffuse, ob.visible_glossy, round(light.diffuse_factor, 6),
+             round(light.specular_factor, 6))
+    want = VRAY_LIGHT_FLAGS.get(o["name"], (True, True, True, 1.0, 1.0))
+    check(label + ": camera, diffuse and glossy visibility, diffuse and specular factors", flags == want, str(flags))
+
+
+def check_light_strength(path):
+    """vray_lights imported again with Light Strength 2: every light's energy is its power times 2."""
+    empty_scene()
+    result = bpy.ops.import_scene.maxdrop(filepath=path, light_strength=2.0)
+    check("vray_lights Light Strength 2: the operator finishes", result == {'FINISHED'}, str(result))
+    sphere = bpy.data.objects.get("FixtureSphere")
+    check("vray_lights Light Strength 2: 40 W x 2", sphere is not None and abs(sphere.data.energy - 80.0) < 1e-4,
+          str(sphere and sphere.data.energy))
 
 
 def check_extruded(label, ob, node, o, meters, plan):
