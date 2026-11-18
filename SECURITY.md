@@ -56,8 +56,8 @@ unless you prefer otherwise.
 
 A `.max` file is a complex binary format. From version 0.0.4 MaxDrop's own reader reads everything it imports,
 nodes, meshes, transforms and materials (and from 0.1.0 lights and cameras; an IES file a light names is not
-opened), with bounded reads, depth, cycle and entry limits and a size cap on
-compressed streams; the parser inherited from io_scene_max is gone. A malformed or hostile file is meant to end in
+opened), with bounded reads, depth, cycle and entry limits and a size cap on compressed streams; the parser
+inherited from io_scene_max is gone. A malformed or hostile file is meant to end in
 "Not imported" with a message, but it can still make Blender use a lot of memory or take long, and a defect can
 still stop the import with a Python error. Memory safety is Python's, so the realistic risk is a hang or a crash
 of that Blender session, not code execution: treat files from unknown sources with the usual care and save your

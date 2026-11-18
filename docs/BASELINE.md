@@ -285,17 +285,17 @@ and a file with a camera sets the scene camera and the render size. Measured as 
 
 The v0.1.0 gate: drop each scene and look through its own camera. `tools/first_open.py` imports the file with the
 operator's default options (Units: Auto) in a fresh headless Blender, renders one frame through `scene.camera` with
-EEVEE at 640 pixels across, the world dark so that only the imported lights light it, and answers the gate's
-questions. Run on Blender 5.2.0 and 4.2.23 on 2026-11-19; both versions gave the same answers and counts.
+EEVEE at 640 pixels across, the world dark so that only the imported lights light it (and once more with those
+lights off: the brightness must come from them, not from glowing materials alone), and answers the gate's questions. Run on Blender 5.2.0 and 4.2.23 on 2026-11-19; both versions gave the same answers and counts.
 
 | | Scene A | Scene B |
 |---|---|---|
 | No traceback | yes | yes |
-| No magenta (texture that did not load) | yes: 0 % of the pixels, 0 texture files missing | yes: 0 %, 0 missing |
-| Lit by its own lights | yes: mean luminance 0.35 | yes: 0.44 |
+| No magenta, every texture found and loaded | yes: 0 % of the pixels; 118 textures found, 0 not found or not loaded | yes: 0 %; 132 found, 0 not found or not loaded |
+| Lit by its own lights (mean luminance; with its lights off) | yes: 0.35 (0.001) | yes: 0.44 (0.000) |
 | Closed: rays through each quarter of the frame hit geometry | yes: 98 %, 100 %, 94 %, 94 % | yes: 100 % in each |
 | Right scale: floor to ceiling in front of the camera | yes: 3.4 m | yes: 3.3 m |
-| The report accounts for every node, light, camera and modifier | yes: 746 nodes, 289 lights, 1 camera | yes: 2,251 nodes, 25 lights, 1 camera |
+| The report accounts for every node, light, camera and modifier class | yes: 746 nodes, 289 lights, 1 camera | yes: 2,251 nodes, 25 lights, 1 camera |
 
 - Scene A's camera stands behind a wall and clips it away (3ds Max's clipping planes, imported): the image shows a
   closed, textured room, its floor, walls, ceiling and furniture lit by its spots and strips. The bottom of the frame
@@ -304,9 +304,9 @@ questions. Run on Blender 5.2.0 and 4.2.23 on 2026-11-19; both versions gave the
 - Scene B's camera is a long lens (139 mm) on one piece of furniture inside the room: every ray of the frame hits.
   A wide lens from the same point shows the room around it: floor, walls, ceiling and windows, lit through the
   windows by its VRaySun.
-- "Accounts for" is checked against the file read again: each light or camera node is a Blender light or camera, a
-  placeholder of its class or an issue that says it was not built, and each modifier class of a node is counted as
-  applied, converted or not applied. What was simplified (wrappers and maps peeled, maps without a usable map below,
+- "Accounts for" is checked against the file read again: its node count, each light or camera node a Blender light or
+  camera, a placeholder of its class or an issue that says it was not built, and each modifier class of a node
+  counted as applied, converted or not applied. What was simplified (wrappers and maps peeled, maps without a usable map below,
   lights' and cameras' settings Blender has no place for) is listed by class in the report.
 - Scene A from a `.zip` and from a `.rar` of its folder: the same objects (747), materials (158) and images (127)
   as from the `.max` itself, and the same answers.
@@ -327,10 +327,10 @@ nodes of the 0.0.1 table came from lines the inherited engine printed; the tool 
 The first open:
 
 ```powershell
-python tools\first_open.py --blender "<blender.exe>" --profile "<scratch>\profile" --label "scene A" `
+python tools\first_open.py --blender "<blender.exe>" --profile "<scratch>\profile" --label "scene A" --tag 52 `
     --out "<scratch>\first_open" "<path>\scene.max"
 ```
 
 It prints its JSON (counts, class names, issue kinds and a yes or no per question) and exits 0 when every answer is
-yes. The image and the log it writes beside the JSON show and name the scene: keep `--out` outside the repository
+yes. The images and the log it writes beside the JSON show and name the scene: keep `--out` outside the repository
 too.

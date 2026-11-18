@@ -41,9 +41,9 @@ scene was downloaded as. Blender 4.2 or newer; tested on 4.2 LTS, 4.5 LTS and 5.
   becomes the scene camera and the file's render size Blender's.
 
 Not yet: Corona lights, V-Ray mesh and dome lights, the sky (the World stays as it was), IES distributions, the other
-modifiers (Edit Poly, Edit Mesh, FFD, Noise…: the object arrives as it was
-before them), Teapot, sliced primitives and hemispheres, other shapes (Star, Text, Helix, Donut…), animation,
-procedural maps (simplified to the image below them). See [docs/SUPPORT.md](docs/SUPPORT.md).
+modifiers (Edit Poly, Edit Mesh, FFD, Noise…: the object arrives as it was before them), Teapot, sliced primitives
+and hemispheres, other shapes (Star, Text, Helix, Donut…), animation, procedural maps (simplified to the image below
+them). See [docs/SUPPORT.md](docs/SUPPORT.md).
 
 ## Install
 

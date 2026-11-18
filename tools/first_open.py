@@ -4,27 +4,31 @@
 
 """First open of a scene: import it as a user would, look through its camera, answer the gate's questions.
 
-    python tools/first_open.py --blender <blender.exe> --profile <scratch dir> --label "scene A" --out <folder>
-                               [--size 640] [--pack-scene <name.max>] [--limit-minutes 30] <file.max | pack>
+    python tools/first_open.py --blender <blender.exe> --profile <scratch dir> --label "scene A" --tag 52
+                               --out <folder> [--size 640] [--pack-scene <name.max>] [--limit-minutes 30]
+                               <file.max | pack>
 
 Blender runs headless with --factory-startup and its own profile (--profile becomes BLENDER_USER_RESOURCES) and
 runs this file inside it: the dev package of this checkout imports the file with the operator's default options
-(Units: Auto), the scene is rendered once through scene.camera with EEVEE (the world dark, so only the imported
-lights light it; Standard view transform, so a missing texture's magenta stays magenta) at --size pixels along the
-long side, and the result is written as <out>/<label>-<blender version>.json beside the image (.png) and Blender's
-console log (.log). The answers, yes or no:
+(Units: Auto), the scene is rendered through scene.camera with EEVEE (the world dark, so only the imported lights
+light it; Standard view transform, so a missing texture's magenta stays magenta) at --size pixels along the long
+side, once as imported and once with the imported lights switched off, and the result is written as
+<out>/<label>-<tag>.json beside the images (.png, -lights-off.png) and Blender's console log (.log). --tag tells
+runs of several Blender versions apart: a run replaces the files of the same label and tag. The answers, yes or no:
 
     traceback   Blender finished and its log holds no Python traceback
     magenta     at most MAGENTA_MAX of the pixels are magenta (a texture that did not load)
-    lit         the mean luminance of the image is at least LIT_MEAN_MIN (the lights work)
+    lit         the mean luminance of the image is at least LIT_MEAN_MIN, and at least LIGHTS_SHARE_MIN of it goes
+                when the imported lights are switched off (the lights work, not only emissive materials)
     closed      rays from the camera through each quadrant of its frame hit geometry, at least CLOSED_MIN of them
     scale       floor to ceiling in front of the camera (vertical rays) is within HEIGHT meters
-    report      the report accounts for every node, light, camera and modifier of the file and no image points at a
-                missing file
+    report      the report accounts for every node, light, camera and modifier class of the file read again, and
+                every texture was found and loaded (accounting())
 
-The JSON holds counts, class names and issue kinds (quoted names and numbers removed) only, but the image and the
-log show and name the scene: keep all three outside the repository for scenes that are not yours. Exit 0 when every
-answer is yes. Standard library only outside Blender.
+The JSON holds counts, class names and issue kinds (names, file names and numbers removed: issue_kind()) only; read
+it before quoting it anywhere public, as a name the rules miss can slip through. The images and the log show and
+name the scene: keep all of them outside the repository for scenes that are not yours. Exit 0 when every answer is
+yes. Unlike tools/baseline.py there is no memory watch, only the time limit. Standard library only outside Blender.
 """
 import argparse
 import json
@@ -42,6 +46,11 @@ HEIGHT = (2.2, 4.5)       # meters, floor to ceiling
 GRID = 16                 # rays per quadrant side
 RAY_LENGTH = 1000.0       # meters
 LIT = 0.1                 # luminance of a pixel counted as lit
+LIGHTS_SHARE_MIN = 0.5    # of the mean luminance that goes when the imported lights are switched off
+NOT_LOADED = "texture not loaded"  # build.materials' issue of a texture file found that does not load
+# The first parts of issue reasons that name a topic, not an object (convert.scene, convert.texmaps, ops).
+TOPICS = {"light", "camera", "render", "modifiers", "transform", "primitive", "node", "geometry", "shape", "extrude",
+          "uvw map", "layer", "Keep Targets", NOT_LOADED, "map N"}
 _QUOTED = re.compile(r"(?<!\w)'[^']*'|\"[^\"]*\"")  # not the apostrophe of "sun's"
 _FILE = re.compile(r"\S*[\\/]\S*|[\w.-]+\.(?:ies|jpe?g|png|tga|tiff?|exr|hdr|bmp|psd|gif|dds|max|vrmesh)\b",
                    re.IGNORECASE)
@@ -66,9 +75,14 @@ def image_stats(pixels, width, height):
 
 
 def issue_kind(reason):
-    """An issue reason without the names, file names and numbers it quotes: what kind of thing was not converted."""
-    text = _NUMBER.sub("N", _FILE.sub("<file>", _QUOTED.sub("<name>", reason)))
-    return ": ".join(text.split(": ")[:2]).strip()
+    """An issue reason without the names, file names and numbers it quotes: what kind of thing was not converted.
+    Its first part stays only when it is a known topic or names its object in quotes (a map's "VRayBitmap 'x'");
+    otherwise it may be a bare material name ("<name>: no sub-material")."""
+    parts = _NUMBER.sub("N", _FILE.sub("<file>", _QUOTED.sub("<name>", reason))).split(": ")
+    if len(parts) > 1 and parts[0] not in TOPICS and "<name>" not in parts[0]:
+        parts[0] = "<name>"
+    keep = 3 if len(parts) > 2 and parts[1] == "not built" else 2
+    return ": ".join(parts[:keep]).strip()
 
 
 def verdict(result):
@@ -77,7 +91,9 @@ def verdict(result):
     answers = {
         "traceback": not result.get("traceback") and result.get("exit_code") == 0,
         "magenta": image is not None and image["magenta_share"] <= MAGENTA_MAX,
-        "lit": image is not None and image["mean_luminance"] >= LIT_MEAN_MIN,
+        "lit": image is not None and image["mean_luminance"] >= LIT_MEAN_MIN
+        and image.get("lights_off_mean_luminance") is not None
+        and image["mean_luminance"] - image["lights_off_mean_luminance"] >= LIGHTS_SHARE_MIN * image["mean_luminance"],
         "closed": bool(result.get("scene_camera")) and rays is not None
         and all(share >= CLOSED_MIN for share in rays["quadrants"]),
         "scale": height is not None and HEIGHT[0] <= height <= HEIGHT[1],
@@ -100,9 +116,7 @@ def safe_label(label):
     return re.sub(r"[^A-Za-z0-9._-]+", "-", label).strip("-") or "scene"
 
 
-# --- inside Blender ------------------------------------------------------------------------------------------------
-
-def inside(root, path, out_json, png, size, pack_scene=""):
+def inside(root, path, png, size, pack_scene=""):
     import bpy
     from mathutils import Vector
 
@@ -112,6 +126,7 @@ def inside(root, path, out_json, png, size, pack_scene=""):
     from maxdrop.build import report as build_report
     from maxdrop.reader import cfb, classids
     from maxdrop.reader import scene as reader_scene
+    from maxdrop.reader.chunks import ChunkError
 
     for ob in list(bpy.data.objects):
         bpy.data.objects.remove(ob)
@@ -166,7 +181,11 @@ def inside(root, path, out_json, png, size, pack_scene=""):
         "dropped_uv_layers": rep.dropped_uv_layers, "approximated": rep.approximated, "left_out": rep.left_out,
         "issue_kinds": dict(sorted(kinds.items(), key=lambda kv: (-kv[1], kv[0]))),
     }
-    found["accounting"] = _accounting(rep, types, missing_files, path, found, cfb, classids, reader_scene)
+    pack = getattr(rep, "pack", None)  # a pack's .max is the one the operator unpacked
+    source = pack.max_path if pack is not None and getattr(pack, "max_path", None) else path
+    census = file_census(source, cfb, classids, reader_scene, ChunkError)
+    found["accounting"], counters = accounting(rep, census, types, missing_files)
+    found["file"] = dict(census, **counters)
 
     camera = scene.camera
     found["scene_camera"] = camera is not None
@@ -179,51 +198,64 @@ def inside(root, path, out_json, png, size, pack_scene=""):
     return found
 
 
-def _accounting(rep, types, missing_files, path, found, cfb, classids, reader_scene):
-    """Whether the report accounts for what the file holds. The light and camera nodes and the modifier classes per
-    node are read from the file again, by superclass; a .max inside a pack is the one the operator unpacked."""
-    source = path
-    pack = getattr(rep, "pack", None)
-    if pack is not None and getattr(pack, "max_path", None):
-        source = pack.max_path
-    lights = cameras = 0
-    light_classes, camera_classes, modifier_nodes = set(), set(), {}
-    with cfb.CompoundFile(source) as cf:
+def file_census(path, cfb, classids, reader_scene, chunk_error):
+    """What the file holds, read again with MaxDrop's reader (plain Python): its nodes, the nodes whose base object
+    is a light or a camera (by superclass) and their classes, and per modifier class the nodes whose stack holds it.
+    A node whose record or stack cannot be read counts as a node only: the import names it as a node issue."""
+    census = {"nodes": 0, "light_nodes": 0, "camera_nodes": 0, "light_classes": [], "camera_classes": [],
+              "modifier_nodes_by_class": {}}
+    light_classes, camera_classes, modifier_nodes = set(), set(), census["modifier_nodes_by_class"]
+    with cfb.CompoundFile(path) as cf:
         sc = reader_scene.Scene.from_file(cf)
-        for i in sc.walk():
+        order = sc.walk()
+        census["nodes"] = len(order)
+        for i in order:
             try:
                 node = sc.node(i)
-                stack = sc.object_stack(node.object)
-            except Exception:  # a damaged node: the import reports it as a node issue
+                stack = sc.object_stack(node.object) if node.object is not None else None
+            except chunk_error:
+                continue
+            if stack is None:
                 continue
             entry = sc.entry(stack.base) if stack.base is not None else None
             if entry is not None and entry.superclass == classids.SC_LIGHT:
-                lights += 1
+                census["light_nodes"] += 1
                 light_classes.add(entry.name)
             elif entry is not None and entry.superclass == classids.SC_CAMERA:
-                cameras += 1
+                census["camera_nodes"] += 1
                 camera_classes.add(entry.name)
             for name in {(sc.entry(m).name if sc.entry(m) is not None else "") for m in stack.modifiers}:
                 modifier_nodes[name] = modifier_nodes.get(name, 0) + 1
+    census["light_classes"], census["camera_classes"] = sorted(light_classes), sorted(camera_classes)
+    return census
+
+
+def accounting(rep, census, types, missing_files):
+    """Whether the report (a convert.report.Report) accounts for what census says the file holds. types: {Blender
+    object type: count} of the import; missing_files: loaded images whose file is not on disk. Each light or camera
+    node must be a Blender light or camera, a placeholder of its class or a "not built" issue; each modifier class of
+    a node counted as applied, converted or not applied (a node may count once under each); every texture found and
+    loaded. ({check: yes / no}, {counter: value})."""
     not_built = {"light": 0, "camera": 0}
     for _label, reason in rep.issues:
         for what in not_built:
             if reason.startswith(what + ": not built"):
                 not_built[what] += 1
-    placed = {what: sum(rep.placeholders.get(c, 0) for c in classes)
-              for what, classes in (("light", light_classes), ("camera", camera_classes))}
+    placed = {what: sum(rep.placeholders.get(c, 0) for c in census[what + "_classes"]) for what in not_built}
     counted = {name: rep.modifiers_applied.get(name, 0) + rep.modifiers_converted.get(name, 0)
-               + rep.modifiers.get(name, 0) for name in modifier_nodes}
-    found["file"] = {"light_nodes": lights, "camera_nodes": cameras, "light_placeholders": placed["light"],
-                     "lights_not_built": not_built["light"], "camera_placeholders": placed["camera"],
-                     "cameras_not_built": not_built["camera"], "modifier_nodes_by_class": modifier_nodes}
-    return {
-        "nodes": rep.nodes == rep.objects_built,
-        "lights": lights == types.get("LIGHT", 0) + placed["light"] + not_built["light"],
-        "cameras": cameras == types.get("CAMERA", 0) + placed["camera"] + not_built["camera"],
-        "modifiers": all(counted[name] >= n for name, n in modifier_nodes.items()),
-        "image_files": missing_files == 0,
+               + rep.modifiers.get(name, 0) for name in census["modifier_nodes_by_class"]}
+    not_loaded = sum(1 for _label, reason in rep.material_issues if reason.startswith(NOT_LOADED))
+    counters = {"light_placeholders": placed["light"], "lights_not_built": not_built["light"],
+                "camera_placeholders": placed["camera"], "cameras_not_built": not_built["camera"],
+                "textures_not_found": len(rep.textures_missing), "textures_not_loaded": not_loaded}
+    checks = {
+        "nodes": census["nodes"] == rep.nodes == rep.objects_built,
+        "lights": census["light_nodes"] == types.get("LIGHT", 0) + placed["light"] + not_built["light"],
+        "cameras": census["camera_nodes"] == types.get("CAMERA", 0) + placed["camera"] + not_built["camera"],
+        "modifiers": all(counted[name] >= n for name, n in census["modifier_nodes_by_class"].items()),
+        "textures": not rep.textures_missing and not not_loaded and missing_files == 0,
     }
+    return checks, counters
 
 
 def _cast(scene, depsgraph, origin, direction, length=RAY_LENGTH):
@@ -302,21 +334,34 @@ def _render(bpy, scene, png, size):
     r.film_transparent = False
     r.image_settings.file_format = 'PNG'
     r.image_settings.color_mode = 'RGBA'
-    r.filepath = png
     start = time.perf_counter()
+    stats = _render_still(bpy, scene, png)
+    stats.update(render_seconds=round(time.perf_counter() - start, 1), engine=r.engine)
+    # Again without the imported lights: an emissive material alone must not pass for working lights.
+    lights = [ob for ob in scene.objects if ob.type == 'LIGHT' and not ob.hide_render]
+    stats["lights_off_mean_luminance"] = None
+    if lights:
+        for ob in lights:
+            ob.hide_render = True
+        off = os.path.splitext(png)[0] + "-lights-off.png"
+        stats["lights_off_mean_luminance"] = _render_still(bpy, scene, off)["mean_luminance"]
+        for ob in lights:
+            ob.hide_render = False
+    return stats
+
+
+def _render_still(bpy, scene, png):
+    scene.render.filepath = png
     bpy.ops.render.render(write_still=True)
-    seconds = time.perf_counter() - start
     img = bpy.data.images.load(png, check_existing=False)
     width, height = img.size
     pixels = [0.0] * (width * height * 4)
     img.pixels.foreach_get(pixels)
     stats = image_stats(pixels, width, height)
-    stats.update(width=width, height=height, render_seconds=round(seconds, 1), engine=r.engine)
+    stats.update(width=width, height=height)
     bpy.data.images.remove(img)
     return stats
 
-
-# --- outside Blender -----------------------------------------------------------------------------------------------
 
 def run(args):
     out = os.path.abspath(args.out)
@@ -324,7 +369,7 @@ def run(args):
     os.makedirs(args.profile, exist_ok=True)
     stem = os.path.join(out, safe_label(args.label) + "-" + safe_label(args.tag))
     result_json, log, png, inner = stem + ".json", stem + ".log", stem + ".png", stem + ".inner.json"
-    for name in (result_json, log, png, inner):
+    for name in (result_json, log, png, stem + "-lights-off.png", inner):
         if os.path.exists(name):
             os.remove(name)
     env = dict(os.environ, BLENDER_USER_RESOURCES=os.path.abspath(args.profile), PYTHONIOENCODING="utf-8")
@@ -360,7 +405,7 @@ def main(argv=None):
     parser.add_argument("--blender", required=True, help="path of the Blender executable")
     parser.add_argument("--profile", required=True, help="scratch folder for Blender's profile")
     parser.add_argument("--label", default="scene", help="how the result names the file")
-    parser.add_argument("--tag", default="blender", help="the Blender version in the result's file names")
+    parser.add_argument("--tag", required=True, help="the Blender version in the result's file names, e.g. 52")
     parser.add_argument("--out", required=True, help="folder for the JSON, the image and the log")
     parser.add_argument("--size", type=int, default=640, help="pixels along the long side of the image")
     parser.add_argument("--pack-scene", default="", help="the .max to import from a pack that holds several")
@@ -374,7 +419,7 @@ def main(argv=None):
 def _inside_main():
     argv = sys.argv[sys.argv.index("--") + 1:]
     _mode, root, path, out_json, png, size, pack_scene = argv[:7]
-    found = inside(root, path, out_json, png, int(size), pack_scene)
+    found = inside(root, path, png, int(size), pack_scene)
     with open(out_json, "w", encoding="utf-8") as f:
         json.dump(found, f, indent=1)
     print("FIRST OPEN DONE")
