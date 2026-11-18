@@ -81,23 +81,25 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
 Each map object counts once in stats.peeled or stats.unsupported, each issue once in stats.issues. The file comes
 from anywhere: a reference cycle, a chain deeper than MAX_DEPTH, a reference to an object that is not a map or a
 damaged object end that branch (an issue), a shared map is converted once (no blow-up through repeated
-references), and unreadable Placement, Output or BitmapInfo chunks take the defaults. The chunks of the Placement object and the
-BitmapInfo are read here (3ds Max 2020 layout, docs/FORMAT.md). No bpy, no mathutils.
+references), and unreadable Placement, Output or BitmapInfo chunks take the defaults. Those chunks are read by
+reader/materials.py (placement, output_invert, bitmap_gamma); what they hold is judged here. No bpy, no mathutils.
 """
 import collections
 import dataclasses
 import math
-import struct
 
 from ..reader import chunks, classids, pblock
+from ..reader import materials as reader_materials
 from ..reader.classdir import ClassId
-from . import colors
+from . import colors, params
 
 ChunkError = chunks.ChunkError
 
 COLOR, DATA, NORMAL, BUMP = "color", "data", "normal", "bump"
 SRGB, NON_COLOR = "sRGB", "Non-Color"
-EXPLICIT, OBJECT_XYZ, VERTEX_COLOR, WORLD_XYZ = 0, 1, 2, 3  # Placement coordinate source
+EXPLICIT, OBJECT_XYZ, VERTEX_COLOR, WORLD_XYZ = (  # Placement coordinate source
+    reader_materials.UV_EXPLICIT, reader_materials.UV_OBJECT_XYZ, reader_materials.UV_VERTEX_COLOR,
+    reader_materials.UV_WORLD_XYZ)
 MAX_DEPTH = 8
 MAX_NODES = 256  # nodes of one graph drawn as a tree
 SRGB_GAMMA, GAMMA_TOLERANCE = 2.2, 0.05
@@ -165,15 +167,10 @@ CM_MULTIPLY, CM_MIX = 2, 6
 # Bitmap, block 0
 BM_CLIP_U, BM_CLIP_V, BM_CLIP_W, BM_CLIP_H, BM_APPLY, BM_CROP_PLACE, BM_MONO, BM_RGB, BM_FILE = (
     0, 1, 2, 3, 6, 7, 9, 10, 13)
-# Placement (UVGen) old ParamBlock indices, and its chunks
+# Placement (UVGen) old ParamBlock indices (its chunks: reader_materials.placement)
 UV_U_OFFSET, UV_V_OFFSET, UV_U_TILING, UV_V_TILING, UV_U_ANGLE, UV_V_ANGLE, UV_W_ANGLE, UV_BLUR = range(8)
-_UV_FLAGS, _UV_AXIS, _UV_MAPPING_TYPE, _UV_SOURCE, _UV_CHANNEL = 0x9002, 0x9003, 0x9005, 0x9006, 0x900B
-U_TILE, V_TILE, U_MIRROR, V_MIRROR, REAL_WORLD = 0x1, 0x2, 0x4, 0x8, 0x08000000
-# Output (TexOutput) old ParamBlock indices and its flags chunk
+# Output (TexOutput) old ParamBlock indices (its flags: reader_materials.output_invert)
 OUT_LEVEL, OUT_OFFSET, OUT_AMOUNT = 0, 1, 2
-_OUT_FLAGS, OUT_INVERT = 0x0002, 0x2
-# BitmapInfo: the 0x0003 sibling of the bitmap entry holds 0x1201; its last 14 bytes start with gamma, flags
-_BITMAP_DATA, _BITMAP_INFO, _BI_TAIL, BI_GAMMA_OVERRIDE = 0x0003, 0x1201, 14, 0x1
 
 
 @dataclasses.dataclass(frozen=True)
@@ -368,18 +365,15 @@ def first_image(node):
     return None
 
 
-def _finite(v):
-    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+_finite = params.finite
 
 
 def _num(m, pid, default):
-    v = m.param(pid, 0)
-    return float(v) if _finite(v) else default
+    return params.num(m, pid, 0, default)
 
 
 def _flag(m, pid, default):
-    v = m.param(pid, 0)
-    return bool(v) if _finite(v) else default
+    return params.flag(m, pid, 0, default)
 
 
 def _vec(m, pid, default):
@@ -750,72 +744,38 @@ class TexmapConverter:
         return Image(m.index, entry.name, entry.path, entry.resolved, found, mapping, crop, self._output(out),
                      colorspace(kind, gamma), gamma, alpha)
 
-    def _chunk_u32s(self, index, ids):
-        """{chunk id: u32} of the leaf children of object index with those ids; {} when unreadable."""
-        out = {}
-        try:
-            chunk = self.graph.scene.chunk(index)
-            if not chunk.container:
-                return out
-            for c in chunk.children:
-                if c.id in ids and not c.container and c.payload_size >= 4 and c.id not in out:
-                    out[c.id] = c.unpack("<I")[0]
-        except (ChunkError, IndexError, struct.error):
-            return {}
-        return out
-
     def _mapping(self, uv):
         if uv is None:
             return Mapping()
-        raw = self._chunk_u32s(uv.index, (_UV_FLAGS, _UV_AXIS, _UV_MAPPING_TYPE, _UV_SOURCE, _UV_CHANNEL))
-        flags = raw.get(_UV_FLAGS, U_TILE | V_TILE)
-        source = raw.get(_UV_SOURCE, EXPLICIT)
-        source = source if source in (EXPLICIT, OBJECT_XYZ, VERTEX_COLOR, WORLD_XYZ) else EXPLICIT
-        channel = raw.get(_UV_CHANNEL, 1)
+        p = reader_materials.placement(self.graph.scene, uv.index)
+        source = p.source if p.source in (EXPLICIT, OBJECT_XYZ, VERTEX_COLOR, WORLD_XYZ) else EXPLICIT
+        channel = 1 if p.channel is None else p.channel
         channel = 0 if source == VERTEX_COLOR else (channel if 0 <= channel <= 99 else 1)
-        axis = raw.get(_UV_AXIS, 0)
         return Mapping(
             channel=channel,
             tiling=(_old(uv, UV_U_TILING, 1.0), _old(uv, UV_V_TILING, 1.0)),
             offset=(_old(uv, UV_U_OFFSET, 0.0), _old(uv, UV_V_OFFSET, 0.0)),
             angle=(_old(uv, UV_U_ANGLE, 0.0), _old(uv, UV_V_ANGLE, 0.0), _old(uv, UV_W_ANGLE, 0.0)),
-            tile=(bool(flags & U_TILE), bool(flags & V_TILE)),
-            mirror=(bool(flags & U_MIRROR), bool(flags & V_MIRROR)),
-            axis=axis if axis in (0, 1, 2) else 0,
+            tile=p.tile,
+            mirror=p.mirror,
+            axis=p.axis if p.axis in (0, 1, 2) else 0,
             source=source,
-            environment=raw.get(_UV_MAPPING_TYPE, 0) != 0,
-            real_world=bool(flags & REAL_WORLD),
+            environment=p.environment,
+            real_world=p.real_world,
             blur=_old(uv, UV_BLUR, 1.0))
 
     def _output(self, part):
         """The TexOutput of a map's Output part, None when it changes nothing."""
         if part is None:
             return None
-        flags = self._chunk_u32s(part.index, (_OUT_FLAGS,)).get(_OUT_FLAGS, 0)
-        out = TexOutput(bool(flags & OUT_INVERT), _old(part, OUT_AMOUNT, 1.0), _old(part, OUT_LEVEL, 1.0),
-                        _old(part, OUT_OFFSET, 0.0))
+        out = TexOutput(reader_materials.output_invert(self.graph.scene, part.index), _old(part, OUT_AMOUNT, 1.0),
+                        _old(part, OUT_LEVEL, 1.0), _old(part, OUT_OFFSET, 0.0))
         return None if out == TexOutput() else out
 
     def _gamma(self, m):
-        """The Bitmap's gamma override, None for automatic or when it cannot be read."""
-        for slot, block in sorted(m.blocks.items()):
-            if block.block_id != 0 or slot not in m.refs:
-                continue
-            try:
-                chunk = self.graph.scene.chunk(m.refs[slot])
-                holders = [c for c in chunk.children if c.id == _BITMAP_DATA and c.container] if chunk.container \
-                    else []
-                info = holders[0].first(_BITMAP_INFO) if holders else None
-                if info is None or info.container or info.payload_size < _BI_TAIL:
-                    return None
-                data = info.tobytes()
-            except (ChunkError, IndexError):
-                return None
-            gamma, flags = struct.unpack_from("<fI", data, len(data) - _BI_TAIL)
-            if flags & BI_GAMMA_OVERRIDE and math.isfinite(gamma) and 0.1 <= gamma <= 10.0:
-                return gamma
-            return None
-        return None
+        """The Bitmap's gamma override, None for automatic, when it cannot be read or is outside 0.1 to 10."""
+        gamma = reader_materials.bitmap_gamma(self.graph.scene, m)
+        return gamma if gamma is not None and math.isfinite(gamma) and 0.1 <= gamma <= 10.0 else None
 
     def _normal(self, m, ids, kind, walk, depth, chain):
         normal = self._sub(m, ids.normal, ids.normal_on, NORMAL, walk, depth, chain)

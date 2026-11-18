@@ -27,9 +27,19 @@ block or of the Texmaps object at its slot. A reference of superclass UVGen (0x0
 Dispatch is on superclass, never on a class name. The file comes from anywhere: a reference that leaves the object
 list raises in Scene.refs and makes get() raise ChunkError for that object only; a block that cannot be read is
 left out and named in the MtlBase's issues; walk() keeps going past objects that cannot be read (graph.issues)
-and through reference cycles, each object visited once, bounded by the object count. No bpy.
+and through reference cycles, each object visited once, bounded by the object count.
+
+Some parts keep settings in chunks of their own, read into values here (3ds Max 2020 layout, docs/FORMAT.md):
+
+    placement(scene, uv.index)          # Placement: tile, mirror, real-world scale, axis, environment, source,
+                                        # channel of a Placement (UVGen) object
+    output_invert(scene, out.index)     # an Output (TexOutput) part's invert flag
+    bitmap_gamma(scene, m)              # a Bitmap's gamma override as stored, None for automatic
+
+Unreadable chunks give the defaults (as 3ds Max writes a new map). No bpy.
 """
 import collections
+import struct
 
 from . import chunks, classids, pblock
 
@@ -40,6 +50,15 @@ PART_SUPERCLASSES = frozenset((classids.SC_UVGEN, classids.SC_XYZGEN, classids.S
 MTLBASE_SUPERCLASSES = frozenset((classids.SC_MATERIAL, classids.SC_TEXMAP))
 _NAME = 0x4001
 
+# Placement (UVGen) object: u32 leaves; flags bits; coordinate source values
+_UV_FLAGS, _UV_AXIS, _UV_MAPPING_TYPE, _UV_SOURCE, _UV_CHANNEL = 0x9002, 0x9003, 0x9005, 0x9006, 0x900B
+_U_TILE, _V_TILE, _U_MIRROR, _V_MIRROR, _REAL_WORLD = 0x1, 0x2, 0x4, 0x8, 0x08000000
+UV_EXPLICIT, UV_OBJECT_XYZ, UV_VERTEX_COLOR, UV_WORLD_XYZ = 0, 1, 2, 3
+# Output (TexOutput) part: its flags leaf
+_OUT_FLAGS, _OUT_INVERT = 0x0002, 0x2
+# BitmapInfo: the 0x0003 sibling of the bitmap entry holds 0x1201; its last 14 bytes start with gamma, flags
+_BITMAP_DATA, _BITMAP_INFO, _BI_TAIL, _BI_GAMMA_OVERRIDE = 0x0003, 0x1201, 14, 0x1
+
 
 class Part(collections.namedtuple("Part", "index class_id superclass blocks legacy")):
     """A reference of a material or map that carries parameter blocks of its own."""
@@ -47,6 +66,13 @@ class Part(collections.namedtuple("Part", "index class_id superclass blocks lega
 
 
 class Issue(collections.namedtuple("Issue", "index reason")):
+    __slots__ = ()
+
+
+class Placement(collections.namedtuple("Placement", "tile mirror real_world axis environment source channel")):
+    """A Placement object's chunk settings. tile, mirror: (u, v); real_world: real-world map size; axis (0 UV, 1 VW,
+    2 WU), source (UV_*) and channel: as stored, None without their chunk; environment: a mapping type other than
+    texture."""
     __slots__ = ()
 
 
@@ -196,3 +222,52 @@ class MaterialGraph:
             out.append(i)
             stack.extend(c for c in reversed(m.children) if c not in seen)
         return out
+
+
+def _leaf_u32s(scene, index, ids):
+    """{chunk id: u32} of the leaf children of object index with those ids, the first of each; {} when unreadable."""
+    out = {}
+    try:
+        chunk = scene.chunk(index)
+        if not chunk.container:
+            return out
+        for c in chunk.children:
+            if c.id in ids and not c.container and c.payload_size >= 4 and c.id not in out:
+                out[c.id] = c.unpack("<I")[0]
+    except (ChunkError, IndexError, struct.error):
+        return {}
+    return out
+
+
+def placement(scene, index):
+    """The Placement of the UVGen object index; a missing flags chunk means both axes tiled, nothing mirrored."""
+    raw = _leaf_u32s(scene, index, (_UV_FLAGS, _UV_AXIS, _UV_MAPPING_TYPE, _UV_SOURCE, _UV_CHANNEL))
+    flags = raw.get(_UV_FLAGS, _U_TILE | _V_TILE)
+    return Placement((bool(flags & _U_TILE), bool(flags & _V_TILE)), (bool(flags & _U_MIRROR), bool(flags & _V_MIRROR)),
+                     bool(flags & _REAL_WORLD), raw.get(_UV_AXIS), raw.get(_UV_MAPPING_TYPE, 0) != 0,
+                     raw.get(_UV_SOURCE), raw.get(_UV_CHANNEL))
+
+
+def output_invert(scene, index):
+    """Whether the Output (TexOutput) object index inverts its map; False when its flags cannot be read."""
+    return bool(_leaf_u32s(scene, index, (_OUT_FLAGS,)).get(_OUT_FLAGS, 0) & _OUT_INVERT)
+
+
+def bitmap_gamma(scene, m):
+    """The gamma override of Bitmap m as stored (any float, NaN included), None for automatic or when its
+    BitmapInfo cannot be read: the one in the object of its block 0."""
+    for slot, block in sorted(m.blocks.items()):
+        if block.block_id != 0 or slot not in m.refs:
+            continue
+        try:
+            chunk = scene.chunk(m.refs[slot])
+            holders = [c for c in chunk.children if c.id == _BITMAP_DATA and c.container] if chunk.container else []
+            info = holders[0].first(_BITMAP_INFO) if holders else None
+            if info is None or info.container or info.payload_size < _BI_TAIL:
+                return None
+            data = info.tobytes()
+        except (ChunkError, IndexError):
+            return None
+        gamma, flags = struct.unpack_from("<fI", data, len(data) - _BI_TAIL)
+        return gamma if flags & _BI_GAMMA_OVERRIDE else None
+    return None

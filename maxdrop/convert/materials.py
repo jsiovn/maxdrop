@@ -90,6 +90,7 @@ from ..reader import chunks, classids, pblock
 from ..reader.classdir import ClassId
 from . import colors
 from . import texmaps as _texmaps
+from .params import finite as _finite, flag as _flag, num as _num
 
 ChunkError = chunks.ChunkError
 
@@ -229,22 +230,8 @@ def class_name(superclass, class_id):
     return (classids.name_of(superclass, cid) or CLASS_NAMES.get(cid) or "ClassID%s" % (cid,)).strip()
 
 
-def _finite(v):
-    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
-
-
-def _num(m, pid, block, default):
-    v = m.param(pid, block)
-    return float(v) if _finite(v) else default
-
-
 def _clamp01(v):
     return min(1.0, max(0.0, v))
-
-
-def _flag(m, pid, block, default):
-    v = m.param(pid, block)
-    return bool(v) if _finite(v) else default
 
 
 def _mix(a, b, t):

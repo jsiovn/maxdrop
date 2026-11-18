@@ -13,6 +13,7 @@ objects that are not materials.
 import glob
 import importlib.util
 import json
+import math
 import os
 import struct
 import sys
@@ -325,6 +326,77 @@ class Synthetic(unittest.TestCase):
         n = 5000
         s = make_scene(*[container(MAP, refs(i + 1)) for i in range(n - 1)], container(MAP))
         self.assertEqual(len(materials.MaterialGraph(s).walk([0])), n)
+
+
+def u32(cid, v):
+    return leaf(cid, struct.pack("<I", v))
+
+
+class _Block:
+    def __init__(self, block_id):
+        self.block_id = block_id
+
+
+class _Map:
+    """What bitmap_gamma reads of a MtlBase: its blocks by slot and its references."""
+
+    def __init__(self, blocks, refs_):
+        self.blocks, self.refs = blocks, refs_
+
+
+def info(gamma, flags, size=70):
+    """A BitmapInfo payload: the gamma tail (f32 gamma, u32 flags, 6 bytes) at its end."""
+    return bytes(size - 14) + struct.pack("<fI", gamma, flags) + bytes(6)
+
+
+class MapParts(unittest.TestCase):
+    """The Placement, Output and BitmapInfo chunks read into values (docs/FORMAT.md)."""
+
+    def test_placement_defaults_without_chunks(self):
+        s = make_scene(container(OTHER), leaf(OTHER))
+        default = materials.Placement((True, True), (False, False), False, None, False, None, None)
+        self.assertEqual(materials.placement(s, 0), default)
+        self.assertEqual(materials.placement(s, 1), default)  # a leaf object
+        self.assertEqual(materials.placement(s, 9), default)  # outside the objects
+
+    def test_placement_chunks(self):
+        s = make_scene(container(OTHER, u32(0x9002, 0x48000008), u32(0x9003, 2), u32(0x9005, 1), u32(0x9006, 3),
+                                 u32(0x900B, 4)))
+        p = materials.placement(s, 0)
+        self.assertEqual((p.tile, p.mirror, p.real_world), ((False, False), (False, True), True))
+        self.assertEqual((p.axis, p.environment, p.source, p.channel), (2, True, 3, 4))
+
+    def test_short_placement_chunk_is_skipped(self):
+        s = make_scene(container(OTHER, leaf(0x9002, b"\x01\x00"), u32(0x900B, 1000)))
+        p = materials.placement(s, 0)
+        self.assertEqual((p.tile, p.channel), ((True, True), 1000))  # out of range values are convert's to judge
+
+    def test_output_invert(self):
+        s = make_scene(container(OTHER, u32(0x0002, 2)), container(OTHER, u32(0x0002, 1)), container(OTHER))
+        self.assertEqual([materials.output_invert(s, i) for i in (0, 1, 2, 7)], [True, False, False, False])
+
+    def test_bitmap_gamma(self):
+        def gamma(payload, blocks=None):
+            s = make_scene(container(OTHER, container(0x0003, leaf(0x1201, payload))))
+            return materials.bitmap_gamma(s, _Map({0: _Block(0)} if blocks is None else blocks, {0: 0}))
+        self.assertAlmostEqual(gamma(info(1.8, 5)), 1.8, places=6)
+        self.assertIsNone(gamma(info(1.0, 20)))  # automatic
+        self.assertIsNone(gamma(b"\x05" * 10))  # shorter than the tail
+        self.assertIsNone(gamma(info(1.8, 5), {0: _Block(1)}))  # no block 0
+        self.assertTrue(math.isnan(gamma(info(float("nan"), 5))))  # as stored: convert judges it
+
+    def test_bitmap_gamma_unreadable(self):
+        s = make_scene(container(OTHER, container(0x0003)))
+        self.assertIsNone(materials.bitmap_gamma(s, _Map({0: _Block(0)}, {0: 0})))
+        self.assertIsNone(materials.bitmap_gamma(s, _Map({0: _Block(0)}, {0: 9})))
+
+    def test_no_chunk_ids_in_convert(self):
+        ids = ("0x9002", "0x9003", "0x9005", "0x9006", "0x900b", "0x1201")
+        for path in glob.glob(os.path.join(ROOT, "maxdrop", "convert", "*.py")):
+            with open(path, encoding="utf-8") as f:
+                text = f.read().lower()
+            with self.subTest(path=os.path.basename(path)):
+                self.assertEqual([i for i in ids if i in text], [])
 
 
 if __name__ == "__main__":
