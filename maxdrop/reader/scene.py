@@ -258,7 +258,10 @@ class Scene:
             raise ChunkError("object %d: 0x2034 of %d bytes is not a whole number of i32" % (i, refs.payload_size))
         if n > MAX_REFS:
             raise ChunkError("object %d: %d references, more than %d" % (i, n, MAX_REFS))
-        return [None if v == -1 else self._target(i, v) for v, in struct.iter_unpack("<i", refs.view())]
+        # Unpacked whole, never through struct.iter_unpack: an iterator over the view holds a buffer export of it,
+        # and left in a traceback's frame when _target raises, it crashes Python <= 3.11's garbage collector.
+        values = struct.unpack("<%di" % n, refs.view())
+        return [None if v == -1 else self._target(i, v) for v in values]
 
     def refs(self, i):
         """{slot: object index} of object i, from 0x2034 and 0x2035; empty slots are left out."""
@@ -272,7 +275,9 @@ class Scene:
                                  (i, pairs.payload_size))
             if n > MAX_REFS:
                 raise ChunkError("object %d: %d reference pairs, more than %d" % (i, n, MAX_REFS))
-            for slot, value in _PAIR.iter_unpack(pairs.view()[4:]):
+            view = pairs.view()
+            for k in range(n):  # unpack_from, not iter_unpack: see ref_list
+                slot, value = _PAIR.unpack_from(view, 4 + 8 * k)
                 if value != -1:
                     out[slot] = self._target(i, value)
         return out

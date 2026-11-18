@@ -180,6 +180,39 @@ class DamagedInputTest(unittest.TestCase):
                 self.assertOnlyValueError(_read_streams, _rewritten(scene, ref.offset, bad), classes, dlls,
                                           what="%s %04X at %d past the objects" % (name, ref.id, ref.offset))
 
+    def test_failed_reference_read_keeps_no_iterator(self):
+        # A struct unpack iterator over a chunk's view holds a buffer export of it. Left in a frame of the
+        # traceback, it crashes Python <= 3.11 when the garbage collector clears that memoryview.
+        unpack_iterator = type(struct.iter_unpack("<i", b""))
+        for path in FIXTURES:
+            scene, classes, dlls = _streams(path)
+            name = os.path.basename(path)
+            objects = chunks.index(scene)[0].children
+            for wanted in (0x2034, 0x2035):
+                ref = next((c for obj in objects if obj.container for c in obj.children
+                            if c.id == wanted and c.payload_size >= (4 if wanted == 0x2034 else 12)), None)
+                if ref is None:
+                    continue
+                raw, past = ref.tobytes(), len(objects) + 5
+                if wanted == 0x2034:
+                    bad = struct.pack("<%di" % (len(raw) // 4), *[past] * (len(raw) // 4))
+                else:
+                    bad = raw[:4] + struct.pack("<Ii", 0, past) * ((len(raw) - 4) // 8)
+                sc = reader_scene.Scene(_rewritten(scene, ref.offset, bad), classdir.ClassDirectory.parse(classes, dlls))
+                held = None
+                for i in range(len(sc)):
+                    try:
+                        sc.refs(i)
+                    except chunks.ChunkError as exc:
+                        tb, held = exc.__traceback__, []
+                        while tb is not None:
+                            held += [k for k, v in tb.tb_frame.f_locals.items() if isinstance(v, unpack_iterator)]
+                            tb = tb.tb_next
+                        del exc, tb
+                        break
+                self.assertIsNotNone(held, "%s %04X: no reference read failed" % (name, wanted))
+                self.assertEqual(held, [], "%s %04X: an unpack iterator outlives the raise" % (name, wanted))
+
     def test_truncated_and_garbled_files(self):
         rng = random.Random(SEED + 1)
         for path in FIXTURES:
