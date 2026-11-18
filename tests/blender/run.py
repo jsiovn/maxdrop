@@ -72,7 +72,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 MATRIX_TOLERANCE = 1e-4
 BBOX_TOLERANCE = 1e-3
-UV_LAYERS = {  # mapcoords:true in the script gives channel 1
+UV_LAYERS = {  # mapcoords:true in the script gives channel 1; kept literal: test_convert_scene reads it with ast
     "box_poly_standard": ["UVMap"],
     "corona_layered": ["UVMap"],
     "corona_legacy": ["UVMap"],
