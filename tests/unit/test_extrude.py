@@ -14,6 +14,7 @@ import importlib
 import json
 import math
 import os
+import struct
 import sys
 import types
 import unittest
@@ -40,6 +41,7 @@ shapes = importlib.import_module(_PKG + ".reader.shapes")
 pblock = importlib.import_module(_PKG + ".reader.pblock")
 classids = importlib.import_module(_PKG + ".reader.classids")
 reader_modifiers = importlib.import_module(_PKG + ".reader.modifiers")
+chunks = importlib.import_module(_PKG + ".reader.chunks")
 rules = importlib.import_module(_PKG + ".convert.modifiers")
 
 CAPPED = ("FixtureExtRect", "FixtureExtL", "FixtureExtHole", "FixtureExtIsland", "FixtureExtMirror",
@@ -432,6 +434,31 @@ class Parameters(unittest.TestCase):
         self.assertEqual(len(issues), 4)  # segments, grid caps, patch output, shape IDs
         p, _issues = extrude.read_params(FakeScene(), _modifier({1: 10 ** 9}))
         self.assertEqual(p.segments, extrude.MAX_SEGMENTS)
+
+    def test_real_world_is_the_entry_of_its_own_class(self):
+        """Real-World Map Size is the 0x2150 entry naming the Extrude class, as on a UVW Map or a primitive: another
+        class's entry (another plug-in's data on the modifier) does not set it."""
+        def leaf(cid, payload):
+            return struct.pack("<HI", cid, 6 + len(payload)) + payload
+
+        def holder(cid, *children):
+            body = b"".join(children)
+            return struct.pack("<HI", cid, (6 + len(body)) | 0x80000000) + body
+
+        def entry(cls, flag):
+            return holder(0x0110, leaf(0x0120, struct.pack("<5I", cls[0], cls[1], 0x10, 0, 4)),
+                          leaf(0x0130, struct.pack("<I", flag)))
+
+        def flag(*entries):
+            chunk = chunks.index(holder(0x0001, holder(0x2150, leaf(0x0100, struct.pack("<I", 1)), *entries)))[0]
+            return extrude._real_world(chunk, classids.EXTRUDE)
+
+        own, other = tuple(classids.EXTRUDE), (0x1234, 0x5678)
+        self.assertFalse(flag(entry(other, 1)))
+        self.assertFalse(flag(entry(other, 1), entry(own, 0)))
+        self.assertTrue(flag(entry(other, 0), entry(own, 1)))
+        self.assertTrue(flag(entry(own, 1)))
+        self.assertFalse(flag())
 
     def test_is_extrude(self):
         self.assertTrue(extrude.is_extrude(_modifier({})))

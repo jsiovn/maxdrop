@@ -12,7 +12,8 @@
 
 The parameters are an old ParamBlock in reference slot 0 (0 amount, 1 segments, 2 cap start, 3 cap end, 4 cap
 type 0 morph / 1 grid, 5 output 0 patch / 1 mesh / 2 NURBS, 6 generate mapping coordinates, 7 generate material
-IDs, 8 use shape IDs, 9 smooth); Real-World Map Size is the u32 0x0130 in the modifier's 0x2150 {0x0110} container.
+IDs, 8 use shape IDs, 9 smooth); Real-World Map Size is the u32 0x0130 of the 0x0110 entry in the modifier's 0x2150
+whose 0x0120 names the Extrude class (another class's entry is not this flag).
 
 Interpolation (3ds Max's, fitted to its own counts): each segment gets steps points between its knots; with
 optimize a straight segment (segment type line, or both vectors on the chord) gets none; adaptive gives a straight
@@ -50,7 +51,7 @@ ChunkError = chunks.ChunkError
  P_SMOOTH) = range(10)
 CAP_MORPH, CAP_GRID = 0, 1
 OUTPUT_PATCH, OUTPUT_MESH, OUTPUT_NURBS = 0, 1, 2
-_REAL_WORLD, _REAL_WORLD_ENTRY, _REAL_WORLD_VALUE = 0x2150, 0x0110, 0x0130
+_REAL_WORLD, _REAL_WORLD_ENTRY, _REAL_WORLD_CLASS, _REAL_WORLD_VALUE = 0x2150, 0x0110, 0x0120, 0x0130
 SLOT_PARAMS = 0
 
 ADAPTIVE_ANGLE = math.radians(2.0)
@@ -65,6 +66,7 @@ MAX_LOOPS = 4000  # closed polylines nested against each other: quadratic
 MAX_NEST_TESTS = 1 << 24  # point-edge tests telling which outline lies in which: about 2 s in Python
 _STRAIGHT = 1e-6  # relative distance of a vector from the chord
 _U32 = struct.Struct("<I")
+_CLASS_KEY = struct.Struct("<II")
 
 
 class ExtrudeError(ChunkError):
@@ -104,15 +106,26 @@ def _number(block, i, default):
     return v
 
 
-def _real_world(chunk):
+def _real_world(chunk, class_id):
+    """The Real-World Map Size flag: the 0x0130 of the 0x2150 entry naming the modifier's own class, as
+    convert.uvwmap and convert.primitives read it (another plug-in's entry is not this flag)."""
     if not chunk.container:
         return False
     holder = chunk.first(_REAL_WORLD)
-    entry = holder.first(_REAL_WORLD_ENTRY) if holder is not None and holder.container else None
-    value = entry.first(_REAL_WORLD_VALUE) if entry is not None and entry.container else None
-    if value is None or value.payload_size < _U32.size:
+    if holder is None or not holder.container:
         return False
-    return _U32.unpack(value.view()[:_U32.size])[0] != 0
+    for entry in holder.find_all(_REAL_WORLD_ENTRY):
+        if not entry.container:
+            continue
+        cls = entry.first(_REAL_WORLD_CLASS)
+        if cls is None or cls.payload_size < _CLASS_KEY.size or \
+                tuple(_CLASS_KEY.unpack(cls.view()[:_CLASS_KEY.size])) != tuple(class_id):
+            continue
+        value = entry.first(_REAL_WORLD_VALUE)
+        if value is None or value.payload_size < _U32.size:
+            return False
+        return _U32.unpack(value.view()[:_U32.size])[0] != 0
+    return False
 
 
 def read_params(scene, modifier):
@@ -131,7 +144,7 @@ def read_params(scene, modifier):
     if clamped != segments:
         issues.append("%g segments, made with %d" % (segments, clamped))
     try:
-        real_world = _real_world(scene.chunk(modifier.index))
+        real_world = _real_world(scene.chunk(modifier.index), modifier.class_id)
     except (ChunkError, struct.error):
         real_world = False
     p = Params(float(_number(block, P_AMOUNT, d.amount)), clamped, flag(P_CAP_START, d.cap_start),
