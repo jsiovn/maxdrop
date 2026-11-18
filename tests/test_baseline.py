@@ -24,7 +24,8 @@ if _PKG not in sys.modules:
     sys.modules[_PKG] = _pkg
 report = importlib.import_module(_PKG + ".convert.report")
 
-ZERO = {"curves": 0, "placeholders": 0, "modifiers_not_applied": 0, "textures_missing": 0, "approximated": 0, "issues": 0}
+ZERO = {"curves": 0, "placeholders": 0, "modifiers_not_applied": 0, "textures_missing": 0, "approximated": 0,
+        "issues": 0}
 
 
 class ReadLog(unittest.TestCase):
@@ -49,8 +50,8 @@ class ReadLog(unittest.TestCase):
                           "1 modifier not applied, 2 textures missing, 4 approximated, 5 issues. "
                           "See the text MaxDrop Report.")
         self.assertEqual(found["import_report"], {
-            "objects": 747, "meshes": 343, "curves": 0, "materials": 141, "placeholders": 323, "modifiers_not_applied": 1,
-            "textures_missing": 2, "approximated": 4, "issues": 5})
+            "objects": 747, "meshes": 343, "curves": 0, "materials": 141, "placeholders": 323,
+            "modifiers_not_applied": 1, "textures_missing": 2, "approximated": 4, "issues": 5})
         self.assertNotIn("secret", repr(found))
 
     def test_curves(self):
@@ -69,9 +70,10 @@ class ReadLog(unittest.TestCase):
 
     def test_several_scenes_are_summed(self):
         found = self.read("MaxDrop: Imported a.max: 1 object, 1 mesh, nothing left out.",
-                          "MaxDrop: Imported b.max: 3 objects, 2 meshes, 2 materials; 1 placeholder. "
+                          "MaxDrop: Imported b.max: 3 objects, 2 meshes, 2 curves, 2 materials; 1 placeholder. "
                           "See the text MaxDrop Report.")
-        self.assertEqual(found["import_report"], dict(ZERO, objects=4, meshes=3, materials=2, placeholders=1))
+        self.assertEqual(found["import_report"], dict(ZERO, objects=4, meshes=3, curves=2, materials=2,
+                                                      placeholders=1))
 
     def test_no_import_line(self):
         found = self.read("Traceback (most recent call last):", "  File \"x\", line 1")
