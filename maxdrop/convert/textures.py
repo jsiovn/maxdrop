@@ -27,13 +27,17 @@ without regard to case, in this order:
 
 The first rule that has the name wins; inside a rule the file nearest to the folder searched wins (breadth
 first, names sorted). Each rule's folders are walked once, when the rule is first needed, at most max_depth
-folders deep and max_entries files and folders per rule (the report says where the walk stopped). A link is a
-symbolic link or a name-surrogate reparse point (junction, mount point): never entered, never taken, in any rule;
-other reparse points (cloud placeholders, deduplicated files) are ordinary files and folders. Unreadable folders
-are skipped. No bpy, no reader import: this takes the stored strings.
+folders deep. The bound on work is a count, no time limit: a rule reads at most max_entries files and folders (one
+more to see the budget run out), the SIBLING rule's listing of the scene's folder and its parent included, and a
+folder's listing is read no further than the budget left, so a folder of millions of entries costs no more than
+the budget. The report says where a rule stopped; of the folder it stopped in, the entries taken follow the order
+the file system lists them (name order on NTFS), then names sorted. A link is a symbolic link or a name-surrogate
+reparse point (junction, mount point): never entered, never taken, in any rule; other reparse points (cloud
+placeholders, deduplicated files) are ordinary files and folders. Unreadable folders are skipped. No bpy, no reader
+import: this takes the stored strings.
 """
 import collections
-import heapq
+import itertools
 import os
 import stat
 import unicodedata
@@ -136,22 +140,36 @@ def _plain_file(path):
     return stat.S_ISREG(st.st_mode)
 
 
+def _by_name(entry):
+    return entry.name
+
+
 def _entries(folder, limit):
-    """The first limit entries of folder by name; only those are held, however many the folder has."""
+    """At most limit entries of folder, sorted by name: the listing is read no further, however many entries the
+    folder has. All of them when it has no more than limit."""
     try:
         with os.scandir(folder) as it:
-            return heapq.nsmallest(limit, it, key=lambda e: e.name)
+            return sorted(itertools.islice(it, max(limit, 0)), key=_by_name)
     except (OSError, ValueError):
         return []
 
 
-def _named(folder, keys):
-    """The entries of folder whose name_key is in keys, sorted by name; the rest of the listing is not held."""
+def _named(folder, keys, budget):
+    """(the entries of folder whose name_key is in keys, sorted by name; True when the listing was cut). Each entry
+    read is charged to budget, a one-item list; the listing stops at the first entry that finds it at 0."""
+    found, cut = [], False
     try:
         with os.scandir(folder) as it:
-            return sorted((e for e in it if name_key(e.name) in keys), key=lambda e: e.name)
+            for e in it:
+                if budget[0] <= 0:
+                    cut = True
+                    break
+                budget[0] -= 1
+                if name_key(e.name) in keys:
+                    found.append(e)
     except (OSError, ValueError):
-        return []
+        pass
+    return sorted(found, key=_by_name), cut
 
 
 def _kind(entry):
@@ -215,26 +233,33 @@ class TextureIndex:
         self._cache = {}
         self.report = TextureReport()
 
-    def _roots(self, rule):
+    def _roots(self, rule, budget):
+        """(the folders rule walks, each with whether its subfolders too; the folder where the budget ran out while
+        finding them, None when it did not)."""
         if rule == SCENE:
-            return [(self.scene_dir, self.scene_subfolders)]
+            return [(self.scene_dir, self.scene_subfolders)], None
         if rule == SIBLING:
             roots = []
             for folder in dict.fromkeys((self.scene_dir, os.path.dirname(self.scene_dir))):
-                roots.extend((e.path, True) for e in _named(folder, SIBLING_NAMES) if _kind(e) == "dir")
-            return roots
-        return [(d, True) for d in self.user_dirs]
+                named, cut = _named(folder, SIBLING_NAMES, budget)
+                if cut:
+                    return roots, folder
+                roots.extend((e.path, True) for e in named if _kind(e) == "dir")
+            return roots, None
+        return [(d, True) for d in self.user_dirs], None
 
     def _tier(self, rule):
         index = self._tiers.get(rule)
         if index is None:
             index = self._tiers[rule] = {}
             budget = [self.max_entries]
-            for root, recursive in self._roots(rule):
+            roots, stopped = self._roots(rule, budget)
+            for root, recursive in roots if stopped is None else ():
                 stopped = self._walk(root, recursive, index, budget)
                 if stopped is not None:
-                    self.report.truncated.append((rule, stopped, self.max_entries))
                     break
+            if stopped is not None:
+                self.report.truncated.append((rule, stopped, self.max_entries))
         return index
 
     def _walk(self, root, recursive, index, budget):

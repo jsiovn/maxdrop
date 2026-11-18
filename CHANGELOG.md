@@ -28,6 +28,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   once no longer make the second fail or replace a folder made in between: it takes the next free folder name (or
   reuses the first one's folder); a `.zip` listing more entries than MaxDrop reads is refused before its directory
   is loaded into memory; a Windows junction is no longer searched or written into, like a link.
+- Texture lookup: a folder with millions of files no longer slows an import down. Each search place reads at most
+  200,000 files and folders, the listing of the `.max` file's folder and its parent for `maps` / `textures`
+  folders included, instead of reading every entry of a huge folder before stopping; the report names the folder
+  where a search stopped.
 - Import report: the status line names material problems on their own ("2 material problems, 1 issue") and the text
   MaxDrop Report states their total; a texture file that was found but did not load is listed under the material
   issues instead of the other issues.

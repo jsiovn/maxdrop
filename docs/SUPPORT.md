@@ -132,10 +132,11 @@ images. MaxDrop takes the **file name** of each path and looks for it, without r
 
 The first place that has the file wins. A path stored as a network share (`\\server\share\...`), a device path,
 a relative path or one that climbs with `..` is never opened; its file name is still looked for in places 1 to 3.
-Each place is searched once per import, at most 8 folders deep and 200,000 files and folders; links and
-junctions are not followed. A file that is not found keeps its Image Texture node, without an image and not
-connected, so the channel keeps its plain value (no black or magenta surface, in EEVEE or Cycles), and is named in
-the import report. A file that is found but holds no image (empty, or not starting as its format does) is left
+Each place is searched once per import, at most 8 folders deep and 200,000 files and folders read, however
+large the folders are (for place 2, the listing of the `.max` file's folder and its parent counts too; the report
+says where a search stopped); links and junctions are not followed. A file that is not found keeps its Image
+Texture node, without an image and not connected, so the channel keeps its plain value (no black or magenta
+surface, in EEVEE or Cycles), and is named in the import report. A file that is found but holds no image (empty, or not starting as its format does) is left
 out the same way and named in the report. Each file is loaded once per color space. A material that fails to
 convert or build is named in the report and the scene comes in without it (its faces without a material) instead
 of failing.

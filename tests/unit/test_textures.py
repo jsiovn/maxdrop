@@ -241,14 +241,91 @@ class BoundsTest(Tree):
         self.assertIsNone(idx.find("a.png"))
 
     def test_a_folder_listing_holds_one_past_the_budget(self):
-        for n in (4, 0, 3, 1, 2):
-            self.touch("lib", "f%d.png" % n)
+        names = ["f%d.png" % n for n in (4, 0, 3, 1, 2)]
+        for name in names:
+            self.touch("lib", name)
         lib = os.path.join(self.root, "lib")
-        self.assertEqual([e.name for e in textures._entries(lib, 3)], ["f0.png", "f1.png", "f2.png"])
+        cut = [e.name for e in textures._entries(lib, 3)]
+        # which three depends on the file system's order (name order on NTFS, hash order on ext4)
+        self.assertEqual((len(cut), cut, set(cut) <= set(names)), (3, sorted(cut), True))
+        self.assertEqual([e.name for e in textures._entries(lib, 10)], sorted(names))
         real = textures._entries
         with mock.patch.object(textures, "_entries", side_effect=real) as entries:
             self.index(user_dirs=[lib], max_entries=2).find("x.png")
         self.assertEqual(entries.call_args.args, (lib, 3))
+
+
+class WorkBoundTest(Tree):
+    """The budget bounds the entries read, not only those kept: a huge folder costs no more than the budget."""
+
+    def read(self, idx, *names, under=None):
+        """How many directory entries the lookups of names made os.scandir yield (in the folder under and its
+        subfolders only, when given)."""
+        real, count = os.scandir, [0]
+
+        class Counting:
+            def __init__(self, path):
+                self._it = real(path)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                self._it.close()
+
+            def __iter__(self):
+                for e in self._it:
+                    if under is None or e.path.startswith(under + os.sep):
+                        count[0] += 1
+                    yield e
+
+        with mock.patch.object(textures.os, "scandir", Counting):
+            for name in names:
+                idx.find(name)
+        return count[0]
+
+    def test_a_huge_folder_is_read_only_as_far_as_the_budget(self):
+        for n in range(40):
+            self.touch("lib", "f%02d.png" % n)
+        lib = os.path.join(self.root, "lib")
+        idx = self.index(user_dirs=[lib], max_entries=5)
+        self.assertLessEqual(self.read(idx, "x.png", under=lib), 6)
+        self.assertEqual(idx.report.truncated, [(USER, lib, 5)])
+
+    def test_a_rule_reads_at_most_one_past_its_budget(self):
+        for n in range(10):
+            self.touch("lib", "top%d.png" % n)
+            self.touch("lib", "a", "a%d.png" % n)
+            self.touch("lib", "b", "b%d.png" % n)
+        lib = os.path.join(self.root, "lib")
+        idx = self.index(user_dirs=[lib], max_entries=12)
+        self.assertLessEqual(self.read(idx, "x.png", under=lib), 13)
+        self.assertEqual(len(idx.report.truncated), 1)
+
+    def test_the_sibling_listing_counts(self):
+        for n in range(30):
+            self.touch("proj", "f%02d.png" % n)
+        self.touch("proj", "textures", "t.png")
+        proj = os.path.join(self.root, "proj")
+        idx = self.index(max_entries=10)
+        self.assertLessEqual(self.read(idx, "t.png"), 1 + 11)  # rule 1: the scene's folder, 1 entry
+        self.assertIsNone(idx.find("t.png"))
+        self.assertEqual(idx.report.truncated, [(SIBLING, proj, 10)])
+
+    def test_the_sibling_listing_leaves_less_for_the_walk(self):
+        for n in range(3):
+            self.touch("proj", "scene", "s%d.png" % n)
+        for n in range(6):
+            self.touch("proj", "maps", "m%d.png" % n)
+        maps = os.path.join(self.root, "proj", "maps")
+        # listings: the scene's folder (scene.max + 3) and proj (scene, maps) take 6 of 8: 2 left for maps
+        idx = self.index(max_entries=8)
+        found = [n for n in range(6) if idx.find("m%d.png" % n)]
+        self.assertEqual(len(found), 2, found)
+        self.assertEqual(idx.report.truncated, [(SIBLING, maps, 8)])
+        idx = self.index(max_entries=100)
+        self.assertEqual(idx.find("m5.png"), Found(os.path.join(maps, "m5.png"), SIBLING))
+        self.assertEqual(idx.report.truncated, [])
 
 
 class RefusalTest(Tree):
