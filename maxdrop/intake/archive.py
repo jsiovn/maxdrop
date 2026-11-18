@@ -905,6 +905,7 @@ def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=Non
         _remove_stale_staging(parent, limits)
         staging = tempfile.mkdtemp(prefix=STAGING_PREFIX, dir=parent)
         reserved = None
+        budget = _Budget(limits)
         labels = []
 
         def extract(part):
@@ -914,7 +915,6 @@ def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=Non
                 labels.append(label)
 
         try:
-            budget = _Budget(limits)
             if references is None:
                 extract(plan)
             else:

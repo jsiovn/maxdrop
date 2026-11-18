@@ -600,6 +600,7 @@ class StandInTests(TempCase):
         self.first = Tool(UNRAR, PY, (7, 23))
         self.second = Tool(SEVENZIP, PY, (26, 6))
         self.scripts = {}
+        self.unlistable = set()     # flavors whose listing fails
         saved = (external.list_entries, external.extract_args, archive._BACKENDS.get("rar"))
         self.addCleanup(self._restore, saved)
         external.list_entries = self._list
@@ -610,6 +611,8 @@ class StandInTests(TempCase):
         archive._BACKENDS["rar"] = backend
 
     def _list(self, tool, path):
+        if tool.flavor in self.unlistable:
+            raise external.ToolFailed(tool.label, "exit code 2")
         return [archive.Entry(name=n, size=3, key=(tool, n)) for n in PLAN]
 
     def _extract_args(self, tool, path, list_file, out):
@@ -656,9 +659,18 @@ class StandInTests(TempCase):
 
     def test_listing_names_the_lister(self):
         self.use(self.first, self.second)
-        listing = archive.list_pack(self.pack)
-        self.assertEqual(listing.backend, "UnRAR 7.23")
+        self.assertEqual(archive.list_pack(self.pack).backend, "UnRAR 7.23")
+        self.unlistable.add(UNRAR)
+        self.assertEqual(archive.list_pack(self.pack).backend, "7-Zip 26.06")
         self.assertEqual(archive._BACKENDS["rar"].name, external.ExternalBackend("rar").name)
+
+    def test_reused_folder_names_the_lister(self):
+        self.scripts[UNRAR] = self.WRITE
+        unpack = self.use(self.first, self.second)
+        self.assertEqual(unpack().mode, "unpacked")
+        self.unlistable.add(UNRAR)
+        again = unpack()
+        self.assertEqual((again.mode, again.backend), ("reused", "7-Zip 26.06"))
 
     # Writes each name of its list file into out, under its base name.
     WRITE_LISTED = ("import os, sys\nout, names = sys.argv[1], sys.argv[2]\n"

@@ -831,7 +831,7 @@ class ExternalBackend:
     def __init__(self, kind, tools=None):
         self.kind = kind
         self._fixed = tools                 # tests: these tools instead of the discovery
-        # Fixed: one backend serves every pack of its kind, so the program used for one pack is never kept here.
+        # Never reassigned: one backend serves every pack of its kind, so the program used for a pack is not kept.
         self.name = " / ".join(LABELS[f] for f in _ORDER[kind])
 
     def _tools(self, archive, order_kind):

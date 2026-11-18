@@ -20,6 +20,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Import report: the status line names material problems on their own ("2 material problems, 1 issue") and the text
   MaxDrop Report states their total; a texture file that was found but did not load is listed under the material
   issues instead of the other issues.
+- Import report: the Unpacker line of a `.rar` or `.7z` scene pack names the program that wrote the files when the
+  first one failed and another took over, not the one that only listed the pack.
 
 ## [0.0.5] - 2026-11-18
 
