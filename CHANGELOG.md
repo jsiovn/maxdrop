@@ -28,6 +28,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Import report: the status line names material problems on their own ("2 material problems, 1 issue") and the text
   MaxDrop Report states their total; a texture file that was found but did not load is listed under the material
   issues instead of the other issues.
+- Import report: a Falloff, VRayDirt, Output, RGB Tint or VRayColor2Bump over a map that converts to nothing is no
+  longer listed as a simplified map (it draws nothing; its lost map is reported), and no longer marks a Mix that
+  hides it as approximated.
 - Import report: the Unpacker line of a `.rar` or `.7z` scene pack names the program that wrote the files when the
   first one failed and another took over, not the one that only listed the pack.
 - Materials: a cropped or placed Bitmap with tiling off no longer repeats over the whole surface, and its mirror

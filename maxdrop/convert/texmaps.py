@@ -69,7 +69,8 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
 - A map that is set (and switched on) but converts to nothing (an unsupported class with no bitmap below, a
   Bitmap without a file, a cut branch) is an issue on its wrapper naming its class, and never stands in as the
   wrapper's own color for it (3ds Max uses that color only without a map or with the map off): a Color Correction,
-  Falloff, VRayDirt, Output, RGB Tint or VRayColor2Bump over it gives no graph, so the input keeps its own value.
+  Falloff, VRayDirt, Output, RGB Tint or VRayColor2Bump over it gives no graph and is not counted (the lost map
+  is), so the input keeps its own value.
   A Mix or CoronaMix weighs it by its amount: a side that does not show is drawn as its color (exact), a side that
   fills the result gives no graph, any other weight (or a mask) peels the wrapper to its other side's map, or no
   graph; an RGB Multiply is always peeled that way. A lost mask leaves the mix amount, a lost Composite layer is
@@ -78,9 +79,9 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
   the input's value with the map (Mix(Constant(value), map, amount)), above 1 multiplies the map; in a bump input the
   amount is the Bump's strength, in a normal input it scales the NormalMap's strengths.
 
-Each map object counts once in stats.peeled or stats.unsupported, each issue once in stats.issues. The file comes
-from anywhere: a reference cycle, a chain deeper than MAX_DEPTH, a reference to an object that is not a map or a
-damaged object end that branch (an issue), a shared map is converted once (no blow-up through repeated
+Each map object counts at most once in stats.peeled or stats.unsupported, each issue once in stats.issues. The file
+comes from anywhere: a reference cycle, a chain deeper than MAX_DEPTH, a reference to an object that is not a map or
+a damaged object end that branch (an issue), a shared map is converted once (no blow-up through repeated
 references), and unreadable Placement, Output or BitmapInfo chunks take the defaults. Those chunks are read by
 reader/materials.py (placement, output_invert, bitmap_gamma); what they hold is judged here. No bpy, no mathutils.
 """
@@ -548,9 +549,11 @@ class TexmapConverter:
             return rule(self, m, kind, walk, depth, chain)
         rule = _PEEL.get(key)
         if rule is not None:
-            walk.approximated = True
-            self._count(self.stats.peeled, m)
-            return rule(self, m, kind, walk, depth, chain)
+            node = rule(self, m, kind, walk, depth, chain)
+            if node is not None:
+                walk.approximated = True
+                self._count(self.stats.peeled, m)
+            return node
         return self._peel_to_image(m, kind, walk, depth, chain, "no bitmap below")
 
     def _peel_to_image(self, m, kind, walk, depth, chain, why):

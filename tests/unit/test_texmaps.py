@@ -1311,15 +1311,31 @@ class LostMaps(Checks):
                              (FakeMap(1, tx.VRAY_DIRT, {13: (1.0, 0.0, 0.0), 17: Ref(2)}, [2], cls="VRayDirt"),
                               "VRayDirt"),
                              (FakeMap(1, tx.OUTPUT, {0: Ref(2)}, [2], cls="Output"), "Output"),
-                             (FakeMap(1, tx.RGB_TINT, {3: Ref(2)}, [2], cls="RGB Tint"), "RGB Tint")):
+                             (FakeMap(1, tx.RGB_TINT, {3: Ref(2)}, [2], cls="RGB Tint"), "RGB Tint"),
+                             (FakeMap(1, tx.VRAY_COLOR2BUMP, {0: Ref(2)}, [2], cls="VRayColor2Bump"),
+                              "VRayColor2Bump")):
             tex = _tex(wrapper, _noise(2))
             self.assertIsNone(tex.convert(mat.MapRef(1), tx.COLOR), cls)
             self.lost_issue(tex, cls)
+            self.assertEqual(tex.stats.peeled, collections.Counter(), "%s drew nothing: not a peel" % cls)
+            self.assertEqual(tex.stats.unsupported, collections.Counter({"Noise": 1}), "the lost map only")
         tex = _tex(_falloff(1, color1=(1.0, 0.0, 0.0)))
         self.close(tex.convert(mat.MapRef(1), tx.COLOR).root.value, (1.0, 0.0, 0.0), "no map: color 1")
+        self.assertEqual(tex.stats.peeled, collections.Counter({"Falloff": 1}))
         tex = _tex(FakeMap(1, tx.VRAY_DIRT, {13: (1.0, 0.0, 0.0), 17: Ref(2), 18: 0}, [2], cls="VRayDirt"),
                    _noise(2))
         self.close(tex.convert(mat.MapRef(1), tx.COLOR).root.value, (1.0, 0.0, 0.0), "map off: its color")
+        self.assertEqual(tex.stats.peeled, collections.Counter({"VRayDirt": 1}))
+
+    def test_hidden_peeled_wrapper_is_exact(self):
+        # mix amount 1: map 1 (a Falloff over a lost map) does not show and is drawn as color 1
+        tex = _tex(FakeMap(1, tx.MIX, {0: 1.0, 6: Ref(2), 7: Ref(3)}, [2, 3], cls="Mix", name="mx"),
+                   _falloff(2, 4), _bitmap(3), _noise(4))
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertIsInstance(g.root, tx.Mix)
+        self.assertFalse(g.approximated)
+        self.assertEqual(tex.stats.peeled, collections.Counter())
+        self.assertEqual(tex.stats.unsupported, collections.Counter({"Noise": 1}))
 
     def test_lost_map_that_is_not_a_map(self):
         tex = _tex(FakeMap(1, tx.COLOR_CORRECTION, {1: Ref(7)}, [7], cls="Color Correction", name="cc"))
