@@ -13,7 +13,9 @@ Each file is imported into an emptied scene with the default options and must br
 one material; the counts are printed so that runs on different Blender versions can be compared.
 
 Every .max is then packed into a .zip in a scratch folder (the scene with the image and .ies files of its folder
-tree) and imported from it: same checks, no fewer images, unpacked beside the zip. A zip holding it twice under two
+tree, plus one image no scene names) and imported from it: same checks, no fewer images, unpacked beside the zip;
+when the scene's asset list is read, that image stays in the zip and the report counts it (`Files the scene does
+not use, left out: 1` for the fixtures, which carry no images). A zip holding it twice under two
 names must be refused in EXEC mode with both names in the message, then import once the scene is named; its Scene
 Pack panel names the exact folder of the scene the Scene field names, and the reused one after the import. The same
 files are also chosen through directory + files, as the file browser and a drop pass them: a .max with a
@@ -53,6 +55,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 ARCHIVES = (".zip", ".rar", ".7z")
 SECOND = "second.max"
+UNUSED = "maxdrop_smoke_unused.png"  # an image in every generated zip that no scene names
 TEXT_NAME = "MaxDrop Report"
 failures = []
 REPORTS = []  # (level, message) of each scene the operator imported, while record_reports() wraps it
@@ -251,12 +254,18 @@ def damage(zip_path):
         f.write(bytes([byte ^ 0xFF]))
 
 
-def as_pack(max_path, scratch, images_of_max, archive):
+def as_pack(max_path, scratch, images_of_max, archive, ops):
     name = os.path.basename(max_path)
     stem = os.path.splitext(name)[0]
     folder = os.path.join(scratch, "one")
     entries = [(stem + "/" + name, max_path)]
     entries += [(stem + "/" + arc, full) for arc, full in maps_of(max_path, archive.ASSET_EXTENSIONS)]
+    # An image no scene names: the operator's filter (ops._referenced_maps) must leave it in the zip.
+    unused = os.path.join(scratch, UNUSED)
+    os.makedirs(scratch, exist_ok=True)
+    with open(unused, "wb") as f:
+        f.write(b"\x89PNG\r\n\x1a\n not used")
+    entries.append((stem + "/unused/" + UNUSED, unused))
     zip_path = make_zip(os.path.join(folder, stem + ".zip"), entries)
     images = import_one(zip_path, "%s in a .zip (%d map files)" % (name, len(entries) - 1), max_name=name,
                         pack_name=os.path.basename(zip_path))
@@ -268,6 +277,23 @@ def as_pack(max_path, scratch, images_of_max, archive):
     outside = [img.filepath for img in bpy.data.images
                if img.filepath and not inside(bpy.path.abspath(img.filepath), pack)]
     check("%s in a .zip: every image comes from the pack folder" % name, not outside, ", ".join(outside[:5]))
+    referenced = ops._referenced_maps(max_path)
+    if referenced is None:
+        if argv:
+            print("NOTE %s in a .zip: no readable asset list, every map unpacked: unused-map check skipped" % name)
+        else:
+            check("%s in a .zip: its asset list is read (every fixture has one)" % name, False)
+        return
+    wanted = {archive.name_key(n) for n in referenced}
+    bases = [arc.rsplit("/", 1)[-1] for arc, _full in entries[1:]]
+    expected = sum(1 for b in bases if archive.refused_reason(b) is None and archive.name_key(b) not in wanted)
+    text = bpy.data.texts.get(TEXT_NAME)
+    body = text.as_string() if text is not None else ""
+    check("%s in a .zip: the image the scene does not use is not unpacked" % name,
+          UNUSED.casefold() not in {n.casefold() for n in os.listdir(pack)}, ", ".join(sorted(os.listdir(pack))))
+    line = "\n  Files the scene does not use, left out: %d\n" % expected
+    check("%s in a .zip: the report says %r" % (name, line.strip()), line in body + "\n",
+          [s for s in body.split("\n") if "does not use" in s])
 
 
 def attempt(**options):
@@ -507,7 +533,7 @@ def run():
             FIXTURE["issues"] = 0 if argv else FIXTURE_ISSUES.get(os.path.basename(path), 0)
             images = import_one(path)
             work = os.path.join(scratch, str(n))
-            as_pack(path, work, images, archive)
+            as_pack(path, work, images, archive, ops)
             two_scenes(path, work, ops)
             selections(path, work)
         FIXTURE["modifiers"] = FIXTURE["issues"] = 0

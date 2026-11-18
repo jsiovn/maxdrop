@@ -715,6 +715,30 @@ class StandInTests(TempCase):
         self.assertLess(time.monotonic() - start, 5)
         self.assertEqual(self.left(), ["scene.rar"])
 
+    def test_watcher_counts_the_scene_phase(self):
+        """The maps' watcher starts from what the scene phase wrote: each phase is under the byte limit, both are
+        over it, and only that watcher ends the second program before its sleep does."""
+        self.scripts[UNRAR] = (
+            "import os, sys, time\nout, names = sys.argv[1], open(sys.argv[2], encoding='utf-8').read()\n"
+            "if 'scene.max' in names:\n"
+            "    open(os.path.join(out, 'scene.max'), 'wb').write(b'S' * (700 << 10))\n"
+            "else:\n"
+            "    f = open(os.path.join(out, 'wood.jpg'), 'wb'); f.write(b'W' * (700 << 10)); f.flush()\n"
+            "    time.sleep(60)\n")
+        asked = []
+
+        def refs(max_path):
+            asked.append(os.path.getsize(max_path))
+            return ["wood.jpg"]
+        archive._BACKENDS["rar"] = external.ExternalBackend("rar", tools=[self.first])
+        limits = archive.Limits(total_bytes=1 << 20, free_margin=0)  # declared sizes are 3 bytes: no early refusal
+        start = time.monotonic()
+        with self.assertRaisesRegex(PackError, "unpacks to more than"):
+            archive.unpack(self.pack, limits=limits, references=refs)
+        self.assertLess(time.monotonic() - start, 10)
+        self.assertEqual(asked, [700 << 10], "the scene phase passed on its own")
+        self.assertEqual(self.left(), ["scene.rar"])
+
     def test_pack_time_limit(self):
         self.scripts[UNRAR] = "import time\ntime.sleep(60)\n"
         limits = archive.Limits(seconds=1.5, free_margin=0)
@@ -813,6 +837,40 @@ class RealToolTests(TempCase):
                     self.assertEqual(result.backend, tool.label)
                     # Two wood.jpg: the one beside the scene is kept, the other reported.
                     self.assertEqual([c.replace("\\", "/") for c in result.collided], ["pack/other/wood.jpg"])
+                    self.assertEqual(sorted(os.listdir(case_dir)), sorted([name, name.rsplit(".", 1)[0]]))
+                    say(label, True)
+
+    def test_references_unpack_only_the_named_maps(self):
+        """Two phases through one program: the scene alone, then only the maps its asset list names."""
+        for name in ("normal.rar", "solid.rar", "plain.7z"):
+            flavors = [f for f in (UNRAR, SEVENZIP, BSDTAR) if name in self.CASES[f]]
+            for tool, label in self.tools_for("references, %s" % name, flavors):
+                with self.subTest(tool=tool.label, pack=name):
+                    self.only(tool)
+                    case_dir = tempfile.mkdtemp(dir=self.tmp)
+                    pack = os.path.join(case_dir, name)
+                    shutil.copyfile(os.path.join(PACKS, name), pack)
+                    asked = []
+
+                    def refs(max_path):
+                        # The scene is on disk, alone, before any map is asked for.
+                        with open(max_path, "rb") as f:
+                            asked.append((max_path, f.read(), sorted(os.listdir(os.path.dirname(max_path)))))
+                        return ["wood.jpg"]
+
+                    result = archive.unpack(pack, references=refs)
+                    self.assertEqual(len(asked), 1)
+                    staged, data, beside = asked[0]
+                    self.assertEqual(data, TREE["pack/scene/scene.max"])
+                    self.assertEqual(beside, ["scene.max"])
+                    self.assertNotEqual(os.path.normcase(os.path.dirname(staged)),
+                                        os.path.normcase(result.folder), "asked about the staged scene")
+                    self.assertEqual(folder_files(result.folder),
+                                     {"scene.max": TREE["pack/scene/scene.max"], "wood.jpg": b"near wood"})
+                    self.assertEqual((result.mode, result.written, result.unwanted), ("unpacked", 2, 2))
+                    self.assertEqual([c.replace("\\", "/") for c in result.collided], ["pack/other/wood.jpg"])
+                    self.assertEqual(result.backend, tool.label)
+                    self.assertEqual(archive._read_marker(result.folder)["wanted"], ["wood.jpg"])
                     self.assertEqual(sorted(os.listdir(case_dir)), sorted([name, name.rsplit(".", 1)[0]]))
                     say(label, True)
 
