@@ -223,6 +223,8 @@ def run_fixture(path, modules):
     _same, plan = _irs(path)
     result = bpy.ops.import_scene.maxdrop(filepath=path)
     check("%s: the operator finishes" % name, result == {'FINISHED'}, str(result))
+    listed = name in UV_LAYERS  # a named failure, not a KeyError (the plain suite also checks the keys)
+    check("%s: listed in UV_LAYERS of tests/blender/run.py" % name, listed)
     if name == "vray_wrappers":
         check_wrappers_report()
     view_layer = bpy.context.view_layer
@@ -288,9 +290,10 @@ def run_fixture(path, modules):
             check(label + ": vertex and face counts", (len(mesh.vertices), len(mesh.polygons)) ==
                   (o["base_verts"], o["base_faces"]), "%d, %d" % (len(mesh.vertices), len(mesh.polygons)))
         uv = [layer.name for layer in mesh.uv_layers]
-        want = UV_LAYERS[name]
-        check(label + ": UV layers", uv == (want.get(o["name"], ["UVMap"]) if isinstance(want, dict) else want),
-              str(uv))
+        if listed:
+            want = UV_LAYERS[name]
+            check(label + ": UV layers", uv == (want.get(o["name"], ["UVMap"]) if isinstance(want, dict) else want),
+                  str(uv))
         md = desc.meshes[node.mesh]
         for (uv_name, uv_data), layer in zip(md.uv_layers, mesh.uv_layers):
             got = [c for d in layer.data for c in d.uv]

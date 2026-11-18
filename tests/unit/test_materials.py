@@ -23,8 +23,14 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 FIXTURE_DIR = os.path.join(ROOT, "tests", "fixtures")
 FIXTURES = sorted(glob.glob(os.path.join(FIXTURE_DIR, "*.max")))
 TOLERANCE = 1e-5  # relative above 1: the oracle prints 6 significant digits
-# compared values per V-Ray fixture: guards against a parity test that compares nothing
-FLOORS = {"vray_basic": 190, "vray_maps": 630, "vray_wrappers": 2000, "standard_physical": 290, "vray_texmaps": 2900}
+# compared values per fixture, every fixture listed (test_every_fixture_has_a_floor): guards against a parity test
+# that compares nothing. A fixture whose graph is one Standard material compares 125.
+FLOORS = {"box_poly_standard": 120, "corona_layered": 630, "corona_legacy": 370, "corona_light": 180,
+          "corona_maps": 950, "corona_physical": 500, "editable_mesh": 380, "extrude": 120, "gamma_swatches": 540,
+          "hierarchy": 120, "instances": 120, "layers_flags": 120, "modifier_pivot": 120, "multi_uv": 120,
+          "primitives": 120, "shapes": 120, "stack_basic": 120, "stack_convert": 120, "standard_physical": 290,
+          "texmap_rules": 1570, "units_cm": 120, "units_in": 120, "units_mm": 120, "uvwmap": 120,
+          "uvwmap_oblique": 120, "vray_basic": 190, "vray_maps": 630, "vray_texmaps": 2900, "vray_wrappers": 2000}
 
 
 def _load(name, path, package_dir=None):
@@ -144,6 +150,12 @@ class Parity:
 
 
 class Fixtures(unittest.TestCase):
+    def test_every_fixture_has_a_floor(self):
+        names = {os.path.basename(p)[:-4] for p in FIXTURES}
+        self.assertTrue(names)
+        self.assertEqual(sorted(names - set(FLOORS)), [], "fixtures without a FLOORS entry")
+        self.assertEqual(sorted(set(FLOORS) - names), [], "FLOORS entries without a fixture")
+
     def test_raw_param_parity(self):
         for path in FIXTURES:
             name = os.path.basename(path)[:-4]
@@ -177,8 +189,8 @@ class Fixtures(unittest.TestCase):
                     children = {(tuple(g.get(c).class_id), g.get(c).name) for c in m.children}
                     for sub in e["subs"]:
                         self.assertIn(_key(oracle[sub["target"]]), children, where)
-                if name in FLOORS:
-                    self.assertGreaterEqual(parity.compared, FLOORS[name], name)
+                self.assertIn(name, FLOORS, "no FLOORS entry in tests/unit/test_materials.py")
+                self.assertGreaterEqual(parity.compared, FLOORS[name], name)
                 del cf
 
     def test_vray_values_by_id(self):

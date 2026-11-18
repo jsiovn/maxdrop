@@ -9,6 +9,7 @@ groups), the shapes' curves against the oracle's knots and segment midpoints.
 
     python -I -m unittest discover tests
 """
+import ast
 import collections
 import glob
 import importlib
@@ -442,6 +443,34 @@ class Matrices(unittest.TestCase):
                 conv.describe(None, bad)
 
 
+def _run_py_table(name):
+    """A module-level table of tests/blender/run.py, which imports bpy: read from its source."""
+    path = os.path.join(ROOT, "tests", "blender", "run.py")
+    with open(path, encoding="utf-8") as f:
+        tree = ast.parse(f.read(), path)
+    for stmt in tree.body:
+        if isinstance(stmt, ast.Assign) and any(isinstance(t, ast.Name) and t.id == name for t in stmt.targets):
+            return ast.literal_eval(stmt.value)
+    raise AssertionError("no %s in tests/blender/run.py" % name)
+
+
+class FixtureTables(unittest.TestCase):
+    """Every committed fixture has an entry in the per-fixture tables, here and in tests/blender/run.py, so a new
+    fixture fails the plain suite instead of only the Blender run."""
+
+    def _same_names(self, table, where):
+        names = {_name(p) for p in FIXTURES}
+        self.assertTrue(names)
+        self.assertEqual(sorted(names - set(table)), [], "fixtures without an entry in " + where)
+        self.assertEqual(sorted(set(table) - names), [], "entries without a fixture in " + where)
+
+    def test_uv_layers_lists_every_fixture(self):
+        self._same_names(UV_LAYERS, "UV_LAYERS of tests/unit/test_convert_scene.py")
+
+    def test_blender_run_uv_layers_lists_every_fixture(self):
+        self._same_names(_run_py_table("UV_LAYERS"), "UV_LAYERS of tests/blender/run.py")
+
+
 @unittest.skipIf(numpy is None, "numpy missing")
 class Fixtures(unittest.TestCase):
     """Every committed fixture against its 3ds Max oracle."""
@@ -449,9 +478,6 @@ class Fixtures(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.cases = [(_name(p), conv.read(p), _oracle(p)) for p in FIXTURES]
-
-    def test_every_fixture_is_described(self):
-        self.assertEqual(sorted(name for name, _d, _o in self.cases), sorted(UV_LAYERS))
 
     def test_units_follow_the_file(self):
         meters = {name: desc.meters for name, desc, _o in self.cases}
