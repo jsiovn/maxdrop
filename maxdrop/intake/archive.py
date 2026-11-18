@@ -82,8 +82,8 @@ _CHUNK = 1 << 20
 # A marker lists the asset names a filtered unpack wrote for: thousands of escaped CJK names fit.
 _MARKER_READ_MAX = 4 << 20
 
-BY_HAND_TAIL = "Extract the archive by hand and import the .max from that folder."
-_BY_HAND = "%s: MaxDrop cannot read it. " + BY_HAND_TAIL
+_BY_HAND_TAIL = "Extract the archive by hand and import the .max from that folder."
+_BY_HAND = "%s: MaxDrop cannot read it. " + _BY_HAND_TAIL
 
 
 class PackError(Exception):
@@ -93,7 +93,7 @@ class PackError(Exception):
 def password_message(path):
     """The one message for a pack with a password, whichever backend found it and on which entry."""
     return "%s is password-protected: MaxDrop does not ask for passwords. %s" % (os.path.basename(path),
-                                                                                 BY_HAND_TAIL)
+                                                                                 _BY_HAND_TAIL)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -403,10 +403,10 @@ class ZipBackend:
                             out.write(chunk)
                 except PackError:
                     raise
+                except NotImplementedError as e:  # a RuntimeError too: first
+                    raise PackError(_BY_HAND % ("%s needs %s" % (entry.name, e))) from None
                 except RuntimeError:  # zipfile: an encrypted entry and no password
                     raise PackError(password_message(path)) from None
-                except NotImplementedError as e:
-                    raise PackError(_BY_HAND % ("%s needs %s" % (entry.name, e))) from None
                 except Exception as e:  # damaged data (CRC, zlib, bz2, lzma) or a failed write
                     raise PackError("Could not unpack %s (%s). Extract the archive by hand." % (entry.name, e)) \
                         from None
@@ -770,7 +770,7 @@ def preview(path, scene, several, dest_parent=None, references=None):
     decides whether a folder unpacked with a filter serves."""
     path = os.path.abspath(path)
     dest_parent = os.path.abspath(dest_parent or os.path.dirname(path))
-    entry = Entry(scene)
+    entry = Entry(scene.replace("\\", "/"))
     try:
         found = _destination(path, dest_parent, entry, several, _ident(path, os.stat(path)), references)
     except (OSError, PackError):
@@ -849,7 +849,7 @@ def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=Non
     elif scene is None:
         raise PackError("%s holds %d scenes: choose one." % (os.path.basename(path), len(scenes)))
     else:
-        chosen = next((e for e in scenes if e.name == scene), None)
+        chosen = next((e for e in scenes if e.name == scene.replace("\\", "/")), None)
         if chosen is None:
             raise PackError("%s holds no scene %s." % (os.path.basename(path), scene))
     dest_parent = os.path.abspath(dest_parent or os.path.dirname(path))

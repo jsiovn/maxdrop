@@ -74,7 +74,7 @@ MESSAGE_OUTPUT_CAP = 64 << 10
 _WATCH_EVERY = 0.5
 _POLL = 0.05
 _MESSAGE_CHARS = 300
-# archive.BY_HAND_TAIL: this module is loaded while archive.py still is.
+# A copy of archive._BY_HAND_TAIL: archive.py is still loading when it imports this module.
 _BY_YOURSELF = "Extract the archive by hand and import the .max from that folder."
 WORK_PREFIX = ".maxdrop-work-"
 

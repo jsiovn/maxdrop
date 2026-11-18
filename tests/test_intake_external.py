@@ -679,7 +679,8 @@ class StandInTests(TempCase):
         """UnRAR on Windows lists pack\\scene.max: shown and chosen as pack/scene.max, asked for as listed."""
         self.use(self.first)
         self.assertEqual(archive.list_pack(self.pack).scenes, ["pack/scene.max"])
-        self.scripts[UNRAR] = self.WRITE
+        self.scripts[UNRAR] = self.WRITE + ("names = open(sys.argv[2], 'rb').read().decode('utf-8').split('\\n')\n"
+                                            "sys.exit(0 if names[0] == %r else 5)\n" % PLAN[0])
         result = archive.unpack(self.pack, "pack/scene.max")
         self.assertEqual(folder_files(result.folder), {"scene.max": b"MAX", "wood.jpg": b"WOOD"})
         self.assertEqual(archive._read_marker(result.folder)["scene"], "pack/scene.max")

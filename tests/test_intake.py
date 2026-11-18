@@ -628,13 +628,19 @@ class Unreadable(Base):
     def test_an_entry_zipfile_finds_encrypted_gives_the_same_message(self):
         # Not flagged in the listing, refused by zipfile when read: the message does not depend on where.
         path = self.pack([("room.max", b"MAX"), ("wood.jpg", b"W")])
-        entries = archive.ZipBackend().names(path)
         before = files_under(self.tmp)
-        with mock.patch.object(archive.ZipBackend, "names", lambda _self, _path: entries),                 mock.patch.object(zipfile.ZipFile, "open", side_effect=RuntimeError("password required")):
+        with mock.patch.object(zipfile.ZipFile, "open", side_effect=RuntimeError("password required")):
             with self.assertRaises(PackError) as caught:
                 archive.unpack(path, dest_parent=self.out)
         self.assertEqual(str(caught.exception), archive.password_message(path))
         self.assert_clean(before)
+
+    def test_an_entry_zipfile_cannot_decode_is_not_called_encrypted(self):
+        # NotImplementedError is a RuntimeError: e.g. a patched-data flag set in the local header only.
+        path = self.pack([("room.max", b"MAX")])
+        with mock.patch.object(zipfile.ZipFile, "open", side_effect=NotImplementedError("patched data")):
+            with self.assertRaisesRegex(PackError, "^room.max needs patched data: MaxDrop cannot read it"):
+                archive.unpack(path, dest_parent=self.out)
 
     def test_encrypted_entry_that_is_not_written(self):
         path = self.pack([("room.max", b"MAX"), ("secret.txt", b"S")])
@@ -692,7 +698,6 @@ class Names(Base):
         r = archive.unpack(path, dest_parent=self.out)
         self.assertEqual(self.listing(r.folder), sorted([archive.MARKER, "room.max", "Ünï.png", "木纹.jpg"]))
 
-
     def test_backslash_names_are_shown_with_slashes(self):
         path = self.pack([("box\\room.max", b"MAX"), ("box\\maps\\wood.jpg", b"W"), ("box\\bad.jpg", b"B")])
         patch_entry(path, "box\\bad.jpg", method=9)
@@ -703,6 +708,11 @@ class Names(Base):
         r = archive.unpack(path, "box/room.max", dest_parent=self.out, wanted={"wood.jpg"})
         self.assertEqual(self.listing(r.folder), sorted([archive.MARKER, "room.max", "wood.jpg"]))
         self.assertEqual(archive._read_marker(r.folder)["scene"], "box/room.max")
+        # A caller that passes the stored spelling still finds the scene.
+        self.assertEqual(archive.preview(path, "box\\room.max", False, self.out, references=lambda _p: ["wood.jpg"]),
+                         ("reused", r.max_path))
+        self.assertEqual(archive.unpack(path, "box\\room.max", dest_parent=self.out, wanted={"wood.jpg"}).mode,
+                         "reused")
 
     def test_a_marker_written_with_backslashes_is_reused(self):
         path = self.pack([("box\\room.max", b"MAX")])
