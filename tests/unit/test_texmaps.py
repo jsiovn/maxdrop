@@ -438,11 +438,14 @@ class Synthetic(Checks):
             self.assertEqual((g.root.gamma, g.root.colorspace), (1.0, tx.NON_COLOR), path)
         table = assets.AssetTable([assets.AssetEntry(G1, "Bitmap", "maps\\sky.exr", "")])
         for info, gamma, space in ((_info(2.2, 5), 2.2, tx.SRGB), (_info(1.8, 5), 1.8, tx.NON_COLOR),
-                                   (_info(2.2, 4), 1.0, tx.NON_COLOR)):  # an override is kept; no flag: automatic
+                                   (_info(2.2, 4), 1.0, tx.NON_COLOR),  # an override is kept; no flag: automatic
+                                   (_info(50.0, 5), 1.0, tx.NON_COLOR)):  # out of range: automatic
             b, chunk_map = _placed(info=info)
             g = tx.TexmapConverter(FakeGraph(b, chunk_map=chunk_map), table).convert(mat.MapRef(1), tx.COLOR)
             self.close(g.root.gamma, gamma)
             self.assertEqual(g.root.colorspace, space, info.hex())
+        g = _tex(_bitmap(1), table=table).convert(mat.MapRef(1), tx.DATA)
+        self.assertEqual(g.root.colorspace, tx.NON_COLOR)
         g = _tex(_bitmap(1)).convert(mat.MapRef(1), tx.COLOR)
         self.assertEqual((g.root.gamma, g.root.colorspace), (None, tx.SRGB), "an 8-bit file: still automatic")
 

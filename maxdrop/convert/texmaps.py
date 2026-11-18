@@ -14,12 +14,12 @@
 kind says what the input is: COLOR (base color, specular and transmission, which V-Ray and Standard drive with the
 reflection and refraction colors, emission), DATA (roughness, metallic, opacity), NORMAL or BUMP. It sets the color
 space of every image below: sRGB for COLOR, Non-Color for the others (a Mix mask is always Non-Color). A Bitmap's
-gamma override (None: automatic, the default) is kept on its Image: on a color input, an override of 2.2 is sRGB,
-any other is Non-Color and the builder applies the override as a gamma (1.0: none); on the other inputs an image is
-data and the override is not applied. Constants are linear, a swatch made so by the scene's swatch rule
-(convert/colors.py: linear with the gamma on, the sRGB curve with it off): in a COLOR graph always linear RGB (also
-when the input itself is a float, as specular and transmission are: the builder takes the mean of the graph's color
-there, the measure materials.py uses), elsewhere a float, the mean of the linear color.
+gamma override (None: automatic, the default; 1.0 for an EXR or HDR file) is kept on its Image: on a color input, an
+override of 2.2 is sRGB, any other is Non-Color and the builder applies the override as a gamma (1.0: none); on the
+other inputs an image is data and the override is not applied. Constants are linear, a swatch made so by the scene's
+swatch rule (convert/colors.py: linear with the gamma on, the sRGB curve with it off): in a COLOR graph always
+linear RGB (also when the input itself is a float, as specular and transmission are: the builder takes the mean of
+the graph's color there, the measure materials.py uses), elsewhere a float, the mean of the linear color.
 
 The graph's nodes (frozen dataclasses): Image (an image map: the file as the scene stores it, the one the texture lookup
 found, Mapping, Crop, TexOutput, color space, gamma, alpha), Constant, Invert, Mix(a, b, factor, mask), Multiply,
@@ -38,8 +38,8 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
   amount, RGB level and offset) when it changes anything; alpha when the Bitmap gives its alpha to a mono input
   (mono output Alpha) or as its color (RGB output Alpha). A Bitmap without a file is no image (an issue).
 - CoronaBitmap -> Image the same way, from its own parameters: UVW scale and offset, W angle, tiling (none, repeat,
-  mirror) per axis, map channel, blur, clipping (crop or place), gamma (-1 automatic), mono / RGB output alpha, real-
-  world scale (an issue); its Output part as a Bitmap's.
+  mirror) per axis, map channel, blur, clipping (crop or place), gamma (-1 automatic, as a Bitmap's), mono / RGB
+  output alpha, real-world scale (an issue); its Output part as a Bitmap's.
 - VRayBitmap (VRayHDRI before V-Ray 5: the same class) -> Image the same way: its Placement and Output parts as a
   Bitmap's, its own crop / place and mono / RGB output alpha; its transfer function as the gamma (none: 1.0, inverse
   gamma g: 1 / g, sRGB: automatic, from 3ds Max and auto: automatic, linear for an EXR or HDR file), its overall
@@ -215,8 +215,8 @@ class TexOutput:
 class Image:
     """An image map (Bitmap, CoronaBitmap, VRayBitmap). path / resolved: as the scene stores them (resolved:
     FileAssetMetaData3's); found: the textures.Found of the lookup, None without a lookup or when the file was not
-    found; gamma: the override (linear = pixel ^ gamma), None for automatic; alpha: the image's alpha is used, not
-    its color."""
+    found; gamma: the override (linear = pixel ^ gamma), None for automatic (1.0 for an EXR or HDR file); alpha: the
+    image's alpha is used, not its color."""
     index: int
     name: str
     path: str = ""

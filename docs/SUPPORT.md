@@ -84,7 +84,7 @@ the gamma on (2.2, 3ds Max's default since 2014) a swatch's value is taken as li
 (a 128 grey swatch is 0.502 in Blender); with the gamma off it is decoded from sRGB, so it shows as in 3ds Max (128
 grey is 0.216). A file that does not store the setting is taken as gamma on, and the report says so. The report
 names the rule it used. A scene saved in LUT mode is read as gamma on (the file stores it so). Image files are
-sRGB either way (or what their own gamma says). Turn materials off with
+sRGB either way, EXR and HDR files linear (or what their own gamma says). Turn materials off with
 **Object Filter**.
 
 | Material | This version |
