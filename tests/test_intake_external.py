@@ -420,8 +420,9 @@ class HeaderTests(unittest.TestCase):
             external.ExternalBackend("rar", tools=[]).names(path)
         with open(path, "wb") as f:
             f.write(rar5_header(4))
-        with self.assertRaisesRegex(PackError, "password-protected"):
+        with self.assertRaises(PackError) as caught:
             external.ExternalBackend("rar", tools=[]).names(path)
+        self.assertEqual(str(caught.exception), archive.password_message(path))
 
 
 class MessageTests(unittest.TestCase):
@@ -432,7 +433,7 @@ class MessageTests(unittest.TestCase):
         with open(path, "wb") as f:
             f.write(rar5_header(1))
         with self.assertRaisesRegex(PackError, "No program to unpack .rar archives was found.*extract the archive "
-                                               "yourself"):
+                                               "by hand and import the .max from that folder"):
             external.ExternalBackend("rar", tools=[]).names(path)
 
     def test_too_old(self):
@@ -459,11 +460,22 @@ class MessageTests(unittest.TestCase):
     def test_password_and_tool_error(self):
         backend = external.ExternalBackend("rar")
         failures = [external.ToolFailed("UnRAR 7.23", "exit code 11", "Incorrect password for x.jpg")]
-        self.assertIn("password-protected", backend._failure("/p/scene.rar", failures))
+        self.assertEqual(backend._failure("/p/scene.rar", failures), archive.password_message("/p/scene.rar"))
         failures = [external.ToolFailed("bsdtar 3.8.9", "exit code 1", "line\n" * 50 + "x" * 1000)]
         message = backend._failure("/p/scene.rar", failures)
         self.assertIn("bsdtar 3.8.9: exit code 1", message)
         self.assertLess(len(message), 600)
+
+    def test_no_message_says_drop(self):
+        """Since File > Import: every message says to import the .max, none to drop it."""
+        backend = external.ExternalBackend("rar")
+        messages = [backend._none_message("/p/scene.rar", "rar", []),
+                    backend._none_message("/p/scene.rar", "rar", [Tool(UNRAR, "/opt/UnRAR.exe", (7, 1))]),
+                    backend._failure("/p/scene.rar", [external.ToolFailed("UnRAR 7.23", "exit code 1")]),
+                    external._volume_message("/p/scene.part1.rar")]
+        for message in messages:
+            self.assertNotIn("drop", message)
+            self.assertIn("import the .max", message)
 
 
 
@@ -644,9 +656,33 @@ class StandInTests(TempCase):
 
     def test_password_message(self):
         self.scripts[UNRAR] = "import sys\nprint('Incorrect password for pack/scene.max')\nsys.exit(11)\n"
-        with self.assertRaisesRegex(PackError, "password-protected"):
+        with self.assertRaises(PackError) as caught:
             self.use(self.first)()
+        self.assertEqual(str(caught.exception), archive.password_message(self.pack))
         self.assertEqual(self.left(), ["scene.rar"])
+
+    def test_an_entry_listed_as_encrypted_gives_the_password_message(self):
+        listed = self._list
+
+        def encrypted(tool, path):
+            entries = listed(tool, path)
+            entries[1].encrypted = True
+            return entries
+        external.list_entries = encrypted
+        self.scripts[UNRAR] = self.WRITE
+        with self.assertRaises(PackError) as caught:
+            self.use(self.first)()
+        self.assertEqual(str(caught.exception), archive.password_message(self.pack))
+        self.assertEqual(self.left(), ["scene.rar"])
+
+    def test_names_are_listed_with_slashes(self):
+        """UnRAR on Windows lists pack\\scene.max: shown and chosen as pack/scene.max, asked for as listed."""
+        self.use(self.first)
+        self.assertEqual(archive.list_pack(self.pack).scenes, ["pack/scene.max"])
+        self.scripts[UNRAR] = self.WRITE
+        result = archive.unpack(self.pack, "pack/scene.max")
+        self.assertEqual(folder_files(result.folder), {"scene.max": b"MAX", "wood.jpg": b"WOOD"})
+        self.assertEqual(archive._read_marker(result.folder)["scene"], "pack/scene.max")
 
     def test_next_program_on_a_fresh_folder(self):
         self.scripts[UNRAR] = self.WRITE + "open(os.path.join(out, 'junk.jpg'), 'wb').write(b'x')\nsys.exit(2)\n"

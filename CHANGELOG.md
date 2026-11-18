@@ -13,6 +13,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Scene packs: the import popup names the exact folder a pack unpacks into (`<archive> (2)` when that name is
   taken, `<archive>/<scene>` for a pack with several scenes), and names it again when the Scene field picks
   another scene.
+- Scene packs: a password-protected pack gives one message, naming the archive, whether it is a `.zip`, a `.rar`
+  with a password on its data or one with encrypted names; entry names in messages and the Scene field are shown
+  with `/` on every backend, and no message says "drop the .max" any more.
 
 ### Fixed
 

@@ -53,7 +53,8 @@ def write_zip(path, files, compression=zipfile.ZIP_DEFLATED):
 def patch_entry(path, name, flags=0, method=None, size=None, volume=None):
     """Patch the local header and the central directory record of one entry."""
     with zipfile.ZipFile(path) as z:
-        info = z.getinfo(name)
+        # By the stored name: getinfo() knows a backslash name only as its slash form, on Windows only.
+        info = next(i for i in z.infolist() if i.orig_filename == name)
         start = z.start_dir
     raw = info.orig_filename.encode("utf-8" if info.flag_bits & 0x800 else "cp437")
     data = bytearray(read(path))
@@ -322,8 +323,9 @@ class References(Base):
         self.assertEqual((r.written, r.unwanted), (2, 1))
         before = files_under(self.tmp)
         named, _ = self.asker(["secret.jpg"])
-        with self.assertRaisesRegex(PackError, "secret.jpg is encrypted"):
+        with self.assertRaises(PackError) as caught:
             archive.unpack(path, dest_parent=self.tmp, references=named)
+        self.assertEqual(str(caught.exception), archive.password_message(path))
         self.assert_clean(before)
 
     def test_a_failing_question_leaves_nothing(self):
@@ -613,8 +615,25 @@ class Unreadable(Base):
         self.assertEqual(listing.encrypted, ["secret.jpg"])
         self.assertTrue(any("encrypted" in p for p in listing.problems))
         before = files_under(self.tmp)
-        with self.assertRaisesRegex(PackError, "secret.jpg is encrypted.*Extract the archive by hand"):
+        with self.assertRaises(PackError) as caught:
             archive.unpack(path, dest_parent=self.out)
+        self.assertEqual(str(caught.exception), archive.password_message(path))
+        self.assert_clean(before)
+
+    def test_the_password_message_names_the_archive(self):
+        message = archive.password_message(os.path.join(self.tmp, "pack.zip"))
+        self.assertEqual(message, "pack.zip is password-protected: MaxDrop does not ask for passwords. Extract the "
+                                  "archive by hand and import the .max from that folder.")
+
+    def test_an_entry_zipfile_finds_encrypted_gives_the_same_message(self):
+        # Not flagged in the listing, refused by zipfile when read: the message does not depend on where.
+        path = self.pack([("room.max", b"MAX"), ("wood.jpg", b"W")])
+        entries = archive.ZipBackend().names(path)
+        before = files_under(self.tmp)
+        with mock.patch.object(archive.ZipBackend, "names", lambda _self, _path: entries),                 mock.patch.object(zipfile.ZipFile, "open", side_effect=RuntimeError("password required")):
+            with self.assertRaises(PackError) as caught:
+                archive.unpack(path, dest_parent=self.out)
+        self.assertEqual(str(caught.exception), archive.password_message(path))
         self.assert_clean(before)
 
     def test_encrypted_entry_that_is_not_written(self):
@@ -672,6 +691,29 @@ class Names(Base):
         self.assertEqual(listing.guessed, [])
         r = archive.unpack(path, dest_parent=self.out)
         self.assertEqual(self.listing(r.folder), sorted([archive.MARKER, "room.max", "Ünï.png", "木纹.jpg"]))
+
+
+    def test_backslash_names_are_shown_with_slashes(self):
+        path = self.pack([("box\\room.max", b"MAX"), ("box\\maps\\wood.jpg", b"W"), ("box\\bad.jpg", b"B")])
+        patch_entry(path, "box\\bad.jpg", method=9)
+        listing = archive.list_pack(path)
+        self.assertEqual(listing.scenes, ["box/room.max"])
+        with self.assertRaisesRegex(PackError, "^box/bad.jpg "):
+            archive.unpack(path, "box/room.max", dest_parent=self.out)
+        r = archive.unpack(path, "box/room.max", dest_parent=self.out, wanted={"wood.jpg"})
+        self.assertEqual(self.listing(r.folder), sorted([archive.MARKER, "room.max", "wood.jpg"]))
+        self.assertEqual(archive._read_marker(r.folder)["scene"], "box/room.max")
+
+    def test_a_marker_written_with_backslashes_is_reused(self):
+        path = self.pack([("box\\room.max", b"MAX")])
+        first = archive.unpack(path, dest_parent=self.out)
+        marker = os.path.join(first.folder, archive.MARKER)
+        data = archive._read_marker(first.folder)
+        data["scene"] = "box\\room.max"  # as an earlier version wrote a .rar's name listed by UnRAR
+        os.chmod(marker, stat.S_IWRITE | stat.S_IREAD)
+        with open(marker, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        self.assertEqual(archive.unpack(path, dest_parent=self.out).mode, "reused")
 
 
 class Destination(Base):

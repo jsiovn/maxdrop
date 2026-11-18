@@ -82,11 +82,18 @@ _CHUNK = 1 << 20
 # A marker lists the asset names a filtered unpack wrote for: thousands of escaped CJK names fit.
 _MARKER_READ_MAX = 4 << 20
 
-_BY_HAND = "%s: MaxDrop cannot read it. Extract the archive by hand and import the .max from that folder."
+BY_HAND_TAIL = "Extract the archive by hand and import the .max from that folder."
+_BY_HAND = "%s: MaxDrop cannot read it. " + BY_HAND_TAIL
 
 
 class PackError(Exception):
     """The one error of this module; its message tells the user what to do."""
+
+
+def password_message(path):
+    """The one message for a pack with a password, whichever backend found it and on which entry."""
+    return "%s is password-protected: MaxDrop does not ask for passwords. %s" % (os.path.basename(path),
+                                                                                 BY_HAND_TAIL)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -396,8 +403,8 @@ class ZipBackend:
                             out.write(chunk)
                 except PackError:
                     raise
-                except RuntimeError:
-                    raise PackError(_BY_HAND % ("%s is encrypted" % entry.name)) from None
+                except RuntimeError:  # zipfile: an encrypted entry and no password
+                    raise PackError(password_message(path)) from None
                 except NotImplementedError as e:
                     raise PackError(_BY_HAND % ("%s needs %s" % (entry.name, e))) from None
                 except Exception as e:  # damaged data (CRC, zlib, bz2, lzma) or a failed write
@@ -435,6 +442,10 @@ def _read_entries(backend, path, limits):
     entries = backend.names(path)
     if len(entries) > limits.entries:
         raise too_many
+    # Shown and chosen with / whichever program listed them (UnRAR on Windows writes \); a backend keeps its
+    # own spelling in the key.
+    for e in entries:
+        e.name = e.name.replace("\\", "/")
     return entries
 
 
@@ -572,7 +583,10 @@ def _marker_matches(marker, ident, scene_name, wanted=None, max_path=None):
     """wanted: the name_key() set asked for now, None for every asset, or a references callable (asked about
     max_path, the folder's .max, only when the folder was unpacked with a filter). A folder unpacked with a filter
     serves only a request it covers."""
-    if not (marker is not None and marker.get("format") == MARKER_FORMAT and marker.get("scene") == scene_name
+    stored_scene = marker.get("scene") if marker is not None else None
+    if isinstance(stored_scene, str):
+        stored_scene = stored_scene.replace("\\", "/")  # an earlier version kept the \ of UnRAR's listing
+    if not (marker is not None and marker.get("format") == MARKER_FORMAT and stored_scene == scene_name
             and all(marker.get(k) == v for k, v in ident.items())):
         return False
     stored = marker.get("wanted")
@@ -804,10 +818,10 @@ def _check_staging(staging, targets, path):
                         % os.path.basename(path))
 
 
-def _refuse_unreadable(entries):
+def _refuse_unreadable(entries, path):
     for e in entries:
         if e.encrypted:
-            raise PackError(_BY_HAND % ("%s is encrypted" % e.name))
+            raise PackError(password_message(path))
         if e.unsupported:
             raise PackError(_BY_HAND % ("%s %s" % (e.name, e.unsupported)))
 
@@ -866,13 +880,13 @@ def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=Non
     _free, folder, container, folders = found
     space_at = os.path.dirname(container or folder)
     scene_plan = [(chosen, chosen.base)]
-    _refuse_unreadable([chosen])
+    _refuse_unreadable([chosen], path)
 
     def asset_plan(want, scene_written=None):
         """(entry, target) of the maps to write; scene_written: the bytes of the scene when it is on disk
         already, None when it is written with the maps."""
         assets = _select(entries, chosen, want, result)
-        _refuse_unreadable(assets)
+        _refuse_unreadable(assets, path)
         if len(assets) + 1 > limits.files:
             raise PackError("The scene needs %d files, more than the %d MaxDrop writes from one pack. Extract it "
                             "by hand." % (len(assets) + 1, limits.files))

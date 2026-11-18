@@ -74,7 +74,8 @@ MESSAGE_OUTPUT_CAP = 64 << 10
 _WATCH_EVERY = 0.5
 _POLL = 0.05
 _MESSAGE_CHARS = 300
-_BY_YOURSELF = "Extract the archive yourself, then drop the .max."
+# archive.BY_HAND_TAIL: this module is loaded while archive.py still is.
+_BY_YOURSELF = "Extract the archive by hand and import the .max from that folder."
 WORK_PREFIX = ".maxdrop-work-"
 
 _WINDOWS = os.name == "nt"
@@ -650,11 +651,6 @@ def _volume_message(archive):
             "parts. %s" % (os.path.basename(archive), _BY_YOURSELF))
 
 
-def _password_message(archive):
-    return ("%s is password-protected. MaxDrop does not ask for passwords. %s"
-            % (os.path.basename(archive), _BY_YOURSELF))
-
-
 def _precheck(archive):
     """PackError for what no program will do here; the RAR kind ("rar4" or "rar") otherwise."""
     try:
@@ -667,7 +663,7 @@ def _precheck(archive):
     if problem == "volume":
         raise _error(_volume_message(archive))
     if problem == "encrypted":
-        raise _error(_password_message(archive))
+        raise _error(_archive.password_message(archive))
     if problem == "split":
         raise _error("%s is incomplete or one part of an archive split into several (.7z.001). %s"
                      % (os.path.basename(archive), _BY_YOURSELF))
@@ -851,8 +847,8 @@ class ExternalBackend:
         if old:
             told = " ".join("%s (%s) is older than %s, the first version without known path traversal problems: "
                             "update it." % (t.label, t.path, version_text(FLOORS[t.flavor], t.flavor)) for t in old)
-            return "%s cannot be unpacked safely here. %s Or extract the archive yourself, then drop the .max." \
-                % (base, told)
+            return "%s cannot be unpacked safely here. %s Or extract the archive by hand and import the .max " \
+                "from that folder." % (base, told)
         if sys.platform == "win32":
             what = "7-Zip (7-zip.org)" if order_kind == "7z" else "WinRAR (rarlab.com) or 7-Zip (7-zip.org)"
         elif sys.platform == "darwin":
@@ -863,11 +859,11 @@ class ExternalBackend:
             what = "bsdtar (package libarchive-tools or libarchive), 7-Zip (7zz) or unrar"
         kind = "RAR 4" if order_kind == "rar4" else "." + self.kind
         return ("No program to unpack %s archives was found for %s. Install %s in its standard folder, or extract "
-                "the archive yourself, then drop the .max." % (kind, base, what))
+                "the archive by hand and import the .max from that folder." % (kind, base, what))
 
     def _failure(self, archive, failures):
         if any(_mentions_password(f.output) for f in failures):
-            return _password_message(archive)
+            return _archive.password_message(archive)
         detail = "; ".join("%s: %s%s" % (f.tool_label, f.detail, (" (%s)" % _short(f.output)) if f.output else "")
                            for f in failures)
         return "%s could not be unpacked (%s). %s" % (os.path.basename(archive), detail, _BY_YOURSELF)
