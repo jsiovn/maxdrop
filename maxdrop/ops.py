@@ -252,7 +252,11 @@ def _preview(path, scenes, text):
     if scene not in previews:
         if len(previews) >= _CACHE_MAX:
             previews.clear()
-        previews[scene] = archive.preview(path, scene, len(scenes) > 1, parent, references=_referenced_maps)
+        try:
+            previews[scene] = archive.preview(path, scene, len(scenes) > 1, parent, references=_referenced_maps)
+        except Exception as e:  # cached as None: draw() runs on every redraw
+            print("MaxDrop: could not preview the pack folder of %s (%s)" % (os.path.basename(path), e))
+            previews[scene] = None
         if previews[scene] and previews[scene][0] != "unpacked":
             _remember_preflight(previews[scene][1])
     return previews[scene]
@@ -522,6 +526,7 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
             finally:
                 if window:
                     window.cursor_set('DEFAULT')
+            _TARGETS.pop(_norm(path), None)  # its previews are out of date now: the next invoke() makes new ones
             if result.mode == "unpacked":
                 written.append("%s into %s" % (os.path.basename(path), result.folder))
             resolved.append((result.max_path, result, path))

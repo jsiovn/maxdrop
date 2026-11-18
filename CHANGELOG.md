@@ -8,6 +8,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ## [Unreleased]
 
+### Changed
+
+- Scene packs: the import popup names the exact folder a pack unpacks into (`<archive> (2)` when that name is
+  taken, `<archive>/<scene>` for a pack with several scenes), and names it again when the Scene field picks
+  another scene.
+
 ### Fixed
 
 - A damaged `.max` whose objects reference objects that do not exist no longer risks crashing Blender 4.2 and 4.5

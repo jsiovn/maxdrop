@@ -14,7 +14,8 @@ one material; the counts are printed so that runs on different Blender versions 
 
 Every .max is then packed into a .zip in a scratch folder (the scene with the image and .ies files of its folder
 tree) and imported from it: same checks, no fewer images, unpacked beside the zip. A zip holding it twice under two
-names must be refused in EXEC mode with both names in the message, then import once the scene is named. The same
+names must be refused in EXEC mode with both names in the message, then import once the scene is named; its Scene
+Pack panel names the exact folder of the scene the Scene field names, and the reused one after the import. The same
 files are also chosen through directory + files, as the file browser and a drop pass them: a .max with a
 one-scene zip, a two-scene zip with another pack (refused), a good zip then one with a damaged scene (refused,
 nothing imported, the message names the good one, which stays unpacked), a file named .zip that is not one
@@ -278,7 +279,7 @@ def attempt(**options):
         return {'CANCELLED'}, str(e)
 
 
-def two_scenes(max_path, scratch):
+def two_scenes(max_path, scratch, ops):
     name = os.path.basename(max_path)
     folder = os.path.join(scratch, "two")
     zip_path = make_zip(os.path.join(folder, "two.zip"), [("a/" + name, max_path), ("b/" + SECOND, max_path)])
@@ -287,10 +288,29 @@ def two_scenes(max_path, scratch):
     check("two scenes in a .zip, none named: the message names both",
           ("a/" + name) in message and ("b/" + SECOND) in message, message.strip())
     check("two scenes in a .zip, none named: nothing unpacked", not os.path.exists(os.path.join(folder, "two")))
+    # What invoke() stores (it needs a window): the popup then previews whichever scene the Scene field names.
+    ops._TARGETS[ops._norm(zip_path)] = (folder, None, {})
+    first = os.path.join(folder, "two", os.path.splitext(name)[0])
+    labels = pack_panel(ops, zip_path, "a/" + name)
+    check("Scene Pack panel: names the folder of the scene chosen", labels[-2:] == ["Unpacks into", first],
+          str(labels))
+    second = os.path.join(folder, "two", "second")
+    labels = pack_panel(ops, zip_path, SECOND)
+    check("Scene Pack panel: names it again when the Scene field changes", labels[-2:] == ["Unpacks into", second],
+          str(labels))
+    check("Scene Pack panel: the preview wrote nothing", not os.path.exists(os.path.join(folder, "two")))
     import_one(zip_path, "two scenes in a .zip, %s named" % SECOND, max_name=SECOND, pack_name="two.zip",
                pack_scene=SECOND)
     check("two scenes in a .zip: the named scene is unpacked into its own folder",
           os.path.isfile(os.path.join(folder, "two", "second", SECOND)))
+    check("two scenes in a .zip: the unpack drops the popup's previews", ops._norm(zip_path) not in ops._TARGETS)
+    ops._TARGETS[ops._norm(zip_path)] = (folder, None, {})
+    labels = pack_panel(ops, zip_path, SECOND)
+    check("Scene Pack panel: the scene unpacked before is read from its folder",
+          labels[-2:] == ["Unpacked before: imports from", second], str(labels))
+    labels = pack_panel(ops, zip_path, "a/" + name)
+    check("Scene Pack panel: the other scene unpacks beside it", labels[-2:] == ["Unpacks into", first], str(labels))
+    ops._TARGETS.pop(ops._norm(zip_path), None)
 
 
 def selections(max_path, scratch):
@@ -359,10 +379,23 @@ class FakeLayout:
     def label(self, text="", icon='NONE'):
         self.labels.append(text)
 
+    def prop(self, data, name):
+        pass
+
+    def row(self):
+        return self
+
 
 class FakeOperator:
-    def __init__(self, path):
-        self.files, self.directory, self.filepath = [], "", path
+    def __init__(self, path, pack_scene=""):
+        self.files, self.directory, self.filepath, self.pack_scene = [], "", path, pack_scene
+
+
+def pack_panel(ops, zip_path, scene):
+    """The labels of the Scene Pack panel, as draw() shows them for the Scene field set to scene."""
+    layout = FakeLayout()
+    ops.import_pack(layout, FakeOperator(zip_path, scene), [(zip_path, ops._listing(zip_path))])
+    return layout.labels
 
 
 def preflight_panel(ops, path):
@@ -475,7 +508,7 @@ def run():
             images = import_one(path)
             work = os.path.join(scratch, str(n))
             as_pack(path, work, images, archive)
-            two_scenes(path, work)
+            two_scenes(path, work, ops)
             selections(path, work)
         FIXTURE["modifiers"] = FIXTURE["issues"] = 0
         if not argv:
