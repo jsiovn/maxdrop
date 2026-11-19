@@ -1369,6 +1369,24 @@ class LostMaps(Checks):
         self.assertFalse(g.approximated)
         self.empty_issue(tex, "Output 'out'")
 
+    def test_empty_wrapper_elsewhere(self):
+        tint = FakeMap(2, tx.RGB_TINT, {3: Ref(None)}, cls="RGB Tint", name="t")
+        tex = _tex(FakeMap(1, tx.COMPOSITE, {9: [Ref(3), Ref(2)]}, [3, 2], cls="Composite", name="cp"), tint,
+                   _bitmap(3))
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertEqual(g.root.name, "a.png", "the empty layer is left out")
+        self.empty_issue(tex, "RGB Tint 't'")
+        self.lost_issue_of(tex, "Composite 'cp'", "RGB Tint 't'")
+        c2b = FakeMap(1, tx.VRAY_COLOR2BUMP, {0: Ref(None)}, cls="VRayColor2Bump", name="c2b")
+        tex = _tex(c2b)
+        self.assertIsNone(tex.convert(mat.MapRef(1), tx.BUMP))
+        self.assertEqual([r for _i, r in tex.stats.issues], ["VRayColor2Bump 'c2b': no map, not drawn"])
+        tex = _tex(FakeMap(1, tx.OUTPUT, {0: Ref(2)}, [2], cls="Output", name="out"), tint)
+        self.assertIsNone(tex.convert(mat.MapRef(1), tx.COLOR))
+        self.empty_issue(tex, "RGB Tint 't'")
+        self.lost_issue_of(tex, "Output 'out'", "RGB Tint 't'")
+        self.assertEqual(tex.stats.peeled, collections.Counter())
+
     def lost_issue_of(self, tex, wrapper, lost):
         issues = [r for _i, r in tex.stats.issues if "converts to nothing" in r]
         self.assertEqual(len(issues), 1, tex.stats.issues)

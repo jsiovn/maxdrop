@@ -60,11 +60,11 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
   mode, no mask; any other is peeled).
 - Peeled to the first usable map below, an approximation counted by class: Falloff (map 1 when on, else color 1),
   VRayDirt (the unoccluded map when on, else the unoccluded color), Output (map 1; its own Output's invert kept),
-  RGB Tint (map 1), VRayColor2Bump (its map). An Output, RGB Tint or VRayColor2Bump without a map (or with it
-  off) gives no graph and is an issue on it, counted nowhere: what 3ds Max draws there is not measured, so nothing
-  stands in for it (at the top the input keeps its own value). Any other map class with maps below gives the first
-  image below it (depth first, in reference order), counted the same way; one without is unsupported (counted, no
-  graph).
+  RGB Tint (map 1), VRayColor2Bump (its map). An Output, RGB Tint or VRayColor2Bump without a map (or an Output or
+  RGB Tint with it off; VRayColor2Bump has no switch) gives no graph and is an issue on it, counted nowhere: what
+  3ds Max draws there is not measured, so nothing stands in for it (at the top the input keeps its own value). Any
+  other map class with maps below gives the first image below it (depth first, in reference order), counted the
+  same way; one without is unsupported (counted, no graph).
 - Normal maps (VRayNormalMap, Normal Bump, CoronaNormal) in a normal or bump input -> NormalMap: the normal image
   with the class's multiplier as its strength, flip red / green and swap, and the additional bump map as a Bump with
   its multiplier; a normal map class with only its bump map is that Bump. In any other input it is peeled to its
@@ -849,7 +849,8 @@ def _wrapped(conv, m, map_pid, on_pid, kind, walk, depth, chain):
     """The map of a wrapper that has no color of its own (Output, RGB Tint, VRayColor2Bump). Without a used map it
     gives no graph and is an issue: what 3ds Max draws there was not measured, so nothing stands in for it."""
     if conv._on(m, map_pid, on_pid) is None:
-        conv._issue(walk, m.index, "%s %r: no map (or its map off), not drawn" % (conv._class_name(m), m.name))
+        conv._issue(walk, m.index, "%s %r: %s, not drawn" % (
+            conv._class_name(m), m.name, "no map" if on_pid is None else "no map (or its map off)"))
         return None
     return conv._sub(m, map_pid, on_pid, kind, walk, depth, chain)
 
