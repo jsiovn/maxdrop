@@ -60,6 +60,8 @@
 # Modified for MaxDrop, 2026-11-19 (jsiovn). An import started from a window runs in steps (maxdrop.import_progress):
 # progress in the status bar, Esc cancels and removes what the run made. The unpack and the reading run in a worker
 # thread there; an import from a script or without a window stays synchronous.
+# Modified for MaxDrop, 2026-11-19 (jsiovn). New option Text Encoding: the code page of the names of a file saved by
+# 3ds Max 2012 or older.
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -147,6 +149,22 @@ MODIFIERS = (
      "TurboSmooth and MeshSmooth become Subdivision Surface, Shell Solidify, Symmetry Mirror", 0),
     ('IGNORE', "Ignore", "The objects arrive without these modifiers (each counted in the import report)", 1),
 )
+# Saved in presets by identifier, like UNITS. The codecs are reader.strings.CHOICES.
+TEXT_ENCODINGS = (
+    ('AUTO', "Auto", "The code page the file records, else UTF-8, else Western (1252)", 0),
+    ('CP1252', "Western (1252)", "English and Western European names", 1),
+    ('CP1250', "Central European (1250)", "Polish, Czech, Hungarian and other Central European names", 2),
+    ('CP1251', "Cyrillic (1251)", "Russian, Ukrainian, Bulgarian and other Cyrillic names", 3),
+    ('CP1253', "Greek (1253)", "Greek names", 4),
+    ('CP1254', "Turkish (1254)", "Turkish names", 5),
+    ('CP932', "Japanese (932)", "Japanese names (Shift JIS)", 6),
+    ('CP936', "Simplified Chinese (936)", "Simplified Chinese names (GBK)", 7),
+    ('CP949', "Korean (949)", "Korean names", 8),
+    ('CP950', "Traditional Chinese (950)", "Traditional Chinese names (Big5)", 9),
+    ('UTF_8', "UTF-8", "Names saved as UTF-8", 10),
+)
+TEXT_CODECS = {'CP1252': "cp1252", 'CP1250': "cp1250", 'CP1251': "cp1251", 'CP1253': "cp1253", 'CP1254': "cp1254",
+               'CP932': "cp932", 'CP936': "cp936", 'CP949': "cp949", 'CP950': "cp950", 'UTF_8': "utf-8"}
 UNIT_METERS = {'MILLIMETERS': 0.001, 'CENTIMETERS': 0.01, 'METERS': 1.0, 'INCHES': 0.0254, 'FEET': 0.3048}
 _SEP = re.compile(r"[\\/]")
 
@@ -456,11 +474,12 @@ def _summary(path, result):
 class ImportOptions:
     """The operator's settings an import reads, copied: a modal run outlives the operator that started it."""
     __slots__ = ("units", "scale_objects", "use_image_search", "object_filter", "modifiers", "light_strength",
-                 "keep_targets", "axis_forward", "axis_up")
+                 "keep_targets", "axis_forward", "axis_up", "text_encoding")
+    DEFAULTS = {"text_encoding": 'AUTO'}
 
     def __init__(self, **values):
         for name in self.__slots__:
-            setattr(self, name, values[name])
+            setattr(self, name, values[name] if name in values else self.DEFAULTS[name])
 
     @classmethod
     def of(cls, op):
@@ -532,7 +551,7 @@ def _read_scene(max_path, opts, dirs):
     name = os.path.basename(max_path)
     read = _Read()
     with cfb.CompoundFile(max_path) as cf:
-        sc = reader_scene.Scene.from_file(cf)
+        sc = reader_scene.Scene.from_file(cf, encoding=TEXT_CODECS.get(opts.text_encoding, "AUTO"))
         unit = units.system_unit(sc)
         meters, read.note = _meters(opts.units, unit, opts.scale_objects)
         table = assets.AssetTable.from_file(cf)
@@ -865,6 +884,13 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
         min=0.0, max=1000000.0,
         soft_min=0.0, soft_max=1000.0,
         default=LIGHT_STRENGTH,
+    )
+    text_encoding: EnumProperty(
+        name="Text Encoding",
+        description="How the names of a file saved by 3ds Max 2012 or older are read (they are in the code page "
+        "of the computer that saved it). Files of 3ds Max 2013 and later are Unicode and ignore it",
+        items=TEXT_ENCODINGS,
+        default='AUTO',
     )
     keep_targets: BoolProperty(
         name="Keep Targets",
@@ -1237,6 +1263,7 @@ def import_include(layout, operator):
         layout.column().prop(operator, "object_filter")
         layout.prop(operator, "modifiers")
         layout.prop(operator, "light_strength")
+        layout.prop(operator, "text_encoding")
 
 
 def import_transform(layout, operator):
