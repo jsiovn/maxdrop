@@ -296,21 +296,28 @@ def determinant3(m):
 def sharp_edges(loop_vertices, loop_starts, loop_totals, groups):
     """The edges, as sorted vertex pairs int32 (E, 2), where two faces meet that share no smoothing group."""
     import numpy
-    lv = numpy.asarray(loop_vertices, dtype=numpy.int64)
+    # int32 per loop where it fits (indices are int32, reader.geometry), int64 only for the key: the arrays per loop
+    # are the peak of a mesh's conversion
+    lv = numpy.asarray(loop_vertices, dtype=numpy.int32)
     starts = numpy.asarray(loop_starts, dtype=numpy.int64)
     totals = numpy.asarray(loop_totals, dtype=numpy.int64)
     if not len(lv):
         return numpy.zeros((0, 2), dtype=numpy.int32)
-    face = numpy.repeat(numpy.arange(len(starts)), totals)
-    following = numpy.arange(1, len(lv) + 1)
+    face = numpy.repeat(numpy.arange(len(starts), dtype=numpy.int32), totals)
+    following = numpy.arange(1, len(lv) + 1, dtype=numpy.int32)
     following[starts + totals - 1] = starts  # the last loop of a face closes it
-    a, b = lv, lv[following]
-    lo, hi = numpy.minimum(a, b), numpy.maximum(a, b)
-    key = lo * (int(lv.max()) + 1) + hi
+    b = lv[following]
+    del following
+    lo, hi = numpy.minimum(lv, b), numpy.maximum(lv, b)
+    del b
+    key = lo.astype(numpy.int64)
+    key *= int(lv.max()) + 1
+    key += hi
     order = numpy.argsort(key, kind="stable")
     key, face = key[order], face[order]
     groups = numpy.asarray(groups, dtype=numpy.uint32)
-    _keys, first, counts = numpy.unique(key, return_index=True, return_counts=True)
+    first = numpy.flatnonzero(numpy.concatenate(([True], key[1:] != key[:-1])))  # key is sorted: its runs
+    counts = numpy.diff(numpy.append(first, len(key)))
     two = first[counts == 2]
     sharp = two[(groups[face[two]] & groups[face[two + 1]]) == 0]
     more = [start for start, n in zip(first[counts > 2], counts[counts > 2])
@@ -348,10 +355,11 @@ def valid_faces(loop_vertices, loop_starts, loop_totals):
         good = faces[~repeated]
         if not len(good):
             continue
-        _rows, first = numpy.unique(rows[~repeated], axis=0, return_index=True)
-        doubled = numpy.ones(len(good), dtype=bool)
-        doubled[first] = False
-        keep[good[doubled]] = False
+        rows = rows[~repeated]
+        order = numpy.lexsort(rows.T)  # stable: the earliest face of equal rows comes first
+        rows = rows[order]
+        later = order[1:][(rows[1:] == rows[:-1]).all(axis=1)]
+        keep[good[later]] = False
     return keep
 
 
