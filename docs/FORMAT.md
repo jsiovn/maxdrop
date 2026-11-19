@@ -1067,10 +1067,11 @@ Bitmap's).
 - Corpus scene A (3ds Max 2015 saving in the 2012 format) has UTF-16 names too (every `0x0962`, `0x2042` and DLL
   name has a zero in each odd byte), and the root container `0x2014`: the saved-as version and the root id do not
   tell an 8-bit file, the version that wrote it does.
-- The reader decides from the file's bytes: the DLL file names (`0x2037`) and class names (`0x2042`) are ASCII in
-  every file seen, so in UTF-16 their second byte is 0 and their size even; in 8-bit text the second byte is the
-  second letter. When no name says (no directory), the writer's `3ds Max Version` decides (15 = 3ds Max 2013, the
-  first Unicode version); with nothing at all, UTF-16.
+- The reader decides by the writer's `3ds Max Version`: 15 (3ds Max 2013, the first Unicode version) or more is
+  UTF-16, whatever the names look like. Below 15, or without a version, the DLL file names (`0x2037`) and class
+  names (`0x2042`) vote: an 8-bit name ends with its only NUL, an ASCII name in UTF-16 has a 0 second byte and an
+  even size, any other name (not ASCII, one letter) abstains. Below 15 the file is 8-bit unless the names say
+  UTF-16; without a version, UTF-16 unless they say 8-bit.
 - An 8-bit string is cut at its first NUL and decoded with the code page the summary records (property 1 of
   DocumentSummaryInformation, else SummaryInformation) when it is a Windows ANSI code page, else as UTF-8 when it
   is valid UTF-8, else as cp1252; the import option Text Encoding overrides it. The layer name and the ParamBlock2
@@ -1100,8 +1101,8 @@ Not shown by any fixture yet, so not stated above:
   - not known: the first `u32` of `0x0009`, the fourth `u32` of an entry, the third `u16` of a `0x0013` record,
     `0x0005` and `0x0004` of the old ParamBlock, and the value layout of the types no file has shown (matrix3,
     and the others the reader keeps as raw bytes).
-- Other root container ids: `0x2014` (the 2012 format, corpus scene A) and `0x2023` (corpus scene B) occur in
-  the corpus, and the 64-bit chunk header (size 0, then a `u64`) in large ones.
+- Other root container ids: `0x2014` (the 2012 format, corpus scene A) occurs in the corpus, and the 64-bit
+  chunk header (size 0, then a `u64`) in large ones.
 - Files of 3ds Max 2012 and older: no such file has been read. Taken from the 3ds Max SDK of those versions and
   checked only on synthetic chunks: the 8-bit strings and their NUL, the ParamBlock2 string as a byte count then
   8-bit text, the code page the summary records (the machine's ANSI code page is assumed), the layer name in the

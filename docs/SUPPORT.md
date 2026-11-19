@@ -178,12 +178,13 @@ the scene in the archive is kept.
   | Saved by 3ds Max 2020 | Tested: every test file. |
   | Saved by 3ds Max 2020 in the 2017, 2018 or 2019 format (Save As) | Tested: a test file in each format, names with accents and Chinese characters included. |
   | Saved by 3ds Max 2013 to 2019, 2021 or later, in any format they offer | Expected to work: the same layout as far as seen. Imported whole: a scene saved by 3ds Max 2015 in the 2012 format and one saved by 3ds Max 2020 in the 2018 format. |
-  | Saved by 3ds Max 2012 or older | Expected to work, not tested: no such file has been imported yet. Names are read in the code page the file records, else as UTF-8, else Western (1252); **Text Encoding** (Include) picks another code page (Central European, Cyrillic, Greek, Turkish, Japanese, Chinese, Korean). Checked only on made-up data. |
+  | Saved by 3ds Max 2012 or older | Not verified: no such file has been imported yet. Names are read in the code page the file records, else as UTF-8, else Western (1252); **Text Encoding** (Include) picks another code page (Central European, Cyrillic, Greek, Turkish, Japanese, Chinese, Korean). Checked only on made-up data. |
   | A file with the older `ClassDirectory` stream instead of `ClassDirectory3` | Not supported: it is read as the newer layout, which no file has confirmed; what comes out is not known. |
 
   Text Encoding changes nothing for a file of 3ds Max 2013 or later: its names are Unicode.
 - When a `.max` is dropped, the options popup shows a **File** line: the 3ds Max version, the renderer, the
-  number of objects and the unit, read in a fraction of a second even from a large scene.
+  number of objects and the unit, read in a fraction of a second even from a large scene; for a file with 8-bit
+  names (3ds Max 2012 or older), the code page Auto reads them in.
 - A very large scene works but needs time and memory: see [BASELINE.md](BASELINE.md) (version 0.1.0 next to
   0.0.5, 0.0.4, 0.0.3 and the engine they replaced).
 - **Scene packs**: a `.zip`, `.rar` or `.7z` holding the scene, chosen in *File › Import*; a `.rar` or `.7z` can
@@ -202,7 +203,7 @@ the scene in the archive is kept.
 
 ## What comes next
 
-Toward 1.0: an import with a progress bar that Esc cancels, a time and memory budget for large scenes, and limits
-and fuzz tests against hostile files. Not scheduled yet: Corona lights, V-Ray mesh and dome
+Toward 1.0: an import with a progress bar that Esc cancels, a time and memory budget for large scenes, limits and
+fuzz tests against hostile files, and a file of 3ds Max 2012 or older to check its names against. Not scheduled yet: Corona lights, V-Ray mesh and dome
 lights, IES distributions, the sky and Skylight as the World, camera exposure, and the modifiers that still leave an
 object as its base object (Edit Poly, Edit Mesh, FFD…).

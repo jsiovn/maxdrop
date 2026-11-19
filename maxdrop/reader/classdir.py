@@ -26,8 +26,8 @@ from . import chunks, strings as strings_mod
 
 ChunkError = chunks.ChunkError
 
-_CLASS_ENTRY, _CLASS_IDS, _CLASS_NAME = 0x2040, 0x2060, 0x2042
-_DLL_ENTRY, _DLL_FILE, _DLL_DESCRIPTION = 0x2038, 0x2037, 0x2039
+CLASS_ENTRY, _CLASS_IDS, CLASS_NAME = 0x2040, 0x2060, 0x2042
+DLL_ENTRY, DLL_FILE, _DLL_DESCRIPTION = 0x2038, 0x2037, 0x2039
 _U32 = 0xFFFFFFFF
 
 
@@ -96,8 +96,8 @@ def parse_dlls(data, strings=None):
     """The DllEntry list of a DllDirectory stream (bytes-like or cfb.Stream); strings as chunks.index's."""
     out = []
     for chunk in chunks.index(data, strings=strings):
-        if chunk.id == _DLL_ENTRY and chunk.container:
-            out.append(DllEntry(len(out), _text(chunk, _DLL_FILE), _text(chunk, _DLL_DESCRIPTION)))
+        if chunk.id == DLL_ENTRY and chunk.container:
+            out.append(DllEntry(len(out), _text(chunk, DLL_FILE), _text(chunk, _DLL_DESCRIPTION)))
     return out
 
 
@@ -119,14 +119,14 @@ class ClassDirectory:
         dlls = parse_dlls(dlldir_data, strings) if dlldir_data is not None else []
         classes = []
         for chunk in chunks.index(classdir_data, strings=strings):
-            if chunk.id != _CLASS_ENTRY:
+            if chunk.id != CLASS_ENTRY:
                 continue
             ids = chunk.first(_CLASS_IDS) if chunk.container else None
             if ids is None:
                 raise ChunkError("class entry %d at %d has no 0x%04X chunk" % (len(classes), chunk.offset, _CLASS_IDS))
             dll_index, a, b, superclass = ids.unpack("<iIII")
             dll = dlls[dll_index] if 0 <= dll_index < len(dlls) else None
-            classes.append(ClassEntry(len(classes), ClassId(a, b), superclass, _text(chunk, _CLASS_NAME),
+            classes.append(ClassEntry(len(classes), ClassId(a, b), superclass, _text(chunk, CLASS_NAME),
                                       dll_index, dll))
         return cls(classes, dlls, stream)
 

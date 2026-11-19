@@ -209,12 +209,13 @@ class TestText(unittest.TestCase):
 
 class TestLooksWide(unittest.TestCase):
     def test_votes(self):
-        self.assertTrue(strings.looks_wide([(b"N\0", 8), (b"B\0", 20)]))
-        self.assertFalse(strings.looks_wide([(b"No", 5), (b"Ba", 11)]))
+        self.assertTrue(strings.looks_wide([wide("Node"), wide("No")]))
+        self.assertFalse(strings.looks_wide([narrow("Node"), narrow("No")]))
         self.assertIsNone(strings.looks_wide([]))
-        self.assertIsNone(strings.looks_wide([(b"N", 1), (b"N\0", 2), (b"Na", 3)]))  # too short, then a tie
-        self.assertIsNone(strings.looks_wide([(b"N\0", 7)]))  # an odd count is not UTF-16, a NUL second not 8-bit
-        self.assertFalse(strings.looks_wide([(b"No", 5), (b"Ba", 11), (b"N\0", 8)]))  # the majority
+        self.assertIsNone(strings.looks_wide([narrow("N"), wide("N"), b"x"]))  # one letter: either
+        self.assertIsNone(strings.looks_wide([wide("中文"), wide("Бокс")]))  # no ASCII
+        self.assertIsNone(strings.looks_wide([wide("Node") + b"\0"]))  # odd: not UTF-16, NUL not alone: not 8-bit
+        self.assertFalse(strings.looks_wide([narrow("Node"), narrow("Box"), wide("Node")]))  # the majority
 
 
 class TestSyntheticOldFile(unittest.TestCase):
@@ -240,12 +241,26 @@ class TestSyntheticOldFile(unittest.TestCase):
         self.assertIs(strings.of_file(cf, "cp949"), strings.UNICODE)
         self.assertEqual(read_names(cf, "cp949"), ("Box" + KOREAN, "Layer" + KOREAN, "Base Layer", "some.dlo"))
 
-    def test_bytes_decide_before_version(self):
-        """3ds Max 2015 saving in the 2012 format writes UTF-16; a summary claiming 2020 over 8-bit names loses."""
-        cf = old_file(wide("Box"), b"0", version="14.00", enc=wide)
+    def test_version_decides_from_2013(self):
+        """A version of 15 (3ds Max 2013) or more is UTF-16 whatever the names look like: a Unicode file whose
+        class names are mostly not ASCII must never be cut at its first NUL."""
+        classes = b"".join(class_entry(0x100 + k, 0, 0x10, "中文%d" % k, wide) for k in range(60))
+        classes += class_entry(1, 0, 1, "Node", wide)
+        cf = FakeFile(ClassDirectory3=classes, Scene=scene_stream(wide("Box001"), b"0"),
+                      doc_summary=summary(metadata.FMTID_DOC_SUMMARY, version="22.00"))
         self.assertIs(strings.of_file(cf), strings.UNICODE)
-        cf = old_file(narrow("Box"), narrow("0"), version="22.00")
-        self.assertFalse(strings.of_file(cf).wide)
+        cf = old_file(narrow("Box"), narrow("0"), version="22.00")  # 8-bit names under 2020: the version wins
+        self.assertIs(strings.of_file(cf), strings.UNICODE)
+
+    def test_names_confirm_an_older_version(self):
+        """Below 15 the file is 8-bit unless its names say UTF-16 (corpus scene A, 3ds Max 2015 saving in the 2012
+        format, is UTF-16 and says 17.00)."""
+        self.assertIs(strings.of_file(old_file(wide("Box"), b"0", version="14.00", enc=wide)), strings.UNICODE)
+        self.assertFalse(strings.of_file(old_file(narrow("Box"), narrow("0"), version="14.00")).wide)
+
+    def test_names_decide_without_version(self):
+        self.assertFalse(strings.of_file(old_file(narrow("Box"), narrow("0"), version=None)).wide)
+        self.assertIs(strings.of_file(old_file(wide("Box"), b"0", version=None, enc=wide)), strings.UNICODE)
 
     def test_version_when_bytes_say_nothing(self):
         empty = dict(ClassDirectory3=b"", Scene=scene_stream(narrow("Box"), narrow("0")))
@@ -258,6 +273,32 @@ class TestSyntheticOldFile(unittest.TestCase):
         cf = old_file(narrow(KOREAN, "cp949"), narrow("0"), code_page=None, version=None)
         cf.streams["\x05SummaryInformation"] = Stream(summary(metadata.FMTID_SUMMARY, 949))
         self.assertEqual(strings.of_file(cf).codec, "cp949")
+        cf = old_file(narrow(KOREAN, "cp949"), narrow("0"), code_page=65001, version=None)  # UTF-8 says nothing
+        cf.streams["\x05SummaryInformation"] = Stream(summary(metadata.FMTID_SUMMARY, 949))
+        self.assertEqual(strings.of_file(cf).codec, "cp949")
+
+    def test_oversized_summary_is_not_read(self):
+        class Huge(Stream):
+            @property
+            def size(self):
+                return metadata.MAX_STREAM + 1
+
+            def read(self):
+                raise AssertionError("read past the cap")
+
+        cf = old_file(narrow("Box"), narrow("0"), code_page=None, version=None)
+        cf.streams[metadata.DOC_SUMMARY] = Huge(summary(metadata.FMTID_DOC_SUMMARY, 949))
+        cf.streams["\x05SummaryInformation"] = Huge(summary(metadata.FMTID_SUMMARY, 949))
+        self.assertEqual(strings.of_file(cf), strings.Strings(False))
+
+    def test_summary_strings_in_a_recorded_code_page(self):
+        """metadata decodes the 8-bit strings of a property set in the ANSI code page it records."""
+        raw = KOREAN.encode("cp949") + b"\0"
+        sec = _section([(1, struct.pack("<Ihh", metadata.VT_I2, 949, 0)),
+                        (13, struct.pack("<III", metadata.VT_VECTOR | metadata.VT_LPSTR, 1, len(raw)) + _pad(raw))])
+        data = (b"\xfe\xff\x00\x00\x0a\x00\x02\x00" + b"\0" * 16 + struct.pack("<I", 1) +
+                metadata.FMTID_DOC_SUMMARY.bytes_le + struct.pack("<I", 48) + sec)
+        self.assertEqual(metadata.property_sets(data)[metadata.FMTID_DOC_SUMMARY][13], [KOREAN])
 
     def test_damaged_summary_records_nothing(self):
         cf = old_file(narrow("Box"), narrow("0"), code_page=None, version=None)

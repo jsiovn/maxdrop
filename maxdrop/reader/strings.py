@@ -11,12 +11,13 @@
 
 3ds Max 2013 made its strings Unicode: since then a name chunk (node 0x0962, class 0x2042, material 0x4001, ...)
 holds UTF-16LE without a terminator. Older versions wrote the same chunks as 8-bit text in the code page of the
-machine that saved the file, ended by a NUL. What decides is the file's own bytes: the DLL file names and class
-names of the directories are plain ASCII on every file seen, so UTF-16 shows as a zero in the second byte of each,
-8-bit text as a letter there. Only when they say nothing (no directory, no name of two bytes or more) does the
-version that wrote the file decide (`3ds Max Version` of the summary, 15 = 3ds Max 2013). The saved-as version
-does not: 3ds Max 2015 saving in the 2012 format still writes UTF-16 (corpus scene A), and so does the root
-container id (0x2014 = the 2012 format, written by both).
+machine that saved the file, ended by a NUL. What decides is the version that wrote the file (`3ds Max Version` of
+the summary, 15 = 3ds Max 2013): from 15 on, UTF-16. The saved-as version does not: 3ds Max 2015 saving in the 2012
+format still writes UTF-16 (corpus scene A), and so does the root container id (0x2014 = the 2012 format, written
+by both). Below 15, or without a version, the DLL file names and class names of the directories vote: a name of
+8-bit text ends with its only NUL; an ASCII name in UTF-16 has a zero in its second byte. A name that is neither
+(a UTF-16 name in Chinese, a one-letter name) abstains. Below 15 the file is 8-bit unless the names say UTF-16;
+without a version it is UTF-16 unless they say 8-bit.
 
 An 8-bit string is cut at its first NUL and decoded with, by choice:
     "AUTO"      the code page the summary streams record (property 1), when it is one of CODE_PAGES; else each
@@ -44,6 +45,7 @@ CODECS = frozenset(codec for codec, _label in CHOICES)
 CODE_PAGES = metadata.CODE_PAGES
 WIDE_FROM = 15  # the major version of 3ds Max 2013, the first to write UTF-16
 SNIFF_NAMES = 64  # names looked at per directory: enough to outvote a damaged one, bounded on a hostile file
+MAX_NAME = 512  # bytes of one name looked at
 _SUMMARIES = ("\x05DocumentSummaryInformation", "\x05SummaryInformation")
 
 
@@ -83,29 +85,30 @@ UNICODE = Strings(True)
 
 
 def looks_wide(names):
-    """True when ASCII names are UTF-16LE, False when they are 8-bit, None when they do not say. names: (first two
-    bytes, byte count) of each. The second byte of an ASCII character in UTF-16 is 0 (and the count even); the
-    second character of an 8-bit name is not 0."""
+    """True when the names (bytes, at most MAX_NAME of each) look UTF-16LE, False when they look 8-bit, None when
+    they do not say. An 8-bit name of two characters or more ends with its only NUL; an ASCII name in UTF-16 has a 0
+    second byte and an even size; any other name abstains."""
     wide = narrow = 0
-    for head, size in names:
-        if size < 2 or len(head) < 2:
-            continue
-        if head[1] == 0 and not size & 1:
-            wide += 1
-        elif head[1] != 0:
+    for raw in names:
+        if len(raw) < 3:
+            continue  # b"x\0" is a one-letter 8-bit name and "x" in UTF-16 alike
+        if raw[-1] == 0 and raw.count(0) == 1:
             narrow += 1
+        elif raw[1] == 0 and not len(raw) & 1:
+            wide += 1
     if wide == narrow:
         return None
     return wide > narrow
 
 
 def _directory_names(cf):
-    """(first two bytes, byte count) of the first SNIFF_NAMES DLL file names and class names of the file."""
+    """The first SNIFF_NAMES DLL file names and class names of the file, as bytes; a name longer than MAX_NAME is
+    left out (no ASCII DLL or class name is that long)."""
     from . import classdir
     out = []
-    for stream, entry, name in (("DllDirectory", classdir._DLL_ENTRY, classdir._DLL_FILE),
-                                ("ClassDirectory3", classdir._CLASS_ENTRY, classdir._CLASS_NAME),
-                                ("ClassDirectory", classdir._CLASS_ENTRY, classdir._CLASS_NAME)):
+    for stream, entry, name in (("DllDirectory", classdir.DLL_ENTRY, classdir.DLL_FILE),
+                                ("ClassDirectory3", classdir.CLASS_ENTRY, classdir.CLASS_NAME),
+                                ("ClassDirectory", classdir.CLASS_ENTRY, classdir.CLASS_NAME)):
         if not cf.exists(stream):
             continue
         taken = 0
@@ -115,8 +118,8 @@ def _directory_names(cf):
             if chunk.id != entry or not chunk.container:
                 continue
             found = chunk.first(name)
-            if found is not None:
-                out.append((bytes(found.view()[:2]), found.payload_size))
+            if found is not None and found.payload_size <= MAX_NAME:
+                out.append(found.tobytes())
                 taken += 1
         if stream == "ClassDirectory3" and taken:
             break  # ClassDirectory is the older name of the same stream
@@ -124,17 +127,20 @@ def _directory_names(cf):
 
 
 def code_page(cf):
-    """The codec of the code page the file's summary records (DocumentSummaryInformation, else
-    SummaryInformation), None when it records none or one that is not in CODE_PAGES."""
+    """The codec of the first code page of CODE_PAGES the file's summary records (DocumentSummaryInformation, then
+    SummaryInformation), None when neither records one."""
     for name in _SUMMARIES:
         if not cf.exists(name):
             continue
         try:
-            page = metadata.code_page(cf.open(name, decompress=False).read())
+            stream = cf.open(name, decompress=False)
+            if stream.size > metadata.MAX_STREAM:
+                continue
+            page = metadata.code_page(stream.read())
         except ValueError:  # MetadataError, or a damaged stream (CfbError): this stream records none
             continue
-        if page is not None:
-            return CODE_PAGES.get(page)
+        if page in CODE_PAGES:
+            return CODE_PAGES[page]
     return None
 
 
@@ -151,13 +157,14 @@ def of_file(cf, choice="AUTO"):
     """The Strings of an open cfb.CompoundFile. choice: "AUTO" or one of CODECS, for 8-bit strings only."""
     if choice != "AUTO" and choice not in CODECS:
         raise ValueError("unknown text encoding %r" % (choice,))
+    major = writer_version(cf)
+    if major is not None and major >= WIDE_FROM:
+        return UNICODE
     try:
-        wide = looks_wide(_directory_names(cf))
+        voted = looks_wide(_directory_names(cf))
     except ValueError:  # ChunkError or CfbError: the class directory's own reading reports the damage
-        wide = None
-    if wide is None:
-        major = writer_version(cf)
-        wide = major is None or major >= WIDE_FROM
+        voted = None
+    wide = voted is True if major is not None else voted is not False
     if wide:
         return UNICODE
     return Strings(False, code_page(cf) if choice == "AUTO" else choice)

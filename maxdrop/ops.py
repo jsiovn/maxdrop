@@ -61,7 +61,7 @@
 # progress in the status bar, Esc cancels and removes what the run made. The unpack and the reading run in a worker
 # thread there; an import from a script or without a window stays synchronous.
 # Modified for MaxDrop, 2026-11-19 (jsiovn). New option Text Encoding: the code page of the names of a file saved by
-# 3ds Max 2012 or older.
+# 3ds Max 2012 or older; the pre-flight line names the one Auto chose for such a file.
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -384,7 +384,7 @@ def _meters(choice, unit, scale):
 def _preflight(path):
     """One line about a .max before it is imported: 3ds Max version, renderer, objects (nodes), unit. Reads the
     summary stream and the index of the Scene stream, not the objects (0.1 s on a scene of 800 MB)."""
-    from .reader import cfb, metadata, units
+    from .reader import cfb, metadata, strings, units
     from .reader import scene as reader_scene
     try:
         with cfb.CompoundFile(path) as cf:
@@ -395,6 +395,7 @@ def _preflight(path):
             sc = reader_scene.Scene.from_file(cf)
             unit = units.system_unit(sc)
             nodes = len(sc.node_indices)
+            names = sc.strings
     except _UNREADABLE as e:
         return "Not readable as a .max file (%s)" % e
     release = info.get("max_release")
@@ -404,6 +405,9 @@ def _preflight(path):
         parts.append(renderer)
     parts.append(_plural(nodes, "object"))
     parts.append(unit.name if unit is not None else "unit not stated")
+    if not names.wide:  # what Auto chose for an 8-bit file, so the user knows whether to set Text Encoding
+        parts.append("names: " + (dict(strings.CHOICES).get(names.codec, names.codec) if names.codec
+                                  else "UTF-8, else Western (1252)"))
     return ", ".join(parts)
 
 
@@ -475,7 +479,7 @@ class ImportOptions:
     """The operator's settings an import reads, copied: a modal run outlives the operator that started it."""
     __slots__ = ("units", "scale_objects", "use_image_search", "object_filter", "modifiers", "light_strength",
                  "keep_targets", "axis_forward", "axis_up", "text_encoding")
-    DEFAULTS = {"text_encoding": 'AUTO'}
+    DEFAULTS = {"text_encoding": 'AUTO'}  # an option added after scripts and tests that build ImportOptions
 
     def __init__(self, **values):
         for name in self.__slots__:
