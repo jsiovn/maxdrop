@@ -19,33 +19,26 @@ Exit code 0, 1 when the file cannot be read, 2 for a usage error.
 """
 import argparse
 import collections
-import importlib.util
+import importlib
 import json
 import os
 import sys
 import time
+import types
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_READER = os.path.join(ROOT, "maxdrop", "reader")
 
-
-def _load(name, path, package_dir=None):
-    if name in sys.modules:
-        return sys.modules[name]
-    kw = {"submodule_search_locations": [package_dir]} if package_dir else {}
-    spec = importlib.util.spec_from_file_location(name, path, **kw)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-# By path, as a package of its own: `import maxdrop` would run the add-on's __init__ and pull bpy.
-_load("maxdrop_reader", os.path.join(_READER, "__init__.py"), _READER)
-cfb = _load("maxdrop_reader.cfb", os.path.join(_READER, "cfb.py"))
-chunks = _load("maxdrop_reader.chunks", os.path.join(_READER, "chunks.py"))
-scene = _load("maxdrop_reader.scene", os.path.join(_READER, "scene.py"))
-modifiers_ = _load("maxdrop_reader.modifiers", os.path.join(_READER, "modifiers.py"))
+# A package of its own whose path is maxdrop/: the reader's relative imports (..pathnames) resolve,
+# and maxdrop/__init__.py (which imports bpy) never runs.
+_PKG = "maxdrop_tool"
+if _PKG not in sys.modules:
+    _pkg = types.ModuleType(_PKG)
+    _pkg.__path__ = [os.path.join(ROOT, "maxdrop")]
+    sys.modules[_PKG] = _pkg
+cfb = importlib.import_module(_PKG + ".reader.cfb")
+chunks = importlib.import_module(_PKG + ".reader.chunks")
+scene = importlib.import_module(_PKG + ".reader.scene")
+modifiers_ = importlib.import_module(_PKG + ".reader.modifiers")
 
 SPECIAL_NAMES = {modifiers_.DERIVED_OBJECT: "(derived object)",
                  modifiers_.WSM_DERIVED_OBJECT: "(world-space derived object)"}

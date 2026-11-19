@@ -9,35 +9,28 @@ for the unit types and scales no fixture has.
     python -I -m unittest discover tests
 """
 import glob
-import importlib.util
+import importlib
 import json
 import math
 import os
 import struct
 import sys
+import types
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 FIXTURES = sorted(glob.glob(os.path.join(ROOT, "tests", "fixtures", "*.max")))
 
 
-def _load(name, path, package_dir=None):
-    if name in sys.modules:
-        return sys.modules[name]
-    kw = {"submodule_search_locations": [package_dir]} if package_dir else {}
-    spec = importlib.util.spec_from_file_location(name, path, **kw)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-_READER = os.path.join(ROOT, "maxdrop", "reader")
-_load("maxdrop_reader", os.path.join(_READER, "__init__.py"), _READER)
-cfb = _load("maxdrop_reader.cfb", os.path.join(_READER, "cfb.py"))
-classdir = _load("maxdrop_reader.classdir", os.path.join(_READER, "classdir.py"))
-scene = _load("maxdrop_reader.scene", os.path.join(_READER, "scene.py"))
-units = _load("maxdrop_reader.units", os.path.join(_READER, "units.py"))
+_PKG = "maxdrop_convert_test"  # the package the convert tests make: maxdrop/__init__.py (bpy) never runs
+if _PKG not in sys.modules:
+    _pkg = types.ModuleType(_PKG)
+    _pkg.__path__ = [os.path.join(ROOT, "maxdrop")]
+    sys.modules[_PKG] = _pkg
+cfb = importlib.import_module(_PKG + ".reader.cfb")
+classdir = importlib.import_module(_PKG + ".reader.classdir")
+scene = importlib.import_module(_PKG + ".reader.scene")
+units = importlib.import_module(_PKG + ".reader.units")
 
 
 def _fixture(name):

@@ -9,30 +9,23 @@ fixtures are checked against the 3ds Max oracle in test_materials.py.
     python -I -m unittest discover tests
 """
 import glob
-import importlib.util
+import importlib
 import os
 import struct
 import sys
+import types
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-def _load(name, path, package_dir=None):
-    if name in sys.modules:
-        return sys.modules[name]
-    kw = {"submodule_search_locations": [package_dir]} if package_dir else {}
-    spec = importlib.util.spec_from_file_location(name, path, **kw)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-_READER = os.path.join(ROOT, "maxdrop", "reader")
-_load("maxdrop_reader", os.path.join(_READER, "__init__.py"), _READER)
-chunks = _load("maxdrop_reader.chunks", os.path.join(_READER, "chunks.py"))
-pblock = _load("maxdrop_reader.pblock", os.path.join(_READER, "pblock.py"))
+_PKG = "maxdrop_convert_test"  # the package the convert tests make: maxdrop/__init__.py (bpy) never runs
+if _PKG not in sys.modules:
+    _pkg = types.ModuleType(_PKG)
+    _pkg.__path__ = [os.path.join(ROOT, "maxdrop")]
+    sys.modules[_PKG] = _pkg
+chunks = importlib.import_module(_PKG + ".reader.chunks")
+pblock = importlib.import_module(_PKG + ".reader.pblock")
 ChunkError = chunks.ChunkError
 Reference, Animated, Asset = pblock.Reference, pblock.Animated, pblock.Asset
 
@@ -427,8 +420,8 @@ class OwnerSlotsOnFixtures(unittest.TestCase):
     """Every fixture block with a 0x0013 table, blanked like a format-14000 block, gives the same references."""
 
     def test_blanked_blocks_resolve_the_same(self):
-        cfb = _load("maxdrop_reader.cfb", os.path.join(_READER, "cfb.py"))
-        scene = _load("maxdrop_reader.scene", os.path.join(_READER, "scene.py"))
+        cfb = importlib.import_module(_PKG + ".reader.cfb")
+        scene = importlib.import_module(_PKG + ".reader.scene")
         checked, classes = 0, set()
         for path in sorted(glob.glob(os.path.join(ROOT, "tests", "fixtures", "*.max"))):
             with cfb.CompoundFile(path) as cf:

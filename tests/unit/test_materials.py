@@ -11,12 +11,13 @@ objects that are not materials.
     python -I -m unittest discover tests
 """
 import glob
-import importlib.util
+import importlib
 import json
 import math
 import os
 import struct
 import sys
+import types
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -36,26 +37,18 @@ FLOORS = {"vray_lights": 0, "lights_standard": 0, "lights_photometric": 0, "box_
           "uvwmap_oblique": 120, "vray_basic": 190, "vray_maps": 630, "vray_texmaps": 2900, "vray_wrappers": 2000}
 
 
-def _load(name, path, package_dir=None):
-    if name in sys.modules:
-        return sys.modules[name]
-    kw = {"submodule_search_locations": [package_dir]} if package_dir else {}
-    spec = importlib.util.spec_from_file_location(name, path, **kw)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-_READER = os.path.join(ROOT, "maxdrop", "reader")
-_load("maxdrop_reader", os.path.join(_READER, "__init__.py"), _READER)
-cfb = _load("maxdrop_reader.cfb", os.path.join(_READER, "cfb.py"))
-chunks = _load("maxdrop_reader.chunks", os.path.join(_READER, "chunks.py"))
-classdir = _load("maxdrop_reader.classdir", os.path.join(_READER, "classdir.py"))
-classids = _load("maxdrop_reader.classids", os.path.join(_READER, "classids.py"))
-scene = _load("maxdrop_reader.scene", os.path.join(_READER, "scene.py"))
-pblock = _load("maxdrop_reader.pblock", os.path.join(_READER, "pblock.py"))
-materials = _load("maxdrop_reader.materials", os.path.join(_READER, "materials.py"))
+_PKG = "maxdrop_convert_test"  # the package the convert tests make: maxdrop/__init__.py (bpy) never runs
+if _PKG not in sys.modules:
+    _pkg = types.ModuleType(_PKG)
+    _pkg.__path__ = [os.path.join(ROOT, "maxdrop")]
+    sys.modules[_PKG] = _pkg
+cfb = importlib.import_module(_PKG + ".reader.cfb")
+chunks = importlib.import_module(_PKG + ".reader.chunks")
+classdir = importlib.import_module(_PKG + ".reader.classdir")
+classids = importlib.import_module(_PKG + ".reader.classids")
+scene = importlib.import_module(_PKG + ".reader.scene")
+pblock = importlib.import_module(_PKG + ".reader.pblock")
+materials = importlib.import_module(_PKG + ".reader.materials")
 ChunkError = chunks.ChunkError
 
 

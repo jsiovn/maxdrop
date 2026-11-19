@@ -22,29 +22,22 @@ Those bytes can hold names and paths: do not paste the output of a scene that is
 file cannot be read, 2 for a usage error.
 """
 import argparse
-import importlib.util
+import importlib
 import os
 import sys
+import types
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_READER = os.path.join(ROOT, "maxdrop", "reader")
 
-
-def _load(name, path, package_dir=None):
-    if name in sys.modules:
-        return sys.modules[name]
-    kw = {"submodule_search_locations": [package_dir]} if package_dir else {}
-    spec = importlib.util.spec_from_file_location(name, path, **kw)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-# By path, as a package of its own: `import maxdrop` would run the add-on's __init__ and pull bpy.
-_load("maxdrop_reader", os.path.join(_READER, "__init__.py"), _READER)
-cfb = _load("maxdrop_reader.cfb", os.path.join(_READER, "cfb.py"))
-chunks = _load("maxdrop_reader.chunks", os.path.join(_READER, "chunks.py"))
+# A package of its own whose path is maxdrop/: the reader's relative imports (..pathnames) resolve,
+# and maxdrop/__init__.py (which imports bpy) never runs.
+_PKG = "maxdrop_tool"
+if _PKG not in sys.modules:
+    _pkg = types.ModuleType(_PKG)
+    _pkg.__path__ = [os.path.join(ROOT, "maxdrop")]
+    sys.modules[_PKG] = _pkg
+cfb = importlib.import_module(_PKG + ".reader.cfb")
+chunks = importlib.import_module(_PKG + ".reader.chunks")
 
 _GAP = 8  # differing byte ranges closer than this are reported as one
 _BLOCK = 4096
