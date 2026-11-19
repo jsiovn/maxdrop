@@ -9,6 +9,7 @@ several disks) its bytes are patched.
     python -I -m unittest discover tests
 """
 import ast
+import contextlib
 import importlib
 import json
 import os
@@ -1145,6 +1146,8 @@ class Race(Base):
         real, moved = os.rename, []
 
         def failing(src, dst):
+            if os.path.isdir(src):  # the destination, renamed into place holding its reservation
+                return real(src, dst)
             moved.append(os.path.basename(dst))
             if len(moved) == 3:
                 raise OSError("disk gone")
@@ -1231,6 +1234,8 @@ class Reservation(Base):
             return reserved[-1]
 
         def rename(src, dst):
+            if os.path.isdir(src):  # a folder renamed into place, not a file move
+                return real_rename(src, dst)
             if moves is not None and moves == 0:
                 raise Crash()
             if moves is not None:
@@ -1453,6 +1458,122 @@ class Reservation(Base):
         self.assertEqual(r.folder, moved)
         self.assertEqual(self.listing(moved), sorted([archive.MARKER, "room.max", "stone.png", "wood.jpg"]))
         self.assertEqual(os.listdir(made), [])
+
+    def test_the_destination_appears_holding_its_reservation(self):
+        several = [("one.max", b"1"), ("two.max", b"2"), ("wood.jpg", b"W")]
+        for files, scene, expected in (
+                (self.FILES, None, [("pack", [archive.RESERVATION])]),
+                (several, "two.max", [("pack", [archive.MARKER]), (os.path.join("pack", "two"),
+                                                                   [archive.RESERVATION])])):
+            with self.subTest(scene=scene):
+                out = tempfile.mkdtemp(dir=self.tmp)
+                real, made = os.rename, []
+
+                def rename(src, dst):
+                    if os.path.isdir(src):
+                        self.assertFalse(os.path.lexists(dst))
+                        made.append((os.path.relpath(dst, out), sorted(os.listdir(src))))
+                    return real(src, dst)
+                with mock.patch.object(archive.os, "rename", rename):
+                    archive.unpack(self.pack(files), scene, dest_parent=out)
+                self.assertEqual(made, expected)
+
+    def crash_on_make(self, path, scene=None, at_marker=False):
+        """unpack() stopped while a folder is filled under its staging name, before it is renamed into place: the
+        destination's (at its rename) or the pack folder's (at_marker: at its marker). No cleanup runs; what it
+        leaves is aged."""
+        real = os.rename
+
+        def rename(src, dst):
+            if os.path.isdir(src) and not at_marker:
+                raise Crash()
+            return real(src, dst)
+
+        def marker(*args):
+            raise Crash()
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch.object(archive.os, "rename", rename))
+            stack.enter_context(mock.patch.object(archive.shutil, "rmtree"))
+            if at_marker:
+                stack.enter_context(mock.patch.object(archive, "_write_marker", marker))
+            with self.assertRaises(Crash):
+                archive.unpack(path, scene, dest_parent=self.out)
+        for parent, dirs, files in os.walk(self.out):
+            self.age(*[os.path.join(parent, n) for n in dirs + files])
+
+    def assert_only_staging(self, folder):
+        left = self.listing(folder)
+        self.assertTrue(left and all(n.startswith(archive.STAGING_PREFIX) for n in left), left)
+
+    def test_a_crash_before_the_destination_is_in_place_leaves_no_folder(self):
+        path = self.pack(self.FILES)
+        self.crash_on_make(path)
+        self.assert_only_staging(self.out)
+        r = archive.unpack(path, dest_parent=self.out)
+        self.assertEqual((r.mode, r.folder), ("unpacked", os.path.join(self.out, "pack")))
+        self.assertEqual(self.listing(self.out), ["pack"])
+
+    def test_a_crash_before_the_pack_folder_is_in_place_leaves_no_folder(self):
+        path = self.pack([("one.max", b"1"), ("two.max", b"2"), ("wood.jpg", b"W")])
+        self.crash_on_make(path, "two.max", at_marker=True)
+        self.assert_only_staging(self.out)
+        r = archive.unpack(path, "two.max", dest_parent=self.out)
+        self.assertEqual((r.mode, r.folder), ("unpacked", os.path.join(self.out, "pack", "two")))
+        self.assertEqual(self.listing(self.out), ["pack"])
+        self.assertEqual(self.listing(os.path.join(self.out, "pack")), sorted([archive.MARKER, "two"]))
+
+    def test_a_folder_that_cannot_be_renamed_is_made_as_before(self):
+        path = self.pack([("one.max", b"1"), ("two.max", b"2"), ("wood.jpg", b"W")])
+        real = os.rename
+
+        def rename(src, dst):
+            if os.path.isdir(src):
+                raise PermissionError("a file in it is open")
+            return real(src, dst)
+        with mock.patch.object(archive.os, "rename", rename):
+            r = archive.unpack(path, "two.max", dest_parent=self.out)
+        self.assertEqual(r.folder, os.path.join(self.out, "pack", "two"))
+        self.assertEqual(self.listing(r.folder), sorted([archive.MARKER, "two.max", "wood.jpg"]))
+        self.assertEqual(self.listing(self.out), ["pack"])
+        self.assertEqual(self.listing(os.path.join(self.out, "pack")), sorted([archive.MARKER, "two"]))
+
+    def test_a_folder_that_cannot_go_back_is_kept(self):
+        path = self.pack(self.FILES)
+        ident = self.ident(path)
+        folder = self.crash(path, moves=1)
+        self.age(os.path.join(folder, archive.RESERVATION))
+        real = archive._stale_reservation
+
+        def judged(f, i):
+            if os.path.basename(f).startswith(archive.STAGING_PREFIX):
+                # What was renamed aside had been cleared and filled anew by another unpack, and a third one has
+                # taken the name since.
+                write(os.path.join(f, "room.max"), b"MAX")
+                write(os.path.join(f, archive.MARKER), b"{}")
+                os.mkdir(folder)
+                write(os.path.join(folder, "third.jpg"), b"T")
+            return real(f, i)
+        with mock.patch.object(archive, "_stale_reservation", judged):
+            self.assertFalse(archive._clear_stale_reservation(folder, ident))
+        self.assertEqual(os.listdir(folder), ["third.jpg"])
+        kept = [n for n in os.listdir(self.out) if n.startswith(archive.RECLAIM_PREFIX)]
+        self.assertEqual(len(kept), 1)
+        with mock.patch.object(archive, "_STALE_SECONDS", -60):  # everything counts as old
+            archive._remove_stale_staging(self.out, archive.Limits(seconds=-60))
+        self.assertEqual(self.listing(self.out), sorted(["pack", kept[0]]))
+        self.assertIn("room.max", os.listdir(os.path.join(self.out, kept[0])))
+
+    def test_a_clear_that_fails_half_way_is_removed_later(self):
+        path = self.pack(self.FILES)
+        ident = self.ident(path)
+        folder = self.crash(path, moves=1)
+        self.age(os.path.join(folder, archive.RESERVATION))
+        with mock.patch.object(archive.os, "remove", side_effect=PermissionError("in use")):
+            self.assertTrue(archive._clear_stale_reservation(folder, ident))
+        self.assert_only_staging(self.out)
+        with mock.patch.object(archive, "_STALE_SECONDS", -60):
+            archive._remove_stale_staging(self.out, archive.Limits(seconds=-60))
+        self.assertEqual(os.listdir(self.out), [])
 
     def test_a_complete_unpack_keeps_no_reservation(self):
         path = self.pack(self.FILES)
