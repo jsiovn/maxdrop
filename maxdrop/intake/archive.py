@@ -17,8 +17,8 @@ leave it empty (unless the rename is refused, when it is made and filled as befo
 
 Formats are recognised by their magic bytes. A backend lists the entries (names) and writes chosen entries into
 the staging folder (extract); the rules here are the same for every backend. Of the add-on it imports only
-external.py and the bpy-free pathnames.py: the tests load it under a package of their own, without the add-on's
-__init__ (which needs bpy).
+external.py and the bpy-free pathnames.py and reader/errors.py (PackError is a MaxFileError): the tests load it
+under a package of their own, without the add-on's __init__ (which needs bpy).
 """
 
 import dataclasses
@@ -37,6 +37,7 @@ import zlib
 from typing import Dict, List, Optional, Tuple
 
 from .. import pathnames
+from ..reader.errors import MaxFileError
 from . import external as _external
 
 KIND_ZIP = "zip"
@@ -99,7 +100,7 @@ _BY_HAND_TAIL = "Extract the archive by hand and import the .max from that folde
 _BY_HAND = "%s: MaxDrop cannot read it. " + _BY_HAND_TAIL
 
 
-class PackError(Exception):
+class PackError(MaxFileError):
     """The one error of this module; its message tells the user what to do."""
 
 

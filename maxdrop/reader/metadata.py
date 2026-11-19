@@ -32,6 +32,8 @@ exception. No bpy.
 import struct
 import uuid
 
+from .errors import MaxFileError
+
 DOC_SUMMARY = "\x05DocumentSummaryInformation"
 FMTID_DOC_SUMMARY = uuid.UUID("D5CDD502-2E9C-101B-9397-08002B2CF9AE")
 FMTID_SUMMARY = uuid.UUID("F29F85E0-4FF9-1068-AB91-08002B27B3D9")
@@ -58,7 +60,7 @@ CODE_PAGES = {1250: "cp1250", 1251: "cp1251", 1252: "cp1252", 1253: "cp1253", 12
 _CODECS = {1200: "utf-16-le", 65001: "utf-8", **CODE_PAGES}
 
 
-class MetadataError(ValueError):
+class MetadataError(MaxFileError):
     pass
 
 

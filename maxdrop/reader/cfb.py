@@ -27,6 +27,8 @@ import struct
 import sys
 import zlib
 
+from .errors import MaxFileError
+
 MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 GZIP_MAGIC = b"\x1f\x8b\x08"  # ID1 ID2 and CM = deflate, the only method gzip defines
 
@@ -48,7 +50,7 @@ _HEADER = struct.Struct("<8s16sHHHHH6sIIIIIIIII")
 _ENTRY = struct.Struct("<64sHBBIII16sIQQIQ")
 
 
-class CfbError(ValueError):
+class CfbError(MaxFileError):
     pass
 
 

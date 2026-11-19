@@ -30,6 +30,8 @@ import bisect
 import struct
 import weakref
 
+from .errors import MaxFileError
+
 DEFAULT_MAX_DEPTH = 64
 DEFAULT_MAX_CHUNKS = 1 << 22  # per level; the widest level of the 811 MB corpus scene has 35 825
 
@@ -41,7 +43,7 @@ _SIZE64 = (1 << 63) - 1
 _CONTAINER = 0x80  # flag next to the header length in ChunkList._heads
 
 
-class ChunkError(ValueError):
+class ChunkError(MaxFileError):
     pass
 
 
