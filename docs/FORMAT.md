@@ -779,6 +779,9 @@ camera view looks through), `0x2820` i32 the active viewport (−1 on a tab that
 locked one, else the active viewport; the cameras fixture locks it on viewport 2 (CamTarget) while viewport 1
 (CamFree) is active, and the oracle's `render.camera` (3ds Max's `viewport.getCamera`) is CamTarget. Both corpus
 scenes are saved looking through their one camera; their cameras' fields of view equal 3ds Max's (EvalCameraState).
+A view through no camera (a Perspective viewport active, the render view unlocked: the lookat fixture) makes the
+first camera the scene camera, a note of the report's render line; no Config stream or layout, a damaged one, or
+no view index in range is an issue.
 
 ## System unit
 

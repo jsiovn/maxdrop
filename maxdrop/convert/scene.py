@@ -70,7 +70,8 @@ camera whose parameters cannot be read is an EMPTY with the reason as an issue, 
 an object offset keeps the node transform (an issue: 3ds Max looks from the object). desc.render holds the render
 size (None, or a size of None, when not stored: the report says so; an issue when out of range) and desc.camera the
 camera of the view 3ds Max renders (convert.cameras render_camera, with describe(..., views) the file's saved views;
-read() reads them), else the first camera (an issue). Scene-level issues have the index None.
+read() reads them), else the first camera: desc.camera_note says why when that view looks through no camera (the
+report's render line), an issue when the saved views cannot be read. Scene-level issues have the index None.
 
 Look At: the matrices of a node aimed by a Look At controller or a LookAt Constraint are the ones 3ds Max computes
 at frame 0 (reader.controllers), baked. A node with a Look At controller aimed at a node also gets node.look_at, a
@@ -255,15 +256,17 @@ class LayerDescription:
 class SceneDescription:
     """nodes in walk order, meshes {key: MeshDescription}, curves {key: CurveDescription}, lights {key:
     convert.lights.LightDescription} and cameras {key: convert.cameras.CameraDescription} in order of first use,
-    camera the scene camera's node index, render the convert.cameras.RenderSettings (None when not stored), meters
-    per file unit, unit the reader's SystemUnit (None when the file does not say), layers, placeholders,
+    camera the scene camera's node index, camera_note why it is the first camera when that is no issue (None: the
+    view 3ds Max renders, or an issue says why), render the convert.cameras.RenderSettings (None when not stored),
+    meters per file unit, unit the reader's SystemUnit (None when the file does not say), layers, placeholders,
     unknown_controllers and issues."""
-    __slots__ = ("nodes", "meshes", "curves", "lights", "cameras", "camera", "render", "meters", "unit", "layers",
-                 "placeholders", "unknown_controllers", "issues")
+    __slots__ = ("nodes", "meshes", "curves", "lights", "cameras", "camera", "camera_note", "render", "meters",
+                 "unit", "layers", "placeholders", "unknown_controllers", "issues")
 
     def __init__(self, meters, unit=None):
         self.nodes, self.meshes, self.meters, self.unit, self.layers = [], {}, meters, unit, []
         self.curves, self.lights, self.cameras, self.camera, self.render = {}, {}, {}, None, None
+        self.camera_note = None
         self.placeholders = collections.Counter()
         self.unknown_controllers = collections.Counter()
         self.issues = []
@@ -578,8 +581,8 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
     desc.render, issues = cameras.render_settings(scene)
     desc.issues.extend((None, "render: %s" % x) for x in issues)
     names = {node.index: node.name or "object %d" % node.index for node in desc.nodes}
-    desc.camera, reason = cameras.render_camera(desc.render, views, [n.index for n in desc.nodes if n.kind == CAMERA],
-                                                names)
+    desc.camera, reason, desc.camera_note = cameras.render_camera(
+        desc.render, views, [n.index for n in desc.nodes if n.kind == CAMERA], names)
     if reason is not None:
         desc.issues.append((desc.camera, "camera: %s" % reason))
     sky = lights.environment_sky(scene)

@@ -8,6 +8,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ## [Unreleased]
 
+### Changed
+
+- Report: a scene saved with a view through no camera active (common) names its scene camera, the first camera, in
+  the render line instead of raising a warning; a damaged Config stream is named as such, not as "no saved view".
+
 ## [0.1.0] - 2026-11-19
 
 ### Added

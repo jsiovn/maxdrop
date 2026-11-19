@@ -255,16 +255,23 @@ class Malformed(unittest.TestCase):
         views = C.SavedViews([(2, None), (C.CAMERA_VIEW, 7), (C.CAMERA_VIEW, 9)], 0)
         settings = C.RenderSettings(10, 10, 1.0, None, 0)
         names = {5: "First"}
-        self.assertEqual(C.render_camera(settings, views, []), (None, None))
-        self.assertEqual(C.render_camera(settings, views, [5, 7], names),
-                         (5, C.NOT_A_CAMERA % (1, "First")))
-        self.assertEqual(C.render_camera(settings._replace(view=1), views, [5, 7], names), (7, None))
-        self.assertEqual(C.render_camera(settings, views._replace(active=2), [5, 9], names), (9, None))
+        self.assertEqual(C.render_camera(settings, views, []), (None, None, None))
+        # the view was read and looks through no camera: a note, no issue
+        self.assertEqual(C.render_camera(settings, views, [5, 7], names), (5, None, C.NOT_A_CAMERA % 1))
+        self.assertEqual(C.render_camera(settings._replace(view=1), views, [5, 7], names), (7, None, None))
+        self.assertEqual(C.render_camera(settings, views._replace(active=2), [5, 9], names), (9, None, None))
         # a camera node that was not built (an empty) is no scene camera
         self.assertEqual(C.render_camera(settings._replace(view=2), views, [5, 7], names),
-                         (5, C.NOT_A_CAMERA % (3, "First")))
-        self.assertEqual(C.render_camera(None, None, [5], names), (5, C.NO_VIEW % "First"))
-        self.assertEqual(C.render_camera(settings._replace(view=8), views, [5]), (5, C.NO_VIEW % "object 5"))
+                         (5, None, C.NOT_A_CAMERA % 3))
+        # the views cannot be read: an issue
+        self.assertEqual(C.render_camera(None, None, [5], names), (5, C.NO_VIEW % "First", None))
+        self.assertEqual(C.render_camera(settings._replace(view=8), views, [5]), (5, C.NO_VIEW % "object 5", None))
+        self.assertEqual(C.render_camera(settings, views._replace(active=None), [5], names),
+                         (5, C.NO_VIEW % "First", None))
+        damaged = C.SavedViews([], None, "bad chunk")
+        self.assertEqual(C.render_camera(settings._replace(view=1), damaged, [5, 7], names),
+                         (5, C.DAMAGED_VIEWS % ("bad chunk", "First"), None))
+        self.assertIsNone(views.damaged)
 
     def test_views_of_layout_tabs_and_of_a_flat_layout(self):
         import struct
@@ -306,8 +313,15 @@ class Malformed(unittest.TestCase):
 
             def open(self, name, **kw):
                 raise cfb.CfbError("damaged")
+        class Garbage(Broken):  # a Config stream that is no chunk tree
+            def open(self, name, **kw):
+                return b"\x00\x20\xff\xff\xff\x7f"
         self.assertIsNone(C.saved_views(NoConfig()))
-        self.assertIsNone(C.saved_views(Broken()))
+        # a damaged Config stream is told apart from a missing one
+        self.assertEqual(C.saved_views(Broken()), C.SavedViews([], None, "damaged"))
+        damaged = C.saved_views(Garbage())
+        self.assertEqual((damaged.viewports, damaged.active), ([], None))
+        self.assertTrue(damaged.damaged)
 
 
 class _Block:
@@ -479,6 +493,12 @@ class Fixtures(unittest.TestCase):
         self.assertIsNone(oracle["render"]["camera"])
         self.assertEqual(next(n.name for n in desc.nodes if n.index == desc.camera), "FixtureCam")
         self.assertEqual(len(desc.cameras), 4)
+        # saved with a Perspective viewport active: nothing is left out, the render line says why
+        self.assertEqual(desc.camera_note, C.NOT_A_CAMERA % 4)
+        self.assertFalse([r for _i, r in desc.issues if r.startswith("camera: ")])
+        rep = report.gather(desc, source="lookat.max")
+        self.assertIn("; scene camera: FixtureCam, the first camera: the view 3ds Max renders (viewport 4) looks "
+                      "through no camera", rep.text())
 
     def test_report(self):
         desc, _oracle = self.cases["cameras"]

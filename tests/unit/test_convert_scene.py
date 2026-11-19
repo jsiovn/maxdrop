@@ -120,9 +120,7 @@ NO_DECAY = "light: no decay: Blender's light falls off with the square of the di
 ISSUES = {"uvwmap": ["uvw map: a UVW Map above Bend is not evaluated",
                      "uvw map: shrink-wrap mapping is not evaluated: the stored channel stays"],
           "stack_convert": ["modifiers: TurboSmooth above Bend is not converted"],
-          "lookat": [  # its target spot; it was saved with a Perspective viewport active
-              "camera: the view 3ds Max renders (viewport 4) looks through no camera: the first camera, FixtureCam, is "
-              "the scene camera", NO_DECAY],
+          "lookat": [NO_DECAY],  # its target spot (its Perspective viewport is a note of the report, no issue)
           "cameras": ["camera: depth of field is not imported"] * 2 + [
               "camera: its exposure is not imported: Blender renders as if the camera had none"] * 3 + [
               "camera: its tilt correction (0, 5) is not imported: Blender has no keystone correction"],

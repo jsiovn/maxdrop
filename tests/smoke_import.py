@@ -37,7 +37,8 @@ only things listed are on the material side: wrappers and maps approximated, map
 Blender 4, Principled inputs that Blender lacks; and the modifiers not applied, as many as the oracle lists, in a
 fixture whose oracle lists some (modifier_pivot; the ones converted to Blender modifiers are not counted), the
 issues a fixture is made to raise (uvwmap, stack_convert, vray_lights) and the placeholders of classes not built
-yet (lookat's Point helper). Two scenes in one run: the text holds both reports; a file
+yet (lookat's Point helper). lookat, saved with a Perspective viewport active, names its first camera as the scene
+camera in the report's render line, not as an issue. Two scenes in one run: the text holds both reports; a file
 that was not imported is named after them.
 Prints `IMPORT PASSED` (exit 0) or `IMPORT FAILED` (exit 1).
 """
@@ -71,7 +72,7 @@ FIXTURE = {"modifiers": 0, "issues": 0, "placeholders": 0, "lights_only": False}
 # What the oracle does not tell: a UVW Map of a type MaxDrop does not evaluate (shrink-wrap), and the issues each
 # fixture is made to raise (ISSUES in tests/unit/test_convert_scene.py)
 NOT_EVALUATED = {"FixtureUVWShrink"}
-FIXTURE_ISSUES = {"uvwmap.max": 2, "stack_convert.max": 1, "vray_lights.max": 4, "lookat.max": 2,
+FIXTURE_ISSUES = {"uvwmap.max": 2, "stack_convert.max": 1, "vray_lights.max": 4, "lookat.max": 1,
                   "lights_standard.max": 17, "lights_photometric.max": 9, "cameras.max": 6}
 # placeholders of classes MaxDrop does not build yet: lookat's Point
 FIXTURE_PLACEHOLDERS = {"lookat.max": 1}
@@ -173,6 +174,9 @@ def check_report(name, max_name, pack_name=None):
             and (not held or all("; %d placeholder%s" % (held, "" if held == 1 else "s") in m for _k, m in summaries))
         check("%s: the operator reported INFO, nothing left out (or only the known gaps of the fixtures)" % name,
               clean or missing, str(summaries))
+        if max_name == "lookat.max":  # saved with a Perspective viewport active: a note, no issue
+            check("%s: the render line names the first camera as the scene camera" % name,
+                  "; scene camera: FixtureCam, the first camera: " in body)
 
 
 def _block_heads(lines, title):

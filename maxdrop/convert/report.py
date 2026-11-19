@@ -53,7 +53,7 @@ class Report:
     a material or map object ("object <index>") or a Blender material. materials_built is None when the import made
     no materials."""
     __slots__ = ("source", "unit", "meters", "nodes", "objects_built", "meshes_built", "curves_built",
-                 "lights_built", "cameras_built", "scene_camera", "render_size", "layers",
+                 "lights_built", "cameras_built", "scene_camera", "scene_camera_note", "render_size", "layers",
                  "hidden_layers", "hidden", "unrenderable", "frozen", "groups", "placeholders", "unknown_controllers", "modifiers",
                  "modifiers_applied", "modifiers_converted",
                  "dropped_uv_layers", "unknown_controller_nodes", "geometry_errors", "issues", "pack", "pack_name",
@@ -66,6 +66,7 @@ class Report:
         self.nodes = self.objects_built = self.meshes_built = self.layers = self.hidden_layers = 0
         self.curves_built = self.lights_built = self.cameras_built = 0
         self.scene_camera = self.render_size = None  # the scene camera's name; "W x H" or NO_RENDER_SIZE
+        self.scene_camera_note = None  # why the scene camera is the first one, when that is no issue
         self.hidden = self.unrenderable = self.frozen = self.groups = self.dropped_uv_layers = 0
         self.unknown_controller_nodes = 0  # their issues, listed by class in unknown_controllers instead
         self.placeholders = collections.Counter()
@@ -160,7 +161,8 @@ class Report:
                      + (", cameras: %d" % self.cameras_built if self.cameras_built else ""))
         if self.render_size is not None or self.scene_camera is not None:
             lines.append("Render size: %s; scene camera: %s" % (self.render_size or NO_RENDER_SIZE,
-                                                                self.scene_camera or "none"))
+                                                                self.scene_camera or "none")
+                         + (", " + self.scene_camera_note if self.scene_camera_note else ""))
         lines.append("Layers: %d (%d hidden)" % (self.layers, self.hidden_layers))
         lines.append("Objects hidden: %d, not renderable: %d, frozen: %d" % (self.hidden, self.unrenderable,
                                                                              self.frozen))
@@ -349,6 +351,7 @@ def gather(desc, source="", objects_built=None, meshes_built=None, dropped_uv_la
     labels = {node.index: node.name or "object %d" % node.index for node in desc.nodes}
     if camera is not None:
         rep.scene_camera = labels.get(camera, "object %d" % camera)
+        rep.scene_camera_note = getattr(desc, "camera_note", None)
     for index, reason in desc.issues:
         label = SCENE if index is None else labels.get(index, "object %d" % index)
         if reason == UNKNOWN_CONTROLLER and desc.unknown_controllers:  # counted by class already

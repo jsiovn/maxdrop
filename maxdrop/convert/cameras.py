@@ -14,7 +14,7 @@ render aspect, lens shift, clipping and orthographic width in meters; the render
     settings, issues = render_settings(scene)   # RenderSettings or None: width, height, pixel aspect, locked view
     views = saved_views(cf)             # SavedViews of the current viewport layout (Config stream), or None
     views = views_of(chunk)             # the same of the Config stream's 0x2080 chunk
-    node, reason = render_camera(settings, views, cameras)   # the camera node of the view 3ds Max renders
+    node, issue, note = render_camera(settings, views, cameras)   # the camera node of the view 3ds Max renders
 
 The field of view (docs/FORMAT.md, "Cameras"; checked against 3ds Max's own camera state, EvalCameraState, in the
 fixture's oracle, and against renders):
@@ -40,7 +40,9 @@ depth of field, distortion, a multi-pass effect and V-Ray's exposure have no Ble
 Render settings: the RenderEnvironment object's chunk 0x0110 / 0x2000: width, height, pixel aspect and, when the
 render view is locked, its viewport index. Saved views: the Config stream's current layout, each viewport's view type
 and the node it looks through. render_camera picks the locked render view, else the active viewport; when it looks
-through a built camera that is the scene camera, else the first camera (with the reason).
+through a built camera that is the scene camera, else the first camera: a note when the saved views were read (a
+view through no camera is common and loses nothing), an issue when they were not (none stored, a damaged Config
+stream: SavedViews.damaged, or no view to pick).
 
 The file comes from anywhere: a parameter that is animated, missing or no finite number takes its default (an
 issue); a block that cannot be read raises CameraError; render settings and views out of range are left out (an issue
@@ -109,8 +111,8 @@ NO_TARGET = "its orthographic width needs the distance to its target, which is n
 BAD_SIZE = "the render size %s is out of Blender's range: Blender's is kept"
 BAD_ASPECT = "pixel aspect %r is out of Blender's range: Blender's is kept"
 NO_VIEW = "no saved view: the first camera, %s, is the scene camera"
-NOT_A_CAMERA = "the view 3ds Max renders (viewport %d) looks through no camera: the first camera, %s, is the scene " \
-    "camera"
+DAMAGED_VIEWS = "the saved views cannot be read (%s): the first camera, %s, is the scene camera"
+NOT_A_CAMERA = "the first camera: the view 3ds Max renders (viewport %d) looks through no camera"  # a note
 
 
 class CameraDescription:
@@ -135,9 +137,10 @@ RenderSettings = collections.namedtuple("RenderSettings", "width height pixel_as
 RenderSettings.__doc__ = """The render settings: width and height in pixels, pixel_aspect (each None when not stored
 or out of Blender's range), view the 0-based viewport index of a locked render view (None: the active viewport
 renders), index the RenderEnvironment's object index."""
-SavedViews = collections.namedtuple("SavedViews", "viewports active")
+SavedViews = collections.namedtuple("SavedViews", "viewports active damaged", defaults=(None,))
 SavedViews.__doc__ = """The current viewport layout: viewports [(view type, node object index or None)], active the
-0-based index of the active viewport (None when not stored)."""
+0-based index of the active viewport (None when not stored); damaged the reason the Config stream cannot be read
+(then no viewports), else None."""
 CAMERA_VIEW = 8  # the view type of a viewport that looks through a camera
 
 
@@ -350,14 +353,14 @@ MAX_CONFIG = 1 << 24  # bytes: a Config stream is tens of kilobytes
 
 
 def saved_views(cf):
-    """The SavedViews of the current viewport layout in a compound file's Config stream, None when it has none or it
-    cannot be read."""
+    """The SavedViews of the current viewport layout in a compound file's Config stream, None when it has no Config
+    stream or no layout; a damaged one (or one compressed past the cap) gives SavedViews([], None, reason)."""
     try:
         if not cf.exists("Config"):
             return None
         return views_of(chunks.index(cf.open("Config", max_size=MAX_CONFIG)).first(_LAYOUTS))
-    except (ChunkError, KeyError, ValueError, OSError):  # a damaged or compressed-past-the-cap stream
-        return None
+    except (ChunkError, KeyError, ValueError, OSError) as exc:
+        return SavedViews([], None, str(exc) or type(exc).__name__)
 
 
 def views_of(holder):
@@ -395,18 +398,22 @@ def views_of(holder):
 
 
 def render_camera(settings, views, cameras, names=None):
-    """(node index of the scene camera, reason or None): the camera the locked render view, else the active viewport
-    looks through when it is among cameras (node indices of the camera nodes built, in walk order); else the first of
-    cameras and the reason. (None, None) without cameras. names: {node index: name} for the reason."""
+    """(node index of the scene camera, issue, note): the camera the locked render view, else the active viewport
+    looks through when it is among cameras (node indices of the camera nodes built, in walk order), with neither;
+    else the first of cameras with a note when the view was read (it looks through no built camera) or an issue when
+    it was not (no saved views, damaged ones, no view index in range). (None, None, None) without cameras. names:
+    {node index: name} for the issue."""
     if not cameras:
-        return None, None
-    view = settings.view if settings is not None and settings.view is not None else (
-        views.active if views is not None else None)
+        return None, None, None
     first = cameras[0]
     label = (names or {}).get(first, "object %d" % first)
+    if views is not None and views.damaged is not None:
+        return first, DAMAGED_VIEWS % (views.damaged, label), None
+    view = settings.view if settings is not None and settings.view is not None else (
+        views.active if views is not None else None)
     if views is None or view is None or not 0 <= view < len(views.viewports):
-        return first, NO_VIEW % label
+        return first, NO_VIEW % label, None
     kind, node = views.viewports[view]
     if kind == CAMERA_VIEW and node in cameras:
-        return node, None
-    return first, NOT_A_CAMERA % (view + 1, label)
+        return node, None, None
+    return first, None, NOT_A_CAMERA % (view + 1)
