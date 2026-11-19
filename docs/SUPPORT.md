@@ -196,7 +196,7 @@ the scene in the archive is kept.
   Deflate64 or archives split into parts. File names without the UTF-8 flag are decoded as UTF-8, then GBK,
   Shift-JIS, cp1252, cp437.
 - `.rar` (RAR 5; RAR 4 through UnRAR or 7-Zip only) and `.7z` need a program already installed: UnRAR 7.23 or
-  newer, 7-Zip 25.01 or newer, or bsdtar 3.7.4 or newer (the `tar` of the system on macOS and Linux is taken
+  newer, 7-Zip 26.02 or newer, or bsdtar 3.8.8 or newer (the `tar` of the system on macOS and Linux is taken
   whatever version it prints). Not readable: password-protected archives and archives split into volumes.
 - Limits for one pack: 20,000 entries listed, 5,000 files and 16 GiB written, 4 GiB per file, 15 minutes, and
   512 MiB left free on the disk.

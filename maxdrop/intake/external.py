@@ -35,16 +35,22 @@ SEVENZIP = "7z"
 BSDTAR = "bsdtar"
 LABELS = {UNRAR: "UnRAR", SEVENZIP: "7-Zip", BSDTAR: "bsdtar"}
 
-# The first version without the vendor's known path traversal or code execution problems on extraction.
+# The first version without the vendor's known path traversal or code execution problems on extraction. Checked
+# against the vendors' pages on 2026-11-20.
 FLOORS = {
     # WinRAR WhatsNew.txt, version 7.23: a symbolic link pointing outside the destination could be created by
-    # UnRAR on every platform, and a heap overflow in RAR 5 recovery volumes; 7.13: Windows path traversal.
+    # UnRAR on every platform, and a heap overflow in RAR 5 recovery volumes; 7.13: Windows path traversal. The link
+    # chain and recursion fixes of 7.30 are in betas only so far.
     UNRAR: (7, 23),
-    # 7-zip.org history.txt, 25.01: CVE-2025-55188, symbolic links on extraction; 25.00: CVE-2025-11001/11002.
-    SEVENZIP: (25, 1),
-    # libarchive release v3.7.4: CVE-2024-26256, RAR e8 filter out-of-bounds write (code execution). No
-    # libarchive advisory concerns path traversal; bsdtar refuses "..", absolute paths and links by default.
-    BSDTAR: (3, 7, 4),
+    # 7-zip.org history.txt, 26.02: CVE-2026-14266, heap overflow in XZ decompression (code execution); 26.01: heap
+    # overflows and out-of-bounds reads in other handlers; 25.01: CVE-2025-55188, symbolic links on extraction;
+    # 25.00: CVE-2025-11001/11002. 26.03 to 26.06 name no fix of extraction paths or code execution.
+    SEVENZIP: (26, 2),
+    # libarchive releases: 3.8.8 adds a missing bound check to the RAR reader and fixes a heap overflow of the 7-Zip
+    # reader; 3.8.3 a buffer overrun on truncated 7-Zip headers; 3.8.0 CVE-2025-5915 (RAR heap buffer overflow) and
+    # CVE-2025-5914 (RAR double free); 3.7.4 CVE-2024-26256 (RAR e8 filter). No libarchive advisory concerns path
+    # traversal; bsdtar refuses "..", absolute paths and links by default.
+    BSDTAR: (3, 8, 8),
 }
 # A bsdtar of the operating system on Linux and macOS is used whatever number it prints: distributions and
 # Apple backport fixes without changing it (Ubuntu 24.04 prints 3.7.2), so the number says nothing.

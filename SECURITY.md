@@ -46,7 +46,7 @@ unless you prefer otherwise.
   `/opt/homebrew/bin` on macOS and Linux). It is taken only from those fixed absolute paths or from the install
   folder the WinRAR and 7-Zip installers record, never from the current folder, `PATH` or the archive's folder, and
   only a native program, never a script. Versions before the vendor's fix of known path or link problems on
-  extraction are refused (UnRAR 7.23, 7-Zip 25.01, libarchive 3.7.4); a bsdtar of the operating system on macOS and
+  extraction are refused (UnRAR 7.23, 7-Zip 26.02, libarchive 3.8.8); a bsdtar of the operating system on macOS and
   Linux is accepted whatever version it prints, because distributions backport fixes without changing it. The
   program runs without a shell, with its own folder as working directory, a reduced environment, no input, a time
   limit and capped output. It unpacks into a private folder, and its result is checked file by file (plain files
