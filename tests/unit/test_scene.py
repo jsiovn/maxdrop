@@ -287,6 +287,16 @@ class TestDamagedRecords(unittest.TestCase):
         finally:
             scene.MAX_REFS = saved
 
+    def test_node_cap(self):
+        saved = scene.MAX_NODES
+        scene.MAX_NODES = 2
+        try:
+            self.assertEqual(len(make(node_obj("A", -1), node_obj("B", -1)).node_indices), 2)
+            with self.assertRaisesRegex(ChunkError, "3 objects, more than the 2"):
+                make(node_obj("A", -1), node_obj("B", -1), node_obj("C", -1))
+        finally:
+            scene.MAX_NODES = saved
+
     def test_file_without_scene_stream(self):
         class NoScene:
             def exists(self, name):

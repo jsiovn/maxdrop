@@ -17,6 +17,7 @@ import struct
 import sys
 import types
 import unittest
+from unittest import mock
 
 try:
     import numpy
@@ -273,6 +274,22 @@ class EditablePolyTest(unittest.TestCase):
         with self.assertRaisesRegex(GeometryError, "past the end"):
             geometry.read_editable_poly(c)
 
+    def test_caps_per_mesh(self):
+        two = poly_faces(poly_face([0, 1, 2]), poly_face([0, 2, 3]))
+        cases = (
+            ("MAX_VERTICES", 4, poly(poly_verts(QUAD), two), "5 vertices, more than the 4"),
+            ("MAX_VERTICES", 4, poly(poly_verts(QUAD, dead={4}), two), "5 vertices, more than the 4"),
+            ("MAX_LOOPS", 5, poly(poly_verts(QUAD), two), "6 face corners, more than the 5"),
+            ("MAX_VERTICES", 5, poly(poly_verts(QUAD), poly_faces(poly_face([0, 1, 2])),
+                                     poly_map(1, QUAD + [(3, 0, 0)], [[0, 1, 2]])), "6 map vertices, more than the 5"),
+        )
+        for cap, value, c, message in cases:
+            with self.subTest(cap=cap, value=value), mock.patch.object(geometry, cap, value), \
+                    self.assertRaisesRegex(GeometryError, message):
+                geometry.read_editable_poly(c)
+        with mock.patch.object(geometry, "MAX_VERTICES", 5), mock.patch.object(geometry, "MAX_LOOPS", 6):
+            self.assertEqual(len(geometry.read_editable_poly(poly(poly_verts(QUAD), two)).loop_vertices), 6)
+
 
 @unittest.skipIf(numpy is None, "numpy missing")
 class EditableMeshTest(unittest.TestCase):
@@ -298,6 +315,13 @@ class EditableMeshTest(unittest.TestCase):
         self.assertEqual(m.maps[1].indices.dtype, numpy.int32)
         self.assertEqual(m.maps[1].uvw.shape, (3, 3))
         self.assertEqual((m.stored_vertices, m.stored_faces), (4, 2))
+
+    def test_caps_per_mesh(self):
+        two = mesh_faces((0, 1, 2, 0, 0), (1, 3, 2, 0, 0))
+        for cap, value, message in (("MAX_VERTICES", 3, "4 vertices, more than the 3"),
+                                    ("MAX_LOOPS", 5, "6 face corners, more than the 5")):
+            with self.subTest(cap=cap), mock.patch.object(geometry, cap, value),                     self.assertRaisesRegex(GeometryError, message):
+                geometry.read_editable_mesh(mesh(mesh_verts(TRI), two))
 
     def test_empty_mesh(self):
         m = geometry.read_editable_mesh(mesh(mesh_verts([]), mesh_faces()))

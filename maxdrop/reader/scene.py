@@ -32,8 +32,8 @@ Nodes are keyed by object index, never by name: two nodes with the same name are
 a Node (the RootNode, another class, out of range) means top level. A parent cycle is cut at its member with the
 lowest object index, which becomes top level and is listed in cut_cycles; a layer's parent cycle is cut the same
 way, and a parent layer that is not a layer or cannot be read means top level. A reference past the object list, more
-than MAX_REFS references in one object, a payload of the wrong size, a derived-object cycle or a file without a
-Scene stream raise ChunkError (a ValueError). One damaged record poisons only itself: a node whose 0x0960 cannot
+than MAX_REFS references in one object, more than MAX_NODES nodes, a payload of the wrong size, a derived-object
+cycle or a file without a Scene stream raise ChunkError (a ValueError). One damaged record poisons only itself: a node whose 0x0960 cannot
 be read is top level for the hierarchy (listed in bad_parents) while node() on it raises. Every walk is iterative
 and bounded by the object count. No bpy.
 """
@@ -47,6 +47,7 @@ ChunkError = chunks.ChunkError
 ROOT_IDS = frozenset((0x2014, 0x2022, 0x2023, 0x2025))  # root container ids seen so far; others are read the same way
 DERIVED_OBJECT = 0x2032
 MAX_REFS = 1 << 20  # per object and chunk: a hostile payload must not become millions of Python ints
+MAX_NODES = 1 << 20  # scene B, the largest corpus scene, has 2 251; Blender is unusable long before this
 SLOT_TM, SLOT_OBJECT, SLOT_MATERIAL, SLOT_LAYER = 0, 1, 3, 6
 GROUP_HEAD, GROUP_MEMBER, HIDDEN, FROZEN = 0x40, 0x100, 0x100000, 0x200000  # node 0x0960, layer 0x1020
 RENDERABLE = 0x8000  # node 0x099C, layer 0x1050
@@ -194,6 +195,9 @@ class Scene:
             elif entry.superclass == classids.SC_REF_TARGET and entry.class_id == classids.LAYER_MANAGER:
                 manager_classes.add(entry.index)
         self.node_indices = tuple(i for i, cid in enumerate(self._ids) if cid in node_classes)
+        if len(self.node_indices) > MAX_NODES:
+            raise ChunkError("the scene has %d objects, more than the %d MaxDrop imports"
+                             % (len(self.node_indices), MAX_NODES))
         self._node_set = frozenset(self.node_indices)
         self.root_node = next((i for i, cid in enumerate(self._ids) if cid in root_classes), None)
         self.layer_indices = tuple(i for i, cid in enumerate(self._ids) if cid in layer_classes)

@@ -29,9 +29,9 @@ Dead vertices and faces are left out; the vertices are renumbered.
 Channel numbers are kept as stored: 0 = vertex color, 1 and up = texture coordinates, -1 and -2 = illumination and
 alpha. Fixed-size records are read as numpy views (no Python loop); the variable-length Poly records take one loop
 that only collects byte slices. The file comes from anywhere: a size that does not match its count, an index past
-its array, an unknown face field, a record cut short or a map face whose degree differs from its face raise
-GeometryError (a ChunkError) for that object only. Arrays are copies: nothing keeps the file's mapping alive.
-Indices are int32: a mesh past 2**31 vertices or loops (over 8 GB of records) is out of reach.
+its array, an unknown face field, a record cut short, a map face whose degree differs from its face, or more than
+MAX_VERTICES vertices or MAX_LOOPS face corners in one mesh raise GeometryError (a ChunkError) for that object
+only. Arrays are copies: nothing keeps the file's mapping alive. Indices are int32, far above the caps.
 No bpy; numpy is imported when a mesh is read.
 """
 import array
@@ -43,6 +43,10 @@ from . import chunks, classids
 ChunkError = chunks.ChunkError
 
 GEOMETRY = 0x08FE
+# Per mesh, checked before anything is allocated. Scene B's largest mesh has 1.5 million vertices and 5.6 million
+# loops; past these a mesh alone takes gigabytes in Blender, and its int32 indices stay far from overflow.
+MAX_VERTICES = 1 << 26  # vertices, and map vertices of one channel
+MAX_LOOPS = 1 << 27  # face corners
 DEAD = 0x2  # vertex, edge and face flag of Editable Poly records that are no longer part of the mesh
 
 # Editable Poly
@@ -120,10 +124,16 @@ def _count(chunk, item_size):
     return n
 
 
-def _points(chunk):
+def _capped(n, cap, what):
+    if n > cap:
+        raise GeometryError("%d %s, more than the %d MaxDrop reads in one mesh" % (n, what, cap))
+    return n
+
+
+def _points(chunk, what="vertices"):
     """u32 count + 3 x f32 per point as float32 (n, 3)."""
     import numpy
-    n = _count(chunk, 12)
+    n = _capped(_count(chunk, 12), MAX_VERTICES, what)
     return numpy.array(chunk.as_array("<f4", 4, n * 3), dtype=numpy.float32).reshape(n, 3)
 
 
@@ -153,7 +163,7 @@ def _channels(geo, channel_id, verts_id, faces_id, read_faces):
                 raise GeometryError("map vertices without a channel")
             if uvw is not None:
                 raise GeometryError("map channel %d has its map vertices twice" % channel)
-            uvw = _points(chunk)
+            uvw = _points(chunk, "map vertices")
         elif chunk.id == faces_id:
             if channel is None or uvw is None:
                 raise GeometryError("map faces without a channel and its map vertices")
@@ -172,6 +182,7 @@ def read_editable_mesh(chunk):
     positions = _points(_required(geo, _M_VERTS))
     faces = _required(geo, _M_FACES)
     nf = _count(faces, 20)
+    _capped(3 * nf, MAX_LOOPS, "face corners")
     rec = faces.as_array([("v", "<u4", (3,)), ("smooth", "<u4"), ("flags", "<u4")], 4, nf)
     loop_vertices = _indices(rec["v"].reshape(-1), len(positions), "vertex")
     loop_starts = numpy.arange(0, 3 * nf, 3, dtype=numpy.int32)
@@ -195,14 +206,15 @@ def _poly_positions(chunk):
     if chunk.payload_size < 4:
         raise GeometryError("%04X of %d bytes has no count" % (chunk.id, chunk.payload_size))
     n, = chunk.unpack("<I")
+    if n > (chunk.payload_size - 4) // 4:  # a record takes at least its 4-byte flags: refuse before allocating
+        raise GeometryError("%d vertices counted in %d bytes" % (n, chunk.payload_size))
+    _capped(n, MAX_VERTICES, "vertices")
     if chunk.payload_size == 4 + 16 * n:  # no dead vertex: fixed-size records
         rec = chunk.as_array([("flags", "<u4"), ("p", "<f4", (3,))], 4, n)
         if numpy.any(rec["flags"] & DEAD):
             raise GeometryError("a dead vertex with a position")
         return numpy.array(rec["p"], dtype=numpy.float32), None
     data = chunk.view()
-    if n > (len(data) - 4) // 4:  # a record takes at least its 4-byte flags: refuse before allocating
-        raise GeometryError("%d vertices counted in %d bytes" % (n, len(data)))
     size, off, live, points = len(data), 4, bytearray(n), bytearray()
     try:
         for i in range(n):
@@ -276,6 +288,7 @@ def _poly_faces(chunk):
         raise GeometryError("face records cut short (%d of %d bytes)" % (off, size)) from None
     if off != size:
         raise GeometryError("%d bytes after the %d face records" % (size - off, n))
+    _capped(len(loops) // 4, MAX_LOOPS, "face corners")
     return loops, degrees, live, smooth, mats
 
 
