@@ -9,7 +9,10 @@ must pass the name policy (refused_reason) and the allow-list (the chosen .max, 
 flat: the .max and its maps side by side. Directory parts only rank duplicates. Everything is written into a
 staging folder beside the destination; once complete, the destination is created (never an existing folder) and
 the files move into it, the marker last. Staging is removed on any failure, and one a crash left behind is removed
-by a later unpack.
+by a later unpack. A destination holds a reservation file while the files move in: one a crash left (old, no
+marker, no .max yet, nothing but the maps it lists) is cleared by a later unpack, which takes the name again. A crash
+right after creating the destination, before the reservation file, still leaves an empty folder that keeps its name;
+so does one between the folder of a several-scene pack and its marker.
 
 Formats are recognised by their magic bytes. A backend lists the entries (names) and writes chosen entries into
 the staging folder (extract); the rules here are the same for every backend. Of the add-on it imports only
@@ -50,6 +53,8 @@ _MAGIC = (
 
 MARKER = ".maxdrop-pack.json"
 MARKER_FORMAT = 1
+# Lives in a destination only while the files move in: see _stale_reservation.
+RESERVATION = ".maxdrop-reserved.json"
 STAGING_PREFIX = ".maxdrop-staging-"
 
 IMAGE_EXTENSIONS = frozenset((
@@ -603,6 +608,67 @@ def _write_marker(folder, ident, scene_name, files, wanted=None):
         json.dump(data, f, indent=1, sort_keys=True)
 
 
+def _write_reservation(folder, maps):
+    with open(os.path.join(folder, RESERVATION), "x", encoding="utf-8") as f:
+        json.dump({"format": MARKER_FORMAT, "maps": sorted(maps)}, f, indent=1)
+
+
+def _stale_reservation(folder):
+    """The files of a destination an unpack reserved and never finished, or None. Stale only when the folder is
+    a real one holding regular files only: its reservation file, untouched for _STALE_SECONDS (well past the time
+    the moves take), and some of the maps that file lists; no marker and no .max (a folder whose scene was moved
+    is complete but for its marker, and may be in use already). Listed names count only as maps the policy allows:
+    the file may come from an archive extracted by hand. Judged from the scan, never from the stored names."""
+    if _is_link(folder):
+        return None
+    try:
+        with os.scandir(folder) as it:
+            items = list(it)
+    except OSError:
+        return None
+    by_key = {name_key(item.name): item for item in items}
+    reservation = by_key.get(name_key(RESERVATION))
+    try:
+        if (reservation is None or not reservation.is_file(follow_symlinks=False)
+                or reservation.stat(follow_symlinks=False).st_mtime > time.time() - _STALE_SECONDS):
+            return None
+        with open(reservation.path, "rb") as f:
+            data = json.loads(f.read(_MARKER_READ_MAX).decode("utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or data.get("format") != MARKER_FORMAT or not isinstance(data.get("maps"), list):
+        return None
+    maps = {name_key(n) for n in data["maps"]
+            if isinstance(n, str) and refused_reason(n) is None and extension(n) in ASSET_EXTENSIONS}
+    files = []
+    for key, item in by_key.items():
+        if item is reservation:
+            continue
+        try:
+            if key not in maps or not item.is_file(follow_symlinks=False):
+                return None
+        except OSError:
+            return None
+        files.append(item.path)
+    return files + [reservation.path]
+
+
+def _clear_stale_reservation(folder):
+    """Remove a stale reservation (judged again here: another unpack may have cleared it and made the folder anew
+    since it was seen), the reservation file last, then the folder. Two unpacks clearing one folder at once may
+    interleave; the one whose mkdir fails takes the next name. False when anything stays."""
+    files = _stale_reservation(folder)
+    if files is None:
+        return False
+    try:
+        for file in files:
+            os.remove(file)
+        os.rmdir(folder)
+    except OSError:
+        return False
+    return True
+
+
 def _is_link(path):
     """A symbolic link, or on Windows a junction (os.path.islink does not see one; os.path.isjunction exists
     from Python 3.12 only). False when path cannot be read."""
@@ -658,6 +724,8 @@ def _probe(folder, scene, ident, wanted):
         return "free"
     if _is_link(folder) or not os.path.isdir(folder):
         return None
+    if _stale_reservation(folder) is not None:
+        return "free"  # unpack() clears it in _reserve
     marker = _read_marker(folder)
     if marker is not None:
         max_path = os.path.join(folder, scene.base)
@@ -719,12 +787,18 @@ def _no_free_folder(path, parent):
 
 def _reserve(path, folders):
     """Create the first of folders that does not exist yet. One that appeared since _destination looked (another
-    unpack of the same pack, or anything else) is never written into: the next name is taken."""
+    unpack of the same pack, or anything else) is never written into: the next name is taken. A stale reservation
+    is cleared and its name taken again."""
     for folder in folders:
         try:
             os.mkdir(folder)
         except FileExistsError:
-            continue
+            if not _clear_stale_reservation(folder):
+                continue
+            try:
+                os.mkdir(folder)
+            except FileExistsError:
+                continue
         return folder
     raise _no_free_folder(path, os.path.dirname(folders[0]))
 
@@ -946,11 +1020,16 @@ def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=Non
                 plan = scene_plan + maps
             _check_staging(staging, [t for _e, t in plan], path)
             reserved = _reserve(path, folders)
+            _write_reservation(reserved, [t for _e, t in plan[1:]])
             # The maps, then the scene, then the marker: a folder seen half-filled has no .max to import yet,
             # and only a complete one carries the marker that lets it be reused.
             for target in [t for _e, t in plan[1:]] + [chosen.base]:
                 os.rename(os.path.join(staging, target), os.path.join(reserved, target))
             _write_marker(reserved, ident, chosen.name, len(plan), wanted)
+            try:
+                os.remove(os.path.join(reserved, RESERVATION))
+            except OSError:
+                pass  # complete all the same: a marker and a .max are never stale
         except BaseException:
             shutil.rmtree(staging, ignore_errors=True)
             if reserved is not None:
