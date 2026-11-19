@@ -17,10 +17,11 @@ space of every image below: sRGB for COLOR, Non-Color for the others (a Mix mask
 gamma override (None: automatic, the default; 1.0 for an EXR or HDR file) is kept on its Image: on a color input, an
 override of 2.2 is sRGB, any other is Linear Rec.709 (sRGB primaries: Blender converts them into the scene's working
 space; the builder falls back to Non-Color where the color space is missing) and the builder applies the override as
-a gamma (1.0: none); on the other inputs an image is data and the override is not applied. Constants are linear, a swatch made so by the scene's
-swatch rule (convert/colors.py: linear with the gamma on, the sRGB curve with it off): in a COLOR graph always
-linear RGB (also when the input itself is a float, as specular and transmission are: the builder takes the mean of
-the graph's color there, the measure materials.py uses), elsewhere a float, the mean of the linear color.
+a gamma (1.0: none); on the other inputs an image is data and the override is not applied. Constants are linear, a
+swatch made so by the scene's swatch rule (convert/colors.py: linear with the gamma on, the sRGB curve with it off):
+in a COLOR graph always linear RGB (also when the input itself is a float, as specular and transmission are: the
+builder takes the mean of the graph's color there, the measure materials.py uses), elsewhere a float, the mean of the
+linear color.
 
 The graph's nodes (frozen dataclasses): Image (an image map: the file as the scene stores it, the one the texture lookup
 found, Mapping, Crop, TexOutput, color space, gamma, alpha), Constant, Invert, Mix(a, b, factor, mask), Multiply,

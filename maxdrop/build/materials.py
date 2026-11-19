@@ -213,7 +213,7 @@ class MaterialBuilder:
 
     def colorspace(self, name):
         """The color space an image the IR puts in name is loaded in: tx.LINEAR where this Blender's color
-        management config has it (the stock one of every supported version does), Non-Color otherwise, as before."""
+        management config has it (the stock one of every supported version does), Non-Color otherwise."""
         if name != tx.LINEAR:
             return name
         if self._linear is None:
