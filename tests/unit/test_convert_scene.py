@@ -505,6 +505,20 @@ def _run_py_table(name):
     raise AssertionError("no %s in tests/blender/run.py" % name)
 
 
+def _uv_layers(fixture, mesh):
+    """UV_LAYERS of one mesh: a fixture's list, or its table per mesh (a mesh not in a plain dict has none)."""
+    want = UV_LAYERS[fixture]
+    if isinstance(want, collections.defaultdict):
+        return want[mesh]
+    return want.get(mesh, []) if isinstance(want, dict) else want
+
+def _extruded_nodes():
+    """(fixture, node name) of every oracle node tests/blender/run.py's check_extruded runs on: a shape under an
+    Extrude (an Extrude that is off leaves no eval_verts)."""
+    return [(_name(p), o["name"]) for p in FIXTURES for o in _oracle(p)["nodes"]
+            if o["shape"] is not None and o["eval_verts"] is not None]
+
+
 class LookAt(unittest.TestCase):
     def test_track_to_of_each_look_at(self):
         look_at = importlib.import_module(_PKG + ".reader.controllers").LookAt
@@ -554,6 +568,26 @@ class FixtureTables(unittest.TestCase):
 
     def test_blender_run_uv_layers_lists_every_fixture(self):
         self._same_names(_run_py_table("UV_LAYERS"), "UV_LAYERS of tests/blender/run.py")
+
+    def test_blender_run_extrude_tables_list_every_extruded_object(self):
+        nodes = _extruded_nodes()
+        names = {n for _f, n in nodes}
+        self.assertTrue(names)
+        self.assertEqual(len(names), len(nodes), "extruded node names repeat across fixtures: " + str(nodes))
+        for table in ("EXTRUDE_EULER", "EXTRUDE_SHARP_EDGES"):  # indexed by check_extruded
+            keys = set(_run_py_table(table))
+            self.assertEqual(sorted(names - keys), [], "extruded objects without an entry in %s of "
+                             "tests/blender/run.py" % table)
+            self.assertEqual(sorted(keys - names), [], "entries without an extruded object in %s of "
+                             "tests/blender/run.py" % table)
+        self.assertEqual(_run_py_table("EXTRUDE_SHARP_EDGES"), SHARP_EDGES_EXTRUDE,
+                         "EXTRUDE_SHARP_EDGES of tests/blender/run.py differs from SHARP_EDGES_EXTRUDE")
+        uv = _run_py_table("EXTRUDE_UV_LAYERS")  # read with .get(name, []): no entry is no UV layer
+        self.assertEqual(sorted(set(uv) - names), [], "entries without an extruded object in EXTRUDE_UV_LAYERS "
+                         "of tests/blender/run.py")
+        for fixture, name in nodes:
+            self.assertEqual(uv.get(name, []), _uv_layers(fixture, name),
+                             "%s: EXTRUDE_UV_LAYERS of tests/blender/run.py differs from UV_LAYERS" % name)
 
 
 @unittest.skipIf(numpy is None, "numpy missing")
@@ -683,11 +717,7 @@ class Fixtures(unittest.TestCase):
     def test_uv_layers_follow_the_map_channels(self):
         for name, desc, _o in self.cases:
             for md in desc.meshes.values():
-                want = UV_LAYERS[name]
-                if isinstance(want, collections.defaultdict):
-                    want = want[md.name]
-                elif isinstance(want, dict):
-                    want = want.get(md.name, [])
+                want = _uv_layers(name, md.name)
                 self.assertEqual([n for n, _uv in md.uv_layers], want, name)
                 for _n, uv in md.uv_layers:
                     self.assertEqual(uv.shape, (len(md.loop_vertices), 2))
