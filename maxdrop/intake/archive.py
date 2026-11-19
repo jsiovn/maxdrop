@@ -9,10 +9,11 @@ must pass the name policy (refused_reason) and the allow-list (the chosen .max, 
 flat: the .max and its maps side by side. Directory parts only rank duplicates. Everything is written into a
 staging folder beside the destination; once complete, the destination is created (never an existing folder) and
 the files move into it, the marker last. Staging is removed on any failure, and one a crash left behind is removed
-by a later unpack. A destination holds a reservation file while the files move in: one a crash left (old, no
-marker, no .max yet, nothing but the maps it lists) is cleared by a later unpack, which takes the name again. A crash
-right after creating the destination, before the reservation file, still leaves an empty folder that keeps its name;
-so does one between the folder of a several-scene pack and its marker.
+by a later unpack. A destination holds a reservation file while the files move in: one a crash left (old, of the
+same pack, no marker, no .max yet, nothing but the maps it lists) is cleared by a later unpack of that pack, which
+takes the name again unless a later folder serves. A crash right after creating the destination, before the
+reservation file, still leaves an empty folder that keeps its name; so does one between the folder of a
+several-scene pack and its marker.
 
 Formats are recognised by their magic bytes. A backend lists the entries (names) and writes chosen entries into
 the staging folder (extract); the rules here are the same for every backend. Of the add-on it imports only
@@ -82,6 +83,9 @@ _CANDIDATES = 99
 # An unpack is stopped after Limits.seconds (15 minutes by default): a staging folder untouched for this long was
 # left by one that never finished.
 _STALE_SECONDS = 6 * 3600
+# A reservation lives only while files move within one volume (seconds): one this old was left by a crash. An hour
+# leaves room for slow network shares and clock skew between the computer and a file server.
+_RESERVATION_STALE_SECONDS = 3600
 # Times a pack folder another unpack created first sends the destination search round again.
 _RACE_RETRIES = 3
 _CHUNK = 1 << 20
@@ -608,18 +612,19 @@ def _write_marker(folder, ident, scene_name, files, wanted=None):
         json.dump(data, f, indent=1, sort_keys=True)
 
 
-def _write_reservation(folder, maps):
+def _write_reservation(folder, ident, maps):
     with open(os.path.join(folder, RESERVATION), "x", encoding="utf-8") as f:
-        json.dump({"format": MARKER_FORMAT, "maps": sorted(maps)}, f, indent=1)
+        json.dump(dict(ident, format=MARKER_FORMAT, maps=sorted(maps)), f, indent=1, sort_keys=True)
 
 
-def _stale_reservation(folder):
-    """The files of a destination an unpack reserved and never finished, or None. Stale only when the folder is
-    a real one holding regular files only: its reservation file, untouched for _STALE_SECONDS (well past the time
-    the moves take), and some of the maps that file lists; no marker and no .max (a folder whose scene was moved
-    is complete but for its marker, and may be in use already). Listed names count only as maps the policy allows:
-    the file may come from an archive extracted by hand. Judged from the scan, never from the stored names."""
-    if _is_link(folder):
+def _stale_reservation(folder, ident):
+    """The files of a destination an unpack of this pack (ident) reserved and never finished, or None. Stale only
+    when the folder is a real one holding regular files only: its reservation file, untouched for
+    _RESERVATION_STALE_SECONDS, and some of the maps that file lists; no marker and no .max (a folder whose scene
+    was moved is complete but for its marker, and may be in use already). The file may come from an archive
+    extracted by hand: it must name this pack, and listed names count only as maps the policy allows. Judged from
+    the scan, never from the stored names."""
+    if _is_link(folder) or not os.path.lexists(os.path.join(folder, RESERVATION)):
         return None
     try:
         with os.scandir(folder) as it:
@@ -627,16 +632,19 @@ def _stale_reservation(folder):
     except OSError:
         return None
     by_key = {name_key(item.name): item for item in items}
+    if len(by_key) != len(items):  # two names one key (a case-sensitive file system): one would go unchecked
+        return None
     reservation = by_key.get(name_key(RESERVATION))
     try:
         if (reservation is None or not reservation.is_file(follow_symlinks=False)
-                or reservation.stat(follow_symlinks=False).st_mtime > time.time() - _STALE_SECONDS):
+                or reservation.stat(follow_symlinks=False).st_mtime > time.time() - _RESERVATION_STALE_SECONDS):
             return None
         with open(reservation.path, "rb") as f:
             data = json.loads(f.read(_MARKER_READ_MAX).decode("utf-8"))
     except (OSError, ValueError):
         return None
-    if not isinstance(data, dict) or data.get("format") != MARKER_FORMAT or not isinstance(data.get("maps"), list):
+    if (not isinstance(data, dict) or data.get("format") != MARKER_FORMAT or not isinstance(data.get("maps"), list)
+            or any(data.get(k) != v for k, v in ident.items())):
         return None
     maps = {name_key(n) for n in data["maps"]
             if isinstance(n, str) and refused_reason(n) is None and extension(n) in ASSET_EXTENSIONS}
@@ -653,20 +661,30 @@ def _stale_reservation(folder):
     return files + [reservation.path]
 
 
-def _clear_stale_reservation(folder):
-    """Remove a stale reservation (judged again here: another unpack may have cleared it and made the folder anew
-    since it was seen), the reservation file last, then the folder. Two unpacks clearing one folder at once may
-    interleave; the one whose mkdir fails takes the next name. False when anything stays."""
-    files = _stale_reservation(folder)
-    if files is None:
+def _clear_stale_reservation(folder, ident):
+    """Remove a stale reservation; False when the folder stays. It is first renamed to a staging name: of two
+    unpacks clearing it at once only one rename succeeds, and nothing else writes into the renamed folder, so it
+    is judged again there and only what that scan found is removed (the reservation file last). A folder no longer
+    stale by then (cleared and made anew meanwhile) is renamed back; should that fail it stays a staging folder,
+    removed as stale later like any other."""
+    if _stale_reservation(folder, ident) is None:
         return False
+    moved = os.path.join(os.path.dirname(folder), STAGING_PREFIX + "reclaim-" + os.urandom(6).hex())
     try:
-        for file in files:
-            os.remove(file)
-        os.rmdir(folder)
+        os.rename(folder, moved)
     except OSError:
         return False
-    return True
+    files = _stale_reservation(moved, ident)
+    try:
+        if files is None:
+            os.rename(moved, folder)
+            return False
+        for file in files:
+            os.remove(file)
+        os.rmdir(moved)
+    except OSError:
+        pass  # a staging folder now: the name is free all the same
+    return not os.path.lexists(folder)
 
 
 def _is_link(path):
@@ -718,14 +736,14 @@ def _candidates(parent, name):
 
 
 def _probe(folder, scene, ident, wanted):
-    """What a candidate folder offers for the scene: "free", ("reused" | "in_place", .max path), or None (taken:
-    never written into)."""
+    """What a candidate folder offers for the scene: "free", "stale" (a reservation a crash left, which unpack()
+    clears), ("reused" | "in_place", .max path), or None (taken: never written into)."""
     if not os.path.lexists(folder):
         return "free"
     if _is_link(folder) or not os.path.isdir(folder):
         return None
-    if _stale_reservation(folder) is not None:
-        return "free"  # unpack() clears it in _reserve
+    if _stale_reservation(folder, ident) is not None:
+        return "stale"
     marker = _read_marker(folder)
     if marker is not None:
         max_path = os.path.join(folder, scene.base)
@@ -741,18 +759,31 @@ def _safe_stem(name, fallback):
     return stem if stem and refused_reason(stem) is None else fallback
 
 
+def _offer(folders, scene, ident, wanted):
+    """The first candidate to reuse, use in place or write into, as _destination returns it; None when every one
+    is taken. A stale reservation is written into only when no later existing candidate serves: a retry after the
+    crash may have completed one."""
+    stale = None
+    for i, folder in enumerate(folders):
+        found = _probe(folder, scene, ident, wanted)
+        if found == "stale":
+            stale = i if stale is None else stale
+        elif found == "free":
+            i = i if stale is None else stale
+            return ("free", folders[i], None, folders[i:])
+        elif found:
+            return found
+    return None if stale is None else ("free", folders[stale], None, folders[stale:])
+
+
 def _destination(path, dest_parent, scene, several, ident, wanted):
     """("free", folder, container to create or None, the candidate folders from folder on) or ("reused" |
     "in_place", .max path)."""
     stem = _safe_stem(os.path.basename(path), "pack")
     if not several:
-        folders = list(_candidates(dest_parent, stem))
-        for i, folder in enumerate(folders):
-            found = _probe(folder, scene, ident, wanted)
-            if found == "free":
-                return ("free", folder, None, folders[i:])
-            if found:
-                return found
+        found = _offer(list(_candidates(dest_parent, stem)), scene, ident, wanted)
+        if found:
+            return found
     else:
         sub = _safe_stem(scene.base, "scene")
         for top in _candidates(dest_parent, stem):
@@ -769,13 +800,9 @@ def _destination(path, dest_parent, scene, several, ident, wanted):
                 continue
             if not _marker_matches(marker, ident, None):
                 continue
-            folders = list(_candidates(top, sub))
-            for i, folder in enumerate(folders):
-                found = _probe(folder, scene, ident, wanted)
-                if found == "free":
-                    return ("free", folder, None, folders[i:])
-                if found:
-                    return found
+            found = _offer(list(_candidates(top, sub)), scene, ident, wanted)
+            if found:
+                return found
             break
     raise _no_free_folder(path, dest_parent)
 
@@ -785,7 +812,7 @@ def _no_free_folder(path, parent):
                      % (os.path.basename(path), parent))
 
 
-def _reserve(path, folders):
+def _reserve(path, folders, ident):
     """Create the first of folders that does not exist yet. One that appeared since _destination looked (another
     unpack of the same pack, or anything else) is never written into: the next name is taken. A stale reservation
     is cleared and its name taken again."""
@@ -793,11 +820,11 @@ def _reserve(path, folders):
         try:
             os.mkdir(folder)
         except FileExistsError:
-            if not _clear_stale_reservation(folder):
+            if not _clear_stale_reservation(folder, ident):
                 continue
             try:
                 os.mkdir(folder)
-            except FileExistsError:
+            except OSError:  # made again meanwhile, or still pending delete (Windows)
                 continue
         return folder
     raise _no_free_folder(path, os.path.dirname(folders[0]))
@@ -1019,8 +1046,8 @@ def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=Non
                     extract(maps)
                 plan = scene_plan + maps
             _check_staging(staging, [t for _e, t in plan], path)
-            reserved = _reserve(path, folders)
-            _write_reservation(reserved, [t for _e, t in plan[1:]])
+            reserved = _reserve(path, folders, ident)
+            _write_reservation(reserved, ident, [t for _e, t in plan[1:]])
             # The maps, then the scene, then the marker: a folder seen half-filled has no .max to import yet,
             # and only a complete one carries the marker that lets it be reused.
             for target in [t for _e, t in plan[1:]] + [chosen.base]:

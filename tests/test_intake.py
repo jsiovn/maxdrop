@@ -1167,6 +1167,15 @@ class Reservation(Base):
     OLD = 7 * 3600
     FILES = [("room.max", b"MAX"), ("wood.jpg", b"W"), ("stone.png", b"S")]
 
+    def ident(self, path):
+        return archive._ident(path, os.stat(path))
+
+    def reservation(self, folder, ident, maps):
+        """An aged reservation file, as unpack() writes it."""
+        path = os.path.join(folder, archive.RESERVATION)
+        write(path, json.dumps(dict(ident, format=archive.MARKER_FORMAT, maps=maps)).encode())
+        self.age(path)
+
     def age(self, *paths):
         then = time.time() - self.OLD
         for path in paths:
@@ -1218,7 +1227,7 @@ class Reservation(Base):
         self.assertEqual(self.listing(folder), sorted([archive.MARKER, "room.max", "stone.png", "wood.jpg"]))
         self.assertEqual(self.listing(self.out), ["pack"])
 
-    def test_a_crash_before_any_move(self):
+    def test_a_crash_before_any_move_leaves_a_folder_taken_again(self):
         path = self.pack(self.FILES)
         folder = self.crash(path, moves=0)
         self.assertEqual(os.listdir(folder), [archive.RESERVATION])
@@ -1256,7 +1265,7 @@ class Reservation(Base):
                 folder = self.crash(path, moves=1, out=out)
                 add(folder)
                 self.age(os.path.join(folder, archive.RESERVATION))
-                self.assertIsNone(archive._stale_reservation(folder))
+                self.assertIsNone(archive._stale_reservation(folder, self.ident(path)))
                 kept = self.listing(folder)
                 r = archive.unpack(path, dest_parent=out)
                 if label == "a scene":
@@ -1266,47 +1275,116 @@ class Reservation(Base):
                 self.assertEqual(self.listing(folder), kept)
 
     def test_a_reservation_file_that_does_not_hold_is_not_stale(self):
+        path = self.pack(self.FILES)
+        ident = self.ident(path)
         folder = os.path.join(self.out, "pack")
         reservation = os.path.join(folder, archive.RESERVATION)
-        fmt = archive.MARKER_FORMAT
+        good = dict(ident, format=archive.MARKER_FORMAT, maps=["wood.jpg"])
         cases = {
             "not json": (b"half", "wood.jpg"),
             "not a dict": (b"[]", "wood.jpg"),
-            "another format": (json.dumps({"format": 99, "maps": ["wood.jpg"]}).encode(), "wood.jpg"),
-            "maps not a list": (json.dumps({"format": fmt, "maps": "wood.jpg"}).encode(), "wood.jpg"),
-            # A file of an archive extracted by hand: only names a pack writes as maps count.
-            "a listed scene": (json.dumps({"format": fmt, "maps": ["room.max"]}).encode(), "room.max"),
-            "a listed text": (json.dumps({"format": fmt, "maps": ["notes.txt"]}).encode(), "notes.txt"),
-            "a listed refused name": (json.dumps({"format": fmt, "maps": ["wood.jpg "]}).encode(), "wood.jpg"),
+            "another format": (dict(good, format=99), "wood.jpg"),
+            "maps not a list": (dict(good, maps="wood.jpg"), "wood.jpg"),
+            # A file of an archive extracted by hand: it must name this pack, and only names a pack writes as maps
+            # count.
+            "another pack": (dict(good, size=ident["size"] + 1), "wood.jpg"),
+            "no pack": ({"format": archive.MARKER_FORMAT, "maps": ["wood.jpg"]}, "wood.jpg"),
+            "a listed scene": (dict(good, maps=["room.max"]), "room.max"),
+            "a listed text": (dict(good, maps=["notes.txt"]), "notes.txt"),
+            "a listed refused name": (dict(good, maps=["wood.jpg "]), "wood.jpg"),
         }
         for label, (data, present) in cases.items():
             with self.subTest(label):
                 os.mkdir(folder)
-                write(reservation, data)
+                write(reservation, data if isinstance(data, bytes) else json.dumps(data).encode())
                 write(os.path.join(folder, present), b"W")
                 self.age(reservation)
-                self.assertIsNone(archive._stale_reservation(folder))
-                self.assertFalse(archive._clear_stale_reservation(folder))
+                self.assertIsNone(archive._stale_reservation(folder, ident))
+                self.assertFalse(archive._clear_stale_reservation(folder, ident))
                 self.assertEqual(self.listing(folder), sorted([archive.RESERVATION, present]))
+                r = archive.unpack(path, dest_parent=self.out)
+                if present == "room.max":
+                    self.assertEqual((r.mode, r.folder), ("in_place", folder))
+                else:
+                    self.assertEqual((r.mode, r.folder), ("unpacked", folder + " (2)"))
+                    shutil.rmtree(r.folder)
                 shutil.rmtree(folder)
         os.makedirs(reservation)  # a folder by that name
         self.age(reservation)
-        self.assertIsNone(archive._stale_reservation(folder))
+        self.assertIsNone(archive._stale_reservation(folder, ident))
+
+    def test_two_names_of_one_key_are_not_stale(self):
+        # NTFS keeps an NFC and an NFD name apart; name_key() makes them one: the second would go unchecked.
+        nfc, nfd = "caf\u00e9.jpg", "cafe\u0301.jpg"
+        path = self.pack(self.FILES)
+        folder = os.path.join(self.out, "pack")
+        os.mkdir(folder)
+        write(os.path.join(folder, nfc), b"1")
+        write(os.path.join(folder, nfd), b"2")
+        if len(os.listdir(folder)) != 2:
+            raise unittest.SkipTest("this file system stores both names as one")
+        self.reservation(folder, self.ident(path), [nfc])
+        self.assertIsNone(archive._stale_reservation(folder, self.ident(path)))
+        os.remove(os.path.join(folder, nfd))
+        self.assertIsNotNone(archive._stale_reservation(folder, self.ident(path)))
 
     def test_a_linked_folder_is_not_stale(self):
+        path = self.pack(self.FILES)
+        ident = self.ident(path)
         target = os.path.join(self.tmp, "target")
         os.mkdir(target)
-        write(os.path.join(target, archive.RESERVATION),
-              json.dumps({"format": archive.MARKER_FORMAT, "maps": ["keep.jpg"]}).encode())
-        write(os.path.join(target, "keep.jpg"), b"K")
-        self.age(os.path.join(target, archive.RESERVATION))
-        self.assertIsNotNone(archive._stale_reservation(target))
+        write(os.path.join(target, "wood.jpg"), b"K")
+        self.reservation(target, ident, ["wood.jpg"])
+        self.assertIsNotNone(archive._stale_reservation(target, ident))
         link = os.path.join(self.out, "pack")
         junction(target, link)
         self.addCleanup(os.rmdir, link)
-        self.assertIsNone(archive._stale_reservation(link))
-        self.assertFalse(archive._clear_stale_reservation(link))
-        self.assertEqual(self.listing(target), sorted([archive.RESERVATION, "keep.jpg"]))
+        self.assertIsNone(archive._stale_reservation(link, ident))
+        self.assertFalse(archive._clear_stale_reservation(link, ident))
+        self.assertEqual(self.listing(target), sorted([archive.RESERVATION, "wood.jpg"]))
+
+    def test_a_later_folder_a_retry_completed_is_reused(self):
+        path = self.pack(self.FILES)
+        folder = self.crash(path, moves=1)
+        retry = archive.unpack(path, dest_parent=self.out)
+        self.assertEqual(retry.folder, folder + " (2)")
+        self.age(os.path.join(folder, archive.RESERVATION))
+        self.assertEqual(archive.preview(path, "room.max", False, self.out), ("reused", retry.max_path))
+        r = archive.unpack(path, dest_parent=self.out)
+        self.assertEqual((r.mode, r.folder), ("reused", retry.folder))
+        self.assertEqual(self.listing(folder), sorted([archive.RESERVATION, "wood.jpg"]))
+
+    def test_a_later_scene_folder_a_retry_completed_is_reused(self):
+        path = self.pack([("one.max", b"1"), ("two.max", b"2"), ("wood.jpg", b"W")])
+        folder = self.crash(path, moves=1, scene="two.max")
+        retry = archive.unpack(path, "two.max", dest_parent=self.out)
+        self.assertEqual(retry.folder, folder + " (2)")
+        self.age(os.path.join(folder, archive.RESERVATION))
+        r = archive.unpack(path, "two.max", dest_parent=self.out)
+        self.assertEqual((r.mode, r.folder), ("reused", retry.folder))
+
+    def test_two_unpacks_clearing_one_folder(self):
+        path = self.pack(self.FILES)
+        folder = self.crash(path, moves=1)
+        self.age(os.path.join(folder, archive.RESERVATION))
+        real, other, calls = archive._stale_reservation, [], []
+
+        def judged(f, ident):
+            found = real(f, ident)
+            if f == folder and not other:
+                calls.append(found is not None)
+                if len(calls) == 2:  # _probe's look, then _clear_stale_reservation's: before its removal
+                    # Another unpack of the pack clears the folder and fills it.
+                    other.append(None)
+                    other[0] = archive.unpack(path, dest_parent=self.out)
+            return found
+        r = None
+        with mock.patch.object(archive, "_stale_reservation", judged):
+            r = archive.unpack(path, dest_parent=self.out)
+        self.assertEqual((other[0].folder, r.folder), (folder, folder + " (2)"))
+        complete = sorted([archive.MARKER, "room.max", "stone.png", "wood.jpg"])
+        self.assertEqual((self.listing(folder), self.listing(r.folder)), (complete, complete))
+        self.assertEqual(self.listing(self.out), ["pack", "pack (2)"])
 
     def test_a_stale_scene_folder_of_several(self):
         path = self.pack([("one.max", b"1"), ("two.max", b"2"), ("wood.jpg", b"W")])
@@ -1355,7 +1433,7 @@ class Reservation(Base):
         self.assertEqual(self.listing(r.folder),
                          sorted([archive.MARKER, archive.RESERVATION, "room.max", "stone.png", "wood.jpg"]))
         self.age(os.path.join(r.folder, archive.RESERVATION))
-        self.assertIsNone(archive._stale_reservation(r.folder))
+        self.assertIsNone(archive._stale_reservation(r.folder, self.ident(path)))
         self.assertEqual(archive.unpack(path, dest_parent=self.out).mode, "reused")
 
 
