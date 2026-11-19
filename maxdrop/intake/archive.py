@@ -103,6 +103,13 @@ class PackError(Exception):
     """The one error of this module; its message tells the user what to do."""
 
 
+class Cancelled(PackError):
+    """The unpack was stopped by its watch (unpack(watch=...)): the user cancelled the import."""
+
+    def __init__(self, message="Unpacking was cancelled."):
+        super().__init__(message)
+
+
 def password_message(path):
     """The one message for a pack with a password, whichever backend found it and on which entry."""
     return "%s is password-protected: MaxDrop does not ask for passwords. %s" % (os.path.basename(path),
@@ -134,8 +141,9 @@ def _size_text(n):
 class _Budget:
     """Counts what is really written: a declared size can lie."""
 
-    def __init__(self, limits):
+    def __init__(self, limits, watch=None):
         self.limits = limits
+        self.watch = watch
         self.files = 0
         self.total = 0
         self.current = 0
@@ -162,7 +170,10 @@ class _Budget:
         self.total += n
         self.check_time()
 
-    def check_time(self):
+    def check_time(self, seen=None):
+        """seen: the bytes written so far when total does not count them yet (a program writing them)."""
+        if self.watch is not None:
+            self.watch(self.total if seen is None else seen)
         if time.monotonic() > self.deadline:
             raise PackError("Unpacking took longer than %d seconds and was stopped. Extract the archive by hand."
                             % self.limits.seconds)
@@ -990,7 +1001,7 @@ def _refuse_unreadable(entries, path):
             raise PackError(_BY_HAND % ("%s %s" % (e.name, e.unsupported)))
 
 
-def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=None, references=None):
+def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=None, references=None, watch=None):
     """Unpack the scene (its archive path, as list_pack gives it; may be None when the pack holds one) with its
     maps. wanted: optional set of name_key() base names; when given, only those assets are written. references:
     instead of wanted, a callable asked about a .max path that returns the base names of the files that scene
@@ -999,6 +1010,10 @@ def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=Non
 
     The destination is <dest_parent>/<archive stem>/, or <dest_parent>/<archive stem>/<scene stem>/ when the pack
     holds several scenes; dest_parent defaults to the archive's folder.
+
+    watch: called with the bytes written so far while the files are written (often: every chunk, or every half
+    second while a program unpacks), in the thread that unpacks. It may raise Cancelled to stop: the program is
+    ended, the staging folder removed, and a pack folder made for this unpack removed while it holds nothing else.
     """
     if wanted is not None and references is not None:
         raise ValueError("pass wanted or references, not both")
@@ -1089,7 +1104,7 @@ def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=Non
         _remove_stale_staging(parent, limits)
         staging = tempfile.mkdtemp(prefix=STAGING_PREFIX, dir=parent)
         reserved = None
-        budget = _Budget(limits)
+        budget = _Budget(limits, watch)
         labels = []
 
         def extract(part):

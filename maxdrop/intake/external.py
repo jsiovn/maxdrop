@@ -813,7 +813,7 @@ def _watcher(out, budget):
         if total > limits.total_bytes:
             raise _error("The pack unpacks to more than %s, the most MaxDrop writes from one pack. Extract it by "
                          "hand." % size_text(limits.total_bytes))
-        budget.check_time()
+        budget.check_time(total)
     return watch
 
 

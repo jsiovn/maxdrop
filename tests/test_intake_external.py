@@ -875,6 +875,28 @@ class RealToolTests(TempCase):
                     self.assertEqual(sorted(os.listdir(case_dir)), sorted([name, name.rsplit(".", 1)[0]]))
                     say(label, True)
 
+    def test_cancelled_by_the_watch(self):
+        """A watch that raises Cancelled ends the program and leaves only the pack in its folder."""
+        for name in ("normal.rar", "plain.7z"):
+            flavors = [f for f in (UNRAR, SEVENZIP, BSDTAR) if name in self.CASES[f]]
+            for tool, label in self.tools_for("cancel %s" % name, flavors):
+                with self.subTest(tool=tool.label, pack=name):
+                    self.only(tool)
+                    case_dir = tempfile.mkdtemp(dir=self.tmp)
+                    pack = os.path.join(case_dir, name)
+                    shutil.copyfile(os.path.join(PACKS, name), pack)
+                    seen = []
+
+                    def stop(n):
+                        seen.append(n)
+                        raise archive.Cancelled()
+
+                    with self.assertRaises(archive.Cancelled):
+                        archive.unpack(pack, watch=stop)
+                    self.assertEqual(seen, [0])
+                    self.assertEqual(os.listdir(case_dir), [name])
+                    say(label, True)
+
     def test_references_unpack_only_the_named_maps(self):
         """Two phases through one program: the scene alone, then only the maps its asset list names."""
         for name in ("normal.rar", "solid.rar", "plain.7z"):

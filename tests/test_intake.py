@@ -614,6 +614,38 @@ class LimitTests(Base):
             budget.start_file("a")
 
 
+class Watch(Base):
+    """unpack(watch=...): the bytes written so far, and a way to stop (the import's Esc)."""
+
+    def test_watch_sees_the_bytes_written(self):
+        path = self.pack([("room.max", b"M" * 3000), ("wood.jpg", b"W" * 5000)])
+        seen = []
+        result = archive.unpack(path, dest_parent=self.out, watch=seen.append)
+        self.assertEqual(result.written, 2)
+        self.assertTrue(seen and seen == sorted(seen), seen)
+        self.assertEqual(seen[-1], 8000)
+
+    def test_cancelled_leaves_nothing(self):
+        path = self.pack([("room.max", b"M" * 3000), ("wood.jpg", b"W" * 5000)])
+        before = files_under(self.tmp)
+        calls = []
+
+        def stop(n):
+            calls.append(n)
+            if len(calls) == 2:
+                raise archive.Cancelled()
+
+        with self.assertRaises(archive.Cancelled):
+            archive.unpack(path, dest_parent=self.out, watch=stop)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(os.listdir(self.out), [])
+        self.assert_clean(before)
+
+    def test_cancelled_is_a_pack_error(self):
+        self.assertTrue(issubclass(archive.Cancelled, PackError))
+        self.assertTrue(str(archive.Cancelled()))
+
+
 class Unreadable(Base):
     def test_encrypted_entry(self):
         path = self.pack([("room.max", b"MAX"), ("secret.jpg", b"S")])
