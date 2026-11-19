@@ -246,7 +246,7 @@ def track_targets(desc, built):
         ob, target = built.objects.get(node.index), built.objects.get(look.target)
         if ob is None:
             continue
-        if target is None or target is ob:
+        if target is None or target is ob:  # a guard: no file reaches it (every node is built, a self-aim is damaged)
             kept.append((node.index, NO_TARGET if target is None else SELF_TARGET))
             continue
         if look.track is None:

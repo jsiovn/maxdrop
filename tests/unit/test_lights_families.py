@@ -110,6 +110,11 @@ class Standard(unittest.TestCase):
         self.assertAlmostEqual(ld.watts, 1500.0 * 0.25 * CD, delta=1e-9)
         self.assertEqual(issues, [L.INVERSE % 0.5])
 
+    def test_decay_from_a_start_of_zero_is_reported(self):
+        for decay in (L.DECAY_SQUARE, L.DECAY_INVERSE):
+            ld, issues = describe(standard(decay=decay, start=0.0, multiplier=2.0))
+            self.assertEqual((ld.watts, issues), (0.0, [L.ZERO_START]))
+
     def test_spot_cone(self):
         ld, issues = describe(standard(shape=L.SPOTLIGHT, hotspot=30.0, falloff=50.0, decay=L.DECAY_SQUARE,
                                        start=1000.0))

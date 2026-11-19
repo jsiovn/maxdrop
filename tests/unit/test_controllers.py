@@ -757,17 +757,27 @@ class TestLookAt(MatrixCase):
         self.assertEqual([(i.node, i.reason[:len(ct.DAMAGED)]) for i in t.issues], [(n, ct.DAMAGED)])
         self.assertIn("depends on itself", t.issues[0].reason)
         self.assertIsNone(t.look_at(n))
-        b = LookAtBuild()  # two aiming at each other: the one evaluated second is damaged, the first aims at it
+        b = LookAtBuild()  # two aiming at each other: both damaged, whichever is asked for first
         a = len(b.objects) + 7
         other = b.look_at(a + 8, pos=(10, 0, 0))
         self.assertEqual(other, a)
         second = b.look_at(a, pos=(0, 10, 0))
+        for first in (a, second):
+            t = b.transforms()
+            t.world(first)
+            self.assertEqual(sorted((i.node, i.reason[:len(ct.DAMAGED)]) for i in t.issues),
+                             [(a, ct.DAMAGED), (second, ct.DAMAGED)])
+            self.assertEqual((t.world(a), t.world(second)), (ct.IDENTITY, ct.IDENTITY))
+            self.assertEqual((t.look_at(a), t.look_at(second)), (None, None))
+        b = LookAtBuild()  # a node aiming into a cycle is not on it: it aims at the damaged node
+        c = len(b.objects) + 7
+        self.assertEqual(b.look_at(c + 8), c)
+        self.assertEqual(b.look_at(c + 16, pos=(10, 0, 0)), c + 8)
+        self.assertEqual(b.look_at(c + 8, pos=(0, 10, 0)), c + 16)
         t = b.transforms()
-        world = t.world(a)
-        self.assertTrue(all(math.isfinite(v) for row in world for v in row))
-        self.assertEqual([(i.node, i.reason[:len(ct.DAMAGED)]) for i in t.issues], [(second, ct.DAMAGED)])
-        self.assertEqual(t.world(second), ct.IDENTITY)
-        self.assertIsNotNone(t.look_at(a))
+        t.world(c)
+        self.assertEqual(sorted(i.node for i in t.issues), [c + 8, c + 16])
+        self.assertIsNotNone(t.look_at(c))
 
     def test_long_chain(self):
         b = LookAtBuild()

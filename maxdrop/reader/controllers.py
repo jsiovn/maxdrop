@@ -33,8 +33,9 @@ controller in a PRS) give the node's world matrix from the world positions of ot
 constraint's targets and up node): scale * aim frame * translation(P), P the position controller's value times the
 parent's world matrix; the parent's rotation and scale do not reach the frame. The node's local matrix is that
 world matrix times the parent's inverse, and its children follow the world matrix. look_frame() and
-constraint_frame() say how a frame is aimed, look_at(i) describes a node's Look At controller. A look-at whose
-evaluation comes back to itself (a cycle) or waits on more than MAX_LOOK_AT_DEPTH others is damaged.
+constraint_frame() say how a frame is aimed, look_at(i) describes a node's Look At controller. Every node of a
+look-at cycle (one aimed at itself included) is damaged, whichever node is asked for first; a look-at that waits on
+more than MAX_LOOK_AT_DEPTH others is damaged.
 
 Anything not supported gives identity (zero position, no rotation, unit scale) for that controller and an Issue:
 an unknown class (also a Look At or a constraint outside a node, as a modifier's gizmo, and a constraint anywhere
@@ -611,6 +612,7 @@ class _Eval:
         return _point(self.position(i), self.transforms.parent_world(self.node))
 
     def _look_at(self, i):
+        # the parent's scale is intentionally dropped: 3ds Max's Look At frame is absolute (_constrained keeps it)
         chunk = self.scene.chunk(i)
         refs = self.scene.refs(i)
         axis, flip, target_up = 2, False, False
@@ -727,6 +729,7 @@ class Transforms:
         self._direct = {}  # node -> world matrix of a look-at node, which its local matrix only approximates
         self._look = {}  # node -> LookAt
         self._busy = []  # nodes whose local matrix is being computed: a look-at waits on other nodes
+        self._cycle = set()  # nodes found on a look-at cycle: each one is damaged, not only where it closed
 
     def local(self, i):
         """Node i's transform relative to its parent: scale * rotation * position (a look-at node: its world
@@ -734,7 +737,8 @@ class Transforms:
         m = self._local.get(i)
         if m is not None:
             return m
-        if i in self._busy:  # only reached from a look-at below local(i): raised into that node's evaluation
+        if i in self._busy:  # only reached from a look-at below local(i): every node from i on waits on i
+            self._cycle.update(self._busy[self._busy.index(i):])
             raise ChunkError("node %d: its look-at depends on itself" % i)
         if len(self._busy) >= MAX_LOOK_AT_DEPTH:
             raise ChunkError("look-at nodes waiting on more than %d others" % MAX_LOOK_AT_DEPTH)
@@ -759,6 +763,8 @@ class Transforms:
         mark = len(self.issues)
         try:
             m = ev.matrix(node.tm)
+            if i in self._cycle:  # it completed, aimed at a node the cycle left at identity
+                raise ChunkError("node %d: its look-at depends on itself" % i)
             if ev.world and _finite(m):
                 inverse = _inverse(self.parent_world(i))
                 if inverse is None:

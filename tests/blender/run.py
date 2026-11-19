@@ -916,7 +916,9 @@ def check_lookat(path, desc, obs, nodes, meters):
         n in line and "Keep Targets" in line for line in body.splitlines())]
     check("lookat Keep Targets: the report names the two kept fixed", named == ["FixtureCamRoll", "FixtureLookerY"],
           str(named))
-    # a look-at whose target was not built, or that aims at itself, keeps its rotation and is named with the reason
+    # a look-at whose target was not built, or that aims at itself, keeps its rotation and is named with the reason.
+    # No .max reaches either guard (every node is built; a self-aim is damaged by reader.controllers, look_at None):
+    # hand-built descriptions
     from types import SimpleNamespace
     from maxdrop.build import objects as build_objects
     from maxdrop.convert.scene import LookAtDescription

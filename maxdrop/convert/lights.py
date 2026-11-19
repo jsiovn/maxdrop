@@ -61,7 +61,8 @@ watts at 683 lm/W: 4 pi I / 683 for a point or spot light of on-axis intensity I
   decay (an issue: Blender's light falls off). Omni -> POINT, Spot -> SPOT (_cone: size the falloff, the blend
   that puts Blender's full-intensity edge on the hotspot; Blender blends in cosine space, (cos theta - cos(size / 2))
   / ((1 - cos(size / 2)) blend)), Direct -> SUN of 1500 m lx (its beam, the falloff's cylinder, is not: an issue,
-  but with overshoot). Radius and angle 0: they are point sources with hard shadows.
+  but with overshoot). Radius and angle 0: they are point sources with hard shadows. Decay from a start of 0 gives
+  0 W (an issue).
 - Photometric (Free / Target Light in its six shapes, one class each; ParamBlock2s 0, 2, 3, 4): the intensity is
   always cd, times the dimmer. Isotropic -> POINT, spotlight -> SPOT (block 2's cone), web -> SPOT of WEB_CONE
   (the rules source's wide spot, falloff 170 and hotspot 100 degrees; the web file named in an issue), uniform
@@ -191,6 +192,7 @@ NOT_SKYLIGHT = "a Skylight is not imported yet (Skylight -> World is later work)
 SKY = "the environment map is a VRaySky: not imported yet (environment -> World is later work)"
 NO_DECAY = "no decay: Blender's light falls off with the square of the distance; as bright as in 3ds Max at %g m"
 INVERSE = "inverse decay: Blender's light falls off with the square of the distance; as bright as in 3ds Max at %g m"
+ZERO_START = "decay start 0: its power grows with the square of the decay start, so 0 W"
 BEAM = "its beam (%g m across) is not imported: the sun lights the whole scene"
 RECTANGLE_CONE = "its rectangular cone is drawn round"
 OVERSHOOT = "overshoot is not imported: the spot lights its cone only"
@@ -599,7 +601,9 @@ def _describe_standard(key, name, v, meters, swatches, issues):
         issues.append(NO_DECAY % d)
     else:
         d = abs(v["start"]) * meters
-        if v["decay"] != DECAY_SQUARE:
+        if d == 0.0:
+            issues.append(ZERO_START)
+        elif v["decay"] != DECAY_SQUARE:
             issues.append(INVERSE % d)
     ld.watts = ld.power = point_watts(LUX_PER_UNIT * m * d * d)
     if kind == SPOTLIGHT:
