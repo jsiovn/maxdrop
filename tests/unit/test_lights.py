@@ -210,7 +210,6 @@ class Params(unittest.TestCase):
     def test_no_block_raises(self):
         light = _Entry(classids.SC_LIGHT, classids.VRAY_LIGHT)
         sc = _Scene([light, _Entry(classids.SC_LIGHT, classids.VRAY_LIGHT)], {0: {0: 1}})
-        self.assertTrue(L.is_vray_light(sc, 0))
         with self.assertRaises(L.LightError):
             L.read_params(sc, 0)
         with self.assertRaises(L.LightError):

@@ -5,7 +5,6 @@
 """3ds Max lights as Blender lights: shape, size in meters, linear color and power in watts.
 
     light_class(scene, i)               # VRAY, STANDARD, PHOTOMETRIC, SUN, IES or SKYLIGHT; None: not one read here
-    is_vray_light(scene, i)             # object i is a VRayLight
     values, issues = read_params(scene, i, assets)   # the light's values, LightError without its block
     not_built(values)                   # why a mesh or dome light or a Skylight is not built, None for the others
     scale = area_scale(values, world)   # what a node's scale does to the area, rounded (part of the key)
@@ -256,11 +255,6 @@ def light_class(scene, i):
     if cid in _PHOTOMETRIC:
         return PHOTOMETRIC
     return _FAMILIES.get(cid)
-
-
-def is_vray_light(scene, i):
-    entry = scene.entry(i)
-    return entry is not None and entry.superclass == classids.SC_LIGHT and entry.class_id == classids.VRAY_LIGHT
 
 
 def environment_sky(scene):
@@ -536,14 +530,6 @@ def describe(key, name, values, meters, swatches, scale=1.0):
     else:
         ld.radius = size0 * meters
     return ld, issues
-
-
-def describe_light(scene, i, name, meters, swatches, scale=1.0, assets=None):
-    """(LightDescription of light object i keyed (i, scale), or None, issues); LightError when its block is missing
-    or damaged."""
-    values, issues = read_params(scene, i, assets)
-    ld, more = describe((i, scale), name, values, meters, swatches, scale)
-    return ld, issues + more
 
 
 def _rays(ld, diffuse, specular, diffuse_contribution, specular_contribution, issues):
