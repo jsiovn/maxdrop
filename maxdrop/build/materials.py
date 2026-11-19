@@ -867,9 +867,9 @@ class _Tree:
         result = MISSING
         for layer in n.layers:
             v = self.graph(layer.node, work, depth + 2)
+            mask = self.graph(layer.mask, FLOAT, depth + 2) if layer.mask is not None else MISSING  # its node even unused
             if v is MISSING:
                 continue
-            mask = self.graph(layer.mask, FLOAT, depth + 2) if layer.mask is not None else MISSING
             if result is MISSING and layer.opacity >= 1.0 and mask is MISSING:
                 result = v
                 continue

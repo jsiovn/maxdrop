@@ -68,6 +68,7 @@ UV_LAYERS = {
     "stack_convert": ["UVMap"],  # its modifiers become Blender modifiers: the base meshes are built
     "standard_physical": ["UVMap"],
     "texmap_rules": ["UVMap"],
+    "texmap_wrappers": ["UVMap"],
     "units_cm": ["UVMap"],
     "units_in": ["UVMap"],
     "units_mm": ["UVMap"],

@@ -11,6 +11,7 @@ into materials.py, and the guards on synthetic maps.
 """
 import collections
 import importlib
+import json
 import math
 import os
 import struct
@@ -1571,6 +1572,109 @@ class SwatchRule(Checks):
             with self.subTest(rule):
                 self.close(self._root(rule, kelvin).value, colors.GAMMA_OFF.color(tx.kelvin_rgb(3000.0)))
                 self.close(self._root(rule, hdr).value, (0.25, 0.5, 2.0))
+
+
+class TexmapWrappers(Checks):
+    """tools/fixtures/texmap_wrappers.ms, against the parameters its oracle (3ds Max) reports for each map."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.f = Fixture("texmap_wrappers")
+        with open(os.path.join(FIXTURE_DIR, "texmap_wrappers.oracle.json"), encoding="utf-8") as fh:
+            graph = json.load(fh)["material_graph"]
+        cls.oracle = collections.defaultdict(list)  # class name -> [{param name: value}] in graph order
+        for item in graph:
+            params = {p["name"]: p["value"] for b in item["blocks"] for p in b["params"] if p["name"]}
+            cls.oracle[item["class_name"]].append(dict(params, _name=item["name"]))
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.f.close()
+
+    def params(self, cls, name):
+        return next(p for p in self.oracle[cls] if p["_name"] == name)
+
+    def test_falloff_perpendicular_with_a_map_amount(self):
+        o = self.params("falloff", "FixtureFoPerp")
+        self.assertEqual((o["type"], o["direction"]), (1, 0))
+        g = self.f.irs["FixtureWrapFalloff"].textures["base_color"]
+        self.assertFalse(g.approximated)
+        self.assertEqual(g.root.mask, tx.Facing(tx.PERPENDICULAR, 1.6))
+        side1 = g.root.a
+        self.close(side1.factor, o["map1Amount"] / 100.0)
+        self.close(side1.a.value, tuple(_lin(c * 255) for c in o["color1"]))
+        self.image(side1.b, "wrap_fo_map.png", tx.SRGB)
+        self.close(g.root.b.value, tuple(_lin(c * 255) for c in o["color2"]))
+
+    def test_falloff_fresnel_and_towards(self):
+        o = self.params("falloff", "FixtureFoFresnel")
+        t = self.f.irs["FixtureWrapFalloff"].textures
+        self.assertEqual(t["specular"].root.mask.mode, tx.FRESNEL)
+        self.close(t["specular"].root.mask.ior, o["ior"])
+        o = self.params("falloff", "FixtureFoTowards")
+        self.assertEqual(o["type"], 0)
+        g = t["emission_color"].root
+        self.assertEqual(g.mask, tx.Facing(tx.TOWARDS, 1.6))
+        self.close((g.a.value, g.b.value), (tuple(o["color1"]), tuple(o["color2"])))
+
+    def test_falloff_other_type_and_direction_are_peeled(self):
+        t = self.f.irs["FixtureWrapFalloff"].textures
+        self.assertEqual((self.params("falloff", "FixtureFoLocalX")["direction"],
+                          self.params("falloff", "FixtureFoShadow")["type"]), (1, 3))
+        self.image(t["alpha"].root, "wrap_fo_dir.png", tx.NON_COLOR)
+        self.assertTrue(t["alpha"].approximated)
+        g = t["roughness"]  # a glossiness map: inverted; shadow / light without a map: its color 1
+        self.close(g.root.input.value, _lin(100))
+        self.assertTrue(g.approximated)
+
+    def test_composite_blend_modes_and_mask(self):
+        o = self.oracle["CompositeTexturemap"][0]
+        g = self.f.irs["FixtureWrapComposite"].textures["base_color"]
+        self.assertFalse(g.approximated)
+        layers = g.root.layers
+        self.assertEqual([la.node.name for la in layers], ["wrap_comp_base.png", "wrap_comp_mul.png",
+                                                           "wrap_comp_over.png", "wrap_comp_screen.png"])
+        self.assertEqual([la.blend for la in layers], o["blendMode"])
+        self.close(tuple(la.opacity for la in layers), tuple(v / 100.0 for v in o["opacity"]))
+        self.assertEqual([la.mask is not None for la in layers], [False, False, True, False])
+        self.assertEqual(layers[2].mask.mask, tx.Facing(), "the mask Falloff, a data Mix by its Facing")
+        g = self.f.irs["FixtureWrapComposite"].textures["emission_color"]
+        top = g.root.layers[1]
+        self.assertEqual(top.blend, tx.SPOTLIGHT_BLEND)
+        self.image(top.mask, "wrap_spot_mask.png", tx.NON_COLOR)
+
+    def test_composite_soft_light_is_peeled(self):
+        self.assertEqual(self.oracle["CompositeTexturemap"][1]["blendMode"], [0, 15])
+        g = self.f.irs["FixtureWrapComposite"].textures["specular"]
+        self.image(g.root, "wrap_soft_base.png", tx.SRGB)
+        self.assertTrue(g.approximated)
+
+    def test_color_correction_rewiring(self):
+        t = self.f.irs["FixtureWrapColor"].textures
+        for slot, name in (("base_color", "FixtureCCMono"), ("specular", "FixtureCCInvert"),
+                           ("emission_color", "FixtureCCCustom")):
+            o = self.params("Color_Correction", name)
+            self.assertEqual(t[slot].root.rewire, (o["rewireR"], o["rewireG"], o["rewireB"]), name)
+            self.assertFalse(t[slot].approximated, name)
+        self.close(t["specular"].root.brightness, 0.2)
+
+    def test_output_and_tint(self):
+        t = self.f.irs["FixtureWrapOutput"].textures
+        out = t["base_color"].root.output
+        self.assertTrue(out.invert)
+        self.close((out.amount, out.level, out.offset), (0.5, 2.0, 0.1))
+        self.image(t["base_color"].root.input, "wrap_out.png", tx.SRGB)
+        o = self.params("RGB_Tint", "FixtureTint")
+        tint = t["specular"].root
+        self.assertIsInstance(tint, tx.Tint)
+        self.close(tint.red, tuple(_lin(c * 255) for c in o["red"]))
+        self.close((tint.green, tint.blue), ((0.0, 1.0, 0.0), (0.0, 0.0, 1.0)))
+        self.image(t["emission_color"].root, "wrap_out_plain.png", tx.SRGB)  # an Output with its defaults
+
+    def test_counts(self):
+        self.assertEqual(self.f.tex.stats.peeled, collections.Counter({"Falloff": 2, "Composite": 1}))
+        self.assertEqual(self.f.tex.stats.unsupported, collections.Counter())
+        self.assertEqual(len(self.f.tex.stats.issues), 3, self.f.tex.stats.issues)
 
 
 class GammaSwatchesFixture(Checks):

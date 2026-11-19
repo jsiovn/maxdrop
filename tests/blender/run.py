@@ -114,6 +114,7 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1; kept literal: tes
     "stack_convert": ["UVMap"],  # the modifiers become Blender modifiers on the base meshes
     "standard_physical": ["UVMap"],
     "texmap_rules": ["UVMap"],
+    "texmap_wrappers": ["UVMap"],
     "units_cm": ["UVMap"],
     "units_in": ["UVMap"],
     "units_mm": ["UVMap"],
@@ -1488,7 +1489,8 @@ def check_pack_cancel(fixture):
 
 
 def check_found_textures():
-    """vray_maps, texmap_rules, corona_maps, corona_light and vray_texmaps copied beside a PNG for each texture name:
+    """vray_maps, texmap_rules, corona_maps, corona_light, vray_texmaps and texmap_wrappers copied beside a PNG for
+    each texture name:
     every Image Texture node gets its file, in the color space the IR asks for, one datablock per file and color
     space; the report lists no texture."""
     from maxdrop.convert import texmaps as tx
@@ -1496,7 +1498,7 @@ def check_found_textures():
     scratch = tempfile.mkdtemp(prefix="maxdrop-textures-")
     linear = []  # the images the IR puts in Linear Rec.709, over every fixture
     try:
-        for name in ("vray_maps", "texmap_rules", "corona_maps", "corona_light", "vray_texmaps"):
+        for name in ("vray_maps", "texmap_rules", "corona_maps", "corona_light", "vray_texmaps", "texmap_wrappers"):
             empty_scene()
             for ob in list(bpy.data.images):
                 bpy.data.images.remove(ob)
@@ -1570,6 +1572,8 @@ def check_found_textures():
                 kinds = {n.bl_idname for n in keep.node_tree.nodes}
                 check("texmap_rules: Mix with a mask, Multiply, Color Correction as nodes",
                       {"ShaderNodeMix", "ShaderNodeHueSaturation", "ShaderNodeGamma"} <= kinds, str(sorted(kinds)))
+            if name == "texmap_wrappers":
+                check_wrapper_nodes()
         check("found textures: a linear color image (VRayBitmap transfer function None) imported in Linear Rec.709",
               "vtx_linear.png" in linear, str(linear))
     finally:
@@ -2207,6 +2211,49 @@ def check_builder_wiring(ma, mb, builder, cm, tx, srgb, data, lost, gamma):
           and close(list(pd.inputs["Base Color"].default_value)[:3], [0.1, 0.2, 0.3], 1e-6)
           and not any(o.is_linked for n in md.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage" for o in n.outputs)
           and len([n for n in md.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage"]) == 1)
+
+
+def _node_kinds(material):
+    """{bl_idname, and bl_idname:operation or :blend_type where a node has one} of a material's nodes."""
+    out = set()
+    for n in material.node_tree.nodes:
+        out.add(n.bl_idname)
+        for attr in ("operation", "blend_type"):
+            if hasattr(n, attr):
+                out.add("%s:%s" % (n.bl_idname, getattr(n, attr)))
+    return out
+
+
+def check_wrapper_nodes():
+    """texmap_wrappers imported with its textures found: the node types and links each wrapper is drawn with."""
+    wants = {
+        "FixtureWrapFalloff": {"ShaderNodeLayerWeight", "ShaderNodeFresnel", "ShaderNodeNewGeometry",
+                               "ShaderNodeVectorMath:DOT_PRODUCT", "ShaderNodeMath:MULTIPLY_ADD", "ShaderNodeMix:MIX"},
+        "FixtureWrapComposite": {"ShaderNodeMix:MULTIPLY", "ShaderNodeMix:OVERLAY", "ShaderNodeMix:SCREEN",
+                                 "ShaderNodeMix:ADD", "ShaderNodeLayerWeight", "ShaderNodeMath:MULTIPLY"},
+        "FixtureWrapColor": {"ShaderNodeInvert", "ShaderNodeSeparateColor", "ShaderNodeCombineColor",
+                             "ShaderNodeVectorMath:DOT_PRODUCT", "ShaderNodeMath:SUBTRACT", "ShaderNodeBrightContrast"},
+        "FixtureWrapOutput": {"ShaderNodeVectorMath:MULTIPLY_ADD", "ShaderNodeVectorMath:SCALE",
+                              "ShaderNodeVectorMath:ADD", "ShaderNodeSeparateColor", "ShaderNodeInvert"},
+    }
+    for name, want in wants.items():
+        m = bpy.data.materials.get(name)
+        kinds = _node_kinds(m) if m is not None else set()
+        check("texmap_wrappers/%s: its wrappers' nodes" % name, want <= kinds, str(sorted(want - kinds)))
+    p = _principled(bpy.data.materials["FixtureWrapFalloff"])
+    mix = _from(p.inputs["Base Color"])
+    side = _from(_input(mix, "A_Color"))
+    check("texmap_wrappers: the Falloff's side 1 is lerp(color 1, its map, 0.6), by Layer Weight Facing",
+          _from(_input(mix, "Factor_Float")).bl_idname == "ShaderNodeLayerWeight" and side.bl_idname == "ShaderNodeMix"
+          and abs(_input(side, "Factor_Float").default_value - 0.6) < 1e-6
+          and _from(_input(side, "B_Color")).bl_idname == "ShaderNodeTexImage")
+    p = _principled(bpy.data.materials["FixtureWrapComposite"])
+    top = _from(p.inputs["Base Color"])
+    screen = _from(_input(top, "B_Color"))
+    check("texmap_wrappers: the Composite's top layer: Screen, then a clamped Mix by 0.7 times its image's alpha",
+          screen.blend_type == 'SCREEN' and top.clamp_result
+          and _from(_input(top, "Factor_Float")).operation == 'MULTIPLY'
+          and abs(_from(_input(top, "Factor_Float")).inputs[1].default_value - 0.7) < 1e-6)
 
 
 def check_wrapper_wiring(builder, cm, tx, srgb, data):
