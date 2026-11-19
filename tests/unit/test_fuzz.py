@@ -2,10 +2,10 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""The plain suite's slice of the .max fuzz harness (tests/unit/fuzz.py): the first CASES cases of every fixture
-through the operator's reader path, without Blender. Each must read, be refused with a MaxFileError, or fail
-only inside the material stage the operator guards; within fuzz.CASE_SECONDS each, the process under
-fuzz.MEMORY_LIMIT. The slice runs in a child process (`fuzz.py slice`): its peak memory is the slice's own, and
+"""The plain suite's slice of the .max fuzz harness (tests/unit/fuzz.py): the first CASES cases of every seed (the
+fixtures and the gzip variant the harness builds) through the operator's reader path, without Blender. Each must
+read, be refused with a MaxFileError, or fail only inside the material stage the operator guards; within
+fuzz.CASE_SECONDS each, the process under fuzz.MEMORY_LIMIT. The slice runs in a child process (`fuzz.py slice`): its peak memory is the slice's own, and
 a case past CASE_SECONDS ends it with the stack of that case (faulthandler). A failure names the case as
 <fixture>:<k>; `python -I tests/unit/fuzz.py replay <fixture>:<k>` runs it again.
 
@@ -17,6 +17,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 
 try:
@@ -60,6 +61,87 @@ class CasesTest(unittest.TestCase):
         self.assertTrue(seed.dir_entries and seed.fat_entries)
         for region in ("header", "fat", "directory", "Scene", "ClassDirectory3", "DllDirectory"):
             self.assertIn(region, seed.regions)
+        self.assertEqual(seed.gzip, {})
+        self.assertIs(seed.kinds, fuzz._KINDS)
+
+
+class GzipSeedTest(unittest.TestCase):
+    """The seed whose Scene is gzip-compressed (3ds Max's Compress on Save), built from a fixture by the harness.
+    Deflate output depends on the zlib build: nothing here pins a compressed length, a digest or outcome counts."""
+
+    NAME = fuzz.GZIP_SEEDS[0]
+
+    @classmethod
+    def setUpClass(cls):
+        cls.plain = fuzz.seeds("max", {cls.NAME})[0]
+        cls.seed = fuzz.seeds("max", {cls.NAME + fuzz.GZIP_SUFFIX})[0]
+
+    def test_it_is_a_seed_of_the_harness(self):
+        self.assertIn(self.NAME + fuzz.GZIP_SUFFIX, fuzz.seed_names("max"))
+        self.assertEqual(self.seed.name, self.NAME + fuzz.GZIP_SUFFIX)
+
+    def test_the_scene_inflates_to_the_fixtures(self):
+        with fuzz.cfb.CompoundFile(self.seed.raw) as cf, fuzz.cfb.CompoundFile(self.plain.raw) as plain:
+            raw = cf.open("Scene", decompress=False)
+            self.assertTrue(raw.compressed)
+            self.assertGreaterEqual(raw.size, 4096)  # regular sectors, not the mini stream
+            self.assertEqual(cf.open("Scene").read(), plain.open("Scene").read())
+            for name in plain.names():
+                if name != "Scene":
+                    self.assertEqual(cf.open(name).read(), plain.open(name).read(), name)
+
+    def test_it_reads_like_its_fixture(self):
+        reader = fuzz._Reader()
+
+        def described(raw):
+            with fuzz.cfb.CompoundFile(raw) as cf:
+                sc = reader.scene.Scene.from_file(cf, encoding="AUTO")
+                unit = reader.units.system_unit(sc)
+                desc = reader.convert.describe(sc, unit.meters if unit else 1.0, unit,
+                                               assets=reader.assets.AssetTable.from_file(cf),
+                                               views=reader.cameras.saved_views(cf))
+                return (repr(desc), [repr(n) for n in desc.nodes], [repr(m) for m in desc.meshes.values()],
+                        [str(i) for i in desc.issues])
+
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertEqual(reader.read(self.seed.raw, folder), "ok")
+        self.assertEqual(described(self.seed.raw), described(self.plain.raw))
+
+    def test_its_structures_are_found(self):
+        g = self.seed.gzip["Scene"]
+        self.assertGreaterEqual(len(g.members), 2)
+        self.assertEqual([m[3] for m in g.members[:-1]], [m[0] for m in g.members[1:]])  # back to back
+        self.assertLess(g.padding, len(g.data))
+        self.assertEqual(g.data[g.padding:], bytes(len(g.data) - g.padding))
+        # The compressed Scene is not walked for chunks; the streams beside it are.
+        self.assertEqual({name for name, _ in self.seed.heads}, {"ClassDirectory3", "DllDirectory"})
+        self.assertNotIn("Scene", {name for name, _, _, _ in self.seed.leaves})
+        self.assertEqual(self.seed.kinds[-1][0], "multi")
+        self.assertEqual(self.seed.kinds[:len(fuzz._KINDS) - 1], fuzz._KINDS[:-1])
+
+    def test_every_gzip_kind_changes_the_file(self):
+        seen = {}
+        for k in range(600):
+            data, spec = fuzz.max_case(self.seed, k)
+            kind = spec.split(" ", 1)[0]
+            seen[kind] = seen.get(kind, 0) + (data != self.seed.raw)
+        for kind, _ in fuzz._GZIP_KINDS:
+            with self.subTest(kind=kind):
+                self.assertGreater(seen.get(kind, 0), 0)
+        self.assertEqual(fuzz.max_case(self.seed, 7), fuzz.max_case(self.seed, 7))
+
+    def test_cases_reach_the_inflate(self):
+        refused = 0
+        for k in range(300):
+            data, spec = fuzz.max_case(self.seed, k)
+            if not spec.startswith("gz_"):
+                continue
+            try:
+                with fuzz.cfb.CompoundFile(data) as cf:
+                    cf.open("Scene")
+            except fuzz.cfb.CfbError as e:
+                refused += str(e).startswith("compressed stream")
+        self.assertGreater(refused, 0)
 
 
 def run_slice(test, target, cases):
@@ -85,7 +167,7 @@ class FuzzSliceTest(unittest.TestCase):
     def test_fixtures_survive_their_first_cases(self):
         self.assertTrue(fuzz.FIXTURES)
         r = run_slice(self, "max", CASES)
-        self.assertEqual(sum(r["counts"].values()), CASES * len(fuzz.FIXTURES))
+        self.assertEqual(sum(r["counts"].values()), CASES * len(fuzz.seed_names("max")))
         self.assertGreater(r["counts"].get("ok", 0), 0)
         self.assertGreater(r["counts"].get("refused", 0), 0)
 
