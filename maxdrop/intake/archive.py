@@ -12,8 +12,8 @@ the files move into it, the marker last. Staging is removed on any failure, and 
 by a later unpack. A destination holds a reservation file while the files move in: one a crash left (old, of the
 same pack, no marker, no .max yet, nothing but the maps it lists) is cleared by a later unpack of that pack, which
 takes the name again unless a later folder serves. A destination, and the folder of a several-scene pack, is made
-under a staging name already holding its reservation file (or marker) and renamed into place: a crash never leaves
-it empty.
+under a staging name already holding its reservation file (or marker) and renamed into place: a crash does not
+leave it empty (unless the rename is refused, when it is made and filled as before).
 
 Formats are recognised by their magic bytes. A backend lists the entries (names) and writes chosen entries into
 the staging folder (extract); the rules here are the same for every backend. Of the add-on it imports only
@@ -57,8 +57,8 @@ MARKER_FORMAT = 1
 # Lives in a destination only while the files move in: see _stale_reservation.
 RESERVATION = ".maxdrop-reserved.json"
 STAGING_PREFIX = ".maxdrop-staging-"
-# A folder a clear of a stale reservation took aside and could not put back: complete by then, so never removed as
-# stale staging.
+# A folder a clear of a stale reservation took aside and could not put back: another unpack had filled it anew (it
+# may hold a complete scene), so it is never removed as stale staging.
 RECLAIM_PREFIX = ".maxdrop-reclaim-"
 
 IMAGE_EXTENSIONS = frozenset((
@@ -667,11 +667,12 @@ def _stale_reservation(folder, ident):
 def _clear_stale_reservation(folder, ident):
     """Remove a stale reservation; False when the folder stays. It is first renamed to a staging name: of two
     unpacks clearing it at once only one rename succeeds, and nothing else writes into the renamed folder, so it
-    is judged again there and only what that scan found is removed (the reservation file last); a crash or a
-    failure meanwhile leaves a staging folder, removed as stale later. A folder no longer stale by then (cleared
-    and filled anew meanwhile: complete) is renamed back; should that fail (the name was taken again), it is
-    renamed to a RECLAIM_PREFIX name, which stale-staging cleanup leaves alone, and stays a staging folder only
-    when that rename fails too."""
+    is judged again there and only what that scan found is removed (the reservation file last); a failure
+    meanwhile leaves a staging folder, removed as stale later. A folder no longer stale by then (cleared and
+    filled anew meanwhile) is renamed back; should that fail (the name taken again, or the rename refused), it is
+    renamed to a RECLAIM_PREFIX name, which stale-staging cleanup leaves alone. It stays a staging folder, removed
+    later, only when that rename fails too or a crash comes between the renames: a stale folder taken aside is
+    staging from the start, so that a crash while it is removed leaves nothing kept for ever."""
     if _stale_reservation(folder, ident) is None:
         return False
     parent = os.path.dirname(folder)
@@ -681,11 +682,18 @@ def _clear_stale_reservation(folder, ident):
     except OSError:
         return False
     files = _stale_reservation(moved, ident)
-    try:
-        if files is None:
-            if not _rename_new(moved, folder):
+    if files is None:
+        try:
+            back = _rename_new(moved, folder)
+        except OSError:
+            back = False
+        if not back:
+            try:
                 os.rename(moved, os.path.join(parent, RECLAIM_PREFIX + os.urandom(6).hex()))
-            return False
+            except OSError:
+                pass
+        return False
+    try:
         for file in files:
             os.remove(file)
         os.rmdir(moved)
@@ -712,8 +720,9 @@ def _rename_new(src, dst):
 def _create(folders, fill, clear=None):
     """Create the first of folders that does not exist yet, already holding what fill(folder) writes into it: it
     is filled under a staging name beside folders[0] and renamed into place, so that a crash never leaves it empty
-    (the staging folder a crash leaves is removed as stale later). clear(folder): True when an existing folder was
-    removed and its name may be taken again. Returns the folder, None when every one exists."""
+    (the staging folder a crash leaves is removed as stale later). Only when that rename is refused is the folder
+    made and filled as before, with the old window. clear(folder): True when an existing folder was removed and
+    its name may be taken again. Returns the folder, None when every one exists."""
     temp = os.path.join(os.path.dirname(folders[0]), STAGING_PREFIX + "new-" + os.urandom(6).hex())
     os.mkdir(temp)
     moved = False

@@ -1563,6 +1563,63 @@ class Reservation(Base):
         self.assertEqual(self.listing(self.out), sorted(["pack", kept[0]]))
         self.assertIn("room.max", os.listdir(os.path.join(self.out, kept[0])))
 
+    def test_a_folder_whose_rename_back_is_refused_is_kept(self):
+        path = self.pack(self.FILES)
+        ident = self.ident(path)
+        folder = self.crash(path, moves=1)
+        self.age(os.path.join(folder, archive.RESERVATION))
+        real_judged, real_rename = archive._stale_reservation, os.rename
+
+        def judged(f, i):
+            if os.path.basename(f).startswith(archive.STAGING_PREFIX):  # filled anew by another unpack
+                write(os.path.join(f, "room.max"), b"MAX")
+                write(os.path.join(f, archive.MARKER), b"{}")
+            return real_judged(f, i)
+
+        def rename(src, dst):
+            if dst == folder:
+                raise PermissionError("a file in it is open")
+            return real_rename(src, dst)
+        with mock.patch.object(archive, "_stale_reservation", judged), \
+                mock.patch.object(archive.os, "rename", rename):
+            self.assertFalse(archive._clear_stale_reservation(folder, ident))
+        self.assertFalse(os.path.lexists(folder))
+        kept = [n for n in os.listdir(self.out) if n.startswith(archive.RECLAIM_PREFIX)]
+        self.assertEqual(len(kept), 1)
+        with mock.patch.object(archive, "_STALE_SECONDS", -60):
+            archive._remove_stale_staging(self.out, archive.Limits(seconds=-60))
+        self.assertIn("room.max", os.listdir(os.path.join(self.out, kept[0])))
+
+    def test_the_fallback_takes_the_next_name_and_cleans_up_a_failure(self):
+        real_rename, real_mkdir = os.rename, os.mkdir
+
+        def rename(src, dst):
+            if os.path.isdir(src):
+                raise PermissionError("a file in it is open")
+            return real_rename(src, dst)
+
+        def mkdir(p, *args):
+            if os.path.basename(p) == "pack":  # made by someone else between the rename and the mkdir
+                real_mkdir(p, *args)
+                raise FileExistsError(p)
+            return real_mkdir(p, *args)
+        path = self.pack(self.FILES)
+        with mock.patch.object(archive.os, "rename", rename), mock.patch.object(archive.os, "mkdir", mkdir):
+            r = archive.unpack(path, dest_parent=self.out)
+        self.assertEqual(r.folder, os.path.join(self.out, "pack (2)"))
+        self.assertEqual(os.listdir(os.path.join(self.out, "pack")), [])
+        self.assertEqual(self.listing(self.out), ["pack", "pack (2)"])
+
+        out = tempfile.mkdtemp(dir=self.tmp)
+        before = files_under(self.tmp)
+        failing = mock.patch.object(archive, "_write_reservation",
+                                    side_effect=[None, OSError("disk gone")])  # fine in staging, not in place
+        with mock.patch.object(archive.os, "rename", rename), failing:
+            with self.assertRaisesRegex(PackError, "disk gone"):
+                archive.unpack(path, dest_parent=out)
+        self.assertEqual(os.listdir(out), [])
+        self.assert_clean(before)
+
     def test_a_clear_that_fails_half_way_is_removed_later(self):
         path = self.pack(self.FILES)
         ident = self.ident(path)
