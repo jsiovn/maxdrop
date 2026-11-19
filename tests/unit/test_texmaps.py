@@ -183,7 +183,11 @@ class TexmapRules(Checks):
 
     def test_peeled_to_the_bitmap_below(self):
         t = self.f.irs["FixtureTexPeel"].textures
-        self.image(t["base_color"].root, "peel_diffuse.png", tx.SRGB)  # Falloff
+        fo = t["base_color"].root  # Falloff, perpendicular / parallel: map 1 to color 2
+        self.assertIsInstance(fo, tx.Mix)
+        self.assertEqual(fo.mask, tx.Facing(tx.PERPENDICULAR, 1.6))
+        self.image(fo.a, "peel_diffuse.png", tx.SRGB)
+        self.close(fo.b.value, tuple(_lin(c) for c in (10, 20, 30)))
         self.image(t["specular"].root.b, "peel_reflect.png", tx.SRGB)  # VRayDirt, at 80 %
         self.close(t["specular"].root.factor, 0.8)
         self.assertIsInstance(t["roughness"].root, tx.Invert)  # Output, a glossiness map
@@ -191,19 +195,24 @@ class TexmapRules(Checks):
         self.assertIsInstance(t["bump"].root, tx.Bump)  # VRayColor2Bump: a height map
         self.close(t["bump"].root.strength, 0.4)
         self.image(t["bump"].root.input, "peel_height.png", tx.NON_COLOR)
-        self.image(t["alpha"].root, "peel_opacity.png", tx.NON_COLOR)  # RGB Tint
-        for name in ("base_color", "specular", "roughness", "bump", "alpha", "metallic", "emission_color"):
+        self.image(t["alpha"].root, "peel_opacity.png", tx.NON_COLOR)  # RGB Tint, its identity
+        for name in ("specular", "bump"):
             self.assertTrue(t[name].approximated, name)
+        for name in ("base_color", "roughness", "alpha", "metallic", "emission_color"):
+            self.assertFalse(t[name].approximated, name)
 
     def test_peels_are_counted_once_per_map(self):
-        self.assertEqual(self.f.tex.stats.peeled, collections.Counter(
-            {"Falloff": 3, "VRayDirt": 1, "Output": 1, "VRayColor2Bump": 1, "RGB Tint": 1}))
+        self.assertEqual(self.f.tex.stats.peeled, collections.Counter({"VRayDirt": 1, "VRayColor2Bump": 1}))
         self.assertEqual(self.f.tex.stats.unsupported, collections.Counter())
 
-    def test_falloff_without_a_map_is_its_color(self):
+    def test_falloff_without_a_map_is_its_colors(self):
         t = self.f.irs["FixtureTexPeel"].textures
-        self.close(t["metallic"].root.value, sum(_lin(c) for c in (200, 100, 50)) / 3.0)  # a data input: the mean
-        self.close(t["emission_color"].root.value, (1.0, 0.0, 0.0))  # map1 switched off: color1
+        g = t["metallic"].root  # a data input: the means
+        self.close((g.a.value, g.b.value), (sum(_lin(c) for c in (200, 100, 50)) / 3.0, 1.0))
+        g = t["emission_color"].root  # map1 switched off: color1
+        self.close(g.a.value, (1.0, 0.0, 0.0))
+        self.close(g.b.value, (1.0, 1.0, 1.0))
+        self.assertIsInstance(g.mask, tx.Facing)
 
     def test_kept_wrappers(self):
         t = self.f.irs["FixtureTexKeep"].textures
@@ -250,8 +259,9 @@ class TexmapRules(Checks):
     def test_composite(self):
         c = self.f.irs["FixtureTexPlace"].textures["base_color"].root
         self.assertIsInstance(c, tx.Composite)
-        self.assertEqual([n.name for n, _o in c.layers], ["place_comp_a.png", "place_comp_b.png"])
-        self.close(tuple(o for _n, o in c.layers), (1.0, 0.6))
+        self.assertEqual([la.node.name for la in c.layers], ["place_comp_a.png", "place_comp_b.png"])
+        self.close(tuple(la.opacity for la in c.layers), (1.0, 0.6))
+        self.assertEqual([(la.blend, la.mask) for la in c.layers], [(0, None), (0, None)])
 
     def test_crop_channel_mirror_angles_gamma(self):
         i = self.f.irs["FixtureTexPlace"].textures["specular"].root
@@ -400,8 +410,8 @@ def _bitmap(index, guid=G1):
     return FakeMap(index, classids.BITMAP_TEX, {13: pblock.Asset(guid)}, cls="Bitmap")
 
 
-def _falloff(index, map1=None, color1=(0.5, 0.5, 0.5)):
-    return FakeMap(index, tx.FALLOFF, {0: color1, 2: Ref(map1), 3: 1}, [map1] if map1 is not None else [],
+def _falloff(index, map1=None, color1=(0.5, 0.5, 0.5), ftype=1):
+    return FakeMap(index, tx.FALLOFF, {0: color1, 2: Ref(map1), 3: 1, 8: ftype}, [map1] if map1 is not None else [],
                    cls="Falloff")
 
 
@@ -502,14 +512,120 @@ class Synthetic(Checks):
         self.assertIsNone(tex.convert(mat.MapRef(1), tx.COLOR))
         self.assertEqual(tex.stats.unsupported, collections.Counter({"Noise": 1}))
 
-    def test_composite_with_a_mask_is_peeled(self):
+    def test_composite_with_a_mask(self):
         comp = FakeMap(1, tx.COMPOSITE, {1: [1, 1], 3: [1, 1], 5: [0, 0], 8: [100.0, 50.0], 9: [Ref(2), Ref(3)],
-                                         10: [Ref(None), Ref(3)]}, [2, 3], cls="Composite")
-        tex = _tex(comp, _bitmap(2), _bitmap(3))
+                                         10: [Ref(None), Ref(4)]}, [2, 3, 4], cls="Composite")
+        tex = _tex(comp, _bitmap(2), _bitmap(3), _bitmap(4))
         g = tex.convert(mat.MapRef(1), tx.COLOR)
-        self.assertIsInstance(g.root, tx.Image)
+        self.assertIsInstance(g.root, tx.Composite)
+        self.assertFalse(g.approximated)
+        bottom, top = g.root.layers
+        self.assertIsNone(bottom.mask)
+        self.assertEqual((top.opacity, top.blend), (0.5, 0))
+        self.assertEqual(top.mask.colorspace, tx.NON_COLOR, "a mask is data")
+        self.assertEqual(tex.stats.peeled, collections.Counter())
+        comp = FakeMap(1, tx.COMPOSITE, {3: [1, 0], 9: [Ref(2), Ref(3)], 10: [Ref(None), Ref(4)]}, [2, 3, 4])
+        g = _tex(comp, _bitmap(2), _bitmap(3), _bitmap(4)).convert(mat.MapRef(1), tx.COLOR)
+        self.assertIsNone(g.root.layers[1].mask, "mask switched off")
+        comp = FakeMap(1, tx.COMPOSITE, {9: [Ref(2), Ref(3)], 10: [Ref(None), Ref(5)]}, [2, 3, 5], cls="Composite",
+                       name="cp")
+        tex = _tex(comp, _bitmap(2), _bitmap(3), _noise(5))
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertIsNone(g.root.layers[1].mask, "a lost mask: the opacity alone")
         self.assertTrue(g.approximated)
-        self.assertEqual(tex.stats.peeled, collections.Counter({"Composite": 1}))
+        self.assertTrue(any("converts to nothing" in r for _i, r in tex.stats.issues))
+
+    def test_composite_blend_modes(self):
+        for mode in sorted(tx.BLENDS):
+            comp = FakeMap(1, tx.COMPOSITE, {5: [14, mode], 9: [Ref(2), Ref(3)]}, [2, 3], cls="Composite")
+            tex = _tex(comp, _bitmap(2), _bitmap(3))
+            g = tex.convert(mat.MapRef(1), tx.COLOR)
+            self.assertEqual([la.blend for la in g.root.layers], [tx.NORMAL_BLEND, mode], "the bottom one is normal")
+            self.assertEqual(tex.stats.peeled, collections.Counter())
+        for mode in (tx.LINEAR_BURN, tx.SOFT_LIGHT, tx.PIN_LIGHT, tx.HARD_MIX, 25):
+            comp = FakeMap(1, tx.COMPOSITE, {5: [0, mode], 9: [Ref(2), Ref(3)]}, [2, 3], cls="Composite")
+            tex = _tex(comp, _bitmap(2), _bitmap(3))
+            g = tex.convert(mat.MapRef(1), tx.COLOR)
+            self.assertIsInstance(g.root, tx.Image, mode)
+            self.assertEqual(tex.stats.peeled, collections.Counter({"Composite": 1}))
+
+    def test_falloff_types_and_amounts(self):
+        fo = FakeMap(1, tx.FALLOFF, {0: (0.0, 0.0, 0.0), 1: 60.0, 2: Ref(2), 3: 1, 4: (1.0, 1.0, 1.0), 5: 100.0,
+                                     6: Ref(3), 7: 1, 8: 2, 9: 0, 11: 1, 12: 1.5}, [2, 3], cls="Falloff")
+        tex = _tex(fo, _bitmap(2), _bitmap(3))
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertFalse(g.approximated)
+        self.assertEqual(g.root.mask, tx.Facing(tx.FRESNEL, 1.5))
+        self.close(g.root.factor, 0.0)
+        side1, side2 = g.root.a, g.root.b
+        self.assertIsInstance(side1, tx.Mix, "map amount 60: lerp(color 1, map 1, 0.6)")
+        self.close(side1.factor, 0.6)
+        self.close(side1.a.value, (0.0, 0.0, 0.0))
+        self.assertIsInstance(side1.b, tx.Image)
+        self.assertIsInstance(side2, tx.Image, "map amount 100: the map")
+        for ftype, mode in ((0, tx.TOWARDS), (1, tx.PERPENDICULAR), (None, tx.PERPENDICULAR)):
+            fo = FakeMap(1, tx.FALLOFF, {8: ftype}, cls="Falloff")
+            self.assertEqual(_tex(fo).convert(mat.MapRef(1), tx.COLOR).root.mask, tx.Facing(mode, 1.6))
+        fo = FakeMap(1, tx.FALLOFF, {8: 2, 11: 0, 12: 1.3}, cls="Falloff", name="f")
+        tex = _tex(fo)
+        self.assertEqual(tex.convert(mat.MapRef(1), tx.COLOR).root.mask, tx.Facing(tx.FRESNEL, 1.3))
+        self.assertEqual([r for _i, r in tex.stats.issues], ["Falloff 'f': the material's IOR not read: its own, 1.3"])
+        fo = FakeMap(1, tx.FALLOFF, {8: 2, 12: float("nan")}, cls="Falloff")
+        self.assertEqual(_tex(fo).convert(mat.MapRef(1), tx.COLOR).root.mask, tx.Facing(tx.FRESNEL, 1.6))
+
+    def test_falloff_other_types_and_directions_are_peeled(self):
+        for params in ({8: 3}, {8: 4}, {8: 1, 9: 1}, {8: 7}):
+            fo = FakeMap(1, tx.FALLOFF, {**params, 0: (1.0, 0.0, 0.0), 2: Ref(2), 3: 1}, [2], cls="Falloff")
+            tex = _tex(fo, _bitmap(2))
+            g = tex.convert(mat.MapRef(1), tx.COLOR)
+            self.assertIsInstance(g.root, tx.Image, params)
+            self.assertTrue(g.approximated)
+            self.assertEqual(tex.stats.peeled, collections.Counter({"Falloff": 1}))
+            self.assertTrue(any("drawn as its first side" in r for r in g.issues))
+            fo = FakeMap(1, tx.FALLOFF, {**params, 0: (1.0, 0.0, 0.0)}, cls="Falloff")
+            self.close(_tex(fo).convert(mat.MapRef(1), tx.COLOR).root.value, (1.0, 0.0, 0.0), "no map: color 1")
+
+    def test_falloff_as_a_mask(self):
+        fo = FakeMap(2, tx.FALLOFF, {}, cls="Falloff")
+        mix = FakeMap(1, tx.MIX, {6: Ref(3), 7: Ref(4), 8: Ref(2)}, [2, 3, 4], cls="Mix")
+        g = _tex(mix, fo, _bitmap(3), _bitmap(4)).convert(mat.MapRef(1), tx.COLOR)
+        self.assertEqual(g.root.mask, tx.Mix(tx.Constant(0.0), tx.Constant(1.0), 0.0, tx.Facing()))
+
+    def test_color_correction_rewiring(self):
+        for params, want in (({2: 1}, tx.REWIRE_MONO), ({2: 2}, tx.REWIRE_INVERT), ({2: 0, 3: 2}, tx.REWIRE_NONE),
+                             ({2: 3, 3: 2, 4: 1, 5: 0}, (2, 1, 0)), ({2: 3, 3: 8, 4: 9, 5: 10}, (8, 9, 10))):
+            cc = FakeMap(1, tx.COLOR_CORRECTION, {**params, 1: Ref(2)}, [2], cls="Color Correction")
+            g = _tex(cc, _bitmap(2)).convert(mat.MapRef(1), tx.COLOR)
+            self.assertEqual(g.root.rewire, want, params)
+            self.assertFalse(g.approximated, params)
+        cc = FakeMap(1, tx.COLOR_CORRECTION, {1: Ref(2), 2: 3, 3: 3, 4: 7, 5: 2}, [2], name="cc")
+        g = _tex(cc, _bitmap(2)).convert(mat.MapRef(1), tx.COLOR)
+        self.assertEqual(g.root.rewire, (9, 10, 2), "alpha drawn as one, its inverse as zero")
+        self.assertTrue(g.approximated)
+        self.assertTrue(any("from alpha" in r for r in g.issues))
+        for params in ({2: 3, 3: (2872,), 4: 1, 5: 2}, {2: 3, 3: 11, 4: 1, 5: 2}, {2: 5}):
+            cc = FakeMap(1, tx.COLOR_CORRECTION, {**params, 1: Ref(2)}, [2], name="cc")
+            g = _tex(cc, _bitmap(2)).convert(mat.MapRef(1), tx.COLOR)
+            self.assertEqual(g.root.rewire, tx.REWIRE_NONE, params)
+            self.assertTrue(any("rewiring" in r for r in g.issues), params)
+
+    def test_output_and_rgb_tint(self):
+        out = FakeMap(1, tx.OUTPUT, {0: Ref(2)}, [2], cls="Output")
+        part = FakeMap(5, (0x100, 0), superclass=classids.SC_TEXOUTPUT)
+        part.legacy = {0: {0: 2.0, 1: 0.1, 2: 0.5}}
+        out.parts = {2: part}
+        g = _tex(out, _bitmap(2)).convert(mat.MapRef(1), tx.COLOR)
+        self.assertIsInstance(g.root, tx.Adjust)
+        self.assertEqual(g.root.output, tx.TexOutput(False, 0.5, 2.0, 0.1))
+        self.assertFalse(g.approximated)
+        tint = FakeMap(1, tx.RGB_TINT, {0: (1.0, 0.5, 0.0), 3: Ref(2)}, [2], cls="RGB Tint")
+        tex = tx.TexmapConverter(FakeGraph(tint, _bitmap(2)), _table(), swatches=colors.GAMMA_ON)
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertEqual(g.root, tx.Tint(g.root.input, (1.0, 0.5, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)))
+        self.assertEqual((g.approximated, tex.stats.peeled), (False, collections.Counter()))
+        tint = FakeMap(1, tx.RGB_TINT, {3: Ref(2)}, [2], cls="RGB Tint")
+        self.assertIsInstance(_tex(tint, _bitmap(2)).convert(mat.MapRef(1), tx.COLOR).root, tx.Image,
+                              "the identity: the map")
 
     def test_slot_amounts(self):
         tex = _tex(_bitmap(1))
@@ -542,7 +658,7 @@ class Synthetic(Checks):
         self.assertIsNone(_tex(n, _bitmap(2)).convert(mat.MapRef(1), tx.NORMAL))
 
     def test_same_wrapper_in_two_slots_counts_once(self):
-        tex = _tex(_falloff(1, 2), _bitmap(2))
+        tex = _tex(_falloff(1, 2, ftype=3), _bitmap(2))
         tex.convert(mat.MapRef(1), tx.COLOR)
         tex.convert(mat.MapRef(1, 0.5), tx.DATA, 0.0)
         self.assertEqual(tex.stats.peeled, collections.Counter({"Falloff": 1}))
@@ -842,23 +958,23 @@ class Guards(Checks):
         self.assertTrue(g.approximated)
         self.assertTrue(any("cut down" in r for r in g.issues))
 
-    def test_composite_with_a_blend_mode_is_peeled(self):
-        comp = FakeMap(1, tx.COMPOSITE, {5: [0, 2], 9: [Ref(2), Ref(3)]}, [2, 3], cls="Composite")
+    def test_composite_with_an_unknown_blend_mode_is_peeled(self):
+        comp = FakeMap(1, tx.COMPOSITE, {5: [0, 15], 9: [Ref(2), Ref(3)]}, [2, 3], cls="Composite")
         tex = _tex(comp, _bitmap(2), _bitmap(3))
         g = tex.convert(mat.MapRef(1), tx.COLOR)
         self.assertIsInstance(g.root, tx.Image)
-        self.assertTrue(any("blend modes" in r for r in g.issues))
+        self.assertTrue(any("blend modes [15]" in r for r in g.issues))
 
     def test_color_correction_modes(self):
         standard = FakeMap(1, tx.COLOR_CORRECTION, {1: Ref(2), 11: 0, 12: 10.0, 13: -20.0, 22: 2.0}, [2])
         g = _tex(standard, _bitmap(2)).convert(mat.MapRef(1), tx.COLOR)
         self.assertEqual((g.root.brightness, g.root.contrast, g.root.gamma), (0.1, -0.2, 1.0))
         self.assertFalse(g.approximated)
-        lifted = FakeMap(1, tx.COLOR_CORRECTION, {1: Ref(2), 11: 1, 30: 0.2, 2: 1}, [2])
+        lifted = FakeMap(1, tx.COLOR_CORRECTION, {1: Ref(2), 11: 1, 30: 0.2, 10: 0.5}, [2])
         g = _tex(lifted, _bitmap(2)).convert(mat.MapRef(1), tx.COLOR)
         self.assertTrue(g.approximated)
         self.assertTrue(any("pivot and lift" in r for r in g.issues))
-        self.assertTrue(any("rewiring" in r for r in g.issues))
+        self.assertTrue(any("tint not converted" in r for r in g.issues))
 
     def test_mix_curve_is_an_issue(self):
         mix = FakeMap(1, tx.MIX, {3: 1, 6: Ref(2)}, [2])
@@ -962,10 +1078,10 @@ class VRayTexmaps(Checks):
         self.assertIsInstance(cc, tx.ColorCorrect)
         self.close(cc.brightness, 0.1)
         self.assertIsInstance(cc.input, tx.Composite)
-        (a, oa), (b, ob) = cc.input.layers
-        self.image(a, "vtx_layer_a.png", tx.SRGB)
-        self.image(b, "vtx_layer_b.png", tx.SRGB)
-        self.close((oa, ob), (1.0, 0.5))
+        a, b = cc.input.layers
+        self.image(a.node, "vtx_layer_a.png", tx.SRGB)
+        self.image(b.node, "vtx_layer_b.png", tx.SRGB)
+        self.close((a.opacity, b.opacity), (1.0, 0.5))
         mix = self.f.irs["FixtureMixMask"].textures["base_color"].root
         self.assertIsInstance(mix, tx.Mix)
         self.image(mix.a, "vtx_mix_a.png", tx.SRGB)
@@ -978,9 +1094,10 @@ class VRayTexmaps(Checks):
 
     def test_vray_color_below_falloff_color_correction_and_mix(self):
         g = self.f.irs["FixtureVFalloff"].textures["base_color"]
-        self.assertIsInstance(g.root, tx.Constant)
-        self.close(g.root.value, (_lin(50), _lin(150), _lin(250)))
-        self.assertTrue(g.approximated)  # the Falloff is peeled
+        self.assertIsInstance(g.root, tx.Mix)  # the Falloff: its map 1 to its color 2
+        self.close(g.root.a.value, (_lin(50), _lin(150), _lin(250)))
+        self.assertIsInstance(g.root.mask, tx.Facing)
+        self.assertFalse(g.approximated)
         cc = self.f.irs["FixtureCCColor"].textures["base_color"].root
         self.assertIsInstance(cc, tx.ColorCorrect)
         self.close(cc.saturation, 1.2)
@@ -999,7 +1116,7 @@ class VRayTexmaps(Checks):
 
     def test_peeled_and_unsupported_classes(self):
         # the Noise below a Color Correction converts to nothing
-        self.assertEqual(self.f.tex.stats.peeled, collections.Counter({"Falloff": 1}))
+        self.assertEqual(self.f.tex.stats.peeled, collections.Counter())
         self.assertEqual(self.f.tex.stats.unsupported, collections.Counter({"Noise": 1}))
 
     def test_rgb_color_space_is_read_from_block_3(self):
@@ -1322,7 +1439,11 @@ class LostMaps(Checks):
             self.assertEqual(tex.stats.unsupported, collections.Counter({"Noise": 1}), "the lost map only")
             self.assertEqual(len(tex.stats.issues), 2, "the Noise and the lost map: %s" % tex.stats.issues)
         tex = _tex(_falloff(1, color1=(1.0, 0.0, 0.0)))
-        self.close(tex.convert(mat.MapRef(1), tx.COLOR).root.value, (1.0, 0.0, 0.0), "no map: color 1")
+        self.close(tex.convert(mat.MapRef(1), tx.COLOR).root.a.value, (1.0, 0.0, 0.0), "no map: color 1")
+        self.assertEqual(tex.stats.peeled, collections.Counter())
+        tex = _tex(FakeMap(1, tx.FALLOFF, {2: Ref(2), 6: Ref(3)}, [2, 3], cls="Falloff", name="f"), _noise(2),
+                   _bitmap(3))
+        self.assertEqual(tex.convert(mat.MapRef(1), tx.COLOR).root.name, "a.png", "a lost side: the other map")
         self.assertEqual(tex.stats.peeled, collections.Counter({"Falloff": 1}))
         tex = _tex(FakeMap(1, tx.VRAY_DIRT, {13: (1.0, 0.0, 0.0), 17: Ref(2), 18: 0}, [2], cls="VRayDirt"),
                    _noise(2))
@@ -1437,7 +1558,7 @@ class SwatchRule(Checks):
                 root = self._root(rule, mix)
                 self.close(root.a.value, (want,) * 3)
                 self.close(root.b.value, (want,) * 3)
-                self.close(self._root(rule, falloff).value, (want,) * 3)
+                self.close(self._root(rule, falloff).a.value, (want,) * 3)
                 self.close(self._root(rule, dirt).value, (want,) * 3)
                 self.close(self._root(rule, cc).input.value, (want,) * 3)
                 for m in (vc, cco, hexed):

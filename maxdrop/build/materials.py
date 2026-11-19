@@ -24,8 +24,11 @@ transmission) goes through the mean of its channels, the measure convert/materia
 Texture graphs (convert/texmaps.py) become nodes, a node of the IR shared by several inputs once per material: Image
 -> Image Texture (its image datablock reused per file and color space: one file used in two color spaces is two
 datablocks; see Images below), with its placement as a Mapping node and a UV Map node for a map channel other than
-1; Invert, Mix, Multiply, ColorCorrect (Hue/Saturation/Value, Bright/Contrast, gain, Gamma), Composite (Mix per
-layer), NormalMap (Normal Map node, flips through Separate / Combine Color), Bump (Bump node). A texture file that
+1; Invert, Mix, Multiply, ColorCorrect (its rewiring as Invert, the mean or Separate / Combine Color, then
+Hue/Saturation/Value, Bright/Contrast, gain, Gamma), Composite (per layer its blend at factor 1, then a Mix by
+opacity x mask), Facing (Layer Weight Facing, Fresnel, or the Geometry node's Normal . Incoming), Adjust (a map's
+Output, as an image's), Tint (Separate Color, three scales, two adds), NormalMap (Normal Map node, flips through
+Separate / Combine Color), Bump (Bump node). A texture file that
 was not found (or does not load) keeps its Image Texture node, without an image and not connected. The texture
 lookup (convert.textures) reports a file not found by name; the builder reports a file that does not load. The graph
 above the node carries on without it (a Mix gives its other side, a normal map without its image nothing) and an
@@ -66,6 +69,13 @@ from ..convert import texmaps as tx
 SPECULAR_LEVEL = 0.5
 X_STEP, Y_STEP = 300, 280
 COLOR, FLOAT = "color", "float"
+# Composite blend mode -> the Mix node's blend type drawn at factor 1 (texmaps: AVERAGE, SPOTLIGHT, SPOTLIGHT_BLEND
+# and HARD_LIGHT have forms of their own, LINEAR_DODGE is ADD clamped before the opacity, as measured)
+BLEND_TYPES = {tx.ADDITION: 'ADD', tx.SUBTRACT: 'SUBTRACT', tx.DARKEN: 'DARKEN', tx.MULTIPLY_BLEND: 'MULTIPLY',
+               tx.COLOR_BURN: 'BURN', tx.LIGHTEN: 'LIGHTEN', tx.SCREEN: 'SCREEN', tx.COLOR_DODGE: 'DODGE',
+               tx.LINEAR_DODGE: 'ADD', tx.OVERLAY: 'OVERLAY', tx.HARD_LIGHT: 'OVERLAY', tx.DIFFERENCE: 'DIFFERENCE',
+               tx.EXCLUSION: 'EXCLUSION', tx.HUE: 'HUE', tx.SATURATION: 'SATURATION', tx.COLOR_BLEND: 'COLOR',
+               tx.VALUE: 'VALUE', tx.AVERAGE: 'MIX', tx.SPOTLIGHT: 'MULTIPLY', tx.SPOTLIGHT_BLEND: 'MULTIPLY'}
 _EPS = 1e-6
 MISSING = object()  # what a graph gives where its image is missing
 
@@ -450,6 +460,12 @@ class _Tree:
             return self.color_correct(n, space, depth)
         if isinstance(n, tx.Composite):
             return self.composite(n, space, depth)
+        if isinstance(n, tx.Facing):
+            return self.facing(n, depth)
+        if isinstance(n, tx.Adjust):
+            return self.adjust(n, depth)
+        if isinstance(n, tx.Tint):
+            return self.tint(n, depth)
         if isinstance(n, (tx.NormalMap, tx.Bump)):  # texmaps puts these at a normal or bump root only: its image
             image = tx.first_image(n)
             return self.graph(image, space, depth) if image is not None else MISSING
@@ -623,7 +639,8 @@ class _Tree:
         return _out(comb, "Vector")
 
     def output(self, o, out, depth):
-        """A map's Output: inverted, then times level plus offset, then times amount."""
+        """A map's Output: level times the color plus offset (inverted: level times its inverse minus offset, as
+        3ds Max renders it), then times amount."""
         if o.invert:
             out = self.invert(out, COLOR, depth)
         if o.level != 1.0 or o.offset != 0.0:
@@ -631,7 +648,7 @@ class _Tree:
             n.operation = 'MULTIPLY_ADD'
             self.links.new(out, _in(n, "Vector"))
             _in(n, "Vector_001").default_value = (o.level,) * 3
-            _in(n, "Vector_002").default_value = (o.offset,) * 3
+            _in(n, "Vector_002").default_value = (-o.offset if o.invert else o.offset,) * 3
             out = _out(n, "Vector")
         if o.amount != 1.0:
             out = self.scale(out, o.amount, depth)
@@ -699,8 +716,8 @@ class _Tree:
         return result
 
     def color_correct(self, n, space, depth):
-        steps = [n.hue % 1.0 != 0.0 or n.saturation != 1.0, n.brightness != 0.0 or n.contrast != 0.0,
-                 n.gain != 1.0, n.gamma != 1.0]
+        steps = [tuple(n.rewire) != tx.REWIRE_NONE, n.hue % 1.0 != 0.0 or n.saturation != 1.0,
+                 n.brightness != 0.0 or n.contrast != 0.0, n.gain != 1.0, n.gamma != 1.0]
         d = depth + sum(steps) - 1  # the first step's column; the input one further left
         v = self.graph(n.input, COLOR, d + 1)
         if v is MISSING:
@@ -708,6 +725,9 @@ class _Tree:
         if not any(steps):
             return v if space == COLOR or isinstance(v, bpy.types.NodeSocket) else _mean(v)
         v = self.socket(v, COLOR, d + 1)
+        if steps[0]:
+            v, d = self.rewire(v, tuple(n.rewire), d), d - 1
+        steps = steps[1:]
         if steps[0]:
             h = self.node("ShaderNodeHueSaturation", d)
             _in(h, "Hue").default_value = (0.5 + n.hue) % 1.0
@@ -729,29 +749,153 @@ class _Tree:
             v = _out(g, "Color")
         return v
 
+    def rewire(self, v, channels, depth):
+        """A Color Correction's rewiring of color socket v: Invert, the mean of the channels, or Separate /
+        Combine Color with each output from its source (texmaps' codes; an alpha source was made one or zero)."""
+        if channels == tx.REWIRE_INVERT:
+            return self.invert(v, COLOR, depth)
+        mean = None
+
+        def mono():
+            nonlocal mean
+            if mean is None:
+                dot = self.node("ShaderNodeVectorMath", depth)
+                dot.operation = 'DOT_PRODUCT'
+                self.links.new(v, _in(dot, "Vector"))
+                _in(dot, "Vector_001").default_value = (1.0 / 3.0,) * 3
+                mean = _out(dot, "Value")
+            return mean
+        if channels == tx.REWIRE_MONO:
+            return mono()
+        sep = self.node("ShaderNodeSeparateColor", depth)
+        comb = self.node("ShaderNodeCombineColor", depth)
+        self.links.new(v, _in(sep, "Color"))
+        names = ("Red", "Green", "Blue")
+        for target, c in zip(names, channels):
+            socket = _in(comb, target)
+            if c in (0, 1, 2):
+                self.links.new(_out(sep, names[c]), socket)
+            elif c in (4, 5, 6):
+                inv = self.node("ShaderNodeMath", depth)
+                inv.operation = 'SUBTRACT'
+                inv.inputs[0].default_value = 1.0
+                self.links.new(_out(sep, names[c - 4]), inv.inputs[1])
+                self.links.new(inv.outputs[0], socket)
+            elif c == tx.RW_MONO:
+                self.links.new(mono(), socket)
+            else:
+                socket.default_value = 1.0 if c == tx.RW_ONE else 0.0
+        return _out(comb, "Color")
+
+    def facing(self, n, depth):
+        """A Falloff's ratio (a float socket): Layer Weight Facing at blend 0.5 is 1 - |N.I|; the Fresnel node at
+        the IOR; towards / away (1 - N.I) / 2 from the Geometry node."""
+        if n.mode == tx.FRESNEL:
+            f = self.node("ShaderNodeFresnel", depth)
+            _in(f, "IOR").default_value = n.ior
+            return _out(f, "Fac")
+        if n.mode == tx.PERPENDICULAR:
+            lw = self.node("ShaderNodeLayerWeight", depth)
+            _in(lw, "Blend").default_value = 0.5
+            return _out(lw, "Facing")
+        geo = self.node("ShaderNodeNewGeometry", depth + 2)
+        dot = self.node("ShaderNodeVectorMath", depth + 1)
+        dot.operation = 'DOT_PRODUCT'
+        self.links.new(_out(geo, "Normal"), _in(dot, "Vector"))
+        self.links.new(_out(geo, "Incoming"), _in(dot, "Vector_001"))
+        m = self.node("ShaderNodeMath", depth)
+        m.operation = 'MULTIPLY_ADD'
+        self.links.new(_out(dot, "Value"), m.inputs[0])
+        m.inputs[1].default_value, m.inputs[2].default_value = -0.5, 0.5
+        return m.outputs[0]
+
+    def adjust(self, n, depth):
+        """A wrapper's Output over its input (a color socket), as an image's."""
+        v = self.graph(n.input, COLOR, depth + 1)
+        if v is MISSING:
+            return MISSING
+        return self.output(n.output, self.socket(v, COLOR, depth + 1), depth)
+
+    def tint(self, n, depth):
+        """RGB Tint: R x red + G x green + B x blue (a color socket)."""
+        v = self.graph(n.input, COLOR, depth + 3)
+        if v is MISSING:
+            return MISSING
+        sep = self.node("ShaderNodeSeparateColor", depth + 2)
+        self.links.new(self.socket(v, COLOR, depth + 3), _in(sep, "Color"))
+        out = None
+        for channel, color in (("Red", n.red), ("Green", n.green), ("Blue", n.blue)):
+            sc = self.node("ShaderNodeVectorMath", depth + 1)
+            sc.operation = 'SCALE'
+            _in(sc, "Vector").default_value = tuple(color[:3])
+            self.links.new(_out(sep, channel), _in(sc, "Scale"))
+            if out is None:
+                out = _out(sc, "Vector")
+                continue
+            add = self.node("ShaderNodeVectorMath", depth)
+            add.operation = 'ADD'
+            self.links.new(out, _in(add, "Vector"))
+            self.links.new(_out(sc, "Vector"), _in(add, "Vector_001"))
+            out = _out(add, "Vector")
+        return out
+
+    def blend(self, mode, below, top, depth):
+        """A Composite layer blended over below at factor 1 (a color socket); the opacity Mix comes after."""
+        node, a, b, out = self.mix_node(COLOR, depth, BLEND_TYPES[mode])
+        _in(node, "Factor_Float").default_value = 0.5 if mode == tx.AVERAGE else 1.0
+        node.clamp_result = mode == tx.LINEAR_DODGE
+        if mode == tx.HARD_LIGHT:  # overlay with the layers' roles swapped
+            below, top = top, below
+        self.feed(a, below)
+        self.feed(b, top)
+        if mode == tx.SPOTLIGHT:
+            return self.scale(out, 2.0, depth)
+        if mode == tx.SPOTLIGHT_BLEND:  # below + below x top
+            add, a2, b2, out2 = self.mix_node(COLOR, depth, 'ADD')
+            _in(add, "Factor_Float").default_value = 1.0
+            self.feed(a2, below)
+            self.links.new(out, b2)
+            return out2
+        return out
+
     def composite(self, n, space, depth):
-        """Each layer over the ones below in the normal mode: a Mix by its opacity (times an image's alpha). A
-        layer whose image is missing is left out."""
+        """Each layer over the ones below: its blend at factor 1, then a Mix by opacity x mask (times an image's
+        alpha), clamped for a blend other than normal (3ds Max's result stays within 0..1). The bottom layer is over
+        black. A layer whose image is missing is left out, a missing mask leaves the opacity. With a blend mode the
+        layers are drawn in color."""
+        work = COLOR if any(layer.blend != tx.NORMAL_BLEND for layer in n.layers) else space
         result = MISSING
-        for layer, opacity in n.layers:
-            v = self.graph(layer, space, depth + 1)
+        for layer in n.layers:
+            v = self.graph(layer.node, work, depth + 2)
             if v is MISSING:
                 continue
-            if result is MISSING and opacity >= 1.0:
+            mask = self.graph(layer.mask, FLOAT, depth + 2) if layer.mask is not None else MISSING
+            if result is MISSING and layer.opacity >= 1.0 and mask is MISSING:
                 result = v
                 continue
-            node, a, b, out = self.mix_node(space, depth)
-            self.feed(a, _as(0.0, space) if result is MISSING else result)
-            self.feed(b, v)
-            factor = _in(node, "Factor_Float")
-            tex = self.texture_nodes.get(id(layer)) if isinstance(layer, tx.Image) and not layer.alpha else None
+            blended = result is not MISSING and layer.blend != tx.NORMAL_BLEND
+            top = self.blend(layer.blend, result, v, depth + 1) if blended else v
+            node, a, b, out = self.mix_node(work, depth)
+            node.clamp_result = blended
+            self.feed(a, _as(0.0, work) if result is MISSING else result)
+            self.feed(b, top)
+            factor = layer.opacity
+            if isinstance(mask, bpy.types.NodeSocket):
+                factor = self.times(mask, factor, depth + 1)
+            elif mask is not MISSING:
+                factor *= _mean(mask)
+            img = layer.node
+            tex = self.texture_nodes.get(id(img)) if isinstance(img, tx.Image) and not img.alpha else None
             if tex is not None and result is not MISSING:
-                mul = self.node("ShaderNodeMath", depth + 1)
-                mul.operation = 'MULTIPLY'
-                self.links.new(_out(tex, "Alpha"), mul.inputs[0])
-                mul.inputs[1].default_value = opacity
-                self.links.new(mul.outputs[0], factor)
-            else:
-                factor.default_value = opacity
+                factor = self.times(_out(tex, "Alpha"), factor, depth + 1)
+            self.feed(_in(node, "Factor_Float"), factor)
             result = out
         return result
+
+    def times(self, socket, factor, depth):
+        """socket x factor (a float socket or constant) as a Math node's output."""
+        mul = self.node("ShaderNodeMath", depth)
+        mul.operation = 'MULTIPLY'
+        self.links.new(socket, mul.inputs[0])
+        self.feed(mul.inputs[1], factor)
+        return mul.outputs[0]

@@ -1026,13 +1026,20 @@ def _fold(n, present):
     if isinstance(n, tx.ColorCorrect):
         v = _fold(n.input, present)
         changes = n.hue % 1.0 != 0.0 or n.saturation != 1.0 or n.brightness or n.contrast or n.gain != 1.0 \
-            or n.gamma != 1.0
+            or n.gamma != 1.0 or tuple(n.rewire) != tx.REWIRE_NONE
         return v if v is LOST or not changes else MAP
+    if isinstance(n, (tx.Adjust, tx.Tint)):  # made only when they change something: nodes
+        v = _fold(n.input, present)
+        return LOST if v is LOST else MAP
+    if isinstance(n, tx.Facing):
+        return MAP
     if isinstance(n, tx.Composite):
-        layers = [(v, o) for v, o in ((_fold(layer, present), o) for layer, o in n.layers) if v is not LOST]
+        layers = [(v, la) for v, la in ((_fold(la.node, present), la) for la in n.layers) if v is not LOST]
         if not layers:
             return LOST
-        return layers[0][0] if len(layers) == 1 and layers[0][1] >= 1.0 else MAP
+        v, la = layers[0]
+        masked = la.mask is not None and _fold(la.mask, present) is not LOST
+        return v if len(layers) == 1 and la.opacity >= 1.0 and not masked else MAP
     image = tx.first_image(n)
     return _fold(image, present) if image is not None else LOST
 
@@ -1610,7 +1617,8 @@ def check_builder():
         b = cm.MaterialIR(11, "Clash", "test", alpha=cm.Input(1.0, cm.MapRef(2)),
                           emission_color=cm.Input((1.0, 0.5, 0.0), cm.MapRef(3)), emission_strength=2.0)
         b.textures = {"alpha": graph(lost, tx.DATA),
-                      "emission_color": graph(tx.ColorCorrect(tx.Composite(((placed, 1.0), (gamma, 0.5))),
+                      "emission_color": graph(tx.ColorCorrect(tx.Composite((tx.CompositeLayer(placed, 1.0),
+                                                                             tx.CompositeLayer(gamma, 0.5))),
                                                               hue=0.25, saturation=1.5, brightness=0.1,
                                                               contrast=0.2, gain=1.2, gamma=1.1), tx.COLOR),
                       "normal": graph(tx.NormalMap(data, 0.7, flip_red=True, flip_green=True, swap=True,
@@ -1663,6 +1671,7 @@ def check_builder():
               and close(list(dot.inputs[1].default_value), [1 / 6.0] * 3, 1e-6))
         check("builder: the viewport color is the base color", close(list(ma.diffuse_color)[:3], [0.5] * 3, 1e-6))
         check_builder_wiring(ma, mb, builder, cm, tx, srgb, data, lost, gamma)
+        check_wrapper_wiring(builder, cm, tx, srgb, data)
     finally:
         empty_scene()
         for img in list(bpy.data.images):
@@ -2149,11 +2158,11 @@ def check_builder_wiring(ma, mb, builder, cm, tx, srgb, data, lost, gamma):
     uv = _from(place.inputs["Vector"])
     from maxdrop.build import materials as build_materials
     want = build_materials.uv_transform(tx.Mapping(tiling=(2.0, 1.0), angle=(0.0, 0.0, 0.5)))
-    check("wiring: Output: inverted, times 2 plus 0.1, times 0.5",
+    check("wiring: Output: inverted, times 2 minus 0.1 (3ds Max's offset under an invert), times 0.5",
           amount.operation == 'SCALE' and abs(_input(amount, "Scale").default_value - 0.5) < 1e-6
           and level.operation == 'MULTIPLY_ADD' and close(list(_input(level, "Vector_001").default_value), [2.0] * 3,
                                                           1e-6)
-          and close(list(_input(level, "Vector_002").default_value), [0.1] * 3, 1e-6)
+          and close(list(_input(level, "Vector_002").default_value), [-0.1] * 3, 1e-6)
           and out_inv.bl_idname == "ShaderNodeInvert")
     check("wiring: a placed crop mirrored both ways: UVChannel_2 -> placement -> ping-pong per axis -> Mapping "
           "TEXTURE at (0.1, 0.3) x 0.5",
@@ -2198,6 +2207,99 @@ def check_builder_wiring(ma, mb, builder, cm, tx, srgb, data, lost, gamma):
           and close(list(pd.inputs["Base Color"].default_value)[:3], [0.1, 0.2, 0.3], 1e-6)
           and not any(o.is_linked for n in md.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage" for o in n.outputs)
           and len([n for n in md.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage"]) == 1)
+
+
+def check_wrapper_wiring(builder, cm, tx, srgb, data):
+    """The nodes of the wrappers maxdrop-3gc.3 draws (Falloff's Facing, Composite blend modes and masks, Color
+    Correction rewiring, Adjust, Tint) on a hand-made IR, against the measured 3ds Max rules."""
+    L = tx.CompositeLayer
+    tinted = tx.Tint(srgb, (1.0, 0.5, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
+    adjusted = tx.Adjust(srgb, tx.TexOutput(level=2.0, offset=0.1))
+    custom = tx.ColorCorrect(srgb, rewire=(2, 4, tx.RW_MONO))
+    comp = tx.Composite((L(srgb), L(tinted, 0.5, tx.SCREEN, data), L(adjusted, 1.0, tx.SPOTLIGHT_BLEND),
+                         L(custom, 0.25, tx.HARD_LIGHT)))
+    w = cm.MaterialIR(14, "Wrappers", "test", base_color=cm.Input((0.5,) * 3, cm.MapRef(1)),
+                      roughness=cm.Input(0.4, cm.MapRef(1)), metallic=cm.Input(0.0, cm.MapRef(1)),
+                      emission_color=cm.Input((0.0,) * 3, cm.MapRef(1)), specular=cm.Input(0.5, cm.MapRef(1)),
+                      transmission=cm.Input(0.0, cm.MapRef(1)))
+    w.textures = {
+        "base_color": tx.TextureGraphIR(tx.Mix(tx.Constant((0.0,) * 3), srgb, 0.0, tx.Facing(tx.PERPENDICULAR)),
+                                        tx.COLOR),
+        "roughness": tx.TextureGraphIR(tx.Mix(tx.Constant(0.2), tx.Constant(0.8), 0.0, tx.Facing(tx.FRESNEL, 1.45)),
+                                       tx.DATA),
+        "metallic": tx.TextureGraphIR(tx.Mix(tx.Constant(0.0), tx.Constant(1.0), 0.0, tx.Facing(tx.TOWARDS)),
+                                      tx.DATA),
+        "emission_color": tx.TextureGraphIR(comp, tx.COLOR),
+        "specular": tx.TextureGraphIR(tx.ColorCorrect(srgb, rewire=tx.REWIRE_MONO), tx.COLOR),
+        "transmission": tx.TextureGraphIR(tx.ColorCorrect(srgb, rewire=tx.REWIRE_INVERT), tx.COLOR)}
+    mw = builder.make(w)
+    check("wrappers: material built", mw is not None)
+    if mw is None:
+        return
+    p = _principled(mw)
+    mix = _from(p.inputs["Base Color"])
+    lw = _from(_input(mix, "Factor_Float"))
+    check("wrappers: Falloff perpendicular / parallel: a Mix by Layer Weight Facing at blend 0.5",
+          mix.bl_idname == "ShaderNodeMix" and lw.bl_idname == "ShaderNodeLayerWeight"
+          and _input(mix, "Factor_Float").links[0].from_socket.identifier == "Facing"
+          and abs(_input(lw, "Blend").default_value - 0.5) < 1e-6
+          and _from(_input(mix, "B_Color")).bl_idname == "ShaderNodeTexImage")
+    mix = _from(p.inputs["Roughness"])
+    fr = _from(_input(mix, "Factor_Float"))
+    check("wrappers: Falloff Fresnel: a float Mix by the Fresnel node at IOR 1.45",
+          mix.bl_idname == "ShaderNodeMix" and mix.data_type == 'FLOAT' and fr.bl_idname == "ShaderNodeFresnel"
+          and abs(_input(fr, "IOR").default_value - 1.45) < 1e-6
+          and abs(_input(mix, "A_Float").default_value - 0.2) < 1e-6)
+    mix = _from(p.inputs["Metallic"])
+    ma = _from(_input(mix, "Factor_Float"))
+    dot = _from(ma.inputs[0]) if ma is not None else None
+    geo = {link.from_socket.identifier for s in dot.inputs for link in s.links} if dot is not None else set()
+    check("wrappers: Falloff towards / away: (1 - Normal . Incoming) / 2 of the Geometry node",
+          ma.bl_idname == "ShaderNodeMath" and ma.operation == 'MULTIPLY_ADD'
+          and (ma.inputs[1].default_value, ma.inputs[2].default_value) == (-0.5, 0.5)
+          and dot.operation == 'DOT_PRODUCT' and geo == {"Normal", "Incoming"})
+    dot = _from(_from(p.inputs["Specular IOR Level"]).inputs[0])
+    check("wrappers: Color Correction monochrome: the mean of the channels",
+          dot.bl_idname == "ShaderNodeVectorMath" and dot.operation == 'DOT_PRODUCT'
+          and close(list(_input(dot, "Vector_001").default_value), [1 / 3.0] * 3, 1e-6)
+          and _from(_input(dot, "Vector")).bl_idname == "ShaderNodeTexImage")
+    inv = _from(_from(p.inputs["Transmission Weight"]).inputs[0])
+    check("wrappers: Color Correction invert: an Invert node", inv.bl_idname == "ShaderNodeInvert")
+    top = _from(p.inputs["Emission Color"])
+    hard = _from(_input(top, "B_Color"))
+    comb = _from(_input(hard, "A_Color"))
+    third = _from(_input(hard, "B_Color"))
+    check("wrappers: Composite hard light at 25 %: Overlay with the layer as A over the result as B, then a clamped "
+          "Mix by 0.25",
+          top.blend_type == 'MIX' and top.clamp_result and abs(_input(top, "Factor_Float").default_value - 0.25) < 1e-6
+          and hard.blend_type == 'OVERLAY' and abs(_input(hard, "Factor_Float").default_value - 1.0) < 1e-6
+          and comb.bl_idname == "ShaderNodeCombineColor" and _from(_input(top, "A_Color")) == third)
+    red, green, blue = (_input(comb, k).links[0] for k in ("Red", "Green", "Blue"))
+    check("wrappers: Color Correction custom (B, 1 - R, mono): Separate / Combine Color",
+          red.from_socket.identifier == "Blue" and red.from_node.bl_idname == "ShaderNodeSeparateColor"
+          and green.from_node.operation == 'SUBTRACT' and green.from_node.inputs[1].links[0].from_socket.identifier
+          == "Red" and blue.from_node.operation == 'DOT_PRODUCT')
+    add = _from(_input(third, "B_Color"))
+    mul = _from(_input(add, "B_Color"))
+    adj = _from(_input(mul, "B_Color"))
+    second = _from(_input(third, "A_Color"))
+    check("wrappers: Composite spotlight blend: below + below x layer; the layer's Output times 2 plus 0.1",
+          third.clamp_result and abs(_input(third, "Factor_Float").default_value - 1.0) < 1e-6
+          and add.blend_type == 'ADD' and mul.blend_type == 'MULTIPLY' and _from(_input(add, "A_Color")) == second
+          and _from(_input(mul, "A_Color")) == second and adj.operation == 'MULTIPLY_ADD'
+          and close(list(_input(adj, "Vector_002").default_value), [0.1] * 3, 1e-6))
+    screen = _from(_input(second, "B_Color"))
+    factor = _from(_input(second, "Factor_Float"))
+    tint = _from(_input(screen, "B_Color"))
+    scales = [n for n in mw.node_tree.nodes if n.bl_idname == "ShaderNodeVectorMath" and n.operation == 'SCALE']
+    check("wrappers: Composite screen at 50 % with a mask: Screen of the Tint, Mix by mask x 0.5; Tint as three "
+          "scales and two adds",
+          screen.blend_type == 'SCREEN' and factor.operation == 'MULTIPLY'
+          and abs(factor.inputs[1].default_value - 0.5) < 1e-6
+          and _from(factor.inputs[0]).image.colorspace_settings.name == "Non-Color"
+          and tint.operation == 'ADD' and len(scales) == 3
+          and any(close(list(_input(n, "Vector").default_value), [1.0, 0.5, 0.0], 1e-6) for n in scales)
+          and _from(_input(second, "A_Color")).bl_idname == "ShaderNodeTexImage")
 
 
 def check_layer_flags(modules):

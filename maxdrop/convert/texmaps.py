@@ -174,6 +174,24 @@ CM_MULTIPLY, CM_MIX = 2, 6
 # Bitmap, block 0
 BM_CLIP_U, BM_CLIP_V, BM_CLIP_W, BM_CLIP_H, BM_APPLY, BM_CROP_PLACE, BM_MONO, BM_RGB, BM_FILE = (
     0, 1, 2, 3, 6, 7, 9, 10, 13)
+# Falloff, block 0. type 0 towards / away, 1 perpendicular / parallel, 2 Fresnel (3 shadow / light, 4 distance
+# blend: peeled); direction 0 the viewing direction (the others: peeled); its MixCurve is not read (drawn linear)
+FO_COLOR1, FO_AMOUNT1, FO_MAP1, FO_ON1, FO_COLOR2, FO_AMOUNT2, FO_MAP2, FO_ON2, FO_TYPE, FO_DIRECTION = range(10)
+FO_IOR_OVERRIDE, FO_IOR = 11, 12
+TOWARDS, PERPENDICULAR, FRESNEL = "towards", "perpendicular", "fresnel"  # Facing modes
+FALLOFF_TYPES = {0: TOWARDS, 1: PERPENDICULAR, 2: FRESNEL}
+# Composite blend modes (blendMode, per layer); measured with renderMap: result = lerp(below, blend(below, layer),
+# opacity x mask). 7 linear burn, 15 soft light (Photoshop's), 17 pin light and 18 hard mix are not drawn: peeled
+NORMAL_BLEND, AVERAGE, ADDITION, SUBTRACT, DARKEN, MULTIPLY_BLEND, COLOR_BURN, LINEAR_BURN, LIGHTEN, SCREEN,     COLOR_DODGE, LINEAR_DODGE, SPOTLIGHT, SPOTLIGHT_BLEND, OVERLAY, SOFT_LIGHT, HARD_LIGHT, PIN_LIGHT, HARD_MIX,     DIFFERENCE, EXCLUSION, HUE, SATURATION, COLOR_BLEND, VALUE = range(25)
+BLENDS = frozenset(range(25)) - {LINEAR_BURN, SOFT_LIGHT, PIN_LIGHT, HARD_MIX}
+# Color Correction rewiring, per output channel: 0..2 R, G, B, 3 A, 4..7 their inverse, 8 the mean of R, G and B,
+# 9 one, 10 zero. rewireMode 1 (monochrome) stores (8, 8, 8), 2 (invert) (4, 5, 6), 3 the channels set
+CC_REWIRE_MODE, CC_REWIRE = 2, (3, 4, 5)
+REWIRE_NONE, REWIRE_INVERT, REWIRE_MONO = (0, 1, 2), (4, 5, 6), (8, 8, 8)
+RW_ALPHA, RW_INV_ALPHA, RW_MONO, RW_ONE, RW_ZERO = 3, 7, 8, 9, 10
+# RGB Tint, block 0: out = R x red + G x green + B x blue
+TINT_RED, TINT_GREEN, TINT_BLUE = 0, 1, 2
+
 # Placement (UVGen) old ParamBlock indices (its chunks: reader_materials.placement)
 UV_U_OFFSET, UV_V_OFFSET, UV_U_TILING, UV_V_TILING, UV_U_ANGLE, UV_V_ANGLE, UV_W_ANGLE, UV_BLUR = range(8)
 # Output (TexOutput) old ParamBlock indices (its flags: reader_materials.output_invert)
@@ -210,7 +228,8 @@ class Crop:
 
 @dataclasses.dataclass(frozen=True)
 class TexOutput:
-    """A map's Output: the color is inverted, then times level plus offset, then times amount."""
+    """A map's Output: level times the color plus offset (inverted: level times (1 - color) minus offset, measured),
+    then times amount."""
     invert: bool = False
     amount: float = 1.0
     level: float = 1.0
@@ -264,9 +283,11 @@ class Multiply:
 
 @dataclasses.dataclass(frozen=True)
 class ColorCorrect:
-    """hue: shift in turns; saturation: factor (1 = unchanged); brightness, contrast: added fractions; gain: factor;
-    gamma: the advanced mode's (1 = none)."""
+    """rewire: the source of the red, green and blue outputs (REWIRE_NONE: unchanged; codes as CC_REWIRE's), applied
+    first; hue: shift in turns; saturation: factor (1 = unchanged); brightness, contrast: added fractions; gain:
+    factor; gamma: the advanced mode's (1 = none)."""
     input: object
+    rewire: tuple = REWIRE_NONE
     hue: float = 0.0
     saturation: float = 1.0
     brightness: float = 0.0
@@ -276,9 +297,43 @@ class ColorCorrect:
 
 
 @dataclasses.dataclass(frozen=True)
+class CompositeLayer:
+    """A Composite layer: its node, opacity 0..1, blend mode (BLENDS) and mask (a data node, None: none). The result
+    is lerp(below, blend(below, node), opacity x mask); the bottom layer is over black whatever its mode."""
+    node: object
+    opacity: float = 1.0
+    blend: int = NORMAL_BLEND
+    mask: object = None
+
+
+@dataclasses.dataclass(frozen=True)
 class Composite:
-    """layers: ((node, opacity 0..1), ...), bottom first, each over the ones below in the normal blend mode."""
+    """layers: CompositeLayers, bottom first."""
     layers: tuple
+
+
+@dataclasses.dataclass(frozen=True)
+class Facing:
+    """A Falloff's ratio, 0 facing the viewer and 1 at grazing (PERPENDICULAR: 1 - |N.V|), away from it (TOWARDS:
+    (1 - N.V) / 2), or the dielectric Fresnel reflectance of ior (FRESNEL)."""
+    mode: str = PERPENDICULAR
+    ior: float = 1.6
+
+
+@dataclasses.dataclass(frozen=True)
+class Adjust:
+    """A wrapper's Output (TexOutput) over its input."""
+    input: object
+    output: TexOutput
+
+
+@dataclasses.dataclass(frozen=True)
+class Tint:
+    """RGB Tint: input R x red + G x green + B x blue, each a linear RGB."""
+    input: object
+    red: tuple = (1.0, 0.0, 0.0)
+    green: tuple = (0.0, 1.0, 0.0)
+    blue: tuple = (0.0, 0.0, 1.0)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -333,14 +388,14 @@ class _Walk:
 
 
 def _children(node):
-    if isinstance(node, (Invert, Bump, ColorCorrect)):
+    if isinstance(node, (Invert, Bump, ColorCorrect, Adjust, Tint)):
         return (node.input,)
     if isinstance(node, Mix):
         return tuple(n for n in (node.a, node.b, node.mask) if n is not None)
     if isinstance(node, Multiply):
         return (node.a, node.b)
     if isinstance(node, Composite):
-        return tuple(n for n, _o in node.layers)
+        return tuple(n for layer in node.layers for n in (layer.node, layer.mask) if n is not None)
     if isinstance(node, NormalMap):
         return (node.input,) if node.bump is None else (node.input, node.bump)
     return ()
@@ -833,11 +888,59 @@ def _scaled(n, amount):
     return dataclasses.replace(n, strength=n.strength * amount, bump=bump)
 
 
+def _falloff_peel(conv, m, kind, walk, depth, chain):
+    """A Falloff of a type or direction not drawn: map 1 when used, else color 1; counted as a peel."""
+    if conv._on(m, FO_MAP1, FO_ON1) is not None:
+        node = conv._sub(m, FO_MAP1, FO_ON1, kind, walk, depth, chain)
+    else:
+        node = conv._constant(m, FO_COLOR1, kind, (0.0, 0.0, 0.0))
+    if node is not None:
+        walk.approximated = True
+        conv._count(conv.stats.peeled, m)
+    return node
+
+
+def _own_output(conv, m, node):
+    """node under the map's own Output part (Adjust) when that changes anything."""
+    part = next((p for _s, p in sorted(m.parts.items()) if p.superclass == classids.SC_TEXOUTPUT), None)
+    out = conv._output(part)
+    return node if node is None or out is None else Adjust(node, out)
+
+
 def _falloff(conv, m, kind, walk, depth, chain):
-    """0 color1, 2 map1, 3 map1On. Color 1 only when map 1 is not used."""
-    if conv._on(m, 2, 3) is not None:
-        return conv._sub(m, 2, 3, kind, walk, depth, chain)
-    return conv._constant(m, 0, kind, (0.0, 0.0, 0.0))
+    """Types 0, 1 and 2 in the viewing direction: Mix(side 1, side 2) by a Facing; side k is lerp(color k, map k,
+    amount k) when map k is used, else color k (measured). Its MixCurve is not read (drawn linear). Any other type
+    or direction: peeled (_falloff_peel). A used map that converts to nothing: the other side's map (a peel)."""
+    ftype, direction = m.param(FO_TYPE, 0), m.param(FO_DIRECTION, 0)
+    ftype = 1 if ftype is None else ftype
+    if ftype not in FALLOFF_TYPES or direction not in (None, 0):
+        node = _falloff_peel(conv, m, kind, walk, depth, chain)
+        if node is not None:
+            conv._issue(walk, m.index, "Falloff %r: type %r, direction %r drawn as its first side"
+                        % (m.name, ftype, direction))
+        return node
+    ids = ((FO_MAP1, FO_ON1), (FO_MAP2, FO_ON2))
+    (a, b), lost = _sides(conv, m, ids, kind, walk, depth, chain)
+    if any(lost):
+        return _other_side(conv, m, (a, b), walk)
+    sides = []
+    for node, color, amount_pid, default in ((a, FO_COLOR1, FO_AMOUNT1, (0.0, 0.0, 0.0)),
+                                              (b, FO_COLOR2, FO_AMOUNT2, (1.0, 1.0, 1.0))):
+        constant = conv._constant(m, color, kind, default)
+        if node is None:
+            sides.append(constant)
+            continue
+        amount = min(1.0, max(0.0, _num(m, amount_pid, 100.0) / 100.0))
+        sides.append(node if amount >= 1.0 else Mix(constant, node, amount))
+    mode, ior = FALLOFF_TYPES[ftype], 1.6
+    if mode == FRESNEL:
+        ior = _num(m, FO_IOR, 1.6)
+        if not 1.0 <= ior <= 10.0:
+            conv._issue(walk, m.index, "Falloff %r: IOR %r not converted: 1.6" % (m.name, ior))
+            ior = 1.6
+        if not _flag(m, FO_IOR_OVERRIDE, True):
+            conv._issue(walk, m.index, "Falloff %r: the material's IOR not read: its own, %g" % (m.name, ior))
+    return _own_output(conv, m, Mix(sides[0], sides[1], 0.0, Facing(mode, ior)))
 
 
 def _vray_dirt(conv, m, kind, walk, depth, chain):
@@ -858,16 +961,21 @@ def _wrapped(conv, m, map_pid, on_pid, kind, walk, depth, chain):
 
 
 def _output_map(conv, m, kind, walk, depth, chain):
-    """0 map1, 1 map1Enabled; its own Output part's invert is kept."""
-    node = _wrapped(conv, m, 0, 1, kind, walk, depth, chain)
-    part = next((p for _s, p in sorted(m.parts.items()) if p.superclass == classids.SC_TEXOUTPUT), None)
-    out = conv._output(part)
-    return Invert(node) if node is not None and out is not None and out.invert else node
+    """0 map1, 1 map1Enabled; its Output part as an Adjust (its clamp and color map curve are not read)."""
+    return _own_output(conv, m, _wrapped(conv, m, 0, 1, kind, walk, depth, chain))
 
 
 def _rgb_tint(conv, m, kind, walk, depth, chain):
-    """3 map1, 4 map1Enabled."""
-    return _wrapped(conv, m, 3, 4, kind, walk, depth, chain)
+    """0 / 1 / 2 red / green / blue (swatches, made linear), 3 map1, 4 map1Enabled: a Tint unless the identity."""
+    node = _wrapped(conv, m, 3, 4, kind, walk, depth, chain)
+    if node is None:
+        return None
+    tint = tuple(conv._constant(m, pid, COLOR, d).value
+                 for pid, d in ((TINT_RED, (1.0, 0.0, 0.0)), (TINT_GREEN, (0.0, 1.0, 0.0)),
+                                (TINT_BLUE, (0.0, 0.0, 1.0))))
+    if all(abs(c - (1.0 if i == j else 0.0)) <= 1e-6 for j, row in enumerate(tint) for i, c in enumerate(row)):
+        return node
+    return Tint(node, *tint)
 
 
 def _color2bump(conv, m, kind, walk, depth, chain):
@@ -949,21 +1057,50 @@ def _color_correction(conv, m, kind, walk, depth, chain):
         if conv._on(m, 1, None) is not None:
             return None
         node = conv._constant(m, 0, kind, (0.0, 0.0, 0.0))
-    if m.param(2, 0) not in (None, 0) or _num(m, 10, 0.0) != 0.0:
+    if _num(m, 10, 0.0) != 0.0:
         walk.approximated = True
-        conv._issue(walk, m.index, "Color Correction %r: rewiring and tint not converted" % (m.name,))
+        conv._issue(walk, m.index, "Color Correction %r: tint not converted" % (m.name,))
+    rewire = _rewire(conv, m, walk)
     hue, saturation = _num(m, 7, 0.0) / 360.0, 1.0 + _num(m, 8, 0.0) / 100.0
     if m.param(11, 0) != 1:
-        return ColorCorrect(node, hue, saturation, _num(m, 12, 0.0) / 100.0, _num(m, 13, 0.0) / 100.0)
+        return ColorCorrect(node, rewire, hue, saturation, _num(m, 12, 0.0) / 100.0, _num(m, 13, 0.0) / 100.0)
     if _num(m, 26, 1.0) != 1.0 or _num(m, 30, 0.0) != 0.0:
         walk.approximated = True
         conv._issue(walk, m.index, "Color Correction %r: pivot and lift not converted" % (m.name,))
-    return ColorCorrect(node, hue, saturation, gain=_num(m, 18, 100.0) / 100.0, gamma=max(0.01, _num(m, 22, 1.0)))
+    return ColorCorrect(node, rewire, hue, saturation, gain=_num(m, 18, 100.0) / 100.0,
+                        gamma=max(0.01, _num(m, 22, 1.0)))
+
+
+def _rewire(conv, m, walk):
+    """The rewiring of a Color Correction (rewireMode 2; channels 3 to 5 in custom mode, 3). An alpha source is
+    drawn as one (alpha) or zero (its inverse): the map's alpha is not carried; an unreadable channel or mode
+    leaves the color unchanged. Both are issues."""
+    mode = m.param(CC_REWIRE_MODE, 0)
+    if mode in (None, 0):
+        return REWIRE_NONE
+    if mode == 1:
+        return REWIRE_MONO
+    if mode == 2:
+        return REWIRE_INVERT
+    channels = tuple(m.param(pid, 0) for pid in CC_REWIRE) if mode == 3 else None
+    if channels is None or not all(isinstance(c, int) and not isinstance(c, bool) and 0 <= c <= RW_ZERO
+                                   for c in channels):
+        walk.approximated = True
+        conv._issue(walk, m.index, "Color Correction %r: rewiring %r not converted" % (
+            m.name, channels if channels is not None else mode))
+        return REWIRE_NONE
+    if RW_ALPHA in channels or RW_INV_ALPHA in channels:
+        walk.approximated = True
+        conv._issue(walk, m.index, "Color Correction %r: rewired from alpha, drawn as opaque" % (m.name,))
+        channels = tuple(RW_ONE if c == RW_ALPHA else RW_ZERO if c == RW_INV_ALPHA else c for c in channels)
+    return channels
 
 
 def _composite(conv, m, kind, walk, depth, chain):
-    """Tables: 1 mapEnabled, 3 maskEnabled, 5 blendMode (0 normal), 8 opacity (%), 9 mapList, 10 mask. Simple (every
-    used layer normal, no mask): kept; else peeled to its first Bitmap."""
+    """Tables: 1 mapEnabled, 3 maskEnabled, 5 blendMode, 8 opacity (%), 9 mapList, 10 mask. Kept when every used
+    layer above the bottom one has a blend mode in BLENDS (the bottom one is over black whatever its mode); else
+    peeled to its first Bitmap. A layer's mask (on and set) is a data node; one that converts to nothing leaves the
+    opacity (an approximation)."""
     block = m.block(0)
     maps = block.value(9) if block is not None else None
     maps = maps if isinstance(maps, list) else []
@@ -974,11 +1111,12 @@ def _composite(conv, m, kind, walk, depth, chain):
 
     used = [k for k, r in enumerate(maps) if isinstance(r, pblock.Reference) and r.index is not None
             and at(1, k, 1)]
-    simple = all(at(5, k, 0) == 0 and not (at(3, k, 1) and _ref(m, 10, k) is not None) for k in used)
-    if not simple:
-        image = conv._peel_to_image(m, kind, walk, depth, chain, "blend modes or masks, and no bitmap below")
+    modes = [at(5, k, 0) for k in used[1:]]
+    if not all(mode in BLENDS for mode in modes):
+        bad = sorted({mode for mode in modes if mode not in BLENDS})
+        image = conv._peel_to_image(m, kind, walk, depth, chain, "blend modes %s, and no bitmap below" % (bad,))
         if image is not None:
-            conv._issue(walk, m.index, "Composite %r: blend modes or masks not converted" % (m.name,))
+            conv._issue(walk, m.index, "Composite %r: blend modes %s not converted" % (m.name, bad))
         return image
     layers = []
     for k in used:
@@ -986,12 +1124,19 @@ def _composite(conv, m, kind, walk, depth, chain):
         if node is None:
             walk.approximated = True
             conv._lost(m, maps[k].index, walk)
-        else:
-            layers.append((node, min(1.0, max(0.0, at(8, k, 100.0) / 100.0))))
+            continue
+        mask = None
+        if at(3, k, 1) and _ref(m, 10, k) is not None:
+            mask = conv._node(_ref(m, 10, k), DATA, walk, depth, chain)
+            if mask is None:
+                walk.approximated = True
+                conv._lost(m, _ref(m, 10, k), walk)
+        blend = at(5, k, 0) if layers else NORMAL_BLEND
+        layers.append(CompositeLayer(node, min(1.0, max(0.0, at(8, k, 100.0) / 100.0)), blend, mask))
     if not layers:
         return None
-    if len(layers) == 1 and layers[0][1] == 1.0:
-        return layers[0][0]
+    if len(layers) == 1 and layers[0].opacity == 1.0 and layers[0].mask is None:
+        return layers[0].node
     return Composite(tuple(layers))
 
 
@@ -1114,9 +1259,9 @@ def _corona_mix(conv, m, kind, walk, depth, chain):
 
 
 _KEEP = {MIX: _mix, RGB_MULTIPLY: _rgb_multiply, COLOR_CORRECTION: _color_correction, COMPOSITE: _composite,
-         classids.CORONA_COLOR: _corona_color, classids.CORONA_MIX: _corona_mix, classids.VRAY_COLOR: _vray_color}
-_PEEL = {FALLOFF: _falloff, VRAY_DIRT: _vray_dirt, OUTPUT: _output_map, RGB_TINT: _rgb_tint,
-         VRAY_COLOR2BUMP: _color2bump}
+         classids.CORONA_COLOR: _corona_color, classids.CORONA_MIX: _corona_mix, classids.VRAY_COLOR: _vray_color,
+         FALLOFF: _falloff, OUTPUT: _output_map, RGB_TINT: _rgb_tint}
+_PEEL = {VRAY_DIRT: _vray_dirt, VRAY_COLOR2BUMP: _color2bump}
 
 # MaterialIR input -> its kind (normal and bump: MapRefs of their own)
 SLOT_KINDS = (("base_color", COLOR), ("metallic", DATA), ("roughness", DATA), ("specular", COLOR),
