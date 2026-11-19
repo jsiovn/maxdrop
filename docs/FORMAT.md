@@ -398,7 +398,9 @@ against the extrude fixture's oracle) keeps its parameters in an old ParamBlock 
 Real-World Map Size is not in the block: the modifier's own chunk holds `0x2150 {0x0100 u32 1, 0x0110 {0x0120: 20
 bytes naming the class, 0x0130 u32}}`, and that `u32` is 1 on FixtureExtAdaptive, 0 on the others. `0x2150` can hold
 several `0x0110` entries: the flag is the one whose `0x0120` names Extrude's ClassID (another class's entry is not it).
-`maxdrop/reader/realworld.py` reads it for Extrude, UVW Map and the primitives alike.
+`maxdrop/reader/realworld.py` reads it for Extrude, UVW Map and the primitives alike. A damaged one is off, never an
+error (the flag only changes UVs): a chunk or a `0x2150` whose children do not parse, or a `0x0130` shorter
+than a `u32`; an entry that does not parse or whose `0x0120` is shorter than a ClassID is skipped.
 
 What 3ds Max 2020 makes of it (`snapshotAsMesh`, probed on scratch scenes and checked on the fixture: the oracle's
 `eval_verts`, `eval_faces` and `bbox_*`; `tests/unit/test_extrude.py` holds the counts):

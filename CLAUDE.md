@@ -107,9 +107,10 @@ powershell -ExecutionPolicy Bypass -File build.ps1    # dist\ (git-ignored): zip
   from a pack is executed or imported as code. Never `extract()` / `extractall()`: stream each entry and count
   the bytes really written against the limits (`Limits`). Unpack into a staging folder beside the destination,
   rename at the end, remove staging on any failure, and remove only folders this code created. A folder without
-  the `.maxdrop-pack.json` marker is never written into. The one exception: a destination a crash left mid-move
-  (an hour-old `.maxdrop-reserved.json` naming the same pack, nothing but the maps it lists, no `.max`) is
-  renamed to staging, judged again and cleared, file by file.
+  the `.maxdrop-pack.json` marker is never written into. The one exception, and only to remove it: a real folder
+  (not a link) a crash left mid-move (an hour-old `.maxdrop-reserved.json` naming the same pack, nothing but the
+  maps it lists, no `.max`) is first renamed to staging (one unpack wins), judged again and cleared, file by
+  file; the new unpack takes the name with a folder of its own.
 - **Install from the repository, not from disk:** Blender only upgrades an extension inside the repository it
   came from.
 - English only for UI strings, comments and docs; comment only non-obvious *why*.

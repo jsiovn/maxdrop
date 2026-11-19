@@ -661,6 +661,7 @@ def _stale_reservation(folder, ident):
         except OSError:
             return None
         files.append(item.path)
+    # The reservation last: _clear_stale_reservation removes in this order.
     return files + [reservation.path]
 
 
@@ -1084,6 +1085,7 @@ def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=Non
             created = container
             break
         parent = os.path.dirname(folder)
+        # The unpack's staging and _reserve's are made beside the folder (dest_parent itself for one scene).
         _remove_stale_staging(parent, limits)
         staging = tempfile.mkdtemp(prefix=STAGING_PREFIX, dir=parent)
         reserved = None
