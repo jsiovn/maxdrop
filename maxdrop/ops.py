@@ -1075,6 +1075,7 @@ class MAXDROP_OT_import_progress(bpy.types.Operator):
         except Exception as e:
             traceback.print_exc()
             try:
+                self._steps.close()  # suspended mid-build when the error came from _flush() or _show()
                 self._run.undo()
                 kept = "nothing was kept"
             except Exception:
