@@ -262,6 +262,15 @@ class TestSyntheticOldFile(unittest.TestCase):
         self.assertFalse(strings.of_file(old_file(narrow("Box"), narrow("0"), version=None)).wide)
         self.assertIs(strings.of_file(old_file(wide("Box"), b"0", version=None, enc=wide)), strings.UNICODE)
 
+    def test_tiny_directory(self):
+        """One usable name decides: a pre-2013 class directory of a single two-letter name and one-letter names
+        (which abstain) is 8-bit, with or without a version."""
+        classes = class_entry(1, 0, 1, "No", narrow) + class_entry(2, 0, 0x10, "B", narrow)
+        for version in ("14.00", None):
+            doc = summary(metadata.FMTID_DOC_SUMMARY, version=version) if version else None
+            cf = FakeFile(ClassDirectory3=classes, doc_summary=doc)
+            self.assertEqual(strings.of_file(cf), strings.Strings(False), version)
+
     def test_version_when_bytes_say_nothing(self):
         empty = dict(ClassDirectory3=b"", Scene=scene_stream(narrow("Box"), narrow("0")))
         for version, is_wide in (("14.00", False), ("12.00", False), ("15.00", True), ("22.00", True)):

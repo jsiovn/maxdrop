@@ -64,6 +64,8 @@
 # 3ds Max 2012 or older; the pre-flight line names the one Auto chose for such a file.
 # Modified for MaxDrop, 2026-11-19 (jsiovn). A file whose reading runs out of memory or recursion depth is reported
 # as not imported too, with a reason also when the error carries no message.
+# Modified for MaxDrop, 2026-11-20 (jsiovn). A SystemExit or KeyboardInterrupt in the import's worker thread fails
+# the run as a RuntimeError, so the progress runner still tears down and removes what the run made.
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -546,7 +548,12 @@ def _in_thread(fn, *args, stop=None, **kwargs):
             worker.join(_STOP_WAIT)
         raise
     if "error" in box:
-        raise box["error"]
+        error = box["error"]
+        if not isinstance(error, Exception):
+            # A worker's SystemExit or KeyboardInterrupt ended only the read; raised as it is, it would pass the
+            # modal runner's except Exception and skip its teardown and the removal of what the run made.
+            raise RuntimeError("the import thread ended with %s" % type(error).__name__) from error
+        raise error
     return box["value"]
 
 
