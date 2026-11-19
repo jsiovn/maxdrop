@@ -70,10 +70,12 @@ channel 1 and reported, a texture file without image data reported, a material w
 reported; a material conversion that raises leaves the scene imported without materials, the report says why.
 Images already in the file (an earlier import's) are reused by file and color space, unless modified, packed,
 generated or linked from a library; vray_maps imported twice with its textures adds no image the second time.
+The performance budget of one big mesh (tests/blender/bench.py) runs last, without file arguments.
 Prints `FIXTURES PASSED` (exit 0) or `FIXTURES FAILED` (exit 1).
 """
 import collections
 import glob
+import importlib.util
 import json
 import math
 import os
@@ -2373,6 +2375,14 @@ def check_material_slots(modules):
           and all(v == [0] * 6 for v in faces.values()), "%s %s" % (got, faces))
 
 
+def _bench():
+    """tests/blender/bench.py, the performance budget of one big mesh (its own docstring says what it checks)."""
+    spec = importlib.util.spec_from_file_location("maxdrop_bench", os.path.join(ROOT, "tests", "blender", "bench.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def main():
     print("Blender " + bpy.app.version_string)
     sys.path.insert(0, ROOT)
@@ -2419,7 +2429,8 @@ def main():
                                  ("light note on failure", lambda: check_light_note_on_failure(
                                      os.path.join(ROOT, "tests", "fixtures", "vray_lights.max"))),
                                  ("asset table once", lambda: check_asset_table_once(
-                                     os.path.join(ROOT, "tests", "fixtures", "vray_lights.max")))):
+                                     os.path.join(ROOT, "tests", "fixtures", "vray_lights.max"))),
+                                 ("benchmark", lambda: _bench().run(check))):
             try:
                 run_check()
             except Exception:
