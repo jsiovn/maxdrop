@@ -11,7 +11,7 @@
     entry.class_id == classids.EDITABLE_POLY; entry.superclass; entry.name; entry.dll_name
 
 ClassDirectory3 (ClassDirectory in older files) holds one 0x2040 container per class: 0x2060 = i32 dll index,
-u32 classA, u32 classB, u32 superclass id; 0x2042 = the class name in UTF-16LE. The class index counts the 0x2040
+u32 classA, u32 classB, u32 superclass id; 0x2042 = the class name (UTF-16LE; strings.py). The class index counts the 0x2040
 entries from 0. DllDirectory holds a 0x21C0 header chunk, then one 0x2038 container per plug-in DLL, 0x2039 =
 description, 0x2037 = file name; a dll index counts the 0x2038 entries from 0, and a negative one means none
 (-1: built into 3ds Max). The class name is for people: code compares ClassIds, never names.
@@ -22,7 +22,7 @@ Malformed input raises ChunkError, and the compound file CfbError: both are Valu
 import collections
 import operator
 
-from . import chunks
+from . import chunks, strings as strings_mod
 
 ChunkError = chunks.ChunkError
 
@@ -92,10 +92,10 @@ def _text(container, cid):
     return chunk.text() if chunk is not None else ""
 
 
-def parse_dlls(data):
-    """The DllEntry list of a DllDirectory stream (bytes-like or cfb.Stream)."""
+def parse_dlls(data, strings=None):
+    """The DllEntry list of a DllDirectory stream (bytes-like or cfb.Stream); strings as chunks.index's."""
     out = []
-    for chunk in chunks.index(data):
+    for chunk in chunks.index(data, strings=strings):
         if chunk.id == _DLL_ENTRY and chunk.container:
             out.append(DllEntry(len(out), _text(chunk, _DLL_FILE), _text(chunk, _DLL_DESCRIPTION)))
     return out
@@ -113,11 +113,12 @@ class ClassDirectory:
             self._by_id.setdefault(entry.class_id, []).append(entry)
 
     @classmethod
-    def parse(cls, classdir_data, dlldir_data=None, stream=None):
-        """From the bytes (or cfb.Streams) of ClassDirectory3 or ClassDirectory, and of DllDirectory."""
-        dlls = parse_dlls(dlldir_data) if dlldir_data is not None else []
+    def parse(cls, classdir_data, dlldir_data=None, stream=None, strings=None):
+        """From the bytes (or cfb.Streams) of ClassDirectory3 or ClassDirectory, and of DllDirectory; strings
+        decodes the names (default UTF-16)."""
+        dlls = parse_dlls(dlldir_data, strings) if dlldir_data is not None else []
         classes = []
-        for chunk in chunks.index(classdir_data):
+        for chunk in chunks.index(classdir_data, strings=strings):
             if chunk.id != _CLASS_ENTRY:
                 continue
             ids = chunk.first(_CLASS_IDS) if chunk.container else None
@@ -130,15 +131,18 @@ class ClassDirectory:
         return cls(classes, dlls, stream)
 
     @classmethod
-    def from_file(cls, cf):
-        """From an open cfb.CompoundFile: ClassDirectory3, else ClassDirectory; DllDirectory when present."""
+    def from_file(cls, cf, strings=None):
+        """From an open cfb.CompoundFile: ClassDirectory3, else ClassDirectory; DllDirectory when present. strings:
+        how the names decode, by default what strings.of_file finds."""
         for name in ("ClassDirectory3", "ClassDirectory"):
             if cf.exists(name):
                 break
         else:
             raise ChunkError("the file has no class directory")
+        if strings is None:
+            strings = strings_mod.of_file(cf)
         dlldir = cf.open("DllDirectory") if cf.exists("DllDirectory") else None
-        return cls.parse(cf.open(name), dlldir, name)
+        return cls.parse(cf.open(name), dlldir, name, strings)
 
     def __len__(self):
         return len(self._classes)

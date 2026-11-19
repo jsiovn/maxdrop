@@ -116,7 +116,7 @@ class _Damaged(Exception):
     pass
 
 
-def _element(buf, pos, tag, base, stored_ref):
+def _element(buf, pos, tag, base, stored_ref, strings=chunks.WIDE):
     """(value, next position) of one element; _Damaged when it does not fit or cannot be sized."""
     if tag & TAG_CONTROLLER and not tag & TAG_VALUE:
         return _CONTROLLER, pos
@@ -138,7 +138,7 @@ def _element(buf, pos, tag, base, stored_ref):
             return None, pos
         if size > len(buf) - pos:
             raise _Damaged("string of %d bytes, %d left" % (size, len(buf) - pos))
-        text = bytes(buf[pos:pos + size - (size & 1)]).decode("utf-16-le", "replace")
+        text = strings.text(buf[pos:pos + size])
         return text[:-1] if text.endswith("\x00") else text, pos + size
     if base == FILENAME:
         return _unpack(buf, pos, "<i")[0], pos + 4
@@ -154,14 +154,14 @@ def _unpack(buf, pos, fmt):
     return struct.unpack_from(fmt, buf, pos)
 
 
-def _entry(buf):
+def _entry(buf, strings=chunks.WIDE):
     """(id, type, flags, elements) of one entry payload; _Damaged when it cannot be read."""
     if len(buf) < _ENTRY_HEAD.size + 1:
         raise _Damaged("entry of %d bytes" % len(buf))
     pid, ptype, flags, _unknown = _ENTRY_HEAD.unpack_from(buf)
     base, stored_ref, pos = ptype & ~TABLE, bool(flags & (P_OWNERS_REF | P_NO_REF)), _ENTRY_HEAD.size
     if not ptype & TABLE:
-        value, pos = _element(buf, pos + 1, buf[pos], base, stored_ref)
+        value, pos = _element(buf, pos + 1, buf[pos], base, stored_ref, strings)
         return pid, ptype, flags, [value]
     count = _unpack(buf, pos + 1, "<I")[0]
     pos += 5
@@ -170,7 +170,7 @@ def _entry(buf):
     out = []
     for _ in range(count):
         tag = _unpack(buf, pos, "<B")[0]
-        value, pos = _element(buf, pos + 1, tag, base, stored_ref)
+        value, pos = _element(buf, pos + 1, tag, base, stored_ref, strings)
         out.append(value)
     return pid, ptype, flags, out
 
@@ -242,7 +242,7 @@ class ParamBlock2:
                     missing()
                 buf = child.view()
                 try:
-                    pid, ptype, flags, values = _entry(buf)
+                    pid, ptype, flags, values = _entry(buf, chunk.strings)
                 except _Damaged as e:
                     pid = struct.unpack_from("<H", buf)[0] if len(buf) >= 2 else -1
                     ptype, flags = struct.unpack_from("<II", buf, 2) if len(buf) >= 10 else (None, 0)

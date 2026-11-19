@@ -40,7 +40,7 @@ and bounded by the object count. No bpy.
 import collections
 import struct
 
-from . import chunks, classdir, classids
+from . import chunks, classdir, classids, strings as strings_mod
 
 ChunkError = chunks.ChunkError
 
@@ -159,14 +159,16 @@ def _floats(chunk, count, default):
 class Scene:
     """The objects of a Scene stream (bytes-like or cfb.Stream) with the file's ClassDirectory."""
 
-    def __init__(self, data, classes, max_depth=chunks.DEFAULT_MAX_DEPTH, max_chunks=chunks.DEFAULT_MAX_CHUNKS):
-        top = chunks.index(data, max_depth, max_chunks)
+    def __init__(self, data, classes, max_depth=chunks.DEFAULT_MAX_DEPTH, max_chunks=chunks.DEFAULT_MAX_CHUNKS,
+                 strings=None):
+        top = chunks.index(data, max_depth, max_chunks, strings)
         if not len(top):
             raise ChunkError("the Scene stream is empty")
         root = top[0]
         if not root.container:
             raise ChunkError("the Scene stream starts with a leaf chunk %04X, not a container" % root.id)
         self.classes = classes
+        self.strings = root.strings  # how the names decode: chunks.WIDE or a strings.Strings
         self.root_id = root.id
         self._root = root
         self._objects = root.children
@@ -199,13 +201,15 @@ class Scene:
         self._managers = tuple(i for i, cid in enumerate(self._ids) if cid in manager_classes)
 
     @classmethod
-    def from_file(cls, cf, classes=None):
-        """From an open cfb.CompoundFile; the class directory is read from it unless given."""
+    def from_file(cls, cf, classes=None, encoding="AUTO"):
+        """From an open cfb.CompoundFile; the class directory is read from it unless given. encoding: how the
+        8-bit strings of a file of 3ds Max 2012 or older decode ("AUTO" or a codec of strings.CODECS)."""
         if not cf.exists("Scene"):
             raise ChunkError("the file has no Scene stream")
+        strings = strings_mod.of_file(cf, encoding)
         if classes is None:
-            classes = classdir.ClassDirectory.from_file(cf)
-        return cls(cf.open("Scene"), classes)
+            classes = classdir.ClassDirectory.from_file(cf, strings)
+        return cls(cf.open("Scene"), classes, strings=strings)
 
     def __len__(self):
         return len(self._ids)
@@ -440,7 +444,12 @@ class Scene:
         if not chunk.container:
             raise ChunkError("layer %d is a leaf chunk" % i)
         name = chunk.first(_LAYER_NAME)
-        name = name.tobytes().decode("utf-8", "replace").rstrip("\x00") if name is not None else ""
+        if name is None:
+            name = ""
+        elif self.strings.wide:  # UTF-8 in a file of 3ds Max 2013 or later, unlike its other names
+            name = name.tobytes().decode("utf-8", "replace").rstrip("\x00")
+        else:
+            name = name.text()
         what = "layer %d" % i
         layer = Layer(i, name, _u32(chunk.first(_LAYER_FLAGS), 0, what),
                       _u32(chunk.first(_LAYER_RENDER), RENDERABLE, what), self._layer_hierarchy()[i])

@@ -45,15 +45,30 @@ class ChunkError(ValueError):
     pass
 
 
+class _Wide:
+    """The strings of a file 3ds Max 2013 or later saved: UTF-16LE (strings.Strings decides for older files)."""
+    __slots__ = ()
+    wide = True
+
+    @staticmethod
+    def text(raw):
+        return bytes(raw[:len(raw) & ~1]).decode("utf-16-le", "replace")
+
+
+WIDE = _Wide()
+
+
 class Source:
     """The bytes of a stream as contiguous read-only pieces: one for a bytes-like object, one per run of a
-    cfb.Stream (its view made when first touched)."""
-    __slots__ = ("size", "_starts", "_pieces", "_stream")
+    cfb.Stream (its view made when first touched). strings decodes the stream's text: WIDE, or a strings.Strings."""
+    __slots__ = ("size", "strings", "_starts", "_pieces", "_stream")
 
     def __init__(self, data):
         if isinstance(data, Source):
             self.size, self._starts, self._pieces, self._stream = data.size, data._starts, data._pieces, data._stream
+            self.strings = data.strings
             return
+        self.strings = WIDE
         if hasattr(data, "runs") and hasattr(data, "view"):  # cfb.Stream
             starts, pos = array.array("q"), 0
             for _offset, n in data.runs:
@@ -153,9 +168,14 @@ class Chunk:
         return self.view().tobytes()
 
     def text(self):
-        """The payload as UTF-16LE text (3ds Max strings carry no terminator)."""
-        view = self.view()
-        return view[:len(view) & ~1].tobytes().decode("utf-16-le", "replace")
+        """The payload as text: UTF-16LE without a terminator, or the 8-bit string of an older file, as the
+        stream's strings decode it."""
+        return self._src.strings.text(self.view())
+
+    @property
+    def strings(self):
+        """How this stream's strings decode (chunks.WIDE or a strings.Strings)."""
+        return self._src.strings
 
     def _check(self, offset, n):
         if offset < 0 or n < 0 or offset + n > self.payload_size:
@@ -265,9 +285,12 @@ class ChunkList:
         return [self[i] for i, x in enumerate(self._ids) if x == cid]
 
 
-def index(data, max_depth=DEFAULT_MAX_DEPTH, max_chunks=DEFAULT_MAX_CHUNKS):
-    """The top level of a stream (bytes-like, cfb.Stream or Source) as a ChunkList; it must cover the stream."""
+def index(data, max_depth=DEFAULT_MAX_DEPTH, max_chunks=DEFAULT_MAX_CHUNKS, strings=None):
+    """The top level of a stream (bytes-like, cfb.Stream or Source) as a ChunkList; it must cover the stream.
+    strings: how its text decodes (default: a Source's own, else WIDE)."""
     src = Source(data)
+    if strings is not None:
+        src.strings = strings
     return ChunkList(src, _scan(src, 0, src.size), src.size, 0, (max_depth, max_chunks))
 
 

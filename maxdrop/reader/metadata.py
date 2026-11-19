@@ -34,6 +34,7 @@ import uuid
 
 DOC_SUMMARY = "\x05DocumentSummaryInformation"
 FMTID_DOC_SUMMARY = uuid.UUID("D5CDD502-2E9C-101B-9397-08002B2CF9AE")
+FMTID_SUMMARY = uuid.UUID("F29F85E0-4FF9-1068-AB91-08002B27B3D9")
 PID_CODEPAGE, PID_HEADING_PAIRS, PID_DOC_PARTS = 1, 12, 13
 
 MAX_STREAM = 16 << 20
@@ -50,7 +51,11 @@ COUNTS = {
     "Objects": "objects", "Shapes": "shapes", "Lights": "lights", "Cameras": "cameras", "Helpers": "helpers",
     "Space Warps": "space_warps", "Total": "total", "Vertices": "vertices", "Faces": "faces",
 }
-_CODECS = {1200: "utf-16-le", 65001: "utf-8", 1252: "cp1252"}
+# The Windows ANSI code pages a property set (or an older file's 8-bit strings, reader/strings.py) may be in
+CODE_PAGES = {1250: "cp1250", 1251: "cp1251", 1252: "cp1252", 1253: "cp1253", 1254: "cp1254", 1255: "cp1255",
+              1256: "cp1256", 1257: "cp1257", 1258: "cp1258", 874: "cp874", 932: "cp932", 936: "cp936",
+              949: "cp949", 950: "cp950"}
+_CODECS = {1200: "utf-16-le", 65001: "utf-8", **CODE_PAGES}
 
 
 class MetadataError(ValueError):
@@ -215,11 +220,27 @@ def _is_file_name(name):
     return 0 < len(name) <= MAX_TEXT and not any(c in name for c in "\\/:")
 
 
+def major(version):
+    """The major version of a version string ("22.00" -> 22), None when it does not start with a number."""
+    return _int((version or "").split(".", 1)[0])
+
+
+def code_page(data):
+    """The code page (property 1, as an unsigned 16-bit number) a SummaryInformation or DocumentSummaryInformation
+    stream records, None when it records none."""
+    sets = property_sets(data, {FMTID_DOC_SUMMARY: (PID_CODEPAGE,), FMTID_SUMMARY: (PID_CODEPAGE,)})
+    for fmtid in (FMTID_DOC_SUMMARY, FMTID_SUMMARY):
+        page = sets.get(fmtid, {}).get(PID_CODEPAGE)
+        if isinstance(page, int) and not isinstance(page, bool):
+            return page & 0xFFFF
+    return None
+
+
 def release(version):
     """The 3ds Max release year of a version string ("22.00" -> 2020); None outside versions 10 (3ds Max 2008)
     to 99."""
-    major = _int((version or "").split(".", 1)[0])
-    return major + 1998 if major is not None and 10 <= major <= 99 else None
+    n = major(version)
+    return n + 1998 if n is not None and 10 <= n <= 99 else None
 
 
 def _class_part(text):
