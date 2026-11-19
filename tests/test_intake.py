@@ -842,6 +842,22 @@ class Destination(Base):
     def test_preview_of_one_of_several_says_no_folder_is_free(self):
         self.assert_no_free_folder(self.pack([("one.max", b"1"), ("two.max", b"2")]), "two.max", True)
 
+    def test_preview_says_no_folder_is_free_inside_the_pack_folder(self):
+        """The pack folder is this pack's (its marker matches), but every name for the scene's sub-folder is
+        taken."""
+        path = self.pack([("one.max", b"1"), ("two.max", b"2")])
+        archive.unpack(path, "two.max", dest_parent=self.out)
+        os.mkdir(os.path.join(self.out, "pack", "one"))
+        write(os.path.join(self.out, "pack", "one", "notes.txt"))
+        with mock.patch.object(archive, "_CANDIDATES", 1):
+            before = files_under(self.tmp)
+            with self.assertRaisesRegex(PackError, "No free folder for pack.zip") as previewed:
+                archive.preview(path, "one.max", True, self.out)
+            with self.assertRaises(PackError) as unpacked:
+                archive.unpack(path, "one.max", dest_parent=self.out)
+            self.assert_clean(before)
+        self.assertEqual(str(previewed.exception), str(unpacked.exception))
+
     def assert_preview_is_unpack(self, path, scene, several, expected):
         """preview() names expected, writes nothing, and unpack() then does exactly that."""
         before = files_under(self.tmp)
