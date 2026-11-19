@@ -4,11 +4,12 @@
 
 """Damaged input through the whole reader path the operator runs (compound file, summary, class directory, Scene
 index, unit, scene description): no Blender. A .max comes from anywhere, so whatever is wrong with it must come
-out as a ValueError (CfbError, ChunkError, MetadataError, GeometryError), never IndexError, struct.error or
-another exception that would escape the operator's "Not imported" handling. Every fixture is cut short at many
-lengths and garbled with a fixed seed, so a failure is reproducible; its chunk tree is also written again with
-records cut short and with references past the last object, the input that reaches the reader's IndexError and
-struct.error paths if a check is missing.
+out as a MaxFileError (CfbError, ChunkError, MetadataError, GeometryError), never IndexError, struct.error or
+another exception. Every fixture is cut short at a few lengths and garbled with a fixed seed, so a failure is
+reproducible; its chunk tree is also written again with records cut short and with references past the last
+object, the input that reaches the reader's IndexError and struct.error paths if a check is missing. The fuzz
+harness (tests/unit/fuzz.py, test_fuzz.py) mutates the same fixtures in many more ways and at depth; the counts
+here stay small to keep the plain suite fast.
 
     python -I -m unittest discover tests
 """
@@ -29,9 +30,9 @@ except ImportError:  # optional here: CI installs it, Blender ships it
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 FIXTURES = sorted(glob.glob(os.path.join(ROOT, "tests", "fixtures", "*.max")))
 SEED = 20261115
-GARBLED_PER_FIXTURE = 40
-CUTS_PER_FIXTURE = 24
-RECORDS_PER_FIXTURE = 30
+GARBLED_PER_FIXTURE = 10
+CUTS_PER_FIXTURE = 8
+RECORDS_PER_FIXTURE = 10
 
 # A package named apart from the add-on whose path is maxdrop/: relative imports resolve, and maxdrop/__init__.py
 # (which imports bpy) never runs.
@@ -47,6 +48,7 @@ metadata = importlib.import_module(_PKG + ".reader.metadata")
 reader_scene = importlib.import_module(_PKG + ".reader.scene")
 units = importlib.import_module(_PKG + ".reader.units")
 conv = importlib.import_module(_PKG + ".convert.scene")
+MaxFileError = importlib.import_module(_PKG + ".reader.errors").MaxFileError
 
 
 def _describe(sc):
@@ -112,12 +114,12 @@ def _cuts(size):
 
 
 class DamagedInputTest(unittest.TestCase):
-    def assertOnlyValueError(self, read, *args, what=""):
+    def assertOnlyMaxFileError(self, read, *args, what=""):
         try:
             read(*args)
-        except ValueError:
+        except MaxFileError:
             pass
-        except Exception as exc:  # the operator catches ValueError (and OSError) only
+        except Exception as exc:  # a defect: the reader's errors are MaxFileErrors
             self.fail("%s: %s escaped the reader: %s" % (what, type(exc).__name__, exc))
 
     def test_fixtures_present(self):
@@ -128,10 +130,10 @@ class DamagedInputTest(unittest.TestCase):
             scene, classes, dlls = _streams(path)
             name = os.path.basename(path)
             for n in _cuts(len(scene)):
-                self.assertOnlyValueError(_read_streams, scene[:n], classes, dlls,
+                self.assertOnlyMaxFileError(_read_streams, scene[:n], classes, dlls,
                                           what="%s Scene cut at %d" % (name, n))
             for n in _cuts(len(classes)):
-                self.assertOnlyValueError(_read_streams, scene, classes[:n], dlls,
+                self.assertOnlyMaxFileError(_read_streams, scene, classes[:n], dlls,
                                           what="%s class directory cut at %d" % (name, n))
 
     def test_garbled_scene_and_class_directory(self):
@@ -144,7 +146,7 @@ class DamagedInputTest(unittest.TestCase):
                     args, which = (_garble(rng, scene), classes, dlls), "Scene"
                 else:
                     args, which = (scene, _garble(rng, classes), dlls), "class directory"
-                self.assertOnlyValueError(_read_streams, *args, what="%s garbled %s #%d" % (name, which, k))
+                self.assertOnlyMaxFileError(_read_streams, *args, what="%s garbled %s #%d" % (name, which, k))
 
     def test_records_cut_short(self):
         rng = random.Random(SEED + 2)
@@ -156,7 +158,7 @@ class DamagedInputTest(unittest.TestCase):
             leaves = [c for c in _leaves(chunks.index(scene)[0]) if c.payload_size]
             for leaf in rng.sample(leaves, min(RECORDS_PER_FIXTURE, len(leaves))):
                 for n in (0, leaf.payload_size // 2, leaf.payload_size - 1):
-                    self.assertOnlyValueError(_read_streams, _rewritten(scene, leaf.offset, leaf.tobytes()[:n]),
+                    self.assertOnlyMaxFileError(_read_streams, _rewritten(scene, leaf.offset, leaf.tobytes()[:n]),
                                               classes, dlls,
                                               what="%s %04X at %d cut to %d bytes" % (name, leaf.id, leaf.offset, n))
 
@@ -177,7 +179,7 @@ class DamagedInputTest(unittest.TestCase):
                     pairs = struct.unpack("<%dI" % ((len(raw) - 4) // 4), raw[4:])
                     bad = raw[:4] + struct.pack("<%dI" % len(pairs), *[v if k % 2 == 0 else past
                                                                        for k, v in enumerate(pairs)])
-                self.assertOnlyValueError(_read_streams, _rewritten(scene, ref.offset, bad), classes, dlls,
+                self.assertOnlyMaxFileError(_read_streams, _rewritten(scene, ref.offset, bad), classes, dlls,
                                           what="%s %04X at %d past the objects" % (name, ref.id, ref.offset))
 
     def test_failed_reference_read_keeps_no_iterator(self):
@@ -222,9 +224,9 @@ class DamagedInputTest(unittest.TestCase):
                 raw = f.read()
             name = os.path.basename(path)
             for n in _cuts(len(raw)):
-                self.assertOnlyValueError(_read_file, raw[:n], what="%s cut at %d" % (name, n))
+                self.assertOnlyMaxFileError(_read_file, raw[:n], what="%s cut at %d" % (name, n))
             for k in range(GARBLED_PER_FIXTURE):  # biased to the header, the FAT and the directory
-                self.assertOnlyValueError(_read_file, _garble(rng, raw, near=4096), what="%s garbled #%d" % (name, k))
+                self.assertOnlyMaxFileError(_read_file, _garble(rng, raw, near=4096), what="%s garbled #%d" % (name, k))
 
 
 if __name__ == "__main__":

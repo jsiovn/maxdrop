@@ -377,6 +377,80 @@ class RefusalTest(Tree):
         self.assertIsNone(self.index().find("C:a.jpg"))
 
 
+class FuzzedPathTest(Tree):
+    """The refusals again, on stored paths built at random from the pieces that make a path dangerous: an accepted
+    path has the shape refused_reason promises, a refused one is never handed to is_local_drive or lstat, and no
+    stored path decides which folder is listed."""
+
+    SEED = 20261119
+    COUNT = 3000
+    HEADS = ("\\\\", "//", "\\/", "\\\\?\\", "\\\\.\\", "\\??\\", "C:", "C:\\", "c:/", "Z:\\", "1:\\", "\u00e9:\\",
+             "\\", "/", "", "..\\", "./", "\\\\host\\share\\", "\\\\?\\UNC\\host\\s\\", "file://", "C:\\..\\")
+    PARTS = ("a", "maps", "..", ".", "...", ".. ", " ..", "CON", "con.jpg", "nul", "aux.png", "COM1", "lpt9.tif",
+             "COM\u00b9", "x:y", "a.jpg:stream", "\x00", "\x01", "\x7f", "\u202e", "\uff0f", "\u2215", "\u00e9t\u00e9",
+             "\u6587\u4ef6", "a b", "x" * 80, "", "~1", "$Recycle.Bin", "System Volume Information")
+    SEPS = ("\\", "/", "\\\\", "/\\")
+
+    def paths(self):
+        import random
+        rng = random.Random(self.SEED)
+        for _ in range(self.COUNT):
+            parts = [rng.choice(self.PARTS) for _ in range(rng.randint(0, 5))] + [rng.choice(("a.jpg", "b.png", ""))]
+            path = rng.choice(self.HEADS) + "".join(p + rng.choice(self.SEPS) for p in parts[:-1]) + parts[-1]
+            if rng.random() < 0.2:
+                i = rng.randrange(len(path) + 1)
+                path = path[:i] + chr(rng.randrange(0x20, 0x3000)) + path[i:]
+            yield path
+
+    def test_an_accepted_path_has_the_promised_shape(self):
+        accepted = 0
+        for path in self.paths():
+            if textures.refused_reason(path) is not None:
+                continue
+            accepted += 1
+            with self.subTest(path=path):
+                self.assertTrue(path[0].isascii() and path[0].isalpha() and path[1] == ":" and path[2] in "\\/")
+                self.assertNotIn(":", path[2:])
+                parts = path[3:].replace("\\", "/").split("/")
+                self.assertNotIn("..", parts)
+                self.assertFalse(any(ord(c) < 32 or ord(c) == 127 for c in path))
+                self.assertFalse(any(textures.pathnames.is_reserved(p) for p in parts))
+        self.assertGreater(accepted, 50)
+
+    def test_a_refused_path_is_never_touched(self):
+        lstat, scandir = os.lstat, os.scandir
+        local, touched, listed = [], [], []
+
+        def is_local(path):
+            local.append(path)
+            return True
+
+        def spy_lstat(path):
+            touched.append(path)
+            return lstat(path)
+
+        def spy_scandir(path="."):
+            listed.append(os.path.abspath(path))
+            return scandir(path)
+
+        idx = self.index(is_local_drive=is_local)
+        with mock.patch.object(textures.os, "lstat", side_effect=spy_lstat), \
+                mock.patch.object(textures.os, "scandir", side_effect=spy_scandir):
+            for path in self.paths():
+                idx.find(path, path[::-1])
+        for path in local:
+            with self.subTest(local=path):
+                self.assertIsNone(textures.refused_reason(path))
+        for path in touched:
+            with self.subTest(lstat=path):
+                self.assertTrue(path[0].isalpha() and path[1:3] in (":\\", ":/"), path)
+                self.assertFalse(path.startswith(("\\\\", "//")))
+        parent = os.path.dirname(self.scene_dir)
+        for folder in listed:
+            with self.subTest(listed=folder):
+                self.assertEqual(os.path.commonpath([folder, parent]), parent)
+
+
 class ReportTest(Tree):
     def test_counts_per_rule_and_missing_names(self):
         self.touch("proj", "scene", "a.jpg")
