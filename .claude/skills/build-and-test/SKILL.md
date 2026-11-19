@@ -327,8 +327,8 @@ stay in `S`, and only counts and measurements are compared with `docs/BASELINE.m
 objects, meshes, materials, placeholders). `counts.nodes` is the number of nodes MaxDrop's reader walks in the
 file (`tools/baseline_import.py`; the importer builds one object per node), `null` only when the reader cannot
 index the file. `import_report` holds the counts of the operator's `Imported ...` line (objects, meshes,
-curves, materials, placeholders, modifiers not applied, textures missing, approximated, issues), `null` when the
-log has no such line.
+curves, materials, placeholders, modifiers not applied, textures missing, approximated, material problems,
+issues), `null` when the log has no such line.
 
 ## Evidence and report
 

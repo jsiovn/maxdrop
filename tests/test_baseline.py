@@ -25,7 +25,7 @@ if _PKG not in sys.modules:
 report = importlib.import_module(_PKG + ".convert.report")
 
 ZERO = {"curves": 0, "placeholders": 0, "modifiers_not_applied": 0, "textures_missing": 0, "approximated": 0,
-        "issues": 0}
+        "material_problems": 0, "issues": 0}
 
 
 class ReadLog(unittest.TestCase):
@@ -47,11 +47,12 @@ class ReadLog(unittest.TestCase):
 
     def test_left_out_counts_and_no_name(self):
         found = self.read("MaxDrop: Imported a: secret.max: 747 objects, 343 meshes, 141 materials; 323 placeholders, "
-                          "1 modifier not applied, 2 textures missing, 4 approximated, 5 issues. "
+                          "1 modifier not applied, 2 textures missing, 4 approximated, 3 material problems, 5 issues. "
                           "See the text MaxDrop Report.")
         self.assertEqual(found["import_report"], {
             "objects": 747, "meshes": 343, "curves": 0, "materials": 141, "placeholders": 323,
-            "modifiers_not_applied": 1, "textures_missing": 2, "approximated": 4, "issues": 5})
+            "modifiers_not_applied": 1, "textures_missing": 2, "approximated": 4, "material_problems": 3,
+            "issues": 5})
         self.assertNotIn("secret", repr(found))
 
     def test_curves(self):
@@ -63,6 +64,11 @@ class ReadLog(unittest.TestCase):
                           "See the text MaxDrop Report.")
         self.assertEqual(found["import_report"], dict(ZERO, objects=2, meshes=0, curves=1, materials=None,
                                                       placeholders=1, issues=2))
+
+    def test_one_material_problem(self):
+        found = self.read("MaxDrop: Imported a.max: 1 object, 1 mesh, 1 material; 1 material problem. "
+                          "See the text MaxDrop Report.")
+        self.assertEqual(found["import_report"], dict(ZERO, objects=1, meshes=1, materials=1, material_problems=1))
 
     def test_without_materials(self):
         found = self.read("MaxDrop: Imported box.max: 1 object, 1 mesh, nothing left out.")
@@ -96,11 +102,12 @@ class ReadLog(unittest.TestCase):
             rep.modifiers["Bend"] = n
             rep.textures_missing = ["t.png"] * n
             rep.wrappers["Blend"] = n
+            rep.grey_materials["Foo"] = n
             rep.issues = ["?"] * n
             found = self.read("MaxDrop: " + rep.summary()[1])
             self.assertEqual(found["import_report"], {
                 "objects": n, "meshes": n, "curves": n, "materials": n, "placeholders": n, "modifiers_not_applied": n,
-                "textures_missing": n, "approximated": n, "issues": n}, rep.summary()[1])
+                "textures_missing": n, "approximated": n, "material_problems": n, "issues": n}, rep.summary()[1])
         rep = report.Report("")
         found = self.read("MaxDrop: " + rep.summary()[1])
         self.assertEqual(found["import_report"], dict(ZERO, objects=0, meshes=0, materials=None))

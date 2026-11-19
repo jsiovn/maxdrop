@@ -323,8 +323,9 @@ python tools\baseline.py --blender "<blender.exe>" --profile "<scratch>\profile"
 Keep `--out` outside the repository: the JSON holds counts only, but Blender's console log written next to it
 (`<out>.log`) names objects and texture files of the scene. Besides the measurements and `counts`, the JSON's
 `import_report` holds the counts of the operator's `Imported ...` line (objects, meshes, curves,
-materials, placeholders, modifiers not applied, textures missing, approximated, issues). The skipped and failed
-nodes of the 0.0.1 table came from lines the inherited engine printed; the tool no longer reads them.
+materials, placeholders, modifiers not applied, textures missing, approximated, material problems, issues). The
+skipped and failed nodes of the 0.0.1 table came from lines the inherited engine printed; the tool no longer reads
+them.
 
 The first open:
 

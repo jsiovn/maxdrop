@@ -32,9 +32,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 IMPORTED = re.compile(r"^MaxDrop: Imported .*: (\d+) objects?, (\d+) mesh(?:es)?(?:, (\d+) curves?)?"
                       r"(?:, (\d+) materials?)?"
                       r"(?:, nothing left out\.|; (.*)\. See the text MaxDrop Report\.)$")
-LEFT_OUT = re.compile(r"(\d+) (placeholder|modifier|texture|approximated|issue)")
+LEFT_OUT = re.compile(r"(\d+) (placeholder|modifier|texture|approximated|material problem|issue)")
 LEFT_OUT_KEYS = {"placeholder": "placeholders", "modifier": "modifiers_not_applied",
-                 "texture": "textures_missing", "approximated": "approximated", "issue": "issues"}
+                 "texture": "textures_missing", "approximated": "approximated",
+                 "material problem": "material_problems", "issue": "issues"}
 GB = 1024 ** 3
 
 
