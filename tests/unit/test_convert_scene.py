@@ -538,6 +538,7 @@ class LookAt(unittest.TestCase):
                              (look_at(7, 2, False, 0.1, False), conv.NO_TRACK_ROLL)):
             self.assertEqual(describe(look), conv.LookAtDescription(7, None, None, False, reason))
 
+    @unittest.skipIf(numpy is None, "numpy missing")  # lookat.max has boxes: their meshes are built with numpy
     def test_lookat_fixture(self):
         desc = conv.read(os.path.join(ROOT, "tests", "fixtures", "lookat.max"))
         index = {n.index: n.name for n in desc.nodes}
