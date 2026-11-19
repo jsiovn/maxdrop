@@ -11,7 +11,8 @@ version 22000). What only other files have shown is listed under [Open](#open), 
   whose payload is more chunks. Every chunked stream of every fixture (`Scene`, `ClassDirectory3`,
   `DllDirectory`, `Config`, `ClassData`, `VideoPostQueue`) indexes to the bottom with this rule
   (`tests/unit/test_chunks.py`).
-- Strings are UTF-16LE without a terminator (node names: `0x0962`, below).
+- Strings are UTF-16LE without a terminator (node names: `0x0962`, below). A file of 3ds Max 2012 or older
+  writes the same chunks as 8-bit text: see [Strings of older files](#strings-of-older-files).
 
 ## Class directory
 
@@ -28,6 +29,9 @@ version 22000). What only other files have shown is listed under [Open](#open), 
   the scene: the **object index** is a child's position, the child's chunk id is its **class index** into the
   class directory. Every child id of every fixture is a valid class index (`test_classdir.py`,
   `tests/unit/test_scene.py`).
+- The root container's id follows the format the file was saved in: `0x2022` saved_as_2017, `0x2023`
+  saved_as_2018 and saved_as_2019, `0x2025` 3ds Max 2020 (the oracle's `file_version`; `tests/unit/test_census.py`).
+  The children read the same way under all three (every check of `test_scene.py` runs on the saved_as fixtures).
 - Most objects are containers. Two per fixture are empty leaf chunks (TVNode and Reaction Manager in
   hierarchy): they hold no references.
 
@@ -1052,6 +1056,26 @@ Bitmap's).
   types above); its `fileName` (16) is transient and not stored. The id's record holds the file name 3ds Max
   reports as `fileName` (oracle) for every Bitmap of vray_maps and standard_physical.
 
+## Strings of older files
+
+`maxdrop/reader/strings.py`; `tests/unit/test_strings.py`.
+
+- saved_as_2017, saved_as_2018 and saved_as_2019 (3ds Max 2020, Save As 2017, 2018, 2019) hold their node,
+  material and layer names with U+00F6, U+00E4 and U+4E2D as every 3ds Max 2020 file does: `0x0962` and `0x4001`
+  UTF-16LE, the layer's `0x1010` UTF-8. Their summary says `3ds Max Version: 22.00` and `Saved As Version` 19.00,
+  20.00, 21.00; both summary streams record code page 65001.
+- Corpus scene A (3ds Max 2015 saving in the 2012 format) has UTF-16 names too (every `0x0962`, `0x2042` and DLL
+  name has a zero in each odd byte), and the root container `0x2014`: the saved-as version and the root id do not
+  tell an 8-bit file, the version that wrote it does.
+- The reader decides from the file's bytes: the DLL file names (`0x2037`) and class names (`0x2042`) are ASCII in
+  every file seen, so in UTF-16 their second byte is 0 and their size even; in 8-bit text the second byte is the
+  second letter. When no name says (no directory), the writer's `3ds Max Version` decides (15 = 3ds Max 2013, the
+  first Unicode version); with nothing at all, UTF-16.
+- An 8-bit string is cut at its first NUL and decoded with the code page the summary records (property 1 of
+  DocumentSummaryInformation, else SummaryInformation) when it is a Windows ANSI code page, else as UTF-8 when it
+  is valid UTF-8, else as cp1252; the import option Text Encoding overrides it. The layer name and the ParamBlock2
+  string values follow the same rule in an 8-bit file.
+
 ## Open
 
 Not shown by any fixture yet, so not stated above:
@@ -1076,8 +1100,13 @@ Not shown by any fixture yet, so not stated above:
   - not known: the first `u32` of `0x0009`, the fourth `u32` of an entry, the third `u16` of a `0x0013` record,
     `0x0005` and `0x0004` of the old ParamBlock, and the value layout of the types no file has shown (matrix3,
     and the others the reader keeps as raw bytes).
-- Other root container ids: `0x2014` and `0x2023` occur in older files, and the 64-bit chunk header (size 0,
-  then a `u64`) in large ones.
+- Other root container ids: `0x2014` (the 2012 format, corpus scene A) and `0x2023` (corpus scene B) occur in
+  the corpus, and the 64-bit chunk header (size 0, then a `u64`) in large ones.
+- Files of 3ds Max 2012 and older: no such file has been read. Taken from the 3ds Max SDK of those versions and
+  checked only on synthetic chunks: the 8-bit strings and their NUL, the ParamBlock2 string as a byte count then
+  8-bit text, the code page the summary records (the machine's ANSI code page is assumed), the layer name in the
+  same code page. Their FileAssetMetaData strings are still read as UTF-16, and an older `ClassDirectory` stream
+  as `ClassDirectory3`.
 - Of shapes ([Shapes](#shapes)): NGon's corner radius and Ellipse's outline (no fixture sets them: drawn without,
   an issue), an Arc whose `from` equals `to` (taken as a full turn), the order of a reversed pie's knots (the center
   last), a Rectangle whose corner radius is more than half a side (its knots cross; 3ds Max's handling is not

@@ -25,6 +25,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   masks; Color Correction's rewiring; an Output map's levels; an RGB Tint's channel mix. Other Falloff types and
   directions and the four blend modes left out are simplified as before.
 
+- Import: files of 3ds Max 2012 and older, whose names are 8-bit text in the code page of the computer that saved
+  them, are read with their names: in the code page the file records, else as UTF-8, else Western (1252). The new
+  option **Text Encoding** picks another code page (Central European, Cyrillic, Greek, Turkish, Japanese,
+  Simplified and Traditional Chinese, Korean, UTF-8); Unicode files of 3ds Max 2013 and later ignore it. No file of
+  those versions has been imported yet: checked on made-up data.
+- Tests: files saved by 3ds Max 2020 in the 2017, 2018 and 2019 formats, with accented and Chinese names; docs/
+  SUPPORT.md lists which 3ds Max versions are tested, expected to work or not supported.
+
 ### Changed
 
 - Materials: an inverted Output (of a Bitmap or an Output map) with an RGB offset subtracts the offset, as 3ds Max
