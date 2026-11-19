@@ -19,6 +19,9 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 FIXTURES = sorted(glob.glob(os.path.join(ROOT, "tests", "fixtures", "*.max")))
 BOX = os.path.join(ROOT, "tests", "fixtures", "box_poly_standard.max")
+# The Scene root container id by the format a fixture was saved in (the oracle's file_version): saved_as_2017,
+# saved_as_2018 and saved_as_2019 are 3ds Max 2020 files saved as 2017, 2018 and 2019.
+ROOT_IDS = {19000: "0x2022", 20000: "0x2023", 21000: "0x2023", 22000: "0x2025"}
 STACK_BASIC = os.path.join(ROOT, "tests", "fixtures", "stack_basic.max")
 
 
@@ -85,7 +88,7 @@ class TestFixtures(unittest.TestCase):
                     self.assertLessEqual(r["objects"], r["count"])
                     self.assertLessEqual(r["derived_objects"], r["count"])
                 self.assertEqual(nodes["bad_parents"], 0)
-                self.assertEqual(result["root_id"], "0x2025")
+                self.assertEqual(result["root_id"], ROOT_IDS[oracle["file_version"][0]])
 
     def test_stack_basic(self):
         """An instanced Noise (one object, two stacks), a Taper shared by a reference's stack, the switches."""

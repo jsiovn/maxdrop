@@ -147,9 +147,10 @@ class TestFixtures(unittest.TestCase):
                 with open(path[:-4] + ".oracle.json", encoding="ascii") as f:
                     oracle = json.load(f)
                 info = self._info(path)
-                self.assertEqual(info["max_version"], "22.00")
+                saved_as, writer = oracle["file_version"]  # the saved_as fixtures: 3ds Max 2020 saving as older
+                self.assertEqual(info["max_version"], "%.2f" % (writer / 1000))
                 self.assertEqual(info["max_release"], oracle["max_version"][1])
-                self.assertEqual(info["saved_as_version"], "22.00")
+                self.assertEqual(info["saved_as_version"], "%.2f" % (saved_as / 1000))
                 self.assertFalse(info["compressed"])
                 self.assertEqual(info["renderer"]["name"], "Scanline Renderer")
                 self.assertEqual(info["renderer"]["class_id"],

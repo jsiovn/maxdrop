@@ -16,7 +16,7 @@
         scene.layers()                  # Layer records in the Layer Manager's order
         scene.layer(node.layer)         # name, hidden, frozen, renderable, parent (a layer's object index)
 
-The Scene stream holds one root container (0x2014, 0x2023 or 0x2025 so far); its children are the objects. The
+The Scene stream holds one root container (0x2014, 0x2022, 0x2023 or 0x2025 so far); its children are the objects. The
 object index is a child's position, its chunk id the class index into the class directory. References: 0x2034
 is an i32 array (position = slot, -1 = empty); 0x2035 is a u32 (meaning unknown) then (u32 slot, i32 index)
 pairs. A Node (class (1, 0), superclass 1) has 0x0962 name, 0x0960 i32 parent + u32 flags, 0x096A/B/C pivot
@@ -44,7 +44,7 @@ from . import chunks, classdir, classids, strings as strings_mod
 
 ChunkError = chunks.ChunkError
 
-ROOT_IDS = frozenset((0x2014, 0x2023, 0x2025))  # root container ids seen so far; others are read the same way
+ROOT_IDS = frozenset((0x2014, 0x2022, 0x2023, 0x2025))  # root container ids seen so far; others are read the same way
 DERIVED_OBJECT = 0x2032
 MAX_REFS = 1 << 20  # per object and chunk: a hostile payload must not become millions of Python ints
 SLOT_TM, SLOT_OBJECT, SLOT_MATERIAL, SLOT_LAYER = 0, 1, 3, 6

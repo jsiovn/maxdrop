@@ -9,6 +9,7 @@ version); every committed fixture is UTF-16, and the non-ASCII names of the save
 
     python -I -m unittest discover tests
 """
+import ast
 import glob
 import importlib
 import json
@@ -189,6 +190,21 @@ class TestText(unittest.TestCase):
             "x".encode(codec)
         self.assertNotIn(1200, strings.CODE_PAGES)
         self.assertNotIn(65001, strings.CODE_PAGES)
+
+    def test_operator_offers_every_choice(self):
+        """maxdrop/ops.py (bpy: read with ast) maps each Text Encoding item but Auto to a codec of CHOICES."""
+        with open(os.path.join(ROOT, "maxdrop", "ops.py"), encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+        found = {}
+        for stmt in tree.body:
+            if isinstance(stmt, ast.Assign) and isinstance(stmt.targets[0], ast.Name):
+                if stmt.targets[0].id in ("TEXT_ENCODINGS", "TEXT_CODECS"):
+                    found[stmt.targets[0].id] = ast.literal_eval(stmt.value)
+        items, codecs = found["TEXT_ENCODINGS"], found["TEXT_CODECS"]
+        self.assertEqual([item[0] for item in items], ["AUTO"] + list(codecs))
+        self.assertEqual([item[3] for item in items], list(range(len(items))))
+        self.assertEqual(list(codecs.values()), [codec for codec, _label in strings.CHOICES])
+        self.assertEqual([item[1] for item in items[1:]], [label for _codec, label in strings.CHOICES])
 
 
 class TestLooksWide(unittest.TestCase):

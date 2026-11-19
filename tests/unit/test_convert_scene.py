@@ -67,6 +67,9 @@ UV_LAYERS = {
     "stack_basic": ["UVMap"],  # FixtureTurbo's UVW Map writes channel 1; no other modifier is applied
     "stack_convert": ["UVMap"],  # its modifiers become Blender modifiers: the base meshes are built
     "standard_physical": ["UVMap"],
+    "saved_as_2017": ["UVMap"],
+    "saved_as_2018": ["UVMap"],
+    "saved_as_2019": ["UVMap"],
     "texmap_rules": ["UVMap"],
     "texmap_wrappers": ["UVMap"],
     "units_cm": ["UVMap"],
