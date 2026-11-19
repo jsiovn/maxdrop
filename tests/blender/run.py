@@ -1362,6 +1362,122 @@ def check_cancel(textured, other):
     bpy.data.images.remove(keep_image)
 
 
+def check_run_guards(textured):
+    """The modal runner's safety nets without a window: an undo or file load elsewhere closes the active run
+    (ops._stop_active), the runner's teardown never leaves a run active even when the window manager raises, the
+    windowed import keeps its settings as the last-used ones (ops._store_last), and a cancelled read still running
+    keeps the next import waiting (ops._busy)."""
+    import threading
+    import types
+    from maxdrop import ops
+    empty_scene()
+    before = _state()
+    run = _cancel_run([textured])
+    steps = run.steps()
+    run.close = steps.close
+    held = _advance(steps, lambda: len(bpy.data.objects) > 0)
+    ops._ACTIVE.append(run)
+    ops._guard(True)
+    try:
+        guarded = all(ops._stop_active in getattr(bpy.app.handlers, n) for n in ops._GUARDED)
+        ops._stop_active()
+        check("guards: an undo or file load elsewhere closes the active run, nothing left",
+              held and guarded and run.stopped and _state() == before, "%s | %s" % (_state(), before))
+
+        def raising(*_args):
+            raise RuntimeError("maxdrop test: window manager fails")
+
+        wm = types.SimpleNamespace(event_timer_remove=raising, progress_end=raising)
+        context = types.SimpleNamespace(window_manager=wm, workspace=types.SimpleNamespace(status_text_set=raising))
+        runner = types.SimpleNamespace(_run=run, _timer=object())
+        ops.MAXDROP_OT_import_progress._teardown(runner, context)
+        check("guards: teardown with a failing window manager: no run active, the handlers removed",
+              not ops._ACTIVE and not any(ops._stop_active in getattr(bpy.app.handlers, n) for n in ops._GUARDED)
+              and runner._timer is None and not ops._busy())
+    finally:
+        ops._ACTIVE.clear()
+        ops._guard(False)
+
+    source = types.SimpleNamespace(units='CENTIMETERS', scale_objects=2.0, light_strength=2.5, keep_targets=True,
+                                   modifiers='IGNORE', object_filter={'UV'}, pack_scene="not kept")
+    ops._store_last(source, bpy.context.window_manager)
+    last = bpy.context.window_manager.operator_properties_last("import_scene.maxdrop")
+    check("guards: the windowed import's settings kept as the last-used ones (Scene is not)",
+          last.units == 'CENTIMETERS' and abs(last.scale_objects - 2.0) < 1e-6 and abs(last.light_strength - 2.5) < 1e-6
+          and last.keep_targets and last.modifiers == 'IGNORE' and set(last.object_filter) == {'UV'}
+          and last.pack_scene == "",
+          "%s %s %s %s %s %s %r" % (last.units, last.scale_objects, last.light_strength, last.keep_targets,
+                                    last.modifiers, set(last.object_filter), last.pack_scene))
+    for name in ("units", "scale_objects", "light_strength", "keep_targets", "modifiers", "object_filter"):
+        last.property_unset(name)
+
+    release = threading.Event()
+    steps = ops._in_thread(release.wait, 30)
+    waited = next(steps) is ops._WAIT
+    steps.close()
+    busy = ops._busy()
+    release.set()
+    for worker in list(ops._WORKERS):
+        worker.join(10)
+    check("guards: a cancelled read still running keeps the next import waiting, until it ends",
+          waited and "still reading" in busy and ops._busy() == "", busy)
+
+
+def check_pack_cancel(fixture):
+    """The threaded unpack of a .zip pack as the run's first step: closed while it unpacks, no staging folder and no
+    pack folder are left; closed during the build after it, the finished pack folder stays and nothing in Blender;
+    run to its end, the unpack's summary is reported."""
+    import time
+    import zipfile
+    from maxdrop import ops
+    archive = ops._archive()
+    empty_scene()
+    before = _state()
+    scratch = tempfile.mkdtemp(prefix="maxdrop-pack-cancel-")
+    original = archive.unpack
+    try:
+        pack = os.path.join(scratch, "pack.zip")
+        with zipfile.ZipFile(pack, "w") as z:
+            z.write(fixture, "pack/" + os.path.basename(fixture))
+        scene = "pack/" + os.path.basename(fixture)
+
+        def slow(*args, watch=None, **kwargs):
+            def slowed(n):
+                time.sleep(0.3)  # the close below comes while the scene is being written
+                watch(n)
+            return original(*args, watch=slowed, **kwargs)
+
+        archive.unpack = slow
+        run = ops._Run(_cancel_run([pack]).opts, [pack], {pack: scene}, bpy.context)
+        steps = run.steps(threaded=True)
+        waited = next(steps) is ops._WAIT
+        steps.close()
+        archive.unpack = original
+        check("pack cancel: closed while it unpacks: only the archive is left, nothing in Blender",
+              waited and os.listdir(scratch) == ["pack.zip"] and _state() == before,
+              "%s %s" % (os.listdir(scratch), run.text))
+
+        run = ops._Run(_cancel_run([pack]).opts, [pack], {pack: scene}, bpy.context)
+        steps = run.steps(threaded=True)
+        held = _advance(steps, lambda: len(bpy.data.objects) > 0)
+        steps.close()
+        folder = os.path.join(scratch, "pack")
+        check("pack cancel: closed during the build: the finished pack folder stays, nothing in Blender",
+              held and os.path.isfile(os.path.join(folder, os.path.basename(fixture)))
+              and os.path.isfile(os.path.join(folder, archive.MARKER)) and _state() == before,
+              "%s %s" % (sorted(os.listdir(scratch)), held))
+
+        run = ops._Run(_cancel_run([pack]).opts, [pack], {pack: scene}, bpy.context)
+        ended = not _advance(run.steps(threaded=True), lambda: False)
+        check("pack cancel: run to its end: the unpack's summary reported, the scene imported",
+              ended and any(level == 'INFO' and line.startswith("pack.zip: ") for level, line in run.lines)
+              and len(run._made) == 1, str(run.lines[:2]))
+        run.undo()
+    finally:
+        archive.unpack = original
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def check_found_textures():
     """vray_maps, texmap_rules, corona_maps, corona_light and vray_texmaps copied beside a PNG for each texture name:
     every Image Texture node gets its file, in the color space the IR asks for, one datablock per file and color
@@ -1423,6 +1539,8 @@ def check_found_textures():
                     bpy.data.images.remove(img)
                 check_failed_build_cleanup(dst)
                 check_cancel(dst, os.path.join(fixtures, "cameras.max"))
+                check_run_guards(dst)
+                check_pack_cancel(os.path.join(fixtures, "cameras.max"))
             if name == "texmap_rules":
                 m = bpy.data.materials["FixtureTexPlace"]
                 cropped = next(n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage"

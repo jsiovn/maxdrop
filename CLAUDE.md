@@ -46,7 +46,9 @@ powershell -ExecutionPolicy Bypass -File build.ps1    # dist\ (git-ignored): zip
 - `maxdrop/ops.py`: operator `import_scene.maxdrop` (options popup through `ImportHelper.invoke_popup`), file
   handler `IO_FH_maxdrop`, the *File › Import* entry. Was upstream's `__init__.py`. An import runs reader ->
   convert (scene description, material and texture-map rules, texture lookup) -> build (objects, collections,
-  materials) -> the report. Upstream's engine (`import_max.py`) is deleted: nothing of it is left to call.
+  materials) -> the report. The pipeline is a step generator (`_Run`): scripts drain it at once; from a window the internal
+  modal `maxdrop.import_progress` steps it on a timer (unpack and read in a worker thread), Esc closes it and
+  everything the run made is removed. Upstream's engine (`import_max.py`) is deleted: nothing of it is left to call.
 - `maxdrop/build/materials.py`: a MaterialIR and its texture graphs as a Principled BSDF node tree, one material
   per 3ds Max material, images reused per file and color space.
 - `maxdrop/prefs.py`: add-on preferences: version, Check for Updates, the texture search folders

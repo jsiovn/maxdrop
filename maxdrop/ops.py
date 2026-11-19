@@ -120,9 +120,11 @@ _TICK = 0.05
 _PROGRESS_STEPS = 1000
 _READ_SHARE = 0.55
 _STOP_WAIT = 10.0
-# Runs execute() hands to maxdrop.import_progress, by key; the run being stepped, so that a second one waits.
+# Runs execute() hands to maxdrop.import_progress, by key; the run being stepped, and the worker threads of runs
+# (a cancelled read ends only with its file), so that a second import waits.
 _RUNS = {}
 _ACTIVE = []
+_WORKERS = []
 
 # The default Light Strength: V-Ray 5.2 renders against Cycles renders of the same lights (docs/FORMAT.md,
 # "VRayLight", where the measured ratios are). The standard, photometric, sun and IES powers are derived from V-Ray
@@ -498,6 +500,7 @@ def _in_thread(fn, *args, stop=None, **kwargs):
             box["error"] = e
 
     worker = threading.Thread(target=work, name="MaxDrop import", daemon=True)
+    _WORKERS[:] = [w for w in _WORKERS if w.is_alive()] + [worker]
     worker.start()
     try:
         while worker.is_alive():
@@ -555,6 +558,29 @@ def _read_scene(max_path, opts, dirs):
 
 def _quiet(_text, _fraction):
     pass
+
+
+def _busy():
+    """Why an import cannot start now, "" when it can."""
+    if _ACTIVE:
+        return "An import is running: wait for it to finish, or press Esc to cancel it."
+    if any(w.is_alive() for w in _WORKERS):
+        return "A cancelled import is still reading its file: try again in a moment."
+    return ""
+
+
+def _store_last(source, wm):
+    """Keep source's settings as the import's last-used ones, which Blender keeps only for an operator that
+    returns FINISHED: the windowed import returns CANCELLED once maxdrop.import_progress has the run."""
+    last = wm.operator_properties_last(IMPORT_SCENE_OT_maxdrop.bl_idname)
+    for prop in last.bl_rna.properties:
+        name = prop.identifier
+        if name == "rna_type" or getattr(prop, "is_skip_save", True) or prop.is_readonly:
+            continue
+        try:
+            setattr(last, name, getattr(source, name))
+        except (AttributeError, TypeError, ValueError):
+            pass
 
 
 def _scene_steps(opts, scene, view_layer, max_path, pack=None, pack_name="", dirs=(), threaded=False,
@@ -669,15 +695,20 @@ class _Run:
         self.import_scene = import_scene
         self.lines, self.text, self.fraction = [], "", 0.0
         self._made, self._before, self._render = [], None, None
+        # The runner's close of its steps, for _stop_active; stopped once that closed them.
+        self.close, self.stopped = (lambda: None), False
 
     def _say(self, level, line, printed=None):
         self.lines.append((level, line))
         print("MaxDrop: " + (line if printed is None else printed))
 
     def _at(self, index):
+        """progress(text, fraction of the scene); fraction None: the text alone (an unpack, whose share of the run is
+        not known)."""
         def progress(text, fraction):
             self.text = text if len(self.paths) == 1 else "%s (%d of %d)" % (text, index + 1, len(self.paths))
-            self.fraction = (index + fraction) / len(self.paths)
+            if fraction is not None:
+                self.fraction = (index + fraction) / len(self.paths)
         return progress
 
     def steps(self, threaded=False):
@@ -735,7 +766,7 @@ class _Run:
         """Step generator: archive.unpack() of the pack at path; _Stop when it fails."""
         name = os.path.basename(path)
         progress = self._at(index)
-        progress("unpacking " + name, 0.0)
+        progress("unpacking " + name, None)
         parent, problem = self.parents[path]
         try:
             if problem is not None:
@@ -745,7 +776,7 @@ class _Run:
             stop = threading.Event()
 
             def watch(n):
-                progress("unpacking %s: %s" % (name, archive._size_text(n)), 0.0)
+                progress("unpacking %s: %.1f MiB" % (name, n / 1048576.0), None)
                 if stop.is_set():
                     raise archive.Cancelled()
 
@@ -911,8 +942,9 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
             return self._error("%s holds %d scenes: %s. Type one into the Scene field and import again."
                                % (os.path.basename(path), len(scenes), _scene_list(scenes)))
 
-        if _ACTIVE:
-            return self._error("An import is running: wait for it to finish, or press Esc to cancel it.")
+        busy = _busy()
+        if busy:
+            return self._error(busy)
         run = _Run(ImportOptions.of(self), paths, chosen, context)
         # A window shows the progress and takes Esc; scripts (EXEC) and background runs stay synchronous.
         if self.options.is_invoke and not bpy.app.background and context.window is not None:
@@ -926,8 +958,9 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
                 started = False
             finally:
                 _RUNS.pop(key, None)
-            if started:
-                return {'CANCELLED'}  # maxdrop.import_progress reports, and makes the undo step when it finishes
+            if started:  # maxdrop.import_progress reports, and makes the undo step when it finishes
+                _store_last(self, context.window_manager)
+                return {'CANCELLED'}
         run.import_scene = lambda max_path, result, pack_name: self._import_scene(context, max_path, result,
                                                                                  pack_name)
         window = context.window
@@ -938,6 +971,9 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
         except _Stop as e:
             self._report(run.lines)
             return self._error(str(e))
+        except BaseException:
+            self._report(run.lines)  # the scenes imported before the error
+            raise
         finally:
             if window:
                 window.cursor_set('DEFAULT')
@@ -987,9 +1023,8 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
         return self.invoke_popup(context)
 
 
-
 class MAXDROP_OT_import_progress(bpy.types.Operator):
-    """Run an import Import .max (MaxDrop) started from a window: progress in the status bar, Esc to cancel"""
+    """Run an import started from a window: progress in the status bar, Esc to cancel"""
     bl_idname = "maxdrop.import_progress"
     bl_label = "Import .max (MaxDrop)"
     bl_options = {'UNDO', 'INTERNAL'}
@@ -998,68 +1033,97 @@ class MAXDROP_OT_import_progress(bpy.types.Operator):
 
     def invoke(self, context, event):
         run = _RUNS.pop(self.run_key, None)
-        if run is None or context.window is None or _ACTIVE:
+        if run is None or context.window is None or _busy():
             return {'CANCELLED'}
-        self._run, self._steps = run, run.steps(threaded=True)
+        self._run, self._steps, self._timer = run, run.steps(threaded=True), None
+        run.close = self._steps.close
         wm = context.window_manager
-        self._timer = wm.event_timer_add(_TICK, window=context.window)
-        wm.progress_begin(0, _PROGRESS_STEPS)
-        wm.modal_handler_add(self)
-        _ACTIVE.append(run)
-        self._show(context)
+        try:
+            wm.progress_begin(0, _PROGRESS_STEPS)
+            self._show(context)
+            self._timer = wm.event_timer_add(_TICK, window=context.window)
+            _ACTIVE.append(run)
+            _guard(True)
+            wm.modal_handler_add(self)
+        except Exception:
+            traceback.print_exc()
+            self._teardown(context)
+            return {'CANCELLED'}
         return {'RUNNING_MODAL'}
 
     def modal(self, context, event):
-        if event.type == 'ESC' and event.value == 'PRESS':
-            return self._end(context, cancelled=True)
-        if event.type != 'TIMER':
-            # Swallowed: an undo, a delete or a file load meanwhile would free the datablocks the run holds.
-            return {'RUNNING_MODAL'}
-        end = time.monotonic() + _SLICE
         try:
-            while time.monotonic() < end:
-                if next(self._steps) is _WAIT:
-                    break
-        except StopIteration:
-            return self._end(context)
-        except _Stop as e:
-            return self._end(context, error=str(e))
+            if self._run.stopped:  # an undo, redo or file load in another window closed it (_stop_active)
+                return self._finish(context, cancelled=True)
+            if event.type == 'ESC' and event.value == 'PRESS':
+                return self._finish(context, cancelled=True)
+            if event.type != 'TIMER':
+                # Swallowed: an undo, a delete or a file load meanwhile would free the datablocks the run holds.
+                return {'RUNNING_MODAL'}
+            end = time.monotonic() + _SLICE
+            try:
+                while time.monotonic() < end:
+                    if next(self._steps) is _WAIT:
+                        break
+            except StopIteration:
+                return self._finish(context)
+            except _Stop as e:
+                return self._finish(context, error=str(e))
+            self._flush()
+            self._show(context)
+            return {'PASS_THROUGH'}  # other timers' events reach their owners
         except Exception as e:
             traceback.print_exc()
-            self._run.undo()
-            return self._end(context, error="Import failed, nothing was kept (%s: %s)" % (type(e).__name__, e))
-        self._flush()
-        self._show(context)
-        return {'PASS_THROUGH'}  # other timers' events reach their owners
+            try:
+                self._run.undo()
+                kept = "nothing was kept"
+            except Exception:
+                traceback.print_exc()
+                kept = "not everything it made could be removed"
+            return self._finish(context, error="Import failed, %s (%s: %s)" % (kept, type(e).__name__, e))
 
     def cancel(self, context):
         # Blender ends the run (a window closed, a file loaded): nothing it made stays.
-        self._end(context, cancelled=True)
+        self._finish(context, cancelled=True)
 
     def _show(self, context):
         context.window_manager.progress_update(int(self._run.fraction * _PROGRESS_STEPS))
-        context.workspace.status_text_set("MaxDrop: %s (Esc to cancel)" % (self._run.text or "importing"))
+        if context.workspace is not None:
+            context.workspace.status_text_set("MaxDrop: %s (Esc to cancel)" % (self._run.text or "importing"))
 
     def _flush(self):
         lines, self._run.lines = self._run.lines, []
         for level, line in lines:
             self.report({level}, line)
 
-    def _end(self, context, cancelled=False, error=None):
-        wm = context.window_manager
-        wm.event_timer_remove(self._timer)
-        wm.progress_end()
-        context.workspace.status_text_set(None)
+    def _teardown(self, context):
+        """Idempotent. The run leaves _ACTIVE first: an error below must never block the next import."""
         if self._run in _ACTIVE:
             _ACTIVE.remove(self._run)
-        if cancelled:
+        if not _ACTIVE:
+            _guard(False)
+        wm = context.window_manager
+        timer, self._timer = self._timer, None
+        workspace = context.workspace
+        for step in (lambda: timer is not None and wm.event_timer_remove(timer), wm.progress_end,
+                     lambda: workspace is not None and workspace.status_text_set(None)):
             try:
-                self._steps.close()  # the run removes what it made
+                step()
             except Exception:
                 traceback.print_exc()
+
+    def _finish(self, context, cancelled=False, error=None):
+        self._teardown(context)
+        if cancelled:
+            try:
+                self._steps.close()
+                done = "nothing was kept"
+            except Exception:
+                traceback.print_exc()
+                done = "not everything it made could be removed (see the console)"
             self._run.lines = []
-            self.report({'WARNING'}, "Import cancelled: nothing was kept")
-            print("MaxDrop: import cancelled, nothing was kept")
+            self.report({'WARNING'}, "Import cancelled: " + done)
+            print("MaxDrop: import cancelled, " + done)
             return {'CANCELLED'}
         self._flush()
         if error is not None:
@@ -1067,6 +1131,30 @@ class MAXDROP_OT_import_progress(bpy.types.Operator):
             print("MaxDrop: " + error)
             return {'CANCELLED'}
         return {'FINISHED'}
+
+
+@bpy.app.handlers.persistent
+def _stop_active(*_args):
+    """undo_pre, redo_pre and load_pre while a run is active: the run removes what it made before the data it holds
+    is freed. The runner swallows the events of its own window only, not those of another window."""
+    for run in list(_ACTIVE):
+        run.stopped = True
+        try:
+            run.close()
+        except Exception:
+            traceback.print_exc()
+
+
+_GUARDED = ("undo_pre", "redo_pre", "load_pre")
+
+
+def _guard(on):
+    for name in _GUARDED:
+        handlers = getattr(bpy.app.handlers, name)
+        if on and _stop_active not in handlers:
+            handlers.append(_stop_active)
+        elif not on and _stop_active in handlers:
+            handlers.remove(_stop_active)
 
 
 def import_pack(layout, operator, packs):
@@ -1187,6 +1275,7 @@ def register():
 
 
 def unregister():
+    _guard(False)
     bpy.types.TOPBAR_MT_file_import.remove(menu_func)
     for cls in reversed(_classes):
         bpy.utils.unregister_class(cls)
