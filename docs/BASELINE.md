@@ -313,6 +313,90 @@ Run on Blender 5.2.0 and 4.2.23 on 2026-11-19: both versions gave the same answe
 - Scene A from a `.zip` and from a `.rar` of its folder: the same objects (747), materials (158) and images (127)
   as from the `.max` itself, and the same answers.
 
+## Performance budget
+
+What an import of the two scenes may cost, and the tests that keep a change from making the reader or the build
+slower without anyone noticing. Measured as above (`tools/baseline.py`, Blender 5.2.0 LTS, Python 3.13.13, the same
+machine, default options), on the code after 0.1.0 (the modal import of the next version included: a script still
+runs the import at once), twice per scene on 2026-11-19; both runs gave the same numbers within 0.1 s and 0.01 GB.
+
+| | Budget | Before | After |
+|---|---:|---:|---:|
+| Scene A wall time | 30 s | 13.0 s | 12.5 s |
+| Scene A import time (operator) | | 10.9 s | 10.1 s |
+| Scene A peak memory | 2 GB | 1.32 GB (1.40 GB) | 1.22 GB (1.29 GB) |
+| Scene B wall time | 102 s (0.0.1's) | 17.0 s | 16.5 s |
+| Scene B import time (operator) | | 14.6 s | 14.1 s |
+| Scene B peak memory | 6 GB | 1.43 GB (1.41 GB) | 1.13 GB (1.22 GB) |
+
+Objects, meshes, vertices, polygons, UV layers, materials, images and the import report's counts are the same before
+and after, and the same as 0.1.0's table above.
+
+### Where the time and the memory go
+
+Working set sampled at the boundaries of the import's stages, in the same Blender process (after the changes below):
+
+| | Scene A | Scene B |
+|---|---|---|
+| Index the file | 0.1 s, 0.20 GB | 0.1 s, 0.22 GB |
+| Describe: geometry, controllers, modifiers, lights, cameras | 4.2 s, peak 1.00 GB | 7.0 s, peak 1.05 GB |
+| Convert the materials | 0.5 s | 0.8 s |
+| File closed | 0.74 GB | 0.66 GB |
+| Build: meshes, objects, materials, images | 5.1 s, peak 1.21 GB | 6.6 s, peak 1.13 GB |
+
+- Most of the memory is the file itself (mapped, its pages in the working set while it is read) and the description's
+  arrays: closing the file gives back about 0.3 GB, then Blender's meshes take their place.
+- The time is spread out. By the profiler, for scene B: the Editable Poly face records (a Python loop, 2.0 s without
+  the profiler), Blender's own `foreach_set` of the meshes (2.7 s), the face and edge checks of the conversion and the
+  sharp-edge flags of the build (sorting, below), the transform controllers (3 s profiled), the reading of chunks.
+  For scene A also the images: 170 `images.load` take 1.3 s, without decoding a pixel (Blender reads them on first
+  use; MaxDrop reads 18 bytes of each to check it is an image).
+
+### What changed
+
+- The sharp edges of a mesh sorted the edges twice (the second time in `numpy.unique`); the runs of equal edges now
+  come from the first sort. Their arrays per loop are 32-bit where the indices fit, which was the peak of a mesh's
+  conversion: scene B's peak dropped from 1.43 to 1.13 GB.
+- Faces repeating another face's vertices were found with `numpy.unique` over rows, which sorts them as opaque
+  records: a stable sort by columns finds the same faces.
+- The sharp-edge flags of a built mesh compared every edge with every sharp edge through `numpy.isin` (a sort of all
+  of them): a mesh without sharp edges now skips that, the others use a binary search.
+- Not done, with the reason: a faster loop over the Editable Poly face records (walking only their offsets and
+  reading the fields with numpy) gave 25 to 30 % of that loop, 0.3 s and 0.5 s here: not worth a second way of
+  reading untrusted records. A build that frees each mesh's arrays as it goes: scene B's peak is in the description,
+  not in the build, and both are far below the budget. Loading images later: they are already loaded lazily.
+
+### The benchmarks
+
+Neither corpus scene can be in the repository or in CI, so two tests measure the same code on a synthetic Editable
+Poly object (`tests/synthetic_poly.py`: a grid of quads and triangles written as 3ds Max writes them, with smoothing
+groups, material IDs, a map channel, doubled and degenerate faces; numpy, no 3ds Max):
+
+- `tests/unit/test_perf.py` (plain Python, part of `python -I -m unittest discover tests`): 300,360 faces read
+  (`reader.geometry`) and described (`convert.scene.mesh_description`).
+- `tests/blender/bench.py` (in Blender, alone or from `tests/blender/run.py`, so CI's fixture step runs it): a million
+  faces read, described and built (`build.objects.make_mesh`), and the built mesh's counts and sharp edges checked.
+
+A time limit in seconds would pass on a fast machine what fails on a slow one. Each time is the best of a few runs
+divided by the best time of a reference workload in the same process: plain Python record walking for the reader,
+numpy array work for the description (no sorting and no allocation in it: those differ between Blender builds and
+numpy versions), a mesh made with Blender's own calls alone for the build. Memory is the peak of the Python
+allocations (`tracemalloc`, numpy's included) as a multiple of the object's size, which does not depend on the
+machine.
+
+| Ratio | Measured (Python 3.11 with numpy 1.24.3 and 1.26.4, 3.13 with 2.3.4; Blender 4.2.23, 4.5.16, 5.2.0) | Limit |
+|---|---:|---:|
+| Read / Python reference (300,360 faces; a million) | 2.3 to 2.7; 2.3 to 2.4 | 6.0 |
+| Describe / numpy reference (300,360 faces; a million) | 3.9 to 4.4; 3.9 to 4.4 | 10.0 |
+| Build / Blender reference (a million faces) | 2.2 to 2.6 | 5.5 |
+| Read + describe peak / object size (300,360 faces) | 5.07 on every Python | 5.3 |
+
+The limits are about twice the largest ratio measured, so that code three times as slow fails: a scratch copy that
+runs the reader, the description or `make_mesh` three times over fails each test (read 7.3 to 8.3, describe 12.3 to
+13.0, build 6.9). The memory limit leaves 5 %: one more 64-bit array per loop alive at the peak makes it 5.46 and
+fails, and the code before the changes above gave 7.42 to 7.80. The ratios were measured on Windows; CI runs the tests
+on Linux and its log prints each ratio. A test past its limit is a regression to find, not a limit to raise.
+
 ## Reproduce
 
 ```powershell
@@ -336,3 +420,13 @@ python tools\first_open.py --blender "<blender.exe>" --profile "<scratch>\profil
 It prints its JSON (counts, class names, issue kinds and a yes or no per question) and exits 0 when every answer is
 yes. The images and the log it writes beside the JSON show and name the scene: keep `--out` outside the repository
 too.
+
+The benchmarks (each prints its ratios and limits):
+
+```powershell
+python -I -m unittest discover -s tests -p test_perf.py -v
+$env:BLENDER_USER_RESOURCES = "<scratch>\profile"
+& "<blender.exe>" --background --factory-startup --python-exit-code 1 --python tests\blender\bench.py
+```
+
+The second prints `BENCH PASSED` (exit 0) or `BENCH FAILED` (exit 1).
