@@ -867,7 +867,7 @@ class _Tree:
         result = MISSING
         for layer in n.layers:
             v = self.graph(layer.node, work, depth + 2)
-            mask = self.graph(layer.mask, FLOAT, depth + 2) if layer.mask is not None else MISSING  # its node even unused
+            mask = self.weight(layer.mask, depth + 2)  # its node even when the layer is missing
             if v is MISSING:
                 continue
             if result is MISSING and layer.opacity >= 1.0 and mask is MISSING:
@@ -890,7 +890,23 @@ class _Tree:
                 factor = self.times(_out(tex, "Alpha"), factor, depth + 1)
             self.feed(_in(node, "Factor_Float"), factor)
             result = out
+        if work == COLOR and space != COLOR and not isinstance(result, bpy.types.NodeSocket) and result is not MISSING:
+            return _mean(result)  # a lone constant layer, drawn in color for the blend modes, in a float input
         return result
+
+    def weight(self, n, depth):
+        """A Composite mask as a float: a color socket (an image) through the mean of its channels, as 3ds Max
+        weighs it (Blender's own color to float conversion is a luminance); MISSING without one."""
+        if n is None:
+            return MISSING
+        v = self.graph(n, FLOAT, depth + 1)
+        if not isinstance(v, bpy.types.NodeSocket) or v.type not in ('RGBA', 'VECTOR'):
+            return v
+        dot = self.node("ShaderNodeVectorMath", depth)
+        dot.operation = 'DOT_PRODUCT'
+        self.links.new(v, _in(dot, "Vector"))
+        _in(dot, "Vector_001").default_value = (1.0 / 3.0,) * 3
+        return _out(dot, "Value")
 
     def times(self, socket, factor, depth):
         """socket x factor (a float socket or constant) as a Math node's output."""

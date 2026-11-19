@@ -83,8 +83,9 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
   no graph and is not counted (the lost map is reported), so the input keeps its own value.
   A Mix or CoronaMix weighs it by its amount: a side that does not show is drawn as its color (exact), a side that
   fills the result gives no graph, any other weight (or a mask) peels the wrapper to its other side's map, or no
-  graph; an RGB Multiply and a Falloff (its sides show by the angle) are always peeled that way. A lost mask leaves the mix amount, a lost Composite layer is
-  left out (both approximations); a normal map class keeps its other map.
+  graph; an RGB Multiply and a Falloff (its sides show by the angle) are always peeled that way. A lost mask
+  leaves the mix amount, a lost Composite layer is left out (both approximations); a normal map class keeps its
+  other map.
 - The slot itself: a glossiness map feeding roughness (MapRef.invert) is under an Invert; a slot amount below 1 mixes
   the input's value with the map (Mix(Constant(value), map, amount)), above 1 multiplies the map; in a bump input the
   amount is the Bump's strength, in a normal input it scales the NormalMap's strengths.
@@ -187,7 +188,9 @@ TOWARDS, PERPENDICULAR, FRESNEL = "towards", "perpendicular", "fresnel"  # Facin
 FALLOFF_TYPES = {0: TOWARDS, 1: PERPENDICULAR, 2: FRESNEL}
 # Composite blend modes (blendMode, per layer); measured with renderMap: result = lerp(below, blend(below, layer),
 # opacity x mask). 7 linear burn, 15 soft light (Photoshop's), 17 pin light and 18 hard mix are not drawn: peeled
-NORMAL_BLEND, AVERAGE, ADDITION, SUBTRACT, DARKEN, MULTIPLY_BLEND, COLOR_BURN, LINEAR_BURN, LIGHTEN, SCREEN,     COLOR_DODGE, LINEAR_DODGE, SPOTLIGHT, SPOTLIGHT_BLEND, OVERLAY, SOFT_LIGHT, HARD_LIGHT, PIN_LIGHT, HARD_MIX,     DIFFERENCE, EXCLUSION, HUE, SATURATION, COLOR_BLEND, VALUE = range(25)
+(NORMAL_BLEND, AVERAGE, ADDITION, SUBTRACT, DARKEN, MULTIPLY_BLEND, COLOR_BURN, LINEAR_BURN, LIGHTEN, SCREEN,
+ COLOR_DODGE, LINEAR_DODGE, SPOTLIGHT, SPOTLIGHT_BLEND, OVERLAY, SOFT_LIGHT, HARD_LIGHT, PIN_LIGHT, HARD_MIX,
+ DIFFERENCE, EXCLUSION, HUE, SATURATION, COLOR_BLEND, VALUE) = range(25)
 BLENDS = frozenset(range(25)) - {LINEAR_BURN, SOFT_LIGHT, PIN_LIGHT, HARD_MIX}
 # Color Correction rewiring, per output channel: 0..2 R, G, B, 3 A, 4..7 their inverse, 8 the mean of R, G and B,
 # 9 one, 10 zero. rewireMode 1 (monochrome) stores (8, 8, 8), 2 (invert) (4, 5, 6), 3 the channels set

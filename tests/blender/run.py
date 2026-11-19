@@ -2341,14 +2341,26 @@ def check_wrapper_wiring(builder, cm, tx, srgb, data):
     factor = _from(_input(second, "Factor_Float"))
     tint = _from(_input(screen, "B_Color"))
     scales = [n for n in mw.node_tree.nodes if n.bl_idname == "ShaderNodeVectorMath" and n.operation == 'SCALE']
-    check("wrappers: Composite screen at 50 % with a mask: Screen of the Tint, Mix by mask x 0.5; Tint as three "
-          "scales and two adds",
+    mean = _from(factor.inputs[0])
+    check("wrappers: Composite screen at 50 % with a mask: Screen of the Tint, Mix by mean(mask) x 0.5; Tint as "
+          "three scales and two adds",
           screen.blend_type == 'SCREEN' and factor.operation == 'MULTIPLY'
-          and abs(factor.inputs[1].default_value - 0.5) < 1e-6
-          and _from(factor.inputs[0]).image.colorspace_settings.name == "Non-Color"
+          and abs(factor.inputs[1].default_value - 0.5) < 1e-6 and getattr(mean, "operation", None) == 'DOT_PRODUCT'
+          and close(list(_input(mean, "Vector_001").default_value), [1 / 3.0] * 3, 1e-6)
+          and _from(_input(mean, "Vector")).image.colorspace_settings.name == "Non-Color"
           and tint.operation == 'ADD' and len(scales) == 3
           and any(close(list(_input(n, "Vector").default_value), [1.0, 0.5, 0.0], 1e-6) for n in scales)
           and _from(_input(second, "A_Color")).bl_idname == "ShaderNodeTexImage")
+    missing = tx.Image(9, "nothere.png", "nothere.png", "", None, colorspace=tx.NON_COLOR)
+    lone = tx.Composite((L(tx.Constant(0.3)), L(missing, 1.0, tx.MULTIPLY_BLEND)))
+    f = cm.MaterialIR(15, "LoneLayer", "test", roughness=cm.Input(0.4, cm.MapRef(1)))
+    f.textures = {"roughness": tx.TextureGraphIR(tx.Invert(lone), tx.DATA)}
+    mf = builder.make(f)
+    rough = _principled(mf).inputs["Roughness"] if mf is not None else None
+    check("wrappers: a blended Composite left with one constant layer in a float input (a glossiness map under an "
+          "Invert) is that constant: 1 - 0.3",
+          rough is not None and not rough.is_linked and abs(rough.default_value - 0.7) < 1e-6,
+          "%s %s" % (mf, builder.issues()[-1:]))
 
 
 def check_layer_flags(modules):
