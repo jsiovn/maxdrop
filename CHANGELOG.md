@@ -49,6 +49,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   None, a gamma override other than 2.2) is loaded in the Linear Rec.709 color space instead of Non-Color, so its
   colors keep their primaries in a scene whose working space is not Linear Rec.709 (Non-Color where Blender's color
   management config lacks it). Data maps stay Non-Color.
+- Import: a scene with more than 1,048,576 objects is refused, and a mesh with more than 67,108,864 vertices (or map
+  vertices in one channel) or 134,217,728 face corners is skipped with an issue naming the counts, instead of
+  running Blender out of memory. A file whose reading runs out of memory or recursion depth ends in "Not imported"
+  with a reason, like any other damaged file.
+- Scene packs: `.7z` and `.rar` need 7-Zip 26.02 or newer (was 25.01) or bsdtar 3.8.8 or newer (was 3.7.4), the
+  first versions with the vendors' fixes of overflows in their RAR and 7-Zip readers; UnRAR stays at 7.23.
 
 ### Fixed
 

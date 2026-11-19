@@ -56,12 +56,31 @@ unless you prefer otherwise.
 
 A `.max` file is a complex binary format. From version 0.0.4 MaxDrop's own reader reads everything it imports,
 nodes, meshes, transforms and materials (and from 0.1.0 lights and cameras; an IES file a light names is not
-opened), with bounded reads, depth, cycle and entry limits and a size cap on compressed streams; the parser
-inherited from io_scene_max is gone. A malformed or hostile file is meant to end in
-"Not imported" with a message, but it can still make Blender use a lot of memory or take long, and a defect can
-still stop the import with a Python error. Memory safety is Python's, so the realistic risk is a hang or a crash
-of that Blender session, not code execution: treat files from unknown sources with the usual care and save your
-work before importing.
+opened); the parser inherited from io_scene_max is gone. What it guards against:
+
+- **Sizes, offsets and indices** taken from the file are checked against the stream or the array they point into
+  before anything is read or allocated: every sector of the compound file, every chunk against its parent, every
+  record count against the bytes that hold it, every vertex and object index against its list.
+- **Loops and depth:** sector chains, the directory tree, parents, references, controllers and look-at targets are
+  checked for cycles; chunks nest at most 64 levels, controllers 32, texture-map graphs and material wrappers 8,
+  and the code that recurses stays within these limits.
+- **Counts:** at most 65,536 directory entries, 4 million chunks per level, 1 million references per object,
+  1 million objects per scene, 64 million vertices and 128 million face corners per mesh, and a cap on the
+  generated geometry of primitives, extrusions and modifiers; a compressed stream inflates to at most 4 GiB.
+- **One kind of error:** anything malformed raises MaxFileError, and the import ends in "Not imported" with its
+  message; a memory or recursion failure that slips past these checks is reported the same way.
+
+The reader is fuzzed: the plain test suite runs a fixed slice of mutated fixtures (and mutated scene packs) on
+every change, and this version was run against 100,000 mutations of every fixture (bits flipped, files cut,
+chunk sizes and counts set to extremes, directory entries, FAT entries and sectors bent), each required to read or
+be refused within 5 seconds and 1 GB. Fuzzing finds defects; it does not prove there are none. A hostile file can
+still make Blender use a lot of memory or take long within those caps, and a defect can still stop the import with
+a Python error. Memory safety is Python's, so the realistic risk is a hang or a crash of that Blender session, not
+code execution: treat files from unknown sources with the usual care and save your work before importing.
+
+Scene packs are fuzzed the same way (central directory, local headers, names, sizes, flags, compression methods,
+attributes, truncation): each must unpack into its own folder or be refused, never write outside it or leave a
+staging folder behind, and the name rules are tested on random names.
 
 A texture file found by its stored path is checked (a local drive, a plain file, no link or junction in the path)
 when the scene is imported, and Blender opens it a moment later. Something that can already write into that
