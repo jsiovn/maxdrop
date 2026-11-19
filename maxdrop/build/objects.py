@@ -58,6 +58,8 @@ CLASS_PROPERTY = "maxdrop_class"
 HELPER_PROPERTY = "maxdrop_helper"
 SHEAR_HELPER = "MaxDrop Shear"
 TRACK_TO_NAME = "MaxDrop Target"
+NO_TARGET = "its target is not imported"
+SELF_TARGET = "it is aimed at itself"
 
 
 class Built:
@@ -242,7 +244,10 @@ def track_targets(desc, built):
         if look is None:
             continue
         ob, target = built.objects.get(node.index), built.objects.get(look.target)
-        if ob is None or target is None or target is ob:
+        if ob is None:
+            continue
+        if target is None or target is ob:
+            kept.append((node.index, NO_TARGET if target is None else SELF_TARGET))
             continue
         if look.track is None:
             kept.append((node.index, look.reason))

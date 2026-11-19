@@ -105,6 +105,7 @@ LENS = "its field of view (%g degrees) needs a lens of %g mm: Blender's shortest
 SENSOR = "film width %r mm is out of Blender's range: %g mm is used"
 NO_LENS = "focal length %r mm with zoom %r gives no field of view: 45 degrees is used"
 NO_WIDTH = "its orthographic width cannot be computed (target distance %r): 1 m is used"
+NO_TARGET = "its orthographic width needs the distance to its target, which is not imported: 1 m is used"
 BAD_SIZE = "the render size %s is out of Blender's range: Blender's is kept"
 BAD_ASPECT = "pixel aspect %r is out of Blender's range: Blender's is kept"
 NO_VIEW = "no saved view: the first camera, %s, is the scene camera"
@@ -275,7 +276,7 @@ def describe(key, name, values, meters=1.0, mm=1.0, target=None):
         if finite(width) and width > 0:
             cd.ortho_scale = width
         else:
-            issues.append(NO_WIDTH % (distance,))
+            issues.append(NO_TARGET if family == TARGET and target is None else NO_WIDTH % (distance,))
     if values.get("clip"):
         near, far = abs(values["near"]) * meters, abs(values["far"]) * meters
         cd.clip_start = max(MIN_CLIP, near)

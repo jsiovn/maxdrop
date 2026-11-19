@@ -163,6 +163,8 @@ class Rules(unittest.TestCase):
         cd, issues = C.describe("k", "Cam", vray(zoom=-2.0))
         self.assertEqual(issues, [C.NO_LENS % (40.0, -2.0), C.EXPOSURE])
         cd, issues = C.describe("k", "Cam", standard(C.TARGET, ortho=True))  # a target camera without its target
+        self.assertEqual((cd.kind, cd.ortho_scale, issues), (C.ORTHO, 1.0, [C.NO_TARGET]))
+        cd, issues = C.describe("k", "Cam", standard(ortho=True, target_distance=0.0))
         self.assertEqual((cd.kind, cd.ortho_scale, issues), (C.ORTHO, 1.0, [C.NO_WIDTH % (0.0,)]))
 
 

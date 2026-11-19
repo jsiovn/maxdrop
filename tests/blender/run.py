@@ -916,6 +916,29 @@ def check_lookat(path, desc, obs, nodes, meters):
         n in line and "Keep Targets" in line for line in body.splitlines())]
     check("lookat Keep Targets: the report names the two kept fixed", named == ["FixtureCamRoll", "FixtureLookerY"],
           str(named))
+    # a look-at whose target was not built, or that aims at itself, keeps its rotation and is named with the reason
+    from types import SimpleNamespace
+    from maxdrop.build import objects as build_objects
+    from maxdrop.convert.scene import LookAtDescription
+    lone = [bpy.data.objects.new("FixtureLone%d" % k, None) for k in range(2)]
+    aim = ("TRACK_NEGATIVE_Z", "UP_Y", False, None)
+    fake = SimpleNamespace(nodes=[SimpleNamespace(index=0, look_at=LookAtDescription(99, *aim)),
+                                  SimpleNamespace(index=1, look_at=LookAtDescription(1, *aim))])
+    kept = build_objects.track_targets(fake, SimpleNamespace(objects={0: lone[0], 1: lone[1]}))
+    check("lookat Keep Targets: a missing or self target is returned with its reason, no constraint",
+          kept == [(0, build_objects.NO_TARGET), (1, build_objects.SELF_TARGET)]
+          and not any(ob.constraints for ob in lone), str(kept))
+    for ob in lone:
+        bpy.data.objects.remove(ob)
+    # the note on the axis conversion: only when the file's up does not stay Blender's Z
+    for forward, up, expected in (('X', 'Z', False), ('-Z', 'Y', True)):
+        empty_scene()
+        result = bpy.ops.import_scene.maxdrop(filepath=path, keep_targets=True, axis_forward=forward, axis_up=up)
+        text = bpy.data.texts.get("MaxDrop Report")
+        noted = text is not None and "Track To keeps Blender's Z up" in text.as_string()
+        label = "lookat Keep Targets, Forward %s, Up %s" % (forward, up)
+        check(label + ": the up note " + ("given" if expected else "not given"),
+              result == {'FINISHED'} and noted == expected, "%s, noted %s" % (result, noted))
 
 
 def _irs(path):
@@ -1758,6 +1781,30 @@ def check_conversion_failure(max_path):
     empty_scene()
 
 
+def check_light_note_on_failure(max_path):
+    """A file with lights whose gamma setting is not found and whose material conversion raises: the swatch note of
+    the light colors is still in the report (with converted materials it comes through them)."""
+    import maxdrop.ops as ops
+    from maxdrop.convert import colors
+    empty_scene()
+    original_slots, original_rule = ops._material_slots, colors.of_scene
+
+    def failing(*args, **kwargs):
+        raise RuntimeError("maxdrop test: conversion fails")
+
+    ops._material_slots, colors.of_scene = failing, lambda source: colors.UNKNOWN
+    try:
+        result = bpy.ops.import_scene.maxdrop(filepath=max_path)
+    finally:
+        ops._material_slots, colors.of_scene = original_slots, original_rule
+    text = bpy.data.texts.get("MaxDrop Report")
+    body = text.as_string() if text is not None else ""
+    check("conversion failure: the light colors' swatch note is still reported",
+          result == {'FINISHED'} and len(bpy.data.lights) > 0 and "color swatches: " + colors.GAMMA_NOTE in body,
+          "%s %d lights | %s" % (result, len(bpy.data.lights), body[-500:]))
+    empty_scene()
+
+
 def check_builder_wiring(ma, mb, builder, cm, tx, srgb, data, lost, gamma):
     """The links and values of the hand-made IRs' nodes, against numbers worked out by hand."""
     pa, pb = _principled(ma), _principled(mb)
@@ -2074,7 +2121,9 @@ def main():
                                  ("builder debt", check_builder_debt),
                                  ("image reuse", check_image_reuse), ("double import", check_double_import),
                                  ("conversion failure", lambda: check_conversion_failure(
-                                     os.path.join(ROOT, "tests", "fixtures", "vray_maps.max")))):
+                                     os.path.join(ROOT, "tests", "fixtures", "vray_maps.max"))),
+                                 ("light note on failure", lambda: check_light_note_on_failure(
+                                     os.path.join(ROOT, "tests", "fixtures", "vray_lights.max")))):
             try:
                 run_check()
             except Exception:

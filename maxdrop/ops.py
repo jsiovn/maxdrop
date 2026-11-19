@@ -49,6 +49,8 @@
 # Modified for MaxDrop, 2026-11-19 (jsiovn). Cameras: the scene description gets the file's saved views, the build
 # makes the cameras and, for a file with a camera, sets the scene camera and the render size; a failed build removes
 # its cameras.
+# Modified for MaxDrop, 2026-11-19 (jsiovn). The light colors' swatch note is reported also when the material
+# conversion fails; the Keep Targets note on the axis conversion only when the file's up does not stay Blender's Z.
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -96,7 +98,9 @@ _UNREADABLE = (OSError, ValueError, IndexError, struct.error)
 _MADE = ("meshes", "curves", "lights", "cameras", "materials", "images")
 
 # The default Light Strength: V-Ray 5.2 renders against Cycles renders of the same lights (docs/FORMAT.md,
-# "VRayLight", where the measured ratios are).
+# "VRayLight", where the measured ratios are). The standard, photometric, sun and IES powers are derived from V-Ray
+# renders of the same scene so that this one factor holds for them too ("Standard and photometric lights", "Power,
+# measured": 1.43 is pi 683 / 1500).
 LIGHT_STRENGTH = 1.43
 
 # Saved in presets by identifier; the numbers keep each item's value stable.
@@ -627,8 +631,8 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
                     print("MaxDrop: materials of %s not converted:\n%s" % (name, traceback.format_exc()), end="")
                     failed.append(("materials", "not converted (%s: %s): the scene is imported without materials"
                                    % (type(e).__name__, e)))
-            # light colors follow the swatch rule too; with materials its note reaches the report through them
-            light_note = colors.of_scene(sc).note if desc.lights and not materials else ""
+            # light colors follow the swatch rule too; converted materials bring its note to the report
+            light_note = colors.of_scene(sc).note if desc.lights and counts is None else ""
             del sc  # the Scene holds the inflated stream of a compressed file
         if 'UV' not in self.object_filter:
             for md in desc.meshes.values():
@@ -674,9 +678,11 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
         if axis != Matrix.Identity(4):
             for ob in built.roots():
                 ob.matrix_basis = axis @ ob.matrix_basis
-            # the target's own Z (use_target_z) turns with the scene; the world's does not
-            if any(c.name == build_objects.TRACK_TO_NAME and not c.use_target_z
-                   for ob in built.objects.values() for c in ob.constraints):
+            # the target's own Z (use_target_z) turns with the scene; the world's does not, which matters only when
+            # the file's up does not stay Blender's Z
+            if tuple(axis.col[2][:3]) != (0.0, 0.0, 1.0) and any(
+                    c.name == build_objects.TRACK_TO_NAME and not c.use_target_z
+                    for ob in built.objects.values() for c in ob.constraints):
                 rep.issues.append(("Keep Targets", "Track To keeps Blender's Z up, not the converted axes' up"))
         lines = [('WARNING', "%s %s" % (name, note))] if note else []
         lines.append(build_report.publish(rep))
