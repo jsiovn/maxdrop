@@ -355,29 +355,34 @@ class HandMadeTest(unittest.TestCase):
         self.assertEqual((len(data.positions), len(data.loop_starts)), (6, 8))
         self.assertTrue((data.positions[:, 2] == 0).all())
 
-    def test_real_world_is_the_entry_of_its_own_class(self):
-        """Real-World Map Size is the 0x2150 entry naming the object's class, as on a UVW Map: another class's
-        entry (another plug-in's data on the object) does not turn it on."""
-        def leaf(cid, payload):
-            return struct.pack("<HI", cid, 6 + len(payload)) + payload
+    def test_real_world_is_read_from_its_own_chunk_and_class(self):
+        """Real-World Map Size comes from reader.realworld (tests/unit/test_realworld.py has its cases), asked
+        for the object's own chunk and its own class."""
+        own = object()
 
-        def holder(cid, *children):
-            body = b"".join(children)
-            return struct.pack("<HI", cid, (6 + len(body)) | 0x80000000) + body
+        class Scene:
+            entries = (types.SimpleNamespace(class_id=classids.SPHERE, superclass=classids.SC_GEOMOBJECT),
+                       types.SimpleNamespace(class_id=None, superclass=classids.SC_PARAMETER_BLOCK2))
 
-        def entry(cls, flag):
-            return holder(0x0110, leaf(0x0120, struct.pack("<5I", cls[0], cls[1], 0x10, 0, 4)),
-                          leaf(0x0130, struct.pack("<I", flag)))
+            def __len__(self):
+                return 2
 
-        def flag(*entries):
-            chunk = chunks.index(holder(0x0001, holder(0x2150, leaf(0x0100, struct.pack("<I", 1)), *entries)))[0]
-            return prim._real_world(chunk, classids.SPHERE)
+            def entry(self, i):
+                return self.entries[i]
 
-        own, other = tuple(classids.SPHERE), (0x1234, 0x5678)
-        self.assertFalse(flag(entry(other, 1)))
-        self.assertFalse(flag(entry(other, 1), entry(own, 0)))
-        self.assertTrue(flag(entry(other, 0), entry(own, 1)))
-        self.assertFalse(flag())
+            def refs(self, i):
+                return {0: 1} if i == 0 else {}
+
+            def chunk(self, i):
+                return own if i == 0 else None
+
+        scene = Scene()
+        with mock.patch.object(prim, "is_primitive", return_value=True), \
+                mock.patch.object(prim.pblock.ParamBlock2, "from_chunk", return_value=Block({})), \
+                mock.patch.object(prim.realworld, "flag", return_value=True) as flag:
+            p, _issues = prim.read_params(scene, 0)
+        self.assertTrue(p.real_world)
+        flag.assert_called_once_with(own, classids.SPHERE)
 
     def test_a_refused_primitive_is_a_placeholder_named_once(self):
         """convert.scene: a primitive whose build fails (refused, or a formula error) is a placeholder of its class

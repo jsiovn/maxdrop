@@ -358,6 +358,18 @@ class Parameters(unittest.TestCase):
             with self.assertRaises(uvwmap.UVWMapError, msg=repr(values)):
                 uvwmap.read_params(FakeScene(), _modifier(values))
 
+    def test_real_world_is_read_from_its_own_chunk_and_class(self):
+        """Real-World Map Size comes from reader.realworld (tests/unit/test_realworld.py has its cases), asked
+        for the modifier's own chunk and the UVW Map class; a chunk that cannot be read is off."""
+        own = object()
+        scene = types.SimpleNamespace(chunk=lambda i: own if i == 1 else None)
+        with mock.patch.object(uvwmap.realworld, "flag", return_value=True) as flag:
+            p, _issues = uvwmap.read_params(scene, _modifier({}))
+        self.assertTrue(p.real_world)
+        flag.assert_called_once_with(own, classids.UVW_MAP)
+        p, _issues = uvwmap.read_params(FakeScene(), _modifier({}))
+        self.assertFalse(p.real_world)
+
     def test_an_unknown_alignment_is_made_as_z(self):
         p, issues = uvwmap.read_params(FakeScene(), _modifier({12: 7}))
         self.assertEqual((p.axis, len(issues)), (uvwmap.AXIS_Z, 1))

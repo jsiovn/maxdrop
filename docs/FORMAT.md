@@ -398,6 +398,7 @@ against the extrude fixture's oracle) keeps its parameters in an old ParamBlock 
 Real-World Map Size is not in the block: the modifier's own chunk holds `0x2150 {0x0100 u32 1, 0x0110 {0x0120: 20
 bytes naming the class, 0x0130 u32}}`, and that `u32` is 1 on FixtureExtAdaptive, 0 on the others. `0x2150` can hold
 several `0x0110` entries: the flag is the one whose `0x0120` names Extrude's ClassID (another class's entry is not it).
+`maxdrop/reader/realworld.py` reads it for Extrude, UVW Map and the primitives alike.
 
 What 3ds Max 2020 makes of it (`snapshotAsMesh`, probed on scratch scenes and checked on the fixture: the oracle's
 `eval_verts`, `eval_faces` and `bbox_*`; `tests/unit/test_extrude.py` holds the counts):
@@ -535,7 +536,8 @@ the primitives fixture and its `primitives.mesh.jsonl`). Lengths in file units, 
 | Torus `(0x20, 0)` | 0 radius 1, 1 radius 2, 2 rotation, 3 twist, 4 segments, 5 sides, 6 smooth (0 none, 1 groups alternating by side, 2 all, 3 alternating by segment), 7 slice, 8 and 9 its angles, 10 mapping |
 
 Real-World Map Size is not in the block: `0x2150{0x0100 u32 1, 0x0110{0x0120 the class (classA, classB,
-superclass, 4), 0x0130 u32 flag}}` in the object's chunk; there is no `0x2150` while mapping is off.
+superclass, 4), 0x0130 u32 flag}}` in the object's chunk; there is no `0x2150` while mapping is off. Read by
+`maxdrop/reader/realworld.py`, as on Extrude and UVW Map.
 
 What 3ds Max builds (the TriMesh; MaxDrop merges two triangles that share an edge hidden in both, each with only that
 edge hidden, into the quad 3ds Max shows, and keeps every other triangle, so a cap's fan stays triangles around its

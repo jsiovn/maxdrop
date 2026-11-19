@@ -435,30 +435,17 @@ class Parameters(unittest.TestCase):
         p, _issues = extrude.read_params(FakeScene(), _modifier({1: 10 ** 9}))
         self.assertEqual(p.segments, extrude.MAX_SEGMENTS)
 
-    def test_real_world_is_the_entry_of_its_own_class(self):
-        """Real-World Map Size is the 0x2150 entry naming the Extrude class, as on a UVW Map or a primitive: another
-        class's entry (another plug-in's data on the modifier) does not set it."""
-        def leaf(cid, payload):
-            return struct.pack("<HI", cid, 6 + len(payload)) + payload
-
-        def holder(cid, *children):
-            body = b"".join(children)
-            return struct.pack("<HI", cid, (6 + len(body)) | 0x80000000) + body
-
-        def entry(cls, flag):
-            return holder(0x0110, leaf(0x0120, struct.pack("<5I", cls[0], cls[1], 0x10, 0, 4)),
-                          leaf(0x0130, struct.pack("<I", flag)))
-
-        def flag(*entries):
-            chunk = chunks.index(holder(0x0001, holder(0x2150, leaf(0x0100, struct.pack("<I", 1)), *entries)))[0]
-            return extrude._real_world(chunk, classids.EXTRUDE)
-
-        own, other = tuple(classids.EXTRUDE), (0x1234, 0x5678)
-        self.assertFalse(flag(entry(other, 1)))
-        self.assertFalse(flag(entry(other, 1), entry(own, 0)))
-        self.assertTrue(flag(entry(other, 0), entry(own, 1)))
-        self.assertTrue(flag(entry(own, 1)))
-        self.assertFalse(flag())
+    def test_real_world_is_read_from_its_own_chunk_and_class(self):
+        """Real-World Map Size comes from reader.realworld (tests/unit/test_realworld.py has its cases), asked
+        for the modifier's own chunk and the Extrude class; a chunk that cannot be read is off."""
+        own = object()
+        scene = types.SimpleNamespace(chunk=lambda i: own if i == 1 else None)
+        with mock.patch.object(extrude.realworld, "flag", return_value=True) as flag:
+            p, _issues = extrude.read_params(scene, _modifier({}))
+        self.assertTrue(p.real_world)
+        flag.assert_called_once_with(own, classids.EXTRUDE)
+        p, _issues = extrude.read_params(FakeScene(), _modifier({}))
+        self.assertFalse(p.real_world)
 
     def test_is_extrude(self):
         self.assertTrue(extrude.is_extrude(_modifier({})))

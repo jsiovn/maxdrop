@@ -13,7 +13,7 @@
 The parameters are an old ParamBlock in reference slot 1 (0 map type, 1-3 U/V/W tile, 4-6 U/V/W flip, 7 cap, 8 0 map
 channel / 1 vertex color, 9 length, 10 width, 11 height, 12 alignment 0 X / 1 Y / 2 Z, 13 map channel); the gizmo
 is the Position/Rotation/Scale controller in slot 0; Real-World Map Size is the u32 0x0130 of the modifier's 0x2150
-entry that names its own class. docs/FORMAT.md says which fixture shows what.
+entry that names its own class (reader.realworld). docs/FORMAT.md says which fixture shows what.
 
 What 3ds Max 2020 computes (fitted to its own map vertices, tests/unit/test_uvwmap.py against the uvwmap fixture's
 oracle): a point p of the object goes to q = p * context * inverse(gizmo), then to a frame (a, b, c) that depends on
@@ -38,7 +38,7 @@ import collections
 import math
 import struct
 
-from ..reader import chunks, classids, controllers, geometry, pblock
+from ..reader import chunks, classids, controllers, geometry, pblock, realworld
 
 ChunkError = chunks.ChunkError
 
@@ -51,9 +51,6 @@ SUPPORTED = (PLANAR, CYLINDRICAL, SPHERICAL, BOX)
 AXIS_X, AXIS_Y, AXIS_Z = 0, 1, 2
 SLOT_GIZMO, SLOT_PARAMS = 0, 1
 MAX_CHANNEL = 99
-_REAL_WORLD, _REAL_WORLD_ENTRY, _REAL_WORLD_CLASS, _REAL_WORLD_VALUE = 0x2150, 0x0110, 0x0120, 0x0130
-_CLASS_KEY = struct.Struct("<II")
-_U32 = struct.Struct("<I")
 _FATAL = (controllers.UNKNOWN_CLASS, controllers.DAMAGED, controllers.NON_FINITE)
 
 # (a, b, c) of the mapping frame from the gizmo-space point q, by (planar-like or round, alignment): index of q and
@@ -108,28 +105,6 @@ def _number(block, i, default):
     return v
 
 
-def _real_world(chunk, class_id):
-    """The Real-World Map Size flag: the 0x0130 of the 0x2150 entry naming the modifier's own class (a modifier
-    shared by several nodes holds entries for other classes too)."""
-    if not chunk.container:
-        return False
-    holder = chunk.first(_REAL_WORLD)
-    if holder is None or not holder.container:
-        return False
-    for entry in holder.find_all(_REAL_WORLD_ENTRY):
-        if not entry.container:
-            continue
-        cls = entry.first(_REAL_WORLD_CLASS)
-        if cls is None or cls.payload_size < _CLASS_KEY.size or \
-                tuple(_CLASS_KEY.unpack(cls.view()[:_CLASS_KEY.size])) != tuple(class_id):
-            continue
-        value = entry.first(_REAL_WORLD_VALUE)
-        if value is None or value.payload_size < _U32.size:
-            return False
-        return _U32.unpack(value.view()[:_U32.size])[0] != 0
-    return False
-
-
 def read_params(scene, modifier):
     """(Params, issues) of a UVW Map modifier (reader.modifiers.Modifier); UVWMapError when they cannot be read."""
     block = modifier.legacy.get(SLOT_PARAMS)
@@ -155,7 +130,7 @@ def read_params(scene, modifier):
     if not 0 <= channel <= MAX_CHANNEL:
         raise UVWMapError("map channel %d" % channel)
     try:
-        real_world = _real_world(scene.chunk(modifier.index), modifier.class_id)
+        real_world = realworld.flag(scene.chunk(modifier.index), modifier.class_id)
     except (ChunkError, struct.error):
         real_world = False
     p = Params(maptype, float(_number(block, P_UTILE, d.utile)), float(_number(block, P_VTILE, d.vtile)),
