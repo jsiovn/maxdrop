@@ -121,8 +121,8 @@ class NamePolicyPropertyTest(unittest.TestCase):
         names = [n for _, n in _bases(rng) if archive.refused_reason(n) is None]
         rng.shuffle(names)
         created = 0
-        for name in names[:CREATED]:
-            folder = os.path.join(self.folder, "n%d" % created)
+        for i, name in enumerate(names[:CREATED]):
+            folder = os.path.join(self.folder, "n%d" % i)
             os.mkdir(folder)
             target = os.path.join(folder, name)
             with self.subTest(name=name):
@@ -130,16 +130,16 @@ class NamePolicyPropertyTest(unittest.TestCase):
                 try:
                     with open(target, "xb") as f:
                         f.write(b"x")
-                except UnicodeEncodeError:  # a lone surrogate: the file system API refuses it, nothing is written
+                except UnicodeEncodeError:  # a lone surrogate off Windows: the file system API refuses it
                     self.assertEqual(os.listdir(folder), [])
                     continue
                 listed = os.listdir(folder)
                 self.assertEqual(len(listed), 1)
                 self.assertEqual(archive.name_key(listed[0]), archive.name_key(name))
-                self.assertEqual(os.listdir(self.folder).count("n%d" % created), 1)
+                self.assertEqual(os.listdir(self.folder).count("n%d" % i), 1)
             created += 1
         self.assertGreater(created, CREATED // 2)
-        self.assertEqual(sorted(os.listdir(self.folder)), sorted("n%d" % i for i in range(len(os.listdir(self.folder)))))
+        self.assertEqual(sorted(os.listdir(self.folder)), sorted("n%d" % i for i in range(min(CREATED, len(names)))))
 
 
 if __name__ == "__main__":

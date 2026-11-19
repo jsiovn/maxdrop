@@ -31,10 +31,11 @@ of the stack first; its base can be another derived object. docs/FORMAT.md says 
 Nodes are keyed by object index, never by name: two nodes with the same name are two nodes. A parent that is not
 a Node (the RootNode, another class, out of range) means top level. A parent cycle is cut at its member with the
 lowest object index, which becomes top level and is listed in cut_cycles; a layer's parent cycle is cut the same
-way, and a parent layer that is not a layer or cannot be read means top level. A reference past the object list, more
-than MAX_REFS references in one object, more than MAX_NODES nodes, a payload of the wrong size, a derived-object
-cycle or a file without a Scene stream raise ChunkError (a ValueError). One damaged record poisons only itself: a node whose 0x0960 cannot
-be read is top level for the hierarchy (listed in bad_parents) while node() on it raises. Every walk is iterative
+way, and a parent layer that is not a layer or cannot be read means top level. A reference past the object list,
+more than MAX_REFS references in one object, more than MAX_NODES nodes, a payload of the wrong size, a
+derived-object cycle or a file without a Scene stream raise ChunkError (a MaxFileError). One damaged record poisons
+only itself: a node whose 0x0960 cannot be read is top level for the hierarchy (listed in bad_parents) while node()
+on it raises. Every walk is iterative
 and bounded by the object count. No bpy.
 """
 import collections

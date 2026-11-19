@@ -50,6 +50,9 @@ FIXTURES = sorted(glob.glob(os.path.join(ROOT, "tests", "fixtures", "*.max")))
 SEED = 20261119
 CASE_SECONDS = 5.0
 MEMORY_LIMIT = 1 << 30
+# One thread for numpy's BLAS: otherwise it reserves buffers per core at import, hundreds of MB on a 20-core
+# machine, which the peak memory of a worker would count against MEMORY_LIMIT.
+_BLAS_THREADS = ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS")
 
 # A package of its own whose path is maxdrop/: relative imports resolve and maxdrop/__init__.py (bpy) never runs.
 _PKG = "maxdrop_fuzz"
@@ -386,6 +389,7 @@ class _Reader:
                 sc = self.scene.Scene.from_file(cf)
                 self.units.system_unit(sc)
                 len(sc.node_indices)
+                sc.strings.wide, getattr(sc.strings, "codec", None)  # what the line says of an 8-bit file
             del sc
             with cfb.CompoundFile(data) as cf:  # the reading
                 sc = self.scene.Scene.from_file(cf, encoding="AUTO")
@@ -685,7 +689,7 @@ def run_case(target, seed, k, folder, base=SEED):
 
 # --- campaign ------------------------------------------------------------------------------------------------------
 
-def run_range(target, seed, start, stop, current=None):
+def run_range(target, seed, start, stop, current=None, announce=False):
     """Cases [start, stop) of seed, each under the faulthandler watchdog (a case past CASE_SECONDS ends the
     process with its stack): {"counts", "materials", "escapes", "slowest", "slowest_case"}. current: a
     multiprocessing.Value told the case being run."""
@@ -696,6 +700,9 @@ def run_range(target, seed, start, stop, current=None):
         for k in range(start, stop):
             if current is not None:
                 current.value = k
+            if announce:  # the last line before a faulthandler stack names the case that hung
+                sys.stderr.write("%s:%d\n" % (seed.name, k))
+                sys.stderr.flush()
             faulthandler.dump_traceback_later(CASE_SECONDS, exit=True)
             try:
                 outcome, seconds = run_case(target, seed, k, folder)
@@ -724,7 +731,7 @@ def run_slice(target, cases):
     peak is the slice's alone)."""
     total = {"counts": {}, "materials": {}, "escapes": [], "slowest": 0.0, "slowest_case": None}
     for seed in seeds(target):
-        r = run_range(target, seed, 0, cases)
+        r = run_range(target, seed, 0, cases, announce=True)
         for key in ("counts", "materials"):
             for k, v in r[key].items():
                 total[key][k] = total[key].get(k, 0) + v
@@ -741,14 +748,30 @@ def _worker(target, name, start, stop, current, results):
     results.put(r)
 
 
-def _done(out):
-    done = set()
+def _covered(out):
+    """{(target, seed): [(start, stop)]}: the case ranges the --out file already holds (a shard split by a hang
+    is held as its pieces)."""
+    done = {}
     if os.path.exists(out):
         with open(out, encoding="utf-8") as f:
             for line in f:
                 r = json.loads(line)
-                done.add((r["target"], r["seed"], r["start"], r["stop"]))
+                done.setdefault((r["target"], r["seed"]), []).append((r["start"], r["stop"]))
     return done
+
+
+def _missing(ranges, start, stop):
+    """The pieces of [start, stop) that ranges do not cover."""
+    out, at = [], start
+    for a, b in sorted(ranges):
+        if b <= at or a >= stop:
+            continue
+        if a > at:
+            out.append((at, a))
+        at = max(at, b)
+    if at < stop:
+        out.append((at, stop))
+    return out
 
 
 def _write(out, record):
@@ -765,9 +788,11 @@ def campaign(target, cases, jobs, out, shard, minutes, names=None, first=0):
         all_names = list(ZIP_SEEDS)
     if names:
         all_names = [n for n in all_names if n in names]
-    done = _done(out)
-    todo = [(n, s, min(s + shard, cases)) for s in range(first, cases, shard) for n in all_names
-            if (target, n, s, min(s + shard, cases)) not in done]
+    covered = _covered(out)
+    todo = [(n, a, b) for s in range(first, cases, shard) for n in all_names
+            for a, b in _missing(covered.get((target, n), ()), s, min(s + shard, cases))]
+    for name in _BLAS_THREADS:  # spawned workers inherit it: numpy then reserves no buffers per core
+        os.environ[name] = "1"
     results = ctx.Queue()
     running = {}  # process -> (shard, current)
     deadline = time.time() + 60 * minutes if minutes else None
@@ -801,8 +826,11 @@ def campaign(target, cases, jobs, out, shard, minutes, names=None, first=0):
                         except Exception:
                             pass
                     r = pending.pop(key, None)
-                if r is None:
-                    continue  # still not delivered: ask again on the next round
+                if r is None:  # ended cleanly without a result: recorded, never run again on its own
+                    r = {"target": target, "seed": name, "start": start, "stop": stop,
+                         "counts": {"lost": stop - start}, "materials": {},
+                         "escapes": ["%s:%d-%d: worker ended without a result" % (name, start, stop)],
+                         "slowest": 0.0, "slowest_case": None, "peak_memory": None}
                 _write(out, r)
                 finished += 1
             else:
@@ -867,7 +895,7 @@ def main(argv=None):
         return 0
     if a.command == "summary":
         totals, escapes = summary(a.out)
-        return 1 if escapes or totals.get("hang") else 0
+        return 1 if escapes or totals.get("hang") or totals.get("lost") else 0
     if a.command == "replay":
         name, k = a.case.rsplit(":", 1)
         target = "zip" if name.startswith("zip:") else "max"

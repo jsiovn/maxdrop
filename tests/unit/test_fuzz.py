@@ -64,13 +64,16 @@ class CasesTest(unittest.TestCase):
 
 def run_slice(test, target, cases):
     """The slice in a child process (its peak memory is the slice's alone; a hang ends it, not the suite)."""
+    env = dict(os.environ, **{name: "1" for name in fuzz._BLAS_THREADS})
     proc = subprocess.run([sys.executable, "-I", os.path.join(ROOT, "tests", "unit", "fuzz.py"), "slice",
                            "--target", target, "--cases", str(cases)], capture_output=True, text=True,
-                          timeout=TIMEOUT)
+                          timeout=TIMEOUT, env=env)
     test.assertEqual(proc.returncode, 0, "the slice ended early (a case ran past %.0f s, or a crash): %s"
                      % (fuzz.CASE_SECONDS, proc.stderr[-4000:]))
     r = json.loads(proc.stdout.strip().splitlines()[-1])
     test.assertEqual(r["escapes"], [], "escaped: replay with tests/unit/fuzz.py replay <seed>:<k>")
+    # The operator forgives a failure of the material stage, the harness counts it: in the slice it is a defect.
+    test.assertEqual(r["materials"], {})
     test.assertLess(r["slowest"], fuzz.CASE_SECONDS, r["slowest_case"])
     if r["peak_memory"] is not None:
         test.assertLess(r["peak_memory"], fuzz.MEMORY_LIMIT)

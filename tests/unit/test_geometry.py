@@ -320,7 +320,8 @@ class EditableMeshTest(unittest.TestCase):
         two = mesh_faces((0, 1, 2, 0, 0), (1, 3, 2, 0, 0))
         for cap, value, message in (("MAX_VERTICES", 3, "4 vertices, more than the 3"),
                                     ("MAX_LOOPS", 5, "6 face corners, more than the 5")):
-            with self.subTest(cap=cap), mock.patch.object(geometry, cap, value),                     self.assertRaisesRegex(GeometryError, message):
+            with self.subTest(cap=cap), mock.patch.object(geometry, cap, value), \
+                    self.assertRaisesRegex(GeometryError, message):
                 geometry.read_editable_mesh(mesh(mesh_verts(TRI), two))
 
     def test_empty_mesh(self):

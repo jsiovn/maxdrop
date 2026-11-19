@@ -375,7 +375,7 @@ def _reason(e):
     if isinstance(e, MemoryError):
         return str(e) or "not enough memory to read it"
     if isinstance(e, RecursionError):
-        return "its records are nested too deeply"
+        return "recursion too deep while importing it"
     return str(e) or type(e).__name__
 
 

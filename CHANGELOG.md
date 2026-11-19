@@ -54,7 +54,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   running Blender out of memory. A file whose reading runs out of memory or recursion depth ends in "Not imported"
   with a reason, like any other damaged file.
 - Scene packs: `.7z` and `.rar` need 7-Zip 26.02 or newer (was 25.01) or bsdtar 3.8.8 or newer (was 3.7.4), the
-  first versions with the vendors' fixes of overflows in their RAR and 7-Zip readers; UnRAR stays at 7.23.
+  first versions with the vendors' fixes of overflows in their RAR and 7-Zip readers; UnRAR stays at 7.23. On
+  Windows this applies to its own `tar.exe` too: an older one is not used (install WinRAR or 7-Zip instead).
 
 ### Fixed
 

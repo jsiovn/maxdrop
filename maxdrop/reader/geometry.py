@@ -43,8 +43,9 @@ from . import chunks, classids
 ChunkError = chunks.ChunkError
 
 GEOMETRY = 0x08FE
-# Per mesh, checked before anything is allocated. Scene B's largest mesh has 1.5 million vertices and 5.6 million
-# loops; past these a mesh alone takes gigabytes in Blender, and its int32 indices stay far from overflow.
+# Per mesh: counts before numpy allocates, the corners of an Editable Poly once its face records are walked (their
+# bytes bound that walk). Scene B's largest mesh has 1.5 million vertices and 5.6 million loops; past these a mesh
+# alone takes gigabytes in Blender, and its int32 indices stay far from overflow.
 MAX_VERTICES = 1 << 26  # vertices, and map vertices of one channel
 MAX_LOOPS = 1 << 27  # face corners
 DEAD = 0x2  # vertex, edge and face flag of Editable Poly records that are no longer part of the mesh

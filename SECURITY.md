@@ -45,9 +45,9 @@ unless you prefer otherwise.
   bsdtar (`tar.exe` in the Windows system folder; `bsdtar` or `tar` in fixed folders such as `/usr/bin` or
   `/opt/homebrew/bin` on macOS and Linux). It is taken only from those fixed absolute paths or from the install
   folder the WinRAR and 7-Zip installers record, never from the current folder, `PATH` or the archive's folder, and
-  only a native program, never a script. Versions before the vendor's fix of known path or link problems on
-  extraction are refused (UnRAR 7.23, 7-Zip 26.02, libarchive 3.8.8); a bsdtar of the operating system on macOS and
-  Linux is accepted whatever version it prints, because distributions backport fixes without changing it. The
+  only a native program, never a script. Versions before the vendor's fix of known path, link or memory safety
+  problems on extraction are refused (UnRAR 7.23, 7-Zip 26.02, libarchive 3.8.8, also the `tar.exe` of Windows); a
+  bsdtar of the operating system on macOS and Linux is accepted whatever version it prints, because distributions backport fixes without changing it. The
   program runs without a shell, with its own folder as working directory, a reduced environment, no input, a time
   limit and capped output. It unpacks into a private folder, and its result is checked file by file (plain files
   only, exactly the names asked for) before anything is moved into place.
@@ -72,10 +72,11 @@ opened); the parser inherited from io_scene_max is gone. What it guards against:
 
 The reader is fuzzed: the plain test suite runs a fixed slice of mutated fixtures (and mutated scene packs) on
 every change, and this version was run against 100,000 mutations of every fixture (bits flipped, files cut,
-chunk sizes and counts set to extremes, directory entries, FAT entries and sectors bent), each required to read or
-be refused within 5 seconds and 1 GB. Fuzzing finds defects; it does not prove there are none. A hostile file can
-still make Blender use a lot of memory or take long within those caps, and a defect can still stop the import with
-a Python error. Memory safety is Python's, so the realistic risk is a hang or a crash of that Blender session, not
+chunk sizes and counts set to extremes, directory entries, FAT entries and sectors bent), each required to read,
+be refused, or fail only in the material conversion the import already guards, within 5 seconds, with no worker
+process going past 1 GB. Fuzzing finds defects; it does not prove there are none. A hostile file can still make
+Blender use a lot of memory or take long within those caps, and a defect can still stop the import with a Python
+error. Memory safety is Python's, so the realistic risk is a hang or a crash of that Blender session, not
 code execution: treat files from unknown sources with the usual care and save your work before importing.
 
 Scene packs are fuzzed the same way (central directory, local headers, names, sizes, flags, compression methods,
