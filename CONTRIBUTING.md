@@ -21,6 +21,7 @@ You need Blender 4.2 or newer and any Python 3 for the plain tests. There is not
 
 ```powershell
 python -I -m unittest discover tests                  # the unit tests, the tools, the landing page: no Blender
+python -I tools/lint.py                               # ruff, at the version CI runs (see below)
 powershell -ExecutionPolicy Bypass -File build.ps1    # dist\: the zip, index.json and the landing page
 ```
 
@@ -29,15 +30,18 @@ Blender, so no module there may import `bpy`, `mathutils`, another module of the
 packages, or the add-on by its absolute name (`import maxdrop...` runs `maxdrop/__init__.py`, and inside Blender
 the add-on has another name): import within them relatively. The code is linted with [ruff](https://docs.astral.sh/ruff/), configured in `pyproject.toml`, whose `required-version` is the one ruff version used, by
 the `test` workflow too. `python -I tools/lint.py` runs `ruff check .` with that version: `ruff` on PATH when it
-is that version, otherwise uv's cached copy (`uvx ruff@<version> --version` fetches it once). It exits 2 and
-says how to get ruff when it finds neither. Without uv, install it in a virtual environment of its own:
+is that version, otherwise uv's cached copy (`uvx ruff@<version> --version` fetches it once). It exits 3 and
+says how to get ruff when it finds neither. Without uv, install it in a virtual environment of its own and put
+that on PATH for the session:
 
 ```powershell
 python -m venv $env:TEMP\maxdrop-ruff
 & $env:TEMP\maxdrop-ruff\Scripts\python.exe -m pip install "ruff==<the required-version>"
-& $env:TEMP\maxdrop-ruff\Scripts\Activate.ps1
+$env:PATH = "$env:TEMP\maxdrop-ruff\Scripts;$env:PATH"
 python -I tools/lint.py
 ```
+
+A ruff of another version, such as the one an editor plugin bundles, refuses to run in this repository.
 
 Run the Blender tests headless with a profile of their own, so your preferences are never touched:
 

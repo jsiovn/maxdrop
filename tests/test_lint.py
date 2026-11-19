@@ -16,6 +16,7 @@ import re
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -63,6 +64,35 @@ class PinTest(unittest.TestCase):
         self.assertIn("required-version", text)
 
 
+class FindTest(unittest.TestCase):
+    """Which ruff tools/lint.py runs, and what it says when there is none; no ruff needed."""
+
+    def test_wrong_version_on_path_falls_through_to_uvx(self):
+        which = {"ruff": "/bin/ruff", "uvx": "/bin/uvx"}.get
+        with mock.patch.object(lint.shutil, "which", which), \
+                mock.patch.object(lint, "_prints_version", lambda argv, version: argv[0] == "/bin/uvx"):
+            self.assertEqual(lint.find_ruff("1.2.3"), ["/bin/uvx", "--offline", "ruff@1.2.3"])
+
+    def test_matching_ruff_on_path_wins(self):
+        which = {"ruff": "/bin/ruff", "uvx": "/bin/uvx"}.get
+        with mock.patch.object(lint.shutil, "which", which), \
+                mock.patch.object(lint, "_prints_version", lambda argv, version: True):
+            self.assertEqual(lint.find_ruff("1.2.3"), ["/bin/ruff"])
+
+    def test_none_found_exits_not_found_with_instructions(self):
+        with mock.patch.object(lint.shutil, "which", lambda name: None):
+            code, out = run_main([], cwd=ROOT)
+        self.assertEqual(code, lint.NOT_FOUND)
+        self.assertNotIn(code, (0, 1, 2), "ruff's own exit codes")
+        self.assertIn("no ruff %s found" % lint.pin(), out)
+
+    def test_missing_pin_exits_not_found(self):
+        with mock.patch.object(lint, "pin", side_effect=ValueError("no required-version")):
+            code, out = run_main([], cwd=ROOT)
+        self.assertEqual(code, lint.NOT_FOUND)
+        self.assertIn("no required-version", out)
+
+
 class LintTest(unittest.TestCase):
     """ruff check passes on the tree and fails on a module-level import below a statement (E402)."""
 
@@ -86,6 +116,21 @@ class LintTest(unittest.TestCase):
             code, out = run_main(["--no-cache", "."], cwd=tmp)
         self.assertEqual(code, 1, out)
         self.assertIn("E402", out)
+
+    def test_non_ascii_finding_reaches_a_cp1252_stdout(self):
+        # A redirected stdout on Windows is cp1252; ruff quotes the source line of a finding.
+        with tempfile.TemporaryDirectory() as tmp:
+            shutil.copy(os.path.join(ROOT, "pyproject.toml"), tmp)
+            with open(os.path.join(tmp, "probe.py"), "w", encoding="utf-8") as f:
+                f.write("import os\n\nx = os.sep\n\nimport sys  # noqa: F401  \u2194\n")
+            raw = io.BytesIO()
+            stdout = io.TextIOWrapper(raw, encoding="cp1252")
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(io.StringIO()):
+                code = lint.main(["--no-cache", "."], cwd=tmp)
+            stdout.flush()
+        self.assertEqual(code, 1)
+        self.assertIn(b"E402", raw.getvalue())
+        self.assertIn("\u2194".encode("utf-8"), raw.getvalue())
 
 
 if __name__ == "__main__":

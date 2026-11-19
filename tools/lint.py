@@ -8,14 +8,17 @@
     python -I tools/lint.py --output-format=github .     # the arguments go to `ruff check`
 
 The ruff used is `ruff` on PATH when it is that version, otherwise `uvx --offline ruff@<version>` when uv has it
-cached (`--offline`: never a download). Exit: ruff's own (0 clean, 1 findings), 2 when no ruff of that version is
-found. Standard library only, Python 3.9 and later (no tomllib).
+cached (`--offline`: never a download). Exit: ruff's own (0 clean, 1 findings, 2 a ruff error such as a bad
+argument), 3 when no ruff of that version is found or pyproject.toml has no pin. Standard library only, Python 3.9
+and later (no tomllib).
 """
 import os
 import re
 import shutil
 import subprocess
 import sys
+
+NOT_FOUND = 3  # ruff itself exits 0, 1 or 2
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PYPROJECT = os.path.join(ROOT, "pyproject.toml")
@@ -51,19 +54,33 @@ def find_ruff(version):
     return None
 
 
+def _echo(data, stream):
+    """Ruff's bytes as they are: a redirected stdout on Windows is cp1252, and a finding quotes source lines."""
+    buffer = getattr(stream, "buffer", None)
+    if buffer is None:
+        stream.write(data.decode("utf-8", "replace"))
+    else:
+        stream.flush()
+        buffer.write(data)
+        buffer.flush()
+
+
 def main(args, cwd=ROOT):
-    version = pin()
+    try:
+        version = pin()
+    except (OSError, ValueError) as error:
+        sys.stderr.write("MaxDrop lint: %s\n" % error)
+        return NOT_FOUND
     ruff = find_ruff(version)
     if ruff is None:
         sys.stderr.write(
             "MaxDrop lint: no ruff %s found, neither `ruff` on PATH nor in the uv cache.\n"
             "Get it once with `uvx ruff@%s --version` (uv fetches it), or pip-install `ruff==%s` into a virtual\n"
-            "environment of its own and activate it (CONTRIBUTING.md).\n" % (version, version, version))
-        return 2
-    done = subprocess.run(ruff + ["check"] + (args or ["."]), cwd=cwd, capture_output=True,
-                          encoding="utf-8", errors="replace")
-    sys.stdout.write(done.stdout)
-    sys.stderr.write(done.stderr)
+            "environment of its own and put it on PATH (CONTRIBUTING.md).\n" % (version, version, version))
+        return NOT_FOUND
+    done = subprocess.run(ruff + ["check"] + (args or ["."]), cwd=cwd, capture_output=True)
+    _echo(done.stdout, sys.stdout)
+    _echo(done.stderr, sys.stderr)
     return done.returncode
 
 
