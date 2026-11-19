@@ -318,7 +318,8 @@ Run on Blender 5.2.0 and 4.2.23 on 2026-11-19: both versions gave the same answe
 What an import of the two scenes may cost, and the tests that keep a change from making the reader or the build
 slower without anyone noticing. Measured as above (`tools/baseline.py`, Blender 5.2.0 LTS, Python 3.13.13, the same
 machine, default options), on the code after 0.1.0 (the modal import of the next version included: a script still
-runs the import at once), twice per scene on 2026-11-19; both runs gave the same numbers within 0.1 s and 0.01 GB.
+runs the import at once), three times per scene on 2026-11-19 after the changes: the runs differ by up to 0.5 s and 0.02 GB, the table gives
+the first.
 
 | | Budget | Before | After |
 |---|---:|---:|---:|
@@ -349,8 +350,9 @@ Working set sampled at the boundaries of the import's stages, in the same Blende
 - The time is spread out. By the profiler, for scene B: the Editable Poly face records (a Python loop, 2.0 s without
   the profiler), Blender's own `foreach_set` of the meshes (2.7 s), the face and edge checks of the conversion and the
   sharp-edge flags of the build (sorting, below), the transform controllers (3 s profiled), the reading of chunks.
-  For scene A also the images: 170 `images.load` take 1.3 s, without decoding a pixel (Blender reads them on first
-  use; MaxDrop reads 18 bytes of each to check it is an image).
+  For scene A also the images: 1.3 s for its 127 files, nearly all of it in `images.load` itself (MaxDrop's check
+  of their first 18 bytes takes 0.02 s, the color space 0.01 s). No image is decoded during the import: `has_data`
+  is false for every one of them after it; Blender reads the pixels on first use.
 
 ### What changed
 
@@ -382,12 +384,12 @@ divided by the best time of a reference workload in the same process, their runs
 of a shared machine hits both: plain Python record walking for the reader,
 numpy array work for the description (no sorting and no allocation in it: those differ between Blender builds and
 numpy versions), a mesh made with Blender's own calls alone for the build. Memory is the peak of the Python
-allocations (`tracemalloc`, numpy's included) as a multiple of the object's size, which does not depend on the
-machine.
+allocations (`tracemalloc`, numpy's included) as a multiple of the object's size, which is the same on every Python
+and numpy measured.
 
 | Ratio | Measured (Python 3.11 with numpy 1.24.3 and 1.26.4, 3.13 with 2.3.4; Blender 4.2.23, 4.5.16, 5.2.0) | Limit |
 |---|---:|---:|
-| Read / Python reference (300,360 faces; a million) | 2.3 to 2.8; 2.1 to 2.7 | 6.0 |
+| Read / Python reference (300,360 faces; a million) | 2.3 to 3.0; 2.1 to 2.7 | 6.0 |
 | Describe / numpy reference (300,360 faces; a million) | 3.9 to 4.6; 3.7 to 4.7 | 10.0 |
 | Build / Blender reference (a million faces) | 2.1 to 2.7 | 5.5 |
 | Read + describe peak / object size (300,360 faces) | 5.07 on every Python | 5.3 |

@@ -42,7 +42,7 @@ conv = importlib.import_module(_PKG + ".convert.scene")
 FACES = 300_000
 RUNS = 5
 # measured 2026-11-19 (Windows, 300 360 faces): read 2.3 (Python 3.11 with numpy 1.24 and 1.26, 3.13 with 2.3) to
-# 2.8 (3.9); describe 3.9 to 4.6; memory 5.07 on all of them (one more int64 array per loop alive at the peak makes
+# 3.0 (3.9); describe 3.9 to 4.6; memory 5.07 on all of them (one more int64 array per loop alive at the peak makes
 # it 5.46). The same ratios at a million faces: tests/blender/bench.py
 READ_LIMIT = 6.0
 DESCRIBE_LIMIT = 10.0
