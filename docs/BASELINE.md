@@ -386,14 +386,14 @@ machine.
 
 | Ratio | Measured (Python 3.11 with numpy 1.24.3 and 1.26.4, 3.13 with 2.3.4; Blender 4.2.23, 4.5.16, 5.2.0) | Limit |
 |---|---:|---:|
-| Read / Python reference (300,360 faces; a million) | 2.3 to 2.7; 2.3 to 2.4 | 6.0 |
-| Describe / numpy reference (300,360 faces; a million) | 3.9 to 4.4; 3.9 to 4.4 | 10.0 |
-| Build / Blender reference (a million faces) | 2.2 to 2.6 | 5.5 |
+| Read / Python reference (300,360 faces; a million) | 2.3 to 2.8; 2.1 to 2.7 | 6.0 |
+| Describe / numpy reference (300,360 faces; a million) | 3.9 to 4.6; 3.7 to 4.7 | 10.0 |
+| Build / Blender reference (a million faces) | 2.1 to 2.7 | 5.5 |
 | Read + describe peak / object size (300,360 faces) | 5.07 on every Python | 5.3 |
 
 The limits are about twice the largest ratio measured, so that code three times as slow fails: a scratch copy that
-runs the reader, the description or `make_mesh` three times over fails each test (read 7.3 to 8.3, describe 12.3 to
-13.0, build 6.9). The memory limit leaves 5 %: one more 64-bit array per loop alive at the peak makes it 5.46 and
+runs the reader, the description or `make_mesh` three times over fails each test (read 6.9 to 8.3, describe 12.3 to
+13.4, build 6.9 to 7.9). The memory limit leaves 5 %: one more 64-bit array per loop alive at the peak makes it 5.46 and
 fails, and the code before the changes above gave 7.42 to 7.80. The ratios were measured on Windows; CI runs the tests
 on Linux and its log prints each ratio. A test past its limit is a regression to find, not a limit to raise.
 

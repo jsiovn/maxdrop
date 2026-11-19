@@ -43,7 +43,7 @@ conv = importlib.import_module(_PKG + ".convert.scene")
 FACES = 300_000
 RUNS = 5
 # measured 2026-11-19 (Windows, 300 360 faces): read 2.3 (Python 3.11 with numpy 1.24 and 1.26, 3.13 with 2.3) to
-# 2.7 (3.9); describe 3.9 to 4.4; memory 5.07 on all of them (one more int64 array per loop alive at the peak makes
+# 2.8 (3.9); describe 3.9 to 4.6; memory 5.07 on all of them (one more int64 array per loop alive at the peak makes
 # it 5.46). The same ratios at a million faces: tests/blender/bench.py
 READ_LIMIT = 6.0
 DESCRIBE_LIMIT = 10.0
@@ -109,8 +109,8 @@ class Budget(unittest.TestCase):
         cls.data = cls.sp.poly_object(FACES)
         cls.md = read(cls.data)
 
-    def ratio(self, what, workload, reference, limit):
-        work, ref = best(workload), best(reference)
+    def ratio(self, what, workload, reference, limit, reference_runs=RUNS):
+        work, ref = best(workload), best(reference, reference_runs)
         ratio = work / ref
         print("%s: %.3f s / reference %.3f s = %.2f (limit %.1f)" % (what, work, ref, ratio, limit))
         self.assertLess(ratio, limit, "%s takes %.2f times its reference (%.3f s / %.3f s), the limit is %.1f"
@@ -123,7 +123,7 @@ class Budget(unittest.TestCase):
 
     def test_describe_time(self):
         self.ratio("describe %d faces" % len(self.md.loop_starts), lambda: describe(self.md),
-                   self.sp.numpy_reference(self.md.loop_vertices), DESCRIBE_LIMIT)
+                   self.sp.numpy_reference(self.md.loop_vertices), DESCRIBE_LIMIT, reference_runs=3 * RUNS)
 
     def test_memory(self):
         tracemalloc.start()

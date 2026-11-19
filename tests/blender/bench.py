@@ -32,8 +32,9 @@ import bpy
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 FACES = 1_000_000
 RUNS = 3
-# measured 2026-11-19 (Windows, 1 001 200 faces) on Blender 4.2.23, 4.5.16 and 5.2.0: read 2.3 to 2.4, describe 3.9
-# to 4.4, build 2.2 to 2.6
+REFERENCE_RUNS = 9  # the numpy reference takes a tenth of a second and is the noisier of the two
+# measured 2026-11-19 (Windows, 1 001 200 faces, alone and from run.py) on Blender 4.2.23, 4.5.16 and 5.2.0: read 2.1
+# to 2.7, describe 3.7 to 4.7, build 2.1 to 2.7
 READ_LIMIT = 6.0
 DESCRIBE_LIMIT = 10.0
 BUILD_LIMIT = 5.5
@@ -112,7 +113,7 @@ def run(check):
     _ratio(check, "read %d faces" % faces, _best(read), _best(lambda: sp.reference_loop(faces)), READ_LIMIT)
     desc = describe(md)
     _ratio(check, "describe %d faces" % faces, _best(lambda: describe(md)),
-           _best(sp.numpy_reference(md.loop_vertices)), DESCRIBE_LIMIT)
+           _best(sp.numpy_reference(md.loop_vertices), runs=REFERENCE_RUNS), DESCRIBE_LIMIT)
     md = None  # the reader's arrays are not needed for the build
     _ratio(check, "build %d faces" % len(desc.loop_starts),
            _best(lambda: build_objects.make_mesh(desc), after=_remove),
