@@ -62,6 +62,8 @@
 # thread there; an import from a script or without a window stays synchronous.
 # Modified for MaxDrop, 2026-11-19 (jsiovn). New option Text Encoding: the code page of the names of a file saved by
 # 3ds Max 2012 or older; the pre-flight line names the one Auto chose for such a file.
+# Modified for MaxDrop, 2026-11-19 (jsiovn). A file whose reading runs out of memory or recursion depth is reported
+# as not imported too, with a reason also when the error carries no message.
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -106,9 +108,10 @@ _SHOWN_SCENES = 10
 # Pre-flight lines of the .max files a drop or a script named, by normalized path.
 _PREFLIGHT = {}
 _SHOWN_FILES = 5
-# A .max that cannot be read. The reader raises CfbError / ChunkError (ValueErrors); IndexError and struct.error are
-# caught too, so that a gap in its checks still reports the file as not imported instead of stopping the run.
-_UNREADABLE = (OSError, ValueError, IndexError, struct.error)
+# A .max that cannot be read. The reader raises reader.errors.MaxFileError (a ValueError); IndexError, struct.error,
+# MemoryError and RecursionError are caught too, so that a gap in its checks still reports the file as not imported
+# instead of stopping the run.
+_UNREADABLE = (OSError, ValueError, IndexError, struct.error, MemoryError, RecursionError)
 # What a build makes besides objects and collections, in the order a failed build removes them. Addresses, not
 # names: a new datablock could reuse the address of one freed meanwhile, but the build frees none.
 _MADE = ("meshes", "curves", "lights", "cameras", "materials", "images")
@@ -367,6 +370,15 @@ def _scene_search(self, context, edit_text):
     return [s for s in scenes if text in s.casefold()] or scenes
 
 
+def _reason(e):
+    """The message of one of _UNREADABLE for the report; a MemoryError or RecursionError often has none."""
+    if isinstance(e, MemoryError):
+        return str(e) or "not enough memory to read it"
+    if isinstance(e, RecursionError):
+        return "its records are nested too deeply"
+    return str(e) or type(e).__name__
+
+
 def _plural(n, word, many=None):
     return "%d %s" % (n, word if n == 1 else many or word + "s")
 
@@ -397,7 +409,7 @@ def _preflight(path):
             nodes = len(sc.node_indices)
             names = sc.strings
     except _UNREADABLE as e:
-        return "Not readable as a .max file (%s)" % e
+        return "Not readable as a .max file (%s)" % _reason(e)
     release = info.get("max_release")
     parts = ["3ds Max %s" % release if release else "3ds Max version not stated"]
     renderer = (info.get("renderer") or {}).get("name")
@@ -769,7 +781,7 @@ class _Run:
                             self.opts, self.scene, self.view_layer, max_path, result, pack_name, self.dirs,
                             threaded=threaded, progress=self._at(index), made=self._made)
                 except _UNREADABLE as e:
-                    failed.append("%s: %s" % (os.path.basename(max_path), e))
+                    failed.append("%s: %s" % (os.path.basename(max_path), _reason(e)))
                     continue
                 reports.append(rep)
                 for level, line in lines:
