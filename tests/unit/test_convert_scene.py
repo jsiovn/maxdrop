@@ -558,7 +558,13 @@ class DescribeCancel(unittest.TestCase):
 
     def test_a_tripped_check_raises_at_once_and_keeps_nothing(self):
         import gc
+
+        def alive():  # other tests may keep descriptions of their own
+            gc.collect()
+            return {id(o) for o in gc.get_objects() if isinstance(o, conv.SceneDescription)}
+
         sc = DamagedInput.scene(self, "hierarchy")
+        before = alive()
         nodes = len(sc.walk())
         self.assertGreater(nodes, 3)
         for after in (0, 2, nodes, nodes + 2):  # in the first walk, at its end, in the second walk
@@ -566,8 +572,7 @@ class DescribeCancel(unittest.TestCase):
             with self.assertRaises(conv.Cancelled):
                 conv.describe(sc, 1.0, cancel=cancel)
             self.assertEqual(len(calls), after + 1)
-        gc.collect()
-        self.assertFalse([o for o in gc.get_objects() if isinstance(o, conv.SceneDescription)])
+        self.assertEqual(alive() - before, set())
         self.assertFalse(issubclass(conv.Cancelled, ValueError))  # ops reports a ValueError as an unreadable file
 
     def test_a_check_that_never_trips_changes_nothing(self):

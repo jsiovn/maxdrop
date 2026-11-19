@@ -1475,6 +1475,39 @@ def check_read_cancel(path):
             worker.join(60)
         convert_scene.blender_matrix = original
 
+    # around the material conversion: before it (which is then not run) and after it
+    opts, converted = _cancel_run([path]).opts, []
+    real_slots = ops._material_slots
+
+    def counting(after):
+        calls = []
+
+        def cancel():
+            calls.append(None)
+            return len(calls) > after
+        return cancel, calls
+
+    def slots(*args, **kwargs):
+        converted.append(None)
+        return real_slots(*args, **kwargs)
+
+    ops._material_slots = slots
+    try:
+        cancel, calls = counting(10 ** 9)
+        ops._read_scene(path, opts, (), cancel)
+        total, outcomes = len(calls), []
+        for after in (total - 2, total - 1):
+            converted.clear()
+            try:
+                ops._read_scene(path, opts, (), counting(after)[0])
+                outcomes.append(None)
+            except convert_scene.Cancelled:
+                outcomes.append(len(converted))
+        check("read cancel: asked just before the material conversion (not run then) and just after it",
+              outcomes == [0, 1], "%d calls, %s" % (total, outcomes))
+    finally:
+        ops._material_slots = real_slots
+
 
 def _mesh_arrays(mesh):
     """Every array build.objects writes into a Mesh, as lists."""

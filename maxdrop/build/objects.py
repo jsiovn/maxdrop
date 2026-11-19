@@ -125,6 +125,16 @@ def _drain(steps):
             return done.value
 
 
+def _repeating(steps, value):
+    """Generator: steps run to its end, yielding value for each of its yields; its return value."""
+    while True:
+        try:
+            next(steps)
+        except StopIteration as done:
+            return done.value
+        yield value
+
+
 def _edge_flag_steps(mesh, pairs):
     """Generator of _sharp_edge_flags(): yields before each EDGE_CHUNK edges it looks up, returns the flags."""
     import numpy
@@ -150,7 +160,8 @@ def _edge_flag_steps(mesh, pairs):
 
 
 def _sharp_edge_flags(mesh, pairs):
-    """One bool per Blender edge: whether its vertex pair is in pairs (int32 (E, 2), sorted)."""
+    """One bool per Blender edge: whether its vertex pair is in pairs (int (E, 2), each pair (low, high); faster
+    when sorted and without repeats, as convert.scene.sharp_edges gives them)."""
     return _drain(_edge_flag_steps(mesh, pairs))
 
 
@@ -260,15 +271,8 @@ def build_steps(desc, collection, collections=None, view_layer=None, slots=None,
     for key, md in desc.meshes.items():
         plan = slots.get(key)
         indices = plan.indices if plan is not None else None
-        if len(md.loop_vertices) > STEP_LOOPS:
-            phases = mesh_steps(md, indices)
-            while True:
-                try:
-                    next(phases)
-                except StopIteration as made:
-                    built.meshes[key], dropped = made.value
-                    break
-                yield done, total  # the same count: steps_of() has one step per mesh
+        if len(md.loop_vertices) > STEP_LOOPS:  # the same count each phase: steps_of() has one step per mesh
+            built.meshes[key], dropped = yield from _repeating(mesh_steps(md, indices), (done, total))
         else:
             built.meshes[key], dropped = make_mesh(md, indices)
         built.dropped_uv_layers += dropped

@@ -66,6 +66,8 @@
 # as not imported too, with a reason also when the error carries no message.
 # Modified for MaxDrop, 2026-11-20 (jsiovn). A SystemExit or KeyboardInterrupt in the import's worker thread fails
 # the run as a RuntimeError, so the progress runner still tears down and removes what the run made.
+# Modified for MaxDrop, 2026-11-20 (jsiovn). Esc during a windowed import's read stops the worker at the next node
+# (_read_scene's cancel check, _in_thread's wait).
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
