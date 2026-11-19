@@ -11,7 +11,7 @@ objects, so a node with modifiers counts under the class at the bottom of its st
 per class the entries in derived objects, the derived objects holding one, the modifier objects (an instanced
 modifier is one object in several stacks), the nodes whose stack holds one, and how many of those objects are
 switched off, off in the viewport, off in the renderer. It reads the file through maxdrop/reader (scene.py,
-modifiers.py), loaded by path so no bpy is pulled.
+modifiers.py), loaded through a stub package so maxdrop/__init__.py (bpy) never runs.
 
 The output names classes only, never a node, material or layer, and not the file: it may be run on a scene that
 is not ours and pasted into notes. A node that cannot be read counts as unreadable instead of stopping the run.

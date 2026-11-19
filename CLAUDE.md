@@ -65,8 +65,8 @@ powershell -ExecutionPolicy Bypass -File build.ps1    # dist\ (git-ignored): zip
   device names): the one module outside those packages they may import (`from .. import pathnames`), bpy-free
   like them and importing nothing of the add-on (`tests/unit/test_reader_no_bpy.py` scans it). A test of a
   module that imports it (directly or through another module) must load that module under a package of its own
-  whose path is `maxdrop/` (`maxdrop/__init__.py`, which imports bpy, never runs): the one-level
-  `maxdrop_reader` loaders of some reader tests and tools cannot resolve `..`.
+  whose path is `maxdrop/` (`maxdrop/__init__.py`, which imports bpy, never runs), as the `maxdrop_convert_test`
+  stub of the tests and `maxdrop_tool` of the tools do: a package rooted at `maxdrop/reader/` cannot resolve `..`.
 - `site/index.html` + `tools/make_site.py`: the landing page, filled from `dist/index.json` (`{{token}}`
   values). Self-contained: no third-party requests. The install link keeps the form Blender's own generator
   emits (`./maxdrop-<version>.zip?repository=.%2Findex.json&blender_version_min=4.2.0`).
