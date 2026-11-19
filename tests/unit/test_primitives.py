@@ -18,7 +18,6 @@ import importlib
 import json
 import math
 import os
-import struct
 import sys
 import types
 import unittest
@@ -47,7 +46,6 @@ classids = importlib.import_module(_PKG + ".reader.classids")
 cfb = importlib.import_module(_PKG + ".reader.cfb")
 reader_scene = importlib.import_module(_PKG + ".reader.scene")
 pblock = importlib.import_module(_PKG + ".reader.pblock")
-chunks = importlib.import_module(_PKG + ".reader.chunks")
 
 DEG = math.pi / 180.0
 # what tools/fixtures/primitives.ms sets, by node (lengths in the file's units, angles in radians)

@@ -448,7 +448,8 @@ references
 
 Real-World Map Size is not in the block: as on Extrude, `0x2150` holds `0x0110` entries, each a `0x0120` naming a
 class (the first 8 bytes its ClassID) and a `0x0130` `u32`; the entry naming the modifier's own class holds the flag
-(1 on FixtureUVWRealWorld). An instanced UVW Map (FixtureUVWSharedA/B) holds three entries.
+(1 on FixtureUVWRealWorld). An instanced UVW Map (FixtureUVWSharedA/B) holds three entries. Read by
+`maxdrop/reader/realworld.py`.
 
 What 3ds Max 2020 computes (fitted to `meshop.getMapVert` on scratch scenes, then checked on the fixture: U and V
 within 1e-4 for planar and box, 1e-3 for the round types):

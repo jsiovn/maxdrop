@@ -14,7 +14,6 @@ import importlib
 import json
 import math
 import os
-import struct
 import sys
 import types
 import unittest
@@ -41,7 +40,6 @@ shapes = importlib.import_module(_PKG + ".reader.shapes")
 pblock = importlib.import_module(_PKG + ".reader.pblock")
 classids = importlib.import_module(_PKG + ".reader.classids")
 reader_modifiers = importlib.import_module(_PKG + ".reader.modifiers")
-chunks = importlib.import_module(_PKG + ".reader.chunks")
 rules = importlib.import_module(_PKG + ".convert.modifiers")
 
 CAPPED = ("FixtureExtRect", "FixtureExtL", "FixtureExtHole", "FixtureExtIsland", "FixtureExtMirror",
