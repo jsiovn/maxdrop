@@ -51,6 +51,8 @@
 # its cameras.
 # Modified for MaxDrop, 2026-11-19 (jsiovn). The light colors' swatch note is reported also when the material
 # conversion fails; the Keep Targets note on the axis conversion only when the file's up does not stay Blender's Z.
+# Modified for MaxDrop, 2026-11-19 (jsiovn). An import reads the file's asset table once, for the scene description
+# and the material conversion.
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -361,21 +363,20 @@ def _preflight_of(path):
         return None
 
 
-def _material_slots(cf, sc, desc, max_path, context, image_search):
+def _material_slots(sc, desc, table, max_path, context, image_search):
     """(the material slots of desc's meshes {mesh key: MeshSlots}, (the material converter's, the texture-map
     converter's and the texture lookup's counters, the scene's swatch rule) for the import report): every material
-    converted, its texture files looked up. cf / sc: the open file and its reader Scene, which the converters read;
-    the counters hold no reference to them."""
+    converted, its texture files looked up. sc: the reader Scene, which the converters read; table: the file's
+    reader.assets.AssetTable (the one the scene description got); the counters hold no reference to either."""
     from .convert import colors as convert_colors
     from .convert import materials as convert_materials
     from .convert import texmaps as convert_texmaps
     from .convert import textures as convert_textures
-    from .reader import assets
     from .reader import materials as reader_materials
     graph = reader_materials.MaterialGraph(sc)
     index = convert_textures.TextureIndex(max_path, prefs.texture_dirs(context), scene_subfolders=image_search)
     swatches = convert_colors.of_scene(sc)
-    tex = convert_texmaps.TexmapConverter(graph, assets.AssetTable.from_file(cf), textures=index, swatches=swatches)
+    tex = convert_texmaps.TexmapConverter(graph, table, textures=index, swatches=swatches)
     conv = convert_materials.MaterialConverter(graph, texmaps=tex, swatches=swatches)
     slots = convert_materials.assign(desc, convert_materials.node_materials(sc, desc), conv)
     return slots, (conv.stats, tex.stats, index.report, swatches)
@@ -621,12 +622,13 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
             sc = reader_scene.Scene.from_file(cf)
             unit = units.system_unit(sc)
             meters, note = _meters(self.units, unit, self.scale_objects)
+            table = assets.AssetTable.from_file(cf)
             desc = convert_scene.describe(sc, meters, unit, convert_modifiers=self.modifiers == 'KEEP',
-                                          assets=assets.AssetTable.from_file(cf), views=cameras.saved_views(cf))
+                                          assets=table, views=cameras.saved_views(cf))
             slots, counts, failed = None, None, []
             if materials:
                 try:
-                    slots, counts = _material_slots(cf, sc, desc, max_path, context, self.use_image_search)
+                    slots, counts = _material_slots(sc, desc, table, max_path, context, self.use_image_search)
                 except Exception as e:  # a material rule's bug costs the materials, never the scene
                     print("MaxDrop: materials of %s not converted:\n%s" % (name, traceback.format_exc()), end="")
                     failed.append(("materials", "not converted (%s: %s): the scene is imported without materials"

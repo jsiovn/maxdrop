@@ -1809,6 +1809,28 @@ def check_light_note_on_failure(max_path):
     empty_scene()
 
 
+def check_asset_table_once(max_path):
+    """One import of a file with lights and materials reads the file's asset table once (the scene description and
+    the material conversion share it)."""
+    from maxdrop.reader import assets
+    empty_scene()
+    original = assets.AssetTable.from_file
+    calls = []
+
+    def counting(cf):
+        calls.append(cf)
+        return original(cf)
+
+    assets.AssetTable.from_file = counting
+    try:
+        result = bpy.ops.import_scene.maxdrop(filepath=max_path)
+    finally:
+        assets.AssetTable.from_file = original
+    check("asset table: read once per import", result == {'FINISHED'} and len(calls) == 1,
+          "%s, %d reads" % (result, len(calls)))
+    empty_scene()
+
+
 def check_builder_wiring(ma, mb, builder, cm, tx, srgb, data, lost, gamma):
     """The links and values of the hand-made IRs' nodes, against numbers worked out by hand."""
     pa, pb = _principled(ma), _principled(mb)
@@ -2127,6 +2149,8 @@ def main():
                                  ("conversion failure", lambda: check_conversion_failure(
                                      os.path.join(ROOT, "tests", "fixtures", "vray_maps.max"))),
                                  ("light note on failure", lambda: check_light_note_on_failure(
+                                     os.path.join(ROOT, "tests", "fixtures", "vray_lights.max"))),
+                                 ("asset table once", lambda: check_asset_table_once(
                                      os.path.join(ROOT, "tests", "fixtures", "vray_lights.max")))):
             try:
                 run_check()
