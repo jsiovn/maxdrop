@@ -114,10 +114,15 @@ Pass: one line `## [<version>] - <date>`.
 
 ```powershell
 python -I -m unittest discover tests
+python -I tools/lint.py
 ```
 
 Pass: exit 0, last line `OK` or `OK (skipped=N)`. A skip is a real-tool case whose tool this machine lacks
-(the test prints why); a skip that is new for the change is reported.
+(the test prints why); a skip that is new for the change is reported. Then ruff, the check CI's Ruff step runs:
+exit 0 and `All checks passed!`. The version is `required-version` in `pyproject.toml`; `tools/lint.py` uses
+`ruff` on PATH at that version, else `uvx --offline ruff@<version>`. Exit 2 = no ruff of that version here: fetch
+it once (`uvx ruff@<version> --version`, network) and rerun, or report the lint as skipped. Exit 1 = findings: fix
+them, never commit past them.
 
 ## 2. Build
 

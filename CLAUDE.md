@@ -10,6 +10,7 @@ No package manager. Build = Blender's extension CLI; tests = plain Python for th
 
 ```powershell
 python -I -m unittest discover tests                  # tools/, the landing page, the license files: no Blender
+python -I tools/lint.py                               # ruff at pyproject's required-version (CI's); exit 2 = none found
 powershell -ExecutionPolicy Bypass -File build.ps1    # dist\ (git-ignored): zip, index.json, index.html
 ```
 

@@ -27,13 +27,16 @@ powershell -ExecutionPolicy Bypass -File build.ps1    # dist\: the zip, index.js
 The plain tests include a guard: `maxdrop/reader`, `maxdrop/convert` and `maxdrop/intake` must run without
 Blender, so no module there may import `bpy`, `mathutils`, another module of the add-on outside these three
 packages, or the add-on by its absolute name (`import maxdrop...` runs `maxdrop/__init__.py`, and inside Blender
-the add-on has another name): import within them relatively. The code is linted with [ruff](https://docs.astral.sh/ruff/), configured in `pyproject.toml`. Install it in a virtual environment of its own, at the
-version the `test` workflow pins:
+the add-on has another name): import within them relatively. The code is linted with [ruff](https://docs.astral.sh/ruff/), configured in `pyproject.toml`, whose `required-version` is the one ruff version used, by
+the `test` workflow too. `python -I tools/lint.py` runs `ruff check .` with that version: `ruff` on PATH when it
+is that version, otherwise uv's cached copy (`uvx ruff@<version> --version` fetches it once). It exits 2 and
+says how to get ruff when it finds neither. Without uv, install it in a virtual environment of its own:
 
 ```powershell
 python -m venv $env:TEMP\maxdrop-ruff
-& $env:TEMP\maxdrop-ruff\Scripts\python.exe -m pip install ruff==0.17.5
-& $env:TEMP\maxdrop-ruff\Scripts\ruff.exe check .
+& $env:TEMP\maxdrop-ruff\Scripts\python.exe -m pip install "ruff==<the required-version>"
+& $env:TEMP\maxdrop-ruff\Scripts\Activate.ps1
+python -I tools/lint.py
 ```
 
 Run the Blender tests headless with a profile of their own, so your preferences are never touched:
