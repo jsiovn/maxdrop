@@ -1438,6 +1438,34 @@ def check_run_guards(textured):
           waited and "still reading" in busy and ops._busy() == "", busy)
 
 
+def check_worker_errors():
+    """ops._in_thread() hands the worker's outcome to the main thread: its value; an Exception unchanged; a SystemExit
+    as a RuntimeError caused by it, so that the modal runner's except Exception still tears the run down."""
+    from maxdrop import ops
+
+    def outcome(fn):
+        try:
+            return ops._drain(ops._in_thread(fn))
+        except BaseException as e:  # a SystemExit let through must fail this check, not end Blender
+            return e
+
+    def exits():
+        raise SystemExit(3)
+
+    def fails():
+        raise ValueError("maxdrop test: read fails")
+
+    got = outcome(lambda: 42)
+    check("worker errors: a worker's value is returned", got == 42, repr(got))
+    got = outcome(fails)
+    check("worker errors: a worker's ValueError is raised unchanged",
+          type(got) is ValueError and str(got) == "maxdrop test: read fails", repr(got))
+    got = outcome(exits)
+    check("worker errors: a worker's SystemExit is raised as a RuntimeError caused by it",
+          type(got) is RuntimeError and type(got.__cause__) is SystemExit and got.__cause__.code == 3,
+          "%r from %r" % (got, getattr(got, "__cause__", None)))
+
+
 def check_pack_cancel(fixture):
     """The threaded unpack of a .zip pack as the run's first step: closed while it unpacks, no staging folder and no
     pack folder are left; closed during the build after it, the finished pack folder stays and nothing in Blender;
@@ -2590,6 +2618,7 @@ def main():
                                  ("found textures", check_found_textures), ("builder", check_builder),
                                  ("builder debt", check_builder_debt), ("linear fallback", check_linear_fallback),
                                  ("image reuse", check_image_reuse), ("double import", check_double_import),
+                                 ("worker errors", check_worker_errors),
                                  ("conversion failure", lambda: check_conversion_failure(
                                      os.path.join(ROOT, "tests", "fixtures", "vray_maps.max"))),
                                  ("light note on failure", lambda: check_light_note_on_failure(
