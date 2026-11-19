@@ -340,14 +340,14 @@ def _disjoint(masks):
 
 
 def valid_faces(loop_vertices, loop_starts, loop_totals):
-    """bool (F,): False for a face Blender cannot hold, one that uses a vertex twice or has the vertex set of an
-    earlier face (3ds Max keeps both: degenerate and doubled triangles occur in files)."""
+    """bool (F,): False for a face Blender cannot hold, one of fewer than three vertices, one that uses a vertex twice
+    or has the vertex set of an earlier face (3ds Max keeps both: degenerate and doubled triangles occur in files)."""
     import numpy
     lv = numpy.asarray(loop_vertices, dtype=numpy.int64)
     starts = numpy.asarray(loop_starts, dtype=numpy.int64)
     totals = numpy.asarray(loop_totals, dtype=numpy.int64)
-    keep = numpy.ones(len(starts), dtype=bool)
-    for total in numpy.unique(totals):  # one numpy pass per face size
+    keep = totals >= 3
+    for total in numpy.unique(totals[keep]):  # one numpy pass per face size
         faces = numpy.flatnonzero(totals == total)
         rows = numpy.sort(lv[starts[faces][:, None] + numpy.arange(total)], axis=1)
         repeated = (numpy.diff(rows, axis=1) == 0).any(axis=1)

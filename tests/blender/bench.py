@@ -24,7 +24,6 @@ scene's biggest mesh. The built mesh is also checked: its counts and exactly the
 import importlib.util
 import os
 import sys
-import time
 import traceback
 
 import bpy
@@ -45,18 +44,6 @@ def _synthetic():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
-
-
-def _best(make, runs=RUNS, after=None):
-    """The shortest of runs timed calls of make(), in seconds; after(result) runs outside the timing."""
-    times = []
-    for _ in range(runs):
-        start = time.perf_counter()
-        result = make()
-        times.append(time.perf_counter() - start)
-        if after is not None:
-            after(result)
-    return min(times)
 
 
 def _bare_mesh(md):
@@ -110,14 +97,13 @@ def run(check):
 
     md = read()
     faces = len(md.loop_starts)
-    _ratio(check, "read %d faces" % faces, _best(read), _best(lambda: sp.reference_loop(faces)), READ_LIMIT)
+    _ratio(check, "read %d faces" % faces, *sp.timed(read, lambda: sp.reference_loop(faces), RUNS), READ_LIMIT)
     desc = describe(md)
-    _ratio(check, "describe %d faces" % faces, _best(lambda: describe(md)),
-           _best(sp.numpy_reference(md.loop_vertices), runs=REFERENCE_RUNS), DESCRIBE_LIMIT)
+    _ratio(check, "describe %d faces" % faces, *sp.timed(lambda: describe(md), sp.numpy_reference(md.loop_vertices),
+                                                          RUNS, REFERENCE_RUNS), DESCRIBE_LIMIT)
     md = None  # the reader's arrays are not needed for the build
     _ratio(check, "build %d faces" % len(desc.loop_starts),
-           _best(lambda: build_objects.make_mesh(desc), after=_remove),
-           _best(lambda: _bare_mesh(desc), after=_remove), BUILD_LIMIT)
+           *sp.timed(lambda: build_objects.make_mesh(desc), lambda: _bare_mesh(desc), RUNS, after=_remove), BUILD_LIMIT)
     mesh, dropped = build_objects.make_mesh(desc)
     try:
         check("bench mesh: %d vertices, %d faces" % (len(desc.positions), len(desc.loop_starts)),

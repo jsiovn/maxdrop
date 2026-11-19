@@ -19,7 +19,6 @@ import importlib
 import importlib.util
 import os
 import sys
-import time
 import tracemalloc
 import types
 import unittest
@@ -55,16 +54,6 @@ def _synthetic():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
-
-
-def best(fn, runs=RUNS):
-    """The shortest of runs timed calls of fn, in seconds."""
-    times = []
-    for _ in range(runs):
-        start = time.perf_counter()
-        fn()
-        times.append(time.perf_counter() - start)
-    return min(times)
 
 
 def read(data):
@@ -110,7 +99,7 @@ class Budget(unittest.TestCase):
         cls.md = read(cls.data)
 
     def ratio(self, what, workload, reference, limit, reference_runs=RUNS):
-        work, ref = best(workload), best(reference, reference_runs)
+        work, ref = self.sp.timed(workload, reference, RUNS, reference_runs)
         ratio = work / ref
         print("%s: %.3f s / reference %.3f s = %.2f (limit %.1f)" % (what, work, ref, ratio, limit))
         self.assertLess(ratio, limit, "%s takes %.2f times its reference (%.3f s / %.3f s), the limit is %.1f"

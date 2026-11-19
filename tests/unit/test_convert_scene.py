@@ -329,6 +329,16 @@ class InvalidFaces(unittest.TestCase):
         keep = conv.valid_faces(lv, [0, 3, 6, 9, 13], [3, 3, 3, 4, 4])
         self.assertEqual(keep.tolist(), [True, False, False, True, False])
 
+    def test_the_earliest_of_doubled_faces_is_kept(self):
+        # 0: quad; 1: triangle; 2: face 0 turned; 3: face 1 reversed; 4: face 0 again, reversed
+        lv = [4, 5, 6, 7, 0, 1, 2, 5, 6, 7, 4, 2, 1, 0, 7, 6, 5, 4]
+        keep = conv.valid_faces(lv, [0, 4, 7, 11, 14], [4, 3, 4, 3, 4])
+        self.assertEqual(keep.tolist(), [True, True, False, False, False])
+
+    def test_faces_of_fewer_than_three_vertices_are_refused(self):
+        keep = conv.valid_faces([0, 1, 2, 3, 3, 4], [0, 3, 3, 4], [3, 0, 1, 2])
+        self.assertEqual(keep.tolist(), [True, False, False, False])
+
     def test_dropped_faces_keep_uvs_materials_and_groups_aligned(self):
         lv = numpy.asarray([0, 1, 2, 2, 2, 3, 1, 3, 2], dtype=numpy.int32)
         uv = geometry.MapChannel(1, numpy.arange(27, dtype=numpy.float32).reshape(9, 3),

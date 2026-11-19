@@ -378,7 +378,8 @@ groups, material IDs, a map channel, doubled and degenerate faces; numpy, no 3ds
   faces read, described and built (`build.objects.make_mesh`), and the built mesh's counts and sharp edges checked.
 
 A time limit in seconds would pass on a fast machine what fails on a slow one. Each time is the best of a few runs
-divided by the best time of a reference workload in the same process: plain Python record walking for the reader,
+divided by the best time of a reference workload in the same process, their runs alternating so that a slow moment
+of a shared machine hits both: plain Python record walking for the reader,
 numpy array work for the description (no sorting and no allocation in it: those differ between Blender builds and
 numpy versions), a mesh made with Blender's own calls alone for the build. Memory is the peak of the Python
 allocations (`tracemalloc`, numpy's included) as a multiple of the object's size, which does not depend on the
@@ -392,8 +393,9 @@ machine.
 | Read + describe peak / object size (300,360 faces) | 5.07 on every Python | 5.3 |
 
 The limits are about twice the largest ratio measured, so that code three times as slow fails: a scratch copy that
-runs the reader, the description or `make_mesh` three times over fails each test (read 6.9 to 8.3, describe 12.3 to
-13.4, build 6.9 to 7.9). The memory limit leaves 5 %: one more 64-bit array per loop alive at the peak makes it 5.46 and
+runs the reader, the description or `make_mesh` three times over fails each test (read 6.9 to 8.4, describe 11.8 to
+13.4, build 6.8 to 7.9). The memory limit leaves 5 % (not the 1.5 times first planned: it is exact, the same on every Python
+and numpy measured, so a margin buys nothing): one more 64-bit array per loop alive at the peak makes it 5.46 and
 fails, and the code before the changes above gave 7.42 to 7.80. The ratios were measured on Windows; CI runs the tests
 on Linux and its log prints each ratio. A test past its limit is a regression to find, not a limit to raise.
 

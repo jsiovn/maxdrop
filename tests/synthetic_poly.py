@@ -12,16 +12,18 @@ A grid of quads, every third one split into two triangles, written the way 3ds M
 (reader/geometry.py): every face with its flags, material ID and smoothing groups, the quads with their diagonals.
 Smoothing groups change every few rows (sharp edges between the bands, a flat row now and then), material IDs cycle
 over four, one map channel with a map vertex per vertex. Every DOUBLED-th face comes again at the end with its
-vertices turned, and every DEGENERATE-th triangle again with a vertex used twice: faces convert.scene.valid_faces
-leaves out. The records are laid out with numpy, so a million faces take a fraction of a second; the same arguments
+vertices turned, and the first two vertices of every DEGENERATE-th face as a triangle (a, a, b): faces
+convert.scene.valid_faces leaves out. The records are laid out with numpy, so a million faces take a fraction of a second; the same arguments
 give the same bytes.
 
-reference_loop() and numpy_reference() are the reference workloads the benchmarks divide by: plain Python record
+timed(work, reference) is how the benchmarks time a ratio. reference_loop() and numpy_reference() are the reference
+workloads they divide by: plain Python record
 walking of the kind reader.geometry._poly_faces does, and numpy array work of the kind convert.scene does (on the
 mesh's own loop vertices), timed on the same machine in the same process. Importing this module needs numpy.
 """
 import array
 import struct
+import time
 
 import numpy
 
@@ -68,8 +70,8 @@ def faces_of(n):
     face_rows = numpy.concatenate((r[~split], r[split], r[split]))
     face_cols = numpy.concatenate((c[~split], c[split], c[split]))
     order = numpy.lexsort((face_cols, face_rows))
-    deg = numpy.concatenate((numpy.full(len(whole), 4), numpy.full(len(tris), 3)))[order]
     src_deg = numpy.concatenate((numpy.full(len(whole), 4), numpy.full(len(tris), 3)))
+    deg = src_deg[order]
     src_starts = numpy.concatenate((numpy.zeros(1, numpy.int64), numpy.cumsum(src_deg)[:-1]))
     src_loops = numpy.concatenate((whole.ravel(), tris.ravel()))
     lv = src_loops[numpy.repeat(src_starts[order], deg) + _within(deg)]
@@ -81,7 +83,7 @@ def faces_of(n):
     first = numpy.concatenate((numpy.zeros(1, numpy.int64), numpy.cumsum(deg)[:-1]))
     again = numpy.arange(0, len(deg), DOUBLED)
     turned = numpy.concatenate([numpy.roll(lv[first[f]:first[f] + deg[f]], 1) for f in again])
-    # degenerate triangles: a vertex used twice
+    # degenerate triangles (a, a, b) from the first two vertices of a face
     bad = numpy.arange(0, len(deg), DEGENERATE)
     broken = numpy.stack((lv[first[bad]], lv[first[bad]], lv[first[bad] + 1]), axis=1).ravel()
     deg = numpy.concatenate((deg, deg[again], numpy.full(len(bad), 3)))
@@ -190,3 +192,21 @@ def numpy_reference(values):
             total += int(numpy.count_nonzero(same)) + int(numpy.cumsum(lo, out=hi)[-1])
         return total
     return run
+
+
+def timed(work, reference, runs=5, reference_runs=None, after=None):
+    """(best time of work(), best time of reference()) in seconds, over runs (reference_runs) calls each. The calls
+    alternate, so a slow moment of a shared machine hits both rather than skewing their ratio; after(result) runs
+    outside the timing (to free what a call made)."""
+    reference_runs = runs if reference_runs is None else reference_runs
+    best = [float("inf"), float("inf")]
+    for i in range(max(runs, reference_runs)):
+        for k, fn, n in ((0, work, runs), (1, reference, reference_runs)):
+            if i >= n:
+                continue
+            start = time.perf_counter()
+            result = fn()
+            best[k] = min(best[k], time.perf_counter() - start)
+            if after is not None:
+                after(result)
+    return best[0], best[1]
