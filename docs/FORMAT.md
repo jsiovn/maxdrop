@@ -3,7 +3,8 @@
 What MaxDrop's reader (`maxdrop/reader/`) relies on, written down only once a committed fixture shows it. Each fact
 names the fixture (`tests/fixtures/<name>.max`, whose 3ds Max oracle is `<name>.oracle.json`, see
 [ORACLE.md](ORACLE.md)); the tests named here keep the facts true. Every fixture was saved by 3ds Max 2020 (file
-version 22000). What only other files have shown is listed under [Open](#open), not here.
+version 22000), in its own format but saved_as_2017, saved_as_2018 and saved_as_2019 (formats 19000, 20000,
+21000). What only other files have shown is listed under [Open](#open), not here.
 
 ## Chunks
 
@@ -25,7 +26,8 @@ version 22000). What only other files have shown is listed under [Open](#open), 
 
 ## Scene stream: the object index
 
-- The `Scene` stream is one top-level container, id `0x2025` in every fixture. Its children are the objects of
+- The `Scene` stream is one top-level container, id `0x2025` in every fixture of the 2020 format (the others:
+  below). Its children are the objects of
   the scene: the **object index** is a child's position, the child's chunk id is its **class index** into the
   class directory. Every child id of every fixture is a valid class index (`test_classdir.py`,
   `tests/unit/test_scene.py`).

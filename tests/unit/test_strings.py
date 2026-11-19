@@ -339,9 +339,13 @@ class TestFixtures(unittest.TestCase):
         and U+4E2D, as 3ds Max reports them."""
         self.assertEqual([os.path.basename(p) for p in SAVED_AS],
                          ["saved_as_2017.max", "saved_as_2018.max", "saved_as_2019.max"])
-        for path in SAVED_AS:
+        for path, saved_as in zip(SAVED_AS, (19000, 20000, 21000)):
             o = _oracle(path)
             with self.subTest(os.path.basename(path)), cfb.CompoundFile(path) as cf:
+                # the format each file is in, as 3ds Max reports it and as its summary says
+                self.assertEqual(o["file_version"], [saved_as, 22000])
+                info = metadata.read(cf)
+                self.assertEqual((info["max_version"], info["saved_as_version"]), ("22.00", "%d.00" % (saved_as // 1000)))
                 sc = scene.Scene.from_file(cf)
                 names = [sc.node(i).name for i in sc.node_indices]
                 self.assertEqual(names, [n["name"] for n in o["nodes"]])
