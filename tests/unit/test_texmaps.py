@@ -417,8 +417,9 @@ class Synthetic(Checks):
     def test_colorspace(self):
         self.assertEqual(tx.colorspace(tx.COLOR, None), tx.SRGB)
         self.assertEqual(tx.colorspace(tx.COLOR, 2.2), tx.SRGB)
-        self.assertEqual(tx.colorspace(tx.COLOR, 1.0), tx.NON_COLOR)  # linear: the builder applies no gamma
-        self.assertEqual(tx.colorspace(tx.COLOR, 1.8), tx.NON_COLOR)  # the builder applies 1.8
+        self.assertEqual(tx.colorspace(tx.COLOR, 1.0), tx.LINEAR)  # linear: the builder applies no gamma
+        self.assertEqual(tx.colorspace(tx.COLOR, 1.8), tx.LINEAR)  # the builder applies 1.8
+        self.assertEqual(tx.LINEAR, "Linear Rec.709")  # a Blender color space name: the builder sets it
         for kind in (tx.DATA, tx.NORMAL, tx.BUMP):
             self.assertEqual(tx.colorspace(kind, None), tx.NON_COLOR)
             self.assertEqual(tx.colorspace(kind, 2.2), tx.NON_COLOR)
@@ -435,11 +436,11 @@ class Synthetic(Checks):
         for path in ("maps\\sky.EXR", "maps\\sky.hdr"):
             table = assets.AssetTable([assets.AssetEntry(G1, "Bitmap", path, "")])
             g = _tex(_bitmap(1), table=table).convert(mat.MapRef(1), tx.COLOR)
-            self.assertEqual((g.root.gamma, g.root.colorspace), (1.0, tx.NON_COLOR), path)
+            self.assertEqual((g.root.gamma, g.root.colorspace), (1.0, tx.LINEAR), path)
         table = assets.AssetTable([assets.AssetEntry(G1, "Bitmap", "maps\\sky.exr", "")])
-        for info, gamma, space in ((_info(2.2, 5), 2.2, tx.SRGB), (_info(1.8, 5), 1.8, tx.NON_COLOR),
-                                   (_info(2.2, 4), 1.0, tx.NON_COLOR),  # an override is kept; no flag: automatic
-                                   (_info(50.0, 5), 1.0, tx.NON_COLOR)):  # out of range: automatic
+        for info, gamma, space in ((_info(2.2, 5), 2.2, tx.SRGB), (_info(1.8, 5), 1.8, tx.LINEAR),
+                                   (_info(2.2, 4), 1.0, tx.LINEAR),  # an override is kept; no flag: automatic
+                                   (_info(50.0, 5), 1.0, tx.LINEAR)):  # out of range: automatic
             b, chunk_map = _placed(info=info)
             g = tx.TexmapConverter(FakeGraph(b, chunk_map=chunk_map), table).convert(mat.MapRef(1), tx.COLOR)
             self.close(g.root.gamma, gamma)
@@ -769,7 +770,7 @@ class CoronaSynthetic(Checks):
         table = assets.AssetTable([assets.AssetEntry(G1, "Bitmap", "maps\\sky.HDR", "")])
         for params in ({}, {"p125": -1.0}, {"p125": 50.0}):  # automatic: -1 or outside 0.1 to 10
             g = _tex(_cbitmap(1, **params), table=table).convert(mat.MapRef(1), tx.COLOR)
-            self.assertEqual((g.root.gamma, g.root.colorspace), (1.0, tx.NON_COLOR), params)
+            self.assertEqual((g.root.gamma, g.root.colorspace), (1.0, tx.LINEAR), params)
         g = _tex(_cbitmap(1, p125=2.2), table=table).convert(mat.MapRef(1), tx.COLOR)
         self.close(g.root.gamma, 2.2)
         self.assertEqual(g.root.colorspace, tx.SRGB, "an override is kept")
@@ -818,7 +819,7 @@ class Guards(Checks):
         self.assertTrue(any("real-world" in r for r in g.issues))
 
     def test_gamma(self):
-        cases = ((_info(1.8, 5), 1.8, tx.NON_COLOR), (_info(2.2, 5), 2.2, tx.SRGB), (_info(1.0, 20), None, tx.SRGB),
+        cases = ((_info(1.8, 5), 1.8, tx.LINEAR), (_info(2.2, 5), 2.2, tx.SRGB), (_info(1.0, 20), None, tx.SRGB),
                  (_info(float("nan"), 5), None, tx.SRGB), (_info(50.0, 5), None, tx.SRGB), (b"\x05" * 10, None, tx.SRGB))
         for info, gamma, space in cases:
             with self.subTest(info=info.hex()):
@@ -932,9 +933,9 @@ class VRayTexmaps(Checks):
 
     def test_transfer_functions(self):
         t = self.f.irs["FixtureVBPlace"].textures
-        self.image(t["specular"].root, "vtx_linear.png", tx.NON_COLOR)  # None: linear
+        self.image(t["specular"].root, "vtx_linear.png", tx.LINEAR)  # None: linear
         self.close(t["specular"].root.gamma, 1.0)
-        self.image(t["transmission"].root, "vtx_invgamma.png", tx.NON_COLOR)  # inverse gamma 2: pixel ^ 0.5
+        self.image(t["transmission"].root, "vtx_invgamma.png", tx.LINEAR)  # inverse gamma 2: pixel ^ 0.5
         self.close(t["transmission"].root.gamma, 0.5)
         self.assertIsInstance(t["roughness"].root, tx.Invert)
         self.image(t["roughness"].root.input, "vtx_gloss.png", tx.NON_COLOR)  # sRGB, but a data input
@@ -1036,7 +1037,7 @@ class VRayBitmapSynthetic(Checks):
         self.assertIsNone(tex.convert(mat.MapRef(1), tx.COLOR))
 
     def test_transfer_functions(self):
-        for params, gamma, space in (({"p25": 0}, 1.0, tx.NON_COLOR), ({"p25": 1, "p8": 2.0}, 0.5, tx.NON_COLOR),
+        for params, gamma, space in (({"p25": 0}, 1.0, tx.LINEAR), ({"p25": 1, "p8": 2.0}, 0.5, tx.LINEAR),
                                      ({"p25": 1, "p8": 0.4545}, 2.2002, tx.SRGB), ({"p25": 2}, None, tx.SRGB),
                                      ({"p25": 3}, None, tx.SRGB), ({"p25": 4}, None, tx.SRGB)):
             _t, g = _vb(**params)
@@ -1055,7 +1056,7 @@ class VRayBitmapSynthetic(Checks):
                               ({"p25": 1, "p8": 2.0}, 0.5)):
             g = _tex(_vbitmap(1, **params), table=table).convert(mat.MapRef(1), tx.COLOR)
             self.assertEqual(g.root.gamma, gamma, params)
-            self.assertEqual(g.root.colorspace, tx.SRGB if gamma is None else tx.NON_COLOR, params)
+            self.assertEqual(g.root.colorspace, tx.SRGB if gamma is None else tx.LINEAR, params)
 
     def test_unusable_transfer_function(self):
         for params in ({"p25": 1, "p8": 0.0}, {"p25": 1, "p8": float("nan")}, {"p25": 9}, {"p25": "x"}):

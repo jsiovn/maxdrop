@@ -1270,8 +1270,10 @@ def check_found_textures():
     """vray_maps, texmap_rules, corona_maps, corona_light and vray_texmaps copied beside a PNG for each texture name:
     every Image Texture node gets its file, in the color space the IR asks for, one datablock per file and color
     space; the report lists no texture."""
+    from maxdrop.convert import texmaps as tx
     fixtures = os.path.join(ROOT, "tests", "fixtures")
     scratch = tempfile.mkdtemp(prefix="maxdrop-textures-")
+    linear = []  # the images the IR puts in Linear Rec.709, over every fixture
     try:
         for name in ("vray_maps", "texmap_rules", "corona_maps", "corona_light", "vray_texmaps"):
             empty_scene()
@@ -1286,6 +1288,7 @@ def check_found_textures():
             for ir in irs.values():
                 for img in _images_of(ir):
                     wants.setdefault(img.name, set()).add(img.colorspace)
+            linear += [file for file, spaces in wants.items() if tx.LINEAR in spaces]
             os.makedirs(os.path.join(scratch, "maps"), exist_ok=True)
             for file in wants:  # in the maps folder beside the scene: the lookup's second rule
                 _write_png(os.path.join(scratch, "maps", file))
@@ -1343,6 +1346,8 @@ def check_found_textures():
                 kinds = {n.bl_idname for n in keep.node_tree.nodes}
                 check("texmap_rules: Mix with a mask, Multiply, Color Correction as nodes",
                       {"ShaderNodeMix", "ShaderNodeHueSaturation", "ShaderNodeGamma"} <= kinds, str(sorted(kinds)))
+        check("found textures: a linear color image (VRayBitmap transfer function None) imported in Linear Rec.709",
+              "vtx_linear.png" in linear, str(linear))
     finally:
         empty_scene()
         for img in list(bpy.data.images):
@@ -1374,7 +1379,7 @@ def check_builder():
                                              tile=(False, False), mirror=(True, True)),
                           crop=tx.Crop(0.1, 0.2, 0.5, 0.5, place=True),
                           output=tx.TexOutput(invert=True, amount=0.5, level=2.0, offset=0.1))
-        gamma = tx.Image(4, "shared.png", "shared.png", "", found, colorspace=tx.NON_COLOR, gamma=1.8)
+        gamma = tx.Image(4, "shared.png", "shared.png", "", found, colorspace=tx.LINEAR, gamma=1.8)
 
         def graph(root, kind):
             return tx.TextureGraphIR(root, kind)
@@ -1399,8 +1404,9 @@ def check_builder():
         check("builder: two materials named Clash both kept", sorted([ma.name, mb.name]) == ["Clash", "Clash.001"],
               "%s %s" % (ma.name, mb.name))
         shared = sorted(i.colorspace_settings.name for i in bpy.data.images)
-        check("builder: shared.png in sRGB and Non-Color is two images, reused by every node",
-              shared == ["Non-Color", "sRGB"] and len(builder.images) == 2, str(shared))
+        check("builder: shared.png in sRGB, Non-Color (data) and Linear Rec.709 (a color input's gamma override) is "
+              "three images, reused by every node",
+              shared == ["Linear Rec.709", "Non-Color", "sRGB"] and len(builder.images) == 3, str(shared))
         lost_nodes = [n for n in mb.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage" and n.label == "nothere.png"]
         issues = builder.issues()
         check("builder: a file not found keeps its node, without an image, and is no builder issue (the texture "
@@ -1441,6 +1447,52 @@ def check_builder():
         check("builder: the viewport color is the base color", close(list(ma.diffuse_color)[:3], [0.5] * 3, 1e-6))
         check_builder_wiring(ma, mb, builder, cm, tx, srgb, data, lost, gamma)
     finally:
+        empty_scene()
+        for img in list(bpy.data.images):
+            bpy.data.images.remove(img)
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def check_linear_fallback():
+    """A color management config without Linear Rec.709 (a custom OCIO config; the stock one of every supported
+    version has it): a linear color image falls back to Non-Color, shares the datablock of the same file as data,
+    and keeps its gamma override's Gamma node (bead maxdrop-em3.62)."""
+    from maxdrop.build import materials as build_materials
+    from maxdrop.convert import materials as cm
+    from maxdrop.convert import texmaps as tx
+    from maxdrop.convert import textures as ct
+    empty_scene()
+    for img in list(bpy.data.images):
+        bpy.data.images.remove(img)
+    scratch = tempfile.mkdtemp(prefix="maxdrop-linear-")
+    stock = build_materials._input_colorspaces
+    try:
+        check("linear fallback: the stock config has Linear Rec.709", tx.LINEAR in stock())
+        png = os.path.join(scratch, "linear.png")
+        _write_png(png)
+        found = ct.Found(png, ct.SCENE)
+        build_materials._input_colorspaces = lambda: frozenset((tx.SRGB, tx.NON_COLOR))
+        ir = cm.MaterialIR(40, "LinearFallback", "test", base_color=cm.Input((0.5, 0.5, 0.5), cm.MapRef(1)),
+                           roughness=cm.Input(0.5, cm.MapRef(2)))
+        ir.textures = {
+            "base_color": tx.TextureGraphIR(tx.Image(1, "linear.png", "linear.png", "", found, colorspace=tx.LINEAR,
+                                                     gamma=1.8), tx.COLOR),
+            "roughness": tx.TextureGraphIR(tx.Image(2, "linear.png", "linear.png", "", found,
+                                                    colorspace=tx.NON_COLOR), tx.DATA)}
+        builder = build_materials.MaterialBuilder()
+        m = builder.make(ir)
+        p = _principled(m)
+        gam = _from(p.inputs["Base Color"])
+        rough = _from(p.inputs["Roughness"])
+        tex = _from(gam.inputs["Color"]) if gam is not None and gam.bl_idname == "ShaderNodeGamma" else None
+        check("linear fallback: Non-Color, one datablock with the data image, the Gamma node kept",
+              tex is not None and abs(gam.inputs["Gamma"].default_value - 1.8) < 1e-6
+              and tex.image is not None and tex.image.colorspace_settings.name == tx.NON_COLOR
+              and rough.image is not None and tex.image.as_pointer() == rough.image.as_pointer()
+              and len(bpy.data.images) == 1,
+              "%s %s" % (getattr(gam, "bl_idname", None), [i.colorspace_settings.name for i in bpy.data.images]))
+    finally:
+        build_materials._input_colorspaces = stock
         empty_scene()
         for img in list(bpy.data.images):
             bpy.data.images.remove(img)
@@ -1866,7 +1918,8 @@ def check_builder_wiring(ma, mb, builder, cm, tx, srgb, data, lost, gamma):
     check("wiring: Composite: the top layer over the bottom by its alpha times 0.5, its gamma override 1.8 applied",
           comp.bl_idname == "ShaderNodeMix" and factor.bl_idname == "ShaderNodeMath" and factor.operation == 'MULTIPLY'
           and abs(factor.inputs[1].default_value - 0.5) < 1e-6 and factor.inputs[0].links[0].from_socket.name == "Alpha"
-          and top.bl_idname == "ShaderNodeGamma" and abs(top.inputs["Gamma"].default_value - 1.8) < 1e-6)
+          and top.bl_idname == "ShaderNodeGamma" and abs(top.inputs["Gamma"].default_value - 1.8) < 1e-6
+          and _from(top.inputs["Color"]).image.colorspace_settings.name == "Linear Rec.709")
     amount = _from(_input(comp, "A_Color"))
     level = _from(amount.inputs[0])
     out_inv = _from(level.inputs[0])
@@ -2144,7 +2197,7 @@ def main():
             check("modifiers ignored: no exception", False)
         for label, run_check in (("material slots", lambda: check_material_slots(modules)),
                                  ("found textures", check_found_textures), ("builder", check_builder),
-                                 ("builder debt", check_builder_debt),
+                                 ("builder debt", check_builder_debt), ("linear fallback", check_linear_fallback),
                                  ("image reuse", check_image_reuse), ("double import", check_double_import),
                                  ("conversion failure", lambda: check_conversion_failure(
                                      os.path.join(ROOT, "tests", "fixtures", "vray_maps.max"))),

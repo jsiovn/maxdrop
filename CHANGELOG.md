@@ -17,6 +17,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   or value), but no longer silently.
 - Report: a VRaySky as the environment map is named under "environment" instead of "object N" (the number was the
   map's, not an object's).
+- Materials: a color map read as linear (an EXR or HDR file under automatic gamma, a VRayBitmap transfer function
+  None, a gamma override other than 2.2) is loaded in the Linear Rec.709 color space instead of Non-Color, so its
+  colors keep their primaries in a scene whose working space is not Linear Rec.709 (Non-Color where Blender's color
+  management config lacks it). Data maps stay Non-Color.
 
 ### Fixed
 

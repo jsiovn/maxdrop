@@ -178,6 +178,7 @@ class MaterialBuilder:
     def __init__(self):
         self.images = {}  # (normalized path, color space) -> Image or None (not loaded)
         self._existing = None  # the same key -> an Image that was in the file before this builder: _existing_images
+        self._linear = None  # the color space tx.LINEAR resolves to on this Blender: colorspace
         self._issues = []
         self._seen = set()
         self.classes = collections.Counter()
@@ -210,11 +211,21 @@ class MaterialBuilder:
             self.classes[ir.source] += 1
         return material
 
+    def colorspace(self, name):
+        """The color space an image the IR puts in name is loaded in: tx.LINEAR where this Blender's color
+        management config has it (the stock one of every supported version does), Non-Color otherwise, as before."""
+        if name != tx.LINEAR:
+            return name
+        if self._linear is None:
+            self._linear = tx.LINEAR if tx.LINEAR in _input_colorspaces() else tx.NON_COLOR
+        return self._linear
+
     def image(self, img, label):
         """The Image of a texmaps.Image (None when its file was not found or does not load)."""
         if img.found is None:
             return None
-        key = _key(img.found.path, img.colorspace)
+        space = self.colorspace(img.colorspace)
+        key = _key(img.found.path, space)
         if key not in self.images:
             if not image_has_data(img.found.path):
                 self.issue(label, "texture not loaded: %s (no image data)" % img.name)
@@ -230,7 +241,7 @@ class MaterialBuilder:
                 self.issue(label, "texture not loaded: %s (%s)" % (img.name, e))
                 image = None
             if image is not None:
-                image.colorspace_settings.name = img.colorspace
+                image.colorspace_settings.name = space
             self.images[key] = image
         return self.images[key]
 
@@ -259,6 +270,12 @@ class MaterialBuilder:
 # otherwise fails _reusable as loaded and is loaded anew (a missed reuse); only one whose alpha mode was set by hand
 # to this list's value would still be reused
 _PREMUL_ON_LOAD = (".exr", ".cin", ".dpx", ".hdr")
+
+
+def _input_colorspaces():
+    """The names of the image color spaces of the running Blender's color management (OCIO) config."""
+    prop = bpy.types.ColorManagedInputColorspaceSettings.bl_rna.properties["name"]
+    return frozenset(item.identifier for item in prop.enum_items)
 
 
 def _load_alpha_mode(path):
@@ -522,10 +539,11 @@ class _Tree:
         if tex.image is None:
             return MISSING
         out = tex.outputs["Alpha" if img.alpha else "Color"]
-        # texmaps made a color input's image Non-Color for its gamma override: decode it with that gamma. A mask is
-        # built in FLOAT, so it never gets it, nor does a data input.
+        # texmaps made a color input's image Linear Rec.709 (Non-Color where Blender lacks it) for its gamma override:
+        # decode it with that gamma. A mask is built in FLOAT, so it never gets it, nor does a data input. The power
+        # comes after Blender's primaries conversion: exact in the default working space (Linear Rec.709) and on greys.
         if space == COLOR and not img.alpha and img.gamma is not None and abs(img.gamma - 1.0) > _EPS \
-                and img.colorspace == tx.NON_COLOR == tx.colorspace(tx.COLOR, img.gamma):
+                and img.colorspace == tx.LINEAR == tx.colorspace(tx.COLOR, img.gamma):
             g = self.node("ShaderNodeGamma", depth)
             self.links.new(out, _in(g, "Color"))
             _in(g, "Gamma").default_value = img.gamma

@@ -15,8 +15,9 @@ kind says what the input is: COLOR (base color, specular and transmission, which
 reflection and refraction colors, emission), DATA (roughness, metallic, opacity), NORMAL or BUMP. It sets the color
 space of every image below: sRGB for COLOR, Non-Color for the others (a Mix mask is always Non-Color). A Bitmap's
 gamma override (None: automatic, the default; 1.0 for an EXR or HDR file) is kept on its Image: on a color input, an
-override of 2.2 is sRGB, any other is Non-Color and the builder applies the override as a gamma (1.0: none); on the
-other inputs an image is data and the override is not applied. Constants are linear, a swatch made so by the scene's
+override of 2.2 is sRGB, any other is Linear Rec.709 (sRGB primaries: Blender converts them into the scene's working
+space; the builder falls back to Non-Color where the color space is missing) and the builder applies the override as
+a gamma (1.0: none); on the other inputs an image is data and the override is not applied. Constants are linear, a swatch made so by the scene's
 swatch rule (convert/colors.py: linear with the gamma on, the sRGB curve with it off): in a COLOR graph always
 linear RGB (also when the input itself is a float, as specular and transmission are: the builder takes the mean of
 the graph's color there, the measure materials.py uses), elsewhere a float, the mean of the linear color.
@@ -101,7 +102,7 @@ from .params import finite as _finite
 ChunkError = chunks.ChunkError
 
 COLOR, DATA, NORMAL, BUMP = "color", "data", "normal", "bump"
-SRGB, NON_COLOR = "sRGB", "Non-Color"
+SRGB, NON_COLOR, LINEAR = "sRGB", "Non-Color", "Linear Rec.709"  # Blender color space names
 EXPLICIT, OBJECT_XYZ, VERTEX_COLOR, WORLD_XYZ = (  # Placement coordinate source
     reader_materials.UV_EXPLICIT, reader_materials.UV_OBJECT_XYZ, reader_materials.UV_VERTEX_COLOR,
     reader_materials.UV_WORLD_XYZ)
@@ -416,7 +417,7 @@ def colorspace(kind, gamma):
         return NON_COLOR
     if gamma is None or abs(gamma - SRGB_GAMMA) <= GAMMA_TOLERANCE:
         return SRGB
-    return NON_COLOR
+    return LINEAR
 
 
 def _auto_gamma(gamma, name):
