@@ -112,6 +112,7 @@ BAD_SIZE = "the render size %s is out of Blender's range: Blender's is kept"
 BAD_ASPECT = "pixel aspect %r is out of Blender's range: Blender's is kept"
 NO_VIEW = "no saved view: the first camera, %s, is the scene camera"
 DAMAGED_VIEWS = "the saved views cannot be read (%s): the first camera, %s, is the scene camera"
+BAD_VIEW = "the saved view of viewport %d cannot be read: the first camera, %s, is the scene camera"
 NOT_A_CAMERA = "the first camera: the view 3ds Max renders (viewport %d) looks through no camera"  # a note
 
 
@@ -401,8 +402,8 @@ def render_camera(settings, views, cameras, names=None):
     """(node index of the scene camera, issue, note): the camera the locked render view, else the active viewport
     looks through when it is among cameras (node indices of the camera nodes built, in walk order), with neither;
     else the first of cameras with a note when the view was read (it looks through no built camera) or an issue when
-    it was not (no saved views, damaged ones, no view index in range). (None, None, None) without cameras. names:
-    {node index: name} for the issue."""
+    it was not (no saved views, damaged ones, no view index in range, its viewport record unreadable). (None, None,
+    None) without cameras. names: {node index: name} for the issue."""
     if not cameras:
         return None, None, None
     first = cameras[0]
@@ -414,6 +415,8 @@ def render_camera(settings, views, cameras, names=None):
     if views is None or view is None or not 0 <= view < len(views.viewports):
         return first, NO_VIEW % label, None
     kind, node = views.viewports[view]
+    if kind is None:  # its record is too short to read
+        return first, BAD_VIEW % (view + 1, label), None
     if kind == CAMERA_VIEW and node in cameras:
         return node, None, None
     return first, None, NOT_A_CAMERA % (view + 1)

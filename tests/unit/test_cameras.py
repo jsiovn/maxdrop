@@ -272,6 +272,9 @@ class Malformed(unittest.TestCase):
         self.assertEqual(C.render_camera(settings._replace(view=1), damaged, [5, 7], names),
                          (5, C.DAMAGED_VIEWS % ("bad chunk", "First"), None))
         self.assertIsNone(views.damaged)
+        # the view's own record cannot be read (views_of: (None, None)): an issue, not a note
+        self.assertEqual(C.render_camera(settings, views._replace(viewports=[(None, None)]), [5], names),
+                         (5, C.BAD_VIEW % (1, "First"), None))
 
     def test_views_of_layout_tabs_and_of_a_flat_layout(self):
         import struct

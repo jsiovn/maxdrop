@@ -604,8 +604,10 @@ def check_render(name, oracle, obs, desc):
               len(cams) == 11 and len(bpy.data.cameras) == 11 and scene.camera.name == "CamTarget",
               "%d, %d" % (len(cams), len(bpy.data.cameras)))
     if name == "lookat":
-        check("lookat: FixtureCam (the first camera) is the scene camera", scene.camera is not None and
-              scene.camera.name == "FixtureCam" and desc.camera is not None)
+        check("lookat: FixtureCam (the first camera) is the scene camera, a note, no camera issue",
+              scene.camera is not None and scene.camera.name == "FixtureCam" and desc.camera is not None
+              and desc.camera_note is not None and not any(r.startswith("camera: ") for _i, r in desc.issues),
+              str(desc.camera_note))
 
 
 def check_light(label, ob, ld, o):
