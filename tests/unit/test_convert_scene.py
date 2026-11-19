@@ -512,9 +512,11 @@ def _uv_layers(fixture, mesh):
         return want[mesh]
     return want.get(mesh, []) if isinstance(want, dict) else want
 
+
 def _extruded_nodes():
     """(fixture, node name) of every oracle node tests/blender/run.py's check_extruded runs on: a shape under an
-    Extrude (an Extrude that is off leaves no eval_verts)."""
+    Extrude (an Extrude that is off leaves no eval_verts; test_counts_equal_the_oracle holds that rule to the node
+    kinds). The tables are keyed by node name: an extruded object with instances would need its mesh's name."""
     return [(_name(p), o["name"]) for p in FIXTURES for o in _oracle(p)["nodes"]
             if o["shape"] is not None and o["eval_verts"] is not None]
 
@@ -554,8 +556,9 @@ class LookAt(unittest.TestCase):
 
 
 class FixtureTables(unittest.TestCase):
-    """Every committed fixture has an entry in the per-fixture tables, here and in tests/blender/run.py, so a new
-    fixture fails the plain suite instead of only the Blender run."""
+    """Every committed fixture has an entry in the per-fixture tables, here and in tests/blender/run.py, and every
+    extruded object one in run.py's per-object extrude tables, so a new fixture or object fails the plain suite
+    instead of only the Blender run."""
 
     def _same_names(self, table, where):
         names = {_name(p) for p in FIXTURES}
