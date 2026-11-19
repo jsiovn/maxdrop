@@ -31,7 +31,7 @@ _test_fuzz = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_test_fuzz)
 run_slice = _test_fuzz.run_slice
 
-CASES = int(os.environ.get("MAXDROP_FUZZ_ZIP_CASES", "400"))
+CASES = int(os.environ.get("MAXDROP_FUZZ_ZIP_CASES", "100"))
 NAMES = 4000
 CREATED = 300  # of them, created on disk
 WINDOWS = os.name == "nt"

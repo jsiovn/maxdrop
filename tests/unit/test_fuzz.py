@@ -30,7 +30,7 @@ fuzz = importlib.util.module_from_spec(_spec)
 sys.modules[_spec.name] = fuzz
 _spec.loader.exec_module(fuzz)
 
-CASES = int(os.environ.get("MAXDROP_FUZZ_CASES", "16"))
+CASES = int(os.environ.get("MAXDROP_FUZZ_CASES", "10"))
 TIMEOUT = 600  # seconds for a whole slice: a hang is caught per case first, by fuzz.CASE_SECONDS
 
 

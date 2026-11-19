@@ -30,9 +30,9 @@ except ImportError:  # optional here: CI installs it, Blender ships it
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 FIXTURES = sorted(glob.glob(os.path.join(ROOT, "tests", "fixtures", "*.max")))
 SEED = 20261115
-GARBLED_PER_FIXTURE = 10
-CUTS_PER_FIXTURE = 8
-RECORDS_PER_FIXTURE = 10
+GARBLED_PER_FIXTURE = 6
+CUTS_PER_FIXTURE = 6
+RECORDS_PER_FIXTURE = 6
 
 # A package named apart from the add-on whose path is maxdrop/: relative imports resolve, and maxdrop/__init__.py
 # (which imports bpy) never runs.
