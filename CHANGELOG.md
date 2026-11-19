@@ -8,6 +8,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ## [Unreleased]
 
+### Added
+
+- Import: started from a window (a drop, or File > Import), an import runs in steps: the status bar shows what it
+  does (unpacking with the bytes written, reading, building with the count) and Blender stays responsive. Esc
+  cancels it and removes everything that import made (objects, meshes, materials, images, collections, the report
+  text it created; the scene camera and render size are put back), also the scenes of the run it had finished; an
+  unpack is stopped and its staging folder removed, a finished pack folder stays. A finished import is one undo step.
+  Imports from scripts (`bpy.ops.import_scene.maxdrop(filepath=...)`) and without a window stay synchronous.
+
 ### Changed
 
 - Report: a scene saved with a view through no camera active (common) names its scene camera, the first camera, in

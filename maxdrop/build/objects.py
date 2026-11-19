@@ -14,6 +14,8 @@
     built = build(desc, collection, slots=assign(...), material=make)   # with material slots
     built.materials[ir.index]           # the Material make(ir) returned, once per Max material
                                         # (make: build.materials.MaterialBuilder().make)
+    built = yield from build_steps(desc, collection, ...)   # the same in steps: yields (done, steps_of(desc,
+                                        # slots)) after each datablock, for an import that can be cancelled
 
 Meshes are made with vertices.add / loops.add / polygons.add and foreach_set, then the edges are computed from the
 polygons. Flat faces and sharp edges go to the sharp_face and sharp_edge attributes, which Blender 4.1 and later
@@ -160,22 +162,26 @@ def _material(built, ir, make):
 
 def _slots(built, slots, make):
     """The material slots of each mesh: on the mesh when every user has the same material there, else empty on
-    the mesh and linked to each object with its own."""
+    the mesh and linked to each object with its own. Yields after each mesh's slots."""
     for key, plan in slots.items():
         mesh = built.meshes.get(key)
-        if mesh is None:
+        if mesh is not None:
+            _mesh_slots(built, mesh, plan, make)
+        yield
+
+
+def _mesh_slots(built, mesh, plan, make):
+    for s, irs in enumerate(plan.slots):
+        if all(ir is irs[0] for ir in irs):
+            mesh.materials.append(_material(built, irs[0], make))
             continue
-        for s, irs in enumerate(plan.slots):
-            if all(ir is irs[0] for ir in irs):
-                mesh.materials.append(_material(built, irs[0], make))
-                continue
-            mesh.materials.append(None)
-            for node, ir in zip(plan.users, irs):
-                ob = built.objects.get(node)
-                if ob is not None:
-                    slot = ob.material_slots[s]
-                    slot.link = 'OBJECT'
-                    slot.material = _material(built, ir, make)
+        mesh.materials.append(None)
+        for node, ir in zip(plan.users, irs):
+            ob = built.objects.get(node)
+            if ob is not None:
+                slot = ob.material_slots[s]
+                slot.link = 'OBJECT'
+                slot.material = _material(built, ir, make)
 
 
 def build(desc, collection, collections=None, view_layer=None, slots=None, material=None, light_strength=1.0):
@@ -184,18 +190,49 @@ def build(desc, collection, collections=None, view_layer=None, slots=None, mater
     convert.materials.MeshSlots}, each face's slot and each slot's materials; material: make(MaterialIR) -> a
     Material, called once per Max material (no material in the slots without it); light_strength: the factor on
     every light's power."""
+    steps = build_steps(desc, collection, collections, view_layer, slots, material, light_strength)
+    while True:
+        try:
+            next(steps)
+        except StopIteration as done:
+            return done.value
+
+
+def steps_of(desc, slots=None):
+    """The number of steps build_steps() takes for desc: one per mesh, curve, light, camera, node and mesh with
+    material slots."""
+    return (len(desc.meshes) + len(desc.curves) + len(desc.lights) + len(desc.cameras) + len(desc.nodes)
+            + len(slots or {}))
+
+
+def build_steps(desc, collection, collections=None, view_layer=None, slots=None, material=None,
+                light_strength=1.0):
+    """build() in steps, for an import that shows its progress and can be cancelled: a generator that yields
+    (steps done, steps_of(desc, slots)) after each datablock it made and returns the Built result. Closing it early
+    leaves what it made so far for the caller to remove (everything is linked into collection or the layers'
+    collections, or is data of those objects)."""
     built = Built()
     slots = slots or {}
+    total, done = steps_of(desc, slots), 0
+    view_layer = view_layer or bpy.context.view_layer
     for key, md in desc.meshes.items():
         plan = slots.get(key)
         built.meshes[key], dropped = make_mesh(md, plan.indices if plan is not None else None)
         built.dropped_uv_layers += dropped
+        done += 1
+        yield done, total
     for key, cd in desc.curves.items():
         built.curves[key] = build_curves.make_curve(cd)
+        done += 1
+        yield done, total
     for key, ld in desc.lights.items():
         built.lights[key] = build_lights.make_light(ld, light_strength)
+        done += 1
+        yield done, total
     for key, cd in desc.cameras.items():
         built.cameras[key] = build_cameras.make_camera(cd)
+        done += 1
+        yield done, total
     identity = Matrix.Identity(4)
     hidden = []
     for node in desc.nodes:
@@ -225,8 +262,11 @@ def build(desc, collection, collections=None, view_layer=None, slots=None, mater
         if node.kind == convert_scene.LIGHT:
             build_lights.set_object(ob, desc.lights[node.light])
         built.objects[node.index] = ob
-    _slots(built, slots, material)
-    view_layer = view_layer or bpy.context.view_layer
+        done += 1
+        yield done, total
+    for _ in _slots(built, slots, material):
+        done += 1
+        yield done, total
     for ob in hidden:
         try:
             ob.hide_set(True, view_layer=view_layer)

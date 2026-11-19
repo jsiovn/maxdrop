@@ -1231,14 +1231,14 @@ def check_failed_build_cleanup(max_path):
     keep_material = bpy.data.materials.new("UserMaterial")
     keep_image = bpy.data.images.new("UserImage", 2, 2)
     before = ({m.as_pointer() for m in bpy.data.materials}, {i.as_pointer() for i in bpy.data.images})
-    original, made = build_objects.build, []
+    original, made = build_objects.build_steps, []
 
     def failing(*args, **kwargs):
-        built = original(*args, **kwargs)
+        built = yield from original(*args, **kwargs)
         made.append((len(built.materials), len(bpy.data.images)))
         raise RuntimeError("maxdrop test: build fails")
 
-    build_objects.build = failing
+    build_objects.build_steps = failing
     try:
         try:
             bpy.ops.import_scene.maxdrop(filepath=max_path)
@@ -1246,7 +1246,7 @@ def check_failed_build_cleanup(max_path):
         except RuntimeError:
             raised = True
     finally:
-        build_objects.build = original
+        build_objects.build_steps = original
     after = ({m.as_pointer() for m in bpy.data.materials}, {i.as_pointer() for i in bpy.data.images})
     check("failed build: materials and images were made before it failed",
           raised and made and made[0][0] > 0 and made[0][1] > len(before[1]), str(made))
@@ -1264,6 +1264,102 @@ def _write_png(path):
     img.file_format = 'PNG'
     img.save()
     bpy.data.images.remove(img)
+
+
+CANCEL_KINDS = ("objects", "meshes", "curves", "lights", "cameras", "materials", "images", "collections", "texts",
+                "node_groups")
+
+
+def _state():
+    """What a cancelled run must leave as it found it: the datablocks of each kind, the scene camera, render size."""
+    r = bpy.context.scene.render
+    return ({kind: sorted(b.as_pointer() for b in getattr(bpy.data, kind)) for kind in CANCEL_KINDS},
+            bpy.context.scene.camera, (r.resolution_x, r.resolution_y, r.resolution_percentage, r.pixel_aspect_x,
+                                       r.pixel_aspect_y))
+
+
+def _cancel_run(paths):
+    from maxdrop import ops
+    opts = ops.ImportOptions(units='AUTO', scale_objects=1.0, use_image_search=True, object_filter={'MATERIAL', 'UV'},
+                             modifiers='KEEP', light_strength=ops.LIGHT_STRENGTH, keep_targets=False,
+                             axis_forward='Y', axis_up='Z')
+    return ops._Run(opts, list(paths), {}, bpy.context)
+
+
+def _advance(steps, until, limit=100000):
+    """next() on steps until until() holds (a short sleep while a worker thread reads); whether it held before the
+    run ended."""
+    import time
+    from maxdrop import ops
+    for _ in range(limit):
+        if until():
+            return True
+        try:
+            if next(steps) is ops._WAIT:
+                time.sleep(0.005)
+        except StopIteration:
+            return False
+    return False
+
+
+def check_cancel(textured, other):
+    """The modal import's step generator (ops._Run.steps), driven without a window: closed early (Esc) it leaves
+    the datablocks, the scene camera and the render size as they were, the user's own material and image too. textured:
+    a .max whose textures are found (materials and images are made); other: a .max with a camera (it sets the scene
+    camera and render size)."""
+    empty_scene()
+    for img in list(bpy.data.images):
+        bpy.data.images.remove(img)
+    keep_material = bpy.data.materials.new("UserMaterial")
+    keep_image = bpy.data.images.new("UserImage", 2, 2)
+    before = _state()
+    images = len(bpy.data.images)
+
+    run = _cancel_run([textured])
+    steps = run.steps()
+    held = _advance(steps, lambda: len(bpy.data.images) > images)
+    made = len(bpy.data.objects), len(bpy.data.materials), len(bpy.data.images)
+    steps.close()
+    check("cancel: one file closed during its build, after materials and images were made", held, str(made))
+    check("cancel: one file: every datablock it made is removed, the user's stay", _state() == before,
+          "%s | %s" % (_state(), before))
+
+    run = _cancel_run([other, textured])
+    steps = run.steps()
+    held = _advance(steps, lambda: len(run._made) == 1 and len(bpy.data.images) > images)
+    camera = bpy.context.scene.camera
+    camera = camera is not None and camera.type == 'CAMERA'
+    steps.close()
+    check("cancel: two files closed in the second one's build, the first one finished with its camera",
+          held and camera)
+    check("cancel: two files: both removed, the report text too, the scene camera and render size put back",
+          _state() == before, "%s | %s" % (_state(), before))
+
+    run = _cancel_run([textured])
+    steps = run.steps(threaded=True)
+    from maxdrop import ops
+    waited = next(steps) is ops._WAIT
+    steps.close()
+    check("cancel: threaded, closed while the worker reads: nothing made", waited and _state() == before)
+    run = _cancel_run([other, textured])
+    steps = run.steps(threaded=True)
+    held = _advance(steps, lambda: len(run._made) == 1 and len(bpy.data.objects) > len(before[0]["objects"]) + 1)
+    steps.close()
+    check("cancel: threaded, two files closed in the second one's build: nothing left",
+          held and _state() == before, "%s | %s" % (_state(), before))
+
+    run = _cancel_run([other, textured])
+    steps = run.steps(threaded=True)
+    ended = not _advance(steps, lambda: False)
+    report = bpy.data.texts.get("MaxDrop Report")
+    check("cancel: threaded, run to its end: both files imported, the run's report written",
+          ended and len(run._made) == 2 and bpy.context.scene.camera is not None and report is not None
+          and report.as_string().count("MaxDrop import report: ") == 2,
+          "%s %d %s" % (ended, len(run._made), report and report.as_string()[:200]))
+    run.undo()
+    check("cancel: undo() after a finished run removes it", _state() == before, "%s | %s" % (_state(), before))
+    bpy.data.materials.remove(keep_material)
+    bpy.data.images.remove(keep_image)
 
 
 def check_found_textures():
@@ -1326,6 +1422,7 @@ def check_found_textures():
                 for img in list(bpy.data.images):
                     bpy.data.images.remove(img)
                 check_failed_build_cleanup(dst)
+                check_cancel(dst, os.path.join(fixtures, "cameras.max"))
             if name == "texmap_rules":
                 m = bpy.data.materials["FixtureTexPlace"]
                 cropped = next(n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage"
