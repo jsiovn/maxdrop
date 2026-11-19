@@ -1814,14 +1814,14 @@ def check_asset_table_once(max_path):
     the material conversion share it)."""
     from maxdrop.reader import assets
     empty_scene()
-    original = assets.AssetTable.from_file
+    original = assets.AssetTable.__dict__["from_file"]  # the classmethod itself, put back as it was
     calls = []
 
-    def counting(cf):
+    def counting(cls, cf):
         calls.append(cf)
-        return original(cf)
+        return original.__func__(cls, cf)
 
-    assets.AssetTable.from_file = counting
+    assets.AssetTable.from_file = classmethod(counting)
     try:
         result = bpy.ops.import_scene.maxdrop(filepath=max_path)
     finally:

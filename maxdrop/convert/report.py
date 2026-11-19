@@ -50,8 +50,8 @@ UNKNOWN_CONTROLLER = "transform: " + controllers.UNKNOWN_CLASS  # convert.scene'
 
 class Report:
     """Counters and lists of one import. issues, geometry_errors and material_issues are [(label, reason)]: a node,
-    a material or map object ("object <index>") or a Blender material. materials_built is None when the import made
-    no materials."""
+    a material or map object ("object <index>"), a Blender material or a scene-level label ("scene", "environment",
+    "color swatches"). materials_built is None when the import made no materials."""
     __slots__ = ("source", "unit", "meters", "nodes", "objects_built", "meshes_built", "curves_built",
                  "lights_built", "cameras_built", "scene_camera", "scene_camera_note", "render_size", "layers",
                  "hidden_layers", "hidden", "unrenderable", "frozen", "groups", "placeholders", "unknown_controllers", "modifiers",
