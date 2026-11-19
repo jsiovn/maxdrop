@@ -193,7 +193,8 @@ class _Builder:
             if self.flip:
                 verts, uv = verts[..., ::-1], uv[..., ::-1, :]
             loops.append(verts.reshape(c, f * n))
-            uvs.append(np.broadcast_to(uv, (c, f, n, 2)).reshape(c, f * n * 2))  # a size 0 can leave out an axis
+            # UVs that do not vary along an axis (a size of 0) come with that axis 1, also when F is 0
+            uvs.append(np.broadcast_to(uv, (c, f, n, 2)).reshape(c, f * n * 2))
             sizes.append(np.full((c, f), n, dtype=np.int64))
             mats.append(np.broadcast_to(np.asarray(mat, dtype=np.int64), (c, f)))
             groups.append(np.broadcast_to(np.asarray(group, dtype=np.int64), (c, f)))
@@ -202,14 +203,14 @@ class _Builder:
             out.append(np.concatenate(blocks, axis=1).reshape(-1))
 
     def data(self, mapping):
+        """The MeshData; run under build()'s errstate: values past the float range become inf, refused here."""
         np = self.np
-        with np.errstate(over="ignore", invalid="ignore"):  # checked below
-            positions = np.concatenate(self.positions).astype(np.float32)
-            uvw = None
-            if mapping:
-                uv = np.concatenate(self.uvs).reshape(-1, 2)
-                uvw = np.zeros((len(uv), 3), dtype=np.float32)
-                uvw[:, :2] = uv
+        positions = np.concatenate(self.positions).astype(np.float32)
+        uvw = None
+        if mapping:
+            uv = np.concatenate(self.uvs).reshape(-1, 2)
+            uvw = np.zeros((len(uv), 3), dtype=np.float32)
+            uvw[:, :2] = uv
         if not np.isfinite(positions).all() or (uvw is not None and not np.isfinite(uvw).all()):
             raise PrimitiveError("its sizes give points or UVs past the float range")
         loops = np.concatenate(self.loops).astype(np.int32)
@@ -470,9 +471,11 @@ def _cylinder(b, p, r1, r2):
     if rw:
         vs = vs * h
 
-    def us(j, rho, seam=True):
+    def us(j, rho, seam=None):
+        """(U at the start, at the end) of faces j on a ring of radius rho; seam (an array) False where the face
+        closes on a point at its top, None for every face shifted at the seam."""
         a, e = _seam(np, 0.75 + j / ns, 1.0 / ns)
-        if seam is not True:  # a face that closes on a point at its top: 3ds Max leaves out the seam's shift there
+        if seam is not None:  # a face that closes on a point at its top: 3ds Max leaves out the seam's shift there
             a = np.where(seam, a, (0.75 + j / ns) % 1.0)
             e = np.where(seam, e, (0.75 + (j + 1) / ns) % 1.0)
         if rw:
@@ -482,18 +485,17 @@ def _cylinder(b, p, r1, r2):
 
     def flat(rim, top_cap):
         """The real-world UV of a cap's point: over the extent of the cap's rim (radius rim)."""
-        xs, ys = rim * cos, rim * sin
-        x0, y0, y1 = xs.min(), ys.min(), ys.max()
+        xs, ys = (rim * cos).tolist(), (rim * sin).tolist()
+        x0, y0, y1 = min(xs), min(ys), max(ys)  # Python's: the first of 0.0 and -0.0, as before
         return lambda x, y: (x - x0, y - y0 if top_cap else y1 - y)
 
     first_side, last_side = nc - 1, nc - 1 + nh
     low, high = flat(r1, False), flat(r2, True)
 
     def cap_uv(k, j, top_cap):
+        """The real-world UV of ring k's points j, on the top cap where top_cap (a bool or an array of them)."""
         rho = radii[k]
         x, y = rho * cos[j % ns], rho * sin[j % ns]
-        if top_cap is True or top_cap is False:
-            return (high if top_cap else low)(x, y)
         (lu, lv), (hu, hv) = low(x, y), high(x, y)
         return np.where(top_cap, hu, lu), np.where(top_cap, hv, lv)
 
@@ -554,7 +556,7 @@ def _tube(b, p):
     grid = b.points(_stack(np, rho * sin, rho * cos, z, dtype=np.float64))
     if p.real_world:
         steps = np.concatenate((np.full(nh, h / nh), np.full(nc, abs(r1 - r2) / nc)))
-        along = np.concatenate(((0.0,), np.cumsum(np.concatenate((steps, steps)))))
+        along = np.cumsum(np.concatenate(((0.0,), steps, steps)))  # 0.0 + the first step, as before
         around = _TAU * abs(big)
 
         def uv(q, j):
