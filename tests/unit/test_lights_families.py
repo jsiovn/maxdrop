@@ -443,7 +443,7 @@ class Fixtures(unittest.TestCase):
 
     def test_the_vraysky_is_named(self):
         desc = self.descs["lights_standard"]
-        self.assertIn("light: " + L.SKY, [r for _i, r in desc.issues])
+        self.assertIn((conv.ENVIRONMENT, "light: " + L.SKY), desc.issues)  # not on the map's object index
         self.assertNotIn("light: " + L.SKY, [r for _i, r in self.descs["lights_photometric"].issues])
 
 

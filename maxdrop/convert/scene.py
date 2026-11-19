@@ -15,7 +15,8 @@
     desc.placeholders                   # Counter: class name -> nodes built as an empty
     desc.layers                         # LayerDescription per layer that holds a node, a parent before its children
     desc.unknown_controllers            # Counter: controller class name -> times met
-    desc.issues                         # [(node object index, or None for the whole scene, reason)] for the report
+    desc.issues                         # [(node object index, None for the whole scene or a scene-level label
+                                        #   such as ENVIRONMENT, reason)] for the report
 
 Matrices are Blender's convention: 4x4 tuples of rows, a column vector p becomes M @ p, the translation is the
 last column. The reader's row-vector matrices are transposed here. node.matrix is the local matrix (relative to
@@ -59,7 +60,7 @@ world scale puts on its area (lights.area_scale, 1 but for a VRayLight), so inst
 issues of its parameters are named on its first node, those of a description on the first node of that key. A
 VRayLight's mesh or dome light or a Skylight (not built yet), or a light whose parameters cannot be read, is an EMPTY
 with the reason as an issue, on every node, not counted as a placeholder. A VRaySky as the environment map is an
-issue on its own object index. describe(..., assets) takes the scene's reader.assets.AssetTable for the names of the
+issue labelled ENVIRONMENT. describe(..., assets) takes the scene's reader.assets.AssetTable for the names of the
 web and IES files (read() reads it).
 
 A camera (Free, Target, Physical, VRayPhysicalCamera) becomes a CAMERA (convert.cameras): the lens, sensor, shift,
@@ -71,7 +72,8 @@ an object offset keeps the node transform (an issue: 3ds Max looks from the obje
 size (None, or a size of None, when not stored: the report says so; an issue when out of range) and desc.camera the
 camera of the view 3ds Max renders (convert.cameras render_camera, with describe(..., views) the file's saved views;
 read() reads them), else the first camera: desc.camera_note says why when that view looks through no camera (the
-report's render line), an issue when the saved views cannot be read. Scene-level issues have the index None.
+report's render line), an issue when the saved views cannot be read. Scene-level issues have the index None (the
+report labels them "scene") or a label of their own (ENVIRONMENT), a string the report uses as it is.
 
 Look At: the matrices of a node aimed by a Look At controller or a LookAt Constraint are the ones 3ds Max computes
 at frame 0 (reader.controllers), baked. A node with a Look At controller aimed at a node also gets node.look_at, a
@@ -131,6 +133,7 @@ MAX_BUILT_CORNERS = 1 << 24
 _SPENT = "the primitives and extrusions before it reach %d face corners, the budget for one scene"
 SHEAR_TOLERANCE = 1e-5  # |cos| between two rows of a local matrix
 OFFSET = "its object is offset from its pivot: the camera looks from the pivot, 3ds Max from the object"
+ENVIRONMENT = "environment"  # the label of an issue of the environment map (no node holds it)
 
 ChunkError = chunks.ChunkError
 
@@ -585,9 +588,8 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
         desc.render, views, [n.index for n in desc.nodes if n.kind == CAMERA], names)
     if reason is not None:
         desc.issues.append((desc.camera, "camera: %s" % reason))
-    sky = lights.environment_sky(scene)
-    if sky is not None:
-        desc.issues.append((sky, "light: %s" % lights.SKY))
+    if lights.environment_sky(scene) is not None:
+        desc.issues.append((ENVIRONMENT, "light: %s" % lights.SKY))
     desc.issues.extend((issue.node, "transform: %s" % issue.reason) for issue in t.issues)
     desc.unknown_controllers.update(
         _class_name(scene, issue.controller) if issue.controller is not None else ""

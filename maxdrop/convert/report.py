@@ -353,7 +353,7 @@ def gather(desc, source="", objects_built=None, meshes_built=None, dropped_uv_la
         rep.scene_camera = labels.get(camera, "object %d" % camera)
         rep.scene_camera_note = getattr(desc, "camera_note", None)
     for index, reason in desc.issues:
-        label = SCENE if index is None else labels.get(index, "object %d" % index)
+        label = index if isinstance(index, str) else SCENE if index is None else labels.get(index, "object %d" % index)
         if reason == UNKNOWN_CONTROLLER and desc.unknown_controllers:  # counted by class already
             rep.unknown_controller_nodes += 1
         elif reason.startswith(GEOMETRY):

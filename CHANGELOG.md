@@ -15,6 +15,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Materials: an Output, RGB Tint or VRayColor2Bump map without a map of its own (or an Output or RGB Tint with it
   switched off) is named in the report; it is drawn as before (directly in a slot, the material keeps its own color
   or value), but no longer silently.
+- Report: a VRaySky as the environment map is named under "environment" instead of "object N" (the number was the
+  map's, not an object's).
 
 ## [0.1.0] - 2026-11-19
 
