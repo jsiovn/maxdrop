@@ -30,7 +30,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Primitives: a standard primitive whose Real-World Map Size data is damaged is built with that option off instead
   of as a placeholder.
 - Scene packs: Blender closing at the moment an unpack creates its folder (or the folder of a pack with several
-  scenes) no longer leaves an empty folder behind that makes the next unpack use "<name> (2)".
+  scenes) no longer leaves an empty folder behind that makes the next unpack use `<name> (2)`.
 
 ## [0.1.0] - 2026-11-19
 
