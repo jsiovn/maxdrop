@@ -53,6 +53,8 @@
 # conversion fails; the Keep Targets note on the axis conversion only when the file's up does not stay Blender's Z.
 # Modified for MaxDrop, 2026-11-19 (jsiovn). An import reads the file's asset table once, for the scene description
 # and the material conversion.
+# Modified for MaxDrop, 2026-11-19 (jsiovn). The Scene Pack panel says when no pack folder name is free, and its
+# previews are dropped when the archive at that path changed since invoke().
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
