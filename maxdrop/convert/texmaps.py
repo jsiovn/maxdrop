@@ -60,17 +60,20 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
   mode, no mask; any other is peeled).
 - Peeled to the first usable map below, an approximation counted by class: Falloff (map 1 when on, else color 1),
   VRayDirt (the unoccluded map when on, else the unoccluded color), Output (map 1; its own Output's invert kept),
-  RGB Tint (map 1), VRayColor2Bump (its map). Any other map class with maps below gives the first image below it
-  (depth first, in reference order), counted the same way; one without is unsupported (counted, no graph).
+  RGB Tint (map 1), VRayColor2Bump (its map). An Output, RGB Tint or VRayColor2Bump without a map (or with it
+  off) gives no graph and is an issue on it, counted nowhere: what 3ds Max draws there is not measured, so nothing
+  stands in for it (at the top the input keeps its own value). Any other map class with maps below gives the first
+  image below it (depth first, in reference order), counted the same way; one without is unsupported (counted, no
+  graph).
 - Normal maps (VRayNormalMap, Normal Bump, CoronaNormal) in a normal or bump input -> NormalMap: the normal image
   with the class's multiplier as its strength, flip red / green and swap, and the additional bump map as a Bump with
   its multiplier; a normal map class with only its bump map is that Bump. In any other input it is peeled to its
   normal image (or its bump image).
 - A map that is set (and switched on) but converts to nothing (an unsupported class with no bitmap below, a
-  Bitmap without a file, a cut branch) is an issue on its wrapper naming its class, and never stands in as the
-  wrapper's own color for it (3ds Max uses that color only without a map or with the map off): a Color Correction,
-  Falloff, VRayDirt, Output, RGB Tint or VRayColor2Bump over it gives no graph and is not counted (the lost map
-  is reported), so the input keeps its own value.
+  Bitmap without a file, an empty Output, RGB Tint or VRayColor2Bump, a cut branch) is an issue on its wrapper
+  naming its class, and never stands in as the wrapper's own color for it (3ds Max uses that color only without a
+  map or with the map off): a Color Correction, Falloff, VRayDirt, Output, RGB Tint or VRayColor2Bump over it gives
+  no graph and is not counted (the lost map is reported), so the input keeps its own value.
   A Mix or CoronaMix weighs it by its amount: a side that does not show is drawn as its color (exact), a side that
   fills the result gives no graph, any other weight (or a mask) peels the wrapper to its other side's map, or no
   graph; an RGB Multiply is always peeled that way. A lost mask leaves the mix amount, a lost Composite layer is
@@ -842,9 +845,18 @@ def _vray_dirt(conv, m, kind, walk, depth, chain):
     return conv._constant(m, 13, kind, (1.0, 1.0, 1.0))
 
 
+def _wrapped(conv, m, map_pid, on_pid, kind, walk, depth, chain):
+    """The map of a wrapper that has no color of its own (Output, RGB Tint, VRayColor2Bump). Without a used map it
+    gives no graph and is an issue: what 3ds Max draws there was not measured, so nothing stands in for it."""
+    if conv._on(m, map_pid, on_pid) is None:
+        conv._issue(walk, m.index, "%s %r: no map (or its map off), not drawn" % (conv._class_name(m), m.name))
+        return None
+    return conv._sub(m, map_pid, on_pid, kind, walk, depth, chain)
+
+
 def _output_map(conv, m, kind, walk, depth, chain):
     """0 map1, 1 map1Enabled; its own Output part's invert is kept."""
-    node = conv._sub(m, 0, 1, kind, walk, depth, chain)
+    node = _wrapped(conv, m, 0, 1, kind, walk, depth, chain)
     part = next((p for _s, p in sorted(m.parts.items()) if p.superclass == classids.SC_TEXOUTPUT), None)
     out = conv._output(part)
     return Invert(node) if node is not None and out is not None and out.invert else node
@@ -852,12 +864,12 @@ def _output_map(conv, m, kind, walk, depth, chain):
 
 def _rgb_tint(conv, m, kind, walk, depth, chain):
     """3 map1, 4 map1Enabled."""
-    return conv._sub(m, 3, 4, kind, walk, depth, chain)
+    return _wrapped(conv, m, 3, 4, kind, walk, depth, chain)
 
 
 def _color2bump(conv, m, kind, walk, depth, chain):
-    """0 map."""
-    return conv._sub(m, 0, None, kind, walk, depth, chain)
+    """0 map (no switch)."""
+    return _wrapped(conv, m, 0, None, kind, walk, depth, chain)
 
 
 def _sides(conv, m, ids, kind, walk, depth, chain):

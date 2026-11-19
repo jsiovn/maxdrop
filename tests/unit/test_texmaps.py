@@ -1319,6 +1319,7 @@ class LostMaps(Checks):
             self.lost_issue(tex, cls)
             self.assertEqual(tex.stats.peeled, collections.Counter(), "%s drew nothing: not a peel" % cls)
             self.assertEqual(tex.stats.unsupported, collections.Counter({"Noise": 1}), "the lost map only")
+            self.assertEqual(len(tex.stats.issues), 2, "the Noise and the lost map: %s" % tex.stats.issues)
         tex = _tex(_falloff(1, color1=(1.0, 0.0, 0.0)))
         self.close(tex.convert(mat.MapRef(1), tx.COLOR).root.value, (1.0, 0.0, 0.0), "no map: color 1")
         self.assertEqual(tex.stats.peeled, collections.Counter({"Falloff": 1}))
@@ -1326,6 +1327,53 @@ class LostMaps(Checks):
                    _noise(2))
         self.close(tex.convert(mat.MapRef(1), tx.COLOR).root.value, (1.0, 0.0, 0.0), "map off: its color")
         self.assertEqual(tex.stats.peeled, collections.Counter({"VRayDirt": 1}))
+
+    # (class, class name, map pid, switch pid or None): the wrappers that have no color of their own
+    EMPTY_WRAPPERS = ((tx.OUTPUT, "Output", 0, 1), (tx.RGB_TINT, "RGB Tint", 3, 4),
+                      (tx.VRAY_COLOR2BUMP, "VRayColor2Bump", 0, None))
+
+    def empty_issue(self, tex, wrapper):
+        issues = [r for _i, r in tex.stats.issues if "no map" in r]
+        self.assertEqual(len(issues), 1, tex.stats.issues)
+        self.assertTrue(issues[0].startswith(wrapper), issues[0])
+
+    def test_empty_wrappers_are_named(self):
+        for class_id, cls, pid, on in self.EMPTY_WRAPPERS:
+            cases = [("map unset", _tex(FakeMap(1, class_id, {pid: Ref(None)}, cls=cls, name="w")))]
+            if on is not None:  # map off: the bitmap below is not used
+                cases.append(("map off", _tex(FakeMap(1, class_id, {pid: Ref(2), on: 0}, [2], cls=cls, name="w"),
+                                              _bitmap(2))))
+            for case, tex in cases:
+                with self.subTest(cls=cls, case=case):
+                    self.assertIsNone(tex.convert(mat.MapRef(1), tx.COLOR))
+                    self.assertEqual(len(tex.stats.issues), 1, tex.stats.issues)
+                    self.empty_issue(tex, "%s 'w'" % cls)
+                    self.assertEqual(tex.stats.peeled, collections.Counter())
+                    self.assertEqual(tex.stats.unsupported, collections.Counter())
+                    self.assertIsNone(tex.convert(mat.MapRef(1), tx.DATA))
+                    self.assertEqual(len(tex.stats.issues), 1, "named once: %s" % tex.stats.issues)
+
+    def test_empty_wrapper_below_a_mix(self):
+        empty = FakeMap(2, tx.OUTPUT, {0: Ref(None)}, cls="Output", name="out")
+        tex = _tex(FakeMap(1, tx.MIX, {0: 0.5, 6: Ref(2), 7: Ref(3)}, [2, 3], cls="Mix", name="mx"), empty,
+                   _bitmap(3))
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertEqual(g.root.name, "a.png")
+        self.assertTrue(g.approximated)
+        self.empty_issue(tex, "Output 'out'")
+        self.lost_issue_of(tex, "Mix 'mx'", "Output 'out'")
+        tex = _tex(FakeMap(1, tx.MIX, {0: 1.0, 6: Ref(2), 7: Ref(3)}, [2, 3], cls="Mix", name="mx"), empty,
+                   _bitmap(3))
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertIsInstance(g.root, tx.Mix, "amount 1: map 1 does not show")
+        self.assertFalse(g.approximated)
+        self.empty_issue(tex, "Output 'out'")
+
+    def lost_issue_of(self, tex, wrapper, lost):
+        issues = [r for _i, r in tex.stats.issues if "converts to nothing" in r]
+        self.assertEqual(len(issues), 1, tex.stats.issues)
+        self.assertTrue(issues[0].startswith(wrapper), issues[0])
+        self.assertIn(lost, issues[0])
 
     def test_hidden_peeled_wrapper_is_exact(self):
         # mix amount 1: map 1 (a Falloff over a lost map) does not show and is drawn as color 1
