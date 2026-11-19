@@ -864,15 +864,16 @@ def preview(path, scene, several, dest_parent=None, references=None):
     """(mode, .max path) of what unpack() of the scene (its archive path; several: the pack holds more than one)
     would do now, as UnpackResult names it: "unpacked" into the first free folder, "reused" (an earlier unpack) or
     "in_place" (a copy extracted by hand: no marker needed, any file named like the scene counts). None when the
-    archive cannot be read or no folder name is free. Reads the disk only, for the options popup; unpack() takes
-    the next free name when something makes that folder first. references: what the caller passes to unpack(); it
-    decides whether a folder unpacked with a filter serves."""
+    archive cannot be read; PackError, with the message unpack() would refuse with, when no folder name is free.
+    Reads the disk only, for the options popup; unpack() takes the next free name when something makes that folder
+    first. references: what the caller passes to unpack(); it decides whether a folder unpacked with a filter
+    serves."""
     path = os.path.abspath(path)
     dest_parent = os.path.abspath(dest_parent or os.path.dirname(path))
     entry = Entry(scene.replace("\\", "/"))
     try:
         found = _destination(path, dest_parent, entry, several, _ident(path, os.stat(path)), references)
-    except (OSError, PackError):
+    except OSError:
         return None
     if found[0] == "free":
         return ("unpacked", os.path.join(found[1], entry.base))

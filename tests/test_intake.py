@@ -820,6 +820,28 @@ class Destination(Base):
         self.assertEqual(archive.preview(path, "one.max", True, self.out),
                          ("unpacked", os.path.join(self.out, "pack", "one", "one.max")))
 
+    def assert_no_free_folder(self, path, scene, several):
+        """Every candidate name is a folder of someone else's: preview() raises with the message unpack() refuses
+        with, and neither writes anything."""
+        for name in ("pack", "pack (2)", "pack (3)"):
+            os.mkdir(os.path.join(self.out, name))
+            write(os.path.join(self.out, name, "notes.txt"))
+        with mock.patch.object(archive, "_CANDIDATES", 3):
+            before = files_under(self.tmp)
+            with self.assertRaisesRegex(PackError, "No free folder for pack.zip") as previewed:
+                archive.preview(path, scene, several, self.out)
+            self.assert_clean(before)
+            with self.assertRaises(PackError) as unpacked:
+                archive.unpack(path, scene, dest_parent=self.out)
+            self.assert_clean(before)
+        self.assertEqual(str(previewed.exception), str(unpacked.exception))
+
+    def test_preview_says_no_folder_is_free(self):
+        self.assert_no_free_folder(self.pack([("room.max", b"MAX")]), "room.max", False)
+
+    def test_preview_of_one_of_several_says_no_folder_is_free(self):
+        self.assert_no_free_folder(self.pack([("one.max", b"1"), ("two.max", b"2")]), "two.max", True)
+
     def assert_preview_is_unpack(self, path, scene, several, expected):
         """preview() names expected, writes nothing, and unpack() then does exactly that."""
         before = files_under(self.tmp)

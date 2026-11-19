@@ -18,6 +18,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Report: a VRaySky as the environment map is named under "environment" instead of "object N" (the number was the
   map's, not an object's).
 
+### Fixed
+
+- Scene pack popup: when every name the pack folder could take is already someone else's folder, the popup says so
+  (the message the import would stop with) instead of "Unpacks into a folder named after the archive"; a pack
+  replaced at the same path while the popup is open no longer shows the folder of the old one.
+
 ## [0.1.0] - 2026-11-19
 
 ### Added

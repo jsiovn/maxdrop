@@ -334,8 +334,9 @@ def two_scenes(max_path, scratch, ops):
     check("two scenes in a .zip, none named: the message names both",
           ("a/" + name) in message and ("b/" + SECOND) in message, message.strip())
     check("two scenes in a .zip, none named: nothing unpacked", not os.path.exists(os.path.join(folder, "two")))
+    no_free_folder(ops, zip_path, folder, "a/" + name)
     # What invoke() stores (it needs a window): the popup then previews whichever scene the Scene field names.
-    ops._TARGETS[ops._norm(zip_path)] = (folder, None, {})
+    remember_target(ops, zip_path, folder)
     first = os.path.join(folder, "two", os.path.splitext(name)[0])
     labels = pack_panel(ops, zip_path, "a/" + name)
     check("Scene Pack panel: names the folder of the scene chosen", labels[-2:] == ["Unpacks into", first],
@@ -350,13 +351,42 @@ def two_scenes(max_path, scratch, ops):
     check("two scenes in a .zip: the named scene is unpacked into its own folder",
           os.path.isfile(os.path.join(folder, "two", "second", SECOND)))
     check("two scenes in a .zip: the unpack drops the popup's previews", ops._norm(zip_path) not in ops._TARGETS)
-    ops._TARGETS[ops._norm(zip_path)] = (folder, None, {})
+    remember_target(ops, zip_path, folder)
     labels = pack_panel(ops, zip_path, SECOND)
     check("Scene Pack panel: the scene unpacked before is read from its folder",
           labels[-2:] == ["Unpacked before: imports from", second], str(labels))
     labels = pack_panel(ops, zip_path, "a/" + name)
     check("Scene Pack panel: the other scene unpacks beside it", labels[-2:] == ["Unpacks into", first], str(labels))
+    make_zip(zip_path, [("a/" + name, max_path), ("b/" + SECOND, max_path), ("b/notes.txt", max_path)])
+    labels = pack_panel(ops, zip_path, SECOND)
+    check("Scene Pack panel: a pack replaced at the same path since invoke() keeps none of the old previews",
+          labels[-1] == "Unpacks into a folder named after the archive", str(labels))
     ops._TARGETS.pop(ops._norm(zip_path), None)
+
+
+def remember_target(ops, zip_path, folder):
+    ops._TARGETS[ops._norm(zip_path)] = (ops._key(zip_path), folder, None, {})
+
+
+def no_free_folder(ops, zip_path, folder, scene):
+    """Every name the pack folder could take is someone else's folder: the panel says so, as the unpack would."""
+    archive = ops._archive()
+    taken = os.path.join(folder, "two")
+    os.makedirs(taken)
+    with open(os.path.join(taken, "notes.txt"), "wb"):
+        pass
+    remember_target(ops, zip_path, folder)
+    saved, archive._CANDIDATES = archive._CANDIDATES, 1
+    try:
+        layout = FakeLayout()
+        ops.import_pack(layout, FakeOperator(zip_path, scene), [(zip_path, ops._listing(zip_path))])
+    finally:
+        archive._CANDIDATES = saved
+        ops._TARGETS.pop(ops._norm(zip_path), None)
+        shutil.rmtree(taken)
+    check("Scene Pack panel: no free folder name is said, with an error icon",
+          layout.labels[-1].startswith("No free folder for two.zip in ") and layout.icons[-1] == 'ERROR',
+          str(list(zip(layout.labels, layout.icons))))
 
 
 def selections(max_path, scratch):
@@ -417,13 +447,14 @@ class FakeLayout:
     """Records the labels a draw function puts into a panel (no window in the background)."""
 
     def __init__(self):
-        self.labels = []
+        self.labels, self.icons = [], []
 
     def panel(self, idname, default_closed=False):
         return self, self
 
     def label(self, text="", icon='NONE'):
         self.labels.append(text)
+        self.icons.append(icon)
 
     def prop(self, data, name):
         pass

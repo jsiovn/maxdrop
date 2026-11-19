@@ -85,8 +85,11 @@ _ARCHIVE_EXTENSIONS = (".zip", ".rar", ".7z")
 # Listings of the packs a drop or a script named, for the popup and the Scene search. Keyed by path, size and
 # modification time, so that a changed archive is listed again.
 _LISTINGS = {}
-# Per pack of the popup, by normalized path: (parent folder, the reason there is none, {scene: archive.preview()}).
+# Per pack of the popup, by normalized path: (_key() of the archive, parent folder, the reason there is none,
+# {scene: _preview()}). An archive replaced at that path since invoke() keeps none of it (_target_of).
 _TARGETS = {}
+# The previews that name a .max already on disk.
+_ON_DISK = ("reused", "in_place")
 _CACHE_MAX = 16
 _SHOWN_SCENES = 10
 # Pre-flight lines of the .max files a drop or a script named, by normalized path.
@@ -251,11 +254,25 @@ def _referenced_maps(max_path):
     return {e.name for e in table if e.name}
 
 
-def _preview(path, scenes, text):
-    """archive.preview() of the scene text chooses, ("unpacked" | "reused" | "in_place", .max path), computed once
-    per pack and scene since invoke() and kept in _TARGETS; None when there is no parent folder, the scene is not
-    chosen yet, its name matches none, or there is no free folder. A .max on disk gets its pre-flight line read."""
+def _target_of(path):
+    """(parent folder, the reason there is none, previews) invoke() stored for the pack; None when it stored none or
+    the archive at that path is not the one it looked at (replaced, changed or gone since)."""
     found = _TARGETS.get(_norm(path))
+    if found is None:
+        return None
+    try:
+        key = _key(path)
+    except OSError:
+        return None
+    return found[1:] if found[0] == key else None
+
+
+def _preview(path, scenes, text):
+    """archive.preview() of the scene text chooses, ("unpacked" | "reused" | "in_place", .max path), or ("none",
+    message) when no folder name is free; computed once per pack and scene since invoke() and kept in _TARGETS.
+    None when there is no parent folder, the scene is not chosen yet or its name matches none. A .max on disk gets
+    its pre-flight line read."""
+    found = _target_of(path)
     if found is None or found[0] is None:
         return None
     parent, _problem, previews = found
@@ -271,10 +288,12 @@ def _preview(path, scenes, text):
             previews.clear()
         try:
             previews[scene] = archive.preview(path, scene, len(scenes) > 1, parent, references=_referenced_maps)
+        except archive.PackError as e:  # no folder name is free: unpack() would refuse with this message
+            previews[scene] = ("none", str(e))
         except Exception as e:  # cached as None: draw() runs on every redraw
             print("MaxDrop: could not preview the pack folder of %s (%s)" % (os.path.basename(path), e))
             previews[scene] = None
-        if previews[scene] and previews[scene][0] != "unpacked":
+        if previews[scene] and previews[scene][0] in _ON_DISK:
             _remember_preflight(previews[scene][1])
     return previews[scene]
 
@@ -710,7 +729,10 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
             # known now is previewed here too; draw() previews another one the Scene field names (read only).
             for path, found in packs:
                 parent, problem = _target(path, context)
-                _TARGETS[_norm(path)] = (parent, problem, {})
+                try:
+                    _TARGETS[_norm(path)] = (_key(path), parent, problem, {})
+                except OSError:  # gone since it was listed: the popup shows no folder for it
+                    continue
                 _preview(path, found.scenes, self.pack_scene)  # a pack is never unpacked here
             listed = {_norm(path) for path, _found in packs}
             for path in _paths(self)[:_SHOWN_FILES]:
@@ -739,10 +761,12 @@ def import_pack(layout, operator, packs):
         else:
             body.label(text="Scene: " + _base(listing.scenes[0]))
         body.label(text=_plural(listing.assets, "texture file"))
-        parent, problem, _previews = _TARGETS.get(_norm(path), (None, None, None))
+        parent, problem, _previews = _target_of(path) or (None, None, None)
         found = None if problem else _drawn_preview(operator, path, listing)
         if problem:
             body.label(text=problem, icon='ERROR')
+        elif found and found[0] == "none":
+            body.label(text=found[1], icon='ERROR')
         elif found:
             mode, max_path = found
             if mode == "unpacked":
@@ -765,7 +789,7 @@ def import_files(layout, operator):
     for path in _paths(operator):
         listing = _cached(path)
         found = _drawn_preview(operator, path, listing) if listing is not None else None
-        target = found[1] if found and found[0] != "unpacked" else path
+        target = found[1] if found and found[0] in _ON_DISK else path
         line = _preflight_of(target)
         if line is not None:
             rows.append((os.path.basename(target), line))
