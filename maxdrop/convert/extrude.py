@@ -41,7 +41,6 @@ No bpy; numpy is imported when a mesh is made.
 """
 import collections
 import math
-import struct
 
 from ..reader import chunks, classids, geometry, pblock, realworld, shapes
 
@@ -118,10 +117,7 @@ def read_params(scene, modifier):
     clamped = int(min(max(segments, 1), MAX_SEGMENTS))
     if clamped != segments:
         issues.append("%g segments, made with %d" % (segments, clamped))
-    try:
-        real_world = realworld.flag(scene.chunk(modifier.index), modifier.class_id)
-    except (ChunkError, struct.error):
-        real_world = False
+    real_world = realworld.flag(scene.chunk(modifier.index), modifier.class_id)
     p = Params(float(_number(block, P_AMOUNT, d.amount)), clamped, flag(P_CAP_START, d.cap_start),
                flag(P_CAP_END, d.cap_end), int(_number(block, P_CAP_TYPE, d.cap_type)),
                int(_number(block, P_OUTPUT, d.output)), flag(P_MAPPING, d.mapping),

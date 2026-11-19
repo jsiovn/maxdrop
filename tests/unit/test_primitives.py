@@ -382,6 +382,32 @@ class HandMadeTest(unittest.TestCase):
         self.assertTrue(p.real_world)
         flag.assert_called_once_with(own, classids.SPHERE)
 
+    def test_a_damaged_real_world_holder_keeps_the_primitive(self):
+        """A 0x2150 whose children do not parse (a cut-short chunk header) turns Real-World Map Size off:
+        read_params gives the primitive's Params, not a ChunkError (convert.scene would make a placeholder)."""
+        damaged = prim.chunks.index(bytes.fromhex("01000f000080" "502109000080" "300107"))[0]
+
+        class Scene:
+            entries = (types.SimpleNamespace(class_id=classids.SPHERE, superclass=classids.SC_GEOMOBJECT),
+                       types.SimpleNamespace(class_id=None, superclass=classids.SC_PARAMETER_BLOCK2))
+
+            def __len__(self):
+                return 2
+
+            def entry(self, i):
+                return self.entries[i]
+
+            def refs(self, i):
+                return {0: 1} if i == 0 else {}
+
+            def chunk(self, i):
+                return damaged if i == 0 else None
+
+        with mock.patch.object(prim, "is_primitive", return_value=True), \
+                mock.patch.object(prim.pblock.ParamBlock2, "from_chunk", return_value=Block({})):
+            p, _issues = prim.read_params(Scene(), 0)
+        self.assertEqual((p.class_id, p.real_world), (classids.SPHERE, False))
+
     def test_a_refused_primitive_is_a_placeholder_named_once(self):
         """convert.scene: a primitive whose build fails (refused, or a formula error) is a placeholder of its class
         with one issue, also when an instance shares it; the import goes on."""

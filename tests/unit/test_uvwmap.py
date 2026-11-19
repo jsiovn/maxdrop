@@ -333,9 +333,14 @@ class FakeBlock:
         return self.values.get(i, default)
 
 
+# An object chunk 0x0001 holding a 0x2150 whose children do not parse (a cut-short chunk header): Real-World Map
+# Size off (reader.realworld), the rest of the object read.
+DAMAGED_REAL_WORLD = bytes.fromhex("01000f000080" "502109000080" "300107")
+
+
 class FakeScene:
     def chunk(self, i):
-        raise uvwmap.ChunkError("no chunk %d" % i)
+        return uvwmap.chunks.index(DAMAGED_REAL_WORLD)[0]
 
 
 def _modifier(values):
@@ -360,7 +365,7 @@ class Parameters(unittest.TestCase):
 
     def test_real_world_is_read_from_its_own_chunk_and_class(self):
         """Real-World Map Size comes from reader.realworld (tests/unit/test_realworld.py has its cases), asked
-        for the modifier's own chunk and the UVW Map class; a chunk that cannot be read is off."""
+        for the modifier's own chunk and the UVW Map class; a damaged 0x2150 is off."""
         own = object()
         scene = types.SimpleNamespace(chunk=lambda i: own if i == 1 else None)
         with mock.patch.object(uvwmap.realworld, "flag", return_value=True) as flag:

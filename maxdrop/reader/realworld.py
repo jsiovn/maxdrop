@@ -12,10 +12,12 @@ The flag is not in a parameter block: the object's or modifier's own chunk holds
 0x2150 can hold several 0x0110 entries (an instanced modifier, another plug-in's data): only the first one whose
 0x0120 names class_id is the flag. docs/FORMAT.md says which fixture shows what.
 
-The chunk comes from anywhere: a leaf 0x0110 or a 0x0120 shorter than a ClassID is skipped, a 0x0130 shorter than
-a u32 in the entry of the class is off; a damaged chunk tree under the chunk raises ChunkError, as any walk of it
-does (the callers decide what that costs). No bpy.
+The chunk comes from anywhere: a leaf 0x0110, a 0x0110 whose children do not parse or a 0x0120 shorter than a
+ClassID is skipped, a 0x0130 shorter than a u32 in the entry of the class is off, and so is a chunk or a 0x2150
+whose children do not parse. Never a ChunkError: the flag only changes UVs, so a damaged one must not cost a caller
+its mesh. No bpy.
 """
+from . import chunks
 
 HOLDER, ENTRY, CLASS, VALUE = 0x2150, 0x0110, 0x0120, 0x0130
 _CLASS_SIZE, _VALUE_SIZE = 8, 4
@@ -25,14 +27,21 @@ def flag(chunk, class_id):
     """Whether Real-World Map Size is on in chunk (a reader.chunks chunk) for class_id (a ClassId or (a, b))."""
     if not chunk.container:
         return False
-    holder = chunk.first(HOLDER)
-    if holder is None or not holder.container:
+    try:
+        holder = chunk.first(HOLDER)
+        if holder is None or not holder.container:
+            return False
+        entries = holder.find_all(ENTRY)
+    except chunks.ChunkError:
         return False
     key = tuple(class_id)
-    for entry in holder.find_all(ENTRY):
+    for entry in entries:
         if not entry.container:
             continue
-        cls = entry.first(CLASS)
+        try:
+            cls = entry.first(CLASS)
+        except chunks.ChunkError:
+            continue
         if cls is None or cls.payload_size < _CLASS_SIZE or cls.unpack("<II") != key:
             continue
         value = entry.first(VALUE)

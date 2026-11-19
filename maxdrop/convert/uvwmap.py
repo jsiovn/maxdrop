@@ -36,7 +36,6 @@ No bpy; numpy is imported when a mesh is mapped.
 """
 import collections
 import math
-import struct
 
 from ..reader import chunks, classids, controllers, geometry, pblock, realworld
 
@@ -129,10 +128,7 @@ def read_params(scene, modifier):
     channel = int(_number(block, P_CHANNEL, d.map_channel))
     if not 0 <= channel <= MAX_CHANNEL:
         raise UVWMapError("map channel %d" % channel)
-    try:
-        real_world = realworld.flag(scene.chunk(modifier.index), modifier.class_id)
-    except (ChunkError, struct.error):
-        real_world = False
+    real_world = realworld.flag(scene.chunk(modifier.index), modifier.class_id)
     p = Params(maptype, float(_number(block, P_UTILE, d.utile)), float(_number(block, P_VTILE, d.vtile)),
                float(_number(block, P_WTILE, d.wtile)), flag(P_UFLIP, d.uflip), flag(P_VFLIP, d.vflip),
                flag(P_WFLIP, d.wflip), flag(P_CAP, d.cap), flag(P_CHANNEL_KIND, d.vertex_color),

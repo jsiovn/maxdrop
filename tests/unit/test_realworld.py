@@ -96,6 +96,19 @@ class Flag(unittest.TestCase):
         a_leaf = chunks.index(leaf(0x0001, struct.pack("<I", 1)))[0]
         self.assertFalse(realworld.flag(a_leaf, OWN))
 
+    def test_a_damaged_chunk_tree_is_off(self):
+        """A chunk or a 0x2150 whose children do not parse (here a cut-short chunk header) is off, an entry whose
+        children do not parse is skipped; never a ChunkError: the flag only changes UVs, the callers keep their
+        mesh."""
+        cut = bytes.fromhex("300107")
+        self.assertFalse(flag(holder(0x0110, cut)))  # an entry's body: that entry is skipped
+        self.assertTrue(flag(holder(0x0110, cut), entry(OWN, 1)))
+        self.assertTrue(flag(entry(OWN, 1), holder(0x0110, cut)))
+        damaged_holder = chunks.index(holder(0x0001, holder(0x2150, cut)))[0]
+        self.assertFalse(realworld.flag(damaged_holder, OWN))
+        damaged_object = chunks.index(holder(0x0001, cut))[0]
+        self.assertFalse(realworld.flag(damaged_object, OWN))
+
     def test_class_id_as_a_plain_tuple(self):
         self.assertTrue(flag(entry(OWN, 1), class_id=(OWN[0], OWN[1])))
         self.assertTrue(flag(entry(OWN, 1), class_id=[OWN[0], OWN[1]]))
