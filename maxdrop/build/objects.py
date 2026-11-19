@@ -115,13 +115,17 @@ def _attribute(mesh, name, domain):
 def _sharp_edge_flags(mesh, pairs):
     """One bool per Blender edge: whether its vertex pair is in pairs (int32 (E, 2), sorted)."""
     import numpy
+    pairs = numpy.asarray(pairs, dtype=numpy.int64).reshape(-1, 2)
+    if not len(pairs):
+        return numpy.zeros(len(mesh.edges), dtype=bool)
     edges = numpy.empty(len(mesh.edges) * 2, dtype=numpy.int32)
     mesh.edges.foreach_get("vertices", edges)
     edges = edges.reshape(-1, 2).astype(numpy.int64)
     n = len(mesh.vertices)
     keys = numpy.minimum(edges[:, 0], edges[:, 1]) * n + numpy.maximum(edges[:, 0], edges[:, 1])
-    pairs = numpy.asarray(pairs, dtype=numpy.int64).reshape(-1, 2)
-    return numpy.isin(keys, pairs[:, 0] * n + pairs[:, 1])
+    wanted = numpy.unique(pairs[:, 0] * n + pairs[:, 1])  # a binary search per edge: isin sorts every edge key
+    at = numpy.minimum(numpy.searchsorted(wanted, keys), len(wanted) - 1)
+    return wanted[at] == keys
 
 
 def make_mesh(md, indices=None):
