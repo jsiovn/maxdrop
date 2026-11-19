@@ -335,6 +335,7 @@ def two_scenes(max_path, scratch, ops):
           ("a/" + name) in message and ("b/" + SECOND) in message, message.strip())
     check("two scenes in a .zip, none named: nothing unpacked", not os.path.exists(os.path.join(folder, "two")))
     no_free_folder(ops, zip_path, folder, "a/" + name)
+    parent_problem(ops, zip_path)
     # What invoke() stores (it needs a window): the popup then previews whichever scene the Scene field names.
     remember_target(ops, zip_path, folder)
     first = os.path.join(folder, "two", os.path.splitext(name)[0])
@@ -377,15 +378,49 @@ def no_free_folder(ops, zip_path, folder, scene):
         pass
     remember_target(ops, zip_path, folder)
     saved, archive._CANDIDATES = archive._CANDIDATES, 1
+    # The preview's message is no .max path: it must never be read as one (ops._ON_DISK gates both reads).
+    asked = []
+    remember, preflight_of = ops._remember_preflight, ops._preflight_of
+    ops._remember_preflight = lambda path: asked.append(path) or remember(path)
+    ops._preflight_of = lambda path: asked.append(path) or preflight_of(path)
     try:
         layout = FakeLayout()
-        ops.import_pack(layout, FakeOperator(zip_path, scene), [(zip_path, ops._listing(zip_path))])
+        operator = FakeOperator(zip_path, scene)
+        ops.import_pack(layout, operator, [(zip_path, ops._listing(zip_path))])
+        ops.import_files(FakeLayout(), operator)
+        preview = ops._target_of(zip_path)[2].get(scene)
     finally:
+        ops._remember_preflight, ops._preflight_of = remember, preflight_of
         archive._CANDIDATES = saved
         ops._TARGETS.pop(ops._norm(zip_path), None)
         shutil.rmtree(taken)
-    check("Scene Pack panel: no free folder name is said, with an error icon",
-          layout.labels[-1].startswith("No free folder for two.zip in ") and layout.icons[-1] == 'ERROR',
+    check("Scene Pack panel: no free folder name is said, with an error icon, the folder on its own line",
+          layout.labels[-2:] == ["No free folder for two.zip in", folder] and layout.icons[-2:] == ['ERROR', 'NONE'],
+          str(list(zip(layout.labels, layout.icons))))
+    check("Scene Pack panel: a preview with no free folder never reaches the pre-flight read",
+          preview is not None and preview[0] == "none" and asked == [zip_path], "%s, asked %s" % (preview, asked))
+
+
+def parent_problem(ops, zip_path):
+    """The archive's folder cannot be written and no other is chosen: the panel says so, the folder on its own
+    line."""
+    prefs = ops.prefs
+    saved, prefs.writable = prefs.writable, lambda folder: False
+    try:
+        parent, problem = ops._target(zip_path, bpy.context)
+    finally:
+        prefs.writable = saved
+    beside = os.path.dirname(os.path.abspath(zip_path))
+    check("a folder that cannot be written: no parent, the reason as labels",
+          parent is None and problem == ("Cannot write into", beside, prefs._CHOOSE), "%s %s" % (parent, problem))
+    ops._TARGETS[ops._norm(zip_path)] = (ops._key(zip_path), parent, problem, {})
+    try:
+        layout = FakeLayout()
+        ops.import_pack(layout, FakeOperator(zip_path), [(zip_path, ops._listing(zip_path))])
+    finally:
+        ops._TARGETS.pop(ops._norm(zip_path), None)
+    check("Scene Pack panel: a folder that cannot be written is said on three lines, the first with an error icon",
+          layout.labels[-3:] == list(problem) and layout.icons[-3:] == ['ERROR', 'NONE', 'NONE'],
           str(list(zip(layout.labels, layout.icons))))
 
 

@@ -55,6 +55,8 @@
 # and the material conversion.
 # Modified for MaxDrop, 2026-11-19 (jsiovn). The Scene Pack panel says when no pack folder name is free, and its
 # previews are dropped when the archive at that path changed since invoke().
+# Modified for MaxDrop, 2026-11-19 (jsiovn). The Scene Pack panel puts the folder of its error lines on a label of
+# its own, and invoke() keeps no folder of a pack it cannot look at.
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -87,8 +89,8 @@ _ARCHIVE_EXTENSIONS = (".zip", ".rar", ".7z")
 # Listings of the packs a drop or a script named, for the popup and the Scene search. Keyed by path, size and
 # modification time, so that a changed archive is listed again.
 _LISTINGS = {}
-# Per pack of the popup, by normalized path: (_key() of the archive, parent folder, the reason there is none,
-# {scene: _preview()}). An archive replaced at that path since invoke() keeps none of it (_target_of).
+# Per pack of the popup, by normalized path: (_key() of the archive, parent folder, the reason there is none as
+# popup labels, {scene: _preview()}). An archive replaced at that path since invoke() keeps none of it (_target_of).
 _TARGETS = {}
 # The previews that name a .max already on disk.
 _ON_DISK = ("reused", "in_place")
@@ -225,13 +227,13 @@ def _choose(path, scenes, text):
 
 
 def _target(path, context):
-    """(the folder the pack folder will be made in, None), or (None, the reason there is none). The pack folder's
-    own name is archive.unpack()'s choice (a free name, an earlier unpack, a copy extracted by hand), which
-    archive.preview() tells beforehand."""
+    """(the folder the pack folder will be made in, None), or (None, the reason there is none as popup labels). The
+    pack folder's own name is archive.unpack()'s choice (a free name, an earlier unpack, a copy extracted by hand),
+    which archive.preview() tells beforehand."""
     try:
         return prefs.pack_parent(path, context), None
     except ValueError as e:
-        return None, str(e)
+        return None, getattr(e, "lines", None) or (str(e),)
 
 
 def _referenced_maps(max_path):
@@ -734,6 +736,7 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
                 try:
                     _TARGETS[_norm(path)] = (_key(path), parent, problem, {})
                 except OSError:  # gone since it was listed: the popup shows no folder for it
+                    _TARGETS.pop(_norm(path), None)
                     continue
                 _preview(path, found.scenes, self.pack_scene)  # a pack is never unpacked here
             listed = {_norm(path) for path, _found in packs}
@@ -766,9 +769,12 @@ def import_pack(layout, operator, packs):
         parent, problem, _previews = _target_of(path) or (None, None, None)
         found = None if problem else _drawn_preview(operator, path, listing)
         if problem:
-            body.label(text=problem, icon='ERROR')
-        elif found and found[0] == "none":
-            body.label(text=found[1], icon='ERROR')
+            body.label(text=problem[0], icon='ERROR')
+            for line in problem[1:]:
+                body.label(text=line)
+        elif found and found[0] == "none":  # execute() would stop with found[1]: the same words, the folder apart
+            body.label(text="No free folder for %s in" % os.path.basename(path), icon='ERROR')
+            body.label(text=parent)
         elif found:
             mode, max_path = found
             if mode == "unpacked":
