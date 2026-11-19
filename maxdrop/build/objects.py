@@ -60,6 +60,11 @@ CLASS_PROPERTY = "maxdrop_class"
 HELPER_PROPERTY = "maxdrop_helper"
 SHEAR_HELPER = "MaxDrop Shear"
 TRACK_TO_NAME = "MaxDrop Target"
+# build_steps() makes a mesh of more face corners than this in several steps (mesh_steps), so that Esc and redraws do
+# not wait for it, and looks its sharp edges up EDGE_CHUNK edges a step. foreach_set() writes a whole array, so one
+# array of a huge mesh stays one step (scene B's largest, 5.6 M corners: about 0.6 s).
+STEP_LOOPS = 250000
+EDGE_CHUNK = 1 << 20
 NO_TARGET = "its target is not imported"
 SELF_TARGET = "it is aimed at itself"
 
@@ -112,41 +117,78 @@ def _attribute(mesh, name, domain):
     return attr
 
 
-def _sharp_edge_flags(mesh, pairs):
-    """One bool per Blender edge: whether its vertex pair is in pairs (int32 (E, 2), sorted)."""
+def _drain(steps):
+    while True:
+        try:
+            next(steps)
+        except StopIteration as done:
+            return done.value
+
+
+def _edge_flag_steps(mesh, pairs):
+    """Generator of _sharp_edge_flags(): yields before each EDGE_CHUNK edges it looks up, returns the flags."""
     import numpy
     pairs = numpy.asarray(pairs, dtype=numpy.int64).reshape(-1, 2)
+    flags = numpy.zeros(len(mesh.edges), dtype=bool)
     if not len(pairs):
-        return numpy.zeros(len(mesh.edges), dtype=bool)
+        return flags
     edges = numpy.empty(len(mesh.edges) * 2, dtype=numpy.int32)
     mesh.edges.foreach_get("vertices", edges)
-    edges = edges.reshape(-1, 2).astype(numpy.int64)
+    edges = edges.reshape(-1, 2)
     n = len(mesh.vertices)
-    keys = numpy.minimum(edges[:, 0], edges[:, 1]) * n + numpy.maximum(edges[:, 0], edges[:, 1])
-    wanted = numpy.unique(pairs[:, 0] * n + pairs[:, 1])  # a binary search per edge: isin sorts every edge key
-    at = numpy.minimum(numpy.searchsorted(wanted, keys), len(wanted) - 1)
-    return wanted[at] == keys
+    yield
+    wanted = pairs[:, 0] * n + pairs[:, 1]  # a binary search per edge: isin sorts every edge key
+    if len(wanted) > 1 and not (wanted[1:] > wanted[:-1]).all():  # convert.scene.sharp_edges gives them sorted
+        wanted = numpy.unique(wanted)
+    for start in range(0, len(edges), EDGE_CHUNK):
+        yield
+        part = edges[start:start + EDGE_CHUNK].astype(numpy.int64)
+        keys = numpy.minimum(part[:, 0], part[:, 1]) * n + numpy.maximum(part[:, 0], part[:, 1])
+        at = numpy.minimum(numpy.searchsorted(wanted, keys), len(wanted) - 1)
+        flags[start:start + len(part)] = wanted[at] == keys
+    return flags
+
+
+def _sharp_edge_flags(mesh, pairs):
+    """One bool per Blender edge: whether its vertex pair is in pairs (int32 (E, 2), sorted)."""
+    return _drain(_edge_flag_steps(mesh, pairs))
 
 
 def make_mesh(md, indices=None):
     """A Mesh of a MeshDescription; the number of UV layers that did not fit. indices: each face's material index,
     md.material_indices when None."""
+    return _drain(mesh_steps(md, indices))
+
+
+def mesh_steps(md, indices=None):
+    """make_mesh() as a generator: yields between its phases (the arrays written, the edges, the sharp-edge lookup by
+    EDGE_CHUNK edges, each UV layer) and returns (mesh, dropped). Closed early, the new mesh is left without users for
+    the caller to remove; never with elements added and not filled."""
     import numpy
     mesh = bpy.data.meshes.new(md.name)
     mesh.vertices.add(len(md.positions))
-    mesh.loops.add(len(md.loop_vertices))
-    mesh.polygons.add(len(md.loop_starts))
     mesh.vertices.foreach_set("co", numpy.ascontiguousarray(md.positions, dtype=numpy.float32).ravel())
+    yield
+    mesh.loops.add(len(md.loop_vertices))
     mesh.loops.foreach_set("vertex_index", numpy.ascontiguousarray(md.loop_vertices, dtype=numpy.int32))
+    yield
+    mesh.polygons.add(len(md.loop_starts))
     mesh.polygons.foreach_set("loop_start", numpy.ascontiguousarray(md.loop_starts, dtype=numpy.int32))
     mesh.polygons.foreach_set("material_index", numpy.ascontiguousarray(
         md.material_indices if indices is None else indices, dtype=numpy.int32))
+    yield
     mesh.update(calc_edges=True)
     _attribute(mesh, "sharp_face", 'FACE').data.foreach_set("value", numpy.asarray(md.sharp_faces, dtype=bool))
-    _attribute(mesh, "sharp_edge", 'EDGE').data.foreach_set("value", _sharp_edge_flags(mesh, md.sharp_edges))
+    yield
+    flags = yield from _edge_flag_steps(mesh, md.sharp_edges)
+    _attribute(mesh, "sharp_edge", 'EDGE').data.foreach_set("value", flags)
     dropped = 0
     for name, uv in md.uv_layers:
-        layer = mesh.uv_layers.new(name=name, do_init=False) if len(mesh.uv_layers) < MAX_UV_LAYERS else None
+        if len(mesh.uv_layers) >= MAX_UV_LAYERS:
+            dropped += 1
+            continue
+        yield
+        layer = mesh.uv_layers.new(name=name, do_init=False)
         if layer is None:
             dropped += 1
             continue
@@ -194,12 +236,7 @@ def build(desc, collection, collections=None, view_layer=None, slots=None, mater
     convert.materials.MeshSlots}, each face's slot and each slot's materials; material: make(MaterialIR) -> a
     Material, called once per Max material (no material in the slots without it); light_strength: the factor on
     every light's power."""
-    steps = build_steps(desc, collection, collections, view_layer, slots, material, light_strength)
-    while True:
-        try:
-            next(steps)
-        except StopIteration as done:
-            return done.value
+    return _drain(build_steps(desc, collection, collections, view_layer, slots, material, light_strength))
 
 
 def steps_of(desc, slots=None):
@@ -212,7 +249,8 @@ def steps_of(desc, slots=None):
 def build_steps(desc, collection, collections=None, view_layer=None, slots=None, material=None,
                 light_strength=1.0):
     """build() in steps, for an import that shows its progress and can be cancelled: a generator that yields
-    (steps done, steps_of(desc, slots)) after each datablock it made and returns the Built result. Closing it early
+    (steps done, steps_of(desc, slots)) after each datablock it made, also between the phases of a mesh of more
+    than STEP_LOOPS face corners with the count unchanged, and returns the Built result. Closing it early
     leaves what it made so far for the caller to remove (everything is linked into collection or the layers'
     collections, or is data of those objects)."""
     built = Built()
@@ -221,7 +259,18 @@ def build_steps(desc, collection, collections=None, view_layer=None, slots=None,
     view_layer = view_layer or bpy.context.view_layer
     for key, md in desc.meshes.items():
         plan = slots.get(key)
-        built.meshes[key], dropped = make_mesh(md, plan.indices if plan is not None else None)
+        indices = plan.indices if plan is not None else None
+        if len(md.loop_vertices) > STEP_LOOPS:
+            phases = mesh_steps(md, indices)
+            while True:
+                try:
+                    next(phases)
+                except StopIteration as made:
+                    built.meshes[key], dropped = made.value
+                    break
+                yield done, total  # the same count: steps_of() has one step per mesh
+        else:
+            built.meshes[key], dropped = make_mesh(md, indices)
         built.dropped_uv_layers += dropped
         done += 1
         yield done, total

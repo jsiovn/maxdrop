@@ -1438,6 +1438,132 @@ def check_run_guards(textured):
           waited and "still reading" in busy and ops._busy() == "", busy)
 
 
+def check_read_cancel(path):
+    """Esc while a threaded run reads: the reading stops at the next node (convert.scene.describe's cancel check), so
+    close() ends the worker and the next import is not refused (ops._busy). The read is slowed per node."""
+    import time
+    from maxdrop import ops
+    from maxdrop.convert import scene as convert_scene
+    empty_scene()
+    before = _state()
+    original, calls = convert_scene.blender_matrix, []
+
+    def slow(*args, **kwargs):
+        calls.append(None)
+        time.sleep(0.2)  # twice per node: the read of every node takes 0.4 s
+        return original(*args, **kwargs)
+
+    convert_scene.blender_matrix = slow
+    try:
+        run = _cancel_run([path])
+        steps = run.steps(threaded=True)
+        held = _advance(steps, lambda: len(calls) > 0)
+        start = time.perf_counter()
+        steps.close()
+        closed = time.perf_counter() - start
+        while ops._busy() and time.perf_counter() - start < 1.0:
+            time.sleep(0.01)
+        free = ops._busy() == ""
+        seen = len(calls)
+        time.sleep(0.5)
+        check("read cancel: closed while the worker reads, it stops at the next node: close() within 1 s, the next "
+              "import not refused within 1 s, nothing made",
+              held and closed < 1.0 and free and len(calls) == seen and _state() == before,
+              "close %.2f s, busy %r, %d -> %d calls" % (closed, ops._busy(), seen, len(calls)))
+    finally:
+        for worker in list(ops._WORKERS):
+            worker.join(60)
+        convert_scene.blender_matrix = original
+
+
+def _mesh_arrays(mesh):
+    """Every array build.objects writes into a Mesh, as lists."""
+    import numpy
+
+    def get(seq, attr, width, dtype):
+        out = numpy.empty(len(seq) * width, dtype=dtype)
+        seq.foreach_get(attr, out)
+        return out.tolist()
+
+    arrays = {"co": get(mesh.vertices, "co", 3, numpy.float32),
+              "vertex_index": get(mesh.loops, "vertex_index", 1, numpy.int32),
+              "loop_start": get(mesh.polygons, "loop_start", 1, numpy.int32),
+              "material_index": get(mesh.polygons, "material_index", 1, numpy.int32),
+              "edges": get(mesh.edges, "vertices", 2, numpy.int32)}
+    for name in ("sharp_face", "sharp_edge"):
+        attr = mesh.attributes.get(name)
+        arrays[name] = get(attr.data, "value", 1, bool) if attr is not None else None
+    arrays["uv"] = [(layer.name, get(layer.data, "uv", 2, numpy.float32)) for layer in mesh.uv_layers]
+    return arrays
+
+
+def check_mesh_steps(paths, cancel_path):
+    """build.objects.build_steps() makes a mesh above STEP_LOOPS face corners in phases (mesh_steps), looking its
+    sharp edges up EDGE_CHUNK edges at a time: the same mesh as make_mesh() in one go, several yields per mesh with
+    the count repeated; a run closed while a mesh is half made leaves nothing."""
+    from maxdrop.build import objects as build_objects
+    from maxdrop.convert import scene as convert_scene
+    saved = build_objects.STEP_LOOPS, build_objects.EDGE_CHUNK, build_objects.mesh_steps
+    try:
+        for path in paths:
+            empty_scene()
+            name = os.path.basename(path)
+            desc = convert_scene.read(path)
+            whole = {}
+            for key, md in desc.meshes.items():
+                mesh, _dropped = build_objects.make_mesh(md)
+                whole[key] = _mesh_arrays(mesh)
+                bpy.data.meshes.remove(mesh)
+            build_objects.STEP_LOOPS, build_objects.EDGE_CHUNK = 0, 7
+            steps = build_objects.build_steps(desc, bpy.context.scene.collection)
+            counts = []
+            while True:
+                try:
+                    counts.append(next(steps))
+                except StopIteration as end:
+                    built = end.value
+                    break
+            build_objects.STEP_LOOPS, build_objects.EDGE_CHUNK = saved[:2]
+            total = build_objects.steps_of(desc)
+            dones = [d for d, _t in counts]
+            sharp = sum(sum(a["sharp_edge"] or []) for a in whole.values())
+            check("mesh steps: %s: 3 or more yields per mesh, the count repeated, never back, ending at the total" % name,
+                  len(counts) >= total + 3 * len(desc.meshes) and dones == sorted(dones) and dones[-1] == total
+                  and {t for _d, t in counts} == {total}, "%d yields, %d steps" % (len(counts), total))
+            same = {key: _mesh_arrays(built.meshes[key]) == arrays for key, arrays in whole.items()}
+            check("mesh steps: %s: every mesh built in phases equals make_mesh's (%d meshes, %d sharp edges, UVs)"
+                  % (name, len(whole), sharp), whole and all(same.values()) and sharp > 0,
+                  str([k for k, ok in same.items() if not ok]))
+            import numpy
+            key, md = max(desc.meshes.items(), key=lambda item: len(item[1].sharp_edges))
+            pairs = numpy.asarray(md.sharp_edges)
+            shuffled = numpy.concatenate((pairs[::-1], pairs[:3]))  # not sorted, repeated pairs
+            flags = build_objects._sharp_edge_flags(built.meshes[key], shuffled)
+            check("mesh steps: %s: sharp pairs out of order or repeated mark the same edges" % name,
+                  flags.tolist() == whole[key]["sharp_edge"] and len(pairs) > 3, str(len(pairs)))
+
+        empty_scene()
+        before = _state()
+        inside = []
+
+        def tracked(md, indices=None):
+            inside.append(md)
+            result = yield from saved[2](md, indices)
+            inside.remove(md)
+            return result
+
+        build_objects.STEP_LOOPS, build_objects.EDGE_CHUNK, build_objects.mesh_steps = 0, 7, tracked
+        meshes = len(bpy.data.meshes)
+        run = _cancel_run([cancel_path])
+        steps = run.steps()
+        held = _advance(steps, lambda: bool(inside) and len(bpy.data.meshes) > meshes + 1)
+        steps.close()
+        check("mesh steps: closed while a mesh is half made: nothing left", held and _state() == before,
+              "%s | %s" % (_state(), before))
+    finally:
+        build_objects.STEP_LOOPS, build_objects.EDGE_CHUNK, build_objects.mesh_steps = saved
+
+
 def check_worker_errors():
     """ops._in_thread() hands the worker's outcome to the main thread: its value; an Exception unchanged; a SystemExit
     as a RuntimeError caused by it, so that the modal runner's except Exception still tears the run down."""
@@ -2619,6 +2745,12 @@ def main():
                                  ("builder debt", check_builder_debt), ("linear fallback", check_linear_fallback),
                                  ("image reuse", check_image_reuse), ("double import", check_double_import),
                                  ("worker errors", check_worker_errors),
+                                 ("read cancel", lambda: check_read_cancel(
+                                     os.path.join(ROOT, "tests", "fixtures", "primitives.max"))),
+                                 ("mesh steps", lambda: check_mesh_steps(
+                                     [os.path.join(ROOT, "tests", "fixtures", n) for n in ("multi_uv.max",
+                                                                                          "primitives.max")],
+                                     os.path.join(ROOT, "tests", "fixtures", "primitives.max"))),
                                  ("conversion failure", lambda: check_conversion_failure(
                                      os.path.join(ROOT, "tests", "fixtures", "vray_maps.max"))),
                                  ("light note on failure", lambda: check_light_note_on_failure(

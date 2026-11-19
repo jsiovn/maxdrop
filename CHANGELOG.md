@@ -36,6 +36,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ### Changed
 
+- Import: Esc while a windowed import reads its file stops the reading at the next object (it ran to the end of
+  the file, and a new import was refused until then), and a very large mesh is built in several steps, so Blender
+  keeps drawing and Esc answers during it.
 - Materials: an inverted Output (of a Bitmap or an Output map) with an RGB offset subtracts the offset, as 3ds Max
   renders it (it was added).
 - Report: a scene saved with a view through no camera active (common) names its scene camera, the first camera, in

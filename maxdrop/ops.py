@@ -120,15 +120,17 @@ _MADE = ("meshes", "curves", "lights", "cameras", "materials", "images")
 # The render settings build.cameras.set_render() changes, put back when a run is cancelled.
 _RENDER = ("resolution_x", "resolution_y", "resolution_percentage", "pixel_aspect_x", "pixel_aspect_y")
 # A modal run: seconds of work per timer event, the timer's interval, the steps of the progress shown in the cursor,
-# the share of a scene's progress its reading takes (scene B: 9 s of reading and describing, 7 s of building), and
-# how long an Esc during an unpack waits for the unpacker to stop and remove its staging folder.
+# the share of a scene's progress its reading takes (scene B: 9 s of reading and describing, 7 s of building), how
+# long an Esc during an unpack waits for the unpacker to stop and remove its staging folder, and how long one during
+# a read waits for it to stop at the next node (one node of scene B takes 1.5 s; past this, _busy() covers the rest).
 _SLICE = 0.1
 _TICK = 0.05
 _PROGRESS_STEPS = 1000
 _READ_SHARE = 0.55
 _STOP_WAIT = 10.0
+_READ_WAIT = 0.5
 # Runs execute() hands to maxdrop.import_progress, by key; the run being stepped, and the worker threads of runs
-# (a cancelled read ends only with its file), so that a second import waits.
+# (one that a cancel did not stop within its wait runs on), so that a second import waits.
 _RUNS = {}
 _ACTIVE = []
 _WORKERS = []
@@ -524,10 +526,11 @@ def _drain(steps):
             return end.value
 
 
-def _in_thread(fn, *args, stop=None, **kwargs):
+def _in_thread(fn, *args, stop=None, wait=_STOP_WAIT, **kwargs):
     """Step generator: fn(*args, **kwargs) in a worker thread, yielding _WAIT while it runs; its return value, or its
     exception raised here. fn must touch no Blender data. Closed early: stop (a threading.Event fn watches) is set
-    and the worker given _STOP_WAIT seconds to end; without stop its result is dropped when it ends."""
+    and the worker given wait seconds to end; without stop, or past that, its result is dropped when it ends
+    (_busy() refuses a new import meanwhile)."""
     box = {}
 
     def work():
@@ -545,7 +548,7 @@ def _in_thread(fn, *args, stop=None, **kwargs):
     except GeneratorExit:
         if stop is not None:
             stop.set()
-            worker.join(_STOP_WAIT)
+            worker.join(wait)
         raise
     if "error" in box:
         error = box["error"]
@@ -563,9 +566,10 @@ class _Read:
     __slots__ = ("desc", "note", "slots", "counts", "failed", "light_note")
 
 
-def _read_scene(max_path, opts, dirs):
+def _read_scene(max_path, opts, dirs, cancel=None):
     """Reader, scene description and material conversion of one .max (ImportOptions opts, texture search folders
-    dirs): everything the build needs, in a _Read. One of _UNREADABLE when the file cannot be read. Touches no
+    dirs): everything the build needs, in a _Read. One of _UNREADABLE when the file cannot be read;
+    convert.scene.Cancelled once cancel() holds, asked between nodes and around the material conversion. Touches no
     Blender data: a modal run calls it in a worker thread."""
     from .convert import cameras, colors
     from .convert import scene as convert_scene
@@ -579,15 +583,20 @@ def _read_scene(max_path, opts, dirs):
         meters, read.note = _meters(opts.units, unit, opts.scale_objects)
         table = assets.AssetTable.from_file(cf)
         desc = convert_scene.describe(sc, meters, unit, convert_modifiers=opts.modifiers == 'KEEP',
-                                      assets=table, views=cameras.saved_views(cf))
+                                      assets=table, views=cameras.saved_views(cf), cancel=cancel)
         read.slots, read.counts, read.failed = None, None, []
         if 'MATERIAL' in opts.object_filter:
+            # asked here, not inside: the except below would take a Cancelled for a material rule's bug
+            if cancel is not None and cancel():
+                raise convert_scene.Cancelled()
             try:
                 read.slots, read.counts = _material_slots(sc, desc, table, max_path, dirs, opts.use_image_search)
             except Exception as e:  # a material rule's bug costs the materials, never the scene
                 print("MaxDrop: materials of %s not converted:\n%s" % (name, traceback.format_exc()), end="")
                 read.failed.append(("materials", "not converted (%s: %s): the scene is imported without materials"
                                     % (type(e).__name__, e)))
+            if cancel is not None and cancel():
+                raise convert_scene.Cancelled()
         # light colors follow the swatch rule too; converted materials bring its note to the report
         read.light_note = colors.of_scene(sc).note if desc.lights and read.counts is None else ""
         del sc  # the Scene holds the inflated stream of a compressed file
@@ -633,8 +642,9 @@ def _scene_steps(opts, scene, view_layer, max_path, pack=None, pack_name="", dir
     the archive's file name. Returns ([(report level, line)], the convert.report.Report), the report's summary last;
     raises one of _UNREADABLE when the file cannot be read. A build that fails or is closed early is removed again
     (objects, collections, meshes, curves, lights, cameras, materials, images) before the exception goes on.
-    threaded: the reading in a worker thread (_in_thread), yielding _WAIT meanwhile; progress(text, fraction of the
-    scene) is told what it does; made: a list the scene's build.collections.Collections is appended to once built."""
+    threaded: the reading in a worker thread (_in_thread), yielding _WAIT meanwhile, stopped when closed;
+    progress(text, fraction of the scene) is told what it does; made: a list the scene's build.collections.Collections
+    is appended to once built."""
     from .build import cameras as build_cameras
     from .build import collections as build_collections
     from .build import materials as build_materials
@@ -646,7 +656,8 @@ def _scene_steps(opts, scene, view_layer, max_path, pack=None, pack_name="", dir
     materials = 'MATERIAL' in opts.object_filter
     progress("reading " + name, 0.0)
     if threaded:
-        read = yield from _in_thread(_read_scene, max_path, opts, dirs)
+        stop = threading.Event()  # set when the steps are closed: the reading ends at the next node
+        read = yield from _in_thread(_read_scene, max_path, opts, dirs, stop.is_set, stop=stop, wait=_READ_WAIT)
     else:
         read = _read_scene(max_path, opts, dirs)
     desc, slots, counts, failed = read.desc, read.slots, read.counts, read.failed

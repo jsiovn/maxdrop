@@ -539,6 +539,50 @@ class Shear(unittest.TestCase):
 
 
 @unittest.skipIf(numpy is None, "numpy missing")
+class DescribeCancel(unittest.TestCase):
+    """describe(cancel=): the check is asked once per node of each walk; the first True ends it with Cancelled at
+    once (the modal import's Esc during reading), keeping nothing; the Scene stays usable."""
+
+    @staticmethod
+    def tripping(after):
+        calls = []
+
+        def cancel():
+            calls.append(None)
+            return len(calls) > after
+        return cancel, calls
+
+    @staticmethod
+    def summary(desc):
+        return [(n.index, n.name, n.kind, n.mesh) for n in desc.nodes], sorted(desc.meshes, key=repr)
+
+    def test_a_tripped_check_raises_at_once_and_keeps_nothing(self):
+        import gc
+        sc = DamagedInput.scene(self, "hierarchy")
+        nodes = len(sc.walk())
+        self.assertGreater(nodes, 3)
+        for after in (0, 2, nodes, nodes + 2):  # in the first walk, at its end, in the second walk
+            cancel, calls = self.tripping(after)
+            with self.assertRaises(conv.Cancelled):
+                conv.describe(sc, 1.0, cancel=cancel)
+            self.assertEqual(len(calls), after + 1)
+        gc.collect()
+        self.assertFalse([o for o in gc.get_objects() if isinstance(o, conv.SceneDescription)])
+        self.assertFalse(issubclass(conv.Cancelled, ValueError))  # ops reports a ValueError as an unreadable file
+
+    def test_a_check_that_never_trips_changes_nothing(self):
+        sc = DamagedInput.scene(self, "hierarchy")
+        fresh = self.summary(conv.describe(DamagedInput.scene(self, "hierarchy"), 1.0))
+        cancel, calls = self.tripping(1)
+        with self.assertRaises(conv.Cancelled):
+            conv.describe(sc, 1.0, cancel=cancel)
+        cancel, calls = self.tripping(10 ** 9)
+        self.assertEqual(self.summary(conv.describe(sc, 1.0, cancel=cancel)), fresh)
+        self.assertEqual(len(calls), 2 * len(sc.walk()))
+        self.assertEqual(self.summary(conv.describe(sc, 1.0)), fresh)
+
+
+@unittest.skipIf(numpy is None, "numpy missing")
 class MirroredOffset(unittest.TestCase):
     def data(self):
         lv, starts, _totals, groups = _quad_strip([1, 2])
