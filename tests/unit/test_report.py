@@ -165,6 +165,17 @@ class TestSynthetic(unittest.TestCase):
         self.assertEqual(lines[1], "Units: not stated in the file, 1 m per unit")
         self.assertEqual(lines[-1], "Nothing was left out.")
 
+    def test_scene_camera_note_is_no_issue(self):
+        desc = conv.SceneDescription(1.0)
+        desc.nodes = [node(1, "Box"), node(2, "Cam", conv.CAMERA)]
+        desc.meshes = {(1, None): None}
+        desc.camera, desc.camera_note = 2, "the first camera: the view 3ds Max renders (viewport 4) looks through " \
+            "no camera"
+        rep = report.gather(desc, source="room.max")
+        self.assertEqual(rep.summary()[0], report.LEVEL_INFO)
+        self.assertIn("Render size: not stored, Blender's kept; scene camera: Cam, the first camera: the view 3ds Max "
+                      "renders (viewport 4) looks through no camera", rep.text().split("\n"))
+
     def test_curves_are_counted(self):
         desc = conv.SceneDescription(1.0)
         desc.nodes = [node(1, "Box"), node(2, "Outline", conv.CURVE)]

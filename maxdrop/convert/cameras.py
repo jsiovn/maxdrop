@@ -41,8 +41,8 @@ Render settings: the RenderEnvironment object's chunk 0x0110 / 0x2000: width, he
 render view is locked, its viewport index. Saved views: the Config stream's current layout, each viewport's view type
 and the node it looks through. render_camera picks the locked render view, else the active viewport; when it looks
 through a built camera that is the scene camera, else the first camera: a note when the saved views were read (a
-view through no camera is common and loses nothing), an issue when they were not (none stored, a damaged Config
-stream: SavedViews.damaged, or no view to pick).
+view through no camera is common and loses nothing), an issue otherwise (none stored, a damaged Config stream:
+SavedViews.damaged, no view to pick, its viewport record unreadable, or a view through a camera not built).
 
 The file comes from anywhere: a parameter that is animated, missing or no finite number takes its default (an
 issue); a block that cannot be read raises CameraError; render settings and views out of range are left out (an issue
@@ -113,6 +113,8 @@ BAD_ASPECT = "pixel aspect %r is out of Blender's range: Blender's is kept"
 NO_VIEW = "no saved view: the first camera, %s, is the scene camera"
 DAMAGED_VIEWS = "the saved views cannot be read (%s): the first camera, %s, is the scene camera"
 BAD_VIEW = "the saved view of viewport %d cannot be read: the first camera, %s, is the scene camera"
+UNBUILT_VIEW = "the view 3ds Max renders (viewport %d) looks through a camera that is not imported: the first " \
+    "camera, %s, is the scene camera"
 NOT_A_CAMERA = "the first camera: the view 3ds Max renders (viewport %d) looks through no camera"  # a note
 
 
@@ -401,9 +403,9 @@ def views_of(holder):
 def render_camera(settings, views, cameras, names=None):
     """(node index of the scene camera, issue, note): the camera the locked render view, else the active viewport
     looks through when it is among cameras (node indices of the camera nodes built, in walk order), with neither;
-    else the first of cameras with a note when the view was read (it looks through no built camera) or an issue when
-    it was not (no saved views, damaged ones, no view index in range, its viewport record unreadable). (None, None,
-    None) without cameras. names: {node index: name} for the issue."""
+    else the first of cameras with a note when the view was read and looks through no camera, or an issue (no saved
+    views, damaged ones, no view index in range, its viewport record unreadable, a camera that was not built). (None,
+    None, None) without cameras. names: {node index: name} for the issue."""
     if not cameras:
         return None, None, None
     first = cameras[0]
@@ -415,8 +417,10 @@ def render_camera(settings, views, cameras, names=None):
     if views is None or view is None or not 0 <= view < len(views.viewports):
         return first, NO_VIEW % label, None
     kind, node = views.viewports[view]
-    if kind is None:  # its record is too short to read
+    if kind is None:  # its record cannot be read
         return first, BAD_VIEW % (view + 1, label), None
-    if kind == CAMERA_VIEW and node in cameras:
-        return node, None, None
+    if kind == CAMERA_VIEW:
+        if node in cameras:
+            return node, None, None
+        return first, UNBUILT_VIEW % (view + 1, label), None
     return first, None, NOT_A_CAMERA % (view + 1)

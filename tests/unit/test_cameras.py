@@ -260,9 +260,9 @@ class Malformed(unittest.TestCase):
         self.assertEqual(C.render_camera(settings, views, [5, 7], names), (5, None, C.NOT_A_CAMERA % 1))
         self.assertEqual(C.render_camera(settings._replace(view=1), views, [5, 7], names), (7, None, None))
         self.assertEqual(C.render_camera(settings, views._replace(active=2), [5, 9], names), (9, None, None))
-        # a camera node that was not built (an empty) is no scene camera
+        # a camera node that was not built (an empty) is no scene camera: an issue
         self.assertEqual(C.render_camera(settings._replace(view=2), views, [5, 7], names),
-                         (5, None, C.NOT_A_CAMERA % 3))
+                         (5, C.UNBUILT_VIEW % (3, "First"), None))
         # the views cannot be read: an issue
         self.assertEqual(C.render_camera(None, None, [5], names), (5, C.NO_VIEW % "First", None))
         self.assertEqual(C.render_camera(settings._replace(view=8), views, [5]), (5, C.NO_VIEW % "object 5", None))
