@@ -18,8 +18,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   An undo or a file load from another window during the import cancels it the same way.
   Imports from scripts (`bpy.ops.import_scene.maxdrop(filepath=...)`) and without a window stay synchronous.
 
+- Materials: the map wrappers that were simplified to their first bitmap are drawn as nodes, from what 3ds Max
+  2020 renders (measured): a Falloff (Perpendicular / Parallel, Fresnel, Towards / Away in the viewing direction)
+  as its two sides mixed by Layer Weight, Fresnel or the facing ratio, each side mixed with its color by the map
+  amount; a Composite with its blend modes (all but linear burn, soft light, pin light and hard mix) and layer
+  masks; Color Correction's rewiring; an Output map's levels; an RGB Tint's channel mix. Other Falloff types and
+  directions and the four blend modes left out are simplified as before.
+
 ### Changed
 
+- Materials: an inverted Output (of a Bitmap or an Output map) with an RGB offset subtracts the offset, as 3ds Max
+  renders it (it was added).
 - Report: a scene saved with a view through no camera active (common) names its scene camera, the first camera, in
   the render line instead of raising a warning; a damaged Config stream is named as such, not as "no saved view".
 - Materials: an Output, RGB Tint or VRayColor2Bump map without a map of its own (or an Output or RGB Tint with it

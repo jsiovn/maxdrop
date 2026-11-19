@@ -25,8 +25,9 @@ linear color.
 
 The graph's nodes (frozen dataclasses): Image (an image map: the file as the scene stores it, the one the texture lookup
 found, Mapping, Crop, TexOutput, color space, gamma, alpha), Constant, Invert, Mix(a, b, factor, mask), Multiply,
-ColorCorrect, Composite (layers bottom first, each with its opacity), NormalMap (an image, its strength, flips, the
-map channel of its tangents, an additional Bump) and Bump (a height input and its strength). A map reached by
+ColorCorrect (with its rewiring), Composite (CompositeLayers bottom first: node, opacity, blend mode, mask), Facing
+(a Falloff's ratio), Adjust (a wrapper's Output), Tint, NormalMap (an image, its strength, flips, the map channel of
+its tangents, an additional Bump) and Bump (a height input and its strength). A map reached by
 several paths is converted once per kind and depth, so a graph is a DAG of shared nodes; a graph larger than
 MAX_NODES when drawn as a tree is cut down to its first image (an issue).
 
@@ -56,17 +57,21 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
   Mix(bottom, top, amount, mask), multiply -> Multiply (under a Mix for an amount below 1 or a mask), any other
   operation peeled to its first bitmap (an issue); layer multipliers and offsets are an issue.
 - Kept as nodes (the allow-list): Mix (color 1 / 2 where a map is off or missing, the mask, the mix amount; its
-  curve is not converted: an issue), RGB Multiply, Color Correction (hue shift in turns, saturation as a factor;
-  lightness either standard, brightness and contrast as fractions, or advanced, gain and gamma, whichever is chosen;
-  rewiring, tint and the advanced pivot and lift are not converted: an issue) and a simple Composite (normal blend
-  mode, no mask; any other is peeled).
-- Peeled to the first usable map below, an approximation counted by class: Falloff (map 1 when on, else color 1),
-  VRayDirt (the unoccluded map when on, else the unoccluded color), Output (map 1; its own Output's invert kept),
-  RGB Tint (map 1), VRayColor2Bump (its map). An Output, RGB Tint or VRayColor2Bump without a map (or an Output or
-  RGB Tint with it off; VRayColor2Bump has no switch) gives no graph and is an issue on it, counted nowhere: what
-  3ds Max draws there is not measured, so nothing stands in for it (at the top the input keeps its own value). Any
-  other map class with maps below gives the first image below it (depth first, in reference order), counted the
-  same way; one without is unsupported (counted, no graph).
+  curve is not converted: an issue), RGB Multiply, Color Correction (its rewiring first: monochrome, invert or custom
+  channels, an alpha source drawn as one or zero, an issue; hue shift in turns, saturation as a factor; lightness
+  either standard, brightness and contrast as fractions, or advanced, gain and gamma, whichever is chosen; tint and
+  the advanced pivot and lift are not converted: an issue), Composite (each layer's blend mode in BLENDS and its mask
+  as a data node; a layer in another mode peels the Composite), Falloff (types 0 to 2 in the viewing direction:
+  Mix(side 1, side 2) by a Facing, a side lerp(color, map, map amount); its own Output as an Adjust; the MixCurve is
+  not read; another type or direction is peeled to map 1, else color 1, counted, an issue), Output (its Output part
+  as an Adjust) and RGB Tint (a Tint unless the identity). Measured in 3ds Max 2020 (renderMap, a rendered sphere for
+  the Falloff): see the constants below.
+- Peeled to the first usable map below, an approximation counted by class: VRayDirt (the unoccluded map when on,
+  else the unoccluded color), VRayColor2Bump (its map). An Output, RGB Tint or VRayColor2Bump without a map (or an
+  Output or RGB Tint with it off; VRayColor2Bump has no switch) gives no graph and is an issue on it, counted
+  nowhere: what 3ds Max draws there is not measured, so nothing stands in for it (at the top the input keeps its own
+  value). Any other map class with maps below gives the first image below it (depth first, in reference order),
+  counted the same way; one without is unsupported (counted, no graph).
 - Normal maps (VRayNormalMap, Normal Bump, CoronaNormal) in a normal or bump input -> NormalMap: the normal image
   with the class's multiplier as its strength, flip red / green and swap, and the additional bump map as a Bump with
   its multiplier; a normal map class with only its bump map is that Bump. In any other input it is peeled to its
@@ -74,11 +79,11 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
 - A map that is set (and switched on) but converts to nothing (an unsupported class with no bitmap below, a
   Bitmap without a file, an empty Output, RGB Tint or VRayColor2Bump, a cut branch) is an issue on its wrapper
   naming its class, and never stands in as the wrapper's own color for it (3ds Max uses that color only without a
-  map or with the map off): a Color Correction, Falloff, VRayDirt, Output, RGB Tint or VRayColor2Bump over it gives
+  map or with the map off): a Color Correction, VRayDirt, Output, RGB Tint or VRayColor2Bump over it gives
   no graph and is not counted (the lost map is reported), so the input keeps its own value.
   A Mix or CoronaMix weighs it by its amount: a side that does not show is drawn as its color (exact), a side that
   fills the result gives no graph, any other weight (or a mask) peels the wrapper to its other side's map, or no
-  graph; an RGB Multiply is always peeled that way. A lost mask leaves the mix amount, a lost Composite layer is
+  graph; an RGB Multiply and a Falloff (its sides show by the angle) are always peeled that way. A lost mask leaves the mix amount, a lost Composite layer is
   left out (both approximations); a normal map class keeps its other map.
 - The slot itself: a glossiness map feeding roughness (MapRef.invert) is under an Invert; a slot amount below 1 mixes
   the input's value with the map (Mix(Constant(value), map, amount)), above 1 multiplies the map; in a bump input the

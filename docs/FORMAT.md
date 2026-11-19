@@ -989,7 +989,7 @@ The maps of texmap_rules (block 0 each; `convert/texmaps.py`):
 | Class (ClassID) | Parameters |
 |---|---|
 | Bitmap `(0x240, 0)` | 6 apply (cropping / placement on), 9 monoOutput (1 alpha), 10 rgbOutput (1 alpha as gray), 11 alphaSource |
-| Falloff `(0x6EC3730C, 0)` | 0 color1, 1 map1Amount, 2 map1, 3 map1On, 4 color2, 5 map2Amount, 6 map2, 7 map2On, 8 type, 9 direction |
+| Falloff `(0x6EC3730C, 0)` | 0 color1, 1 map1Amount, 2 map1, 3 map1On, 4 color2, 5 map2Amount, 6 map2, 7 map2On, 8 type (0 towards / away, 1 perpendicular / parallel, the default, 2 Fresnel, 3 shadow / light, 4 distance blend), 9 direction (0 viewing), 10 node, 11 mtlIOROverride, 12 ior, 13 extrapolateOn, 14 nearDistance, 15 farDistance (texmap_wrappers); its Output part; the MixCurve is a Curve Control reference, not in the block |
 | VRayDirt `(0x2F567899, 0x090D5EA4)` | 12 occluded_color, 13 unoccluded_color, 17 texmap_unoccluded_color, 18 its on, 19 its multiplier |
 | VRayColor2Bump `(0x31E15D1D, 0x7D7E2810)` | 0 map, 1 height (world units), 2 bump delta scale |
 | VRayColor `(0x58F82B74, 0x73B75D7F)` (vray_texmaps) | 9 color_mode (0 RGB, 1 temperature: V-Ray writes the temperature's color into color), 8 temperature, 0 / 1 / 2 red / green / blue (color again), 4 rgb_multiplier, 3 alpha, 5 color, 10 color_gamma (applied after the multiplier), 11 rgb_primaries; block 1 (6 gamma_correction, 7 gamma_value) is transient |
@@ -997,8 +997,8 @@ The maps of texmap_rules (block 0 each; `convert/texmaps.py`):
 | RGB Tint `(0x224, 0)` | 0 red, 1 green, 2 blue, 3 map1, 4 map1Enabled |
 | Mix `(0x230, 0)` | 0 mixAmount (fraction), 1 lower, 2 upper, 3 useCurve, 4 color1, 5 color2, 6 map1, 7 map2, 8 mask, 9 / 10 / 11 their switches |
 | RGB Multiply `(0x290, 0)` | 0 color1, 1 color2, 2 map1, 3 map2, 4 / 5 their switches, 6 alphaFrom |
-| Color Correction `(0x2D0, 0)` | 0 color, 1 map, 2 rewireMode, 7 hueShift (degrees), 8 saturation (%), 10 tintStrength, 11 lightnessMode (1 advanced), 12 brightness, 13 contrast, 18 gainRGB (%), 22 gammaRGB |
-| Composite `(0x280, 0)` | tables: 1 mapEnabled, 3 maskEnabled, 5 blendMode (0 normal), 6 layerName, 8 opacity (%), 9 mapList, 10 mask; 0, 2 and 4 have no name and are empty tables, not saved. Its `name` is the layer names: the fixture's Composite keeps its default name |
+| Color Correction `(0x2D0, 0)` | 0 color, 1 map, 2 rewireMode (0 normal, 1 monochrome, 2 invert, 3 custom), 3..6 rewireR, G, B, A (0..2 R, G, B, 3 A, 4..7 their inverse, 8 monochrome, 9 one, 10 zero; modes 1 and 2 store (8, 8, 8, 3) and (4, 5, 6, 3): texmap_wrappers), 7 hueShift (degrees), 8 saturation (%), 9 tint, 10 tintStrength, 11 lightnessMode (1 advanced), 12 brightness, 13 contrast, 14 exposureMode, 15..17 enableR, G, B, 18 gainRGB (%), 22 gammaRGB |
+| Composite `(0x280, 0)` | tables: 1 mapEnabled, 3 maskEnabled, 5 blendMode (0 normal, 1 average, 2 addition, 3 subtract, 4 darken, 5 multiply, 6 color burn, 7 linear burn, 8 lighten, 9 screen, 10 color dodge, 11 linear dodge, 12 spotlight, 13 spotlight blend, 14 overlay, 15 soft light, 16 hard light, 17 pin light, 18 hard mix, 19 difference, 20 exclusion, 21 hue, 22 saturation, 23 color, 24 value: measured with renderMap), 6 layerName, 8 opacity (%), 9 mapList, 10 mask; 0, 2 and 4 have no name and are empty tables, not saved. As a constructor keyword `name` is the layer names; assigned afterwards it is the map's name (texmap_wrappers names its three) |
 | Normal Bump `(0x243E22C6, 0x63F6A014)` | 0 mult_spin, 1 bump_spin, 2 normal_map, 3 bump_map, 4 / 5 their switches, 6 method (0 tangent), 7 flipred, 8 flipgreen, 9 swap_rg |
 | CoronaNormal `(0x2870CEAA, 0xCC18437C)` | 500 normalMap, 501 multiplier, 502 addGamma, 503 flipRed, 504 flipGreen, 505 swapRedGreen, 507 additionalBump, 508 additionalBumpStrength, 509 additionalBumpOn |
 

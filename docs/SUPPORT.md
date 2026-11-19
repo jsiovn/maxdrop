@@ -127,11 +127,15 @@ sRGB either way, EXR and HDR files linear (or what their own gamma says). Turn m
 | CoronaColor | **Imported** as a color: RGB, HDR, temperature (an approximate curve) or hex, times its multiplier |
 | VRayColor | **Imported** as a color: RGB or temperature, times its RGB multiplier, with its color gamma. Its alpha and RGB primaries are not converted |
 | CoronaMix | **Imported** as nodes for the Mix and Multiply operations (with the mix map as mask); the other operations are **simplified** to the first bitmap below; layer multipliers and offsets are not converted; the blend is linear (Corona's "mix in sRGB" is not read) |
-| Mix, RGB Multiply, Color Correction, Composite (normal blend mode, no masks) | **Imported** as nodes (Mix, Hue/Saturation, Bright/Contrast, Gamma). A Mix curve, the rewiring, tint, pivot and lift of Color Correction are not converted |
-| A map MaxDrop cannot convert below a map that wraps it | Named in the report. Never drawn as the wrapper's own color for that map: under a Color Correction, Falloff, VRayDirt, Output, RGB Tint or VRayColor2Bump the material keeps its own color or value. A Mix or CoronaMix whose amount hides that map is imported as it is; one whose amount shows only that map leaves the material its own color; otherwise it is **simplified** to its other map (or the material keeps its own), as an RGB Multiply always is. A mask it cannot convert leaves the mix amount, a Composite layer is left out, a normal map class keeps its other map |
+| Mix, RGB Multiply, Color Correction | **Imported** as nodes (Mix, Hue/Saturation, Bright/Contrast, Gamma), Color Correction's rewiring too (monochrome, invert, custom channels; an alpha source is drawn as opaque). A Mix curve and the tint, pivot and lift of Color Correction are not converted |
+| Composite | **Imported** as nodes: each layer's blend mode drawn at full strength, then mixed in by its opacity times its mask (the mean of the mask's color), as 3ds Max renders it. Linear burn, soft light, pin light and hard mix are not drawn: such a Composite is **simplified** to the first bitmap below |
+| Falloff | **Imported** as nodes for the types Perpendicular / Parallel (Layer Weight, Facing), Fresnel (a Fresnel node at its IOR; 3ds Max's ramp is up to 0.025 darker facing the camera) and Towards / Away in the viewing direction, each side its color, its map, or the two mixed by the map amount; its own Output too. Its mix curve is not read (drawn linear). Other types (Shadow / Light, Distance Blend) and directions are **simplified** to map 1, or color 1 without it |
+| Output, RGB Tint | **Imported** as nodes: the Output's invert, level, offset and amount (its clamp and color map curve are not read); the RGB Tint's three colors as a channel mix |
+| A map MaxDrop cannot convert below a map that wraps it | Named in the report. Never drawn as the wrapper's own color for that map: under a Color Correction, VRayDirt, Output, RGB Tint or VRayColor2Bump the material keeps its own color or value; a Falloff, whose sides show at every angle, is **simplified** to its other map (or the material keeps its own). A Mix or CoronaMix whose amount hides that map is imported as it is; one whose amount shows only that map leaves the material its own color; otherwise it is **simplified** to its other map (or the material keeps its own), as an RGB Multiply always is. A mask it cannot convert leaves the mix amount, a Composite layer is left out, a normal map class keeps its other map |
 | VRayNormalMap, Normal Bump, CoronaNormal | **Imported**: a Normal Map node with its strength and flips, its additional bump map as a Bump node |
 | Bump (height) maps | **Imported** as a Bump node |
-| Falloff, VRayDirt, Output, RGB Tint, VRayColor2Bump | **Simplified** to the map below them (Falloff and VRayDirt without a map: their color; Output, RGB Tint and VRayColor2Bump without a map, or an Output or RGB Tint with it off: named in the report, and the material keeps its own color or value; below a Mix or another map, as a map MaxDrop cannot convert, see above) |
+| VRayDirt, VRayColor2Bump | **Simplified** to the map below them (VRayDirt without a map: its color; VRayColor2Bump without a map: named in the report, and the material keeps its own value) |
+| Output, RGB Tint without a map, or with it off | Named in the report; the material keeps its own color or value |
 | Every other map (noise, gradient, procedural maps…) | **Simplified** to the first Bitmap, CoronaBitmap or VRayBitmap below it, or not converted |
 | Environment and planar (object or world XYZ) mapping, real-world scale | Drawn with the UVs |
 | Displacement | Not yet |
@@ -189,8 +193,7 @@ the scene in the archive is kept.
 
 ## What comes next
 
-Toward 1.0: an import with a progress bar that Esc cancels, a time and memory budget for large scenes, node graphs
-for the map wrappers that are still simplified (Color Correction, Falloff, Mix, Composite), files of older 3ds Max
-versions, and limits and fuzz tests against hostile files. Not scheduled yet: Corona lights, V-Ray mesh and dome
+Toward 1.0: an import with a progress bar that Esc cancels, a time and memory budget for large scenes, files of
+older 3ds Max versions, and limits and fuzz tests against hostile files. Not scheduled yet: Corona lights, V-Ray mesh and dome
 lights, IES distributions, the sky and Skylight as the World, camera exposure, and the modifiers that still leave an
 object as its base object (Edit Poly, Edit Mesh, FFD…).

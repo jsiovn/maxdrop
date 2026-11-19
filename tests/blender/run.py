@@ -62,10 +62,12 @@ Materials (build.materials through the operator): each face on its material's sl
 the 3ds Max material, its Principled inputs equal to the MaterialIR the same file converts to (values, or linked when
 a texture graph drives them), the render method, one Image Texture node per file; vray_maps' Mapping values by hand
 from its authoring script, texture nodes without an image and each missing file listed once by name; vray_maps,
-texmap_rules, corona_maps, corona_light and vray_texmaps copied beside generated PNGs load every image in its color
-space, one datablock per file and color space, the report counts every file as found; hand-made IRs check shared
-images, a missing file, the materials counted by class, Thin Wall (set on 5.x, counted on 4.x), a name clash,
-BLENDED / DITHERED and every node kind; a crop repeating per axis (wrap, ping-pong, clip), map channel 0 drawn on
+texmap_rules, corona_maps, corona_light, vray_texmaps and texmap_wrappers copied beside generated PNGs load every
+image in its color space, one datablock per file and color space, the report counts every file as found (and
+texmap_wrappers draws each wrapper with its nodes: Layer Weight, Fresnel, blend types, Separate / Combine Color);
+hand-made IRs check shared images, a missing file, the materials counted by class, Thin Wall (set on 5.x, counted on
+4.x), a name clash, BLENDED / DITHERED and every node kind, the wrappers' links and values (Facing, blend modes and
+masks, rewiring, Adjust, Tint); a crop repeating per axis (wrap, ping-pong, clip), map channel 0 drawn on
 channel 1 and reported, a texture file without image data reported, a material whose build raises removed and
 reported; a material conversion that raises leaves the scene imported without materials, the report says why.
 Images already in the file (an earlier import's) are reused by file and color space, unless modified, packed,
