@@ -772,9 +772,10 @@ def import_pack(layout, operator, packs):
             body.label(text=problem[0], icon='ERROR')
             for line in problem[1:]:
                 body.label(text=line)
-        elif found and found[0] == "none":  # execute() would stop with found[1]: the same words, the folder apart
+        elif found and found[0] == "none":  # found[1], the message execute() would stop with, split into labels
             body.label(text="No free folder for %s in" % os.path.basename(path), icon='ERROR')
             body.label(text=parent)
+            body.label(text="Too many folders of that name exist.")
         elif found:
             mode, max_path = found
             if mode == "unpacked":

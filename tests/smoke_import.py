@@ -395,7 +395,8 @@ def no_free_folder(ops, zip_path, folder, scene):
         ops._TARGETS.pop(ops._norm(zip_path), None)
         shutil.rmtree(taken)
     check("Scene Pack panel: no free folder name is said, with an error icon, the folder on its own line",
-          layout.labels[-2:] == ["No free folder for two.zip in", folder] and layout.icons[-2:] == ['ERROR', 'NONE'],
+          layout.labels[-3:] == ["No free folder for two.zip in", folder, "Too many folders of that name exist."]
+          and layout.icons[-3:] == ['ERROR', 'NONE', 'NONE'],
           str(list(zip(layout.labels, layout.icons))))
     check("Scene Pack panel: a preview with no free folder never reaches the pre-flight read",
           preview is not None and preview[0] == "none" and asked == [zip_path], "%s, asked %s" % (preview, asked))
@@ -412,15 +413,16 @@ def parent_problem(ops, zip_path):
         prefs.writable = saved
     beside = os.path.dirname(os.path.abspath(zip_path))
     check("a folder that cannot be written: no parent, the reason as labels",
-          parent is None and problem == ("Cannot write into", beside, prefs._CHOOSE), "%s %s" % (parent, problem))
+          parent is None and problem == ("Cannot write into", beside) + prefs._CHOOSE_LINES,
+          "%s %s" % (parent, problem))
     ops._TARGETS[ops._norm(zip_path)] = (ops._key(zip_path), parent, problem, {})
     try:
         layout = FakeLayout()
         ops.import_pack(layout, FakeOperator(zip_path), [(zip_path, ops._listing(zip_path))])
     finally:
         ops._TARGETS.pop(ops._norm(zip_path), None)
-    check("Scene Pack panel: a folder that cannot be written is said on three lines, the first with an error icon",
-          layout.labels[-3:] == list(problem) and layout.icons[-3:] == ['ERROR', 'NONE', 'NONE'],
+    check("Scene Pack panel: a folder that cannot be written is said line by line, the first with an error icon",
+          layout.labels[-4:] == list(problem) and layout.icons[-4:] == ['ERROR', 'NONE', 'NONE', 'NONE'],
           str(list(zip(layout.labels, layout.icons))))
 
 

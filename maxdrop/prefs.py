@@ -44,6 +44,8 @@ def writable(folder):
 
 
 _CHOOSE = "Choose a folder under Unpack Scene Packs Into in the MaxDrop preferences."
+# The same words as popup labels that fit its default width.
+_CHOOSE_LINES = ("Choose a folder under Unpack Scene Packs Into", "in the MaxDrop preferences.")
 
 
 class PackFolderError(ValueError):
@@ -62,15 +64,15 @@ def pack_parent(archive_path, context=None):
     folder = os.path.normpath(bpy.path.abspath(p.pack_dir)) if p is not None and p.pack_dir else ""
     if p is not None and p.pack_target == 'FOLDER':
         if not folder or not os.path.isdir(folder):
-            first = "The folder to unpack scene packs into does not exist."
-            raise PackFolderError(first + " " + _CHOOSE, (first, _CHOOSE))
+            raise PackFolderError("The folder to unpack scene packs into does not exist. " + _CHOOSE,
+                                  ("The folder for scene packs does not exist.",) + _CHOOSE_LINES)
         return folder
     beside = os.path.dirname(os.path.abspath(archive_path))
     if writable(beside):
         return beside
     if folder and os.path.isdir(folder) and writable(folder):
         return folder
-    raise PackFolderError("Cannot write into %s. %s" % (beside, _CHOOSE), ("Cannot write into", beside, _CHOOSE))
+    raise PackFolderError("Cannot write into %s. %s" % (beside, _CHOOSE), ("Cannot write into", beside) + _CHOOSE_LINES)
 
 
 _LOOKUP = ("A folder that holds textures of your .max scenes, searched with its subfolders. A texture is looked "

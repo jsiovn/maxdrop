@@ -25,10 +25,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 ### Fixed
 
 - Scene pack popup: when every name the pack folder could take is already someone else's folder, the popup says so
-  (the message the import would stop with) instead of "Unpacks into a folder named after the archive"; a pack
-  replaced at the same path while the popup is open no longer shows the folder of the old one.
-- Scene pack popup: "No free folder" and "Cannot write into" put the folder on a line of its own, so a long path no
-  longer cuts off the end of the message.
+  (what the import would stop with) instead of "Unpacks into a folder named after the archive"; a pack replaced at
+  the same path while the popup is open no longer shows the folder of the old one. "No free folder" and "Cannot
+  write into" put the folder on a line of its own, so a long path no longer cuts off the end of the message.
 - Primitives: a standard primitive whose Real-World Map Size data is damaged is built with that option off instead
   of as a placeholder.
 - Scene packs: Blender closing at the moment an unpack creates its folder (or the folder of a pack with several
