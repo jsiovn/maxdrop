@@ -392,8 +392,8 @@ describe's sorts and allocations do not; no single limit was both twice the high
 lowest. Memory is the peak of the Python allocations (`tracemalloc`, numpy's included) as a multiple of the object's
 size, which is the same on every Python and numpy measured.
 
-Measured on CI (two attempts of one run of the Test workflow, 2026-11-20: the plain jobs on Linux and Windows with Python 3.11 and
-numpy 1.24.3, 3.13 and 2.3.4; the Blender jobs on Linux) and on Windows here (2026-11-19, describe 2026-11-20; Python
+Measured on CI (two attempts of one run of the Test workflow, 2026-11-21: the plain jobs on Linux and Windows with Python 3.11 and
+numpy 1.24.3, 3.13 and 2.3.4; the Blender jobs on Linux) and on Windows here (2026-11-19, describe 2026-11-21; Python
 3.11 with numpy 1.24.3 and 1.26.4 and 3.13 with 2.3.4 are the interpreters of Blender 4.2.23, 4.5.16 and 5.2.0, run
 outside Blender for the plain test, which also ran on 3.9 with 1.26.4):
 
@@ -419,7 +419,7 @@ a limit to raise.
 ## Version 1.0.0: the gate
 
 The first open of 0.1.0 run again on the 1.0.0 release candidate (`tools/first_open.py`, as above), on Blender 5.2.0
-and 4.2.23 on 2026-11-20: every answer yes on both versions, the same counts on both; luminances are 5.2's (4.2.23's
+and 4.2.23 on 2026-11-21: every answer yes on both versions, the same counts on both; luminances are 5.2's (4.2.23's
 within 0.002, with its lights off at most 0.002).
 
 | | Scene A | Scene B |
