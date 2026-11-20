@@ -8,7 +8,8 @@ The argument builders, the listing parsers, the version floors, the header check
 tested without any unpacker (the runner with Python children). The real-tool tests run each program found at its
 standard place on the test packs of tests/fixtures/packs/ and print every case as RAN or SKIPPED with the reason,
 so a green run never hides that nothing ran. MAXDROP_TEST_7Z may name a 7-Zip outside the standard folders (a
-portable copy) for the 7-Zip cases.
+portable copy) for the 7-Zip cases. MAXDROP_REQUIRE_TOOLS (comma separated: unrar, 7z, bsdtar) makes a program
+that is missing or below its floor a failure instead of a SKIPPED line: CI sets it where it installs them.
 
     python -I -m unittest discover tests
 """
@@ -808,6 +809,32 @@ def _real_tools():
 REAL, REAL_NOTES = _real_tools()
 
 
+def _required(text):
+    """The flavors MAXDROP_REQUIRE_TOOLS names (unknown names kept, for RequiredToolTests to name them)."""
+    return {n.strip() for n in (text or "").split(",") if n.strip()}
+
+
+REQUIRED = _required(os.environ.get("MAXDROP_REQUIRE_TOOLS"))
+
+
+class RequiredToolTests(unittest.TestCase):
+    def test_parse(self):
+        self.assertEqual(_required(None), set())
+        self.assertEqual(_required(""), set())
+        self.assertEqual(_required(" unrar , 7z,,bsdtar "), {UNRAR, SEVENZIP, BSDTAR})
+
+    def test_known_names(self):
+        unknown = sorted(REQUIRED - set(external.LABELS))
+        self.assertFalse(unknown, "MAXDROP_REQUIRE_TOOLS names no program: %s (known: %s)"
+                         % (", ".join(unknown), ", ".join(sorted(external.LABELS))))
+
+    def test_required_found(self):
+        missing = sorted(f for f in REQUIRED & set(external.LABELS) if f not in REAL)
+        self.assertFalse(missing, "MAXDROP_REQUIRE_TOOLS requires %s, not found at its standard place or below its "
+                         "floor%s" % (", ".join(external.LABELS[f] for f in missing),
+                                      "".join("; " + n for n in REAL_NOTES)))
+
+
 def _zip_reference(tmp):
     """What the zip backend unpacks from the same tree."""
     path = os.path.join(tmp, "reference.zip")
@@ -841,16 +868,21 @@ class RealToolTests(TempCase):
             archive._BACKENDS[k] = external.ExternalBackend(k, tools=[tool])
 
     def tools_for(self, case, flavors=(UNRAR, SEVENZIP, BSDTAR)):
-        """(tool, label) of each program present; a SKIPPED line for each one missing."""
-        found = []
+        """(tool, label) of each program present; a SKIPPED line for each one missing. A required one missing
+        fails RequiredToolTests, not here: the programs present still run and print RAN."""
+        found, required = [], []
         for flavor in flavors:
             label = "%s: %s" % (external.LABELS[flavor], case)
             tool = REAL.get(flavor)
             if tool is None:
                 say(label, False, "%s not found at its standard place or below its floor" % external.LABELS[flavor])
+                if flavor in REQUIRED:
+                    required.append(external.LABELS[flavor])
             else:
                 found.append((tool, "%s (%s)" % (label, tool.path)))
         if not found:
+            if required:
+                self.fail("no unpacker here, MAXDROP_REQUIRE_TOOLS requires %s" % ", ".join(required))
             self.skipTest("no unpacker here")
         return found
 
@@ -1024,6 +1056,8 @@ class RealToolTests(TempCase):
         """The backends archive.py really registers: the first usable program of the chain."""
         if not REAL:
             say("discovered chain: normal.rar", False, "no unpacker here")
+            if REQUIRED:
+                self.fail("no unpacker here, MAXDROP_REQUIRE_TOOLS is %s" % ", ".join(sorted(REQUIRED)))
             self.skipTest("no unpacker here")
         archive._BACKENDS["rar"] = external.ExternalBackend("rar")
         pack = self.copy("normal.rar")

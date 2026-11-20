@@ -1,10 +1,10 @@
 name: Test
 
 # The plain job, on Ubuntu and Windows, each with the Python and numpy of the oldest and of the newest supported
-# Blender (no Blender; the tests themselves use no network, only apt installs bsdtar and pip installs numpy and
-# ruff): the unit tests with the no-bpy guard, the tools, the landing page, the license files and the scene
-# packs; the scan of every file under tests/fixtures/ for user names, computer names and user paths; ruff. Then on
-# each Blender of the matrix: build, validate, the license text in the zip, the register smoke test, the import
+# Blender (no Blender; the tests themselves use no network, only apt installs bsdtar, pip installs numpy and
+# ruff, and on Linux UnRAR and 7-Zip come from their vendors): the unit tests with the no-bpy guard, the tools,
+# the landing page, the license files and the scene packs; the scan of every file under tests/fixtures/ for user
+# names, computer names and user paths; ruff. Then on each Blender of the matrix: build, validate, the license text in the zip, the register smoke test, the import
 # smoke test on tests/fixtures/*.max and the fixture tests (tests/blender/run.py).
 #
 # Runs on pull requests and by hand. On a push to main it runs as the first job of the Publish workflow, which
@@ -45,9 +45,8 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
-      # bsdtar for the .rar and .7z tests of the scene packs: ubuntu-latest has no bsdtar and no unrar, and its
-      # 7z is a shell wrapper or below the version MaxDrop accepts; those cases print SKIPPED. On Windows the
-      # unpacker is the tar.exe of System32.
+      # bsdtar for the .rar and .7z tests of the scene packs (ubuntu-latest has none). On Windows the unpacker is
+      # the tar.exe of System32, and UnRAR and 7-Zip are whatever the image holds: their cases may print SKIPPED.
       - name: bsdtar
         if: runner.os == 'Linux'
         run: |
@@ -55,6 +54,51 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq libarchive-tools >/dev/null
           bsdtar --version
+      # UnRAR and 7-Zip for the real-tool tests (ubuntu-latest has no unrar, and its 7z is a shell wrapper or below
+      # external.FLOORS): the vendors' Linux builds, pinned by version and SHA-256, into /usr/local/bin, a standard
+      # place of external.candidates, so the tests find them the way MaxDrop does. 7-Zip from the release the
+      # download page of 7-zip.org links (the author's ip7z/7zip on GitHub), UnRAR from rarlab.com's RAR for Linux
+      # (its UnRAR components are freeware; the trial `rar` is not installed). A new version: new URL and checksum,
+      # at or above external.FLOORS. The tarballs are cached by checksum, so a vendor outage does not fail the job;
+      # the checksum is checked after a restore too.
+      - name: Cache UnRAR and 7-Zip
+        if: runner.os == 'Linux'
+        uses: actions/cache@v6
+        with:
+          path: ~/unpackers
+          key: unpackers-7z2606-2b539cf0-rar723-759b4b6a
+      - name: UnRAR and 7-Zip
+        if: runner.os == 'Linux'
+        env:
+          SEVENZIP_URL: https://github.com/ip7z/7zip/releases/download/26.06/7z2606-linux-x64.tar.xz
+          SEVENZIP_SHA256: 2b539cf067b2ad48e1baa5093dbaa8818b73542d1222a0ffde9dc5f2922ea62e
+          UNRAR_URL: https://www.rarlab.com/rar/rarlinux-x64-723.tar.gz
+          UNRAR_SHA256: 759b4b6aa0d9f77131882162951193f3a0e54bf60e1d8dc4255aa308accab588
+        run: |
+          set -euo pipefail
+          dl=~/unpackers
+          mkdir -p "$dl"
+          fetch() {
+            test -s "$dl/$2" || curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 3 \
+              -o "$dl/$2" "$1"
+          }
+          fetch "$SEVENZIP_URL" 7z-linux-x64.tar.xz
+          fetch "$UNRAR_URL" rarlinux-x64.tar.gz
+          printf '%s  %s\n' "$SEVENZIP_SHA256" "$dl/7z-linux-x64.tar.xz" "$UNRAR_SHA256" "$dl/rarlinux-x64.tar.gz" \
+            | sha256sum --strict -c -
+          work="$RUNNER_TEMP/unpackers"
+          mkdir -p "$work"
+          tar -xJf "$dl/7z-linux-x64.tar.xz" -C "$work" 7zz
+          tar -xzf "$dl/rarlinux-x64.tar.gz" -C "$work" rar/unrar
+          sudo install -m 0755 "$work/7zz" /usr/local/bin/7zz
+          sudo install -m 0755 "$work/rar/unrar" /usr/local/bin/unrar
+          # Run without arguments each prints its banner and usage; the exit code is not the check, the banner is.
+          banner=$(/usr/local/bin/7zz </dev/null 2>&1 || true)
+          printf '%s\n' "$banner" | sed -n 1,4p
+          grep -q '^7-Zip (z) 26\.06 ' <<<"$banner"
+          banner=$(/usr/local/bin/unrar </dev/null 2>&1 || true)
+          printf '%s\n' "$banner" | sed -n 1,4p
+          grep -q '^UNRAR 7\.23 ' <<<"$banner"
       # Exactly the pinned Python and numpy, imported the way the tests run (-I): a failed install fails here
       # instead of turning the numpy tests into skips.
       - name: numpy
@@ -72,11 +116,15 @@ jobs:
           assert p == os.environ["PYTHON"], p
           assert v == os.environ["NUMPY"], v
           '
-      # The real-tool tests of the scene packs print one RAN or SKIPPED line per case. The fuzz slices
+      # The real-tool tests of the scene packs print one RAN or SKIPPED line per case; on Linux
+      # MAXDROP_REQUIRE_TOOLS turns a SKIPPED line of the programs installed above into a failure, so a broken
+      # install cannot pass silently. The fuzz slices
       # (tests/unit/test_fuzz.py, tests/test_intake_fuzz.py) run the first cases of tests/unit/fuzz.py in a child
       # process each: MAXDROP_FUZZ_CASES and MAXDROP_FUZZ_ZIP_CASES make them longer; the default keeps the step
       # under two minutes.
       - name: The unit tests and the no-bpy guard, the tools, the landing page, the license files, the scene packs
+        env:
+          MAXDROP_REQUIRE_TOOLS: ${{ runner.os == 'Linux' && 'unrar,7z,bsdtar' || '' }}
         run: python -I -m unittest discover tests
       - name: Fixture scan (user names, computer names, user paths)
         run: python -I tools/check_fixture.py "tests/fixtures/**/*"
