@@ -7,10 +7,10 @@ Map), as do nine of the standard primitives and TurboSmooth, MeshSmooth, Shell a
 From 0.1.0 the lights (V-Ray, standard, photometric, VRaySun, VRayIES) and the cameras arrive, and a file with a
 camera sets the scene camera and the render size: a dropped interior scene can be looked at through its own camera,
 lit by its own lights. From 1.0.0 an import started from a window shows its progress and Esc cancels it, the
-Falloff, Composite, Color Correction, Output and RGB Tint maps are drawn as nodes, files of 3ds Max 2012 and older
-are read with their names (checked on made-up data), and limits refuse a hostile file instead of running Blender out
-of memory. A scene pack (`.zip`, `.rar`, `.7z`) is unpacked and its `.max` imported (see [Files](#files)), and
-several `.max` files chosen at once are imported one after the other.
+Falloff, Composite, Output and RGB Tint maps and Color Correction's rewiring are drawn as nodes, files of 3ds Max
+2012 and older are read with their names (checked on made-up data), and limits refuse a hostile file instead of
+running Blender out of memory. A scene pack (`.zip`, `.rar`, `.7z`) is unpacked and its `.max` imported (see
+[Files](#files)), and several `.max` files chosen at once are imported one after the other.
 
 How far to trust the list: MaxDrop's test files (`tests/fixtures/`, saved by 3ds Max 2020) are compared with what
 3ds Max itself reports for every node: world matrix, bounding box, vertex and face counts, parents, instances,
