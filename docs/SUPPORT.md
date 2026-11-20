@@ -1,12 +1,14 @@
 # What MaxDrop imports
 
-**This page describes version 0.1.0.** Nodes, meshes, transforms, hierarchy, instances, layers, scene units and
+**This page describes version 1.0.0.** Nodes, meshes, transforms, hierarchy, instances, layers, scene units and
 materials are read by MaxDrop's own reader; the engine of [io_scene_max](https://github.com/nrgsille76/io_scene_max)
 1.9.2 that 0.0.3 still used for materials is gone. From 0.0.5 the room shell arrives too (shapes, Extrude, UVW
 Map), as do nine of the standard primitives and TurboSmooth, MeshSmooth, Shell and Symmetry as Blender modifiers.
 From 0.1.0 the lights (V-Ray, standard, photometric, VRaySun, VRayIES) and the cameras arrive, and a file with a
 camera sets the scene camera and the render size: a dropped interior scene can be looked at through its own camera,
-lit by its own lights. A scene pack (`.zip`, `.rar`, `.7z`) is unpacked and its `.max`
+lit by its own lights. From 1.0.0 an import started from a window shows its progress and Esc cancels it, the
+Falloff, Composite, Color Correction, Output and RGB Tint maps are drawn as nodes, files of 3ds Max 2012 and older
+are read with their names, and limits refuse a hostile file instead of running Blender out of memory. A scene pack (`.zip`, `.rar`, `.7z`) is unpacked and its `.max`
 imported (see [Files](#files)), and several `.max` files chosen at once are imported one after the other.
 
 How far to trust the list: MaxDrop's test files (`tests/fixtures/`, saved by 3ds Max 2020) are compared with what
@@ -185,8 +187,9 @@ the scene in the archive is kept.
 - When a `.max` is dropped, the options popup shows a **File** line: the 3ds Max version, the renderer, the
   number of objects and the unit, read in a fraction of a second even from a large scene; for a file with 8-bit
   names (3ds Max 2012 or older), the code page Auto reads them in.
-- A very large scene works but needs time and memory: see [BASELINE.md](BASELINE.md) (version 0.1.0 next to
-  0.0.5, 0.0.4, 0.0.3 and the engine they replaced).
+- A very large scene works but needs time and memory: see [BASELINE.md](BASELINE.md) (the performance budget
+  of 1.0.0, and each version since the engine they replaced). Scene A imports in about 13 s and 1.3 GB, scene B in
+  about 17 s and 1.2 GB on the machine measured.
 - **Scene packs**: a `.zip`, `.rar` or `.7z` holding the scene, chosen in *File › Import*; a `.rar` or `.7z` can
   also be dropped (a dropped `.zip` goes to Blender's extension installer). The format is recognised by the file's
   content. The chosen `.max` and the image and `.ies` files it names are unpacked into a folder named after the
@@ -203,7 +206,8 @@ the scene in the archive is kept.
 
 ## What comes next
 
-Toward 1.0: an import with a progress bar that Esc cancels, a time and memory budget for large scenes, limits and
-fuzz tests against hostile files, and a file of 3ds Max 2012 or older to check its names against. Not scheduled yet: Corona lights, V-Ray mesh and dome
-lights, IES distributions, the sky and Skylight as the World, camera exposure, and the modifiers that still leave an
-object as its base object (Edit Poly, Edit Mesh, FFD…).
+Not imported yet, and not scheduled: V-Ray mesh proxies (`.vrmesh`), the dome light, sky and Skylight as the World,
+Corona lights, V-Ray mesh lights, IES distributions, camera exposure, procedural maps drawn as nodes (they are
+simplified to the image below them), animation, and the modifiers that still leave an object as its base object
+(Edit Poly, Edit Mesh, FFD…). A file of 3ds Max 2012 or older has not been imported yet: tell us in an issue when
+one does not open.

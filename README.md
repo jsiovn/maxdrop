@@ -4,11 +4,12 @@ A free Blender extension that imports 3ds Max `.max` scenes, meshes and material
 file onto Blender, or use *File › Import › MaxDrop*. It also takes the `.zip`, `.rar` or `.7z` scene pack the
 scene was downloaded as. Blender 4.2 or newer; tested on 4.2 LTS, 4.5 LTS and 5.2 LTS.
 
-> **Early release.** MaxDrop is a new fork of [io_scene_max](https://github.com/nrgsille76/io_scene_max). It
+> **Stable, not complete.** MaxDrop is a fork of [io_scene_max](https://github.com/nrgsille76/io_scene_max). It
 > imports editable meshes with their UVs, smoothing, instances, hierarchy, layers and scene units, the room shell
 > (shapes, Extrude, UVW Map), nine of the standard primitives, V-Ray, Corona, Standard and Physical materials with
 > their texture maps, and the lights and cameras: a dropped V-Ray interior scene opens through its own camera, lit by
-> its own lights. Most modifiers are not applied yet and some lights and maps are simplified.
+> its own lights. An import shows its progress and Esc cancels it. Most modifiers are not applied yet and some lights
+> and maps are simplified.
 > [docs/SUPPORT.md](docs/SUPPORT.md) is the honest list.
 
 > **Independent.** Not affiliated with, endorsed by or supported by Autodesk or Chaos. Autodesk and 3ds Max are
@@ -30,7 +31,7 @@ scene was downloaded as. Blender 4.2 or newer; tested on 4.2 LTS, 4.5 LTS and 5.
 - **Layers** as collections, nested like the layers; hidden, frozen and non-rendering layers and objects keep
   those flags.
 - **Materials** as a Principled BSDF with their maps as nodes (tiling, offset, rotation, cropping, Mix, Color
-  Correction, normal and bump maps): VRayMtl and the other V-Ray materials and wrappers, Standard, Physical,
+  Correction, Falloff, Composite, normal and bump maps): VRayMtl and the other V-Ray materials and wrappers, Standard, Physical,
   Multi/Sub-Object, CoronaPhysicalMtl, CoronaMtl, CoronaLightMtl and CoronaLayeredMtl.
 - **Textures** that are plain image files, next to the `.max` file, in a `maps` or `textures` folder beside it, or
   in folders you add in the preferences.
@@ -136,13 +137,14 @@ any importer; it then complains about a missing manifest. Import a `.zip` throug
 **The scene arrives at the wrong size.** The file states its unit and **Units: Auto** uses it. If the scene was
 modelled in another unit than it was saved with, pick that unit in **Units**; **Scale** is an extra factor.
 
-**Objects are missing or misshapen.** Lights and cameras are not imported yet, and a modifier MaxDrop does not
-apply (Edit Poly, Edit Mesh, FFD…) leaves the object as it was below it; an object MaxDrop cannot convert arrives
+**Objects are missing or misshapen.** A modifier MaxDrop does not apply (Edit Poly, Edit Mesh, FFD…) leaves the object as it was below it; an object MaxDrop cannot convert arrives
 as an empty with its 3ds Max class in the custom property `maxdrop_class`.
 The text **MaxDrop Report** (Text Editor) lists them, and what became of the materials.
 
-**Which 3ds Max versions?** MaxDrop's own test files are saved by 3ds Max 2020, and scenes of 3ds Max 2015 and
-2020 have been imported. Tell us in an issue when a file does not open.
+**Which 3ds Max versions?** MaxDrop's own test files are saved by 3ds Max 2020, also in the 2017, 2018 and 2019
+formats, and scenes of 3ds Max 2015 and 2020 have been imported; files of 3ds Max 2013 and later are expected to
+work. A file of 3ds Max 2012 or older has not been tried yet: **Text Encoding** picks the code page of its names.
+The table in [docs/SUPPORT.md](docs/SUPPORT.md#files) has the details. Tell us in an issue when a file does not open.
 
 **Can it export `.max`?** No, and that is not planned.
 

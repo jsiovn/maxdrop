@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MaxDrop: open 3ds Max .max scenes in Blender</title>
-<meta name="description" content="A free Blender extension that imports 3ds Max .max scenes, their meshes, materials, lights and cameras, without 3ds Max. An early release; free software, GPL-3.0-or-later.">
+<meta name="description" content="A free Blender extension that imports 3ds Max .max scenes, their meshes, materials, lights and cameras, without 3ds Max. Free software, GPL-3.0-or-later.">
 <meta name="color-scheme" content="light dark">
 <meta property="og:type" content="website">
 <meta property="og:title" content="MaxDrop">
-<meta property="og:description" content="Drop a 3ds Max .max file onto Blender and get its meshes, materials, lights and cameras, without 3ds Max. Free, early release, GPL-3.0-or-later.">
+<meta property="og:description" content="Drop a 3ds Max .max file onto Blender and get its meshes, materials, lights and cameras, without 3ds Max. Free, GPL-3.0-or-later.">
 <meta property="og:url" content="{{site_url}}">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <!-- A template: tools/make_site.py fills the values in double braces from dist/index.json. Self-contained by
@@ -172,7 +172,7 @@ footer p { margin: 0; }
 <main id="top">
   <div class="wrap hero">
     <div>
-      <p class="eyebrow">Blender extension · early release</p>
+      <p class="eyebrow">Blender extension · free software</p>
       <h1>MaxDrop</h1>
       <p class="lead">Drop a 3ds Max <code>.max</code> file onto Blender and get its meshes, materials, lights and cameras, or give it the <code>.zip</code>, <code>.rar</code> or <code>.7z</code> the scene came in. 3ds Max does not have to be installed.</p>
       <ul class="meta" aria-label="Release">
@@ -192,7 +192,7 @@ footer p { margin: 0; }
       <h2 id="status-title">Version {{version}}: the first open of a whole scene</h2>
       <p>MaxDrop is a new fork of the free <a href="https://github.com/nrgsille76/io_scene_max">io_scene_max</a> importer. MaxDrop reads the scene and its materials with its own reader, also from the scene pack it came in; io_scene_max's file parser is gone.</p>
       <p>It brings in editable meshes with their UVs, smoothing, instances, hierarchy, layers and scene units, the room shell (shapes, Extrude, UVW Map), nine of the standard primitives, V-Ray, Corona, Standard and Physical materials with their texture maps, and the lights and cameras: a dropped V-Ray interior scene opens through its own camera, lit by its own lights. <a href="#support">See the full list</a>.</p>
-      <p>It is still an early release: most modifiers are not applied yet and some lights and maps are simplified. Updates arrive inside Blender.</p>
+      <p>An import shows its progress and Esc cancels it. Stable, not complete: most modifiers are not applied yet and some lights and maps are simplified. Updates arrive inside Blender.</p>
     </div>
   </div>
 
@@ -248,7 +248,7 @@ footer p { margin: 0; }
             <li><strong>Position, rotation, scale and the whole hierarchy</strong> of the objects; groups and Dummy helpers become empties.</li>
             <li><strong>Scene units</strong>: a scene saved in millimeters, centimeters, inches or feet arrives at its real size.</li>
             <li><strong>Layers</strong> as collections, with their hidden, frozen and non-rendering flags.</li>
-            <li><strong>Materials</strong>, as a Principled BSDF with their maps as nodes (tiling, offset, rotation, cropping, Mix, Color Correction, normal and bump maps): VRayMtl and the other V-Ray materials and wrappers, Standard, Physical, Multi/Sub-Object, CoronaPhysicalMtl, CoronaMtl, CoronaLightMtl and CoronaLayeredMtl.</li>
+            <li><strong>Materials</strong>, as a Principled BSDF with their maps as nodes (tiling, offset, rotation, cropping, Mix, Color Correction, Falloff, Composite, normal and bump maps): VRayMtl and the other V-Ray materials and wrappers, Standard, Physical, Multi/Sub-Object, CoronaPhysicalMtl, CoronaMtl, CoronaLightMtl and CoronaLayeredMtl.</li>
             <li><strong>Textures</strong> that are plain image files, next to the <code>.max</code> file, in a <code>maps</code> or <code>textures</code> folder beside it, or in folders you add in the preferences.</li>
             <li><strong>Lights and cameras</strong>: V-Ray plane, disc and sphere lights, standard and photometric lights, VRaySun and VRayIES, as bright as V-Ray renders them; Free, Target, Physical and VRayPhysicalCamera cameras with 3ds Max's framing, the one the file renders as the scene camera.</li>
           </ul>
@@ -261,7 +261,7 @@ footer p { margin: 0; }
             <li><strong>Teapot</strong>, sliced primitives and hemispheres: they arrive as empties until a later version.</li>
             <li><strong>Star, Text, Helix, Donut</strong> and NURBS curves.</li>
             <li><strong>Animation</strong>: objects arrive as they stand at frame 0.</li>
-            <li><strong>Procedural maps</strong> (Noise, Gradient, VRayDirt, Falloff…): simplified to the image below them, or the channel keeps its plain color.</li>
+            <li><strong>Procedural maps</strong> (Noise, Gradient, VRayDirt…): simplified to the image below them, or the channel keeps its plain color.</li>
             <li><strong>Other materials</strong> (Arnold Standard Surface, Raytrace, Architectural, Corona Skin and Hair…): a grey material that keeps its name.</li>
             <li>Proxies, particles, hair and bones.</li>
           </ul>

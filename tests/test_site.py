@@ -137,7 +137,7 @@ class Page(unittest.TestCase):
     def test_the_page_says_what_this_release_is(self):
         page = self.page()
         for needle in (
-                "early release",                                   # not a finished product
+                "Stable, not complete",                            # not a finished product
                 "io_scene_max", "Sebastian Schrand", "Jens M. Plonka", "Philippe Lagadec",
                 "not affiliated with, endorsed by or supported by Autodesk or Chaos",
                 "Not imported yet", "Lights and cameras", "Modifiers", "Editable Mesh and Editable Poly",
@@ -157,7 +157,7 @@ class Page(unittest.TestCase):
                      "<strong>Modifiers</strong> (Extrude", "Apply Matrix", "<strong>Collection</strong>",
                      "one 3ds Max unit becomes one meter",
                      "imports exactly what that importer imports",
-                     "Lights and cameras are not read yet", "<strong>Lights and cameras</strong>, V-Ray lights included"):
+                     "Lights and cameras are not read yet", "early release", "<strong>Lights and cameras</strong>, V-Ray lights included"):
             self.assertFalse(gone in page, gone)
 
     def test_the_page_says_how_scene_packs_are_imported(self):
