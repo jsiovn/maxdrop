@@ -38,6 +38,7 @@ import math
 import struct
 
 from . import chunks, classids, pblock
+from .errors import MaxFileError
 
 ChunkError = chunks.ChunkError
 
@@ -299,7 +300,7 @@ def _stored(chunk, issues):
     for k, c in enumerate(shape.find_all(_SPLINE)):
         try:
             sp = _spline(c)
-        except (ChunkError, struct.error) as exc:
+        except MaxFileError as exc:  # its knots are read inside the payload: the count is checked first
             issues.append("spline %d left out: %s" % (k, exc))
             continue
         total += len(sp.knots)
@@ -363,6 +364,6 @@ def read_shape(scene, i):
             steps, optimize, adaptive = interp.number(0, DEFAULT_STEPS), interp.flag(1, True), interp.flag(2)
         render = _render(scene, refs, issues)
         steps = int(min(max(steps, 0), MAX_STEPS))
-    except (ChunkError, struct.error, MemoryError, OverflowError, ValueError, TypeError) as exc:
+    except (MaxFileError, MemoryError, OverflowError) as exc:
         raise ShapeError("object %d (%s): %s" % (i, entry.name, exc or type(exc).__name__)) from None
     return Shape(entry.class_id, tuple(splines), steps, optimize, adaptive, render, tuple(issues))

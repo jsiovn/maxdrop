@@ -510,10 +510,7 @@ class TexmapConverter:
             walk.issues.append(reason)
 
     def _class_name(self, m):
-        try:
-            entry = self.graph.scene.entry(m.index)
-        except IndexError:
-            entry = None
+        entry = self.graph.scene.entry(m.index)  # m came from graph.get: an object of the scene
         return (entry.name if entry is not None else "") or classids.name_of(m.superclass, m.class_id) or \
             "ClassID%s" % (ClassId(*m.class_id),)
 

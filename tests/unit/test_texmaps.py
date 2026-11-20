@@ -323,6 +323,9 @@ class FakeScene:
     def __init__(self, objects, chunk_map=None):
         self.objects, self.chunks = objects, chunk_map or {}
 
+    def __len__(self):
+        return max(list(self.objects) + list(self.chunks), default=-1) + 1
+
     def entry(self, i):
         o = self.objects.get(i)
         return FakeEntry(o.cls) if o is not None else None

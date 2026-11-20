@@ -39,6 +39,7 @@ import collections
 import struct
 
 from . import chunks, classids
+from .errors import MaxFileError
 
 ChunkError = chunks.ChunkError
 
@@ -228,7 +229,7 @@ def _poly_positions(chunk):
                 points += data[off + 4:off + 16]
                 live[i] = 1
                 off += 16
-    except struct.error:
+    except struct.error:  # only unpack_from past the payload's end raises it here: that is the check, per record
         raise GeometryError("vertex records cut short (%d of %d bytes)" % (off, size)) from None
     if off != size:
         raise GeometryError("%d bytes after the %d vertex records" % (size - off, n))
@@ -376,5 +377,5 @@ def read_mesh(scene, i):
         return None
     try:
         return reader(scene.chunk(i))
-    except (ChunkError, struct.error, MemoryError, OverflowError) as exc:
+    except (MaxFileError, MemoryError, OverflowError) as exc:
         raise GeometryError("object %d (%s): %s" % (i, entry.name, exc or type(exc).__name__)) from None

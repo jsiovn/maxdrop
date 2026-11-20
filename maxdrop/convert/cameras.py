@@ -53,6 +53,7 @@ import math
 import struct
 
 from ..reader import chunks, classids, pblock
+from ..reader.errors import MaxFileError
 from .params import finite
 
 ChunkError = chunks.ChunkError
@@ -362,7 +363,7 @@ def saved_views(cf):
         if not cf.exists("Config"):
             return None
         return views_of(chunks.index(cf.open("Config", max_size=MAX_CONFIG)).first(_LAYOUTS))
-    except (ChunkError, KeyError, ValueError, OSError) as exc:
+    except (MaxFileError, OSError) as exc:
         return SavedViews([], None, str(exc) or type(exc).__name__)
 
 

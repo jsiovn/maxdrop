@@ -690,7 +690,7 @@ def _primitive(scene, base, issues, node, built):
     except ChunkError as exc:  # PrimitiveError, or a block the reader refuses
         issues.append((node, "primitive: %s" % exc))
         return None
-    except (ArithmeticError, ValueError) as exc:  # a formula the sizes break costs the object, not the import
+    except ArithmeticError as exc:  # a formula the sizes break costs the object, not the import
         issues.append((node, "primitive: not built: %s" % exc))
         return None
     built[0] += len(data.loop_vertices)

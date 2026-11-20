@@ -43,6 +43,7 @@ import collections
 import struct
 
 from . import chunks, classids, pblock
+from .errors import MaxFileError
 
 ChunkError = chunks.ChunkError
 
@@ -164,10 +165,9 @@ class MaterialGraph:
         m = self._cache.get(i)
         if m is not None:
             return m
-        try:
-            entry = self.scene.entry(i)
-        except IndexError as e:
-            raise ChunkError(str(e))
+        if not 0 <= i < len(self.scene):
+            raise ChunkError("object index %d outside the %d objects" % (i, len(self.scene)))
+        entry = self.scene.entry(i)
         if entry is None or entry.superclass not in MTLBASE_SUPERCLASSES:
             raise ChunkError("object %d is not a material or map" % i)
         chunk = self.scene.chunk(i)
@@ -228,6 +228,8 @@ class MaterialGraph:
 def _leaf_u32s(scene, index, ids):
     """{chunk id: u32} of the leaf children of object index with those ids, the first of each; {} when unreadable."""
     out = {}
+    if not 0 <= index < len(scene):  # a reference past the objects reads as no chunk
+        return out
     try:
         chunk = scene.chunk(index)
         if not chunk.container:
@@ -235,7 +237,7 @@ def _leaf_u32s(scene, index, ids):
         for c in chunk.children:
             if c.id in ids and not c.container and c.payload_size >= 4 and c.id not in out:
                 out[c.id] = c.unpack("<I")[0]
-    except (ChunkError, IndexError, struct.error):
+    except MaxFileError:
         return {}
     return out
 
@@ -262,6 +264,8 @@ def bitmap_gamma(scene, m):
     for slot, block in sorted(m.blocks.items()):
         if block.block_id != 0 or slot not in m.refs:
             continue
+        if not 0 <= m.refs[slot] < len(scene):
+            return None
         try:
             chunk = scene.chunk(m.refs[slot])
             holders = [c for c in chunk.children if c.id == _BITMAP_DATA and c.container] if chunk.container else []
@@ -269,7 +273,7 @@ def bitmap_gamma(scene, m):
             if info is None or info.container or info.payload_size < _BI_TAIL:
                 return None
             data = info.tobytes()
-        except (ChunkError, IndexError):
+        except MaxFileError:
             return None
         gamma, flags = struct.unpack_from("<fI", data, len(data) - _BI_TAIL)
         return gamma if flags & _BI_GAMMA_OVERRIDE else None

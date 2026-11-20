@@ -52,6 +52,7 @@ import struct
 
 from . import chunks, classids, pblock
 from .classdir import ClassId
+from .errors import MaxFileError
 
 ChunkError = chunks.ChunkError
 
@@ -146,8 +147,16 @@ def quat_matrix(q):
                   (s * (x * z - y * w), s * (y * z + x * w), 1.0 - s * (x * x + y * y))))
 
 
+def _cos_sin(angle):
+    """(cos, sin) of angle; (nan, nan) when it is not finite, where math raises: the matrix made of them is not
+    finite, which the evaluation reports (NON_FINITE)."""
+    if not math.isfinite(angle):
+        return math.nan, math.nan
+    return math.cos(angle), math.sin(angle)
+
+
 def _axis(axis, angle):
-    c, s = math.cos(angle), math.sin(angle)
+    c, s = _cos_sin(angle)
     if axis == 0:
         return _mat3(((1.0, 0.0, 0.0), (0.0, c, s), (0.0, -s, c)))
     if axis == 1:
@@ -205,9 +214,14 @@ def _weighted_quat(m, weight):
     if n < 1e-12:
         return IDENTITY
     h = math.atan2(n, w) * weight
+    if not math.isfinite(h):  # an infinite weight: a NaN quaternion would read as the zero one, identity
+        return _NAN_MATRIX
     k = math.sin(h) / n
     # stored the Max way: the conjugate of the standard quaternion
     return quat_matrix((-x * k, -y * k, -z * k, math.cos(h)))
+
+
+_NAN_MATRIX = _mat3(((math.nan,) * 3,) * 3, (math.nan,) * 3)
 
 
 def _scale_value(chunk):
@@ -280,7 +294,7 @@ def look_frame(position, target, up=(0.0, 0.0, 1.0), axis=2, flip=False, roll=0.
     if flip:
         x, z = _neg(x), _neg(z)
     if roll:
-        c, s = math.cos(roll), math.sin(roll)
+        c, s = _cos_sin(roll)
         x, y = (tuple(c * a + s * b for a, b in zip(x, y)), tuple(c * b - s * a for a, b in zip(x, y)))
     if axis == 0:
         return (z, y, _neg(x))
@@ -773,7 +787,7 @@ class Transforms:
                 world, m = m, multiply(m, inverse)
                 if _finite(m):
                     self._direct[i] = world
-        except (ValueError, OverflowError, IndexError, struct.error) as exc:  # ChunkError is a ValueError
+        except (MaxFileError, OverflowError) as exc:  # anything else is a defect: the fuzz harness sees it
             # this node's issues only: a look-at may have evaluated other nodes, whose issues stay
             self.issues[mark:] = [x for x in self.issues[mark:] if x.node != i]
             bad = ev.failed if ev.failed is not None else node.tm
@@ -846,7 +860,7 @@ def matrix(scene, i):
         return IDENTITY, issues
     try:
         m = ev.matrix(i)
-    except (ValueError, OverflowError, IndexError, struct.error) as exc:  # ChunkError is a ValueError
+    except (MaxFileError, OverflowError) as exc:
         del issues[:]
         ev.issue(ev.failed if ev.failed is not None else i, "%s: %s" % (DAMAGED, exc))
         return IDENTITY, issues

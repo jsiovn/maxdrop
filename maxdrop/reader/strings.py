@@ -26,6 +26,7 @@ An 8-bit string is cut at its first NUL and decoded with, by choice:
 A UTF-16 file ignores the choice. No bpy.
 """
 from . import chunks, metadata
+from .errors import MaxFileError
 
 CHOICES = (  # (codec, label): the operator's "Text encoding" list after Auto
     ("cp1252", "Western (1252)"),
@@ -137,7 +138,7 @@ def code_page(cf):
             if stream.size > metadata.MAX_STREAM:
                 continue
             page = metadata.code_page(stream.read())
-        except ValueError:  # MetadataError, or a damaged stream (CfbError): this stream records none
+        except MaxFileError:  # MetadataError, or a damaged stream (CfbError): this stream records none
             continue
         if page in CODE_PAGES:
             return CODE_PAGES[page]
@@ -148,7 +149,7 @@ def writer_version(cf):
     """The major version of the 3ds Max that wrote the file, None when its summary does not say."""
     try:
         version = metadata.read(cf).get("max_version")
-    except ValueError:  # MetadataError or CfbError: the summary does not say
+    except MaxFileError:  # MetadataError or CfbError: the summary does not say
         return None
     return metadata.major(version)
 
@@ -162,7 +163,7 @@ def of_file(cf, choice="AUTO"):
         return UNICODE
     try:
         voted = looks_wide(_directory_names(cf))
-    except ValueError:  # ChunkError or CfbError: the class directory's own reading reports the damage
+    except MaxFileError:  # ChunkError or CfbError: the class directory's own reading reports the damage
         voted = None
     wide = voted is True if major is not None else voted is not False
     if wide:

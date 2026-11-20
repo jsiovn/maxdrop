@@ -88,6 +88,7 @@ import math
 
 from ..reader import chunks, classids, pblock
 from ..reader.classdir import ClassId
+from ..reader.errors import MaxFileError
 from . import colors
 from . import texmaps as _texmaps
 from .params import finite as _finite, flag as _flag, num as _num
@@ -820,7 +821,7 @@ def node_materials(scene, desc):
     for node in desc.nodes:
         try:
             out[node.index] = scene.node(node.index).material
-        except (ChunkError, IndexError):
+        except MaxFileError:
             out[node.index] = None
     return out
 

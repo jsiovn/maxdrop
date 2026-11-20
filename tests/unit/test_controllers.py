@@ -491,8 +491,7 @@ class TestUnsupportedAndDamaged(MatrixCase):
         sibling = b.node(b.simple_prs((7, 0, 0)))
         t = b.transforms()
         self.assertEqual(t.world(n), ct.IDENTITY)
-        self.assertEqual(len(t.issues), 1)
-        self.assertTrue(t.issues[0].reason.startswith(ct.DAMAGED), t.issues[0].reason)
+        self.assertEqual([x.reason for x in t.issues], [ct.NON_FINITE])  # cos(inf) is NaN, not a math error
         self.assertMatrix(t.world(sibling), ct.translation((7, 0, 0)))
         b = Build()
         lst = b.add(node(C_ROTLIST, refs34(b.euler((0, 0, 1)), None, None,
@@ -500,7 +499,7 @@ class TestUnsupportedAndDamaged(MatrixCase):
         n = b.node(b.prs(None, lst))
         t = b.transforms()
         self.assertEqual(t.world(n), ct.IDENTITY)
-        self.assertEqual(len(t.issues), 1)
+        self.assertEqual([x.reason for x in t.issues], [ct.NON_FINITE])
 
     def test_shared_sub_controllers_are_evaluated_once(self):
         b = Build()
