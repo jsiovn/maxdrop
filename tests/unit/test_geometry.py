@@ -389,6 +389,80 @@ class ReadMeshTest(unittest.TestCase):
         self.assertIsInstance(GeometryError("x"), chunks.ChunkError)
 
 
+class Stop(Exception):
+    """What a cancelled import's check raises (convert.scene.Cancelled); the reader must not know or wrap it."""
+
+
+@unittest.skipIf(numpy is None, "numpy missing")
+class CheckTest(unittest.TestCase):
+    """read_mesh(check=): called every CHECK_EVERY records of each record loop (never in the first block) and before
+    the faces of each map channel past CHECK_EVERY words; what it raises ends the read as it is, never as a
+    GeometryError."""
+
+    @staticmethod
+    def chunk():
+        # a dead vertex and a dead face with a longer map face: every slow path, each loop over 5 records
+        return poly(poly_verts(QUAD, dead=(1,)),
+                    poly_faces(poly_face([0, 2, 3]), poly_face([], flags=0x10026), poly_face([0, 4, 2], flags=2),
+                               poly_face([4, 2, 3, 0], material=1), poly_face([4, 3, 2])),
+                    poly_map(1, [(0, 0, 0)] * 6, [[0, 1, 2], [3, 4, 5, 0], [1, 1, 1], [5, 4, 3, 2], [0, 1, 2]]))
+
+    @staticmethod
+    def same(a, b):
+        return (a.positions.tolist() == b.positions.tolist() and a.loop_vertices.tolist() == b.loop_vertices.tolist()
+                and a.loop_starts.tolist() == b.loop_starts.tolist()
+                and a.material_ids.tolist() == b.material_ids.tolist()
+                and a.smoothing_groups.tolist() == b.smoothing_groups.tolist() and list(a.maps) == list(b.maps)
+                and all(a.maps[c].indices.tolist() == b.maps[c].indices.tolist() for c in a.maps))
+
+    def test_every_loop_asks_it_and_a_raise_passes_unchanged(self):
+        plain = geometry.read_editable_poly(self.chunk())
+        with mock.patch.object(geometry, "CHECK_EVERY", 1):
+            calls = []
+            m = geometry.read_editable_poly(self.chunk(), lambda: calls.append(None))
+            self.assertTrue(self.same(m, plain))
+            # 4 of 5 vertices, 4 of 5 faces, the channel, 4 of 5 map faces
+            self.assertEqual(len(calls), 13)
+            for k in range(len(calls)):
+                seen = []
+
+                def check():
+                    seen.append(None)
+                    if len(seen) > k:
+                        raise Stop()
+                with self.subTest(trip=k), self.assertRaises(Stop):
+                    geometry.read_editable_poly(self.chunk(), check)
+                self.assertEqual(len(seen), k + 1)
+
+    def test_one_block_is_never_checked(self):
+        calls = []
+        m = geometry.read_editable_poly(self.chunk(), lambda: calls.append(None))
+        self.assertTrue(self.same(m, geometry.read_editable_poly(self.chunk())))
+        self.assertEqual(calls, [])
+
+    def test_an_editable_mesh_asks_it_per_large_channel(self):
+        calls = []
+        chunk = mesh(mesh_verts(TRI), mesh_faces((0, 1, 2, 0, 0)), mesh_map(1, TRI, [(0, 1, 2)]),
+                     mesh_map(2, TRI, [(2, 1, 0)]))
+        geometry.read_editable_mesh(chunk, lambda: calls.append(None))
+        self.assertEqual(calls, [])
+        with mock.patch.object(geometry, "CHECK_EVERY", 1):
+            geometry.read_editable_mesh(chunk, lambda: calls.append(None))
+        self.assertEqual(len(calls), 2)
+
+    def test_read_mesh_passes_it_and_does_not_wrap_what_it_raises(self):
+        classes = classdir.ClassDirectory.parse(b"".join(class_entry(*c) for c in _CLASSES))
+        body = node(geometry.GEOMETRY, poly_verts(QUAD), poly_faces(poly_face([0, 1, 2]), poly_face([1, 4, 2])))
+        sc = scene.Scene(node(0x2025, node(2, body)), classes)
+
+        def check():
+            raise Stop()
+        with mock.patch.object(geometry, "CHECK_EVERY", 1):
+            with self.assertRaises(Stop):
+                geometry.read_mesh(sc, 0, check)
+            self.assertEqual(len(geometry.read_mesh(sc, 0).loop_starts), 2)
+
+
 def _oracle(path):
     with open(path[:-4] + ".oracle.json", encoding="utf-8") as f:
         return json.load(f)

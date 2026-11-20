@@ -372,7 +372,7 @@ class DamagedInput(unittest.TestCase):
         sc = self.scene("instances")
         real = conv.geometry.read_mesh
 
-        def refuse(scene, i):
+        def refuse(scene, i, check=None):
             raise geometry.GeometryError("object %d: refused" % i)
 
         conv.geometry.read_mesh = refuse
@@ -585,6 +585,37 @@ class DescribeCancel(unittest.TestCase):
         self.assertEqual(self.summary(conv.describe(sc, 1.0, cancel=cancel)), fresh)
         self.assertEqual(len(calls), 2 * len(sc.walk()))
         self.assertEqual(self.summary(conv.describe(sc, 1.0)), fresh)
+
+    def test_the_check_is_asked_inside_a_large_mesh(self):
+        """With reader.geometry.CHECK_EVERY at 1 every mesh is large: the check is also asked inside a node, in the
+        Editable Poly's record loops and between the passes of mesh_description (an extrusion's too); tripped at any
+        of those calls, describe ends with Cancelled, keeping nothing."""
+        import gc
+
+        def alive():
+            gc.collect()
+            return {id(o) for o in gc.get_objects() if isinstance(o, conv.SceneDescription)}
+
+        for name in ("box_poly_standard", "extrude"):
+            sc = DamagedInput.scene(self, name)
+            nodes = len(sc.walk())
+            fresh = self.summary(conv.describe(DamagedInput.scene(self, name), 1.0))
+            cancel, calls = self.tripping(10 ** 9)
+            conv.describe(sc, 1.0, cancel=cancel)
+            self.assertEqual(len(calls), 2 * nodes)  # a small mesh: once per node and walk
+            before = alive()
+            with mock.patch.object(geometry, "CHECK_EVERY", 1):
+                cancel, calls = self.tripping(10 ** 9)
+                self.assertEqual(self.summary(conv.describe(sc, 1.0, cancel=cancel)), fresh)
+                total = len(calls)
+                self.assertGreater(total, 2 * nodes, name)
+                for after in range(nodes, total):  # from the second walk's first node to the last call
+                    cancel, calls = self.tripping(after)
+                    with self.subTest(fixture=name, trip=after), self.assertRaises(conv.Cancelled):
+                        conv.describe(sc, 1.0, cancel=cancel)
+                    self.assertEqual(len(calls), after + 1)
+            self.assertEqual(alive() - before, set())
+            self.assertEqual(self.summary(conv.describe(sc, 1.0)), fresh)
 
 
 @unittest.skipIf(numpy is None, "numpy missing")

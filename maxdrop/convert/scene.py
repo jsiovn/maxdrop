@@ -17,7 +17,8 @@
     desc.unknown_controllers            # Counter: controller class name -> times met
     desc.issues                         # [(node object index, None for the whole scene or a scene-level label
                                         #   such as ENVIRONMENT, reason)] for the report
-    describe(scene, meters, cancel=stop.is_set)   # Cancelled between two nodes once cancel() holds
+    describe(scene, meters, cancel=stop.is_set)   # Cancelled once cancel() holds: asked between two nodes and
+                                                  #   inside a large mesh (reader.geometry.CHECK_EVERY)
 
 Matrices are Blender's convention: 4x4 tuples of rows, a column vector p becomes M @ p, the translation is the
 last column. The reader's row-vector matrices are transposed here. node.matrix is the local matrix (relative to
@@ -142,6 +143,17 @@ ChunkError = chunks.ChunkError
 class Cancelled(Exception):
     """describe() stopped because its cancel check held (an import cancelled while reading). Not a ValueError: the
     file is not damaged."""
+
+
+def _raising(cancel):
+    """The check describe() passes into a node's read: raises Cancelled once cancel() holds; None without cancel."""
+    if cancel is None:
+        return None
+
+    def check():
+        if cancel():
+            raise Cancelled()
+    return check
 
 
 class NodeDescription:
@@ -378,10 +390,13 @@ def _reversed_loops(loop_starts, loop_totals):
     return 2 * starts[face] + totals[face] - 1 - numpy.arange(int(totals.sum()))
 
 
-def mesh_description(key, name, data, offset, meters):
+def mesh_description(key, name, data, offset, meters, check=None):
     """A MeshDescription of reader MeshData: faces Blender cannot hold left out (counted in dropped_faces), the
-    offset (a reader matrix) applied, then meters."""
+    offset (a reader matrix) applied, then meters. check() between the numpy passes of a mesh of more than
+    reader.geometry.CHECK_EVERY face corners; what it raises passes unchanged."""
     import numpy
+    if check is not None and len(data.loop_vertices) <= geometry.CHECK_EVERY:
+        check = None  # one pass of a small mesh is quick: the call counts stay once per node
     p = numpy.asarray(data.positions, dtype=numpy.float64)
     if offset is not None:
         m = numpy.asarray(offset, dtype=numpy.float64)
@@ -392,6 +407,8 @@ def mesh_description(key, name, data, offset, meters):
     lv = numpy.asarray(data.loop_vertices, dtype=numpy.int32)
     groups, materials = data.smoothing_groups, data.material_ids
     loops = None  # the loops kept, in their new order; None = all, unchanged
+    if check is not None:
+        check()
     keep = valid_faces(lv, starts, totals)
     dropped = int(len(keep) - keep.sum())
     if dropped:
@@ -407,13 +424,17 @@ def mesh_description(key, name, data, offset, meters):
         lv = lv[loops]
     uv_layers = []
     for channel in sorted(c for c in data.maps if c >= 1):
+        if check is not None:
+            check()
         mc = data.maps[channel]
         indices = mc.indices if loops is None else mc.indices[loops]
         uv = numpy.ascontiguousarray(mc.uvw[indices][:, :2], dtype=numpy.float32)
         uv_layers.append((UV_FIRST if channel == 1 else UV_NAME % channel, uv))
+    if check is not None:
+        check()
+    sharp = sharp_edges(lv, starts, totals, groups)
     return MeshDescription(key, name, positions, lv, starts.astype(numpy.int32), totals.astype(numpy.int32),
-                           materials.astype(numpy.int32), groups == 0, sharp_edges(lv, starts, totals, groups),
-                           uv_layers, dropped)
+                           materials.astype(numpy.int32), groups == 0, sharp, uv_layers, dropped)
 
 
 def _straight(knots, closed):
@@ -480,9 +501,11 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
     leaves the modifiers Blender has an equivalent for in node.modifiers, unconverted and unreported; assets, the
     scene's reader.assets.AssetTable, names the files of web and IES lights (None: not named); views, the file's
     convert.cameras.SavedViews, picks the scene camera (None: the first camera); cancel, a callable asked before each
-    node of both walks, ends it with Cancelled once it returns true."""
+    node of both walks and inside the read and description of a large mesh, ends it with Cancelled once it returns
+    true."""
     if not (math.isfinite(meters) and meters > 0):
         raise ValueError("meters per unit must be a positive number, not %r" % (meters,))
+    check = _raising(cancel)
     t = controllers.Transforms(scene)
     stacks = reader_modifiers.Modifiers(scene)
     desc = SceneDescription(meters, unit)
@@ -491,8 +514,8 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
     shape_of = {}  # base object index -> reader Shape, or None when the reader refused it
     remaining = collections.Counter()  # base object -> nodes still to build: its MeshData goes with the last
     for i in order:
-        if cancel is not None and cancel():
-            raise Cancelled()
+        if check is not None:
+            check()
         try:
             node = scene.node(i)
             stack = scene.object_stack(node.object) if node.object is not None else None
@@ -514,8 +537,8 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
     camera_params = {}  # camera base object index -> its values (convert.cameras.read_params)
     mm = unit.meters * 1000.0 if unit is not None else meters * 1000.0  # the thin lens is in the file's own unit
     for i in order:
-        if cancel is not None and cancel():
-            raise Cancelled()
+        if check is not None:
+            check()
         local, world = t.local(i), t.world(i)
         kind, key, class_name, modifiers, name, node, layer, base = EMPTY, None, "", (), "", None, None, None
         curve, applied, converted, light, camera = None, (), (), None, None
@@ -536,7 +559,7 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
                     fresh = {m.index for m in rest} - told  # named on this node only if its Extrude is made
                     conv, conv_issues = _converted(scene, rest, meters, _offset(t, i), told, convert_modifiers)
                     key, done = _extruded(scene, desc, shape_of, extruded, mapped, base, ext, maps, i, name,
-                                          t.offset(i), meters, built, _shading(conv))
+                                          t.offset(i), meters, built, _shading(conv), check)
                     if key is None:
                         told.difference_update(fresh)
                 if key is not None:
@@ -563,7 +586,7 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
                 class_name = _class_name(scene, base)
                 if base not in data_of:
                     try:
-                        data_of[base] = geometry.read_mesh(scene, base)
+                        data_of[base] = geometry.read_mesh(scene, base, check)
                     except geometry.GeometryError as exc:
                         data_of[base] = None
                         desc.issues.append((i, "geometry: %s" % exc))
@@ -578,7 +601,7 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
                     converted, conv_issues = _converted(scene, rest, meters, offset, told, convert_modifiers)
                     desc.issues.extend((i, x) for x in conv_issues)
                     key, done = _mapped_mesh(scene, desc, mapped, (base, offset), data, maps, i, name, offset,
-                                             meters, _shading(converted))
+                                             meters, _shading(converted), check)
                     converted, more = rules.budget(converted, len(desc.meshes[key].loop_vertices))
                     desc.issues.extend((i, x) for x in more)
                     if done or converted:
@@ -835,10 +858,11 @@ def _mapping(scene, mapped, m, issues, node):
     return mapped[m.index]
 
 
-def _mapped_mesh(scene, desc, mapped, key, data, maps, node, name, offset, meters, shading=None):
+def _mapped_mesh(scene, desc, mapped, key, data, maps, node, name, offset, meters, shading=None, check=None):
     """(the key in desc.meshes of reader MeshData data under the UVW Maps maps, the maps applied), made on first use:
     key extended by (modifier index, context matrix) per UVW Map evaluated, then by ("shading", shading) when a
-    converted smoother changes the shading (SMOOTH: no sharp edge or flat face; CREASE: the sharp edges creased)."""
+    converted smoother changes the shading (SMOOTH: no sharp edge or flat face; CREASE: the sharp edges creased).
+    check goes to mesh_description."""
     usable = []
     for m in maps:
         found = _mapping(scene, mapped, m, desc.issues, node)
@@ -860,7 +884,7 @@ def _mapped_mesh(scene, desc, mapped, key, data, maps, node, name, offset, meter
                 done.append(m)
             except uvwmap.UVWMapError as exc:
                 desc.issues.append((node, "uvw map: %s: the stored channel stays" % exc))
-        md = desc.meshes[key] = mesh_description(key, name, data, offset, meters)
+        md = desc.meshes[key] = mesh_description(key, name, data, offset, meters, check)
         md.applied = tuple(done)
         if shading == rules.SMOOTH:
             md.sharp_faces[:] = False
@@ -874,7 +898,7 @@ def _mapped_mesh(scene, desc, mapped, key, data, maps, node, name, offset, meter
 
 
 def _extruded(scene, desc, shape_of, extruded, mapped, base, ext, maps, node, name, offset, meters, built,
-              shading=None):
+              shading=None, check=None):
     """(the key in desc.meshes of shape base under the Extrude ext and the UVW Maps maps, the maps applied), made on
     first use; (None, ()) when the shape or the Extrude cannot be read or the scene's MAX_BUILT_CORNERS are spent (an
     issue, once per base object and Extrude). extruded caches the MeshData per base object, built counts the face
@@ -899,7 +923,7 @@ def _extruded(scene, desc, shape_of, extruded, mapped, base, ext, maps, node, na
         return None, ()
     offset = None if offset == controllers.IDENTITY else offset
     return _mapped_mesh(scene, desc, mapped, (base, offset, ext.index), data, maps, node, name, offset, meters,
-                        shading)
+                        shading, check)
 
 
 def _layer(scene, i, layers, issues, node):

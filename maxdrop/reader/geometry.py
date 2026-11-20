@@ -32,6 +32,9 @@ that only collects byte slices. The file comes from anywhere: a size that does n
 its array, an unknown face field, a record cut short, a map face whose degree differs from its face, or more than
 MAX_VERTICES vertices or MAX_LOOPS face corners in one mesh raise GeometryError (a ChunkError) for that object
 only. Arrays are copies: nothing keeps the file's mapping alive. Indices are int32, far above the caps.
+read_mesh(scene, i, check) calls check() every CHECK_EVERY records of a record loop and before the map faces of each
+channel past CHECK_EVERY words, never within one block (its caller asked just before the mesh): an exception it
+raises (a cancelled import) ends the read unchanged, never as a GeometryError.
 No bpy; numpy is imported when a mesh is read.
 """
 import array
@@ -50,6 +53,9 @@ GEOMETRY = 0x08FE
 MAX_VERTICES = 1 << 26  # vertices, and map vertices of one channel
 MAX_LOOPS = 1 << 27  # face corners
 DEAD = 0x2  # vertex, edge and face flag of Editable Poly records that are no longer part of the mesh
+# Records of a Python loop between two calls of a read's check (about 50 ms of Editable Poly faces). The first block
+# goes unchecked: the caller asked just before the mesh.
+CHECK_EVERY = 1 << 16
 
 # Editable Poly
 _P_VERTS, _P_FACES = 0x0100, 0x011A
@@ -147,8 +153,14 @@ def _indices(values, limit, what):
     return numpy.array(values, dtype=numpy.int32)
 
 
-def _channels(geo, channel_id, verts_id, faces_id, read_faces):
-    """The map channels in file order: a channel chunk, then its map vertices and map faces."""
+def _blocks(n):
+    """(start, stop) of the CHECK_EVERY-record blocks of a loop over n records."""
+    return ((lo, min(n, lo + CHECK_EVERY)) for lo in range(0, n, CHECK_EVERY))
+
+
+def _channels(geo, channel_id, verts_id, faces_id, read_faces, check=None):
+    """The map channels in file order: a channel chunk, then its map vertices and map faces; check() before the map
+    faces of each channel of a large mesh."""
     maps, channel, uvw = {}, None, None
     for chunk in geo.children:
         if chunk.id == channel_id:
@@ -169,6 +181,8 @@ def _channels(geo, channel_id, verts_id, faces_id, read_faces):
         elif chunk.id == faces_id:
             if channel is None or uvw is None:
                 raise GeometryError("map faces without a channel and its map vertices")
+            if check is not None and chunk.payload_size > 4 * CHECK_EVERY:  # a small mesh: the caller asked
+                check()
             maps[channel] = MapChannel(channel, uvw, _indices(read_faces(chunk), len(uvw),
                                                               "map channel %d vertex" % channel))
             channel = uvw = None
@@ -177,8 +191,8 @@ def _channels(geo, channel_id, verts_id, faces_id, read_faces):
     return maps
 
 
-def read_editable_mesh(chunk):
-    """MeshData of an Editable Mesh object's chunk."""
+def read_editable_mesh(chunk, check=None):
+    """MeshData of an Editable Mesh object's chunk; check() before each large map channel's faces."""
     import numpy
     geo = _geometry(chunk)
     positions = _points(_required(geo, _M_VERTS))
@@ -198,11 +212,11 @@ def read_editable_mesh(chunk):
             raise GeometryError("%d map faces for %d faces" % (n, nf))
         return c.as_array("<u4", 4, 3 * nf)
 
-    maps = _channels(geo, _M_MAP_CHANNEL, _M_MAP_VERTS, _M_MAP_FACES, map_faces)
+    maps = _channels(geo, _M_MAP_CHANNEL, _M_MAP_VERTS, _M_MAP_FACES, map_faces, check)
     return MeshData(positions, loop_vertices, loop_starts, smoothing, materials, maps)
 
 
-def _poly_positions(chunk):
+def _poly_positions(chunk, check=None):
     """(float32 (live, 3), remap or None): remap[i] is the new index of stored vertex i, -1 for a dead one."""
     import numpy
     if chunk.payload_size < 4:
@@ -219,16 +233,19 @@ def _poly_positions(chunk):
     data = chunk.view()
     size, off, live, points = len(data), 4, bytearray(n), bytearray()
     try:
-        for i in range(n):
-            flags, = _U32.unpack_from(data, off)
-            if flags & DEAD:
-                off += 4
-            else:
-                if off + 16 > size:
-                    raise GeometryError("vertex %d cut short" % i)
-                points += data[off + 4:off + 16]
-                live[i] = 1
-                off += 16
+        for lo, hi in _blocks(n):
+            if lo and check is not None:
+                check()
+            for i in range(lo, hi):
+                flags, = _U32.unpack_from(data, off)
+                if flags & DEAD:
+                    off += 4
+                else:
+                    if off + 16 > size:
+                        raise GeometryError("vertex %d cut short" % i)
+                    points += data[off + 4:off + 16]
+                    live[i] = 1
+                    off += 16
     except struct.error:  # only unpack_from past the payload's end raises it here: that is the check, per record
         raise GeometryError("vertex records cut short (%d of %d bytes)" % (off, size)) from None
     if off != size:
@@ -239,7 +256,7 @@ def _poly_positions(chunk):
     return numpy.frombuffer(bytes(points), dtype="<f4").astype(numpy.float32).reshape(-1, 3), remap
 
 
-def _poly_faces(chunk):
+def _poly_faces(chunk, check=None):
     """(loops u32, degrees of every stored face, live mask, smoothing, materials) from 0x011A."""
     data = chunk.view()
     size = len(data)
@@ -253,39 +270,42 @@ def _poly_faces(chunk):
     smooth, mats = array.array("I"), array.array("H")
     unpack_u32, unpack_u16 = _U32.unpack_from, _U16.unpack_from
     try:
-        for i in range(n):
-            deg, = unpack_u32(data, off)
-            start = off + 4
-            off = start + 4 * deg
-            if off > size:
-                raise GeometryError("face %d: %d vertices past the end" % (i, deg))
-            mask, = unpack_u16(data, off)
-            off += 2
-            if mask & ~_FACE_FIELDS:
-                raise GeometryError("face %d: unknown field mask %04X" % (i, mask))
-            flags = sg = mat = 0
-            if mask & FACE_FLAGS:
-                flags, = unpack_u32(data, off)
-                off += 4
-            if mask & FACE_MATERIAL:
-                mat, = unpack_u16(data, off)
+        for lo, hi in _blocks(n):
+            if lo and check is not None:
+                check()
+            for i in range(lo, hi):
+                deg, = unpack_u32(data, off)
+                start = off + 4
+                off = start + 4 * deg
+                if off > size:
+                    raise GeometryError("face %d: %d vertices past the end" % (i, deg))
+                mask, = unpack_u16(data, off)
                 off += 2
-            if mask & FACE_SMOOTHING:
-                sg, = unpack_u32(data, off)
-                off += 4
-            if mask & FACE_DIAGONALS:
+                if mask & ~_FACE_FIELDS:
+                    raise GeometryError("face %d: unknown field mask %04X" % (i, mask))
+                flags = sg = mat = 0
+                if mask & FACE_FLAGS:
+                    flags, = unpack_u32(data, off)
+                    off += 4
+                if mask & FACE_MATERIAL:
+                    mat, = unpack_u16(data, off)
+                    off += 2
+                if mask & FACE_SMOOTHING:
+                    sg, = unpack_u32(data, off)
+                    off += 4
+                if mask & FACE_DIAGONALS:
+                    if deg < 3:
+                        raise GeometryError("face %d: diagonals of a face with %d vertices" % (i, deg))
+                    off += 8 * (deg - 3)
+                degrees.append(deg)
+                if deg == 0 or flags & DEAD:
+                    continue
                 if deg < 3:
-                    raise GeometryError("face %d: diagonals of a face with %d vertices" % (i, deg))
-                off += 8 * (deg - 3)
-            degrees.append(deg)
-            if deg == 0 or flags & DEAD:
-                continue
-            if deg < 3:
-                raise GeometryError("face %d has %d vertices" % (i, deg))
-            loops += data[start:start + 4 * deg]
-            live[i] = 1
-            smooth.append(sg)
-            mats.append(mat)
+                    raise GeometryError("face %d has %d vertices" % (i, deg))
+                loops += data[start:start + 4 * deg]
+                live[i] = 1
+                smooth.append(sg)
+                mats.append(mat)
     except struct.error:  # as in _poly_positions: a record past the payload's end, checked per record
         raise GeometryError("face records cut short (%d of %d bytes)" % (off, size)) from None
     if off != size:
@@ -294,23 +314,27 @@ def _poly_faces(chunk):
     return loops, degrees, live, smooth, mats
 
 
-def _poly_map_faces(chunk, degrees, live):
+def _poly_map_faces(chunk, degrees, live, check=None):
     """The map vertex indices of the live faces from a 0x012B payload, one record per stored face. The map face of
     a dead face keeps the length it had (scene A), so its length is read, not known."""
     import numpy
     data = chunk.view()
     size, off, out = len(data), 0, bytearray()
     try:
-        for i, deg in enumerate(degrees):
-            n, = _U32.unpack_from(data, off)
-            start = off + 4
-            off = start + 4 * n
-            if off > size:
-                raise GeometryError("map face %d: %d vertices past the end" % (i, n))
-            if live[i]:
-                if n != deg:
-                    raise GeometryError("map face %d has %d vertices, its face %d" % (i, n, deg))
-                out += data[start:off]
+        for lo, hi in _blocks(len(degrees)):
+            if lo and check is not None:
+                check()
+            for i in range(lo, hi):
+                deg = degrees[i]
+                n, = _U32.unpack_from(data, off)
+                start = off + 4
+                off = start + 4 * n
+                if off > size:
+                    raise GeometryError("map face %d: %d vertices past the end" % (i, n))
+                if live[i]:
+                    if n != deg:
+                        raise GeometryError("map face %d has %d vertices, its face %d" % (i, n, deg))
+                    out += data[start:off]
     except struct.error:  # as in _poly_positions: a record past the payload's end, checked per record
         raise GeometryError("map faces cut short (%d of %d bytes)" % (off, size)) from None
     if off != size:
@@ -318,12 +342,13 @@ def _poly_map_faces(chunk, degrees, live):
     return numpy.frombuffer(bytes(out), dtype="<u4")
 
 
-def read_editable_poly(chunk):
-    """MeshData of an Editable Poly object's chunk."""
+def read_editable_poly(chunk, check=None):
+    """MeshData of an Editable Poly object's chunk; check() every CHECK_EVERY records of its loops and before each
+    large map channel's faces."""
     import numpy
     geo = _geometry(chunk)
-    positions, remap = _poly_positions(_required(geo, _P_VERTS))
-    loops, stored_degrees, stored_live, smooth, mats = _poly_faces(_required(geo, _P_FACES))
+    positions, remap = _poly_positions(_required(geo, _P_VERTS), check)
+    loops, stored_degrees, stored_live, smooth, mats = _poly_faces(_required(geo, _P_FACES), check)
     nstored = len(remap) if remap is not None else len(positions)
     loop_vertices = _indices(numpy.frombuffer(bytes(loops), dtype="<u4"), nstored, "vertex")
     if remap is not None:
@@ -353,9 +378,9 @@ def read_editable_poly(chunk):
             w = c.as_array("<u4")
             if numpy.array_equal(w[heads], degrees):
                 return w[keep]
-        return _poly_map_faces(c, stored_degrees, stored_live)
+        return _poly_map_faces(c, stored_degrees, stored_live, check)
 
-    maps = _channels(geo, _P_MAP_CHANNEL, _P_MAP_VERTS, _P_MAP_FACES, map_faces)
+    maps = _channels(geo, _P_MAP_CHANNEL, _P_MAP_VERTS, _P_MAP_FACES, map_faces, check)
     return MeshData(positions, loop_vertices, loop_starts, numpy.frombuffer(smooth, dtype=numpy.uint32).copy(),
                     numpy.frombuffer(mats, dtype=numpy.uint16).copy(), maps, nstored, len(degrees))
 
@@ -366,9 +391,10 @@ _READERS = {
 }
 
 
-def read_mesh(scene, i):
+def read_mesh(scene, i, check=None):
     """MeshData of object i when it is an Editable Mesh or Editable Poly, else None. A broken mesh raises
-    GeometryError naming the object."""
+    GeometryError naming the object. check, a callable, is called during the read (see the module docstring); what it
+    raises passes unchanged."""
     entry = scene.entry(i)
     if entry is None or entry.superclass != classids.SC_GEOMOBJECT:
         return None
@@ -376,6 +402,6 @@ def read_mesh(scene, i):
     if reader is None:
         return None
     try:
-        return reader(scene.chunk(i))
+        return reader(scene.chunk(i), check)
     except (MaxFileError, MemoryError, OverflowError) as exc:
         raise GeometryError("object %d (%s): %s" % (i, entry.name, exc or type(exc).__name__)) from None

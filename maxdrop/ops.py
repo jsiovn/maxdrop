@@ -68,6 +68,7 @@
 # the run as a RuntimeError, so the progress runner still tears down and removes what the run made.
 # Modified for MaxDrop, 2026-11-20 (jsiovn). Esc during a windowed import's read stops the worker at the next node
 # (_read_scene's cancel check, _in_thread's wait).
+# Modified for MaxDrop, 2026-11-21 (jsiovn). The read's cancel check is also asked inside a large mesh (comments).
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -124,7 +125,7 @@ _RENDER = ("resolution_x", "resolution_y", "resolution_percentage", "pixel_aspec
 # A modal run: seconds of work per timer event, the timer's interval, the steps of the progress shown in the cursor,
 # the share of a scene's progress its reading takes (scene B: 9 s of reading and describing, 7 s of building), how
 # long an Esc during an unpack waits for the unpacker to stop and remove its staging folder, and how long one during
-# a read waits for it to stop at the next node (one node of scene B takes 1.5 s; past this, _busy() covers the rest).
+# a read waits for it to stop (asked between nodes and inside a large mesh; past this, _busy() covers the rest).
 _SLICE = 0.1
 _TICK = 0.05
 _PROGRESS_STEPS = 1000
@@ -571,8 +572,8 @@ class _Read:
 def _read_scene(max_path, opts, dirs, cancel=None):
     """Reader, scene description and material conversion of one .max (ImportOptions opts, texture search folders
     dirs): everything the build needs, in a _Read. One of _UNREADABLE when the file cannot be read;
-    convert.scene.Cancelled once cancel() holds, asked between nodes and around the material conversion. Touches no
-    Blender data: a modal run calls it in a worker thread."""
+    convert.scene.Cancelled once cancel() holds, asked between nodes, inside a large mesh and around the material
+    conversion. Touches no Blender data: a modal run calls it in a worker thread."""
     from .convert import cameras, colors
     from .convert import scene as convert_scene
     from .reader import assets, cfb, units
