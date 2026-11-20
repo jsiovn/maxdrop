@@ -10,6 +10,7 @@ several disks) its bytes are patched.
 """
 import ast
 import contextlib
+import errno
 import importlib
 import json
 import os
@@ -141,6 +142,13 @@ def files_under(root):
 
 def inside(path, folder):
     return os.path.commonpath([os.path.abspath(path), os.path.abspath(folder)]) == os.path.abspath(folder)
+
+
+def rename_through_os():
+    """Folder renames through os.rename, as the look-then-rename fallback does: a test that patches os.rename to
+    see or fail them would otherwise miss them on Linux and macOS, where the rename that never replaces is ctypes'
+    (on Windows it is os.rename itself)."""
+    return mock.patch.object(archive, "_noreplace", lambda: None)
 
 
 class Base(unittest.TestCase):
@@ -1236,6 +1244,91 @@ class Race(Base):
         self.assertEqual(os.listdir(self.out), ["pack"])
 
 
+class RenameNew(Base):
+    """_rename_new never replaces a folder: not one that exists, not one made in the instant before the rename."""
+
+    def folders(self):
+        src, dst = os.path.join(self.tmp, "src"), os.path.join(self.out, "pack")
+        os.mkdir(src)
+        write(os.path.join(src, "a.txt"), b"A")
+        return src, dst
+
+    def assert_kept(self, src, dst):
+        self.assertEqual(os.listdir(dst), [])
+        self.assertEqual(os.listdir(src), ["a.txt"])
+
+    def test_a_folder_made_in_the_instant_before_the_rename_is_kept(self):
+        real = archive._noreplace()
+        if real is None:
+            self.skipTest("no rename that never replaces on this system: the fallback looks first")
+        src, dst = self.folders()
+
+        def racing(s, d):
+            os.mkdir(d)  # empty: what a POSIX rename replaces
+            return real(s, d)
+        with mock.patch.object(archive, "_noreplace", lambda: racing):
+            self.assertFalse(archive._rename_new(src, dst))
+        self.assert_kept(src, dst)
+
+    def test_an_existing_folder_is_refused(self):
+        for fallback in (False, True):
+            with self.subTest(fallback=fallback), contextlib.ExitStack() as stack:
+                if fallback:
+                    stack.enter_context(rename_through_os())
+                src, dst = self.folders()
+                os.mkdir(dst)
+                self.assertFalse(archive._rename_new(src, dst))
+                self.assert_kept(src, dst)
+                shutil.rmtree(src)
+                os.rmdir(dst)
+
+    def test_a_free_name_is_taken(self):
+        for unsupported in (False, True):
+            with self.subTest(unsupported=unsupported), contextlib.ExitStack() as stack:
+                if unsupported:  # the file system has no such rename: the fallback renames
+                    stack.enter_context(mock.patch.object(archive, "_noreplace", lambda: lambda s, d: False))
+                src, dst = self.folders()
+                self.assertTrue(archive._rename_new(src, dst))
+                self.assertFalse(os.path.lexists(src))
+                self.assertEqual(os.listdir(dst), ["a.txt"])
+                os.remove(os.path.join(dst, "a.txt"))
+                os.rmdir(dst)
+
+    def test_a_missing_source_raises(self):
+        # An OSError of its own, not False: _create then makes the folder by hand (_make).
+        with self.assertRaises(FileNotFoundError):
+            archive._rename_new(os.path.join(self.tmp, "missing"), os.path.join(self.out, "pack"))
+        self.assertEqual(os.listdir(self.out), [])
+
+    def test_the_errno_is_read(self):
+        for err in archive._NOREPLACE_UNSUPPORTED:
+            self.assertIs(archive._noreplace_failed(err, "a", "b"), False)
+        self.assertIn(errno.ENOSYS, archive._NOREPLACE_UNSUPPORTED)
+        self.assertIn(errno.EINVAL, archive._NOREPLACE_UNSUPPORTED)
+        with self.assertRaises(FileExistsError) as caught:
+            archive._noreplace_failed(errno.EEXIST, "a", "b")
+        self.assertEqual((caught.exception.filename, caught.exception.filename2), ("a", "b"))
+        with self.assertRaises(FileNotFoundError):
+            archive._noreplace_failed(errno.ENOENT, "a", "b")
+        with self.assertRaises(PermissionError):
+            archive._noreplace_failed(errno.EACCES, "a", "b")
+
+    @unittest.skipUnless(sys.platform.startswith("linux") or sys.platform == "darwin", "Linux and macOS")
+    def test_the_native_rename_works(self):
+        # Called directly: a wrong flag or argument type comes back as EINVAL, which reads as "unsupported", and
+        # _rename_new's fallback would hide it.
+        rename = archive._noreplace()
+        self.assertIsNotNone(rename)
+        src, dst = self.folders()
+        os.mkdir(dst)
+        with self.assertRaises(FileExistsError):
+            rename(src, dst)
+        self.assert_kept(src, dst)
+        os.rmdir(dst)
+        self.assertIs(rename(src, dst), True)
+        self.assertEqual(os.listdir(dst), ["a.txt"])
+
+
 class Crash(BaseException):
     """Blender stopping mid-way: nothing of unpack() runs after it."""
 
@@ -1513,7 +1606,7 @@ class Reservation(Base):
                         self.assertFalse(os.path.lexists(dst))
                         made.append((os.path.relpath(dst, out), sorted(os.listdir(src))))
                     return real(src, dst)
-                with mock.patch.object(archive.os, "rename", rename):
+                with mock.patch.object(archive.os, "rename", rename), rename_through_os():
                     archive.unpack(self.pack(files), scene, dest_parent=out)
                 self.assertEqual(made, expected)
 
@@ -1532,6 +1625,7 @@ class Reservation(Base):
             raise Crash()
         with contextlib.ExitStack() as stack:
             stack.enter_context(mock.patch.object(archive.os, "rename", rename))
+            stack.enter_context(rename_through_os())
             stack.enter_context(mock.patch.object(archive.shutil, "rmtree"))
             if at_marker:
                 stack.enter_context(mock.patch.object(archive, "_write_marker", marker))
@@ -1569,7 +1663,7 @@ class Reservation(Base):
             if os.path.isdir(src):
                 raise PermissionError("a file in it is open")
             return real(src, dst)
-        with mock.patch.object(archive.os, "rename", rename):
+        with mock.patch.object(archive.os, "rename", rename), rename_through_os():
             r = archive.unpack(path, "two.max", dest_parent=self.out)
         self.assertEqual(r.folder, os.path.join(self.out, "pack", "two"))
         self.assertEqual(self.listing(r.folder), sorted([archive.MARKER, "two.max", "wood.jpg"]))
@@ -1620,7 +1714,7 @@ class Reservation(Base):
                 raise PermissionError("a file in it is open")
             return real_rename(src, dst)
         with mock.patch.object(archive, "_stale_reservation", judged), \
-                mock.patch.object(archive.os, "rename", rename):
+                mock.patch.object(archive.os, "rename", rename), rename_through_os():
             self.assertFalse(archive._clear_stale_reservation(folder, ident))
         self.assertFalse(os.path.lexists(folder))
         kept = [n for n in os.listdir(self.out) if n.startswith(archive.RECLAIM_PREFIX)]
@@ -1643,7 +1737,8 @@ class Reservation(Base):
                 raise FileExistsError(p)
             return real_mkdir(p, *args)
         path = self.pack(self.FILES)
-        with mock.patch.object(archive.os, "rename", rename), mock.patch.object(archive.os, "mkdir", mkdir):
+        with mock.patch.object(archive.os, "rename", rename), mock.patch.object(archive.os, "mkdir", mkdir), \
+                rename_through_os():
             r = archive.unpack(path, dest_parent=self.out)
         self.assertEqual(r.folder, os.path.join(self.out, "pack (2)"))
         self.assertEqual(os.listdir(os.path.join(self.out, "pack")), [])
@@ -1653,7 +1748,7 @@ class Reservation(Base):
         before = files_under(self.tmp)
         failing = mock.patch.object(archive, "_write_reservation",
                                     side_effect=[None, OSError("disk gone")])  # fine in staging, not in place
-        with mock.patch.object(archive.os, "rename", rename), failing:
+        with mock.patch.object(archive.os, "rename", rename), failing, rename_through_os():
             with self.assertRaisesRegex(PackError, "disk gone"):
                 archive.unpack(path, dest_parent=out)
         self.assertEqual(os.listdir(out), [])
@@ -1739,7 +1834,7 @@ class Reservation(Base):
         path = self.pack(self.FILES)
         folder = self.crash(path, moves=1)
         self.age(os.path.join(folder, archive.RESERVATION))
-        with mock.patch.object(archive.os, "rename", rename):
+        with mock.patch.object(archive.os, "rename", rename), rename_through_os():
             r = archive.unpack(path, dest_parent=self.out)
         self.assertEqual((r.mode, r.folder), ("unpacked", folder))
         self.assertEqual(self.listing(r.folder), sorted([archive.MARKER, "room.max", "stone.png", "wood.jpg"]))

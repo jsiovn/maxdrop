@@ -18,6 +18,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Import: a defect in MaxDrop's reader (a TypeError or KeyError while reading a file) reports that file as not
   imported, with the error in the reason and its traceback in the console for a bug report, instead of ending the
   import with a Python error. The other files of the run are still imported.
+- Scene packs on Linux and macOS: a folder another program creates at the name of the unpack's folder in the
+  instant before it is put in place is no longer taken over (renamed with a rename that never replaces; Windows
+  already refused).
 
 ## [1.0.0] - 2026-11-21
 

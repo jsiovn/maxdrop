@@ -26,6 +26,7 @@ under a package of their own, without the add-on's __init__ (which needs bpy).
 """
 
 import dataclasses
+import errno
 import json
 import os
 import re
@@ -68,6 +69,16 @@ STAGING_PREFIX = ".maxdrop-staging-"
 RECLAIM_PREFIX = ".maxdrop-reclaim-"
 # The staging name a clear of a stale reservation takes a folder aside under (see _clear_stale_reservation).
 _TAKEN_ASIDE = STAGING_PREFIX + "reclaim-"
+# A rename that never replaces its target (_noreplace): Linux renameat2 relative to the working directory, as
+# os.rename, and macOS renamex_np.
+_AT_FDCWD = -100
+_RENAME_NOREPLACE = 1
+_RENAME_EXCL = 0x4
+# Its errors when the kernel (ENOSYS) or the file system (EINVAL, ENOTSUP / EOPNOTSUPP) has no such rename.
+_NOREPLACE_UNSUPPORTED = frozenset(
+    e for e in (errno.ENOSYS, errno.EINVAL, getattr(errno, "ENOTSUP", None), getattr(errno, "EOPNOTSUPP", None))
+    if e is not None)
+_NOREPLACE = []  # [the rename, or None], loaded on first use
 
 IMAGE_EXTENSIONS = frozenset((
     "jpg", "jpeg", "png", "tif", "tiff", "tga", "bmp", "gif", "exr", "hdr", "psd", "dds", "webp", "jp2", "tx"))
@@ -724,15 +735,67 @@ def _clear_stale_reservation(folder, ident):
     return not os.path.lexists(folder)
 
 
-def _rename_new(src, dst):
-    """Rename the folder src to dst; False when dst exists. Windows refuses an existing dst by itself; a POSIX
-    rename replaces an empty folder and Python has no rename that never replaces, so dst is looked at first (an
-    empty folder made in that instant would be replaced). Accepted: no file is lost, that folder then holds what
-    src held; renameat2(RENAME_NOREPLACE) (Linux) or renamex_np(RENAME_EXCL) (macOS) through ctypes would close
-    the window at the cost of platform code for an instant's race."""
-    if os.path.lexists(dst):
-        return False
+def _noreplace():
+    """The rename that never replaces its target, as rename(src, dst): True when renamed, False when this system or
+    file system has none, an OSError otherwise (FileExistsError when dst exists). None where there is no such
+    call (a POSIX system other than Linux and macOS, a libc without it)."""
+    if not _NOREPLACE:
+        _NOREPLACE.append(_load_noreplace())
+    return _NOREPLACE[0]
+
+
+def _load_noreplace():
+    if os.name == "nt":
+        def rename(src, dst):
+            os.rename(src, dst)  # refuses an existing dst by itself
+            return True
+        return rename
     try:
+        import ctypes
+        libc = ctypes.CDLL(None, use_errno=True)
+        if sys.platform.startswith("linux"):
+            fn = libc.renameat2
+            fn.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint)
+
+            def call(src, dst):
+                return fn(_AT_FDCWD, src, _AT_FDCWD, dst, _RENAME_NOREPLACE)
+        elif sys.platform == "darwin":
+            fn = libc.renamex_np
+            fn.argtypes = (ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint)
+
+            def call(src, dst):
+                return fn(src, dst, _RENAME_EXCL)
+        else:
+            return None
+        fn.restype = ctypes.c_int
+    except (ImportError, OSError, AttributeError):
+        return None
+
+    def rename(src, dst):
+        if call(os.fsencode(src), os.fsencode(dst)) == 0:
+            return True
+        return _noreplace_failed(ctypes.get_errno(), src, dst)
+    return rename
+
+
+def _noreplace_failed(err, src, dst):
+    """False when err says there is no such rename here; otherwise the OSError of err (its subclass, as os.rename
+    raises it) is raised."""
+    if err in _NOREPLACE_UNSUPPORTED:
+        return False
+    raise OSError(err, os.strerror(err), os.fspath(src), None, os.fspath(dst))
+
+
+def _rename_new(src, dst):
+    """Rename the folder src to dst; False when dst exists. A POSIX rename replaces an empty folder, so a rename
+    that never replaces is used (_noreplace). Where there is none, dst is looked at first: an empty folder made in
+    that instant would be replaced, and would then hold what src held (no file is lost)."""
+    rename = _noreplace()
+    try:
+        if rename is not None and rename(src, dst):
+            return True
+        if os.path.lexists(dst):
+            return False
         os.rename(src, dst)
     except OSError:
         if os.path.lexists(dst):
