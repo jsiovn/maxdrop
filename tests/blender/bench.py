@@ -31,11 +31,10 @@ import bpy
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 FACES = 1_000_000
 RUNS = 3
-REFERENCE_RUNS = 9  # the numpy reference takes a tenth of a second and is the noisier of the two
 # measured 2026-11-19 (Windows, 1 001 200 faces, alone and from run.py) on Blender 4.2.23, 4.5.16 and 5.2.0: read 2.1
 # to 2.7, describe 3.7 to 4.7, build 2.1 to 2.7
 READ_LIMIT = 6.0
-DESCRIBE_LIMIT = 10.0
+DESCRIBE_LIMIT = 5.0
 BUILD_LIMIT = 5.5
 
 
@@ -99,8 +98,10 @@ def run(check):
     faces = len(md.loop_starts)
     _ratio(check, "read %d faces" % faces, *sp.timed(read, lambda: sp.reference_loop(faces), RUNS), READ_LIMIT)
     desc = describe(md)
-    _ratio(check, "describe %d faces" % faces, *sp.timed(lambda: describe(md), sp.numpy_reference(md.loop_vertices),
-                                                          RUNS, REFERENCE_RUNS), DESCRIBE_LIMIT)
+    work, ref = sp.timed(lambda: describe(md), sp.numpy_reference(md.loop_vertices), RUNS, 3 * RUNS)
+    print("diagnostic: describe %d faces / numpy_reference = %.2f (%.3f s / %.3f s)" % (faces, work / ref, work, ref))
+    _ratio(check, "describe %d faces" % faces, *sp.timed(lambda: describe(md), sp.describe_reference(md.loop_vertices),
+                                                          RUNS), DESCRIBE_LIMIT)
     md = None  # the reader's arrays are not needed for the build
     _ratio(check, "build %d faces" % len(desc.loop_starts),
            *sp.timed(lambda: build_objects.make_mesh(desc), lambda: _bare_mesh(desc), RUNS, after=_remove), BUILD_LIMIT)

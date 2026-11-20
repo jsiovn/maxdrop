@@ -45,7 +45,7 @@ RUNS = 5
 # 3.0 (3.9); describe 3.9 to 4.6; memory 5.07 on all of them (one more int64 array per loop alive at the peak makes
 # it 5.46). The same ratios at a million faces: tests/blender/bench.py
 READ_LIMIT = 6.0
-DESCRIBE_LIMIT = 10.0
+DESCRIBE_LIMIT = 5.0
 MEMORY_LIMIT = 5.3
 
 
@@ -98,8 +98,8 @@ class Budget(unittest.TestCase):
         cls.data = cls.sp.poly_object(FACES)
         cls.md = read(cls.data)
 
-    def ratio(self, what, workload, reference, limit, reference_runs=RUNS):
-        work, ref = self.sp.timed(workload, reference, RUNS, reference_runs)
+    def ratio(self, what, workload, reference, limit):
+        work, ref = self.sp.timed(workload, reference, RUNS)
         ratio = work / ref
         print("%s: %.3f s / reference %.3f s = %.2f (limit %.1f)" % (what, work, ref, ratio, limit))
         self.assertLess(ratio, limit, "%s takes %.2f times its reference (%.3f s / %.3f s), the limit is %.1f"
@@ -111,8 +111,13 @@ class Budget(unittest.TestCase):
                    READ_LIMIT)
 
     def test_describe_time(self):
-        self.ratio("describe %d faces" % len(self.md.loop_starts), lambda: describe(self.md),
-                   self.sp.numpy_reference(self.md.loop_vertices), DESCRIBE_LIMIT, reference_runs=3 * RUNS)
+        faces = len(self.md.loop_starts)
+        work, ref = self.sp.timed(lambda: describe(self.md), self.sp.numpy_reference(self.md.loop_vertices), RUNS,
+                                  3 * RUNS)
+        print("diagnostic: describe %d faces / numpy_reference = %.2f (%.3f s / %.3f s)" % (faces, work / ref, work,
+                                                                                         ref))
+        self.ratio("describe %d faces" % faces, lambda: describe(self.md),
+                   self.sp.describe_reference(self.md.loop_vertices), DESCRIBE_LIMIT)
 
     def test_memory(self):
         tracemalloc.start()

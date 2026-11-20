@@ -16,10 +16,11 @@ vertices turned, and the first two vertices of every DEGENERATE-th face as a tri
 convert.scene.valid_faces leaves out. The records are laid out with numpy, so a million faces take a fraction of a second; the same arguments
 give the same bytes.
 
-timed(work, reference) is how the benchmarks time a ratio. reference_loop() and numpy_reference() are the reference
-workloads they divide by: plain Python record
-walking of the kind reader.geometry._poly_faces does, and numpy array work of the kind convert.scene does (on the
-mesh's own loop vertices), timed on the same machine in the same process. Importing this module needs numpy.
+timed(work, reference) is how the benchmarks time a ratio. reference_loop() and describe_reference() are the
+reference workloads they divide the read and the description by: plain Python record walking of the kind
+reader.geometry._poly_faces does, and the numpy calls convert.scene.mesh_description makes (sorts and allocations
+included, on the mesh's own loop vertices), timed on the same machine in the same process. Importing this module
+needs numpy.
 """
 import array
 import struct
@@ -166,12 +167,11 @@ def reference_loop(n):
 
 
 def numpy_reference(values):
-    """A reference workload of numpy array work of the kind convert.scene's face and edge checks do, on values (a
-    mesh's loop vertices, so the data has the same order in it): a function that runs int64 arithmetic, a gather and
-    a comparison of neighbours over them, three times, into arrays made here, and returns a checksum. Nothing is
-    allocated and nothing sorted while it runs: how fast large allocations are differs between Blender's builds and
-    how fast numpy sorts between the numpy versions they ship (a stable argsort of int64 takes twice as long in
-    1.26 as in 1.24), the rest of the work hardly."""
+    """The streaming part of describe_reference, on values (a mesh's loop vertices, so the data has the same order
+    in it): a function that runs int64 arithmetic, a gather and a comparison of neighbours over them, three times,
+    into arrays made here, and returns a checksum. Nothing is allocated and nothing sorted while it runs. Alone it
+    was the describe benchmark's reference until CI showed that it scales with the machine differently from
+    describe (describe_reference)."""
     keys = numpy.asarray(values, dtype=numpy.int64)
     n = len(keys)
     following = numpy.roll(keys, -1)
@@ -191,6 +191,57 @@ def numpy_reference(values):
             numpy.not_equal(picked[1:], picked[:-1], out=same)
             total += int(numpy.count_nonzero(same)) + int(numpy.cumsum(lo, out=hi)[-1])
         return total
+    return run
+
+
+def describe_reference(values):
+    """The describe benchmark's reference: convert.scene.mesh_description's mix of numpy calls, no MaxDrop code, on
+    values (a mesh's loop vertices, kept in mesh order: how long a stable sort takes depends on how sorted its input
+    already is). On the first three fifths of them: a pass per face size (numpy.unique), rows sorted along axis 1, a
+    repeated-vertex test and a stable lexsort of the rows, the loops of the faces kept (repeat, flatnonzero); int64
+    keys of neighbouring vertices, a stable argsort, the runs of equal keys (concatenate, diff), the edges stacked; a
+    gather of float32 rows per loop. On the first sixth, numpy_reference's streaming work. Each of these calls
+    allocates its result, as describe's do: a reference without sorting and allocation (numpy_reference alone)
+    sped up with the runner's vector units and numpy 2.x while describe hardly did, and their ratio ranged from 3 to
+    8 on CI (docs/BASELINE.md). Returns a function that runs it once and returns a checksum."""
+    keys = numpy.asarray(values, dtype=numpy.int64)
+    part = keys[:len(keys) * 3 // 5]
+    stream = numpy_reference(keys[:len(keys) // 6])
+    lv = part.astype(numpy.int32)
+    n = len(lv)
+    scale = int(lv.max()) + 1 if n else 1
+    per_vertex = numpy.zeros((scale, 3), dtype=numpy.float32)
+    split = n // 8 * 4  # the first half as rows of four, the rest as rows of three
+
+    def run():
+        total = stream()
+        if not n:
+            return total
+        sizes = 3 + (part[::4] & 1)
+        keep = numpy.ones(len(sizes), dtype=bool)
+        for size in numpy.unique(sizes):
+            loops = part[:split] if size == 4 else part[split:]
+            rows = numpy.sort(loops[:len(loops) // size * size].reshape(-1, size), axis=1)
+            repeated = (numpy.diff(rows, axis=1) == 0).any(axis=1)
+            rows = rows[~repeated]
+            order = numpy.lexsort(rows.T)
+            rows = rows[order]
+            later = order[1:][(rows[1:] == rows[:-1]).all(axis=1)]
+            keep[later[later < len(keep)]] = False
+        kept = numpy.flatnonzero(numpy.repeat(keep, sizes))
+        following = numpy.roll(lv, -1)
+        lo, hi = numpy.minimum(lv, following), numpy.maximum(lv, following)
+        key = lo.astype(numpy.int64)
+        key *= scale
+        key += hi
+        order = numpy.argsort(key, kind="stable")
+        key = key[order]
+        first = numpy.flatnonzero(numpy.concatenate(([True], key[1:] != key[:-1])))
+        counts = numpy.diff(numpy.append(first, n))
+        src = order[first[counts == 2]]
+        edges = numpy.stack((lo[src], hi[src]), axis=1).astype(numpy.int32)
+        rows = numpy.ascontiguousarray(per_vertex[numpy.take(lv, kept, mode="clip")][:, :2])
+        return total + len(edges) + len(rows)
     return run
 
 
