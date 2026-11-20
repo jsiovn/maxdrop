@@ -503,7 +503,7 @@ class TestUnsupportedAndDamaged(MatrixCase):
 
     def test_infinite_weight_fails_an_outer_list_too(self):
         # the NaN matrix of an infinite weight, weighted again by an outer list, stays NaN at any weight: never
-        # the identity a NaN quaternion would read as
+        # the identity of a zero quaternion
         for outer in (0.0, 0.5, 1.0, 2.0):
             b = Build()
             inner = b.add(node(C_ROTLIST, refs34(b.euler((0, 0, 1)), None, None,
@@ -538,7 +538,61 @@ class TestUnsupportedAndDamaged(MatrixCase):
         self.assertEqual([i.reason for i in t.issues], [ct.NON_FINITE])
         b = Build()
         n = b.node(b.simple_prs(), pivot=((float("inf"), 0, 0), (0, 0, 0, 1), (1, 1, 1)))
-        self.assertEqual(b.transforms().offset(n), ct.IDENTITY)
+        t = b.transforms()
+        self.assertEqual(t.offset(n), ct.IDENTITY)
+        self.assertEqual(t.offset(n), ct.IDENTITY)  # kept: reported once
+        self.assertEqual([(i.node, i.controller, i.reason) for i in t.issues], [(n, None, ct.NON_FINITE)])
+
+    def test_non_finite_stored_quaternion(self):
+        # a NaN or infinite quaternion in the file is NON_FINITE, never the identity a zero quaternion reads as
+        def tcb_rot(b, q):
+            return b.prs(None, b.add(node(C_TCBROT, leaf(0x2504, struct.pack("<4f", *q)))))
+
+        def tcb_scale(b, q):
+            return b.prs(None, None, b.add(node(C_TCBSCALE, leaf(0x2505, struct.pack("<7f", 2, 2, 2, *q)))))
+
+        def bezier_saved(b, q):
+            return b.prs(None, None, b.bscale((2, 2, 2), q))
+
+        def bezier_key(b, q):
+            return b.prs(None, None, b.bscale(saved=False, keys=scale_keys((0, (2, 2, 2) + q))))
+
+        def in_list(b, q):
+            rot = b.add(node(C_TCBROT, leaf(0x2504, struct.pack("<4f", *q))))
+            return b.prs(None, b.add(node(C_ROTLIST, refs34(rot, None, None, b.add(node(C_PB2, refs34(b.flt(0.5))))))))
+
+        for bad in (float("nan"), float("inf"), -float("inf")):
+            for q in ((bad, 0.0, 0.0, 1.0), (0.0, 0.0, 0.0, bad)):
+                for name, make in (("tcb rotation", tcb_rot), ("tcb scale axis", tcb_scale),
+                                   ("bezier scale axis", bezier_saved), ("bezier scale key axis", bezier_key),
+                                   ("rotation list", in_list)):
+                    with self.subTest(name, q=q):
+                        b = Build()
+                        n = b.node(make(b, q))
+                        sibling = b.node(b.simple_prs((7, 0, 0)))
+                        t = b.transforms()
+                        self.assertEqual(t.world(n), ct.IDENTITY)
+                        self.assertEqual([(x.node, x.reason) for x in t.issues], [(n, ct.NON_FINITE)])
+                        self.assertMatrix(t.world(sibling), ct.translation((7, 0, 0)))
+                with self.subTest("pivot rotation", q=q):
+                    b = Build()
+                    n = b.node(b.simple_prs((1, 0, 0)), pivot=((0, 0, 0), q, (1, 1, 1)))
+                    t = b.transforms()
+                    self.assertEqual(t.offset(n), ct.IDENTITY)
+                    self.assertMatrix(t.world(n), ct.translation((1, 0, 0)))
+                    self.assertEqual([(x.node, x.controller, x.reason) for x in t.issues], [(n, None, ct.NON_FINITE)])
+
+    def test_zero_stored_quaternion_stays_identity(self):
+        b = Build()
+        n = b.node(b.prs(b.xyz(C_POSXYZ, (1, 0, 0)), b.add(node(C_TCBROT, leaf(0x2504, struct.pack("<4f", 0, 0, 0,
+                                                                                                    0))))),
+                   pivot=((0, 0, 0), (0, 0, 0, 0), (1, 1, 1)))
+        t = b.transforms()
+        self.assertMatrix(t.world(n), ct.translation((1, 0, 0)))
+        self.assertEqual(t.offset(n), ct.IDENTITY)
+        self.assertEqual(t.issues, [])
+        self.assertFalse(ct._finite(ct.quat_matrix((math.nan, 0, 0, 1))))
+        self.assertFalse(ct._finite(ct.quat_matrix((0, 0, 0, math.inf))))
 
 
 class TestMatrixAlone(MatrixCase):
@@ -579,6 +633,10 @@ class TestMatrixAlone(MatrixCase):
     def test_non_finite_and_unknown(self):
         b = Build()
         tm = b.simple_prs((float("nan"), 0, 0))
+        m, issues = ct.matrix(self.scene_of(b), tm)
+        self.assertEqual((m, [i.reason for i in issues]), (ct.IDENTITY, [ct.NON_FINITE]))
+        b = Build()
+        tm = b.prs(None, b.add(node(C_TCBROT, leaf(0x2504, struct.pack("<4f", float("nan"), 0, 0, 1)))))
         m, issues = ct.matrix(self.scene_of(b), tm)
         self.assertEqual((m, [i.reason for i in issues]), (ct.IDENTITY, [ct.NON_FINITE]))
         b = Build()

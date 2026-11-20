@@ -135,11 +135,17 @@ def translation(p):
     return _mat3(((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)), p)
 
 
+_NAN_MATRIX = _mat3(((math.nan,) * 3,) * 3, (math.nan,) * 3)
+
+
 def quat_matrix(q):
-    """The row-vector matrix of a Max quaternion (x, y, z, w) as stored; a zero quaternion gives identity."""
+    """The row-vector matrix of a Max quaternion (x, y, z, w) as stored; a zero quaternion gives identity, a NaN or
+    infinite one a matrix that is not finite, which the evaluation reports (NON_FINITE)."""
     x, y, z, w = (float(v) for v in q)
     n = x * x + y * y + z * z + w * w
-    if not n > 1e-30:
+    if not math.isfinite(n):
+        return _NAN_MATRIX
+    if n <= 1e-30:
         return IDENTITY
     s = 2.0 / n
     return _mat3(((1.0 - s * (y * y + z * z), s * (x * y - z * w), s * (x * z + y * w)),
@@ -214,14 +220,11 @@ def _weighted_quat(m, weight):
     if n < 1e-12:
         return IDENTITY
     h = math.atan2(n, w) * weight
-    if not math.isfinite(h):  # an infinite weight: a NaN quaternion would read as the zero one, identity
+    if not math.isfinite(h):  # an infinite weight, where math.sin raises
         return _NAN_MATRIX
     k = math.sin(h) / n
     # stored the Max way: the conjugate of the standard quaternion
     return quat_matrix((-x * k, -y * k, -z * k, math.cos(h)))
-
-
-_NAN_MATRIX = _mat3(((math.nan,) * 3,) * 3, (math.nan,) * 3)
 
 
 def _scale_value(chunk):
@@ -830,7 +833,7 @@ class Transforms:
 
     def offset(self, i):
         """Node i's object offset: scale (along its axis) * rotation * position, from the node record (identity
-        when that record is damaged)."""
+        when that record is damaged; identity and an issue when it is not finite)."""
         m = self._offset.get(i)
         if m is not None:
             return m
@@ -841,6 +844,7 @@ class Transforms:
         except ChunkError:
             m = IDENTITY
         if not _finite(m):
+            self.issues.append(Issue(i, None, None, None, NON_FINITE))
             m = IDENTITY
         self._offset[i] = m
         return m

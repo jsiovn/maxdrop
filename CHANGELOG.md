@@ -21,6 +21,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Scene packs on Linux and macOS: a folder another program creates at the name of the unpack's folder in the
   instant before it is put in place is no longer taken over (renamed with a rename that never replaces; Windows
   already refused).
+- Transforms: a NaN or infinite rotation stored in the file (a TCB, Linear or Bezier rotation, the axis of a
+  scale, a node's pivot rotation) is reported as a non-finite transform instead of read as no rotation without a
+  word; a non-finite pivot position or pivot scale is now reported too. The node is still placed without it.
 
 ## [1.0.0] - 2026-11-21
 
