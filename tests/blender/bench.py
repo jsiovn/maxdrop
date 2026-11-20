@@ -31,9 +31,9 @@ import bpy
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 FACES = 1_000_000
 RUNS = 3
-# measured on CI 2026-11-20 (1 001 200 faces, two runs, Linux) on Blender 4.2.23, 4.5.16 and 5.2.4: read 2.27 to
-# 2.54, describe 1.92 to 2.35, build 1.96 to 2.29; on Windows locally on 4.2.23, 4.5.16 and 5.2.0 (alone and from
-# run.py): read 2.1 to 2.7, build 2.1 to 2.7 (2026-11-19), describe 1.80 to 2.23 (2026-11-20)
+# measured on CI 2026-11-20 (1 001 200 faces, two attempts of a run, Linux) on Blender 4.2.23, 4.5.16 and 5.2.4: read
+# 2.27 to 2.54, describe 1.92 to 2.35, build 1.96 to 2.29; on Windows locally on 4.2.23, 4.5.16 and 5.2.0 (alone and
+# from run.py): read 2.1 to 2.7, build 2.1 to 2.7 (2026-11-19), describe 1.80 to 2.24 (2026-11-20)
 READ_LIMIT = 6.0
 DESCRIBE_LIMIT = 5.2
 BUILD_LIMIT = 5.5

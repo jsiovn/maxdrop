@@ -392,23 +392,23 @@ describe's sorts and allocations do not; no single limit was both twice the high
 lowest. Memory is the peak of the Python allocations (`tracemalloc`, numpy's included) as a multiple of the object's
 size, which is the same on every Python and numpy measured.
 
-Measured on CI (two runs of the Test workflow, 2026-11-20: the plain jobs on Linux and Windows with Python 3.11 and
+Measured on CI (two attempts of one run of the Test workflow, 2026-11-20: the plain jobs on Linux and Windows with Python 3.11 and
 numpy 1.24.3, 3.13 and 2.3.4; the Blender jobs on Linux) and on Windows here (2026-11-19, describe 2026-11-20; Python
 3.11 with numpy 1.24.3 and 1.26.4 and 3.13 with 2.3.4 are the interpreters of Blender 4.2.23, 4.5.16 and 5.2.0, run
-outside Blender for the plain test; read also on 3.9 with 1.26.4):
+outside Blender for the plain test, which also ran on 3.9 with 1.26.4):
 
 | Ratio | CI, Linux | CI, Windows | Windows here | Limit |
 |---|---:|---:|---:|---:|
 | Read / Python reference (300,360 faces) | 2.07 to 2.41 | 2.37 to 2.48 | 2.3 to 3.0 | 6.0 |
 | Read / Python reference (a million faces, Blender) | 2.27 to 2.54 | | 2.1 to 2.7 | 6.0 |
-| Describe / describe reference (300,360 faces) | 2.14 to 2.27 | 2.03 to 2.24 | 2.00 to 2.26 | 5.2 |
-| Describe / describe reference (a million faces, Blender) | 1.92 to 2.35 | | 1.80 to 2.23 | 5.2 |
+| Describe / describe reference (300,360 faces) | 2.14 to 2.27 | 2.03 to 2.24 | 2.00 to 2.28 | 5.2 |
+| Describe / describe reference (a million faces, Blender) | 1.92 to 2.35 | | 1.80 to 2.24 | 5.2 |
 | Build / Blender reference (a million faces) | 1.96 to 2.29 | | 2.1 to 2.7 | 5.5 |
 | Read + describe peak / object size (300,360 faces) | 5.07 | 5.07 | 5.07 | 5.3 |
 
 A limit leaves at least 2.2 times the highest ratio measured on CI and stays under three times the lowest, so that
 code three times as slow fails: a scratch copy that runs the reader, the description or `make_mesh` three times over
-fails each test (read 6.9 to 8.4, describe 5.62 to 6.64 here, three times the CI ratios 5.76 to 7.05, build 6.8 to
+fails each test (read 6.9 to 8.4, describe 5.62 to 6.79 here, three times the CI ratios 5.76 to 7.05, build 6.8 to
 7.9). Describe's 5.2 sits in the only window the CI numbers leave (2.2 x 2.35 = 5.17 to 3 x 1.92 = 5.76); read's 6.0
 and build's 5.5 hold on the CI runs too (read 2.2 x 2.54 = 5.59 to 3 x 2.07 = 6.21, build 5.04 to 5.88). The memory
 limit leaves 5 % (not the 1.5 times first planned: it is exact, the same on every Python and numpy measured, so a

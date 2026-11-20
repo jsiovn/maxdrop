@@ -206,7 +206,7 @@ def describe_reference(values):
     8 on CI (docs/BASELINE.md). Returns a function that runs it once and returns a checksum."""
     keys = numpy.asarray(values, dtype=numpy.int64)
     part = keys[:len(keys) * 3 // 5]
-    stream = numpy_reference(keys[:len(keys) // 6])
+    stream = numpy_reference(keys[:len(keys) // 6]) if len(keys) >= 6 else (lambda: 0)
     lv = part.astype(numpy.int32)
     n = len(lv)
     scale = int(lv.max()) + 1 if n else 1
@@ -217,7 +217,7 @@ def describe_reference(values):
         total = stream()
         if not n:
             return total
-        sizes = 3 + (part[::4] & 1)
+        sizes = 3 + numpy.arange((n + 3) // 4) % 2  # both sizes, whatever the values
         keep = numpy.ones(len(sizes), dtype=bool)
         for size in numpy.unique(sizes):
             loops = part[:split] if size == 4 else part[split:]
@@ -245,16 +245,13 @@ def describe_reference(values):
     return run
 
 
-def timed(work, reference, runs=5, reference_runs=None, after=None):
-    """(best time of work(), best time of reference()) in seconds, over runs (reference_runs) calls each. The calls
-    alternate, so a slow moment of a shared machine hits both rather than skewing their ratio; after(result) runs
-    outside the timing (to free what a call made)."""
-    reference_runs = runs if reference_runs is None else reference_runs
+def timed(work, reference, runs=5, after=None):
+    """(best time of work(), best time of reference()) in seconds, over runs calls each. The calls alternate, so a
+    slow moment of a shared machine hits both rather than skewing their ratio; after(result) runs outside the timing
+    (to free what a call made)."""
     best = [float("inf"), float("inf")]
-    for i in range(max(runs, reference_runs)):
-        for k, fn, n in ((0, work, runs), (1, reference, reference_runs)):
-            if i >= n:
-                continue
+    for _ in range(runs):
+        for k, fn in ((0, work), (1, reference)):
             start = time.perf_counter()
             result = fn()
             best[k] = min(best[k], time.perf_counter() - start)
