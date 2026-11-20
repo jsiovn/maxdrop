@@ -416,6 +416,25 @@ margin buys nothing): one more 64-bit array per loop alive at the peak makes it 
 the changes above gave 7.42 to 7.80. The CI log prints each ratio. A test past its limit is a regression to find, not
 a limit to raise.
 
+## Version 1.0.0: the gate
+
+The first open of 0.1.0 run again on the 1.0.0 release candidate (`tools/first_open.py`, as above), on Blender 5.2.0
+and 4.2.23 on 2026-11-20: every answer yes on both versions, the same counts on both; luminances are 5.2's (4.2.23's
+within 0.002, with its lights off at most 0.002).
+
+| | Scene A | Scene B |
+|---|---|---|
+| No traceback | yes | yes |
+| No magenta, every texture found and loaded | yes: 0 % of the pixels; 134 textures found, 0 missing | yes: 0 %; 133 found, 0 missing |
+| Lit by its own lights (mean luminance; with its lights off) | yes: 0.34 (0.001) | yes: 0.44 (0.0004) |
+| Closed: rays through each quarter of the frame hit geometry | yes: 98 %, 100 %, 94 %, 94 % | yes: 100 % in each |
+| Right scale: floor to ceiling in front of the camera | yes: 3.4 m | yes: 3.3 m |
+| The report accounts for every node, light, camera and modifier class | yes: 746 nodes, 289 lights, 1 camera | yes: 2,251 nodes, 25 lights, 1 camera |
+| Objects, materials | 747, 158 | 2,252, 143 |
+| Import time (operator; 5.2.0, 4.2.23) | 9.8 s, 9.0 s | 12.4 s, 11.0 s |
+
+The report found 118 and 132 textures in 0.1.0 and finds 134 and 133 now; none is missing in either.
+
 ## Reproduce
 
 ```powershell
