@@ -44,6 +44,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   the unpacked .max chosen in File > Import), recorded in Blender 5.2 with the scene's contents blurred, and
   pictures of the options and the report. The page and the README no longer say Blender stops responding during
   an import.
+- Landing page in Vietnamese (`vi.html`), with the same pictures and videos; a link in the header switches between
+  English and Tiếng Việt.
 
 ### Changed
 

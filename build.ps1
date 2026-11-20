@@ -33,11 +33,11 @@ if ($LASTEXITCODE -ne 0) { throw "extension validate failed" }
 & $Python (Join-Path $PSScriptRoot "tools\check_zip.py") $zip
 if ($LASTEXITCODE -ne 0) { throw "the zip does not carry the license text" }
 
-# No --html: Blender's page is a bare table, ours is made from site\index.html.
+# No --html: Blender's page is a bare table, ours are made from site\index.html and site\vi.html.
 & $Blender --factory-startup --command extension server-generate --repo-dir $dist
 if ($LASTEXITCODE -ne 0) { throw "server-generate failed" }
 
 & $Python (Join-Path $PSScriptRoot "tools\make_site.py") $dist
 if ($LASTEXITCODE -ne 0) { throw "make_site.py failed" }
 
-Write-Host "Built $zip, $(Join-Path $dist 'index.json') and $(Join-Path $dist 'index.html')"
+Write-Host "Built $zip, $(Join-Path $dist 'index.json'), $(Join-Path $dist 'index.html') and $(Join-Path $dist 'vi.html')"

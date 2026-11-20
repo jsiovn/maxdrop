@@ -2,14 +2,14 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Write the landing page of the extension repository: dist/index.html from site/index.html and dist/index.json.
+"""Write the landing pages of the extension repository: dist/index.html and dist/vi.html from site/ and index.json.
 
     python tools/make_site.py dist [--site https://jsiovn.github.io/maxdrop/]
 
 Blender's own `server-generate --html` page is a bare table and its template only knows ${body} and ${date}, so
 the page is ours. The install link keeps the exact form Blender's generator emits (bl_pkg/cli/blender_ext.py,
 _generate_html): Blender reads the repository and the version range from the query when the link is dropped on it.
-Standard library only.
+PAGES are the same page in each language (English, Vietnamese), filled with the same values. Standard library only.
 """
 import argparse
 import datetime
@@ -24,6 +24,7 @@ import urllib.parse
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXTENSION_ID = "maxdrop"
 TOKEN = re.compile(r"\{\{(\w+)\}\}")
+PAGES = ("index.html", "vi.html")
 
 
 def install_href(package):
@@ -78,11 +79,11 @@ def values(package, site="", changelog=os.path.join(ROOT, "CHANGELOG.md")):
     }
 
 
-def render(template, found):
+def render(template, found, name="index.html"):
     """Fill every {{token}}; one the page asks for and we do not know is an error, not an empty string."""
     unknown = sorted(set(TOKEN.findall(template)) - set(found))
     if unknown:
-        raise KeyError("site/index.html asks for unknown values: %s" % ", ".join(unknown))
+        raise KeyError("site/%s asks for unknown values: %s" % (name, ", ".join(unknown)))
     return TOKEN.sub(lambda m: html.escape(found[m.group(1)], quote=True), template)
 
 
@@ -99,10 +100,11 @@ def build(dist, site="", source=os.path.join(ROOT, "site")):
     # The install link is relative to the page: the zip it names has to be published next to it.
     if not os.path.isfile(os.path.join(dist, found["zip_name"])):
         raise LookupError("index.json names %s, which is not in %s" % (found["zip_name"], dist))
-    with open(os.path.join(source, "index.html"), encoding="utf-8") as f:
-        page = render(f.read(), found)
-    with open(os.path.join(dist, "index.html"), "w", encoding="utf-8", newline="\n") as f:
-        f.write(page)
+    for name in PAGES:
+        with open(os.path.join(source, name), encoding="utf-8") as f:
+            page = render(f.read(), found, name)
+        with open(os.path.join(dist, name), "w", encoding="utf-8", newline="\n") as f:
+            f.write(page)
     assets = os.path.join(source, "assets")
     if os.path.isdir(assets):
         shutil.copytree(assets, os.path.join(dist, "assets"), dirs_exist_ok=True)
@@ -111,11 +113,12 @@ def build(dist, site="", source=os.path.join(ROOT, "site")):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("dist", help="folder holding index.json and the zip; index.html is written into it")
+    parser.add_argument("dist", help="folder holding index.json and the zip; the pages are written into it")
     parser.add_argument("--site", default="", help="public URL of the folder (default: the manifest's website)")
     args = parser.parse_args(argv)
     found = build(args.dist, args.site)
-    print("Wrote %s (%s, %s)" % (os.path.join(args.dist, "index.html"), found["zip_name"], found["install_href"]))
+    print("Wrote %s (%s, %s)" % (", ".join(os.path.join(args.dist, name) for name in PAGES), found["zip_name"],
+                                 found["install_href"]))
 
 
 if __name__ == "__main__":

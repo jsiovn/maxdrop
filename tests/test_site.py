@@ -102,11 +102,14 @@ class Page(unittest.TestCase):
             with open(os.path.join(self.tmp, "maxdrop-1.2.3.zip"), "wb") as f:
                 f.write(b"PK")
 
-    def page(self):
+    def page(self, name="index.html"):
         self.repository()
         make_site.build(self.tmp)
-        with open(os.path.join(self.tmp, "index.html"), encoding="utf-8") as f:
+        with open(os.path.join(self.tmp, name), encoding="utf-8") as f:
             return f.read()
+
+    def pages(self):
+        return {name: self.page(name) for name in make_site.PAGES}
 
     def test_render_escapes_and_refuses_unknown_values(self):
         self.assertEqual(make_site.render('<a href="{{href}}">{{name}}</a>', {"href": "a?b=1&c=2", "name": "<x>"}),
@@ -115,25 +118,56 @@ class Page(unittest.TestCase):
             make_site.render("{{missing}}", {})
 
     def test_build_writes_the_page_of_this_repository(self):
+        for page_name, page in self.pages().items():
+            with self.subTest(page_name):
+                self.assertFalse("{{" in page or "}}" in page, "a value of the template was left unfilled")
+                self.assertEqual(page.count(
+                    'href="./maxdrop-1.2.3.zip?repository=.%2Findex.json&amp;blender_version_min=4.2.0"'), 2)
+                for needle in ('data-copy="https://jsiovn.github.io/maxdrop/index.json"', "1.2.3", "GPL-3.0-or-later"):
+                    self.assertTrue(needle in page, needle)
+                for name in os.listdir(os.path.join(ROOT, "site", "assets")):
+                    self.assertTrue(os.path.isfile(os.path.join(self.tmp, "assets", name)), name)
+                    self.assertTrue("assets/" + name in page, "%s is in site/assets but not on the page" % name)
         page = self.page()
-        self.assertFalse("{{" in page or "}}" in page, "a value of the template was left unfilled")
-        self.assertEqual(page.count(
-            'href="./maxdrop-1.2.3.zip?repository=.%2Findex.json&amp;blender_version_min=4.2.0"'), 2)
-        for needle in ('data-copy="https://jsiovn.github.io/maxdrop/index.json"', "Version 1.2.3",
-                       "GPL-3.0-or-later", "either version 3 of the License, or (at your option) any later version"):
+        for needle in ("Version 1.2.3", "either version 3 of the License, or (at your option) any later version"):
             self.assertTrue(needle in page, needle)
-        for name in os.listdir(os.path.join(ROOT, "site", "assets")):
-            self.assertTrue(os.path.isfile(os.path.join(self.tmp, "assets", name)), name)
-            self.assertTrue("assets/" + name in page, "%s is in site/assets but not on the page" % name)
 
     def test_the_page_loads_nothing_from_another_site(self):
-        page = self.page()
-        for needle in ('src="http', "src='http", "src=\"//", '<link rel="stylesheet"', "@import", "url(http",
-                       "<iframe", "fonts.googleapis"):
-            self.assertFalse(needle in page, needle)
-        self.assertEqual(re.findall(r'<link[^>]+href="(?!assets/)[^"]*"', page), [])
-        self.assertEqual(re.findall(r'<(?:script|img|video|source|audio|track)[^>]+src="(?!assets/)[^"]*"', page), [])
-        self.assertEqual(re.findall(r'<video[^>]+poster="(?!assets/)[^"]*"', page), [])
+        for page_name, page in self.pages().items():
+            with self.subTest(page_name):
+                for needle in ('src="http', "src='http", "src=\"//", '<link rel="stylesheet"', "@import", "url(http",
+                               "<iframe", "fonts.googleapis"):
+                    self.assertFalse(needle in page, needle)
+                self.assertEqual(re.findall(r'<link[^>]+href="(?!assets/)[^"]*"', page), [])
+                self.assertEqual(
+                    re.findall(r'<(?:script|img|video|source|audio|track)[^>]+src="(?!assets/)[^"]*"', page), [])
+                self.assertEqual(re.findall(r'<video[^>]+poster="(?!assets/)[^"]*"', page), [])
+
+    def test_every_language_is_the_same_page(self):
+        # Only the words may differ: one look, one script, the same sections, media, values and outside links.
+        pages = self.pages()
+        english = pages.pop("index.html")
+        for page_name, page in pages.items():
+            with self.subTest(page_name):
+                for start, end in (("<style>", "</style>"), ("<script>", "</script>")):
+                    self.assertEqual(page[page.index(start):page.index(end)],
+                                     english[english.index(start):english.index(end)], start)
+                for pattern in (r'id="([^"]+)"', r'(?:src|poster)="([^"]+)"', r'<(?:img|video)[^>]+width="(\d+)"',
+                                r'href="(#[^"]*|https?://[^"]+|\./[^"]+)"', r'data-(?:drag|copy)\b'):
+                    self.assertEqual(re.findall(pattern, page), re.findall(pattern, english), pattern)
+                for attribute in ("data-click", "data-copied", "data-press"):
+                    self.assertEqual(page.count(attribute + '="'), 1, attribute)
+
+    def test_each_page_links_the_other_language(self):
+        english, vietnamese = self.page("index.html"), self.page("vi.html")
+        self.assertIn('<html lang="en">', english)
+        self.assertIn('<html lang="vi">', vietnamese)
+        self.assertIn('<a href="vi.html" hreflang="vi" lang="vi">Tiếng Việt</a>', english)
+        self.assertIn('<a href="index.html" hreflang="en" lang="en">English</a>', vietnamese)
+        self.assertIn('<meta property="og:url" content="https://jsiovn.github.io/maxdrop/vi.html">', vietnamese)
+        for needle in ("Phiên bản 1.2.3", "không liên kết với Autodesk hay Chaos", "Cài đặt", "Khắc phục sự cố",
+                       "MaxDrop (.max, .zip, .rar, .7z)", "MaxDrop (.max, .rar, .7z)"):
+            self.assertIn(needle, vietnamese)
 
     def test_the_page_says_what_this_release_is(self):
         page = self.page()

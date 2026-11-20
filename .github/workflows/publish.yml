@@ -167,6 +167,7 @@ jobs:
           '
           python3 tools/make_site.py dist --site "$SITE"
           test -s dist/index.html
+          test -s dist/vi.html
 
       - name: Upload Pages artifact
         if: steps.gate.outputs.deploy == 'true'

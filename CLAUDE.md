@@ -71,7 +71,10 @@ powershell -ExecutionPolicy Bypass -File build.ps1    # dist\ (git-ignored): zip
   whose path is `maxdrop/` (`maxdrop/__init__.py`, which imports bpy, never runs), as the `maxdrop_convert_test`
   stub of the tests and `maxdrop_tool` of the tools do: a package rooted at `maxdrop/reader/` cannot resolve `..`.
 - `site/index.html` + `tools/make_site.py`: the landing page, filled from `dist/index.json` (`{{token}}`
-  values). Self-contained: no third-party requests. The install link keeps the form Blender's own generator
+  values). Self-contained: no third-party requests. `site/vi.html` is the same page in Vietnamese (the one
+  exception to English-only docs, on the owner's word): a change to one page's words goes into the other too;
+  their `<style>` and `<script>` blocks, sections, media and links stay identical (`tests/test_site.py`), and
+  the script's words live in data attributes. Blender's own labels stay in English on both. The install link keeps the form Blender's own generator
   emits (`./maxdrop-<version>.zip?repository=.%2Findex.json&blender_version_min=4.2.0`).
 - `.github/workflows/publish.yml`: on every push to `main`: the `test` job (calls `test.yml`), then, gated on
   the manifest version, GitHub Pages and release `v<version>`. A released zip is reused, never rebuilt.
