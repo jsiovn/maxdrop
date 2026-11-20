@@ -1087,18 +1087,25 @@ class StaleStaging(Base):
         self.assertEqual(r.folder, os.path.join(self.out, "pack"))
         self.assertEqual(os.listdir(fresh), ["room.max"])
 
-    def test_only_the_staging_parent_is_cleaned(self):
+    def test_every_unpack_of_several_scenes_cleans_beside_the_pack_folder(self):
         path = self.pack([("one.max", b"1"), ("two.max", b"2")])
         archive.unpack(path, "one.max", dest_parent=self.out)
-        beside = os.path.join(self.out, archive.STAGING_PREFIX + "beside")
+        # A pack folder a crash left under its staging name (holding the pack marker), once the folder exists.
+        beside = os.path.join(self.out, archive.STAGING_PREFIX + "new-beside")
         os.mkdir(beside)
+        write(os.path.join(beside, archive.MARKER), b"{}")
         self.aged(beside)
         inside_pack = os.path.join(self.out, "pack", archive.STAGING_PREFIX + "inside")
         os.mkdir(inside_pack)
         self.aged(inside_pack)
+        elsewhere = os.path.join(self.tmp, archive.STAGING_PREFIX + "elsewhere")
+        os.mkdir(elsewhere)
+        self.aged(elsewhere)
         archive.unpack(path, "two.max", dest_parent=self.out)
-        self.assertTrue(os.path.isdir(beside))
+        self.assertFalse(os.path.lexists(beside))
         self.assertFalse(os.path.lexists(inside_pack))
+        self.assertTrue(os.path.isdir(elsewhere))
+        self.assertEqual(self.listing(self.out), ["pack"])
 
     def test_a_linked_staging_folder_is_not_followed(self):
         target = os.path.join(self.tmp, "target")
@@ -1663,6 +1670,92 @@ class Reservation(Base):
         with mock.patch.object(archive, "_STALE_SECONDS", -60):
             archive._remove_stale_staging(self.out, archive.Limits(seconds=-60))
         self.assertEqual(os.listdir(self.out), [])
+
+    def test_a_crash_between_the_clears_renames_keeps_a_refilled_folder(self):
+        for refill in ([archive.MARKER, "room.max"], ["room.max"]):
+            with self.subTest(refill=refill):
+                out = tempfile.mkdtemp(dir=self.tmp)
+                path = self.pack(self.FILES)
+                ident = self.ident(path)
+                folder = self.crash(path, moves=1, out=out)
+                self.age(os.path.join(folder, archive.RESERVATION))
+                real = archive._stale_reservation
+
+                def judged(f, i, refill=refill):
+                    if os.path.basename(f).startswith(archive.STAGING_PREFIX):  # filled anew by another unpack
+                        for name in refill:
+                            write(os.path.join(f, name), b"X")
+                    return real(f, i)
+
+                def crash(*args):
+                    raise Crash()
+                with mock.patch.object(archive, "_stale_reservation", judged), \
+                        mock.patch.object(archive, "_rename_new", crash):
+                    with self.assertRaises(Crash):
+                        archive._clear_stale_reservation(folder, ident)
+                self.assert_only_staging(out)
+                with mock.patch.object(archive, "_STALE_SECONDS", -60):  # everything counts as old
+                    archive._remove_stale_staging(out, archive.Limits(seconds=-60))
+                # The unpack's own staging (holding the scene it never moved) is removed; the refilled one is kept.
+                left = self.listing(out)
+                self.assertEqual(len(left), 1, left)
+                self.assertTrue(left[0].startswith(archive.RECLAIM_PREFIX), left)
+                self.assertEqual(self.listing(os.path.join(out, left[0])),
+                                 sorted([archive.RESERVATION, "wood.jpg"] + refill))
+
+    def test_a_reclaimed_folder_is_cleared_only_when_stale(self):
+        path = self.pack(self.FILES)
+        ident = self.ident(path)
+
+        def reclaimed(label, reservation_ident, extra=(), aged=True):
+            folder = os.path.join(self.out, archive.RECLAIM_PREFIX + label)
+            os.mkdir(folder)
+            write(os.path.join(folder, "wood.jpg"), b"W")
+            for name in extra:
+                write(os.path.join(folder, name), b"X")
+            self.reservation(folder, reservation_ident, ["wood.jpg"])
+            if not aged:
+                os.utime(os.path.join(folder, archive.RESERVATION))
+            return folder
+        stale = reclaimed("stale", ident)  # the half-filled folder of an unpack that then failed
+        kept = [reclaimed("complete", ident, [archive.MARKER, "room.max"]),
+                reclaimed("other", dict(ident, size=ident["size"] + 1)),
+                reclaimed("recent", ident, aged=False)]
+        listings = {f: self.listing(f) for f in kept}
+        r = archive.unpack(path, dest_parent=self.out)
+        self.assertEqual((r.mode, r.folder), ("unpacked", os.path.join(self.out, "pack")))
+        self.assertFalse(os.path.lexists(stale))
+        self.assertEqual({f: self.listing(f) for f in kept}, listings)
+        self.assertEqual(self.listing(self.out), sorted(["pack"] + [os.path.basename(f) for f in kept]))
+
+    def test_a_freed_name_is_made_when_the_rename_is_refused(self):
+        real_rename, real_mkdir = os.rename, os.mkdir
+
+        def rename(src, dst):
+            if os.path.basename(src).startswith(archive.STAGING_PREFIX + "new-"):
+                raise PermissionError("a file in it is open")
+            return real_rename(src, dst)  # the clear's rename aside, the file moves
+
+        def pending(p, *args):
+            if os.path.basename(p) == "pack":  # Windows: the cleared folder is still pending delete
+                raise PermissionError("pending delete")
+            return real_mkdir(p, *args)
+        for still_pending in (False, True):
+            with self.subTest(still_pending=still_pending):
+                out = tempfile.mkdtemp(dir=self.tmp)
+                path = self.pack(self.FILES)
+                folder = self.crash(path, moves=1, out=out)
+                self.age(os.path.join(folder, archive.RESERVATION))
+                with contextlib.ExitStack() as stack:
+                    stack.enter_context(mock.patch.object(archive.os, "rename", rename))
+                    if still_pending:
+                        stack.enter_context(mock.patch.object(archive.os, "mkdir", pending))
+                    r = archive.unpack(path, dest_parent=out)
+                expected = folder + " (2)" if still_pending else folder
+                self.assertEqual((r.mode, r.folder), ("unpacked", expected))
+                self.assertEqual(self.listing(r.folder),
+                                 sorted([archive.MARKER, "room.max", "stone.png", "wood.jpg"]))
+                self.assertEqual(self.listing(out), [os.path.basename(expected)])
 
     def test_a_complete_unpack_keeps_no_reservation(self):
         path = self.pack(self.FILES)

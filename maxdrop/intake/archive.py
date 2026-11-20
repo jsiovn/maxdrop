@@ -13,7 +13,9 @@ by a later unpack. A destination holds a reservation file while the files move i
 same pack, no marker, no .max yet, nothing but the maps it lists) is cleared by a later unpack of that pack, which
 takes the name again unless a later folder serves. A destination, and the folder of a several-scene pack, is made
 under a staging name already holding its reservation file (or marker) and renamed into place: a crash does not
-leave it empty (unless the rename is refused, when it is made and filled as before).
+leave it empty (unless the rename is refused, when it is made and filled as before). A folder such a clear took
+aside and could not put back, because another unpack had filled it anew, is kept under a reclaim name; a later
+unpack of the pack clears it only once it holds a stale reservation, as a destination.
 
 Formats are recognised by their magic bytes. A backend lists the entries (names) and writes chosen entries into
 the staging folder (extract); the rules here are the same for every backend. Of the add-on it imports only
@@ -59,8 +61,11 @@ MARKER_FORMAT = 1
 RESERVATION = ".maxdrop-reserved.json"
 STAGING_PREFIX = ".maxdrop-staging-"
 # A folder a clear of a stale reservation took aside and could not put back: another unpack had filled it anew (it
-# may hold a complete scene), so it is never removed as stale staging.
+# may hold a complete scene), so it is never removed as stale staging; only a stale reservation of the pack an
+# unpack writes is cleared from it (_clear_reclaimed), as from a destination.
 RECLAIM_PREFIX = ".maxdrop-reclaim-"
+# The staging name a clear of a stale reservation takes a folder aside under (see _clear_stale_reservation).
+_TAKEN_ASIDE = STAGING_PREFIX + "reclaim-"
 
 IMAGE_EXTENSIONS = frozenset((
     "jpg", "jpeg", "png", "tif", "tiff", "tga", "bmp", "gif", "exr", "hdr", "psd", "dds", "webp", "jp2", "tx"))
@@ -683,13 +688,15 @@ def _clear_stale_reservation(folder, ident):
     is judged again there and only what that scan found is removed (the reservation file last); a failure
     meanwhile leaves a staging folder, removed as stale later. A folder no longer stale by then (cleared and
     filled anew meanwhile) is renamed back; should that fail (the name taken again, or the rename refused), it is
-    renamed to a RECLAIM_PREFIX name, which stale-staging cleanup leaves alone. It stays a staging folder, removed
-    later, only when that rename fails too or a crash comes between the renames: a stale folder taken aside is
-    staging from the start, so that a crash while it is removed leaves nothing kept for ever."""
+    renamed to a RECLAIM_PREFIX name, which only this judgement clears (_clear_reclaimed). It stays a staging
+    folder only when that rename fails too or a crash comes between the renames: a stale folder taken aside is
+    staging from the start, so that a crash while it is removed leaves nothing kept for ever, and stale-staging
+    cleanup renames it to a RECLAIM_PREFIX name instead of removing it when it holds a marker or a .max (filled
+    anew: a stale folder holds neither)."""
     if _stale_reservation(folder, ident) is None:
         return False
     parent = os.path.dirname(folder)
-    moved = os.path.join(parent, STAGING_PREFIX + "reclaim-" + os.urandom(6).hex())
+    moved = os.path.join(parent, _TAKEN_ASIDE + os.urandom(6).hex())
     try:
         os.rename(folder, moved)
     except OSError:
@@ -718,7 +725,9 @@ def _clear_stale_reservation(folder, ident):
 def _rename_new(src, dst):
     """Rename the folder src to dst; False when dst exists. Windows refuses an existing dst by itself; a POSIX
     rename replaces an empty folder and Python has no rename that never replaces, so dst is looked at first (an
-    empty folder made in that instant would be replaced)."""
+    empty folder made in that instant would be replaced). Accepted: no file is lost, that folder then holds what
+    src held; renameat2(RENAME_NOREPLACE) (Linux) or renamex_np(RENAME_EXCL) (macOS) through ctypes would close
+    the window at the cost of platform code for an instant's race."""
     if os.path.lexists(dst):
         return False
     try:
@@ -730,40 +739,50 @@ def _rename_new(src, dst):
     return True
 
 
+def _make(folder, fill, freed):
+    """_create's fallback: make folder, then fill it (a crash in between leaves it empty). False when it exists,
+    or, freed (a clear has just removed the folder of that name), when it cannot be made yet: Windows refuses a
+    folder still pending delete with an access error. Any other error of its own stops the unpack."""
+    try:
+        os.mkdir(folder)
+    except FileExistsError:
+        return False
+    except OSError:
+        if freed:
+            return False
+        raise
+    try:
+        fill(folder)
+    except BaseException:
+        shutil.rmtree(folder, ignore_errors=True)
+        raise
+    return True
+
+
 def _create(folders, fill, clear=None):
     """Create the first of folders that does not exist yet, already holding what fill(folder) writes into it: it
     is filled under a staging name beside folders[0] and renamed into place, so that a crash never leaves it empty
-    (the staging folder a crash leaves is removed as stale later). Only when that rename is refused is the folder
-    made and filled as before, with the old window. clear(folder): True when an existing folder was removed and
-    its name may be taken again. Returns the folder, None when every one exists."""
+    (the staging folder a crash leaves is removed as stale later). Only when that rename is refused (Windows: a
+    file in it held open, by a virus scan) is the folder made and filled as before, with the old window (_make).
+    clear(folder): True when an existing folder was removed and its name may be taken again. Returns the folder,
+    None when every one exists."""
     temp = os.path.join(os.path.dirname(folders[0]), STAGING_PREFIX + "new-" + os.urandom(6).hex())
     os.mkdir(temp)
     moved = False
     try:
         fill(temp)
         for folder in folders:
-            try:
-                moved = _rename_new(temp, folder)
-            except OSError:
-                # The folder cannot be renamed (Windows: a file in it held open, by a virus scan): made as before,
-                # then filled. Only an error of its own stops the unpack.
-                try:
-                    os.mkdir(folder)
-                except FileExistsError:
-                    continue
-                try:
-                    fill(folder)
-                except BaseException:
-                    shutil.rmtree(folder, ignore_errors=True)
-                    raise
-                return folder
-            if not moved and clear is not None and clear(folder):
+            for freed in (False, True):
+                if freed and (clear is None or not clear(folder)):
+                    break
                 try:
                     moved = _rename_new(temp, folder)
-                except OSError:  # still pending delete (Windows)
-                    continue
-            if moved:
-                return folder
+                except OSError:
+                    if _make(folder, fill, freed):
+                        return folder
+                    break
+                if moved:
+                    return folder
         return None
     finally:
         if not moved:
@@ -913,23 +932,56 @@ def _only_marker(folder):
         return False
 
 
+def _refilled(folder):
+    """A folder a clear took aside holds a marker or a .max: a stale one holds neither (_stale_reservation), so
+    another unpack had filled it anew. True when it cannot be read: kept."""
+    try:
+        with os.scandir(folder) as it:
+            return any(name_key(item.name) == name_key(MARKER) or extension(item.name) == SCENE_EXTENSION
+                       for item in it)
+    except OSError:
+        return True
+
+
 def _remove_stale_staging(parent, limits):
     """Remove the staging folders of unpacks that never finished (Blender stopped mid-way): only real folders
     (not links) named with STAGING_PREFIX and untouched for a long time. Nothing else in parent is looked at.
-    Best effort."""
+    One a clear took aside and a crash left there holding what another unpack filled it with (_refilled) is
+    renamed to a RECLAIM_PREFIX name instead: it may hold a complete scene. Best effort."""
     cutoff = time.time() - max(_STALE_SECONDS, 2 * limits.seconds)
     try:
         with os.scandir(parent) as it:
-            stale = [item.path for item in it if item.name.startswith(STAGING_PREFIX)]
+            stale = [item for item in it if item.name.startswith(STAGING_PREFIX)]
     except OSError:
         return
-    for folder in stale:
+    for item in stale:
+        folder = item.path
         try:
             st = os.lstat(folder)
         except OSError:
             continue
-        if stat.S_ISDIR(st.st_mode) and not _is_link(folder) and st.st_mtime < cutoff:
-            shutil.rmtree(folder, ignore_errors=True)
+        if not stat.S_ISDIR(st.st_mode) or _is_link(folder) or st.st_mtime >= cutoff:
+            continue
+        if item.name.startswith(_TAKEN_ASIDE) and _refilled(folder):
+            try:
+                os.rename(folder, os.path.join(parent, RECLAIM_PREFIX + os.urandom(6).hex()))
+            except OSError:
+                pass  # left as it is: never removed while it holds a marker or a .max
+            continue
+        shutil.rmtree(folder, ignore_errors=True)
+
+
+def _clear_reclaimed(parent, ident):
+    """Clear the RECLAIM_PREFIX folders in parent that hold a stale reservation of this pack (ident): the
+    half-filled folder of an unpack that failed once its folder was taken aside. Judged and removed as a
+    destination is (_clear_stale_reservation); any other one stays, a complete scene included. Best effort."""
+    try:
+        with os.scandir(parent) as it:
+            kept = [item.path for item in it if item.name.startswith(RECLAIM_PREFIX)]
+    except OSError:
+        return
+    for folder in kept:
+        _clear_stale_reservation(folder, ident)
 
 
 def _ident(path, st):
@@ -1084,8 +1136,9 @@ def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=Non
     created = None
     try:
         retries = 0
-        if container is not None:
-            # A pack folder is made under a staging name beside it: one a crash left there is removed here.
+        if len(scenes) > 1:
+            # A pack folder is made under a staging name beside it: one a crash left there is removed by every
+            # unpack of the pack, not only by the next one that makes a pack folder.
             _remove_stale_staging(dest_parent, limits)
         while container is not None:
             if _create([container], lambda f: _write_marker(f, ident, None, 0)) is None:
@@ -1101,8 +1154,10 @@ def unpack(path, scene=None, dest_parent=None, limits=DEFAULT_LIMITS, wanted=Non
             created = container
             break
         parent = os.path.dirname(folder)
-        # The unpack's staging and _reserve's are made beside the folder (dest_parent itself for one scene).
+        # The unpack's staging and _reserve's are made beside the folder (dest_parent itself for one scene), and
+        # so are the folders a clear takes aside.
         _remove_stale_staging(parent, limits)
+        _clear_reclaimed(parent, ident)
         staging = tempfile.mkdtemp(prefix=STAGING_PREFIX, dir=parent)
         reserved = None
         budget = _Budget(limits, watch)
