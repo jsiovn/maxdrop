@@ -2291,6 +2291,8 @@ def check_reader_defect(first, second):
     imported, its type in the reason, instead of ending the operator: in a run of two files, synchronous and with the
     reading in the worker thread, the other file is still imported; alone, the operator reports Nothing imported;
     the pre-flight line says it is not readable."""
+    import contextlib
+    import io
     from maxdrop import ops
     from maxdrop.reader import assets
     from maxdrop.reader import scene as reader_scene
@@ -2317,8 +2319,16 @@ def check_reader_defect(first, second):
             assets.AssetTable.from_file = classmethod(failing_first)
             run = _cancel_run([first, second])
             steps = run.steps(threaded=threaded)
-            _advance(steps, lambda: False)
+            console = io.StringIO()
+            with contextlib.redirect_stdout(console):
+                _advance(steps, lambda: False)
             assets.AssetTable.from_file = original_table
+            printed = console.getvalue()
+            sys.stdout.write(printed)
+            check("reader defect: %s run, the traceback is in the console" % label,
+                  "MaxDrop: reading %s failed, a defect in MaxDrop (please report it with this traceback):" % name
+                  in printed and "Traceback (most recent call last)" in printed
+                  and "TypeError: maxdrop test: reader defect" in printed, printed[-500:])
             check("reader defect: %s run, the file is not imported, the other one is" % label,
                   ('WARNING', "Not imported: %s: %s" % (name, reason)) in run.lines and len(bpy.data.objects) > 0
                   and len(calls) == 2,

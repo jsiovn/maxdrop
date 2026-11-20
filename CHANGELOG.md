@@ -12,6 +12,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 - Import: Esc while a windowed import reads a very large mesh stops the reading inside that mesh, so the next
   import can start at once (one mesh of 5.6 million face corners kept it busy for about a second more).
+
+### Fixed
+
 - Import: a defect in MaxDrop's reader (a TypeError or KeyError while reading a file) reports that file as not
   imported, with the error in the reason and its traceback in the console for a bug report, instead of ending the
   import with a Python error. The other files of the run are still imported.

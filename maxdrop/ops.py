@@ -122,7 +122,8 @@ _UNREADABLE = (OSError, ValueError, IndexError, struct.error, MemoryError, Recur
 # A defect of the reading (reader and scene description), never raised on purpose: _read_scene and _preflight report
 # it as _ReadDefect, one of _UNREADABLE, its traceback in the console. Not in _UNREADABLE itself, whose net in
 # _Run.steps also covers the build: a build's TypeError is a defect on Blender's side, not a file that cannot be
-# read. tests/unit/fuzz.py still counts both as escaped.
+# read. tests/unit/fuzz.py still counts both as escaped. A windowed import may print the traceback twice for one
+# file, from the pre-flight in invoke() and from the read: both are kept, they need not be the same.
 _DEFECTS = (TypeError, KeyError)
 # What a build makes besides objects and collections, in the order a failed build removes them. Addresses, not
 # names: a new datablock could reuse the address of one freed meanwhile, but the build frees none.

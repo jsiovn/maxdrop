@@ -57,26 +57,24 @@ class CasesTest(unittest.TestCase):
 
     def test_a_reader_defect_escapes(self):
         """The operator reports a TypeError or KeyError of the reading as not imported (ops._DEFECTS); the
-        harness does not mirror that net: such an error still escapes."""
+        harness's reader path does not mirror that net: such an error raised inside the reader leaves _Reader.read
+        and is a case that escapes."""
         seed = fuzz.seeds("max", {"box_poly_standard.max"})[0]
-
-        class Defective:
-            def __init__(self, error):
-                self.error = error
-
-            def read(self, data, folder):
-                raise self.error
-
-        saved = fuzz._READER
+        reader = fuzz._Reader()
+        table = reader.assets.AssetTable
+        original = table.__dict__["from_file"]  # the classmethod itself, put back as it was
         try:
             for error in (TypeError("maxdrop test"), KeyError("maxdrop test")):
+                def defective(cls, cf, error=error):
+                    raise error
+
+                table.from_file = classmethod(defective)
                 with self.subTest(error=type(error).__name__), tempfile.TemporaryDirectory() as folder:
-                    fuzz._READER = Defective(error)
-                    with self.assertRaises(fuzz.Escaped) as caught:
-                        fuzz.run_max(seed, 0, folder)
-                    self.assertIs(caught.exception.__cause__, error)
+                    with self.assertRaises(type(error)) as caught:
+                        reader.read(seed.raw, folder)
+                    self.assertIs(caught.exception, error)
         finally:
-            fuzz._READER = saved
+            table.from_file = original
 
     def test_structures_are_found(self):
         seed = fuzz.seeds("max", {"box_poly_standard.max"})[0]
