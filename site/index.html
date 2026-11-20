@@ -104,6 +104,13 @@ figure video, figure img { display: block; max-width: 100%; height: auto; border
 figure video { width: 100%; }
 figcaption { font-size: .9rem; color: var(--muted); margin-top: .6rem; }
 .demo { margin-bottom: 1.75rem; }
+.demo > figure + figure { margin-top: 1.5rem; }
+.demo.tabbed > figure + figure { margin-top: 0; }
+.demo .note { font-size: .9rem; color: var(--muted); margin: .6rem 0 0; }
+.tabs { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .75rem; }
+.tabs button { font: inherit; font-size: .9rem; color: var(--muted); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: .3rem .9rem; cursor: pointer; }
+.tabs button:hover { color: var(--ink); }
+.tabs button[aria-selected="true"] { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
 .card figure { margin-top: 1.25rem; }
 .tag { display: inline-block; font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: .1rem .6rem; margin-left: .5rem; vertical-align: .15em; }
 
@@ -280,13 +287,35 @@ footer p { margin: 0; }
     <div class="wrap">
       <h2>Using it</h2>
       <p class="sub">There is no panel: MaxDrop adds an importer.</p>
-      <figure class="demo">
-        <video controls muted playsinline preload="metadata" width="1280" height="720" poster="assets/imported.webp"
-               aria-label="Importing a .max file in Blender through File, Import, MaxDrop">
-          <source src="assets/import.mp4" type="video/mp4">
-        </video>
-        <figcaption><em>File › Import › MaxDrop</em> in Blender 5.2: pick the file, check the options, click <strong>Import</strong>; the status bar shows the progress. The scene is one of MaxDrop's test files.</figcaption>
-      </figure>
+      <div class="demo" id="demo">
+        <div class="tabs" role="tablist" aria-label="Ways to import" hidden>
+          <button type="button" role="tab" id="tab-pack" aria-controls="demo-pack" aria-selected="true">Scene pack from the menu</button>
+          <button type="button" role="tab" id="tab-drop" aria-controls="demo-drop" aria-selected="false" tabindex="-1">Scene pack dropped</button>
+          <button type="button" role="tab" id="tab-max" aria-controls="demo-max" aria-selected="false" tabindex="-1">.max from the menu</button>
+        </div>
+        <figure id="demo-pack" role="tabpanel" aria-labelledby="tab-pack">
+          <video controls muted playsinline preload="metadata" width="1280" height="720" poster="assets/poster-blender.webp"
+                 aria-label="Importing a .rar scene pack through File, Import, MaxDrop">
+            <source src="assets/import-menu-pack.mp4" type="video/mp4">
+          </video>
+          <figcaption><em>File › Import › MaxDrop</em>, then the <code>.rar</code> of a scene pack: MaxDrop finds the scene unpacked before beside it and imports it from there.</figcaption>
+        </figure>
+        <figure id="demo-drop" role="tabpanel" aria-labelledby="tab-drop">
+          <video controls muted playsinline preload="metadata" width="1800" height="752" poster="assets/poster-drop.webp"
+                 aria-label="Dragging a .rar scene pack from File Explorer onto Blender's 3D Viewport">
+            <source src="assets/import-drop-pack.mp4" type="video/mp4">
+          </video>
+          <figcaption>The same <code>.rar</code> dragged from File Explorer onto the 3D Viewport: the options name the scene in the pack, its texture files and the folder it was unpacked to.</figcaption>
+        </figure>
+        <figure id="demo-max" role="tabpanel" aria-labelledby="tab-max">
+          <video controls muted playsinline preload="metadata" width="1280" height="720" poster="assets/poster-blender.webp"
+                 aria-label="Importing the unpacked .max file through File, Import, MaxDrop">
+            <source src="assets/import-menu-max.mp4" type="video/mp4">
+          </video>
+          <figcaption>The unpacked <code>.max</code> chosen in <em>File › Import › MaxDrop</em>.</figcaption>
+        </figure>
+        <p class="note">Recorded in Blender 5.2 with a scene of 2,353 objects. The scene is a bought one: its contents are blurred once the import starts, and the import is sped up.</p>
+      </div>
       <div class="cards two">
         <div class="card">
           <h3>Import a scene</h3>
@@ -467,6 +496,32 @@ footer p { margin: 0; }
       done(legacyCopy(text));
     }
   });
+
+  // Without script the three videos stand one below the other; with it, tabs show one at a time.
+  var demo = document.getElementById('demo');
+  var tabs = demo.querySelectorAll('[role="tab"]');
+  function show(tab, focus) {
+    for (var j = 0; j < tabs.length; j++) {
+      var on = tabs[j] === tab;
+      var panel = document.getElementById(tabs[j].getAttribute('aria-controls'));
+      tabs[j].setAttribute('aria-selected', on ? 'true' : 'false');
+      tabs[j].tabIndex = on ? 0 : -1;
+      panel.hidden = !on;
+      if (!on) { panel.querySelector('video').pause(); }
+    }
+    if (focus) { tab.focus(); }
+  }
+  for (var k = 0; k < tabs.length; k++) {
+    tabs[k].addEventListener('click', function () { show(this, false); });
+    tabs[k].addEventListener('keydown', function (event) {
+      var list = Array.prototype.slice.call(tabs), at = list.indexOf(this);
+      if (event.key === 'ArrowRight') { show(list[(at + 1) % list.length], true); event.preventDefault(); }
+      if (event.key === 'ArrowLeft') { show(list[(at + list.length - 1) % list.length], true); event.preventDefault(); }
+    });
+  }
+  demo.querySelector('.tabs').hidden = false;
+  demo.classList.add('tabbed');
+  show(tabs[0], false);
 })();
 </script>
 </body>

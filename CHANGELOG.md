@@ -40,7 +40,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   yet: checked on made-up data.
 - Tests: files saved by 3ds Max 2020 in the 2017, 2018 and 2019 formats, with accented and Chinese names; docs/
   SUPPORT.md lists which 3ds Max versions are tested, expected to work or not supported.
-- Landing page: a short video of an import through File > Import (recorded in Blender 5.2 from a test file) and
+- Landing page: three short videos (a scene pack chosen in File > Import, the same pack dropped from File Explorer,
+  the unpacked .max chosen in File > Import), recorded in Blender 5.2 with the scene's contents blurred, and
   pictures of the options and the report. The page and the README no longer say Blender stops responding during
   an import.
 
