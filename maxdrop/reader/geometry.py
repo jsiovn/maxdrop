@@ -286,7 +286,7 @@ def _poly_faces(chunk):
             live[i] = 1
             smooth.append(sg)
             mats.append(mat)
-    except struct.error:
+    except struct.error:  # as in _poly_positions: a record past the payload's end, checked per record
         raise GeometryError("face records cut short (%d of %d bytes)" % (off, size)) from None
     if off != size:
         raise GeometryError("%d bytes after the %d face records" % (size - off, n))
@@ -311,7 +311,7 @@ def _poly_map_faces(chunk, degrees, live):
                 if n != deg:
                     raise GeometryError("map face %d has %d vertices, its face %d" % (i, n, deg))
                 out += data[start:off]
-    except struct.error:
+    except struct.error:  # as in _poly_positions: a record past the payload's end, checked per record
         raise GeometryError("map faces cut short (%d of %d bytes)" % (off, size)) from None
     if off != size:
         raise GeometryError("%d bytes after the %d map faces" % (size - off, len(degrees)))
