@@ -2286,6 +2286,66 @@ def check_light_note_on_failure(max_path):
     empty_scene()
 
 
+def check_reader_defect(first, second):
+    """A TypeError or KeyError of the reading (a reader defect, never raised on purpose) reports the file as not
+    imported, its type in the reason, instead of ending the operator: in a run of two files, synchronous and with the
+    reading in the worker thread, the other file is still imported; alone, the operator reports Nothing imported;
+    the pre-flight line says it is not readable."""
+    from maxdrop import ops
+    from maxdrop.reader import assets
+    from maxdrop.reader import scene as reader_scene
+    name = os.path.basename(first)
+    reason = "a defect in MaxDrop's reader (TypeError: maxdrop test: reader defect), see the console"
+    original_table = assets.AssetTable.__dict__["from_file"]  # the classmethods themselves, put back as they were
+    original_scene = reader_scene.Scene.__dict__["from_file"]
+    calls = []
+
+    def failing_first(cls, cf):
+        calls.append(cf)
+        if len(calls) == 1:
+            raise TypeError("maxdrop test: reader defect")
+        return original_table.__func__(cls, cf)
+
+    def no_scene(cls, *args, **kwargs):
+        raise KeyError("maxdrop test")
+
+    try:
+        for threaded in (False, True):
+            label = "threaded" if threaded else "synchronous"
+            empty_scene()
+            del calls[:]
+            assets.AssetTable.from_file = classmethod(failing_first)
+            run = _cancel_run([first, second])
+            steps = run.steps(threaded=threaded)
+            _advance(steps, lambda: False)
+            assets.AssetTable.from_file = original_table
+            check("reader defect: %s run, the file is not imported, the other one is" % label,
+                  ('WARNING', "Not imported: %s: %s" % (name, reason)) in run.lines and len(bpy.data.objects) > 0
+                  and len(calls) == 2,
+                  "%d objects, %d calls | %s" % (len(bpy.data.objects), len(calls), run.lines[-3:]))
+        empty_scene()
+        del calls[:]
+        assets.AssetTable.from_file = classmethod(failing_first)
+        try:
+            result, message = bpy.ops.import_scene.maxdrop(filepath=first), ""
+        except RuntimeError as e:  # bpy.ops raises with the message when the operator reports an error
+            result, message = {'CANCELLED'}, str(e)
+        assets.AssetTable.from_file = original_table
+        check("reader defect: one file, the operator reports Nothing imported with the reason",
+              result == {'CANCELLED'} and "Nothing imported. %s: %s" % (name, reason) in message
+              and not bpy.data.objects, "%s %r" % (result, message))
+        reader_scene.Scene.from_file = classmethod(no_scene)
+        line = ops._preflight(first)
+        reader_scene.Scene.from_file = original_scene
+        check("reader defect: the pre-flight line of a KeyError says the file is not readable",
+              line == "Not readable as a .max file (a defect in MaxDrop's reader (KeyError: 'maxdrop test'), see "
+                      "the console)", repr(line))
+    finally:
+        assets.AssetTable.from_file = original_table
+        reader_scene.Scene.from_file = original_scene
+        empty_scene()
+
+
 def check_asset_table_once(max_path):
     """One import of a file with lights and materials reads the file's asset table once (the scene description and
     the material conversion share it)."""
@@ -2791,6 +2851,9 @@ def main():
                                      os.path.join(ROOT, "tests", "fixtures", "vray_maps.max"))),
                                  ("light note on failure", lambda: check_light_note_on_failure(
                                      os.path.join(ROOT, "tests", "fixtures", "vray_lights.max"))),
+                                 ("reader defect", lambda: check_reader_defect(
+                                     os.path.join(ROOT, "tests", "fixtures", "primitives.max"),
+                                     os.path.join(ROOT, "tests", "fixtures", "multi_uv.max"))),
                                  ("asset table once", lambda: check_asset_table_once(
                                      os.path.join(ROOT, "tests", "fixtures", "vray_lights.max"))),
                                  ("benchmark", lambda: _bench().run(check))):

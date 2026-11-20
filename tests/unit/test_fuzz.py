@@ -55,6 +55,29 @@ class CasesTest(unittest.TestCase):
             with self.subTest(kind=kind):
                 self.assertGreater(seen.get(kind, 0), 0)
 
+    def test_a_reader_defect_escapes(self):
+        """The operator reports a TypeError or KeyError of the reading as not imported (ops._DEFECTS); the
+        harness does not mirror that net: such an error still escapes."""
+        seed = fuzz.seeds("max", {"box_poly_standard.max"})[0]
+
+        class Defective:
+            def __init__(self, error):
+                self.error = error
+
+            def read(self, data, folder):
+                raise self.error
+
+        saved = fuzz._READER
+        try:
+            for error in (TypeError("maxdrop test"), KeyError("maxdrop test")):
+                with self.subTest(error=type(error).__name__), tempfile.TemporaryDirectory() as folder:
+                    fuzz._READER = Defective(error)
+                    with self.assertRaises(fuzz.Escaped) as caught:
+                        fuzz.run_max(seed, 0, folder)
+                    self.assertIs(caught.exception.__cause__, error)
+        finally:
+            fuzz._READER = saved
+
     def test_structures_are_found(self):
         seed = fuzz.seeds("max", {"box_poly_standard.max"})[0]
         self.assertGreater(len(seed.heads), 100)

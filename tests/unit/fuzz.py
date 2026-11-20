@@ -594,7 +594,8 @@ def max_case(seed, k, base=SEED):
 
 
 class _Reader:
-    """The reader path of the operator (ops._preflight, then ops._read_scene) on bytes, without Blender."""
+    """The reader path of the operator (ops._preflight, then ops._read_scene) on bytes, without Blender. Not its net
+    for a reader defect: what ops reports as not imported for a TypeError or KeyError (ops._DEFECTS) escapes here."""
 
     def __init__(self):
         self.metadata = _mod("reader.metadata")
