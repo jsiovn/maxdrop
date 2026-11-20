@@ -99,6 +99,12 @@ section > .wrap > h2 { margin-bottom: .5rem; }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 1.5rem; min-width: 0; }
 .card h3 { margin-bottom: 1rem; }
 .card > :last-child { margin-bottom: 0; }
+figure { margin: 0; }
+figure video, figure img { display: block; max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 12px; background: #1d1d1d; }
+figure video { width: 100%; }
+figcaption { font-size: .9rem; color: var(--muted); margin-top: .6rem; }
+.demo { margin-bottom: 1.75rem; }
+.card figure { margin-top: 1.25rem; }
 .tag { display: inline-block; font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: .1rem .6rem; margin-left: .5rem; vertical-align: .15em; }
 
 ul.marks { list-style: none; padding: 0; }
@@ -274,16 +280,28 @@ footer p { margin: 0; }
     <div class="wrap">
       <h2>Using it</h2>
       <p class="sub">There is no panel: MaxDrop adds an importer.</p>
+      <figure class="demo">
+        <video controls muted playsinline preload="metadata" width="1280" height="720" poster="assets/imported.webp"
+               aria-label="Importing a .max file in Blender through File, Import, MaxDrop">
+          <source src="assets/import.mp4" type="video/mp4">
+        </video>
+        <figcaption><em>File › Import › MaxDrop</em> in Blender 5.2: pick the file, check the options, click <strong>Import</strong>; the status bar shows the progress. The scene is one of MaxDrop's test files.</figcaption>
+      </figure>
       <div class="cards two">
         <div class="card">
           <h3>Import a scene</h3>
           <ol class="steps">
             <li>Drag a <code>.max</code> file from your file manager onto Blender's 3D Viewport, or choose <em>File › Import › MaxDrop (.max, .zip, .rar, .7z)</em>.</li>
             <li>Check the options. <strong>Units: Auto</strong> takes the unit the scene was saved with, so it arrives at its real size.</li>
-            <li>Click <strong>Import</strong>. A large scene takes a while; Blender does not respond until it is done.</li>
+            <li>Click <strong>Import</strong>. A large scene takes a while: the status bar shows the progress, and Esc cancels the import and removes what it made.</li>
             <li>The text <strong>MaxDrop Report</strong> in the Text Editor lists what arrived and what did not. It also says what became of the materials: converted, simplified, and the textures not found.</li>
           </ol>
           <p>Scene packs work too: choose the <code>.zip</code>, <code>.rar</code> or <code>.7z</code> in <em>File › Import</em>, or drop the <code>.rar</code> or <code>.7z</code>. MaxDrop unpacks the scene with the maps it uses into a folder named after the archive, next to it, and imports it from there. Nothing else in the pack is written or run.</p>
+          <figure>
+            <img src="assets/options.webp" width="408" height="538" loading="lazy"
+                 alt="The MaxDrop options: the file with its 3ds Max version, renderer, object count and unit, then Include and Transform settings">
+            <figcaption>The options a drop opens, here for a 3ds Max 2020 scene saved in millimeters.</figcaption>
+          </figure>
         </div>
         <div class="card">
           <h3>The options</h3>
@@ -299,6 +317,12 @@ footer p { margin: 0; }
           </ul>
         </div>
       </div>
+
+      <figure class="demo" style="margin: 1.25rem 0 0">
+        <img src="assets/report.webp" width="930" height="234" loading="lazy"
+             alt="The MaxDrop Report text: units, nodes read, objects built, layers, modifiers converted, materials, textures found and what was left out">
+        <figcaption>The <strong>MaxDrop Report</strong> of that import in the Text Editor.</figcaption>
+      </figure>
 
       <div class="cards three" style="margin-top: 1.25rem">
         <div class="card" id="textures">

@@ -90,8 +90,8 @@ above.
    - **Keep Targets** aims target cameras and lights at their targets with a Track To constraint, so they follow
      when a target moves; off, they keep the rotation 3ds Max gives them.
    - Every import makes a collection named after the file, with one collection per 3ds Max layer below it.
-3. Click **Import**. A large scene takes a while and Blender does not respond until it is done
-   ([docs/BASELINE.md](docs/BASELINE.md) has measured times).
+3. Click **Import**. A large scene takes a while ([docs/BASELINE.md](docs/BASELINE.md) has measured times): the
+   status bar shows the progress, and Esc cancels the import and removes what it made.
 4. The status bar sums up the import in one line. The text **MaxDrop Report** in the Text Editor (and the
    system console) lists what arrived and what did not, such as light settings Blender has no place for, and
    what became of the materials: converted by class, wrappers and maps approximated, textures found and the

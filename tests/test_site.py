@@ -132,7 +132,8 @@ class Page(unittest.TestCase):
                        "<iframe", "fonts.googleapis"):
             self.assertFalse(needle in page, needle)
         self.assertEqual(re.findall(r'<link[^>]+href="(?!assets/)[^"]*"', page), [])
-        self.assertEqual(re.findall(r'<(?:script|img)[^>]+src="(?!assets/)[^"]*"', page), [])
+        self.assertEqual(re.findall(r'<(?:script|img|video|source|audio|track)[^>]+src="(?!assets/)[^"]*"', page), [])
+        self.assertEqual(re.findall(r'<video[^>]+poster="(?!assets/)[^"]*"', page), [])
 
     def test_the_page_says_what_this_release_is(self):
         page = self.page()
