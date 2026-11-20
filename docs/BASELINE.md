@@ -381,25 +381,40 @@ groups, material IDs, a map channel, doubled and degenerate faces; numpy, no 3ds
 
 A time limit in seconds would pass on a fast machine what fails on a slow one. Each time is the best of a few runs
 divided by the best time of a reference workload in the same process, their runs alternating so that a slow moment
-of a shared machine hits both: plain Python record walking for the reader,
-numpy array work for the description (no sorting and no allocation in it: those differ between Blender builds and
-numpy versions), a mesh made with Blender's own calls alone for the build. Memory is the peak of the Python
-allocations (`tracemalloc`, numpy's included) as a multiple of the object's size, which is the same on every Python
-and numpy measured.
+of a shared machine hits both: plain Python record walking for the reader, the description's own mix of numpy calls
+for the description (`describe_reference`: a pass per face size from `numpy.unique`, rows sorted along axis 1, a
+stable `lexsort`, int64 pair keys with a stable `argsort`, `concatenate`, a float32 gather, each allocating its
+result, on three fifths of the loop vertices, plus streaming numpy work on a sixth), a mesh made with Blender's own
+calls alone for the build. The description's first reference was the streaming work alone (no sort, no allocation):
+on CI's runners describe took 3.0 to 7.9 times as long as it, two clusters per Blender job by the runner it got and
+the highest with numpy 2.3.4 on Linux, because that work speeds up with a CPU's vector units and numpy 2.x and
+describe's sorts and allocations do not; no single limit was both twice the highest ratio and under three times the
+lowest. Memory is the peak of the Python allocations (`tracemalloc`, numpy's included) as a multiple of the object's
+size, which is the same on every Python and numpy measured.
 
-| Ratio | Measured (Python 3.11 with numpy 1.24.3 and 1.26.4, 3.13 with 2.3.4; Blender 4.2.23, 4.5.16, 5.2.0) | Limit |
-|---|---:|---:|
-| Read / Python reference (300,360 faces; a million) | 2.3 to 3.0; 2.1 to 2.7 | 6.0 |
-| Describe / numpy reference (300,360 faces; a million) | 3.9 to 4.6; 3.7 to 4.7 | 10.0 |
-| Build / Blender reference (a million faces) | 2.1 to 2.7 | 5.5 |
-| Read + describe peak / object size (300,360 faces) | 5.07 on every Python | 5.3 |
+Measured on CI (two runs of the Test workflow, 2026-11-20: the plain jobs on Linux and Windows with Python 3.11 and
+numpy 1.24.3, 3.13 and 2.3.4; the Blender jobs on Linux) and on Windows here (2026-11-19, describe 2026-11-20; Python
+3.11 with numpy 1.24.3 and 1.26.4 and 3.13 with 2.3.4 are the interpreters of Blender 4.2.23, 4.5.16 and 5.2.0, run
+outside Blender for the plain test; read also on 3.9 with 1.26.4):
 
-The limits are about twice the largest ratio measured, so that code three times as slow fails: a scratch copy that
-runs the reader, the description or `make_mesh` three times over fails each test (read 6.9 to 8.4, describe 11.8 to
-13.4, build 6.8 to 7.9). The memory limit leaves 5 % (not the 1.5 times first planned: it is exact, the same on every Python
-and numpy measured, so a margin buys nothing): one more 64-bit array per loop alive at the peak makes it 5.46 and
-fails, and the code before the changes above gave 7.42 to 7.80. The ratios were measured on Windows; CI runs the tests
-on Linux and its log prints each ratio. A test past its limit is a regression to find, not a limit to raise.
+| Ratio | CI, Linux | CI, Windows | Windows here | Limit |
+|---|---:|---:|---:|---:|
+| Read / Python reference (300,360 faces) | 2.07 to 2.41 | 2.37 to 2.48 | 2.3 to 3.0 | 6.0 |
+| Read / Python reference (a million faces, Blender) | 2.27 to 2.54 | | 2.1 to 2.7 | 6.0 |
+| Describe / describe reference (300,360 faces) | 2.14 to 2.27 | 2.03 to 2.24 | 2.00 to 2.26 | 5.2 |
+| Describe / describe reference (a million faces, Blender) | 1.92 to 2.35 | | 1.80 to 2.23 | 5.2 |
+| Build / Blender reference (a million faces) | 1.96 to 2.29 | | 2.1 to 2.7 | 5.5 |
+| Read + describe peak / object size (300,360 faces) | 5.07 | 5.07 | 5.07 | 5.3 |
+
+A limit leaves at least 2.2 times the highest ratio measured on CI and stays under three times the lowest, so that
+code three times as slow fails: a scratch copy that runs the reader, the description or `make_mesh` three times over
+fails each test (read 6.9 to 8.4, describe 5.62 to 6.64 here, three times the CI ratios 5.76 to 7.05, build 6.8 to
+7.9). Describe's 5.2 sits in the only window the CI numbers leave (2.2 x 2.35 = 5.17 to 3 x 1.92 = 5.76); read's 6.0
+and build's 5.5 hold on the CI runs too (read 2.2 x 2.54 = 5.59 to 3 x 2.07 = 6.21, build 5.04 to 5.88). The memory
+limit leaves 5 % (not the 1.5 times first planned: it is exact, the same on every Python and numpy measured, so a
+margin buys nothing): one more 64-bit array per loop alive at the peak makes it 5.46 and fails, and the code before
+the changes above gave 7.42 to 7.80. The CI log prints each ratio. A test past its limit is a regression to find, not
+a limit to raise.
 
 ## Reproduce
 

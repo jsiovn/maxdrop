@@ -9,8 +9,9 @@ object (tests/synthetic_poly.py) through reader.geometry.read_editable_poly and 
 
 No limit is a number of seconds: the machine running the tests is unknown. Each time is the best of a few runs,
 divided by the best time of a reference workload of the same kind in the same process (plain Python record walking
-for the reader, numpy array work for the conversion); the ratio must stay below a limit about twice what it is on
-the Pythons and numpys of Blender 4.2, 4.5 and 5.2, so that code three times as slow fails. Memory is the peak of
+for the reader, the conversion's own mix of numpy calls for the conversion); the ratio must stay below a limit about
+twice what it is on CI's runners and on the Pythons and numpys of Blender 4.2, 4.5 and 5.2, so that code three times
+as slow fails. Memory is the peak of
 the Python allocations (tracemalloc, numpy's included) as a multiple of the object's size, which does not depend on
 the machine. docs/BASELINE.md says where the limits come from; a change that moves a ratio past its limit is a
 regression to fix, not a limit to raise.
@@ -41,11 +42,12 @@ conv = importlib.import_module(_PKG + ".convert.scene")
 
 FACES = 300_000
 RUNS = 5
-# measured 2026-11-19 (Windows, 300 360 faces): read 2.3 (Python 3.11 with numpy 1.24 and 1.26, 3.13 with 2.3) to
-# 3.0 (3.9); describe 3.9 to 4.6; memory 5.07 on all of them (one more int64 array per loop alive at the peak makes
-# it 5.46). The same ratios at a million faces: tests/blender/bench.py
+# measured on CI 2026-11-20 (300 360 faces, two runs; Linux and Windows, Python 3.11 with numpy 1.24.3, 3.13 with
+# 2.3.4): read 2.07 to 2.48, describe 2.03 to 2.27; on Windows locally 2026-11-19 read 2.3 to 3.0 (3.9), describe
+# 2.00 to 2.26 (2026-11-20); memory 5.07 on all of them (one more int64 array per loop alive at the peak makes it
+# 5.46). The same ratios at a million faces: tests/blender/bench.py
 READ_LIMIT = 6.0
-DESCRIBE_LIMIT = 5.0
+DESCRIBE_LIMIT = 5.2
 MEMORY_LIMIT = 5.3
 
 
@@ -111,12 +113,7 @@ class Budget(unittest.TestCase):
                    READ_LIMIT)
 
     def test_describe_time(self):
-        faces = len(self.md.loop_starts)
-        work, ref = self.sp.timed(lambda: describe(self.md), self.sp.numpy_reference(self.md.loop_vertices), RUNS,
-                                  3 * RUNS)
-        print("diagnostic: describe %d faces / numpy_reference = %.2f (%.3f s / %.3f s)" % (faces, work / ref, work,
-                                                                                         ref))
-        self.ratio("describe %d faces" % faces, lambda: describe(self.md),
+        self.ratio("describe %d faces" % len(self.md.loop_starts), lambda: describe(self.md),
                    self.sp.describe_reference(self.md.loop_vertices), DESCRIBE_LIMIT)
 
     def test_memory(self):

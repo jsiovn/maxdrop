@@ -31,10 +31,11 @@ import bpy
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 FACES = 1_000_000
 RUNS = 3
-# measured 2026-11-19 (Windows, 1 001 200 faces, alone and from run.py) on Blender 4.2.23, 4.5.16 and 5.2.0: read 2.1
-# to 2.7, describe 3.7 to 4.7, build 2.1 to 2.7
+# measured on CI 2026-11-20 (1 001 200 faces, two runs, Linux) on Blender 4.2.23, 4.5.16 and 5.2.4: read 2.27 to
+# 2.54, describe 1.92 to 2.35, build 1.96 to 2.29; on Windows locally on 4.2.23, 4.5.16 and 5.2.0 (alone and from
+# run.py): read 2.1 to 2.7, build 2.1 to 2.7 (2026-11-19), describe 1.80 to 2.23 (2026-11-20)
 READ_LIMIT = 6.0
-DESCRIBE_LIMIT = 5.0
+DESCRIBE_LIMIT = 5.2
 BUILD_LIMIT = 5.5
 
 
@@ -98,8 +99,6 @@ def run(check):
     faces = len(md.loop_starts)
     _ratio(check, "read %d faces" % faces, *sp.timed(read, lambda: sp.reference_loop(faces), RUNS), READ_LIMIT)
     desc = describe(md)
-    work, ref = sp.timed(lambda: describe(md), sp.numpy_reference(md.loop_vertices), RUNS, 3 * RUNS)
-    print("diagnostic: describe %d faces / numpy_reference = %.2f (%.3f s / %.3f s)" % (faces, work / ref, work, ref))
     _ratio(check, "describe %d faces" % faces, *sp.timed(lambda: describe(md), sp.describe_reference(md.loop_vertices),
                                                           RUNS), DESCRIBE_LIMIT)
     md = None  # the reader's arrays are not needed for the build
