@@ -148,7 +148,8 @@ class Page(unittest.TestCase):
                 "the meshes 3ds Max builds", "<strong>Extrude</strong> on a shape as its mesh",
                 "<strong>Other modifiers</strong>",
                 "<strong>Lights and cameras</strong>: V-Ray plane, disc and sphere lights",
-                "<strong>Light Strength</strong> scales every light"):
+                "<strong>Light Strength</strong> scales every light",
+                "<strong>Text Encoding</strong> picks the code page"):
             self.assertTrue(needle in page, needle)
 
     def test_the_page_names_no_option_the_importer_lost(self):

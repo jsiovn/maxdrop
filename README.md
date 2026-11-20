@@ -80,6 +80,8 @@ above.
    - **Units**: **Auto** takes the unit the scene was saved with; pick Millimeters, Centimeters, Meters, Inches or
      Feet to override it. A file that does not state its unit is imported at one meter per unit, times Scale.
    - **Scale**: an extra factor on top of Units; leave it at `1`.
+   - **Text Encoding** picks the code page of the names in a file of 3ds Max 2012 or older (**Auto**: the one the
+     file records, else UTF-8, else Western); files of 3ds Max 2013 and later ignore it.
    - **Image Search** also looks for the textures in the subfolders of the scene's folder.
    - **Object Filter** picks whether materials and UV maps come along; **Forward** and **Up** turn the scene.
    - **Modifiers**: **Keep as Blender Modifiers** turns TurboSmooth, MeshSmooth, Shell and Symmetry into Subdivision
