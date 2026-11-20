@@ -33,8 +33,9 @@ its array, an unknown face field, a record cut short, a map face whose degree di
 MAX_VERTICES vertices or MAX_LOOPS face corners in one mesh raise GeometryError (a ChunkError) for that object
 only. Arrays are copies: nothing keeps the file's mapping alive. Indices are int32, far above the caps.
 read_mesh(scene, i, check) calls check() every CHECK_EVERY records of a record loop and before the map faces of each
-channel past CHECK_EVERY words, never within one block (its caller asked just before the mesh): an exception it
-raises (a cancelled import) ends the read unchanged, never as a GeometryError.
+channel past CHECK_EVERY words, never in a loop's first block (its caller asked just before the mesh): an
+exception it raises (a cancelled import; not a MaxFileError, MemoryError or OverflowError) ends the read
+unchanged, never as a GeometryError.
 No bpy; numpy is imported when a mesh is read.
 """
 import array
@@ -181,7 +182,7 @@ def _channels(geo, channel_id, verts_id, faces_id, read_faces, check=None):
         elif chunk.id == faces_id:
             if channel is None or uvw is None:
                 raise GeometryError("map faces without a channel and its map vertices")
-            if check is not None and chunk.payload_size > 4 * CHECK_EVERY:  # a small mesh: the caller asked
+            if check is not None and chunk.payload_size > 4 * CHECK_EVERY:  # one block: the caller asked
                 check()
             maps[channel] = MapChannel(channel, uvw, _indices(read_faces(chunk), len(uvw),
                                                               "map channel %d vertex" % channel))
@@ -394,7 +395,7 @@ _READERS = {
 def read_mesh(scene, i, check=None):
     """MeshData of object i when it is an Editable Mesh or Editable Poly, else None. A broken mesh raises
     GeometryError naming the object. check, a callable, is called during the read (see the module docstring); what it
-    raises passes unchanged."""
+    raises passes unchanged unless it is one of the errors turned into GeometryError."""
     entry = scene.entry(i)
     if entry is None or entry.superclass != classids.SC_GEOMOBJECT:
         return None

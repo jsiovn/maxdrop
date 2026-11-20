@@ -659,7 +659,7 @@ def _scene_steps(opts, scene, view_layer, max_path, pack=None, pack_name="", dir
     materials = 'MATERIAL' in opts.object_filter
     progress("reading " + name, 0.0)
     if threaded:
-        stop = threading.Event()  # set when the steps are closed: the reading ends at the next node
+        stop = threading.Event()  # set when the steps are closed: the reading ends at its next check
         read = yield from _in_thread(_read_scene, max_path, opts, dirs, stop.is_set, stop=stop, wait=_READ_WAIT)
     else:
         read = _read_scene(max_path, opts, dirs)

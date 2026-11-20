@@ -540,8 +540,9 @@ class Shear(unittest.TestCase):
 
 @unittest.skipIf(numpy is None, "numpy missing")
 class DescribeCancel(unittest.TestCase):
-    """describe(cancel=): the check is asked once per node of each walk; the first True ends it with Cancelled at
-    once (the modal import's Esc during reading), keeping nothing; the Scene stays usable."""
+    """describe(cancel=): the check is asked once per node of each walk, and inside a large mesh; the first True
+    ends it with Cancelled at once (the modal import's Esc during reading), keeping nothing; the Scene stays
+    usable."""
 
     @staticmethod
     def tripping(after):
@@ -604,16 +605,27 @@ class DescribeCancel(unittest.TestCase):
             conv.describe(sc, 1.0, cancel=cancel)
             self.assertEqual(len(calls), 2 * nodes)  # a small mesh: once per node and walk
             before = alive()
-            with mock.patch.object(geometry, "CHECK_EVERY", 1):
+            real_read, in_reader = geometry.read_mesh, []
+
+            def reading(scene, i, check=None):  # counts the calls the reader itself makes
+                def counted():
+                    in_reader.append(None)
+                    check()
+                return real_read(scene, i, None if check is None else counted)
+
+            with mock.patch.object(geometry, "CHECK_EVERY", 1), mock.patch.object(geometry, "read_mesh", reading):
                 cancel, calls = self.tripping(10 ** 9)
                 self.assertEqual(self.summary(conv.describe(sc, 1.0, cancel=cancel)), fresh)
                 total = len(calls)
-                self.assertGreater(total, 2 * nodes, name)
+                self.assertGreater(total, 2 * nodes + len(in_reader), name)  # mesh_description asks it too
+                if name == "box_poly_standard":  # an Editable Poly: its record loops ask it
+                    self.assertGreater(len(in_reader), 0)
                 for after in range(nodes, total):  # from the second walk's first node to the last call
                     cancel, calls = self.tripping(after)
-                    with self.subTest(fixture=name, trip=after), self.assertRaises(conv.Cancelled):
-                        conv.describe(sc, 1.0, cancel=cancel)
-                    self.assertEqual(len(calls), after + 1)
+                    with self.subTest(fixture=name, trip=after):
+                        with self.assertRaises(conv.Cancelled):
+                            conv.describe(sc, 1.0, cancel=cancel)
+                        self.assertEqual(len(calls), after + 1)
             self.assertEqual(alive() - before, set())
             self.assertEqual(self.summary(conv.describe(sc, 1.0)), fresh)
 
