@@ -1248,7 +1248,9 @@ class RenameNew(Base):
     """_rename_new never replaces a folder: not one that exists, not one made in the instant before the rename."""
 
     def folders(self):
-        src, dst = os.path.join(self.tmp, "src"), os.path.join(self.out, "pack")
+        """src holding a.txt and a free dst, in a folder of their own (subtests do not share them)."""
+        parent = tempfile.mkdtemp(dir=self.tmp)
+        src, dst = os.path.join(parent, "src"), os.path.join(parent, "pack")
         os.mkdir(src)
         write(os.path.join(src, "a.txt"), b"A")
         return src, dst
@@ -1279,8 +1281,6 @@ class RenameNew(Base):
                 os.mkdir(dst)
                 self.assertFalse(archive._rename_new(src, dst))
                 self.assert_kept(src, dst)
-                shutil.rmtree(src)
-                os.rmdir(dst)
 
     def test_a_free_name_is_taken(self):
         for unsupported in (False, True):
@@ -1291,8 +1291,6 @@ class RenameNew(Base):
                 self.assertTrue(archive._rename_new(src, dst))
                 self.assertFalse(os.path.lexists(src))
                 self.assertEqual(os.listdir(dst), ["a.txt"])
-                os.remove(os.path.join(dst, "a.txt"))
-                os.rmdir(dst)
 
     def test_a_missing_source_raises(self):
         # An OSError of its own, not False: _create then makes the folder by hand (_make).
