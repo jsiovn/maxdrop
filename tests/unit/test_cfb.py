@@ -17,6 +17,7 @@ import sys
 import tempfile
 import types
 import unittest
+import zlib
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -47,6 +48,19 @@ def payload(n, seed=0):
     """n bytes that differ from sector to sector, so a misplaced sector shows."""
     block = bytes((i * 7 + seed) & 0xFF for i in range(251))
     return (block * (n // 251 + 1))[:n]
+
+
+def stored_member(size, seed=0):
+    """A gzip member of exactly size bytes, its data in stored deflate blocks (the block sizes of gzip.compress
+    depend on the zlib build): (member, data)."""
+    # 10 header and 8 trailer bytes, 5 per block of at most 65535: try each block count m
+    n = next(n for m in range(1, size // 65535 + 2) for n in [size - 18 - 5 * m]
+             if n >= 0 and max(1, -(-n // 65535)) == m)
+    data = payload(n, seed)
+    blocks = [data[o:o + 65535] for o in range(0, n, 65535)] or [b""]
+    body = b"".join(struct.pack("<BHH", k == len(blocks) - 1, len(b), len(b) ^ 0xFFFF) + b
+                    for k, b in enumerate(blocks))
+    return b"\x1f\x8b\x08\0\0\0\0\0\0\xff" + body + struct.pack("<II", zlib.crc32(data), n), data
 
 
 class Builder:
@@ -421,6 +435,25 @@ class Gzip(unittest.TestCase):
             with cfb.CompoundFile(data) as cf:
                 with self.assertRaises(CfbError):
                     cf.open("Scene")
+
+    def test_member_ends_at_a_piece_end(self):
+        # Fewer than 3 bytes after a member's end in this piece: the next piece tells a member from padding.
+        piece, b = cfb._INFLATE_PIECE, payload(5000, 6)
+        damaged = gzip.compress(b)
+        damaged = damaged[:3] + bytes(x ^ 0x55 for x in damaged[3:40]) + damaged[40:]
+        for k in (0, 1, 2, 3):  # 3: the magic fits, no refill
+            a_member, a = stored_member(piece - k, 5)
+            self.assertEqual(len(a_member), piece - k)
+            with self.subTest(k=k):
+                # b"\0" * k: padding that ends with the piece, nothing after it
+                for tail, want in ((gzip.compress(b), a + b), (b"\0" * 300, a), (b"\0" * k, a)):
+                    data, _ = self.build(raw=a_member + tail)
+                    with cfb.CompoundFile(data) as cf:
+                        self.assertEqual(cf.open("Scene").read(), want)
+                data, _ = self.build(raw=a_member + damaged)
+                with cfb.CompoundFile(data) as cf:
+                    with self.assertRaises(CfbError):
+                        cf.open("Scene")
 
 
 class Hostile(unittest.TestCase):
