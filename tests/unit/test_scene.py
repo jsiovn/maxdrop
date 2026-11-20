@@ -483,10 +483,10 @@ class TestFixtures(unittest.TestCase):
             by_name = {n.name: n for n in s.nodes()}
             for name, n in by_name.items():
                 chunk = s.chunk(n.index)
-                marks = [c.payload_size for c in (chunk.first(0x0975), chunk.first(0x0976)) if c is not None]
-                own = {"FixtureHiddenParent": 0x100800, "FixtureFrozen": 0x200800}.get(name, 0x800)
-                self.assertEqual((n.flags, n.render_flags, marks), (own, 0x0F00D600, [0] if own != 0x800 else []),
-                                 name)
+                marks = [(c.id, c.payload_size) for c in (chunk.first(0x0975), chunk.first(0x0976)) if c is not None]
+                own, mark = {"FixtureHiddenParent": (0x100800, [(0x0975, 0)]),
+                             "FixtureFrozen": (0x200800, [(0x0976, 0)])}.get(name, (0x800, []))
+                self.assertEqual((n.flags, n.render_flags, marks), (own, 0x0F00D600, mark), name)
             layers = {la.name: la for la in s.layers()}
             raw = {k: (la.flags, la.render_flags) for k, la in layers.items()}
             self.assertEqual(raw, {"0": (0, 0x0B00D600), "FixtureHiddenLayer": (0x100000, 0x0B00D600),

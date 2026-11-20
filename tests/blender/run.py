@@ -492,7 +492,7 @@ def run_fixture(path, modules):
     def tree(col):
         return [(c.name, tree(c)) for c in col.children]
 
-    def layer_tree(parent):
+    def layer_tree(parent):  # Layer Manager order: every fixture makes a parent layer before its children
         return [(la, layer_tree(la)) for la in order if la in kept and parent_of[la] == parent]
     got = tree(root) if root else []
     check("%s: one collection per layer below the file's collection, nested as the layers" % name,
@@ -2674,7 +2674,7 @@ def check_layers_more(root, obs, view_layer):
           child.parent is bpy.data.objects["FixtureHiddenParent"] and child.visible_get(view_layer=view_layer))
 
 
-def check_layer_flags(modules):
+def check_hidden_parent_layer(modules):
     """layers_more with its description changed: FixtureParentLayer hidden in 3ds Max, so its child layer
     (FixtureChildLayer, holding FixtureNested) is out of the view layer with it. No fixture has a hidden parent
     layer."""
@@ -2684,8 +2684,8 @@ def check_layer_flags(modules):
     by_name = {la.name: la for la in desc.layers}
     parent, child = by_name["FixtureParentLayer"], by_name["FixtureChildLayer"]
     parent.hidden = True
-    cols, _built, view_layer = build_scene(desc, "layer_flags", modules)
-    lcs = view_layer.layer_collection.children["layer_flags"].children
+    cols, _built, view_layer = build_scene(desc, "hidden_parent_layer", modules)
+    lcs = view_layer.layer_collection.children["hidden_parent_layer"].children
     check("hidden parent layer: excluded in the view layer, its child layer nested below it",
           lcs[parent.name].exclude and [c.name for c in cols.layers[parent.index].children] == [child.name])
     visible = {ob.name for ob in view_layer.objects}
@@ -2866,7 +2866,7 @@ def main():
             check("%s: no exception" % os.path.basename(path), False)
     if not argv:
         try:
-            check_layer_flags(modules)
+            check_hidden_parent_layer(modules)
         except Exception:
             traceback.print_exc()
             check("layer flags: no exception", False)

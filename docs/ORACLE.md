@@ -54,7 +54,7 @@ Top level:
 |---|---|
 | `file` | Base name of the scene file (`null` for an unsaved scene). |
 | `file_version` | `getMaxFileVersionData`: `[format version, version of the Max that saved it]`, e.g. `[20000, 22000]` = saved by 3ds Max 2020 as a 2018 file (checked by saving with `saveAsVersion:2018`). |
-| `layers` | Every layer in layer-manager order: `name`, `hidden`, `frozen`, `renderable` (the layer's own flags), `parent` (the name of its parent layer, `getParent()`; `null` at the top level). |
+| `layers` | Every layer in layer-manager order: `name`, `hidden`, `frozen`, `renderable` (`isHidden`, `isFrozen`, `renderable` of the layer; whether a hidden or frozen parent layer shows in its child's is not known: no fixture has one), `parent` (the name of its parent layer, `getParent()`; `null` at the top level). |
 | `material_graph` | Every material and map reachable from a node's material, see [below](#the-material-graph). |
 | `materials` | The materials assigned to nodes, in order of first use in the node walk: `index`, `name`, `class_id`, `class_name`, `sub_count` (sub-materials, e.g. of a Multi/Sub-Object). |
 | `max_version` | The Max that made the dump: `[release, year]`, e.g. `[22000, 2020]`. |

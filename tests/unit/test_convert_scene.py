@@ -945,6 +945,8 @@ class Fixtures(unittest.TestCase):
                 while parents[layer] is not None and parents[layer] not in used:
                     layer = parents[layer]
                     used.append(layer)
+            # the Layer Manager's order: every fixture makes a parent layer before its children, so it is also the
+            # converter's parents-first order (test_a_parent_listed_later_is_moved_before_its_child covers the other)
             order = [la["name"] for la in oracle["layers"]]
             self.assertEqual([la.name for la in desc.layers], sorted(used, key=order.index), name)
             flags = {la["name"]: (la["hidden"], la["frozen"], la["renderable"], la["parent"])
