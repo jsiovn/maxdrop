@@ -14,9 +14,8 @@ description with the saved views, the material and texture-map conversion and th
 Compress on Save writes it: a compressed stream is not walked for chunks; its cases bend the deflate bytes and the
 gzip framing instead (headers, trailers, block types, member boundaries, members dropped or repeated, the stream
 cut, a member that inflates to megabytes). Deflate output depends on the zlib build, so such a seed replays on the
-same zlib only. A zip case
-mutates a scene pack built here (central directory, local headers, end record, names, sizes, flags, methods,
-attributes, truncation) and runs list_pack and unpack in a sandbox of its own.
+same zlib only. A zip case mutates a scene pack built here (central directory, local headers, end record, names,
+sizes, flags, methods, attributes, truncation) and runs list_pack and unpack in a sandbox of its own.
 
 A case passes when it reads (`ok`), is refused with a MaxFileError (`refused`; PackError for a pack), or, for a
 .max, fails inside the material stage, which the operator turns into a report line (`materials`: counted, not a
@@ -145,6 +144,7 @@ _GZIP_PADDING = 24  # zero bytes after the last member
 # these, which aim at the compressed stream's deflate bytes and gzip framing.
 _GZIP_KINDS = (("gz_flip", 12), ("gz_header", 7), ("gz_trailer", 6), ("gz_block", 5), ("gz_boundary", 6),
                ("gz_members", 6), ("gz_cut", 7), ("gz_expand", 2))
+_GZIP_REWRITES = ("gz_members", "gz_expand")
 _GZIP_FLG = (0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1E, 0xE0, 0xFF)
 _EXPAND = (1 << 20, 4 << 20, 16 << 20)  # inflated sizes of an expanding member: well under MEMORY_LIMIT
 
@@ -199,15 +199,24 @@ def _dir_entry(cf, raw, name):
     return (sectors[sid // (ss // 128)] + 1) * ss + (sid % (ss // 128)) * 128
 
 
+def _put(buf, cap, offset, data):
+    """data written in place at offset of a stream whose chain covers cap (cut to it)."""
+    for o, b in zip(_file_offsets(cap, offset, len(data)), data):
+        if o < len(buf):
+            buf[o] = b
+
+
+def _set_size(buf, entry, size):
+    if entry + 128 <= len(buf):
+        buf[entry + 120:entry + 128] = struct.pack("<Q", size)
+
+
 def _write_stream(buf, cap, entry, data):
     """data as the whole content of a stream whose chain covers cap (cut to it) and whose directory entry is at
     entry: written in place, the entry's size set to its length, which is returned."""
     data = data[:sum(n for _, n in cap)]
-    for o, b in zip(_file_offsets(cap, 0, len(data)), data):
-        if o < len(buf):
-            buf[o] = b
-    if entry + 128 <= len(buf):
-        buf[entry + 120:entry + 128] = struct.pack("<Q", len(data))
+    _put(buf, cap, 0, data)
+    _set_size(buf, entry, len(data))
     return len(data)
 
 
@@ -228,8 +237,8 @@ def gzip_scene(raw):
     total = sum(n for _, n in cap)
     if len(body) > total:
         raise ValueError("the compressed Scene does not fit its sectors")
-    _write_stream(buf, cap, entry, body + bytes(total - len(body)))
-    buf[entry + 120:entry + 128] = struct.pack("<Q", len(body))
+    _put(buf, cap, 0, body + bytes(total - len(body)))
+    _set_size(buf, entry, len(body))
     return bytes(buf)
 
 
@@ -299,6 +308,8 @@ class MaxSeed:
         self.regions = {k: v for k, v in self.regions.items() if v}
         self.gzip = {k: g for k, g in self.gzip.items() if g.members}
         self.kinds = _KINDS[:-1] + _GZIP_KINDS + _KINDS[-1:] if self.gzip else _KINDS
+        # A stream rewrite starts from the seed's bytes and members: alone, never among the kinds of a multi case.
+        self.multi_kinds = tuple(kw for kw in self.kinds[:-1] if kw[0] not in _GZIP_REWRITES)
 
     @staticmethod
     def _chain(fat, start):
@@ -380,12 +391,6 @@ def _expanded(n, value):
     return _EXPANDED[(n, value)]
 
 
-def _put_stream(buf, g, offset, data):
-    for o, b in zip(_file_offsets(g.cap, offset, len(data)), data):
-        if o < len(buf):
-            buf[o] = b
-
-
 def _mutate_gzip(seed, buf, rng, kind):
     g = seed.gzip[rng.choice(sorted(seed.gzip))]
     if kind == "gz_flip":
@@ -408,13 +413,13 @@ def _mutate_gzip(seed, buf, rng, kind):
             data = bytes([rng.choice((0, 7, 9, 0xFF, rng.randrange(256)))])
         else:  # ID1, ID2, XFL, OS
             data = bytes([g.data[g.members[m][0] + field] ^ rng.randrange(1, 256)])
-        _put_stream(buf, g, g.members[m][0] + field, data)
+        _put(buf, g.cap, g.members[m][0] + field, data)
         return "gz_header %s member %d +%d=%s" % (g.name, m, field, data.hex())
     if kind == "gz_trailer":
         m = rng.randrange(len(g.members))
         at = g.members[m][2] + rng.choice((0, 4))  # CRC32, ISIZE
         value = _extreme(rng, struct.unpack_from("<I", g.data, at)[0])
-        _put_stream(buf, g, at, struct.pack("<I", value))
+        _put(buf, g.cap, at, struct.pack("<I", value))
         return "gz_trailer %s member %d @%d=0x%X" % (g.name, m, at, value)
     if kind == "gz_block":
         m = rng.randrange(len(g.members))
@@ -427,7 +432,7 @@ def _mutate_gzip(seed, buf, rng, kind):
         else:  # a bit of the block header and the code lengths that follow it
             at = rng.randrange(d0, min(d1, d0 + 16))
             value = g.data[at] ^ (1 << rng.randrange(8))
-        _put_stream(buf, g, at, bytes([value]))
+        _put(buf, g.cap, at, bytes([value]))
         return "gz_block %s member %d @%d=0x%02X" % (g.name, m, at, value)
     if kind == "gz_boundary":
         if len(g.members) > 1 and rng.random() < 0.6:  # a later member no longer starts one: read as padding
@@ -438,7 +443,7 @@ def _mutate_gzip(seed, buf, rng, kind):
             at = g.padding
             junk = bytes(rng.getrandbits(8) for _ in range(rng.choice((0, 1, 7, 12))))
             data = cfb.GZIP_MAGIC[:rng.randint(1, 3)] + junk
-        _put_stream(buf, g, at, data)
+        _put(buf, g.cap, at, data)
         return "gz_boundary %s @%d=%s" % (g.name, at, data.hex())
     if kind == "gz_members":
         parts = [g.data[s:e] for s, _, _, e in g.members]
@@ -462,10 +467,10 @@ def _mutate_gzip(seed, buf, rng, kind):
         point = rng.choice((rng.randrange(s, d0), rng.randrange(d0, d1), rng.randrange(d1, e), e,
                             rng.randrange(cfb._CUTOFF)))
         if rng.random() < 0.6:  # the stream ends there (below 4096 bytes the reader looks in the mini stream)
-            if g.entry + 128 <= len(buf):
-                buf[g.entry + 120:g.entry + 128] = struct.pack("<Q", point)
+            _set_size(buf, g.entry, point)
             return "gz_cut %s size %d" % (g.name, point)
-        _put_stream(buf, g, point, bytes(len(g.data) - point))
+        point = min(point, g.padding - 5)  # the padding and the last ISIZE's top bytes are zero already
+        _put(buf, g.cap, point, bytes(len(g.data) - point))
         return "gz_cut %s zeroed from %d" % (g.name, point)
     if kind == "gz_expand":
         m = rng.randrange(len(g.members))
@@ -580,7 +585,7 @@ def max_case(seed, k, base=SEED):
     buf = bytearray(seed.raw)
     kind = _pick(rng, seed.kinds)
     if kind == "multi":
-        kinds = [_pick(rng, seed.kinds[:-1]) for _ in range(rng.randint(2, 4))]
+        kinds = [_pick(rng, seed.multi_kinds) for _ in range(rng.randint(2, 4))]
         kinds.sort(key=lambda x: x == "cut")  # a cut last: the other offsets point into the whole file
         spec = "; ".join(_mutate_max(seed, buf, rng, kd) for kd in kinds)
     else:

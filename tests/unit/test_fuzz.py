@@ -5,9 +5,10 @@
 """The plain suite's slice of the .max fuzz harness (tests/unit/fuzz.py): the first CASES cases of every seed (the
 fixtures and the gzip variant the harness builds) through the operator's reader path, without Blender. Each must
 read, be refused with a MaxFileError, or fail only inside the material stage the operator guards; within
-fuzz.CASE_SECONDS each, the process under fuzz.MEMORY_LIMIT. The slice runs in a child process (`fuzz.py slice`): its peak memory is the slice's own, and
-a case past CASE_SECONDS ends it with the stack of that case (faulthandler). A failure names the case as
-<fixture>:<k>; `python -I tests/unit/fuzz.py replay <fixture>:<k>` runs it again.
+fuzz.CASE_SECONDS each, the process under fuzz.MEMORY_LIMIT. The slice runs in a child process (`fuzz.py
+slice`): its peak memory is the slice's own, and a case past CASE_SECONDS ends it with the stack of that case
+(faulthandler). A failure names the case as <seed>:<k>; `python -I tests/unit/fuzz.py replay <seed>:<k>` runs it
+again.
 
     python -I -m unittest discover tests
     MAXDROP_FUZZ_CASES=200 python -I -m unittest discover tests -p test_fuzz.py     # a longer slice
@@ -134,7 +135,7 @@ class GzipSeedTest(unittest.TestCase):
         refused = 0
         for k in range(300):
             data, spec = fuzz.max_case(self.seed, k)
-            if not spec.startswith("gz_"):
+            if not spec.startswith("gz_") or "; " in spec:  # one gzip kind alone: no other kind decides the outcome
                 continue
             try:
                 with fuzz.cfb.CompoundFile(data) as cf:
