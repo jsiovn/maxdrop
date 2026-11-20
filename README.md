@@ -31,8 +31,8 @@ scene was downloaded as. Blender 4.2 or newer; tested on 4.2 LTS, 4.5 LTS and 5.
 - **Layers** as collections, nested like the layers; hidden, frozen and non-rendering layers and objects keep
   those flags.
 - **Materials** as a Principled BSDF with their maps as nodes (tiling, offset, rotation, cropping, Mix, Color
-  Correction, Falloff, Composite, normal and bump maps): VRayMtl and the other V-Ray materials and wrappers, Standard, Physical,
-  Multi/Sub-Object, CoronaPhysicalMtl, CoronaMtl, CoronaLightMtl and CoronaLayeredMtl.
+  Correction, Falloff, Composite, normal and bump maps): VRayMtl and the other V-Ray materials and wrappers,
+  Standard, Physical, Multi/Sub-Object, CoronaPhysicalMtl, CoronaMtl, CoronaLightMtl and CoronaLayeredMtl.
 - **Textures** that are plain image files, next to the `.max` file, in a `maps` or `textures` folder beside it, or
   in folders you add in the preferences.
 - **Lights**: V-Ray plane, disc and sphere lights, standard and photometric lights, VRaySun and VRayIES as Blender
@@ -137,9 +137,9 @@ any importer; it then complains about a missing manifest. Import a `.zip` throug
 **The scene arrives at the wrong size.** The file states its unit and **Units: Auto** uses it. If the scene was
 modelled in another unit than it was saved with, pick that unit in **Units**; **Scale** is an extra factor.
 
-**Objects are missing or misshapen.** A modifier MaxDrop does not apply (Edit Poly, Edit Mesh, FFD…) leaves the object as it was below it; an object MaxDrop cannot convert arrives
-as an empty with its 3ds Max class in the custom property `maxdrop_class`.
-The text **MaxDrop Report** (Text Editor) lists them, and what became of the materials.
+**Objects are missing or misshapen.** A modifier MaxDrop does not apply (Edit Poly, Edit Mesh, FFD…) leaves the
+object as it was below it; an object MaxDrop cannot convert arrives as an empty with its 3ds Max class in the
+custom property `maxdrop_class`. The text **MaxDrop Report** (Text Editor) lists them, and what became of the materials.
 
 **Which 3ds Max versions?** MaxDrop's own test files are saved by 3ds Max 2020, also in the 2017, 2018 and 2019
 formats, and scenes of 3ds Max 2015 and 2020 have been imported; files of 3ds Max 2013 and later are expected to

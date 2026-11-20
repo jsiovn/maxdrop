@@ -8,8 +8,9 @@ From 0.1.0 the lights (V-Ray, standard, photometric, VRaySun, VRayIES) and the c
 camera sets the scene camera and the render size: a dropped interior scene can be looked at through its own camera,
 lit by its own lights. From 1.0.0 an import started from a window shows its progress and Esc cancels it, the
 Falloff, Composite, Color Correction, Output and RGB Tint maps are drawn as nodes, files of 3ds Max 2012 and older
-are read with their names, and limits refuse a hostile file instead of running Blender out of memory. A scene pack (`.zip`, `.rar`, `.7z`) is unpacked and its `.max`
-imported (see [Files](#files)), and several `.max` files chosen at once are imported one after the other.
+are read with their names (checked on made-up data), and limits refuse a hostile file instead of running Blender out
+of memory. A scene pack (`.zip`, `.rar`, `.7z`) is unpacked and its `.max` imported (see [Files](#files)), and
+several `.max` files chosen at once are imported one after the other.
 
 How far to trust the list: MaxDrop's test files (`tests/fixtures/`, saved by 3ds Max 2020) are compared with what
 3ds Max itself reports for every node: world matrix, bounding box, vertex and face counts, parents, instances,
@@ -188,8 +189,8 @@ the scene in the archive is kept.
   number of objects and the unit, read in a fraction of a second even from a large scene; for a file with 8-bit
   names (3ds Max 2012 or older), the code page Auto reads them in.
 - A very large scene works but needs time and memory: see [BASELINE.md](BASELINE.md) (the performance budget
-  of 1.0.0, and each version since the engine they replaced). Scene A imports in about 13 s and 1.3 GB, scene B in
-  about 17 s and 1.2 GB on the machine measured.
+  of 1.0.0, and each version since the inherited engine). The two commercial scenes measured there take about 13 s
+  and 1.3 GB, and 17 s and 1.2 GB (wall time and peak memory of the whole Blender run).
 - **Scene packs**: a `.zip`, `.rar` or `.7z` holding the scene, chosen in *File › Import*; a `.rar` or `.7z` can
   also be dropped (a dropped `.zip` goes to Blender's extension installer). The format is recognised by the file's
   content. The chosen `.max` and the image and `.ies` files it names are unpacked into a folder named after the

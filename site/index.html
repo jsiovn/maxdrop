@@ -189,10 +189,10 @@ footer p { margin: 0; }
       <p class="unofficial">Independent project: not affiliated with or endorsed by Autodesk or Chaos.</p>
     </div>
     <div class="status" role="note" aria-labelledby="status-title">
-      <h2 id="status-title">Version {{version}}: the first open of a whole scene</h2>
-      <p>MaxDrop is a new fork of the free <a href="https://github.com/nrgsille76/io_scene_max">io_scene_max</a> importer. MaxDrop reads the scene and its materials with its own reader, also from the scene pack it came in; io_scene_max's file parser is gone.</p>
+      <h2 id="status-title">Version {{version}}: stable, not complete</h2>
+      <p>MaxDrop is a fork of the free <a href="https://github.com/nrgsille76/io_scene_max">io_scene_max</a> importer. MaxDrop reads the scene and its materials with its own reader, also from the scene pack it came in; io_scene_max's file parser is gone.</p>
       <p>It brings in editable meshes with their UVs, smoothing, instances, hierarchy, layers and scene units, the room shell (shapes, Extrude, UVW Map), nine of the standard primitives, V-Ray, Corona, Standard and Physical materials with their texture maps, and the lights and cameras: a dropped V-Ray interior scene opens through its own camera, lit by its own lights. <a href="#support">See the full list</a>.</p>
-      <p>An import shows its progress and Esc cancels it. Stable, not complete: most modifiers are not applied yet and some lights and maps are simplified. Updates arrive inside Blender.</p>
+      <p>An import shows its progress and Esc cancels it. Most modifiers are not applied yet and some lights and maps are simplified. Updates arrive inside Blender.</p>
     </div>
   </div>
 
@@ -332,11 +332,11 @@ footer p { margin: 0; }
       </details>
       <details>
         <summary>Objects are missing, or the room has no walls</summary>
-        <p>Lights and cameras are not imported yet, and a modifier MaxDrop does not apply (Edit Poly, Edit Mesh, FFD…) leaves the object as it was below it; a wall drawn as an outline with an Extrude arrives closed. See <a href="#support">what this version imports</a>. An object MaxDrop cannot convert arrives as an empty that keeps its place in the hierarchy.</p>
+        <p>A modifier MaxDrop does not apply (Edit Poly, Edit Mesh, FFD…) leaves the object as it was below it; a wall drawn as an outline with an Extrude arrives closed. See <a href="#support">what this version imports</a>. An object MaxDrop cannot convert arrives as an empty that keeps its place in the hierarchy.</p>
       </details>
       <details>
         <summary>Materials arrive without textures</summary>
-        <p>Put the texture files in the folder of the <code>.max</code> file, in a <code>maps</code> or <code>textures</code> folder beside it, or add their folder under <strong>Texture Search Folders</strong> in the MaxDrop preferences. <strong>Image Search</strong> also searches the subfolders of the scene's folder. Mix, Color Correction, simple Composite and normal maps arrive as nodes; Falloff and other procedural maps are simplified to the image below them, and a channel with no image below keeps its plain color.</p>
+        <p>Put the texture files in the folder of the <code>.max</code> file, in a <code>maps</code> or <code>textures</code> folder beside it, or add their folder under <strong>Texture Search Folders</strong> in the MaxDrop preferences. <strong>Image Search</strong> also searches the subfolders of the scene's folder. Mix, Color Correction, Falloff, Composite and normal maps arrive as nodes; other procedural maps (Noise, Gradient, VRayDirt…) are simplified to the image below them, and a channel with no image below keeps its plain color.</p>
       </details>
       <details>
         <summary>Dropping a <code>.zip</code> opens Blender's extension installer</summary>
