@@ -584,8 +584,8 @@ class TestUnsupportedAndDamaged(MatrixCase):
 
     def test_zero_stored_quaternion_stays_identity(self):
         b = Build()
-        n = b.node(b.prs(b.xyz(C_POSXYZ, (1, 0, 0)), b.add(node(C_TCBROT, leaf(0x2504, struct.pack("<4f", 0, 0, 0,
-                                                                                                    0))))),
+        zero = leaf(0x2504, struct.pack("<4f", 0, 0, 0, 0))
+        n = b.node(b.prs(b.xyz(C_POSXYZ, (1, 0, 0)), b.add(node(C_TCBROT, zero))),
                    pivot=((0, 0, 0), (0, 0, 0, 0), (1, 1, 1)))
         t = b.transforms()
         self.assertMatrix(t.world(n), ct.translation((1, 0, 0)))

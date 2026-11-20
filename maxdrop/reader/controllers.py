@@ -220,7 +220,7 @@ def _weighted_quat(m, weight):
     if n < 1e-12:
         return IDENTITY
     h = math.atan2(n, w) * weight
-    if not math.isfinite(h):  # an infinite weight, where math.sin raises
+    if not math.isfinite(h):  # an infinite weight or a NaN matrix, where math.sin raises
         return _NAN_MATRIX
     k = math.sin(h) / n
     # stored the Max way: the conjugate of the standard quaternion
