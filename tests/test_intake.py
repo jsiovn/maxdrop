@@ -1672,7 +1672,8 @@ class Reservation(Base):
         self.assertEqual(os.listdir(self.out), [])
 
     def test_a_crash_between_the_clears_renames_keeps_a_refilled_folder(self):
-        for refill in ([archive.MARKER, "room.max"], ["room.max"]):
+        # A complete scene, a scene alone, a file this code never writes: more than a stale folder can hold.
+        for refill in ([archive.MARKER, "room.max"], ["room.max"], ["notes.txt"]):
             with self.subTest(refill=refill):
                 out = tempfile.mkdtemp(dir=self.tmp)
                 path = self.pack(self.FILES)
@@ -1729,33 +1730,20 @@ class Reservation(Base):
         self.assertEqual(self.listing(self.out), sorted(["pack"] + [os.path.basename(f) for f in kept]))
 
     def test_a_freed_name_is_made_when_the_rename_is_refused(self):
-        real_rename, real_mkdir = os.rename, os.mkdir
+        real_rename = os.rename
 
         def rename(src, dst):
             if os.path.basename(src).startswith(archive.STAGING_PREFIX + "new-"):
                 raise PermissionError("a file in it is open")
             return real_rename(src, dst)  # the clear's rename aside, the file moves
-
-        def pending(p, *args):
-            if os.path.basename(p) == "pack":  # Windows: the cleared folder is still pending delete
-                raise PermissionError("pending delete")
-            return real_mkdir(p, *args)
-        for still_pending in (False, True):
-            with self.subTest(still_pending=still_pending):
-                out = tempfile.mkdtemp(dir=self.tmp)
-                path = self.pack(self.FILES)
-                folder = self.crash(path, moves=1, out=out)
-                self.age(os.path.join(folder, archive.RESERVATION))
-                with contextlib.ExitStack() as stack:
-                    stack.enter_context(mock.patch.object(archive.os, "rename", rename))
-                    if still_pending:
-                        stack.enter_context(mock.patch.object(archive.os, "mkdir", pending))
-                    r = archive.unpack(path, dest_parent=out)
-                expected = folder + " (2)" if still_pending else folder
-                self.assertEqual((r.mode, r.folder), ("unpacked", expected))
-                self.assertEqual(self.listing(r.folder),
-                                 sorted([archive.MARKER, "room.max", "stone.png", "wood.jpg"]))
-                self.assertEqual(self.listing(out), [os.path.basename(expected)])
+        path = self.pack(self.FILES)
+        folder = self.crash(path, moves=1)
+        self.age(os.path.join(folder, archive.RESERVATION))
+        with mock.patch.object(archive.os, "rename", rename):
+            r = archive.unpack(path, dest_parent=self.out)
+        self.assertEqual((r.mode, r.folder), ("unpacked", folder))
+        self.assertEqual(self.listing(r.folder), sorted([archive.MARKER, "room.max", "stone.png", "wood.jpg"]))
+        self.assertEqual(self.listing(self.out), ["pack"])
 
     def test_a_complete_unpack_keeps_no_reservation(self):
         path = self.pack(self.FILES)

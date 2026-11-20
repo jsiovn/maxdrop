@@ -75,8 +75,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   scenes) no longer leaves an empty folder behind that makes the next unpack use `<name> (2)`.
 - Scene packs: the hidden folders left by rare crashes or by several unpacks of one pack at once are cleaned up by
   a later unpack of that pack (a half-filled `.maxdrop-reclaim-*` folder once stale; a leftover beside the folder
-  of a pack with several scenes by every unpack of that pack), and a folder holding a scene is kept instead of
-  removed; a folder name freed from a stale unpack is taken again when its folder cannot be renamed into place.
+  of a pack with several scenes by every unpack of that pack that writes), and a folder holding a scene is kept
+  instead of removed; a folder name freed from a stale unpack is taken again when its folder cannot be renamed
+  into place.
 
 ## [0.1.0] - 2026-11-19
 
