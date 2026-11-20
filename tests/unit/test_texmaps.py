@@ -35,6 +35,7 @@ colors = importlib.import_module(_PKG + ".convert.colors")
 assets = importlib.import_module(_PKG + ".reader.assets")
 cfb = importlib.import_module(_PKG + ".reader.cfb")
 chunks = importlib.import_module(_PKG + ".reader.chunks")
+classdir = importlib.import_module(_PKG + ".reader.classdir")
 classids = importlib.import_module(_PKG + ".reader.classids")
 pblock = importlib.import_module(_PKG + ".reader.pblock")
 reader_materials = importlib.import_module(_PKG + ".reader.materials")
@@ -1713,6 +1714,33 @@ class GammaSwatchesFixture(Checks):
 
     def test_standard(self):
         self.close(self.f.irs["FixtureGammaStandard"].base_color.value, (200 / 255, 40 / 255, 30 / 255))
+
+
+class TruncatedClassDirectory(unittest.TestCase):
+    """A class directory cut short: the objects whose class index is past its end have no entry. graph.get turns
+    them away (a ChunkError), as it does an index past the objects, so every map it hands the converter is an object
+    of the scene with an entry, and _class_name, which has no IndexError net, cannot raise."""
+
+    def test_class_name_of_every_map_graph_get_returns(self):
+        with cfb.CompoundFile(os.path.join(FIXTURE_DIR, "texmap_rules.max")) as cf:
+            full = classdir.ClassDirectory.from_file(cf)
+            counts = []
+            for keep in sorted({0, len(full) // 4, len(full) // 2, len(full) - 1, len(full)}):
+                scene = reader_scene.Scene.from_file(cf, classdir.ClassDirectory(list(full)[:keep], full.dlls))
+                graph = reader_materials.MaterialGraph(scene)
+                tex = tx.TexmapConverter(graph)
+                got = 0
+                for i in range(len(scene) + 2):
+                    try:
+                        m = graph.get(i)
+                    except chunks.ChunkError:
+                        continue
+                    self.assertLess(scene.class_index(i), keep, "object %d kept %d classes" % (i, keep))
+                    self.assertTrue(tex._class_name(m), "object %d kept %d classes" % (i, keep))
+                    got += 1
+                counts.append(got)
+            self.assertEqual(counts[0], 0)
+            self.assertGreater(counts[-1], counts[0])
 
 
 if __name__ == "__main__":

@@ -147,7 +147,9 @@ def _edge_flag_steps(mesh, pairs):
     edges = edges.reshape(-1, 2)
     n = len(mesh.vertices)
     yield
-    wanted = pairs[:, 0] * n + pairs[:, 1]  # a binary search per edge: isin sorts every edge key
+    # (low, high) as the edge keys below, so a pair given (high, low) still matches; a binary search per edge: isin
+    # sorts every edge key
+    wanted = numpy.minimum(pairs[:, 0], pairs[:, 1]) * n + numpy.maximum(pairs[:, 0], pairs[:, 1])
     if len(wanted) > 1 and not (wanted[1:] > wanted[:-1]).all():  # convert.scene.sharp_edges gives them sorted
         wanted = numpy.unique(wanted)
     for start in range(0, len(edges), EDGE_CHUNK):
@@ -160,8 +162,8 @@ def _edge_flag_steps(mesh, pairs):
 
 
 def _sharp_edge_flags(mesh, pairs):
-    """One bool per Blender edge: whether its vertex pair is in pairs (int (E, 2), each pair (low, high); faster
-    when sorted and without repeats, as convert.scene.sharp_edges gives them)."""
+    """One bool per Blender edge: whether its vertex pair is in pairs (int (E, 2), each pair in either order; faster
+    when sorted (low, high) and without repeats, as convert.scene.sharp_edges gives them)."""
     return _drain(_edge_flag_steps(mesh, pairs))
 
 

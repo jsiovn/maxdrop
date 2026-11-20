@@ -1574,6 +1574,9 @@ def check_mesh_steps(paths, cancel_path):
             flags = build_objects._sharp_edge_flags(built.meshes[key], shuffled)
             check("mesh steps: %s: sharp pairs out of order or repeated mark the same edges" % name,
                   flags.tolist() == whole[key]["sharp_edge"] and len(pairs) > 3, str(len(pairs)))
+            flags = build_objects._sharp_edge_flags(built.meshes[key], pairs[:, ::-1])  # each pair (high, low)
+            check("mesh steps: %s: sharp pairs given (high, low) mark the same edges" % name,
+                  flags.tolist() == whole[key]["sharp_edge"] and len(pairs) > 3, str(len(pairs)))
 
         empty_scene()
         before = _state()
