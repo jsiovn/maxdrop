@@ -852,6 +852,9 @@ class RealToolTests(TempCase):
     def setUpClass(cls):
         for note in REAL_NOTES:
             sys.stderr.write("\n  real tool: note: %s" % note)
+        # Which file runs: a newer copy elsewhere on the search path would be taken before the one CI installs.
+        for t in REAL.values():
+            sys.stderr.write("\n  real tool: using %s at %s" % (t.label, t.path))
 
     def setUp(self):
         super().setUp()
@@ -869,7 +872,7 @@ class RealToolTests(TempCase):
 
     def tools_for(self, case, flavors=(UNRAR, SEVENZIP, BSDTAR)):
         """(tool, label) of each program present; a SKIPPED line for each one missing. A required one missing
-        fails RequiredToolTests, not here: the programs present still run and print RAN."""
+        fails RequiredToolTests, here only when no program is present: the ones present still run and print RAN."""
         found, required = [], []
         for flavor in flavors:
             label = "%s: %s" % (external.LABELS[flavor], case)

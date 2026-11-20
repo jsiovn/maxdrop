@@ -4,8 +4,9 @@ name: Test
 # Blender (no Blender; the tests themselves use no network, only apt installs bsdtar, pip installs numpy and
 # ruff, and on Linux UnRAR and 7-Zip come from their vendors): the unit tests with the no-bpy guard, the tools,
 # the landing page, the license files and the scene packs; the scan of every file under tests/fixtures/ for user
-# names, computer names and user paths; ruff. Then on each Blender of the matrix: build, validate, the license text in the zip, the register smoke test, the import
-# smoke test on tests/fixtures/*.max and the fixture tests (tests/blender/run.py).
+# names, computer names and user paths; ruff. Then on each Blender of the matrix: build, validate, the license
+# text in the zip, the register smoke test, the import smoke test on tests/fixtures/*.max and the fixture tests
+# (tests/blender/run.py).
 #
 # Runs on pull requests and by hand. On a push to main it runs as the first job of the Publish workflow, which
 # calls this file: nothing is published unless it passes, and the tests do not run twice.
@@ -40,6 +41,13 @@ jobs:
     defaults:
       run:
         shell: bash
+    # The UnRAR and 7-Zip the Linux entries install (step "UnRAR and 7-Zip"); the cache key is made of the
+    # checksums, so a new version is these four values only.
+    env:
+      SEVENZIP_URL: https://github.com/ip7z/7zip/releases/download/26.06/7z2606-linux-x64.tar.xz
+      SEVENZIP_SHA256: 2b539cf067b2ad48e1baa5093dbaa8818b73542d1222a0ffde9dc5f2922ea62e
+      UNRAR_URL: https://www.rarlab.com/rar/rarlinux-x64-723.tar.gz
+      UNRAR_SHA256: 759b4b6aa0d9f77131882162951193f3a0e54bf60e1d8dc4255aa308accab588
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -58,22 +66,18 @@ jobs:
       # external.FLOORS): the vendors' Linux builds, pinned by version and SHA-256, into /usr/local/bin, a standard
       # place of external.candidates, so the tests find them the way MaxDrop does. 7-Zip from the release the
       # download page of 7-zip.org links (the author's ip7z/7zip on GitHub), UnRAR from rarlab.com's RAR for Linux
-      # (its UnRAR components are freeware; the trial `rar` is not installed). A new version: new URL and checksum,
-      # at or above external.FLOORS. The tarballs are cached by checksum, so a vendor outage does not fail the job;
-      # the checksum is checked after a restore too.
+      # (UnRAR is freeware, its banner says so, and 3a of the package's license.txt excepts the UnRAR components;
+      # the trial `rar` is not installed). A
+      # new version: the job's env above, at or above external.FLOORS. The tarballs are cached by checksum, so a
+      # vendor outage fails the job only when no cached copy exists; the checksum is checked after a restore too.
       - name: Cache UnRAR and 7-Zip
         if: runner.os == 'Linux'
         uses: actions/cache@v6
         with:
           path: ~/unpackers
-          key: unpackers-7z2606-2b539cf0-rar723-759b4b6a
+          key: unpackers-${{ env.SEVENZIP_SHA256 }}-${{ env.UNRAR_SHA256 }}
       - name: UnRAR and 7-Zip
         if: runner.os == 'Linux'
-        env:
-          SEVENZIP_URL: https://github.com/ip7z/7zip/releases/download/26.06/7z2606-linux-x64.tar.xz
-          SEVENZIP_SHA256: 2b539cf067b2ad48e1baa5093dbaa8818b73542d1222a0ffde9dc5f2922ea62e
-          UNRAR_URL: https://www.rarlab.com/rar/rarlinux-x64-723.tar.gz
-          UNRAR_SHA256: 759b4b6aa0d9f77131882162951193f3a0e54bf60e1d8dc4255aa308accab588
         run: |
           set -euo pipefail
           dl=~/unpackers
@@ -116,12 +120,11 @@ jobs:
           assert p == os.environ["PYTHON"], p
           assert v == os.environ["NUMPY"], v
           '
-      # The real-tool tests of the scene packs print one RAN or SKIPPED line per case; on Linux
-      # MAXDROP_REQUIRE_TOOLS turns a SKIPPED line of the programs installed above into a failure, so a broken
-      # install cannot pass silently. The fuzz slices
-      # (tests/unit/test_fuzz.py, tests/test_intake_fuzz.py) run the first cases of tests/unit/fuzz.py in a child
-      # process each: MAXDROP_FUZZ_CASES and MAXDROP_FUZZ_ZIP_CASES make them longer; the default keeps the step
-      # under two minutes.
+      # The real-tool tests of the scene packs print the program each uses and one RAN or SKIPPED line per case;
+      # on Linux MAXDROP_REQUIRE_TOOLS turns a missing program of those installed above into a failure, so a
+      # broken install cannot pass silently. The fuzz slices (tests/unit/test_fuzz.py, tests/test_intake_fuzz.py)
+      # run the first cases of tests/unit/fuzz.py in a child process each: MAXDROP_FUZZ_CASES and
+      # MAXDROP_FUZZ_ZIP_CASES make them longer; the default keeps the step under two minutes.
       - name: The unit tests and the no-bpy guard, the tools, the landing page, the license files, the scene packs
         env:
           MAXDROP_REQUIRE_TOOLS: ${{ runner.os == 'Linux' && 'unrar,7z,bsdtar' || '' }}
