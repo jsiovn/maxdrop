@@ -59,6 +59,7 @@ UV_LAYERS = {
     "hierarchy": [],
     "instances": ["UVMap"],
     "layers_flags": [],
+    "layers_more": [],
     "lookat": [],  # boxes without Generate Mapping Coords
     "modifier_pivot": ["UVMap"],  # FixtureBent's UVW Map writes channel 1 (applied, the Bend above it is not)
     "multi_uv": ["UVMap", "UVChannel_2", "UVChannel_3"],
@@ -939,12 +940,18 @@ class Fixtures(unittest.TestCase):
                                  (o["hidden"], o["frozen"], o["renderable"], o["layer"]), o["name"])
                 if o["layer"] not in used:
                     used.append(o["layer"])
+            parents = {la["name"]: la["parent"] for la in oracle["layers"]}
+            for layer in list(used):  # a parent layer is kept, nodes or not
+                while parents[layer] is not None and parents[layer] not in used:
+                    layer = parents[layer]
+                    used.append(layer)
             order = [la["name"] for la in oracle["layers"]]
             self.assertEqual([la.name for la in desc.layers], sorted(used, key=order.index), name)
-            flags = {la["name"]: (la["hidden"], la["frozen"], la["renderable"]) for la in oracle["layers"]}
+            flags = {la["name"]: (la["hidden"], la["frozen"], la["renderable"], la["parent"])
+                     for la in oracle["layers"]}
             for la in desc.layers:
-                self.assertEqual((la.hidden, la.frozen, la.renderable), flags[la.name])
-                self.assertIsNone(la.parent)
+                parent = None if la.parent is None else names[la.parent]
+                self.assertEqual((la.hidden, la.frozen, la.renderable, parent), flags[la.name], la.name)
 
     def test_layers_flags_organisation(self):
         desc = dict((n, d) for n, d, _o in self.cases)["layers_flags"]
@@ -957,6 +964,24 @@ class Fixtures(unittest.TestCase):
         self.assertEqual(sorted(k for k, n in by_name.items() if n.group_member),
                          sorted(k for k, n in by_name.items() if n.parent == head))
         self.assertEqual(len([n for n in desc.nodes if n.parent == head]), 2)
+
+    def test_layers_more_organisation(self):
+        """The layer flags live on the layers, not on their nodes; a parent layer without a node is kept."""
+        desc = dict((n, d) for n, d, _o in self.cases)["layers_more"]
+        names = {la.index: la.name for la in desc.layers}
+        self.assertEqual([(la.name, la.hidden, la.frozen, la.renderable, names.get(la.parent)) for la in desc.layers],
+                         [("0", False, False, True, None), ("FixtureHiddenLayer", True, False, True, None),
+                          ("FixtureFrozenLayer", False, True, True, None),
+                          ("FixtureNoRenderLayer", False, False, False, None),
+                          ("FixtureParentLayer", False, False, True, None),
+                          ("FixtureChildLayer", False, False, True, "FixtureParentLayer"),
+                          ("FixtureLäyer中", False, False, True, None)])
+        by_name = {n.name: n for n in desc.nodes}
+        self.assertEqual([k for k, n in by_name.items() if n.hidden], ["FixtureHiddenParent"])
+        self.assertEqual([k for k, n in by_name.items() if n.frozen], ["FixtureFrozen"])
+        self.assertTrue(all(n.renderable for n in desc.nodes))
+        self.assertEqual(by_name["FixtureVisibleChild"].parent, by_name["FixtureHiddenParent"].index)
+        self.assertEqual(names[by_name["FixtureNested"].layer], "FixtureChildLayer")
 
     def test_curves_equal_the_oracle(self):
         """Every shape node's curve: splines, points and cyclic flags as 3ds Max converts the shape, each segment's

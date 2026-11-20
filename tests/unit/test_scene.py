@@ -469,11 +469,41 @@ class TestFixtures(unittest.TestCase):
                                     s.is_a(n.tm, classids.SC_CTRL_MATRIX3, classids.LOOK_AT), e["name"])
                     flags = (n.hidden, n.frozen, n.renderable, s.layer(n.layer).name)
                     self.assertEqual(flags, (e["hidden"], e["frozen"], e["renderable"], e["layer"]), e["name"])
-                layers = [(la.name, la.hidden, la.frozen, la.renderable) for la in s.layers()]
-                self.assertEqual(layers, [(e["name"], e["hidden"], e["frozen"], e["renderable"])
+                layers = [(la.name, la.hidden, la.frozen, la.renderable,
+                           None if la.parent is None else s.layer(la.parent).name) for la in s.layers()]
+                self.assertEqual(layers, [(e["name"], e["hidden"], e["frozen"], e["renderable"], e["parent"])
                                           for e in oracle["layers"]])
-                self.assertTrue(all(la.parent is None for la in s.layers()))
                 del nodes
+
+    def test_layers_more_records(self):
+        """The bytes docs/FORMAT.md quotes from layers_more: a hidden or frozen layer sets its own bits, not its
+        nodes'; the empty 0x0975 / 0x0976 beside a node's own hidden / frozen bit; a nested layer's parent."""
+        with cfb.CompoundFile(os.path.join(ROOT, "tests", "fixtures", "layers_more.max")) as cf:
+            s = _scene(cf)
+            by_name = {n.name: n for n in s.nodes()}
+            for name, n in by_name.items():
+                chunk = s.chunk(n.index)
+                marks = [c.payload_size for c in (chunk.first(0x0975), chunk.first(0x0976)) if c is not None]
+                own = {"FixtureHiddenParent": 0x100800, "FixtureFrozen": 0x200800}.get(name, 0x800)
+                self.assertEqual((n.flags, n.render_flags, marks), (own, 0x0F00D600, [0] if own != 0x800 else []),
+                                 name)
+            layers = {la.name: la for la in s.layers()}
+            raw = {k: (la.flags, la.render_flags) for k, la in layers.items()}
+            self.assertEqual(raw, {"0": (0, 0x0B00D600), "FixtureHiddenLayer": (0x100000, 0x0B00D600),
+                                   "FixtureFrozenLayer": (0x200000, 0x0B00D600),
+                                   "FixtureNoRenderLayer": (0, 0x0B005600), "FixtureParentLayer": (0, 0x0B00D600),
+                                   "FixtureChildLayer": (0, 0x0B00D600),
+                                   "FixtureLäyer中": (0, 0x0B00D600)})
+            child, parent = layers["FixtureChildLayer"], layers["FixtureParentLayer"]
+            body = s.chunk(child.index)
+            self.assertEqual(bytes(body.first(0x1090).tobytes()), b"\x01")
+            self.assertEqual(bytes(body.first(0x10A0).tobytes()), utf16("FixtureParentLayer"))
+            self.assertEqual(struct.unpack("<i", body.first(0x10B0).tobytes()), (parent.index,))
+            self.assertEqual(child.parent, parent.index)
+            self.assertTrue(all(bytes(s.chunk(la.index).first(0x1090).tobytes()) == b"\x00"
+                                for la in layers.values() if la is not child))
+            self.assertEqual(bytes(s.chunk(layers["FixtureLäyer中"].index).first(0x1010).tobytes()),
+                             b"FixtureL\xc3\xa4yer\xe4\xb8\xad")
 
     def test_groups(self):
         with cfb.CompoundFile(os.path.join(ROOT, "tests", "fixtures", "layers_flags.max")) as cf:
@@ -505,7 +535,8 @@ class TestFixtures(unittest.TestCase):
 
     def test_flags_and_pair_heads(self):
         """The values docs/FORMAT.md quotes: 0x0960 flags per node, the first u32 of 0x2035 per class."""
-        flags = {"FixtureHidden": 0x100800, "FixtureGroup": 0x40, "FixtureGroupA": 0x900, "FixtureGroupB": 0x900,
+        flags = {"FixtureHidden": 0x100800, "FixtureHiddenParent": 0x100800, "FixtureFrozen": 0x200800,
+                 "FixtureGroup": 0x40, "FixtureGroupA": 0x900, "FixtureGroupB": 0x900,
                  "FixtureInstance01": 0, "FixtureInstance02": 0, "FixtureInstance03": 0, "FixtureCopy": 0,
                  "FixtureBent": 0, "FixtureSmooth": 0, "FixtureNestedRef": 0,
                  "FixtureBoxCopy": 0,  # instances and references: 0

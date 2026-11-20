@@ -31,7 +31,9 @@ and world box, its UV layer (none without Generate Mapping Coords), sharp edges,
 outward but for the Planes (up, or down for the one of negative width) and the Box of negative width (in, as 3ds Max
 makes it); the instance shares FixtureBox's mesh; the TurboSmooth over a Box evaluates to 3ds Max's counts.
 layers_flags: two layer collections, one hidden object, one with hide_render, the group head as the parent of its two
-members. modifier_pivot: a node with modifiers gets its base mesh (no bounding box check, the oracle's is after the
+members. layers_more: the hidden layer's collection excluded, hide_select on the frozen layer's, hide_render on the
+non-rendering layer's, the child layer's collection below its parent's (which holds no node), the non-ASCII layer
+name, only the nodes' own flags on objects, the hidden parent's child visible. modifier_pivot: a node with modifiers gets its base mesh (no bounding box check, the oracle's is after the
 modifiers), the report names the modifiers not applied, and the node whose pivot alone is rotated keeps its object
 in place. lookat: the nodes aimed by a Look At controller or a LookAt Constraint have 3ds Max's world matrices (above),
 the Target objects are empties; imported again with Keep Targets, each Look At a Track To can follow gets one aimed at
@@ -52,8 +54,8 @@ oracle's, and scene.camera the oracle's render camera (cameras: CamTarget, the l
 camera (lookat: FixtureCam); cameras holds eleven camera objects with a Camera each. Without a camera the scene's render
 size and camera stay as they were.
 Each fixture's import report is published (build.report) and must say nothing was left out; the one the
-operator published for vray_wrappers lists its three peeled wrappers by class. A changed layers_flags description
-checks a hidden, a frozen, a non-rendering and a nested layer, which no fixture has. A hand-made description with sheared local matrices (top-level and parented, hidden, a zero scale) checks that
+operator published for vray_wrappers lists its three peeled wrappers by class. A changed layers_more description
+checks a hidden parent layer, which no fixture has: its child layer is out of the view layer with it. A hand-made description with sheared local matrices (top-level and parented, hidden, a zero scale) checks that
 Blender's world matrices equal the products of the locals, through the helper empty for top-level ones. Material
 slots (build with convert.materials.assign): vray_wrappers' Multi/Sub-Object box with its faces set to IDs 1, 3
 and 7 lands them on the slots of FixtureSubOne, an empty one (ID 3 is switched off) and FixtureSubSeven; the same
@@ -107,6 +109,7 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1; kept literal: tes
     "hierarchy": [],
     "instances": ["UVMap"],
     "layers_flags": [],
+    "layers_more": [],
     "lookat": [],  # boxes without Generate Mapping Coords
     "modifier_pivot": ["UVMap"],  # FixtureBent's UVW Map writes channel 1 (applied, the Bend above it is not)
     "multi_uv": ["UVMap", "UVChannel_2", "UVChannel_3"],
@@ -478,10 +481,23 @@ def run_fixture(path, modules):
         mirrored = [n.name for n in desc.nodes if n.mirrored]
         check("hierarchy: FixtureLeaf is the mirrored node", mirrored == ["FixtureLeaf"], str(mirrored))
     layer_names = [c.name for c in root.children] if root else []
-    expected = [la["name"] for la in oracle["layers"] if any(o["layer"] == la["name"] for o in nodes)]
-    check("%s: one collection per layer below the file's collection" % name,
-          root is not None and layer_names == expected and root.name in bpy.context.scene.collection.children,
-          "%s: %s" % (root and root.name, layer_names))
+    parent_of = {la["name"]: la["parent"] for la in oracle["layers"]}
+    kept = {o["layer"] for o in nodes}
+    for layer in list(kept):  # a parent layer is kept, nodes or not
+        while parent_of[layer] is not None:
+            layer = parent_of[layer]
+            kept.add(layer)
+    order = [la["name"] for la in oracle["layers"]]
+
+    def tree(col):
+        return [(c.name, tree(c)) for c in col.children]
+
+    def layer_tree(parent):
+        return [(la, layer_tree(la)) for la in order if la in kept and parent_of[la] == parent]
+    got = tree(root) if root else []
+    check("%s: one collection per layer below the file's collection, nested as the layers" % name,
+          root is not None and got == layer_tree(None) and root.name in bpy.context.scene.collection.children,
+          "%s: %s" % (root and root.name, got))
     if name == "layers_flags":
         check("layers_flags: two layer collections", layer_names == ["FixtureLayerA", "FixtureLayerB"])
         hidden = [ob.name for ob in obs if ob.hide_viewport and ob.hide_get(view_layer=view_layer)]
@@ -494,6 +510,8 @@ def run_fixture(path, modules):
               group.type == 'EMPTY' and members == ["FixtureGroupA", "FixtureGroupB"], "%s %s" % (group.type, members))
         excluded = [lc.name for lc in view_layer.layer_collection.children[name].children if lc.exclude]
         check("layers_flags: no layer excluded (none is hidden in 3ds Max)", excluded == [], str(excluded))
+    if name == "layers_more":
+        check_layers_more(root, obs, view_layer)
     bare = sorted(ob.name for ob in obs if ob.type == 'MESH' and not any(sl.material for sl in ob.material_slots))
     check("%s: a material on every mesh" % name, bare == [], str(bare))
     check_fixture_materials(name, plan, desc, obs)
@@ -2626,37 +2644,53 @@ def check_wrapper_wiring(builder, cm, tx, srgb, data):
           "%s %s" % (mf, builder.issues()[-1:]))
 
 
+def check_layers_more(root, obs, view_layer):
+    """layers_more as 3ds Max saved it: the flags of a hidden, a frozen and a non-rendering layer go on their
+    collections, not on their objects; the child layer sits below its parent (which holds no node); a hidden parent
+    leaves its child visible."""
+    text = "FixtureLäyer中"
+    check("layers_more: the layer collections, the child layer below its parent",
+          [c.name for c in root.children] == ["0", "FixtureHiddenLayer", "FixtureFrozenLayer", "FixtureNoRenderLayer",
+                                              "FixtureParentLayer", text]
+          and [c.name for c in root.children["FixtureParentLayer"].children] == ["FixtureChildLayer"],
+          str([c.name for c in root.children]))
+    lcs = view_layer.layer_collection.children[root.name].children
+    excluded = [lc.name for lc in lcs if lc.exclude]
+    check("layers_more: the hidden layer excluded in the view layer", excluded == ["FixtureHiddenLayer"], str(excluded))
+    flags = {c.name: (c.hide_select, c.hide_render) for c in root.children_recursive}
+    want = {c: (c == "FixtureFrozenLayer", c == "FixtureNoRenderLayer") for c in flags}
+    check("layers_more: hide_select on the frozen layer's collection, hide_render on the non-rendering one's",
+          flags == want, str(flags))
+    visible = {ob.name for ob in view_layer.objects}
+    check("layers_more: only the hidden layer's object is out of the view layer",
+          {ob.name for ob in obs} - visible == {"FixtureOnHiddenLayer"}, str(sorted(visible)))
+    own = {ob.name: (ob.hide_get(view_layer=view_layer), ob.hide_select, ob.hide_render) for ob in obs
+           if ob.name in visible}
+    check("layers_more: only the nodes' own flags on objects (FixtureHiddenParent hidden, FixtureFrozen frozen)",
+          {k: v for k, v in own.items() if any(v)} == {"FixtureHiddenParent": (True, False, False),
+                                                       "FixtureFrozen": (False, True, False)}, str(own))
+    child = bpy.data.objects["FixtureVisibleChild"]
+    check("layers_more: the hidden parent's child is visible, its child in Blender",
+          child.parent is bpy.data.objects["FixtureHiddenParent"] and child.visible_get(view_layer=view_layer))
+
+
 def check_layer_flags(modules):
-    """layers_flags with its description changed: FixtureLayerB hidden in 3ds Max, FixtureLayerA frozen and not
-    rendering, a child layer of FixtureLayerB holding FixtureHidden."""
+    """layers_more with its description changed: FixtureParentLayer hidden in 3ds Max, so its child layer
+    (FixtureChildLayer, holding FixtureNested) is out of the view layer with it. No fixture has a hidden parent
+    layer."""
     convert_scene = modules[0]
     empty_scene()
-    desc = convert_scene.read(os.path.join(ROOT, "tests", "fixtures", "layers_flags.max"))
-    a, b = desc.layers
-    b.hidden, a.frozen, a.renderable = True, True, False
-    child = convert_scene.LayerDescription(-1, "FixtureChildLayer", parent=b.index)
-    desc.layers.append(child)
-    moved = next(n for n in desc.nodes if n.name == "FixtureHidden")
-    moved.layer = child.index
-    head = next(n for n in desc.nodes if n.name == "FixtureGroup")
-    head.hidden = True  # hiding a parent in 3ds Max leaves its children visible
+    desc = convert_scene.read(os.path.join(ROOT, "tests", "fixtures", "layers_more.max"))
+    by_name = {la.name: la for la in desc.layers}
+    parent, child = by_name["FixtureParentLayer"], by_name["FixtureChildLayer"]
+    parent.hidden = True
     cols, _built, view_layer = build_scene(desc, "layer_flags", modules)
-    members = {ob.name: ob for ob in bpy.data.objects["FixtureGroup"].children}
-    placed = {name: tuple(round(v / desc.meters, 4) for v in ob.matrix_world.translation)
-              for name, ob in members.items()}
-    check("hidden parent: its visible children are placed by Blender",
-          placed == {"FixtureGroupA": (0.0, 30.0, 0.0), "FixtureGroupB": (20.0, 30.0, 0.0)}
-          and not any(ob.hide_get(view_layer=view_layer) for ob in members.values()), str(placed))
     lcs = view_layer.layer_collection.children["layer_flags"].children
-    check("hidden layer: excluded in the view layer", lcs[b.name].exclude and not lcs[a.name].exclude)
-    check("hidden layer: its child layer is nested below it",
-          [c.name for c in cols.layers[b.index].children] == ["FixtureChildLayer"])
+    check("hidden parent layer: excluded in the view layer, its child layer nested below it",
+          lcs[parent.name].exclude and [c.name for c in cols.layers[parent.index].children] == [child.name])
     visible = {ob.name for ob in view_layer.objects}
-    check("hidden layer: its objects and its child layer's are out of the view layer",
-          not visible & {"FixtureHidden", "FixtureNoRender"} and "FixtureVisible" in visible, str(sorted(visible)))
-    col_a = cols.layers[a.index]
-    check("frozen, non-rendering layer: hide_select and hide_render on its collection",
-          col_a.hide_select and col_a.hide_render and not cols.layers[b.index].hide_render)
+    check("hidden parent layer: its child layer's object is out of the view layer",
+          "FixtureNested" not in visible and "FixtureOnTextLayer" in visible, str(sorted(visible)))
 
 
 def _local(a, t):

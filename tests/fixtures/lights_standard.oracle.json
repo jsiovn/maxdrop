@@ -2,7 +2,7 @@
   "file": "lights_standard.max",
   "file_version": [22000, 22000],
   "layers": [
-    {"frozen": false, "hidden": false, "name": "0", "renderable": true}
+    {"frozen": false, "hidden": false, "name": "0", "parent": null, "renderable": true}
   ],
   "material_graph": [],
   "materials": [],
@@ -520,7 +520,7 @@
       "transform": [0.5547, -0.83205, 0, 0.674882, 0.449921, 0.584898, -0.486664, -0.324443, 0.811107, -3000, -2000, 5000]
     }
   ],
-  "oracle_version": 6,
+  "oracle_version": 7,
   "render": {"camera": null, "height": 480, "pixel_aspect": 1, "width": 640},
   "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
   "time": 0,

@@ -2,8 +2,8 @@
   "file": "saved_as_2017.max",
   "file_version": [19000, 22000],
   "layers": [
-    {"frozen": false, "hidden": false, "name": "0", "renderable": true},
-    {"frozen": false, "hidden": false, "name": "FixtureL\u00e4yer\u4e2d", "renderable": true}
+    {"frozen": false, "hidden": false, "name": "0", "parent": null, "renderable": true},
+    {"frozen": false, "hidden": false, "name": "FixtureL\u00e4yer\u4e2d", "parent": null, "renderable": true}
   ],
   "material_graph": [
     {
@@ -168,7 +168,7 @@
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 10, 20, 0]
     }
   ],
-  "oracle_version": 6,
+  "oracle_version": 7,
   "render": {"camera": null, "height": 480, "pixel_aspect": 1, "width": 640},
   "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
   "time": 0,

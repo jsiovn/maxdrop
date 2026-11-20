@@ -26,6 +26,7 @@ NODE_KEYS = ["base_class_id", "base_class_name", "base_faces", "base_superclass"
              "offset_scale", "parent", "renderable", "shape", "transform"]
 MODIFIER_KEYS = ["class_id", "class_name", "context_bbox_max", "context_bbox_min", "context_tm", "enabled",
                  "enabled_in_renders", "enabled_in_views", "name"]
+LAYER_KEYS = ["frozen", "hidden", "name", "parent", "renderable"]
 CAMERA_KEYS = ["fov", "hither", "manual_clip", "ortho", "tdist", "yon"]
 RENDER_KEYS = ["camera", "height", "pixel_aspect", "width"]
 SHAPE_KEYS = ["adaptive", "angle", "display_render_mesh", "length", "optimize", "rectangular", "renderable", "sides",
@@ -119,7 +120,7 @@ class OracleFiles(unittest.TestCase):
             with self.subTest(name):
                 o = _oracle(name)
                 self.assertEqual(list(o), TOP_KEYS)
-                self.assertEqual(o["oracle_version"], 6)
+                self.assertEqual(o["oracle_version"], 7)
                 self.assertEqual(list(o["render"]), RENDER_KEYS)
                 self.assertTrue(o["render"]["width"] > 0 and o["render"]["height"] > 0)
                 self.assertEqual(o["file"], name + ".max")
@@ -157,6 +158,11 @@ class OracleFiles(unittest.TestCase):
                     self.assertIn(n["handle"], n["instances"])
                     self.assertTrue(set(n["instances"]) <= handles)
                     self.assertIn(n["layer"], [layer["name"] for layer in o["layers"]])
+                layer_names = [layer["name"] for layer in o["layers"]]
+                self.assertEqual(len(set(layer_names)), len(layer_names))
+                for layer in o["layers"]:
+                    self.assertEqual(list(layer), LAYER_KEYS)
+                    self.assertTrue(layer["parent"] is None or layer["parent"] in layer_names, layer)
                 self.assertEqual([m["index"] for m in o["materials"]], list(range(len(o["materials"]))))
                 camera = o["render"]["camera"]
                 self.assertTrue(camera is None or any(n["handle"] == camera and n["camera"] is not None

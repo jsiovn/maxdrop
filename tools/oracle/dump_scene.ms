@@ -17,7 +17,7 @@ global MaxDropOracle
 
 struct MaxDropOracleStruct
 (
-	version = 6,
+	version = 7,
 
 	fn num v =
 	(
@@ -310,6 +310,8 @@ struct MaxDropOracleStruct
 		local mods = for m in n.modifiers collect modJson n m
 		local matIndex = if n.material == undefined then "null" else (((findItem mats n.material) - 1) as string)
 		local parent = if n.parent == undefined then "null" else (n.parent.handle as string)
+		-- the node's own flags: MAXScript's isHidden and isFrozen also say true for a node on a hidden or frozen layer
+		local inode = (dotNetClass "Autodesk.Max.GlobalInterface").Instance.COREInterface.GetINodeByHandle n.handle
 		obj #( \
 			#("base_class_id", cid (classOf b)), \
 			#("base_class_name", str ((classOf b) as string)), \
@@ -322,9 +324,9 @@ struct MaxDropOracleStruct
 			#("eval_faces", intOrNull ev[2]), \
 			#("eval_maps", evalMapsJson n), \
 			#("eval_verts", intOrNull ev[1]), \
-			#("frozen", bool n.isFrozen), \
+			#("frozen", bool inode.IsObjectFrozen), \
 			#("handle", n.handle as string), \
-			#("hidden", bool n.isHidden), \
+			#("hidden", bool inode.IsObjectHidden), \
 			#("index", index as string), \
 			#("instances", list (for h in (instanceHandles n) collect h as string)), \
 			#("layer", str n.layer.name), \
@@ -554,7 +556,8 @@ struct MaxDropOracleStruct
 		for i = 0 to LayerManager.count - 1 do
 		(
 			local l = LayerManager.getLayer i
-			append items (inline #(#("frozen", bool l.isFrozen), #("hidden", bool l.isHidden), #("name", str l.name), #("renderable", bool l.renderable)))
+			local p = l.getParent()
+			append items (inline #(#("frozen", bool l.isFrozen), #("hidden", bool l.isHidden), #("name", str l.name), #("parent", if p == undefined then "null" else str p.name), #("renderable", bool l.renderable)))
 		)
 		block items 2
 	),

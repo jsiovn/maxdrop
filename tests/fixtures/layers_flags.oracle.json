@@ -2,9 +2,9 @@
   "file": "layers_flags.max",
   "file_version": [22000, 22000],
   "layers": [
-    {"frozen": false, "hidden": false, "name": "0", "renderable": true},
-    {"frozen": false, "hidden": false, "name": "FixtureLayerA", "renderable": true},
-    {"frozen": false, "hidden": false, "name": "FixtureLayerB", "renderable": true}
+    {"frozen": false, "hidden": false, "name": "0", "parent": null, "renderable": true},
+    {"frozen": false, "hidden": false, "name": "FixtureLayerA", "parent": null, "renderable": true},
+    {"frozen": false, "hidden": false, "name": "FixtureLayerB", "parent": null, "renderable": true}
   ],
   "material_graph": [
     {
@@ -319,7 +319,7 @@
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 20, 30, 0]
     }
   ],
-  "oracle_version": 6,
+  "oracle_version": 7,
   "render": {"camera": null, "height": 480, "pixel_aspect": 1, "width": 640},
   "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
   "time": 0,
