@@ -329,6 +329,38 @@ class Fixture(unittest.TestCase):
         kinds = {n.index: n.kind for n in desc.nodes}
         self.assertEqual(kinds[named[0]], conv.MESH)
 
+    def test_a_shell_hardens_the_rim_of_an_open_extrusion(self):
+        """A converted Shell above an Extrude: the mesh key ends with ("rim", True), the open edges of an extrusion
+        without caps join its sharp edges (convert.scene._rim on the extruded path)."""
+        real_evaluated = conv._evaluated
+        shared = types.SimpleNamespace(index=None)
+
+        def evaluated(*args):
+            ext, maps, rest = real_evaluated(*args)
+            if ext is not None:
+                if shared.index is None:
+                    shared.index = ext.index  # one Shell instanced on every extruded shape
+                rest = rest + (shared,)
+            return ext, maps, rest
+
+        def converting(_scene, m, _meters=1.0, _offset=None):
+            return rules.ModifierDescription(m.index, rules.SOLIDIFY, "Shell", "Shell", True, (), None, None,
+                                             rules.RimRule(False, 45.0, None)), []
+
+        with mock.patch.object(conv, "_evaluated", evaluated),                 mock.patch.object(rules, "is_convertible", lambda m: m is shared),                 mock.patch.object(rules, "convert", converting):
+            desc = conv.read(FIXTURE)
+        meshes = [n for n in desc.nodes if n.kind == conv.MESH]
+        self.assertTrue(meshes)
+        opened = 0
+        for node in meshes:
+            self.assertEqual(node.mesh[-1], ("rim", True), node.name)
+            md = desc.meshes[node.mesh]
+            boundary = {tuple(e) for e in conv.open_edges(md.loop_vertices, md.loop_starts,
+                                                          md.loop_totals).tolist()}
+            self.assertLessEqual(boundary, {tuple(e) for e in md.sharp_edges.tolist()}, node.name)
+            opened += bool(boundary)
+        self.assertGreater(opened, 0)  # FixtureExtOpen: no caps
+
 
 PIES = os.path.join(ROOT, "tests", "fixtures", "arc_pie_reverse.max")
 

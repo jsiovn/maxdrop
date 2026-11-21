@@ -314,6 +314,9 @@ class Rules(unittest.TestCase):
             self.assertEqual(md.rim, rules.RimRule(*want), repr(values))
         md, _issues = _convert(classids.TURBOSMOOTH, {})
         self.assertIsNone(md.rim)
+        # an animated auto smooth refuses nothing: the Shell converts, its rim unreported (an issue)
+        md, issues = _convert(classids.SHELL, {14: pblock.Animated(3)})
+        self.assertEqual((md.kind, md.rim, len(issues)), (SOLIDIFY, None, 1))
 
     def test_shell_surfaces(self):
         # (inner, outer) -> thickness (0.5 m per unit, _convert), offset, flip. Both surfaces outside (-1, 2) or inside
@@ -416,6 +419,14 @@ def _faces(positions, faces):
     return (positions, lv, [4 * k for k in range(len(faces))], [4] * len(faces))
 
 
+def _grid(nx, ny, skip=()):
+    """A flat grid of nx x ny unit quads, counter-clockwise from above, without the cells in skip."""
+    positions = [(x, y, 0) for y in range(ny + 1) for x in range(nx + 1)]
+    faces = [[y * (nx + 1) + x, y * (nx + 1) + x + 1, (y + 1) * (nx + 1) + x + 1, (y + 1) * (nx + 1) + x]
+             for y in range(ny) for x in range(nx) if (x, y) not in skip]
+    return _faces(positions, faces)
+
+
 OPEN_CUBE = _faces(_CUBE, _SIDES)
 CUBE = _faces(_CUBE, _SIDES + [[4, 5, 6, 7]])
 
@@ -453,6 +464,15 @@ class Rim(unittest.TestCase):
         self.assertEqual(conv.rim_corners(*CUBE, 45.0), 0)
         reversed_quad = (QUAD[0], [0, 3, 2, 1], [0], [4])  # the other winding: the same corners
         self.assertEqual(conv.rim_corners(*reversed_quad, 45.0), 4)
+        # a 3 x 3 grid of quads: its 4 corners; without its middle quad (a hole) 4 more; an L of three quads: 6
+        grid = _grid(3, 3)
+        self.assertEqual(conv.rim_corners(*grid, 45.0), 4)
+        self.assertEqual(conv.rim_corners(*_grid(3, 3, skip={(1, 1)}), 45.0), 8)
+        self.assertEqual(conv.rim_corners(*_grid(2, 2, skip={(1, 1)}), 45.0), 6)
+        calls = []
+        self.assertEqual(conv.rim_corners(*grid, 45.0, check=lambda: calls.append(1)), 4)
+        self.assertTrue(calls)
+        self.assertEqual(len(conv.open_edges(*grid[1:])), 12)
 
     def test_which_shell_makes_the_rim(self):
         shell, smooth, crease = _md(SOLIDIFY, index=1), _md(SUBSURF, rules.SMOOTH), _md(SUBSURF, rules.CREASE)

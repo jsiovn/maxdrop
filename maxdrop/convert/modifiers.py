@@ -169,8 +169,13 @@ def _shell(modifier, meters, offset):
         issues.append("bevel edges not converted")
     if _value(b, 2, 0) or _value(b, 8, 0) or _value(b, 17, 0):
         issues.append("material ID overrides not converted")
-    auto = bool(_value(b, 14, 1))
-    rim = RimRule(auto, float(_value(b, 15, 45.0)), int(_value(b, 5, 0)) if _value(b, 4, 0) and not auto else None)
+    try:  # only for the report: one that cannot be read leaves the rim's lines out, not the Shell
+        auto = bool(_value(b, 14, 1))
+        rim = RimRule(auto, float(_value(b, 15, 45.0)),
+                      int(_value(b, 5, 0)) if _value(b, 4, 0) and not auto else None)
+    except ModifierError as exc:
+        rim = None
+        issues.append("the rim's smoothing not read (%s): not reported" % exc)
     scale = meters * _offset_scale(offset, issues)
     settings = (("solidify_mode", "EXTRUDE"), ("thickness", (hi - lo) * scale), ("offset", (hi + lo) / (hi - lo)),
                 ("use_even_offset", False), ("use_rim", True), ("use_flip_normals", inner + outer < 0))
