@@ -6,9 +6,9 @@
 -- Euler XYZ with three angles and in every other Tait-Bryan order; a Bezier Scale with a non-uniform scale along a
 -- turned axis; ScaleXYZ; Linear, TCB and Bezier Position, Rotation (Bezier_Rotation is Smooth Rotation) and Scale;
 -- Position, Rotation and Scale Lists with a weight of 50 % and an animated entry; Linear Float, TCB Float and Float
--- List under Position XYZ; a Bezier Float with three keys; a Target camera (Look At). Keys at frames 0, 20 and 50, and for two nodes at -10 and 40 (frame 0
--- between two keys) or at 10 and 50 (frame 0 before the first); saved with the time slider at frame 30, so a value
--- saved for the slider's frame is not the frame-0 value the oracle reports.
+-- List under Position XYZ; a Bezier Float with three keys; a Target camera (Look At). Keys at frames 0, 20 and 50,
+-- and for two nodes at -10 and 40 (frame 0 between two keys) or at 10 and 50 (frame 0 before the first); saved with
+-- the time slider at frame 30, so a value saved for the slider's frame is not the frame-0 value the oracle reports.
 -- Positions stay below 100: the oracle keeps 6 significant digits.
 -- Authored for MaxDrop's tests (see CONTRIBUTING.md, "Test files"): it resets the scene, so run it in a 3ds Max
 -- session with nothing to keep, then sanitize and check the saved file before it goes into tests/fixtures/.

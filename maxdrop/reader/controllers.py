@@ -25,8 +25,9 @@ when its interval holds time 0; otherwise the keys are evaluated at time 0: the 
 the last key's after it (out-of-range types are not read), between two keys linear for a Linear controller
 (rotation by slerp), linear with an issue for the others (Max follows their tangents). A saved value without an
 interval is used as it is, with an issue when several keys animate it (it may be another frame's). Euler angles
-are radians, the axis order (0x1003) 0 for XYZ and 100 + order for the others; a Max quaternion (x, y, z, w) as stored is the conjugate of the usual one, so the standard
-column-vector formula applied to it gives the row-vector matrix. List controllers keep their entry count in 0x1010
+are radians, the axis order (0x1003) 0 for XYZ and 100 + order for the others; a Max quaternion (x, y, z, w) as
+stored is the conjugate of the usual one, so the standard column-vector formula applied to it gives the row-vector
+matrix. List controllers keep their entry count in 0x1010
 and the entries at reference slots 0..n-1; their weights are parameter 0 of the list's ParamBlock2 (a float table:
 stored values, or controllers where animated). A list sums its entries times their weights (Float and Position
 List), multiplies I + (S - I) * weight (Scale List) or the rotations turned by their weights, a later entry first
@@ -240,10 +241,13 @@ def _weighted_quat(m, weight):
 
 def _unit_quat(q):
     """q normalized; identity for a zero quaternion (as quat_matrix), None when it is not finite."""
-    n = math.sqrt(sum(v * v for v in q))
+    n = sum(v * v for v in q)
     if not math.isfinite(n):
         return None
-    return tuple(v / n for v in q) if n > 1e-30 else (0.0, 0.0, 0.0, 1.0)
+    if n <= 1e-30:
+        return (0.0, 0.0, 0.0, 1.0)
+    n = math.sqrt(n)
+    return tuple(v / n for v in q)
 
 
 def slerp(a, b, f):
@@ -496,10 +500,11 @@ class _Eval:
                 value = self._keyframe(i)
                 return default if value is None else float(value[0])
             if sc == classids.SC_CTRL_FLOAT and cid == classids.FLOAT_LIST:
-                total = 0.0
-                for entry, w in self._list(i):
-                    total += w * self.scalar(entry, default)
-                return total
+                entries = self._list(i)
+                if not entries:
+                    return default
+                # an entry that cannot be read adds nothing: the axis default (1 under ScaleXYZ) is the list's own
+                return sum(w * self.scalar(entry, 0.0) for entry, w in entries)
             self.issue(i, UNKNOWN_CLASS)
             return default
 
@@ -515,8 +520,9 @@ class _Eval:
             return None, []
         pb = pblock.ParamBlock2.from_chunk(self.scene.chunk(block), self.scene.refs(block), refs, len(self.scene),
                                            self.kind(i))
-        if pb.issues:  # a damaged entry reads as missing: weight 1.0
-            self.issue(i, "%s: %s" % (LIST_BLOCK, pb.issues[0]))
+        param = pb.param(_LIST_WEIGHTS)
+        if param is not None and param.error:  # damaged weights read as missing: 1.0
+            self.issue(i, "%s: %s" % (LIST_BLOCK, param.error))
         weights = pb.value(_LIST_WEIGHTS, [])
         return block, weights if isinstance(weights, list) else [weights]
 

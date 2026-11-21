@@ -1236,7 +1236,8 @@ Not shown by any fixture yet, so not stated above:
 - Controllers no file shows yet (`controllers.py` assumes them): a controller without `0x2500` (none in the corpus or
   the fixtures; its value chunk is used, with an issue when several keys animate it); Bezier and TCB interpolation
   between two keys (linear, an issue: their tangents are not read); how Linear Scale interpolates a turned scale
-  axis (slerp; the fixture's axes are the identity); the bare Euler orders 1 to 5 and 100 (read as the SDK numbers
+  axis (slerp; the fixture's axes are the identity); whether Linear Rotation takes the shorter arc between keys more
+  than half a turn apart, as the reader's slerp does (FixtureLinearBetween's keys are 45 deg apart); the bare Euler orders 1 to 5 and 100 (read as the SDK numbers
   them: 1 = XZY ... 5 = ZYX, 100 = XYZ); the Euler orders 106 to 108 (an issue); the order of a Scale List's
   entries (the fixture's two scales are both along the axes, so they commute) and the weight of a Rotation List
   entry that turns about more than one axis (the fixture's turn about one axis each); parameter 1 of a list's

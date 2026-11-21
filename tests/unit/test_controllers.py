@@ -400,6 +400,16 @@ class TestValues(MatrixCase):
         t = b.transforms()
         self.assertMatrix(t.world(n), ct.translation((11, -22, 22)))  # 0.5 * 30 + 1.0 * 7
         self.assertEqual(t.issues, [])
+        b = Build()  # under ScaleXYZ: an empty list keeps the default, an unknown entry adds nothing
+        empty = b.add(node(C_FLOATLIST, refs34(None, None, None, None, list_block(b)),
+                           leaf(0x1010, struct.pack("<i", 0))))
+        odd = b.add(node(C_UNKNOWN_FLOAT, leaf(0x2501, struct.pack("<f", 9))))
+        mixed = b.add(node(C_FLOATLIST, refs34(b.flt(2.0), odd, None, None, list_block(b, 1.0, 1.0)),
+                           leaf(0x1010, struct.pack("<i", 2))))
+        n = b.node(b.prs(None, None, b.add(node(C_SCALEXYZ, refs34(empty, mixed, None)))))
+        t = b.transforms()
+        self.assertMatrix(t.world(n), ct.scale_matrix((1, 2, 1)))
+        self.assertEqual([i.reason for i in t.issues], [ct.UNKNOWN_CLASS])
 
 
 def _rotz(degrees):
@@ -499,7 +509,7 @@ class TestKeyframe(MatrixCase):
     def test_damaged_keys_or_interval(self):
         got, issues = self.world("TCB Scale", saved=(2, 2, 2, 0, 0, 0, 1), interval=AT_FRAME_30,
                                  keys=leaf(0x2523, b"\0" * 113))
-        self.assertMatrix(got, ct.scale_matrix((2, 2, 2)))  # a stale value beats keys that cannot be read
+        self.assertMatrix(got, ct.scale_matrix((2, 2, 2)))  # a stale value beats keys of an unknown size
         self.assertEqual([i.reason for i in issues], [ct.KEYS_UNKNOWN])
         b = Build()
         obj = b.add(node(C_LINPOS, leaf(0x2503, struct.pack("<3f", 1, 2, 3)), leaf(0x2500, b"\0" * 4),
