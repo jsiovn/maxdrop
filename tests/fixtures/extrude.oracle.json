@@ -254,10 +254,10 @@
           {
             "closed": true,
             "knots": [
-              {"in": [15, 3.33333, 0], "mid": [0, 10, 0], "out": [5, 10, 0], "pos": [15, 10, 0], "segment": "curve", "type": "bezierCorner"},
-              {"in": [-5, 10, 0], "mid": [-15, 0, 0], "out": [-15, 3.33333, 0], "pos": [-15, 10, 0], "segment": "curve", "type": "bezierCorner"},
-              {"in": [-15, -3.33333, 0], "mid": [0, -10, 0], "out": [-5, -10, 0], "pos": [-15, -10, 0], "segment": "curve", "type": "bezierCorner"},
-              {"in": [5, -10, 0], "mid": [15, 0, 0], "out": [15, -3.33333, 0], "pos": [15, -10, 0], "segment": "curve", "type": "bezierCorner"}
+              {"in": [15, 3.33333, 0], "material": 1, "mid": [0, 10, 0], "out": [5, 10, 0], "pos": [15, 10, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [-5, 10, 0], "material": 1, "mid": [-15, 0, 0], "out": [-15, 3.33333, 0], "pos": [-15, 10, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [-15, -3.33333, 0], "material": 1, "mid": [0, -10, 0], "out": [-5, -10, 0], "pos": [-15, -10, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [5, -10, 0], "material": 1, "mid": [15, 0, 0], "out": [15, -3.33333, 0], "pos": [15, -10, 0], "segment": "curve", "type": "bezierCorner"}
             ]
           }
         ],
@@ -312,12 +312,12 @@
           {
             "closed": true,
             "knots": [
-              {"in": [-3.8147e-06, 8.33334, 0], "mid": [10, 0, 0], "out": [6.66666, 0, 0], "pos": [0, 0, 0], "segment": "line", "type": "corner"},
-              {"in": [13.3333, 0, 0], "mid": [20, 4, 0], "out": [20, 2.66667, 0], "pos": [20, 0, 0], "segment": "line", "type": "corner"},
-              {"in": [20, 5.33333, 0], "mid": [14, 8, 0], "out": [16, 8, 0], "pos": [20, 8, 0], "segment": "line", "type": "corner"},
-              {"in": [12, 8, 0], "mid": [8, 16.5, 0], "out": [8, 13.6667, 0], "pos": [8, 8, 0], "segment": "line", "type": "corner"},
-              {"in": [8, 19.3333, 0], "mid": [3.99999, 25, 0], "out": [5.33333, 25, 0], "pos": [8, 25, 0], "segment": "line", "type": "corner"},
-              {"in": [2.66666, 25, 0], "mid": [0, 12.5, 0], "out": [0, 16.6667, 0], "pos": [0, 25, 0], "segment": "line", "type": "corner"}
+              {"in": [-3.8147e-06, 8.33334, 0], "material": 1, "mid": [10, 0, 0], "out": [6.66666, 0, 0], "pos": [0, 0, 0], "segment": "line", "type": "corner"},
+              {"in": [13.3333, 0, 0], "material": 1, "mid": [20, 4, 0], "out": [20, 2.66667, 0], "pos": [20, 0, 0], "segment": "line", "type": "corner"},
+              {"in": [20, 5.33333, 0], "material": 1, "mid": [14, 8, 0], "out": [16, 8, 0], "pos": [20, 8, 0], "segment": "line", "type": "corner"},
+              {"in": [12, 8, 0], "material": 1, "mid": [8, 16.5, 0], "out": [8, 13.6667, 0], "pos": [8, 8, 0], "segment": "line", "type": "corner"},
+              {"in": [8, 19.3333, 0], "material": 1, "mid": [3.99999, 25, 0], "out": [5.33333, 25, 0], "pos": [8, 25, 0], "segment": "line", "type": "corner"},
+              {"in": [2.66666, 25, 0], "material": 1, "mid": [0, 12.5, 0], "out": [0, 16.6667, 0], "pos": [0, 25, 0], "segment": "line", "type": "corner"}
             ]
           }
         ],
@@ -372,19 +372,19 @@
           {
             "closed": true,
             "knots": [
-              {"in": [20, 6.66666, 0], "mid": [0, 20, 0], "out": [6.66667, 20, 0], "pos": [20, 20, 0], "segment": "curve", "type": "bezierCorner"},
-              {"in": [-6.66667, 20, 0], "mid": [-20, 0, 0], "out": [-20, 6.66666, 0], "pos": [-20, 20, 0], "segment": "curve", "type": "bezierCorner"},
-              {"in": [-20, -6.66667, 0], "mid": [0, -20, 0], "out": [-6.66667, -20, 0], "pos": [-20, -20, 0], "segment": "curve", "type": "bezierCorner"},
-              {"in": [6.66667, -20, 0], "mid": [20, 0, 0], "out": [20, -6.66667, 0], "pos": [20, -20, 0], "segment": "curve", "type": "bezierCorner"}
+              {"in": [20, 6.66666, 0], "material": 1, "mid": [0, 20, 0], "out": [6.66667, 20, 0], "pos": [20, 20, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [-6.66667, 20, 0], "material": 1, "mid": [-20, 0, 0], "out": [-20, 6.66666, 0], "pos": [-20, 20, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [-20, -6.66667, 0], "material": 1, "mid": [0, -20, 0], "out": [-6.66667, -20, 0], "pos": [-20, -20, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [6.66667, -20, 0], "material": 1, "mid": [20, 0, 0], "out": [20, -6.66667, 0], "pos": [20, -20, 0], "segment": "curve", "type": "bezierCorner"}
             ]
           },
           {
             "closed": true,
             "knots": [
-              {"in": [12, -2.41429, 0], "mid": [9.65536, 7.65536, 0], "out": [12, 6.41429, 0], "pos": [12, 2, 0], "segment": "curve", "type": "bezier"},
-              {"in": [8.41429, 10, 0], "mid": [-1.65536, 7.65536, 0], "out": [-0.41429, 10, 0], "pos": [4, 10, 0], "segment": "curve", "type": "bezier"},
-              {"in": [-4, 6.41429, 0], "mid": [-1.65536, -3.65536, 0], "out": [-4, -2.41429, 0], "pos": [-4, 2, 0], "segment": "curve", "type": "bezier"},
-              {"in": [-0.414289, -6, 0], "mid": [9.65536, -3.65536, 0], "out": [8.41429, -6, 0], "pos": [4, -6, 0], "segment": "curve", "type": "bezier"}
+              {"in": [12, -2.41429, 0], "material": 1, "mid": [9.65536, 7.65536, 0], "out": [12, 6.41429, 0], "pos": [12, 2, 0], "segment": "curve", "type": "bezier"},
+              {"in": [8.41429, 10, 0], "material": 1, "mid": [-1.65536, 7.65536, 0], "out": [-0.41429, 10, 0], "pos": [4, 10, 0], "segment": "curve", "type": "bezier"},
+              {"in": [-4, 6.41429, 0], "material": 1, "mid": [-1.65536, -3.65536, 0], "out": [-4, -2.41429, 0], "pos": [-4, 2, 0], "segment": "curve", "type": "bezier"},
+              {"in": [-0.414289, -6, 0], "material": 1, "mid": [9.65536, -3.65536, 0], "out": [8.41429, -6, 0], "pos": [4, -6, 0], "segment": "curve", "type": "bezier"}
             ]
           }
         ],
@@ -439,28 +439,28 @@
           {
             "closed": true,
             "knots": [
-              {"in": [20, 6.66666, 0], "mid": [0, 20, 0], "out": [6.66666, 20, 0], "pos": [20, 20, 0], "segment": "curve", "type": "bezierCorner"},
-              {"in": [-6.66667, 20, 0], "mid": [-20, 0, 0], "out": [-20, 6.66666, 0], "pos": [-20, 20, 0], "segment": "curve", "type": "bezierCorner"},
-              {"in": [-20, -6.66667, 0], "mid": [0, -20, 0], "out": [-6.66667, -20, 0], "pos": [-20, -20, 0], "segment": "curve", "type": "bezierCorner"},
-              {"in": [6.66666, -20, 0], "mid": [20, 0, 0], "out": [20, -6.66667, 0], "pos": [20, -20, 0], "segment": "curve", "type": "bezierCorner"}
+              {"in": [20, 6.66666, 0], "material": 1, "mid": [0, 20, 0], "out": [6.66666, 20, 0], "pos": [20, 20, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [-6.66667, 20, 0], "material": 1, "mid": [-20, 0, 0], "out": [-20, 6.66666, 0], "pos": [-20, 20, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [-20, -6.66667, 0], "material": 1, "mid": [0, -20, 0], "out": [-6.66667, -20, 0], "pos": [-20, -20, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [6.66666, -20, 0], "material": 1, "mid": [20, 0, 0], "out": [20, -6.66667, 0], "pos": [20, -20, 0], "segment": "curve", "type": "bezierCorner"}
             ]
           },
           {
             "closed": true,
             "knots": [
-              {"in": [12, 4, 0], "mid": [0, 12, 0], "out": [4, 12, 0], "pos": [12, 12, 0], "segment": "curve", "type": "bezierCorner"},
-              {"in": [-4, 12, 0], "mid": [-12, 0, 0], "out": [-12, 4, 0], "pos": [-12, 12, 0], "segment": "curve", "type": "bezierCorner"},
-              {"in": [-12, -4, 0], "mid": [0, -12, 0], "out": [-4, -12, 0], "pos": [-12, -12, 0], "segment": "curve", "type": "bezierCorner"},
-              {"in": [4, -12, 0], "mid": [12, 0, 0], "out": [12, -4, 0], "pos": [12, -12, 0], "segment": "curve", "type": "bezierCorner"}
+              {"in": [12, 4, 0], "material": 1, "mid": [0, 12, 0], "out": [4, 12, 0], "pos": [12, 12, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [-4, 12, 0], "material": 1, "mid": [-12, 0, 0], "out": [-12, 4, 0], "pos": [-12, 12, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [-12, -4, 0], "material": 1, "mid": [0, -12, 0], "out": [-4, -12, 0], "pos": [-12, -12, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [4, -12, 0], "material": 1, "mid": [12, 0, 0], "out": [12, -4, 0], "pos": [12, -12, 0], "segment": "curve", "type": "bezierCorner"}
             ]
           },
           {
             "closed": true,
             "knots": [
-              {"in": [5, 1.66667, 0], "mid": [0, 5, 0], "out": [1.66667, 5, 0], "pos": [5, 5, 0], "segment": "curve", "type": "bezierCorner"},
-              {"in": [-1.66667, 5, 0], "mid": [-5, 0, 0], "out": [-5, 1.66667, 0], "pos": [-5, 5, 0], "segment": "curve", "type": "bezierCorner"},
-              {"in": [-5, -1.66667, 0], "mid": [0, -5, 0], "out": [-1.66667, -5, 0], "pos": [-5, -5, 0], "segment": "curve", "type": "bezierCorner"},
-              {"in": [1.66667, -5, 0], "mid": [5, 0, 0], "out": [5, -1.66667, 0], "pos": [5, -5, 0], "segment": "curve", "type": "bezierCorner"}
+              {"in": [5, 1.66667, 0], "material": 1, "mid": [0, 5, 0], "out": [1.66667, 5, 0], "pos": [5, 5, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [-1.66667, 5, 0], "material": 1, "mid": [-5, 0, 0], "out": [-5, 1.66667, 0], "pos": [-5, 5, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [-5, -1.66667, 0], "material": 1, "mid": [0, -5, 0], "out": [-1.66667, -5, 0], "pos": [-5, -5, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [1.66667, -5, 0], "material": 1, "mid": [5, 0, 0], "out": [5, -1.66667, 0], "pos": [5, -5, 0], "segment": "curve", "type": "bezierCorner"}
             ]
           }
         ],
@@ -515,9 +515,9 @@
           {
             "closed": false,
             "knots": [
-              {"in": [0, 0, 0], "mid": [5, 4.5, 0], "out": [3.33334, 4, 0], "pos": [0, 0, 0], "segment": "curve", "type": "corner"},
-              {"in": [6.66666, 6, 0], "mid": [15, 4.5, 0], "out": [13.3333, 6, 0], "pos": [10, 6, 0], "segment": "curve", "type": "smooth"},
-              {"in": [16.6667, 4, 0], "mid": null, "out": [20, 0, 0], "pos": [20, 0, 0], "segment": null, "type": "corner"}
+              {"in": [0, 0, 0], "material": 1, "mid": [5, 4.5, 0], "out": [3.33334, 4, 0], "pos": [0, 0, 0], "segment": "curve", "type": "corner"},
+              {"in": [6.66666, 6, 0], "material": 1, "mid": [15, 4.5, 0], "out": [13.3333, 6, 0], "pos": [10, 6, 0], "segment": "curve", "type": "smooth"},
+              {"in": [16.6667, 4, 0], "material": null, "mid": null, "out": [20, 0, 0], "pos": [20, 0, 0], "segment": null, "type": "corner"}
             ]
           }
         ],
@@ -572,14 +572,14 @@
           {
             "closed": true,
             "knots": [
-              {"in": [8, 1.89643, 0], "mid": [7.41383, 4.41384, 0], "out": [8, 4.10357, 0], "pos": [8, 3, 0], "segment": "curve", "type": "bezierCorner"},
-              {"in": [7.10358, 5, 0], "mid": [0, 5, 0], "out": [4.89642, 5, 0], "pos": [6, 5, 0], "segment": "curve", "type": "bezierCorner"},
-              {"in": [-4.89642, 5, 0], "mid": [-7.41383, 4.41384, 0], "out": [-7.10358, 5, 0], "pos": [-6, 5, 0], "segment": "curve", "type": "bezierCorner"},
-              {"in": [-8, 4.10357, 0], "mid": [-8, 0, 0], "out": [-8, 1.89643, 0], "pos": [-8, 3, 0], "segment": "curve", "type": "bezierCorner"},
-              {"in": [-8, -1.89643, 0], "mid": [-7.41383, -4.41384, 0], "out": [-8, -4.10357, 0], "pos": [-8, -3, 0], "segment": "curve", "type": "bezierCorner"},
-              {"in": [-7.10358, -5, 0], "mid": [0, -5, 0], "out": [-4.89642, -5, 0], "pos": [-6, -5, 0], "segment": "curve", "type": "bezierCorner"},
-              {"in": [4.89642, -5, 0], "mid": [7.41383, -4.41384, 0], "out": [7.10358, -5, 0], "pos": [6, -5, 0], "segment": "curve", "type": "bezierCorner"},
-              {"in": [8, -4.10357, 0], "mid": [8, 0, 0], "out": [8, -1.89643, 0], "pos": [8, -3, 0], "segment": "curve", "type": "bezierCorner"}
+              {"in": [8, 1.89643, 0], "material": 1, "mid": [7.41383, 4.41384, 0], "out": [8, 4.10357, 0], "pos": [8, 3, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [7.10358, 5, 0], "material": 1, "mid": [0, 5, 0], "out": [4.89642, 5, 0], "pos": [6, 5, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [-4.89642, 5, 0], "material": 1, "mid": [-7.41383, 4.41384, 0], "out": [-7.10358, 5, 0], "pos": [-6, 5, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [-8, 4.10357, 0], "material": 1, "mid": [-8, 0, 0], "out": [-8, 1.89643, 0], "pos": [-8, 3, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [-8, -1.89643, 0], "material": 1, "mid": [-7.41383, -4.41384, 0], "out": [-8, -4.10357, 0], "pos": [-8, -3, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [-7.10358, -5, 0], "material": 1, "mid": [0, -5, 0], "out": [-4.89642, -5, 0], "pos": [-6, -5, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [4.89642, -5, 0], "material": 1, "mid": [7.41383, -4.41384, 0], "out": [7.10358, -5, 0], "pos": [6, -5, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [8, -4.10357, 0], "material": 1, "mid": [8, 0, 0], "out": [8, -1.89643, 0], "pos": [8, -3, 0], "segment": "curve", "type": "bezierCorner"}
             ]
           }
         ],
@@ -2164,10 +2164,10 @@
           {
             "closed": true,
             "knots": [
-              {"in": [6, -3.31072, 0], "mid": [4.24152, 4.24152, 0], "out": [6, 3.31072, 0], "pos": [6, 0, 0], "segment": "curve", "type": "bezier"},
-              {"in": [3.31071, 6, 0], "mid": [-4.24152, 4.24152, 0], "out": [-3.31071, 6, 0], "pos": [0, 6, 0], "segment": "curve", "type": "bezier"},
-              {"in": [-6, 3.31072, 0], "mid": [-4.24152, -4.24152, 0], "out": [-6, -3.31072, 0], "pos": [-6, -5.24537e-07, 0], "segment": "curve", "type": "bezier"},
-              {"in": [-3.31071, -6, 0], "mid": [4.24152, -4.24152, 0], "out": [3.31071, -6, 0], "pos": [0, -6, 0], "segment": "curve", "type": "bezier"}
+              {"in": [6, -3.31072, 0], "material": 1, "mid": [4.24152, 4.24152, 0], "out": [6, 3.31072, 0], "pos": [6, 0, 0], "segment": "curve", "type": "bezier"},
+              {"in": [3.31071, 6, 0], "material": 1, "mid": [-4.24152, 4.24152, 0], "out": [-3.31071, 6, 0], "pos": [0, 6, 0], "segment": "curve", "type": "bezier"},
+              {"in": [-6, 3.31072, 0], "material": 1, "mid": [-4.24152, -4.24152, 0], "out": [-6, -3.31072, 0], "pos": [-6, -5.24537e-07, 0], "segment": "curve", "type": "bezier"},
+              {"in": [-3.31071, -6, 0], "material": 1, "mid": [4.24152, -4.24152, 0], "out": [3.31071, -6, 0], "pos": [0, -6, 0], "segment": "curve", "type": "bezier"}
             ]
           }
         ],
@@ -2218,10 +2218,10 @@
           {
             "closed": true,
             "knots": [
-              {"in": [5, 1.66667, 0], "mid": [0, 5, 0], "out": [1.66666, 5, 0], "pos": [5, 5, 0], "segment": "curve", "type": "bezierCorner"},
-              {"in": [-1.66666, 5, 0], "mid": [-5, 0, 0], "out": [-5, 1.66667, 0], "pos": [-5, 5, 0], "segment": "curve", "type": "bezierCorner"},
-              {"in": [-5, -1.66667, 0], "mid": [0, -5, 0], "out": [-1.66666, -5, 0], "pos": [-5, -5, 0], "segment": "curve", "type": "bezierCorner"},
-              {"in": [1.66666, -5, 0], "mid": [5, 0, 0], "out": [5, -1.66667, 0], "pos": [5, -5, 0], "segment": "curve", "type": "bezierCorner"}
+              {"in": [5, 1.66667, 0], "material": 1, "mid": [0, 5, 0], "out": [1.66666, 5, 0], "pos": [5, 5, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [-1.66666, 5, 0], "material": 1, "mid": [-5, 0, 0], "out": [-5, 1.66667, 0], "pos": [-5, 5, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [-5, -1.66667, 0], "material": 1, "mid": [0, -5, 0], "out": [-1.66666, -5, 0], "pos": [-5, -5, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [1.66666, -5, 0], "material": 1, "mid": [5, 0, 0], "out": [5, -1.66667, 0], "pos": [5, -5, 0], "segment": "curve", "type": "bezierCorner"}
             ]
           }
         ],
@@ -2276,22 +2276,22 @@
           {
             "closed": true,
             "knots": [
-              {"in": [5, -2, 0], "mid": [0, 15, 0], "out": [0, 10, 0], "pos": [0, 0, 0], "segment": "line", "type": "corner"},
-              {"in": [0, 20, 0], "mid": [15, 30, 0], "out": [15, 30, 0], "pos": [0, 30, 0], "segment": "line", "type": "corner"},
-              {"in": [30, 30, 0], "mid": [37.5, 15, 0], "out": [40, 25, 0], "pos": [30, 30, 0], "segment": "curve", "type": "bezierCorner"},
-              {"in": [40, 5, 0], "mid": [22.5, -3, 0], "out": [30, 0, 0], "pos": [30, 0, 0], "segment": "line", "type": "bezierCorner"},
-              {"in": [22.5, -3, 0], "mid": [7.5, -3, 0], "out": [10, -4, 0], "pos": [15, -6, 0], "segment": "line", "type": "corner"}
+              {"in": [5, -2, 0], "material": 5, "mid": [0, 15, 0], "out": [0, 10, 0], "pos": [0, 0, 0], "segment": "line", "type": "corner"},
+              {"in": [0, 20, 0], "material": 5, "mid": [15, 30, 0], "out": [15, 30, 0], "pos": [0, 30, 0], "segment": "line", "type": "corner"},
+              {"in": [30, 30, 0], "material": 7, "mid": [37.5, 15, 0], "out": [40, 25, 0], "pos": [30, 30, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [40, 5, 0], "material": 5, "mid": [22.5, -3, 0], "out": [30, 0, 0], "pos": [30, 0, 0], "segment": "line", "type": "bezierCorner"},
+              {"in": [22.5, -3, 0], "material": 4, "mid": [7.5, -3, 0], "out": [10, -4, 0], "pos": [15, -6, 0], "segment": "line", "type": "corner"}
             ]
           },
           {
             "closed": true,
             "knots": [
-              {"in": [20, 13.2679, 0], "mid": [19.5, 17.5981, 0], "out": [20, 16.7321, 0], "pos": [21, 15, 0], "segment": "line", "type": "corner"},
-              {"in": [19, 18.4641, 0], "mid": [15, 20.1962, 0], "out": [16, 20.1962, 0], "pos": [18, 20.1962, 0], "segment": "line", "type": "corner"},
-              {"in": [14, 20.1962, 0], "mid": [10.5, 17.5981, 0], "out": [11, 18.4641, 0], "pos": [12, 20.1962, 0], "segment": "line", "type": "corner"},
-              {"in": [10, 16.7321, 0], "mid": [10.5, 12.4019, 0], "out": [10, 13.2679, 0], "pos": [9, 15, 0], "segment": "line", "type": "corner"},
-              {"in": [11, 11.5359, 0], "mid": [15, 9.80385, 0], "out": [14, 9.80385, 0], "pos": [12, 9.80385, 0], "segment": "line", "type": "corner"},
-              {"in": [16, 9.80385, 0], "mid": [19.5, 12.4019, 0], "out": [19, 11.5359, 0], "pos": [18, 9.80385, 0], "segment": "line", "type": "corner"}
+              {"in": [20, 13.2679, 0], "material": 11, "mid": [19.5, 17.5981, 0], "out": [20, 16.7321, 0], "pos": [21, 15, 0], "segment": "line", "type": "corner"},
+              {"in": [19, 18.4641, 0], "material": 11, "mid": [15, 20.1962, 0], "out": [16, 20.1962, 0], "pos": [18, 20.1962, 0], "segment": "line", "type": "corner"},
+              {"in": [14, 20.1962, 0], "material": 12, "mid": [10.5, 17.5981, 0], "out": [11, 18.4641, 0], "pos": [12, 20.1962, 0], "segment": "line", "type": "corner"},
+              {"in": [10, 16.7321, 0], "material": 12, "mid": [10.5, 12.4019, 0], "out": [10, 13.2679, 0], "pos": [9, 15, 0], "segment": "line", "type": "corner"},
+              {"in": [11, 11.5359, 0], "material": 12, "mid": [15, 9.80385, 0], "out": [14, 9.80385, 0], "pos": [12, 9.80385, 0], "segment": "line", "type": "corner"},
+              {"in": [16, 9.80385, 0], "material": 12, "mid": [19.5, 12.4019, 0], "out": [19, 11.5359, 0], "pos": [18, 9.80385, 0], "segment": "line", "type": "corner"}
             ]
           }
         ],
@@ -2346,10 +2346,10 @@
           {
             "closed": true,
             "knots": [
-              {"in": [7, 1.66666, 0], "mid": [0, 5, 0], "out": [2.33333, 5, 0], "pos": [7, 5, 0], "segment": "curve", "type": "bezierCorner"},
-              {"in": [-2.33333, 5, 0], "mid": [-7, 0, 0], "out": [-7, 1.66666, 0], "pos": [-7, 5, 0], "segment": "curve", "type": "bezierCorner"},
-              {"in": [-7, -1.66666, 0], "mid": [0, -5, 0], "out": [-2.33333, -5, 0], "pos": [-7, -5, 0], "segment": "curve", "type": "bezierCorner"},
-              {"in": [2.33333, -5, 0], "mid": [7, 0, 0], "out": [7, -1.66666, 0], "pos": [7, -5, 0], "segment": "curve", "type": "bezierCorner"}
+              {"in": [7, 1.66666, 0], "material": 1, "mid": [0, 5, 0], "out": [2.33333, 5, 0], "pos": [7, 5, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [-2.33333, 5, 0], "material": 1, "mid": [-7, 0, 0], "out": [-7, 1.66666, 0], "pos": [-7, 5, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [-7, -1.66666, 0], "material": 1, "mid": [0, -5, 0], "out": [-2.33333, -5, 0], "pos": [-7, -5, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [2.33333, -5, 0], "material": 1, "mid": [7, 0, 0], "out": [7, -1.66666, 0], "pos": [7, -5, 0], "segment": "curve", "type": "bezierCorner"}
             ]
           }
         ],
@@ -2360,7 +2360,7 @@
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 60, 120, 0]
     }
   ],
-  "oracle_version": 11,
+  "oracle_version": 12,
   "render": {"camera": null, "height": 480, "pixel_aspect": 1, "width": 640},
   "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
   "time": 0,

@@ -93,6 +93,9 @@ class TestFixtures(unittest.TestCase):
                         # the oracle names no segment after the last knot of an open spline
                         self.assertEqual([shapes.SEGMENT_NAMES[x.segment] for x in sp.knots][:len(w["knots"]) - 1
                                          + sp.closed], [x["segment"] for x in w["knots"] if x["segment"]], where)
+                        # each segment's material ID: zero-based here, 1-based in the oracle (parametric shapes: 1)
+                        self.assertEqual([x.material + 1 for x in sp.knots][:len(w["knots"]) - 1 + sp.closed],
+                                         [x["material"] for x in w["knots"] if x["segment"]], where)
                         for j, (x, y) in enumerate(zip(sp.knots, w["knots"])):
                             _close(self, x.point + x.in_vec + x.out_vec, y["pos"] + y["in"] + y["out"],
                                    "%s knot %d" % (where, j))

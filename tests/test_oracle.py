@@ -31,7 +31,7 @@ CAMERA_KEYS = ["fov", "hither", "manual_clip", "ortho", "tdist", "yon"]
 RENDER_KEYS = ["camera", "height", "pixel_aspect", "width"]
 SHAPE_KEYS = ["adaptive", "angle", "display_render_mesh", "length", "optimize", "rectangular", "renderable", "sides",
               "splines", "steps", "thickness", "width"]
-KNOT_KEYS = ["in", "mid", "out", "pos", "segment", "type"]
+KNOT_KEYS = ["in", "material", "mid", "out", "pos", "segment", "type"]
 KNOT_TYPES = ("corner", "smooth", "bezier", "bezierCorner")
 GRAPH_KEYS = ["blocks", "class_id", "class_name", "index", "name", "parts", "subs", "superclass"]
 BLOCK_KEYS = ["block_id", "controllers", "kind", "params", "ref"]
@@ -121,7 +121,7 @@ class OracleFiles(unittest.TestCase):
             with self.subTest(name):
                 o = _oracle(name)
                 self.assertEqual(list(o), TOP_KEYS)
-                self.assertEqual(o["oracle_version"], 11)
+                self.assertEqual(o["oracle_version"], 12)
                 self.assertEqual(list(o["render"]), RENDER_KEYS)
                 self.assertTrue(o["render"]["width"] > 0 and o["render"]["height"] > 0)
                 self.assertEqual(o["file"], name + ".max")
@@ -191,6 +191,9 @@ class OracleFiles(unittest.TestCase):
                 self.assertEqual(knot["segment"] is None, last)
                 self.assertEqual(knot["mid"] is None, last)
                 self.assertIn(knot["segment"], (None, "curve", "line"))
+                # the segment's material ID, 1-based as 3ds Max shows it
+                self.assertEqual(knot["material"] is None, last)
+                self.assertTrue(last or (type(knot["material"]) is int and knot["material"] >= 1), knot["material"])
 
     def _check_maps(self, maps, faces):
         """Per channel a UVW Map writes, ascending: per triangle corner position, normal and map vertex."""

@@ -2698,10 +2698,10 @@
           {
             "closed": true,
             "knots": [
-              {"in": [20, 5, 0], "mid": [0, 15, 0], "out": [6.66666, 15, 0], "pos": [20, 15, 0], "segment": "curve", "type": "bezierCorner"},
-              {"in": [-6.66666, 15, 0], "mid": [-20, 0, 0], "out": [-20, 5, 0], "pos": [-20, 15, 0], "segment": "curve", "type": "bezierCorner"},
-              {"in": [-20, -5, 0], "mid": [0, -15, 0], "out": [-6.66666, -15, 0], "pos": [-20, -15, 0], "segment": "curve", "type": "bezierCorner"},
-              {"in": [6.66666, -15, 0], "mid": [20, 0, 0], "out": [20, -5, 0], "pos": [20, -15, 0], "segment": "curve", "type": "bezierCorner"}
+              {"in": [20, 5, 0], "material": 1, "mid": [0, 15, 0], "out": [6.66666, 15, 0], "pos": [20, 15, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [-6.66666, 15, 0], "material": 1, "mid": [-20, 0, 0], "out": [-20, 5, 0], "pos": [-20, 15, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [-20, -5, 0], "material": 1, "mid": [0, -15, 0], "out": [-6.66666, -15, 0], "pos": [-20, -15, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [6.66666, -15, 0], "material": 1, "mid": [20, 0, 0], "out": [20, -5, 0], "pos": [20, -15, 0], "segment": "curve", "type": "bezierCorner"}
             ]
           }
         ],
@@ -3841,7 +3841,7 @@
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 300, 0]
     }
   ],
-  "oracle_version": 11,
+  "oracle_version": 12,
   "render": {"camera": null, "height": 480, "pixel_aspect": 1, "width": 640},
   "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
   "time": 0,

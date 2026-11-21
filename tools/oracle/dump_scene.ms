@@ -17,7 +17,7 @@ global MaxDropOracle
 
 struct MaxDropOracleStruct
 (
-	version = 11,
+	version = 12,
 
 	fn num v =
 	(
@@ -206,6 +206,7 @@ struct MaxDropOracleStruct
 			local segs = numSegments t s
 			local knots = for k = 1 to numKnots t s collect inline #( \
 				#("in", vec ((getInVec t s k) * inv)), \
+				#("material", if k <= segs then intOrNull (getMaterialID t s k) else "null"), \
 				#("mid", if k <= segs then vec ((interpBezier3D t s k 0.5) * inv) else "null"), \
 				#("out", vec ((getOutVec t s k) * inv)), \
 				#("pos", vec ((getKnotPoint t s k) * inv)), \
