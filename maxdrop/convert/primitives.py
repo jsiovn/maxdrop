@@ -25,7 +25,8 @@ The file comes from anywhere: a missing block, an animated parameter or one that
 PrimitiveError; segments below 3ds Max's own minimum are raised to it, a mesh past MAX_CORNERS face corners is
 refused, and so is one whose points or UVs are not finite (sizes near the float range). A size of 0 builds the flat
 or collapsed mesh 3ds Max builds (UVs that would divide by it take 0 there). No bpy; numpy is imported when a mesh is
-made, and every generator works on whole arrays of points and faces, in the order 3ds Max makes them.
+made (or a chopped hemisphere's rings are counted), and every generator works on whole arrays of points and faces, in
+the order 3ds Max makes them.
 """
 import collections
 import math
@@ -37,8 +38,8 @@ ChunkError = chunks.ChunkError
 
 SLOT_BLOCK = 0
 # Face corners one primitive may make (a file can ask for any number of segments): 524,288 quads, measured at the
-# cap in 0.1 to 0.3 s (Box, Plane and GeoSphere the slowest) and 200 MB at most, of the order of
-# convert/extrude.py's budget.
+# cap in 0.1 to 0.4 s (Box, Plane and GeoSphere the slowest; a GeoSphere's hemisphere slerps its lower half too, about
+# twice a full GeoSphere's lattice) and a few hundred MB at most, of the order of convert/extrude.py's budget.
 MAX_CORNERS = 1 << 21
 _TAU = 2.0 * math.pi
 _SEAM = 1e-6
@@ -425,9 +426,9 @@ def _sphere_rings(p):
     the cut, the last on it."""
     n = p.segs
     h = min(max(p.hemisphere, 0.0), 0.9999)  # 3ds Max stops short of a point
-    if h == 0.0:
-        return n // 2 - 1, lambda k: k * _TAU / n, math.pi
     cut = (1.0 - h) * math.pi
+    if cut >= math.pi:  # also a hemisphere too small to move the cut
+        return n // 2 - 1, lambda k: k * _TAU / n, math.pi
     if p.squash:
         rows = n // 2 - 1
         step = cut / (n / 2.0 - 1.0)
@@ -437,10 +438,12 @@ def _sphere_rings(p):
     cut32 = (f32(1.0) - f32(h)) * f32(math.pi)
     delta32 = f32(2.0) * f32(math.pi) / f32(n)
     kept = int(cut32 / delta32)
-    while kept > 0 and not f32(kept) * delta32 <= cut32:
-        kept -= 1
-    while f32(kept + 1) * delta32 <= cut32:
-        kept += 1
+    # a step or two either way; bounded, as segments a file stores as a huge float leave k * delta32 unchanged
+    for _ in range(4):
+        if kept > 0 and not f32(kept) * delta32 <= cut32:
+            kept -= 1
+        elif f32(kept + 1) * delta32 <= cut32:
+            kept += 1
     return kept + 1, lambda k: k * _TAU / n if k <= kept else cut, cut
 
 
@@ -450,8 +453,8 @@ def _sphere(b, p):
     cut (with Slice, the last ring's axis point). Faces: the top fan, the quads between rings, the bottom fan or
     the hemisphere's base (ID 1, group 2); with Slice each row ends with the faces of its two cut planes (the
     end's ID 3, group 4, then the start's ID 4, group 8). U across the part kept as a fraction of a whole turn, V
-    down the rows (1 - 2k / segs; a hemisphere's 1 - k / (rings + 1)); the cut planes U 0 on the axis, 1 at the
-    rim."""
+    down the rows (1 - 2k / segs, a hemisphere's base center one row below its last ring); the cut planes U 0 on
+    the axis, 1 at the rim."""
     np = b.np
     r, n = p.radius, p.segs
     smooth = p.smooth
@@ -678,12 +681,9 @@ def _cylinder_pie(b, p, r1, r2):
     j1 = jj + 1
     u0 = 0.75 + (first + jj * step) / _TAU
 
-    def us(rho, seam=True):
-        """(U at the start, at the end) of faces jj on a ring of radius rho, as _cylinder's: seam False for a
-        face that closes on a point at its top."""
+    def us(rho):
+        """(U at the start, at the end) of a fan's faces jj on a ring of radius rho, as _cylinder's."""
         a, e = _seam(np, u0, step / _TAU)
-        if not seam:
-            a, e = u0 % 1.0, (u0 + step / _TAU) % 1.0
         if rho == 0.0:
             a = e = np.full(ns, 0.5)
         return (a * around, e * around) if rw else (a, e)
@@ -1060,6 +1060,8 @@ def _faces(p):
     if c == classids.PYRAMID:
         return 2 * (v["width_segs"] + v["depth_segs"]) * (v["height_segs"] + 1)
     if c == classids.SPHERE:
+        if v["segs"] > MAX_CORNERS:  # refused on its segments alone (a file may store them as a huge float)
+            return v["segs"] * v["segs"]
         rows, _angle, cut = _sphere_rings(p)
         caps = (2 * rows + (0 if cut != math.pi else 2)) if v["slice"] else 0
         return v["segs"] * (rows + 1) + caps

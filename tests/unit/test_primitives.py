@@ -559,8 +559,9 @@ class HandMadeTest(unittest.TestCase):
                 self.assertEqual(len(data.loop_starts), prim._faces(p))
 
     def test_hostile_slices_and_hemispheres(self):
-        """Slice angles near the float range or many turns, a hemisphere below 0 or past 1, the fewest segments: a
-        MeshData with finite points and UVs, or a PrimitiveError."""
+        """Slice angles near the float range or many turns, a hemisphere below 0, past 1 or too small to move the cut,
+        the fewest segments, segments stored as huge floats: a MeshData with finite points and UVs, or a
+        PrimitiveError, at once."""
         slices = {classids.SPHERE: (7, 8, 9), classids.CYLINDER: (6, 7, 8), classids.CONE: (7, 8, 9),
                   classids.TUBE: (7, 8, 9), classids.TORUS: (7, 8, 9)}
         sizes = {classids.SPHERE: {0: 1.0, 1: 4}, classids.CYLINDER: {0: 1.0, 1: 1.0, 4: 3},
@@ -570,9 +571,15 @@ class HandMadeTest(unittest.TestCase):
         for class_id, (on, a, b) in slices.items():
             for x, y in ((1e30, -3e38), (3e38, 3e38), (0.0, 1e-30), (-7.0 * math.pi, 41.0), (1e-7, 0.0)):
                 cases.append((class_id, {**sizes[class_id], on: 1, a: x, b: y}))
-        for h in (-5.0, 5.0, 0.9999, 1e30, 1e-30):
+        for h in (-5.0, 5.0, 0.9999, 1e30, 1e-30, 1e-17):
             for squash in (0, 1):
                 cases.append((classids.SPHERE, {0: 1.0, 1: 5, 3: h, 4: squash, 5: 1, 7: 1, 8: 1.0, 9: 2.0}))
+        # segments stored as a huge float: refused at once, not counted ring by ring
+        for segs in (1e20, 3e38, 1e39, float(2 ** 31 - 1)):
+            for squash in (0, 1):
+                cases.append((classids.SPHERE, {0: 1.0, 1: segs, 3: 0.5, 4: squash, 7: 1}))
+            cases.append((classids.GEOSPHERE, {0: 1.0, 1: segs, 3: 1}))
+            cases.append((classids.CYLINDER, {0: 1.0, 1: 1.0, 2: segs, 4: segs, 6: 1}))
         for class_id, values in cases:
             with self.subTest(cls=class_id, values=values):
                 p, _ = prim.params_of(class_id, Block(values))
