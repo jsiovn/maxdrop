@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "maxdrop"
-version = "1.0.0"
+version = "1.0.1"
 name = "MaxDrop"
 tagline = "Import 3ds Max .max scenes with materials, no 3ds Max needed"
 maintainer = "jsiovn"

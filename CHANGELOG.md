@@ -8,6 +8,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-11-22
+
 ### Added
 
 - Maps: a Falloff's edited mix curve is drawn as a Float Curve on its ratio, as 3ds Max evaluates it (a curve that
@@ -54,7 +56,6 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   color (0.5, 0.5, 1) it renders (flat in a bump slot), instead of being left out with a line in the report.
   Measured in 3ds Max 2020 and V-Ray 5.2; Corona not measured. In a normal map's normal slot such an empty map is
   still left out with a line in the report (V-Ray tilts the normal by that white).
-
 - Import: Esc while a windowed import reads a very large mesh stops the reading inside that mesh, so the next
   import can start at once (one mesh of 5.6 million face corners kept it busy for about a second more).
 

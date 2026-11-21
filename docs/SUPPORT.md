@@ -1,6 +1,6 @@
 # What MaxDrop imports
 
-**This page describes version 1.0.0.** Nodes, meshes, transforms, hierarchy, instances, layers, scene units and
+**This page describes version 1.0.1.** Nodes, meshes, transforms, hierarchy, instances, layers, scene units and
 materials are read by MaxDrop's own reader; the engine of [io_scene_max](https://github.com/nrgsille76/io_scene_max)
 1.9.2 that 0.0.3 still used for materials is gone. From 0.0.5 the room shell arrives too (shapes, Extrude, UVW
 Map), as do nine of the standard primitives and TurboSmooth, MeshSmooth, Shell and Symmetry as Blender modifiers.
@@ -11,6 +11,10 @@ Falloff, Output and RGB Tint maps, Composite's blend modes and masks and Color C
 nodes, files of 3ds Max 2012 and older are read with their names (checked on made-up data), and limits refuse a
 hostile file instead of running Blender out of memory. A scene pack (`.zip`, `.rar`, `.7z`) is unpacked and its
 `.max` imported (see [Files](#files)), and several `.max` files chosen at once are imported one after the other.
+From 1.0.1 a V-Ray dome light becomes the scene's World, Corona's layered, skin and switch materials and CoronaMix's
+operations are converted, Slice and hemispheres of primitives, an Extrude's shape IDs and a shape's corner radius,
+outline, material and rectangular section are built as 3ds Max builds them, and a Falloff's mix curve, the LookAt
+Constraint's offset and orientation and the lights' shadow switches are read.
 
 How far to trust the list: MaxDrop's test files (`tests/fixtures/`, saved by 3ds Max 2020) are compared with what
 3ds Max itself reports for every node: world matrix, bounding box, vertex and face counts, parents, instances,
