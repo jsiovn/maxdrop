@@ -133,8 +133,12 @@ class OracleFiles(unittest.TestCase):
                     self.assertEqual(list(n), NODE_KEYS)
                     for m in n["modifiers"]:
                         self.assertEqual(list(m), MODIFIER_KEYS)
-                        self.assertEqual(len(m["context_tm"]), 12)
-                        self.assertEqual((len(m["context_bbox_min"]), len(m["context_bbox_max"])), (3, 3))
+                        # getModContextTM answers undefined for a world-space modifier (stack_wsm): no context
+                        if m["context_tm"] is None:
+                            self.assertEqual((m["context_bbox_min"], m["context_bbox_max"]), (None, None))
+                        else:
+                            self.assertEqual(len(m["context_tm"]), 12)
+                            self.assertEqual((len(m["context_bbox_min"]), len(m["context_bbox_max"])), (3, 3))
                     for cid in [n["base_class_id"]] + [m["class_id"] for m in n["modifiers"]]:
                         self.assertEqual(len(cid), 2)
                         self.assertTrue(all(CLASS_ID.match(c) for c in cid), cid)
@@ -394,6 +398,22 @@ class OracleFiles(unittest.TestCase):
         self.assertEqual(stack("FixtureNested"), [("Taper", True, True, True)])
         self.assertEqual(stack("FixtureNestedRef"), [("Twist", True, True, True), ("Taper", True, True, True)])
         self.assertEqual(by_name["FixtureNested"]["instances"], by_name["FixtureNestedRef"]["instances"])
+
+    def test_stack_wsm(self):
+        """A Map Scaler binding (world-space) lists above the object-space stack, without a modifier context."""
+        by_name = {n["name"]: n for n in _oracle("stack_wsm")["nodes"]}
+
+        def stack(name):  # top to bottom, as the oracle lists it
+            return [(m["class_id"], m["name"], m["context_tm"] is None) for m in by_name[name]["modifiers"]]
+
+        binding = (["0x0dadada2", "0x00000000"], "Map Scaler Binding", True)
+        self.assertEqual(stack("FixtureWSM"), [binding, (["0x000f72b1", "0x00000000"], "UVW Map", False)])
+        self.assertEqual(stack("FixtureWSMOnly"), [binding])
+        for n in by_name.values():
+            self.assertEqual(n["base_class_id"], ["0x1bf8338d", "0x192f6098"])
+            self.assertEqual((n["base_verts"], n["base_faces"], n["eval_faces"]), (8, 6, 12))
+        self.assertEqual([c["channel"] for c in by_name["FixtureWSM"]["eval_maps"]], [1])
+        self.assertIsNone(by_name["FixtureWSMOnly"]["eval_maps"])
 
     def test_shapes(self):
         by_name = {n["name"]: n for n in _oracle("shapes")["nodes"]}

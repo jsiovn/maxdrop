@@ -76,8 +76,8 @@ Reference slots of a node, checked on every node of every fixture (`test_scene.p
 - slot 1: the object. With no modifier it is the base object, whose ClassID and superclass equal the oracle's
   `base_class_id` and `base_superclass`. With modifiers it is a derived object: special id `0x2032`, past the
   class directory, whose references are its modifiers top to bottom and then the base object (modifier_pivot:
-  Bend, UVW Map, Editable Poly, the oracle's order; `Scene.object_stack` follows them; see
-  [Modifiers](#modifiers)). Nodes whose stacks end in the same base object are exactly the oracle's `instances`
+  Bend, UVW Map, Editable Poly, the oracle's order; `Scene.object_stack` follows them, and a world-space
+  derived object `0x2033` above one, stack_wsm; see [Modifiers](#modifiers)). Nodes whose stacks end in the same base object are exactly the oracle's `instances`
   (instances: three instances share the source's object, the copy has its own; modifier_pivot: a bare source and two references with modifiers of their own,
   three slot-1 objects on one base object);
 - slot 3: the material, present exactly when the oracle names one (the group head of layers_flags has no
@@ -109,7 +109,7 @@ hidden, frozen and renderable flags against the oracle.
 ## Modifiers
 
 A node's slot 1 with modifiers is a derived object `0x2032` (`reader/modifiers.py`, `tests/unit/test_modifiers.py`
-against the oracle's `modifiers` on every fixture; stack_basic and modifier_pivot have stacks):
+against the oracle's `modifiers` on every fixture; stack_basic, modifier_pivot and stack_wsm have stacks):
 
 | Chunk | Content | Shown by |
 |---|---|---|
@@ -151,10 +151,16 @@ Position/Rotation/Scale, center Position XYZ, block]`; TurboSmooth `[ParamBlock2
 ParamBlock2, UVW Map, Taper, Twist and Noise the old ParamBlock (UVW Map: index 0 map type, 9 to 11 length, width,
 height, see [UVW Map](#uvw-map); TurboSmooth: parameter 0 iterations).
 
-A world-space modifier (a "binding", superclass `0x820`) sits in a derived object of its own, special id `0x2033`:
-a scratch file of 3ds Max 2020 (one box, a UVW Map, then a Map Scaler binding; not committed) had node slot 1 =
-`0x2033` with references `[Map Scaler, the 0x2032 derived object]` and the same `0x2500` layout. `modifiers.py`
-follows it; `Scene.object_stack` does not yet. Neither corpus scene has one.
+A world-space modifier (a "binding", superclass `0x820`) sits in a derived object of its own, special id `0x2033`,
+past the class directory like `0x2032` (stack_wsm, `test_modifiers.py`, `test_scene.py`): FixtureWSM (a UVW Map, then
+a Map Scaler binding) has node slot 1 = `0x2033` with references `[Map Scaler, the 0x2032 derived object]`, that one
+`[UVW Map, Editable Poly]`; FixtureWSMOnly (a Map Scaler binding alone) `0x2033` with `[Map Scaler, Editable Poly]`.
+The same chunks as a `0x2032`: `0x2034`, `0x204B`, one `0x2500` per modifier slot (an identity `0x2510`, the box of
+the stack below in `0x2511`, a `0x2513` of `00 01 04 00`), an empty `0x2501`. So the world-space modifiers come above
+every object-space one; `modifiers.py` marks them `world_space` and `Scene.object_stack` follows both ids. The
+binding keeps an empty `0x0100` name: MaxDrop names it by the class directory (MapScaler), 3ds Max shows "Map Scaler
+Binding" (the oracle's `name`), and the oracle's context of it is `null` (`getModContextTM` answers `undefined` for
+a world-space modifier). Its references: `[-1, -1, a Map Scaler object]`. Neither corpus scene has one.
 
 ## Layers
 

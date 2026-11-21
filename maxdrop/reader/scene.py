@@ -6,7 +6,7 @@
 
     with CompoundFile(path) as cf:
         scene = Scene.from_file(cf)
-        scene.entry(i)                  # ClassEntry of object i, None for a special id (0x2032)
+        scene.entry(i)                  # ClassEntry of object i, None for a special id (0x2032, 0x2033)
         scene.refs(i)                   # {slot: object index}
         node = scene.node(scene.node_indices[0])
         node.name, node.parent, node.flags, node.pivot_position, node.object
@@ -26,7 +26,9 @@ member (0x100); bit 0x8000 of the u32 in 0x099C is renderable. A layer is a Base
 0x1020 the same hidden and frozen bits, bit 0x8000 of 0x1050 renderable and, when the byte 0x1090 is not 0, 0x10B0
 the i32 object index of its parent layer. The Layer Manager references the layers in its order (slot 0 = layer
 "0"). A derived object (special id 0x2032) references [modifier, ..., base object], the top
-of the stack first; its base can be another derived object. docs/FORMAT.md says which fixture shows what.
+of the stack first; its base can be another derived object. A world-space modifier sits in a derived object of its
+own (special id 0x2033), [world-space modifiers, the object's 0x2032 derived object or its base object], read the
+same way. docs/FORMAT.md says which fixture shows what.
 
 Nodes are keyed by object index, never by name: two nodes with the same name are two nodes. A parent that is not
 a Node (the RootNode, another class, out of range) means top level. A parent cycle is cut at its member with the
@@ -46,7 +48,8 @@ from . import chunks, classdir, classids, strings as strings_mod
 ChunkError = chunks.ChunkError
 
 ROOT_IDS = frozenset((0x2014, 0x2022, 0x2023, 0x2025))  # root container ids seen so far; others are read the same way
-DERIVED_OBJECT = 0x2032
+DERIVED_OBJECT, WSM_DERIVED_OBJECT = 0x2032, 0x2033
+DERIVED_IDS = (DERIVED_OBJECT, WSM_DERIVED_OBJECT)
 MAX_REFS = 1 << 20  # per object and chunk: a hostile payload must not become millions of Python ints
 MAX_NODES = 1 << 20  # scene B, the largest corpus scene, has 2 251; Blender is unusable long before this
 SLOT_TM, SLOT_OBJECT, SLOT_MATERIAL, SLOT_LAYER = 0, 1, 3, 6
@@ -182,8 +185,8 @@ class Scene:
         self._bad_parents = ()
         self._layers = {}
         self._layer_parents = None
-        # 0x2032 stands for a derived object only past the class directory, where no class can claim it
-        self._derived = DERIVED_OBJECT if classes.get(DERIVED_OBJECT) is None else None
+        # 0x2032 and 0x2033 stand for derived objects only past the class directory, where no class can claim them
+        self._derived = frozenset(x for x in DERIVED_IDS if classes.get(x) is None)
         node_classes, root_classes, layer_classes, manager_classes = set(), set(), set(), set()
         for entry in classes:
             if entry.superclass == classids.SC_BASENODE:
@@ -248,8 +251,9 @@ class Scene:
         return entry is not None and entry.superclass == superclass and entry.class_id == class_id
 
     def is_derived(self, i):
-        """Whether object i is a derived object (an object with its modifier stack)."""
-        return self.class_index(i) == self._derived
+        """Whether object i is a derived object (an object with its modifier stack, 0x2032, or its world-space
+        modifiers, 0x2033)."""
+        return self.class_index(i) in self._derived
 
     def _target(self, i, value):
         if not 0 <= value < len(self._ids):
@@ -490,7 +494,7 @@ class Scene:
         """The object behind reference i: through derived objects down to the base object."""
         self._check(i)
         modifiers, derived, seen = [], [], set()
-        while i is not None and self._ids[i] == self._derived:
+        while i is not None and self._ids[i] in self._derived:
             if i in seen:
                 raise ChunkError("derived object %d references itself through its stack" % i)
             seen.add(i)

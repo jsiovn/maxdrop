@@ -144,7 +144,8 @@ class Fixtures(unittest.TestCase):
 
     def test_the_fixtures_with_a_uvw_map(self):
         self.assertEqual(sorted(os.path.basename(p) for p, _o, _d in self.cases),
-                         ["modifier_pivot.max", "stack_basic.max", "uvwmap.max", "uvwmap_oblique.max"])
+                         ["modifier_pivot.max", "stack_basic.max", "stack_wsm.max", "uvwmap.max",
+                          "uvwmap_oblique.max"])
 
     def test_uv_of_every_corner_equals_the_oracle(self):
         compared = 0

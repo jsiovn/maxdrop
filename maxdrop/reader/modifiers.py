@@ -36,11 +36,10 @@ import math
 import struct
 
 from . import chunks, classids, pblock
+from .scene import DERIVED_IDS, DERIVED_OBJECT, WSM_DERIVED_OBJECT  # noqa: F401  (tools/census.py)
 
 ChunkError = chunks.ChunkError
 
-DERIVED_OBJECT, WSM_DERIVED_OBJECT = 0x2032, 0x2033
-DERIVED_IDS = (DERIVED_OBJECT, WSM_DERIVED_OBJECT)
 _CONTEXT, _CONTEXT_TM, _CONTEXT_BOX = 0x2500, 0x2510, 0x2511
 _INFO, _NAME, _OFF, _OFF_IN_VIEWS, _OFF_IN_RENDERS = 0x39BF, 0x0100, 0x0110, 0x0120, 0x0130
 MODIFIER_SUPERCLASSES = (classids.SC_OSMODIFIER, classids.SC_WSMODIFIER)
@@ -118,8 +117,7 @@ class Modifiers:
 
     def _derived_kind(self, i):
         """0x2032 or 0x2033 when object i is a derived object (a special id no class claims), else None."""
-        cid = self.scene.class_index(i)
-        return cid if cid in DERIVED_IDS and self.scene.entry(i) is None else None
+        return self.scene.class_index(i) if self.scene.is_derived(i) else None
 
     def _superclass(self, i):
         entry = self.scene.entry(i) if 0 <= i < len(self.scene) else None

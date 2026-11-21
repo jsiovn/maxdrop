@@ -71,13 +71,15 @@ class TestFixtures(unittest.TestCase):
                 self.assertEqual(got, want)
                 node_rows = [r for r in result["classes"] if r["name"] == "Node"]
                 self.assertEqual([r["count"] for r in node_rows], [oracle["node_count"]])
-                # no fixture shares a whole stack: one outermost derived object per node with modifiers
+                # no fixture shares a whole stack: one outermost derived object per node with modifiers, and one
+                # more under it when world-space modifiers (no context in the oracle) sit above object-space ones
                 mods = result["modifiers"]
                 depths = {}
                 for stack in stacks:
                     depths[str(len(stack))] = depths.get(str(len(stack)), 0) + 1
+                both = sum(1 for stack in stacks if len({m["context_tm"] is None for m in stack}) == 2)
                 self.assertEqual((mods["stacks"], mods["stack_depths"], mods["derived_objects"], mods["unreadable"],
-                                  mods["nodes_with_issues"]), (len(stacks), depths, len(stacks), 0, 0))
+                                  mods["nodes_with_issues"]), (len(stacks), depths, len(stacks) + both, 0, 0))
                 # nodes per modifier class, each class once per node
                 by_class = {}
                 for stack in stacks:

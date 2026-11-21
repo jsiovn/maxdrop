@@ -37,6 +37,9 @@ modifiers = importlib.import_module(_PKG + ".reader.modifiers")
 ChunkError = chunks.ChunkError
 
 
+IDENTITY_4 = ((1.0, 0.0, 0.0, 0.0), (0.0, 1.0, 0.0, 0.0), (0.0, 0.0, 1.0, 0.0), (0.0, 0.0, 0.0, 1.0))
+
+
 def _oracle(path):
     with open(path[:-4] + ".oracle.json", encoding="ascii") as f:
         return json.load(f)
@@ -79,19 +82,27 @@ class TestFixtures(unittest.TestCase):
                     self.assertEqual(st.base, plain.base if plain is not None else None, label)
                     want = list(reversed(n["modifiers"]))
                     self.assertEqual([m.class_id for m in st.modifiers], [_cid(m["class_id"]) for m in want], label)
-                    self.assertEqual([m.name for m in st.modifiers], [m["name"] for m in want], label)
+                    # getModContextTM answers undefined for a world-space modifier: the oracle's context is null
+                    self.assertEqual([m.world_space for m in st.modifiers], [w["context_tm"] is None for w in want],
+                                     label)
+                    # a binding keeps an empty name: the class directory's (MapScaler), not the one 3ds Max shows
+                    # (Map Scaler Binding)
+                    self.assertEqual([m.name for m in st.modifiers if not m.world_space],
+                                     [w["name"] for w in want if w["context_tm"] is not None], label)
                     self.assertEqual([(m.enabled, m.enabled_in_views, m.enabled_in_renders) for m in st.modifiers],
                                      [(m["enabled"], m["enabled_in_views"], m["enabled_in_renders"]) for m in want],
                                      label)
                     for m, w in zip(st.modifiers, want):
                         self.assertIsNotNone(m.context, label)
+                        if m.world_space:  # its context in the file: identity, the box of the stack below
+                            self.assertEqual(m.context.tm, IDENTITY_4, label)
+                            continue
                         _close(self, [v for row in m.context.tm for v in row[:3]], w["context_tm"], label)
                         self.assertEqual([row[3] for row in m.context.tm], [0.0, 0.0, 0.0, 1.0], label)
                         # Max computes a context's box when the modifier first needs it: the file may hold none
                         if m.context.box is not None:
                             _close(self, m.context.box[0] + m.context.box[1],
                                    w["context_bbox_min"] + w["context_bbox_max"], label)
-                        self.assertFalse(m.world_space, label)
 
     @unittest.skipUnless(os.path.exists(STACK_BASIC), "no stack_basic")
     def test_stack_basic(self):
@@ -131,6 +142,32 @@ class TestFixtures(unittest.TestCase):
         self.assertEqual(ref.derived[1], nested.derived[0])
         self.assertEqual(ref.modifiers[0].derived, nested.derived[0])  # the derived object holding each one
         self.assertEqual(ref.modifiers[1].derived, ref.derived[0])
+
+    def test_stack_wsm(self):
+        """A Map Scaler binding: node slot 1 is a 0x2033 derived object over the 0x2032 one (FixtureWSM) or over
+        the base object (FixtureWSMOnly); the binding comes last, world_space, and Scene.object_stack agrees."""
+        path = os.path.join(ROOT, "tests", "fixtures", "stack_wsm.max")
+        with cfb.CompoundFile(path) as cf:
+            s = scene.Scene.from_file(cf)
+            by_name = {n.name: n for n in s.nodes()}
+            reader = modifiers.Modifiers(s)
+            for name, depth in (("FixtureWSM", 2), ("FixtureWSMOnly", 1)):
+                n = by_name[name]
+                self.assertEqual(s.class_index(n.object), modifiers.WSM_DERIVED_OBJECT, name)
+                self.assertIsNone(s.entry(n.object), name)
+                st, plain = reader.stack(n), s.object_stack(n.object)
+                self.assertEqual(len(st.derived), depth, name)
+                self.assertEqual((plain.base, plain.derived), (st.base, st.derived), name)
+                self.assertEqual(plain.modifiers, tuple(m.index for m in reversed(st.modifiers)), name)
+                base = s.entry(st.base)
+                self.assertEqual((base.class_a, base.class_b), (0x1BF8338D, 0x192F6098), name)  # Editable Poly
+                self.assertEqual([(m.name, m.superclass, m.world_space, m.derived) for m in st.modifiers][-1],
+                                 ("MapScaler", 0x820, True, n.object), name)
+                self.assertEqual(st.issues, (), name)
+            wsm = reader.stack(by_name["FixtureWSM"])
+            self.assertEqual([(m.name, m.world_space) for m in wsm.modifiers], [("UVW Map", False),
+                                                                                 ("MapScaler", True)])
+            self.assertEqual(s.class_index(wsm.derived[1]), modifiers.DERIVED_OBJECT)
 
     def test_box_not_computed(self):
         """modifier_pivot was saved before anything evaluated its stacks: the Bend and the TurboSmooth have the
@@ -208,6 +245,7 @@ class TestSynthetic(unittest.TestCase):
                          [(1, "Bend", False), (2, "MapScaler", True)])
         self.assertEqual(st.derived, (4, 3))
         self.assertEqual(st.issues, ())
+        self.assertEqual(s.object_stack(4), scene.Stack(0, (2, 1), (4, 3)))  # top first
 
     def test_no_object_and_bare_object(self):
         s = _scene(node(0))

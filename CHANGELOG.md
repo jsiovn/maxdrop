@@ -15,6 +15,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ### Fixed
 
+- Modifiers: an object with a world-space modifier (a Map Scaler or another space-warp binding) on its stack arrives
+  as its mesh, with the binding named in the report among the modifiers not applied, instead of as a placeholder of
+  an unnamed class.
 - Materials: the report names a peeled Double Sided material as 3ds Max does (it said "DoubleSided"), and a
   VRayFastSSS2 whose subsurface color cannot be read (animated, damaged) takes V-Ray's default grey instead of white.
 - Modifiers: a Shell whose inner and outer surfaces both lie on one side of the original (inner -1 and outer 2, for

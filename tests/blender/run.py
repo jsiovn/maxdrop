@@ -125,6 +125,7 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1; kept literal: tes
     "stack_basic": ["UVMap"],  # FixtureTurbo's UVW Map writes channel 1; no other modifier is applied
     "stack_convert": ["UVMap"],  # the modifiers become Blender modifiers on the base meshes
     "stack_shell": ["UVMap"],  # the Shells become Solidify on the base meshes (open boxes)
+    "stack_wsm": ["UVMap"],  # FixtureWSM's UVW Map writes channel 1; the Map Scaler bindings are not applied
     "standard_physical": ["UVMap"],
     "standard_shaders": ["UVMap"],
     "saved_as_2017": ["UVMap"],

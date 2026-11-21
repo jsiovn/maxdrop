@@ -32,6 +32,7 @@ chunks = importlib.import_module(_PKG + ".reader.chunks")
 classdir = importlib.import_module(_PKG + ".reader.classdir")
 classids = importlib.import_module(_PKG + ".reader.classids")
 DERIVED_OBJECT = 0x2032  # reader/scene.py: an object with modifiers
+WSM_DERIVED_OBJECT = 0x2033  # reader/scene.py: an object with world-space modifiers
 ClassId = classdir.ClassId
 ChunkError = chunks.ChunkError
 
@@ -194,8 +195,8 @@ class TestFixtures(unittest.TestCase):
                 d = classdir.ClassDirectory.from_file(cf)
                 top = chunks.index(cf.open("Scene"))
                 objects = top[0].children
-                # past the directory only the derived object id (modifier_pivot's two stacks)
-                self.assertTrue(all(i < len(d) or i == DERIVED_OBJECT for i in objects.ids))
+                # past the directory only the derived object ids (modifier_pivot's two stacks, stack_wsm's bindings)
+                self.assertTrue(all(i < len(d) or i in (DERIVED_OBJECT, WSM_DERIVED_OBJECT) for i in objects.ids))
                 nodes = [c for c in objects if c.id < len(d) and d[c.id].superclass == classids.SC_BASENODE
                          and d[c.id].class_id == classids.NODE]
                 self.assertGreater(len(nodes), 0)
