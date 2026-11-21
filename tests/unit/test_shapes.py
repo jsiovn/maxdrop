@@ -263,7 +263,8 @@ class TestSynthetic(unittest.TestCase):
         sh = shapes.read_shape(_parametric(3, (10.0, 1 << 30, 0, 0.0, 1)), 3)
         self.assertEqual((len(sh.splines[0].knots), len(sh.issues)), (shapes.MAX_SIDES, 1))
         sh = shapes.read_shape(_parametric(3, (10.0, 4, 0, (1.0, 2.0, 3.0), 1)), 3)  # no number: sharp corners
-        self.assertEqual(len(sh.splines[0].knots), 4)
+        self.assertEqual((len(sh.splines[0].knots), len(sh.issues)), (4, 1))
+        self.assertIn("corner radius", sh.issues[0])
 
     def test_ellipse_outline(self):
         """The outline is a second spline with both semi-axes plus the thickness, each clamped at 0."""
@@ -276,6 +277,9 @@ class TestSynthetic(unittest.TestCase):
                "inset")
         sh = shapes.read_shape(_parametric(4, (20.0, 40.0, 3.0, 0)), 3)
         self.assertEqual(len(sh.splines), 1)
+        sh = shapes.read_shape(_parametric(4, (20.0, 40.0, (1.0, 2.0, 3.0), 1)), 3)  # the ellipse kept, an issue
+        self.assertEqual((len(sh.splines), len(sh.issues)), (1, 1))
+        self.assertIn("outline", sh.issues[0])
 
     def test_arc_angles_clamped(self):
         """from and to are clamped to [0, 360] first: 400 -> 500 is a zero-length arc at 360, 0 -> 720 a full turn

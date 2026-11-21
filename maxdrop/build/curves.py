@@ -4,7 +4,7 @@
 
 """Blender curves from the shapes of a convert.scene.SceneDescription.
 
-    curve = make_curve(cd, collection)  # a Curve datablock of a CurveDescription
+    curve = make_curve(cd, collection)  # a Curve datablock of a CurveDescription, its section in collection
 
 One Bezier spline per SplineDescription, its points and handles set with foreach_set, the handles FREE at Max's
 in and out vectors (convert.scene has already put a straight segment's handles on its chord), so each segment is
@@ -15,8 +15,9 @@ has none (a curve without a bevel does not render in Blender either).
 
 A rectangular section (cd.section) is a bevel object: a closed 2D poly curve "<name> section" through the four
 corners, no fill, its object hidden in the viewport and the render, not selectable, marked maxdrop_helper =
-"section" and linked into collection. A bevel object is no user of its object: an unlinked one is dropped when
-the file is saved, and the import's cleanup removes what is in its collections.
+"section" and linked into collection; the curve's caps are filled, as 3ds Max caps the section of an open
+spline. A bevel object is no user of its object: an unlinked one is dropped when the file is saved, and the
+import's cleanup removes what is in its collections.
 """
 import bpy
 
@@ -24,9 +25,9 @@ HELPER_PROPERTY = "maxdrop_helper"  # build.objects' name for objects that are n
 SECTION = "section"
 
 
-def make_curve(cd, collection=None):
-    """A Curve datablock of a CurveDescription; its section object, if any, linked into collection (the scene's
-    collection without one)."""
+def make_curve(cd, collection):
+    """A Curve datablock of a CurveDescription; its section object, if any, linked into collection (the import's,
+    which its cleanup removes)."""
     curve = bpy.data.curves.new(cd.name, 'CURVE')
     curve.dimensions = '3D'
     curve.resolution_u = max(1, min(int(cd.resolution), 1024))
@@ -44,7 +45,8 @@ def make_curve(cd, collection=None):
         spline.resolution_u = curve.resolution_u
     if cd.section:
         curve.bevel_mode = 'OBJECT'
-        curve.bevel_object = _section(cd, collection or bpy.context.scene.collection)
+        curve.bevel_object = _section(cd, collection)
+        curve.use_fill_caps = True
     return curve
 
 

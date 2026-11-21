@@ -523,7 +523,8 @@ class Curves(unittest.TestCase):
         self.assertEqual((len(cd.section), len(issues)), (4, 1))
         self.assertIn("not flat", issues[0])
         cd, issues = section(0, width=0.0)
-        self.assertEqual((cd.section, cd.bevel_depth, issues), (None, 0.0, []))
+        self.assertEqual((cd.section, cd.bevel_depth, len(issues)), (None, 0.0, 1))
+        self.assertIn("not drawn", issues[0])
         cd, issues = section(0, renderable=False)
         self.assertEqual((cd.section, issues), (None, []))
 

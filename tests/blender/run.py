@@ -1023,7 +1023,8 @@ def check_section(label, ob, shape, meters):
 def check_shapes_more(obs, meters):
     """The rectangular sections against 3ds Max's render meshes (snapshotAsMesh renderMesh:true; the fixture's
     script): FixtureSection, a line along X with width 4, length 1 and angle 30, has at x = 0 the corners
-    (Y, Z) = (-1.48205, 1.43301), (1.98205, -0.566987), (1.48205, -1.43301), (-1.98205, 0.566987); FixtureSectionLoop,
+    (Y, Z) = (-1.48205, 1.43301), (1.98205, -0.566987), (1.48205, -1.43301), (-1.98205, 0.566987) and a cap at each
+    end; FixtureSectionLoop,
     a circle of radius 10 with width 3, length 1.5, spans 8.49005 .. 11.5099 out from its center (3ds Max mitres at
     its polyline points, Blender a little less) and Z -0.75 .. 0.75."""
     by_name = {ob.name: ob for ob in obs}
@@ -1036,12 +1037,23 @@ def check_shapes_more(obs, meters):
         evaluated.to_mesh_clear()
         return out
 
-    got = sorted((round(v.y, 4), round(v.z, 4)) for v in verts(by_name["FixtureSection"]) if abs(v.x) < 1e-6)
+    got = sorted({(round(v.y, 4), round(v.z, 4)) for v in verts(by_name["FixtureSection"]) if abs(v.x) < 1e-6})
     want = sorted((round(y, 4), round(z, 4)) for y, z in ((-1.48205, 1.43301), (1.98205, -0.566987),
                                                           (1.48205, -1.43301), (-1.98205, 0.566987)))
     check("shapes_more/FixtureSection: the section's corners where 3ds Max renders them",
           len(got) == 4 and close([c for p in got for c in p], [c for p in want for c in p], 1e-3),
           "%s vs %s" % (got, want))
+    evaluated = by_name["FixtureSection"].evaluated_get(depsgraph)
+    mesh = evaluated.to_mesh()
+    caps = [0.0, 0.0]  # the area of the faces lying in the planes x = 0 and x = 10, in square units
+    for f in mesh.polygons:
+        xs = [mesh.vertices[i].co.x / meters for i in f.vertices]
+        for k, end in enumerate((0.0, 10.0)):
+            if all(abs(x - end) < 1e-6 for x in xs):
+                caps[k] += f.area / meters ** 2
+    evaluated.to_mesh_clear()
+    check("shapes_more/FixtureSection: capped at both ends, as 3ds Max caps it (width x length each)",
+          all(abs(a - 4.0) < 1e-4 for a in caps), str(caps))
     loop = verts(by_name["FixtureSectionLoop"])
     radial = [math.hypot(v.x, v.y) for v in loop]
     zs = [v.z for v in loop]

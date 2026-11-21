@@ -44,8 +44,10 @@ left and right handles. A segment 3ds Max draws straight (segment type line) get
 its chord, whatever the stored vectors. Resolution: 3ds Max's steps + 1 segments per Bezier segment, ADAPTIVE for
 an adaptive shape. A shape that renders (Enable In Renderer) gets a round bevel of its thickness (Max's thickness
 is the diameter) with about as many sides, or with a rectangular section a section: the rectangle width x length
-turned by its angle, which build.curves makes a bevel object of (3ds Max's frame and Blender's agree on a curve
-flat in XY; on another one an issue says the section may turn otherwise).
+turned by its angle, which build.curves makes a bevel object of, capped at the ends of an open spline as 3ds Max
+caps it (on the shapes_more fixture's line along X and loop, flat in XY, the corners land where 3ds Max's render
+mesh has them; on a curve that is not flat an issue says the section may turn otherwise; a width or length of 0 is
+not drawn, an issue).
 
 A standard primitive (Box, Plane, Pyramid, Sphere, GeoSphere, Cylinder, Cone, Tube, Torus) becomes the mesh 3ds Max
 builds from its parameters (convert.primitives) and from there on is a mesh like any other; one with an option that is
@@ -483,6 +485,8 @@ def curve_description(key, name, shape, offset, meters):
             if not _flat(splines):
                 issues.append("a rectangular section on a curve that is not flat in XY may turn otherwise than in "
                               "3ds Max")
+        else:
+            issues.append("a rectangular section of %g x %g is not drawn" % (r.width, r.length))
     elif r.renderable and r.thickness > 0:
         depth = r.thickness / 2.0 * meters
         profile = max(0, (r.sides - 4) // 2)  # Blender's round profile has 4 + 2 * resolution sides

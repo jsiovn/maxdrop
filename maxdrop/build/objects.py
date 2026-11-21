@@ -34,8 +34,9 @@ without a parent, so a sheared top-level node gets one: the empty SHEAR_HELPER a
 made only when needed and listed in built.helpers. It is not baked into the mesh instead because most such nodes
 are empties (placeholders) and the object's own world matrix would stay off.
 An EMPTY node becomes a plain-axes empty with the custom property maxdrop_class; a CURVE node an object of its
-Curve, which gets no material (a rectangular section's hidden bevel object goes into collection: build.curves); a LIGHT node an object of its Light (build.lights, power times light_strength), with
-the light's object flags; a CAMERA node an object of its Camera (build.cameras).
+Curve, which gets no material (a rectangular section's hidden bevel object goes into collection: build.curves); a
+LIGHT node an object of its Light (build.lights, power times light_strength), with the light's object flags; a
+CAMERA node an object of its Camera (build.cameras).
 
 With collections (build.collections.make), each object goes into its layer's collection, else into collection.
 A node hidden in 3ds Max gets hide_viewport and is hidden in view_layer (hide_set), one that does not render

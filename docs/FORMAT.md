@@ -418,7 +418,8 @@ lies across the curve in its plane, the length along the plane's normal (a line 
 2; along Z: X and Y; a Circle: radial and Z), turned by the angle (FixtureSection, at its first point: (Y, Z) =
 (-1.48205, 1.43301), (1.98205, -0.566987) and their opposites), capped at the ends of an open spline. Blender's bevel
 object maps profile x to the line's -Y and y to Z: the rectangle turned by +angle in the profile gives the same
-corners on a curve flat in XY (convert.scene `rectangular_section`).
+corners on FixtureSection, and FixtureSectionLoop spans what 3ds Max's does (convert.scene `rectangular_section`;
+the angle's sign is checked on that line along +X only), with the caps filled.
 
 An Editable Spline keeps a BezierShape `0x1010`:
 
@@ -1254,8 +1255,9 @@ Not shown by any fixture yet, so not stated above:
   same code page. Their FileAssetMetaData strings are still read as UTF-16, and an older `ClassDirectory` stream
   as `ClassDirectory3`.
 - Of shapes ([Shapes](#shapes)): the order of a reversed pie's knots (the center last), a rectangular section on a
-  curve that is not flat in XY (Blender's twist and 3ds Max's may differ: an issue), the angle of a round section
-  (not drawn); the `f32` and the last `u32` of a knot, `0x2904`, `0x1070` of the
+  curve that is not flat in XY (Blender's twist and 3ds Max's may differ: an issue), the section angle's sign on
+  other directions than +X, a rectangular section of width or length 0 (not drawn, an issue), the angle of a round
+  section (not drawn); the `f32` and the last `u32` of a knot, `0x2904`, `0x1070` of the
   BezierShape and `0x2150` (on some Editable Splines and Lines); the other shape classes (Star, Text, Helix, Donut,
   Section, NURBS curves...), which stay placeholders.
 - Of a modifier stack ([Modifiers](#modifiers)): `0x204B`, `0x2501`, `0x2502`, `0x2512` and `0x2513`; how the

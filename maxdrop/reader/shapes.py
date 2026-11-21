@@ -121,7 +121,7 @@ def veccalc(angle):
             y = _f32(_f32(_f32(b * test) + _f32(d * iy)) + _f32(t3 * s))
             total = _f32(total + _f32(math.sqrt(_f32(_f32(x * x) + _f32(y * y)))))
         total = _f32(total / 10.0)
-        if total == 1.0:
+        if total == 1.0 or test in (lo, hi):  # test at a bound: the rest of the 200 passes repeat it
             break
         if total > 1.0:
             hi = test
@@ -219,13 +219,17 @@ def _circle_shape(params, _issues):
     return [Spline(_circle(4, abs(params.number(0))), True)]
 
 
-def _ellipse(params, _issues):
+def _ellipse(params, issues):
     length, width = params.number(0), params.number(1)
     x, y = abs(width) / 2.0, abs(length) / 2.0
     unit = _circle(4, 1.0)
     splines = [Spline(_scaled(unit, x, y), True)]
     if params.flag(3):  # the outline: both semi-axes plus the thickness, each clamped at 0
-        t = params.number(2)
+        try:
+            t = params.number(2)
+        except ChunkError as exc:  # the ellipse itself is still known
+            issues.append("the outline is left out: its thickness %s" % exc)
+            return splines
         splines.append(Spline(_scaled(unit, max(x + t, 0.0), max(y + t, 0.0)), True))
     return splines
 
@@ -257,6 +261,9 @@ def _ngon(params, issues):
     step = 2 * math.pi / sides
     corners = [_p(r * math.cos(k * step), r * math.sin(k * step)) for k in range(sides)]
     corner = params.get(3, 0.0)
+    if not _is_number(corner):
+        issues.append("the corner radius is no number (%s): sharp corners"
+                      % ("animated" if isinstance(corner, pblock.Animated) else "%r" % (corner,)))
     if not (_is_number(corner) and corner > 0):
         return [Spline(_polygon(corners), True)]
     return [Spline(_rounded(corners, corner * math.tan(math.pi / sides)), True)]
