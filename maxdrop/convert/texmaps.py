@@ -25,6 +25,7 @@ linear color.
 
 The graph's nodes (frozen dataclasses): Image (an image map: the file as the scene stores it, the one the texture lookup
 found, Mapping, Crop, TexOutput, color space, gamma, alpha), Constant, Invert, Mix(a, b, factor, mask), Multiply,
+Blend (an arithmetic operation, optionally in a gamma space),
 ColorCorrect (with its rewiring), Composite (CompositeLayers bottom first: node, opacity, blend mode, mask), Facing
 (a Falloff's ratio), Adjust (a wrapper's Output), Tint, NormalMap (an image, its strength, flips, the map channel of
 its tangents, an additional Bump) and Bump (a height input and its strength). A map reached by
@@ -49,13 +50,15 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
   times render multiplier times the Output's amount (the order against the Output's invert and offset is assumed,
   not measured). An environment mapping type (angular, cubic, spherical, mirrored ball), a map source, ACEScg
   primaries, RGB output intensity, an unusable transfer function or multiplier are issues.
-- CoronaColor -> Constant (color and hex as swatches, the HDR color linear, the temperature through kelvin_rgb and
-  the sRGB curve, times the multiplier). VRayColor -> Constant: its swatch times its RGB multiplier, then to the
+- CoronaColor -> Constant (color and hex as swatches, the HDR color linear, the temperature Corona's own linear
+  color from CORONA_KELVIN, times the multiplier). VRayColor -> Constant: its swatch times its RGB multiplier, then to the
   power of its color gamma (that order measured), made linear as a swatch; in temperature mode its color holds
   V-Ray's temperature color. Its
   alpha below 1, RGB primaries other than sRGB and unusable values are issues. CoronaMix: operation mix ->
-  Mix(bottom, top, amount, mask), multiply -> Multiply (under a Mix for an amount below 1 or a mask), any other
-  operation peeled to its first bitmap (an issue); layer multipliers and offsets are an issue.
+  Mix(bottom, top, amount, mask), multiply -> Multiply, add, subtract, divide, min, max and difference -> Blend (in
+  gamma 2.2 with mix in sRGB on, as Corona does: CM_BLENDS), the last two under a Mix for an amount below 1 or a
+  mask; any other operation peeled to its first bitmap (an issue); each layer times its multiplier plus its offset
+  (CM_OFFSET_SCALE), measured.
 - Kept as nodes (the allow-list): Mix (color 1 / 2 where a map is off or missing, the mask, the mix amount; its
   curve is not converted: an issue), RGB Multiply, Color Correction (its rewiring first: monochrome, invert or custom
   channels, an alpha source drawn as one or zero, an issue; hue shift in turns, saturation as a factor; lightness
@@ -175,7 +178,29 @@ VC_RED, VC_GREEN, VC_BLUE, VC_ALPHA, VC_MULTIPLIER, VC_COLOR, VC_MODE, VC_GAMMA,
 CM_OPERATION, CM_AMOUNT, CM_MULT_TOP, CM_MULT_BOTTOM, CM_OFFSET_TOP, CM_OFFSET_BOTTOM = 200, 201, 202, 203, 204, 205
 CM_MAP_TOP, CM_MAP_BOTTOM, CM_COLOR_TOP, CM_COLOR_BOTTOM, CM_MASK, CM_MASK_ON, CM_TOP_ON, CM_BOTTOM_ON = (
     206, 207, 208, 209, 210, 211, 212, 213)
-CM_MULTIPLY, CM_MIX = 2, 6
+CM_MULTIPLY, CM_MIX, CM_SRGB = 2, 6, 214
+BLEND_ADD, BLEND_SUBTRACT, BLEND_DIVIDE, BLEND_MIN, BLEND_MAX, BLEND_DIFFERENCE = (
+    "add", "subtract", "divide", "min", "max", "difference")
+BLEND_OPS = (BLEND_ADD, BLEND_SUBTRACT, BLEND_DIVIDE, BLEND_MIN, BLEND_MAX, BLEND_DIFFERENCE)
+# CoronaMix mixOperation -> Blend op (bottom op top), measured with renderMap: 0 add, 1 subtract (bottom - top, at
+# least 0), 3 divide (bottom / top), 4 min, 5 max, 8 difference; 7 and 9..20 are other operations (peeled).
+# mixInSRgb (on by default) runs the operation on layer^(1 / 2.2) and raises the result to 2.2; multiply, divide,
+# min and max come out the same either way. The amount lerp is linear in both modes.
+CM_BLENDS = {0: BLEND_ADD, 1: BLEND_SUBTRACT, 3: BLEND_DIVIDE, 4: BLEND_MIN, 5: BLEND_MAX, 8: BLEND_DIFFERENCE}
+CM_SRGB_GAMMA = 2.2
+CM_GAMMA_OPS = (BLEND_ADD, BLEND_SUBTRACT, BLEND_DIFFERENCE)
+CM_OFFSET_SCALE = -0.1  # a layer is layer x multiplier + offset x CM_OFFSET_SCALE (renderMap: offset 1 -> -0.1)
+# CoronaColor temperature (method 2): Corona 12's own colors, linear (the brightest channel 1), measured with renderMap
+# in 3ds Max 2020; corona_kelvin interpolates linearly between the points.
+CORONA_KELVIN = (
+    (1000, (255, 2.22179, 0)), (1500, (255, 33.9377, 0)), (1900, (255, 59.3074, 0)), (2000, (255, 65.4825, 2.07004)),
+    (2500, (255, 94.9066, 17.214)), (3000, (255, 121.607, 39.1868)), (3500, (255, 145.49, 66.1245)),
+    (4000, (255, 166.681, 96.2179)), (4500, (255, 185.397, 127.969)), (5000, (255, 201.887, 160.23)),
+    (5500, (255, 216.401, 192.171)), (6000, (255, 229.175, 223.218)), (6500, (255, 240.444, 253.004)),
+    (6600, (251.265, 238.981, 255)), (7000, (231.144, 226.973, 255)), (8000, (195.163, 204.385, 255)),
+    (9000, (171.689, 188.708, 255)), (10000, (155.374, 177.272, 255)), (12000, (134.502, 161.856, 255)),
+    (15000, (117.37, 148.393, 255)), (20000, (103.409, 136.763, 255)), (25000, (96.3463, 130.615, 255)),
+    (30000, (92.1245, 126.848, 255)), (40000, (87.3463, 122.494, 255)))
 
 # Bitmap, block 0
 BM_CLIP_U, BM_CLIP_V, BM_CLIP_W, BM_CLIP_H, BM_APPLY, BM_CROP_PLACE, BM_MONO, BM_RGB, BM_FILE = (
@@ -290,6 +315,17 @@ class Multiply:
 
 
 @dataclasses.dataclass(frozen=True)
+class Blend:
+    """op (BLEND_OPS) per channel on a^(1 / gamma) and b^(1 / gamma), the result raised to gamma: add a + b,
+    subtract a - b floored at 0, divide a / b (a where b is 0, as Blender divides), min, max, difference |a - b|.
+    Not clamped above. A CoronaMix in sRGB mode is gamma 2.2."""
+    op: str
+    a: object
+    b: object
+    gamma: float = 1.0
+
+
+@dataclasses.dataclass(frozen=True)
 class ColorCorrect:
     """rewire: the source of the red, green and blue outputs (REWIRE_NONE: unchanged; codes as CC_REWIRE's), applied
     first; hue: shift in turns; saturation: factor (1 = unchanged); brightness, contrast: added fractions; gain:
@@ -400,7 +436,7 @@ def _children(node):
         return (node.input,)
     if isinstance(node, Mix):
         return tuple(n for n in (node.a, node.b, node.mask) if n is not None)
-    if isinstance(node, Multiply):
+    if isinstance(node, (Multiply, Blend)):
         return (node.a, node.b)
     if isinstance(node, Composite):
         return tuple(n for layer in node.layers for n in (layer.node, layer.mask) if n is not None)
@@ -459,6 +495,31 @@ def kelvin_rgb(kelvin):
     g = 99.4708025861 * math.log(t) - 161.1195681661 if t <= 66.0 else 288.1221695283 * (t - 60.0) ** -0.0755148492
     b = 255.0 if t >= 66.0 else 0.0 if t <= 19.0 else 138.5177312231 * math.log(t - 10.0) - 305.0447927307
     return tuple(min(255.0, max(0.0, c)) / 255.0 for c in (r, g, b))
+
+
+def corona_kelvin(kelvin):
+    """Corona's color of a temperature, linear RGB 0..1: CORONA_KELVIN, clamped to its 1000 K to 40000 K."""
+    pts = CORONA_KELVIN
+    k = min(float(pts[-1][0]), max(float(pts[0][0]), kelvin))
+    for (k0, c0), (k1, c1) in zip(pts, pts[1:]):
+        if k <= k1:
+            t = (k - k0) / (k1 - k0)
+            return tuple((a + (b - a) * t) / 255.0 for a, b in zip(c0, c1))
+    return tuple(c / 255.0 for c in pts[-1][1])
+
+
+def blend_value(op, a, b, gamma=1.0):
+    """Blend's result for two constants (linear RGB tuples or floats), as the builder draws it."""
+    def one(x, y):
+        if gamma != 1.0:
+            x, y = max(0.0, x) ** (1.0 / gamma), max(0.0, y) ** (1.0 / gamma)
+        r = {BLEND_ADD: lambda: x + y, BLEND_SUBTRACT: lambda: max(0.0, x - y),
+             BLEND_DIVIDE: lambda: x / y if y != 0.0 else x, BLEND_MIN: lambda: min(x, y),
+             BLEND_MAX: lambda: max(x, y), BLEND_DIFFERENCE: lambda: abs(x - y)}[op]()
+        return max(0.0, r) ** gamma if gamma != 1.0 else r
+    if isinstance(a, tuple):
+        return tuple(one(x, y) for x, y in zip(a, b))
+    return one(a, b)
 
 
 def _ref(m, pid, tab=0):
@@ -1159,15 +1220,16 @@ def _hex_rgb(text):
 def _corona_color(conv, m, kind, walk, depth, chain):
     """50 method (0 color 52, 1 HDR color 58, 2 temperature 51, 3 hex 59), 57 multiplier. Color and hex are swatches,
     made linear by the scene's rule after the multiplier (a renderMap render in 3ds Max showed the multiplier
-    scaling the swatch value: 2 x 128 = 255); the temperature is kelvin_rgb's sRGB color, decoded with the sRGB
-    curve whatever the gamma (it matched Corona's own 3000 K that way); the HDR color is linear already."""
+    scaling the swatch value: 2 x 128 = 255); the temperature is Corona's own linear color (corona_kelvin) times the
+    multiplier, whatever the gamma; the HDR color is linear already. colorSpace (61) changed nothing in renderMap:
+    not read."""
     method, mult = m.param(CC_METHOD, 0), max(0.0, _num(m, CC_MULTIPLIER, 1.0))
     if method == 1:
         rgb = tuple(max(0.0, c) * mult for c in _vec(m, CC_HDR, (1.0, 1.0, 1.0)))
         return Constant(rgb if kind == COLOR else sum(rgb) / 3.0)
     swatch = None
     if method == 2:
-        lin = colors.GAMMA_OFF.color(tuple(c * mult for c in kelvin_rgb(_num(m, CC_TEMPERATURE, 6500.0))))
+        lin = tuple(c * mult for c in corona_kelvin(_num(m, CC_TEMPERATURE, 6500.0)))
         return Constant(lin if kind == COLOR else sum(lin) / 3.0)
     if method == 3:
         swatch = _hex_rgb(m.param(CC_HEX, 0))
@@ -1224,13 +1286,27 @@ def _vray_color(conv, m, kind, walk, depth, chain):
     return Constant(lin if kind == COLOR else sum(lin) / 3.0)
 
 
+def _corona_layer(node, mult, offset):
+    """A CoronaMix layer times its multiplier plus its offset (CM_OFFSET_SCALE): a Constant folded, a map under an
+    Adjust; the node itself when they change nothing."""
+    if mult == 1.0 and offset == 0.0:
+        return node
+    add = offset * CM_OFFSET_SCALE
+    if isinstance(node, Constant):
+        v = node.value
+        return Constant(tuple(c * mult + add for c in v) if isinstance(v, tuple) else v * mult + add)
+    return Adjust(node, TexOutput(level=mult, offset=add))
+
+
 def _corona_mix(conv, m, kind, walk, depth, chain):
-    """Operation mix -> Mix(bottom, top, amount, mask), multiply -> Multiply (under a Mix when the amount is below 1
-    or a mask is set); any other operation is peeled to its first bitmap. A layer without a map (or with its map
-    switched off) is its color. mixInSRgb (214, on by default) changed nothing in renderMap renders of a 50 % mix
-    of black and white in 3ds Max (the Corona render itself was not measured): not read."""
+    """result = mix(bottom, operation(bottom, top), amount), the mask map replacing the amount (renderMap: an add at
+    amount 0.8 under a 0.25 mask weighs 0.25), always a linear mix. Operation mix -> Mix(bottom, top, amount, mask),
+    multiply -> Multiply, add / subtract / divide / min / max / difference -> Blend (CM_BLENDS; gamma 2.2 for add,
+    subtract and difference with mixInSRgb on), the last two under a Mix when the amount is below 1 or a mask is set;
+    any other operation is peeled to its first bitmap. Each layer is its map, or its color where the map is missing
+    or switched off, times its multiplier plus its offset times CM_OFFSET_SCALE (measured, the multiplier first)."""
     op = m.param(CM_OPERATION, 0)
-    if op not in (CM_MIX, CM_MULTIPLY):
+    if op not in (CM_MIX, CM_MULTIPLY) and op not in CM_BLENDS:
         image = conv._peel_to_image(m, kind, walk, depth, chain, "operation %r and no bitmap below" % (op,))
         if image is not None:
             conv._issue(walk, m.index, "CoronaMix %r: operation %r drawn as its first bitmap" % (m.name, op))
@@ -1244,23 +1320,29 @@ def _corona_mix(conv, m, kind, walk, depth, chain):
             weights = (None, None)
         elif op == CM_MIX:
             weights = (1.0 - amount, amount)
-        else:  # bottom times top: either factor shows unless the amount is 0 (the bottom alone)
+        else:  # bottom op top: either side shows unless the amount is 0 (the bottom alone)
             weights = (1.0, 0.0) if amount == 0.0 else (None, None)
         w = _lost_weight(lost, weights)
         if w == 1.0:
             return None
         if w is None:
             return _other_side(conv, m, (bottom, top), walk)
-    bottom = bottom or conv._constant(m, CM_COLOR_BOTTOM, kind, (0.0, 0.0, 0.0))
-    top = top or conv._constant(m, CM_COLOR_TOP, kind, (1.0, 1.0, 1.0))
-    if (_num(m, CM_MULT_TOP, 1.0), _num(m, CM_MULT_BOTTOM, 1.0), _num(m, CM_OFFSET_TOP, 0.0),
-            _num(m, CM_OFFSET_BOTTOM, 0.0)) != (1.0, 1.0, 0.0, 0.0):
-        walk.approximated = True
-        conv._issue(walk, m.index, "CoronaMix %r: layer multipliers and offsets not converted" % (m.name,))
+    bottom = _corona_layer(bottom or conv._constant(m, CM_COLOR_BOTTOM, kind, (0.0, 0.0, 0.0)),
+                           _num(m, CM_MULT_BOTTOM, 1.0), _num(m, CM_OFFSET_BOTTOM, 0.0))
+    top = _corona_layer(top or conv._constant(m, CM_COLOR_TOP, kind, (1.0, 1.0, 1.0)),
+                        _num(m, CM_MULT_TOP, 1.0), _num(m, CM_OFFSET_TOP, 0.0))
     if op == CM_MIX:
         return Mix(bottom, top, amount, mask)
-    product = Multiply(bottom, top)
-    return product if mask is None and amount == 1.0 else Mix(bottom, product, amount, mask)
+    if op == CM_MULTIPLY:
+        result = Multiply(bottom, top)
+    else:
+        blend = CM_BLENDS[op]
+        gamma = CM_SRGB_GAMMA if blend in CM_GAMMA_OPS and _flag(m, CM_SRGB, True) else 1.0
+        if isinstance(bottom, Constant) and isinstance(top, Constant):
+            result = Constant(blend_value(blend, bottom.value, top.value, gamma))
+        else:
+            result = Blend(blend, bottom, top, gamma)
+    return result if mask is None and amount == 1.0 else Mix(bottom, result, amount, mask)
 
 
 _KEEP = {MIX: _mix, RGB_MULTIPLY: _rgb_multiply, COLOR_CORRECTION: _color_correction, COMPOSITE: _composite,

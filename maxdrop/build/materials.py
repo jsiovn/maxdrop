@@ -24,8 +24,8 @@ transmission) goes through the mean of its channels, the measure convert/materia
 Texture graphs (convert/texmaps.py) become nodes, a node of the IR shared by several inputs once per material: Image
 -> Image Texture (its image datablock reused per file and color space: one file used in two color spaces is two
 datablocks; see Images below), with its placement as a Mapping node and a UV Map node for a map channel other than
-1; Invert, Mix, Multiply, ColorCorrect (its rewiring as Invert, the mean or Separate / Combine Color, then
-Hue/Saturation/Value, Bright/Contrast, gain, Gamma), Composite (per layer its blend at factor 1, then a Mix by
+1; Invert, Mix, Multiply, Blend (Gamma nodes around a Mix node of its operation), ColorCorrect (its rewiring as
+Invert, the mean or Separate / Combine Color, then Hue/Saturation/Value, Bright/Contrast, gain, Gamma), Composite (per layer its blend at factor 1, then a Mix by
 opacity x mask), Facing (Layer Weight Facing, Fresnel, or the Geometry node's Normal . Incoming), Adjust (a map's
 Output, as an image's), Tint (Separate Color, three scales, two adds), NormalMap (Normal Map node, flips through
 Separate / Combine Color), Bump (Bump node). A texture file that
@@ -73,6 +73,9 @@ from ..convert import texmaps as tx
 SPECULAR_LEVEL = 0.5
 X_STEP, Y_STEP = 300, 280
 COLOR, FLOAT = "color", "float"
+# Blend op -> the Mix node's blend type drawn at factor 1
+BLEND_OPS = {tx.BLEND_ADD: 'ADD', tx.BLEND_SUBTRACT: 'SUBTRACT', tx.BLEND_DIVIDE: 'DIVIDE', tx.BLEND_MIN: 'DARKEN',
+             tx.BLEND_MAX: 'LIGHTEN', tx.BLEND_DIFFERENCE: 'DIFFERENCE'}
 # Composite blend mode -> the Mix node's blend type drawn at factor 1 (texmaps: AVERAGE, SPOTLIGHT, SPOTLIGHT_BLEND
 # and HARD_LIGHT have forms of their own, LINEAR_DODGE is ADD clamped before the opacity, as measured)
 BLEND_TYPES = {tx.ADDITION: 'ADD', tx.SUBTRACT: 'SUBTRACT', tx.DARKEN: 'DARKEN', tx.MULTIPLY_BLEND: 'MULTIPLY',
@@ -470,6 +473,8 @@ class _Tree:
             return self.mix(n, space, depth)
         if isinstance(n, tx.Multiply):
             return self.multiply(n, space, depth)
+        if isinstance(n, tx.Blend):
+            return self.arith(n, depth)
         if isinstance(n, tx.ColorCorrect):
             return self.color_correct(n, space, depth)
         if isinstance(n, tx.Composite):
@@ -574,10 +579,7 @@ class _Tree:
         # comes after Blender's primaries conversion: exact in the default working space (Linear Rec.709) and on greys.
         if space == COLOR and not img.alpha and img.gamma is not None and abs(img.gamma - 1.0) > _EPS \
                 and img.colorspace == tx.LINEAR == tx.colorspace(tx.COLOR, img.gamma):
-            g = self.node("ShaderNodeGamma", depth)
-            self.links.new(out, _in(g, "Color"))
-            _in(g, "Gamma").default_value = img.gamma
-            out = _out(g, "Color")
+            out = self.gamma(out, img.gamma, depth)
         return self.output(img.output, out, depth) if img.output is not None else out
 
     def texture_node(self, img, depth):
@@ -739,6 +741,41 @@ class _Tree:
         self.feed(a, va)
         self.feed(b, vb)
         return result
+
+    def arith(self, n, depth):
+        """A Blend (a color socket): both sides through a Gamma node of 1 / gamma, a Mix node of the operation at
+        factor 1, not clamped (subtract floored at 0 by a Vector Math MAXIMUM), then a Gamma node of gamma. A missing
+        side gives the other one when that is a map, else MISSING, as for Multiply."""
+        va, vb = self.graph(n.a, COLOR, depth + 2), self.graph(n.b, COLOR, depth + 2)
+        if va is MISSING or vb is MISSING:
+            other = vb if va is MISSING else va
+            return other if isinstance(other, bpy.types.NodeSocket) else MISSING
+        if not isinstance(va, bpy.types.NodeSocket) and not isinstance(vb, bpy.types.NodeSocket):
+            return tx.blend_value(n.op, _as(va, COLOR), _as(vb, COLOR), n.gamma)
+        sides = []
+        for v in (va, vb):
+            if n.gamma != 1.0:
+                v = self.gamma(self.socket(v, COLOR, depth + 2), 1.0 / n.gamma, depth + 1)
+            sides.append(v)
+        node, a, b, out = self.mix_node(COLOR, depth, BLEND_OPS[n.op])
+        _in(node, "Factor_Float").default_value = 1.0
+        node.clamp_result = False
+        self.feed(a, sides[0])
+        self.feed(b, sides[1])
+        if n.op == tx.BLEND_SUBTRACT:
+            floor = self.node("ShaderNodeVectorMath", depth)
+            floor.operation = 'MAXIMUM'
+            self.links.new(out, _in(floor, "Vector"))
+            _in(floor, "Vector_001").default_value = (0.0, 0.0, 0.0)
+            out = _out(floor, "Vector")
+        return self.gamma(out, n.gamma, depth) if n.gamma != 1.0 else out
+
+    def gamma(self, socket, value, depth):
+        """socket raised to value (a Gamma node; a negative channel stays as it is)."""
+        g = self.node("ShaderNodeGamma", depth)
+        self.links.new(socket, _in(g, "Color"))
+        _in(g, "Gamma").default_value = value
+        return _out(g, "Color")
 
     def color_correct(self, n, space, depth):
         steps = [tuple(n.rewire) != tx.REWIRE_NONE, n.hue % 1.0 != 0.0 or n.saturation != 1.0,

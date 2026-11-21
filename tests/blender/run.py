@@ -1260,6 +1260,14 @@ def _fold(n, present):
         if MAP in (a, b):
             return MAP
         return tuple(x * y for x, y in zip(a, b)) if isinstance(a, tuple) else a * b
+    if isinstance(n, tx.Blend):
+        a, b = _fold(n.a, present), _fold(n.b, present)
+        if LOST in (a, b):
+            other = b if a is LOST else a
+            return MAP if other is MAP else LOST
+        if MAP in (a, b):
+            return MAP
+        return tx.blend_value(n.op, a, b, n.gamma)
     if isinstance(n, tx.ColorCorrect):
         v = _fold(n.input, present)
         changes = n.hue % 1.0 != 0.0 or n.saturation != 1.0 or n.brightness or n.contrast or n.gain != 1.0 \

@@ -14,8 +14,8 @@ With the gamma on (2.2, 3ds Max's default since 2014) 3ds Max and its renderers 
 referred: the swatch renders as stored (byte 128), which Blender's sRGB display shows only from 0.216 linear, so it
 is decoded with the sRGB curve, as image files are in both cases. A file that does not say is taken as gamma on,
 with a note. Measured in 3ds Max 2020 + V-Ray 5.2 (docs/FORMAT.md, Scene gamma); Corona's swatches are assumed to
-follow 3ds Max's rule. Inputs that are linear by definition (CoronaColor's HDR color) and colors made by a curve
-fit in sRGB (kelvin_rgb) do not go through the rule. No bpy.
+follow 3ds Max's rule. Inputs that are linear by definition (CoronaColor's HDR color and temperature,
+corona_kelvin) and colors made by a curve fit in sRGB (kelvin_rgb, the lights') do not go through the rule. No bpy.
 """
 import dataclasses
 
