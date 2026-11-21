@@ -591,6 +591,21 @@ class MaterialConverter:
         self._for[key] = out
         return out
 
+    def source_for(self, index, material_id):
+        """The material object index material_for(index, material_id) converts, None where it gives none, found
+        without converting or counting anything: Multi/Sub-Objects looked up by the ID (through the wrappers peel()
+        has already walked; a wrapper not yet peeled is its own answer). To compare IDs that get no slot."""
+        seen, i = [], index
+        while isinstance(i, int) and not isinstance(i, bool) and i not in seen and len(seen) <= MAX_PEEL:
+            if self.graph.superclass(i) != classids.SC_MATERIAL:
+                return None
+            seen.append(i)
+            base = self._peels.get(i, (i, None))[0]
+            if base is None or not self.is_class(base, classids.SC_MATERIAL, classids.MULTI_SUB_MTL):
+                return i if base is None else base
+            i = self._entry(base, material_id)
+        return None
+
     def _grey(self, index, reason):
         """The grey material for an object no rule converts, named after it."""
         try:
@@ -1115,20 +1130,19 @@ def _group(users, ids, materials, conv):
     return slots, slot_of_id
 
 
-def _mixed(desc, cd, materials, conv):
-    """The issue of a curve whose spline mixes material IDs that some user gets different materials for, named once
-    on its first user."""
+def _mixed(cd, materials, conv):
+    """The issue (node, text) of a curve whose spline mixes material IDs that some user gets different materials for
+    (conv.source_for: the IDs without a slot are not converted), named once on its first user; None without one."""
     for n, sd in enumerate(cd.splines):
         ids = sd.material_ids
         if len(ids) < 2:
             continue
         for u in cd.users:
-            first = conv.material_for(materials.get(u), ids[0])
-            if any(conv.material_for(materials.get(u), mid) is not first for mid in ids[1:]):
-                desc.issues.append((cd.users[0], "shape: spline %d mixes material IDs %s: drawn with ID %d's material "
-                                    "(its first segment's)" % (n + 1, ", ".join(str(m + 1) for m in ids),
-                                                               ids[0] + 1)))
-                return
+            first = conv.source_for(materials.get(u), ids[0])
+            if any(conv.source_for(materials.get(u), mid) != first for mid in ids[1:]):
+                return (cd.users[0], "shape: spline %d mixes material IDs %s: drawn with ID %d's material (its first "
+                        "segment's)" % (n + 1, ", ".join(str(m + 1) for m in ids), ids[0] + 1))
+    return None
 
 
 def assign(desc, materials, conv):
@@ -1139,7 +1153,7 @@ def assign(desc, materials, conv):
     by their material IDs (SplineDescription.material), indices per spline; a curve none of whose users gets a
     material is left out. A spline mixing IDs that render differently adds an issue to desc.issues."""
     import numpy
-    out = Slots()
+    out, mixed = Slots(), []
     for key, cd in desc.curves.items():
         users = list(cd.users)
         per_spline = [sd.material for sd in cd.splines]
@@ -1148,7 +1162,7 @@ def assign(desc, materials, conv):
         if slots:
             where = dict(zip(ids, slot_of_id))
             out.curves[key] = MeshSlots(users, slots, numpy.asarray([where[m] for m in per_spline], dtype=numpy.int32))
-            _mixed(desc, cd, materials, conv)
+            mixed.append(_mixed(cd, materials, conv))
     for key, md in desc.meshes.items():
         users = list(md.users)
         faces = numpy.asarray(md.material_indices, dtype=numpy.int64).ravel()
@@ -1157,4 +1171,5 @@ def assign(desc, materials, conv):
         indices = numpy.asarray(slot_of_id, dtype=numpy.int32)[inverse.ravel()] if len(faces) else \
             numpy.zeros(0, dtype=numpy.int32)
         out[key] = MeshSlots(users, slots, numpy.ascontiguousarray(indices, dtype=numpy.int32))
+    desc.issues.extend(x for x in mixed if x is not None)  # once every material converted: none if one raises
     return out

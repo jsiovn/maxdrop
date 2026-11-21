@@ -1140,6 +1140,8 @@ class Fixtures(unittest.TestCase):
                for n in desc.nodes if n.kind == conv.CURVE}
         self.assertEqual(got.pop("FixtureCurveIds"), [(1, (1,)), (0, (0,))])
         self.assertEqual(got.pop("FixtureCurveMixed"), [(1, (1, 0))])
+        names = {n.index: n.name for n in desc.nodes}  # the mixed spline's issue comes from convert.materials
+        self.assertEqual([r for i, r in desc.issues if names.get(i, "").startswith("FixtureCurve")], [])
         self.assertEqual({sp for v in got.values() for sp in v}, {(0, (0,))})
 
     def test_material_indices_from_the_reader(self):

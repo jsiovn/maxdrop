@@ -1564,6 +1564,22 @@ class Assign(unittest.TestCase):
         self.assertEqual(desc.issues, [(1, "shape: spline 2 mixes material IDs 2, 1: drawn with ID 2's material "
                                            "(its first segment's)")])
 
+    def test_curve_mixed_ids_convert_no_unused_material(self):
+        """The mixed-ID check converts nothing: a sub-material only a mixed spline's other ID picks is not converted
+        (no IR, no counts), the issue is named all the same."""
+        objs = (_vray(4, "Used"), FakeMtl(5, classdir.ClassId(0x1234, 0x5678), "Unused", {}),
+                _multi(6, [(0, Ref(4), 1), (1, Ref(5), 1)]))
+        conv = mat.MaterialConverter(FakeGraph(*objs))
+        desc = _desc(curves={"c": ([1], [(0, 1)])})
+        plan = mat.assign(desc, {1: 6}, conv)
+        self.assertEqual(self.names(plan.curves["c"].slots), [["Used"]])
+        self.assertNotIn(5, conv._done)
+        self.assertEqual(dict(conv.stats.unknown), {})
+        self.assertEqual(len(desc.issues), 1)
+        self.assertEqual(conv.source_for(6, 1), 5)
+        self.assertEqual(conv.source_for(6, 0), 4)
+        self.assertIsNone(conv.source_for(None, 0))
+
     def test_fixture_curves(self):
         """shapes_more: FixtureCurveStd has a Standard material, FixtureCurveMulti a Multi/Sub-Object (ID 1:
         FixtureCurveSubOne); FixtureCurveIds the same Multi/Sub-Object on splines at IDs 2 and 1, FixtureCurveMixed

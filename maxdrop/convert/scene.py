@@ -42,8 +42,8 @@ vertex used twice, the vertex set of an earlier face) are left out and reported.
 A shape (reader.shapes: Line, Editable Spline, Rectangle, Circle, Ellipse, Arc, NGon) becomes a CURVE, keyed and
 shared like a mesh, its offset baked into the knots: one Bezier spline per spline, Max's in and out vectors as the
 left and right handles, each spline with its segments' material IDs (SplineDescription.material_ids: the first
-one is the spline's, convert.materials gives it its slot). A segment 3ds Max draws straight (segment type line) gets handles a third of the way along
-its chord, whatever the stored vectors. Resolution: 3ds Max's steps + 1 segments per Bezier segment, ADAPTIVE for
+one is the spline's, convert.materials gives it its slot). A segment 3ds Max draws straight (segment type line)
+gets handles a third of the way along its chord, whatever the stored vectors. Resolution: 3ds Max's steps + 1 segments per Bezier segment, ADAPTIVE for
 an adaptive shape. A shape that renders (Enable In Renderer) gets a round bevel of its thickness (Max's thickness
 is the diameter) with about as many sides, or with a rectangular section a section: the rectangle width x length
 turned by its angle, which build.curves makes a bevel object of, capped at the ends of an open spline as 3ds Max
