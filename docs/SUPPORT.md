@@ -24,8 +24,9 @@ reports, the camera and the light aimed by a Look At controller in each included
 the measurement of version 0.0.3: 99.7 % and 99.9 %, before Look At was evaluated). Materials are checked on the test files (VRayMtl, its wrappers, Multi/Sub-Object,
 Standard, Physical Material and the texture maps below): the parameters MaxDrop reads are compared with what 3ds Max
 reports, and the Blender material with those parameters, on Blender 4.2, 4.5 and 5.2. In the two commercial scenes,
-the conversion of 214 of 214 and 220 of 220 materials (100 %) gives what the same rules give from the
-parameters 3ds Max reports, textures included (see [BASELINE.md](BASELINE.md)). Modifiers are checked the same
+the conversion of 214 of 214 and 220 of 220 materials (100 %) gave in version 0.0.4 what the same rules give from
+the parameters 3ds Max reports, textures included (see [BASELINE.md](BASELINE.md)); in 1.0.0 and 1.0.1, 210 of
+scene A's 214 do (four differ in their base-color texture, not yet explained). Modifiers are checked the same
 way: in the test files, the meshes MaxDrop makes from shapes with an Extrude, from primitives, with UVW Maps and with
 the modifiers it keeps as Blender modifiers have 3ds Max's vertex and triangle counts and bounding box (Symmetry's
 weld aside, see its row), and UVW Map coordinates equal 3ds Max's. In the scene whose room is built from outlines
