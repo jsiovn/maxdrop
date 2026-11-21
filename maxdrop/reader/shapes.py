@@ -23,10 +23,11 @@ A segment of type LINE is straight whatever its vectors.
 The parametric shapes keep parameters only (reference slot 1: an old ParamBlock, the Ellipse a ParamBlock2) and
 their interpolation in slot 2 (old ParamBlock: 0 steps, 1 optimize, 2 adaptive). Their splines are made here the
 way 3ds Max makes them, checked against 3ds Max's own conversion to an Editable Spline (the oracle): a circular
-arc of angle a has vectors of radius * veccalc(a), the SDK's bisection for the vector length (0.5517857 for 90
-degrees, not the textbook 0.5523); an Arc always has 3 segments. NGon's corner radius and Ellipse's outline are not
-drawn (an issue each). Every shape keeps its rendering block in slot 0 (old ParamBlock: 0 thickness, 1 sides,
-2 angle in degrees, 6 Enable In Renderer, 8 Enable In Viewport, 11 rectangular, 12 width, 13 length).
+arc of angle a has vectors of radius * veccalc(a), the SDK's float32 bisection for the vector length (0.5517862
+for 90 degrees, not the textbook 0.5523); an Arc always has 3 segments, its angles clamped to [0, 360]; an NGon's
+corner radius makes two knots per corner, an Ellipse's outline a second spline. Every shape keeps its rendering
+block in slot 0 (old ParamBlock: 0 thickness, 1 sides, 2 angle in degrees, 6 Enable In Renderer, 8 Enable In
+Viewport, 11 rectangular, 12 width, 13 length, 14 the rectangular section's angle in degrees).
 
 The file comes from anywhere: a spline whose record cannot be read is left out (an issue), a shape whose
 parameters cannot be read raises ShapeError (a ChunkError) naming the object; counts are bounded by the payload,
@@ -74,35 +75,52 @@ class Spline(collections.namedtuple("Spline", "knots closed")):
 
 
 class Render(collections.namedtuple("Render", "renderable viewport thickness sides angle rectangular width "
-                                              "length")):
-    """The shape's rendering settings: renderable = Enable In Renderer, viewport = Enable In Viewport; angle in
-    degrees; width and length are the rectangular section's."""
+                                              "length section_angle")):
+    """The shape's rendering settings: renderable = Enable In Renderer, viewport = Enable In Viewport; angle (the
+    round section's) and section_angle (the rectangular one's) in degrees; width and length are the rectangular
+    section's."""
     __slots__ = ()
 
 
-DEFAULT_RENDER = Render(False, False, 1.0, 12, 0.0, False, 2.0, 6.0)
+DEFAULT_RENDER = Render(False, False, 1.0, 12, 0.0, False, 2.0, 6.0, 0.0)
 
 
 class Shape(collections.namedtuple("Shape", "class_id splines steps optimize adaptive render issues")):
     __slots__ = ()
 
 
+_F32 = struct.Struct("<f")
+
+
+def _f32(x):
+    """x rounded to float32: a double operation on float32 values, rounded, is the float32 operation."""
+    return _F32.unpack(_F32.pack(x))[0]
+
+
 @functools.lru_cache(maxsize=256)
 def veccalc(angle):
     """The vector length, per unit radius, that 3ds Max gives the two knots of a circular arc of angle radians:
-    a bisection until the mean distance of 10 points of the segment from the center is 1 (the SDK's veccalc)."""
-    s, c = math.sin(angle), math.cos(angle)
+    the SDK's veccalc, a float32 bisection until the mean distance of 10 points of the segment from the center is
+    exactly 1. In float32 it stops early on small angles (1.5 / 1024 for 0, where a zero-length Arc's vectors lie),
+    as the oracle shows."""
+    a = _f32(angle)
+    s, c = _f32(math.sin(a)), _f32(math.cos(a))
     lo, hi, test = 0.0, 1.5, 0.75
-    for _ in range(60):  # past double precision
-        test = (lo + hi) / 2.0
-        ox, oy = 1.0, test
-        ix, iy = c + s * test, s - c * test
+    for _ in range(200):  # the SDK's count
+        test = _f32((lo + hi) / 2.0)
+        ix, iy = _f32(c + _f32(s * test)), _f32(s - _f32(c * test))
         total = 0.0
         for k in range(10):
-            u = k / 10.0
-            a, b, d, e = (1 - u) ** 3, 3 * u * (1 - u) ** 2, 3 * u * u * (1 - u), u ** 3
-            total += math.hypot(a + b * ox + d * ix + e * c, b * oy + d * iy + e * s)
-        total /= 10.0
+            t = _f32(k / 10.0)
+            u = _f32(1.0 - t)
+            u2, t2 = _f32(u * u), _f32(t * t)
+            u3, t3 = _f32(u2 * u), _f32(t2 * t)
+            b, d = _f32(_f32(3.0 * t) * u2), _f32(_f32(3.0 * t2) * u)
+            # the Bezier (1, 0), out (1, test), in (ix, iy), (c, s) at t, term by term in the SDK's order
+            x = _f32(_f32(_f32(u3 + b) + _f32(d * ix)) + _f32(t3 * c))
+            y = _f32(_f32(_f32(b * test) + _f32(d * iy)) + _f32(t3 * s))
+            total = _f32(total + _f32(math.sqrt(_f32(_f32(x * x) + _f32(y * y)))))
+        total = _f32(total / 10.0)
         if total == 1.0:
             break
         if total > 1.0:
@@ -201,16 +219,21 @@ def _circle_shape(params, _issues):
     return [Spline(_circle(4, abs(params.number(0))), True)]
 
 
-def _ellipse(params, issues):
+def _ellipse(params, _issues):
     length, width = params.number(0), params.number(1)
-    if params.flag(3):
-        issues.append("the outline (a second spline) is not drawn: the ellipse alone")
-    return [Spline(_scaled(_circle(4, 1.0), abs(width) / 2.0, abs(length) / 2.0), True)]
+    x, y = abs(width) / 2.0, abs(length) / 2.0
+    unit = _circle(4, 1.0)
+    splines = [Spline(_scaled(unit, x, y), True)]
+    if params.flag(3):  # the outline: both semi-axes plus the thickness, each clamped at 0
+        t = params.number(2)
+        splines.append(Spline(_scaled(unit, max(x + t, 0.0), max(y + t, 0.0)), True))
+    return splines
 
 
 def _arc(params, _issues):
     radius, start, end = params.number(0), params.number(1), params.number(2)
-    span = (end - start) % 360.0 or 360.0
+    start, end = min(max(start, 0.0), 360.0), min(max(end, 0.0), 360.0)
+    span = end - start if end >= start else end + 360.0 - start  # from = to: a zero-length arc
     knots = _arc_knots(abs(radius), math.radians(start), math.radians(span) / 3.0, 4)
     knots[0] = knots[0]._replace(in_vec=knots[0].point)
     knots[-1] = knots[-1]._replace(out_vec=knots[-1].point)
@@ -229,13 +252,30 @@ def _ngon(params, issues):
     if sides != stored:
         issues.append("%g sides, drawn with %d" % (stored, sides))
     r = abs(radius) if params.flag(4) else abs(radius) / math.cos(math.pi / sides)  # scribe 0: r is the apothem
-    if params.flag(2):
+    if params.flag(2):  # circular: the corner radius is ignored
         return [Spline(_circle(sides, r), True)]
-    corner = params.get(3, 0.0)
-    if _is_number(corner) and corner > 0:
-        issues.append("the corner radius is not drawn: sharp corners")
     step = 2 * math.pi / sides
-    return [Spline(_polygon([_p(r * math.cos(k * step), r * math.sin(k * step)) for k in range(sides)]), True)]
+    corners = [_p(r * math.cos(k * step), r * math.sin(k * step)) for k in range(sides)]
+    corner = params.get(3, 0.0)
+    if not (_is_number(corner) and corner > 0):
+        return [Spline(_polygon(corners), True)]
+    return [Spline(_rounded(corners, corner * math.tan(math.pi / sides)), True)]
+
+
+def _rounded(corners, d):
+    """An NGon's rounded corners: two Bezier knots per corner, d along the sides to the previous and the next corner
+    (no clamp: past half a side they cross, as in 3ds Max), each vector along its side, d * veccalc(90 degrees) long
+    (the SDK's CIRCLE_VECTOR_LENGTH, whatever the corner's angle)."""
+    v = d * veccalc(math.pi / 2)
+    n, knots = len(corners), []
+    for k, p in enumerate(corners):
+        for q, first in ((corners[k - 1], True), (corners[(k + 1) % n], False)):
+            length = math.hypot(q[0] - p[0], q[1] - p[1]) or 1.0
+            ux, uy = (q[0] - p[0]) / length, (q[1] - p[1]) / length
+            at = _p(p[0] + ux * d, p[1] + uy * d)
+            away, toward = _p(at[0] + ux * v, at[1] + uy * v), _p(at[0] - ux * v, at[1] - uy * v)
+            knots.append(Knot(BEZIER, CURVE, at, away, toward) if first else Knot(BEZIER, CURVE, at, toward, away))
+    return knots
 
 
 _PARAMETRIC = {
@@ -341,7 +381,7 @@ def _render(scene, refs, issues):
     sides = number(1, d.sides)
     return Render(params.flag(6, d.renderable), params.flag(8, d.viewport), number(0, d.thickness),
                   int(min(max(sides, 0), 1000)), number(2, d.angle), params.flag(11, d.rectangular),
-                  number(12, d.width), number(13, d.length))
+                  number(12, d.width), number(13, d.length), number(14, d.section_angle))
 
 
 def read_shape(scene, i):

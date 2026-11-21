@@ -122,6 +122,7 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1; kept literal: tes
     "pblock_animated": ["UVMap"],
     "primitives": {"FixtureBoxNoMap": []},  # else UVMap: Generate Mapping Coords
     "shapes": ["UVMap"],  # FixtureBox; the shapes are curves
+    "shapes_more": ["UVMap"],  # FixtureBox; the shapes are curves
     "stack_basic": ["UVMap"],  # FixtureTurbo's UVW Map writes channel 1; no other modifier is applied
     "stack_convert": ["UVMap"],  # the modifiers become Blender modifiers on the base meshes
     "stack_shell": ["UVMap"],  # the Shells become Solidify on the base meshes (open boxes)

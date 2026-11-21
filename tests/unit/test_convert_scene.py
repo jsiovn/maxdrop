@@ -66,6 +66,7 @@ UV_LAYERS = {
     "pblock_animated": ["UVMap"],
     "primitives": collections.defaultdict(lambda: ["UVMap"], {"FixtureBoxNoMap": []}),  # Generate Mapping Coords
     "shapes": ["UVMap"],  # FixtureBox; the shapes are curves
+    "shapes_more": ["UVMap"],  # FixtureBox; the shapes are curves
     "stack_basic": ["UVMap"],  # FixtureTurbo's UVW Map writes channel 1; no other modifier is applied
     "stack_convert": ["UVMap"],  # its modifiers become Blender modifiers: the base meshes are built
     "stack_shell": ["UVMap"],  # its Shells become Solidify: the base meshes (open boxes) are built
@@ -129,7 +130,9 @@ PRIMITIVE_CLASSES = {("0x00000010", "0x00000000"), ("0x00000011", "0x00000000"),
 PLACEHOLDERS = {"lookat": {"Point": 1}}
 NO_DECAY = "light: no decay: Blender's light falls off with the square of the distance; as bright as in 3ds Max at 1 m"
 # the issues the fixtures are made to raise
-ISSUES = {"uvwmap": ["uvw map: a UVW Map above Bend is not evaluated",
+ISSUES = {"shapes_more": ["shape: a rectangular section (3 x 1.5) is drawn round, 1 across",
+                          "shape: a rectangular section (4 x 1) is drawn round, 1 across"],
+          "uvwmap": ["uvw map: a UVW Map above Bend is not evaluated",
                      "uvw map: shrink-wrap mapping is not evaluated: the stored channel stays"],
           "stack_convert": ["modifiers: TurboSmooth above Bend is not converted"],
           "lookat": [NO_DECAY],  # its target spot (its Perspective viewport is a note of the report, no issue)

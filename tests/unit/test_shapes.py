@@ -5,7 +5,7 @@
 """Tests of maxdrop/reader/shapes.py, the splines of shape objects: no Blender. Every shape node of every committed
 fixture against its 3ds Max oracle (knot types, segment types, positions and vectors within 1e-4, closed flags,
 interpolation and rendering settings), and synthetic Scene streams for damaged input and the parameters no fixture
-sets (NGon corner radius, Ellipse outline, odd side counts).
+sets (odd side counts, Arc angles past the probed ones).
 
     python -I -m unittest discover tests
 """
@@ -22,6 +22,7 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 FIXTURES = sorted(glob.glob(os.path.join(ROOT, "tests", "fixtures", "*.max")))
 SHAPES = os.path.join(ROOT, "tests", "fixtures", "shapes.max")
+SHAPES_MORE = os.path.join(ROOT, "tests", "fixtures", "shapes_more.max")
 
 
 _PKG = "maxdrop_convert_test"  # the package the convert tests make: maxdrop/__init__.py (bpy) never runs
@@ -105,10 +106,28 @@ class TestFixtures(unittest.TestCase):
         self.assertEqual(line.render.thickness, 2.0)
         self.assertEqual(got["FixtureNGon"].class_id, shapes.classids.NGON)
 
+    @unittest.skipUnless(os.path.exists(SHAPES_MORE), "no shapes_more fixture")
+    def test_shapes_more(self):
+        """The settings shapes.max leaves out; the rectangular angle (block index 14) is not in the oracle: the
+        script's values, apart from the round angle's so that swapped indices fail."""
+        got = read_fixture(SHAPES_MORE)
+        r = got["FixtureSection"].render
+        self.assertEqual((r.renderable, r.rectangular, r.width, r.length, r.section_angle, r.angle),
+                         (True, True, 4.0, 1.0, 30.0, 15.0))
+        self.assertEqual(got["FixtureSectionLoop"].render.section_angle, 0.0)
+        self.assertEqual(len(got["FixtureEllOutline"].splines), 2)
+        self.assertEqual(len(got["FixtureNGonCorner"].splines[0].knots), 12)
+        self.assertEqual(len(got["FixtureNGonCornerRound"].splines[0].knots), 5)  # circular: no corner radius
+        self.assertTrue(all(k.point == got["FixtureArcSame"].splines[0].knots[0].point
+                            for k in got["FixtureArcSame"].splines[0].knots))
+
     def test_veccalc(self):
-        """3ds Max's vector for a quarter circle, not the textbook 4/3 tan(a/4) = 0.552285."""
+        """3ds Max's vector for a quarter circle, not the textbook 4/3 tan(a/4) = 0.552285; float32 like the SDK's
+        loop, which stops at 1.5 / 1024 for a zero angle and at 0.0010986 for a sixth of a degree."""
         self.assertAlmostEqual(shapes.veccalc(math.pi / 2), 0.5517862, places=6)
         self.assertAlmostEqual(shapes.veccalc(math.radians(72)) * 12.3607, 5.35303, places=4)
+        self.assertEqual(shapes.veccalc(0.0), 1.5 / 1024)
+        self.assertAlmostEqual(shapes.veccalc(math.radians(0.5) / 3) * 10, 0.01098, places=4)  # the double: 0.0097
 
 
 def leaf(cid, payload=b""):
@@ -226,18 +245,53 @@ class TestSynthetic(unittest.TestCase):
             shapes.read_shape(_parametric(7, (float("inf"),)), 3)
 
     def test_ngon_corner_radius_and_sides(self):
+        """A corner radius makes two knots per corner, at radius * tan(180 / sides) along the sides (no clamp)."""
         sh = shapes.read_shape(_parametric(3, (10.0, 4, 0, 2.0, 1)), 3)
-        self.assertEqual(len(sh.issues), 1)  # sharp corners drawn
-        _close(self, [c for k in sh.splines[0].knots for c in k.point[:2]], [10, 0, 0, 10, -10, 0, 0, -10], "square")
+        self.assertEqual(sh.issues, ())
+        pts = [c for k in sh.splines[0].knots for c in k.point[:2]]
+        d = 2.0 * math.tan(math.pi / 4) / math.sqrt(2)
+        _close(self, pts[:4], [10 - d, -d, 10 - d, d], "square, corner 0")
+        self.assertEqual(len(pts), 16)
+        k = sh.splines[0].knots[1]
+        _close(self, [k.out_vec[0] - k.point[0], k.out_vec[1] - k.point[1]],
+               [-2.0 * shapes.veccalc(math.pi / 2) / math.sqrt(2), 2.0 * shapes.veccalc(math.pi / 2) / math.sqrt(2)],
+               "out vector along the side")
+        sh = shapes.read_shape(_parametric(3, (10.0, 5, 1, 2.0, 1)), 3)  # circular: the corner radius is ignored
+        self.assertEqual(len(sh.splines[0].knots), 5)
         sh = shapes.read_shape(_parametric(3, (10.0, 2, 0, 0.0, 1)), 3)
         self.assertEqual((len(sh.splines[0].knots), len(sh.issues)), (3, 1))
         sh = shapes.read_shape(_parametric(3, (10.0, 1 << 30, 0, 0.0, 1)), 3)
         self.assertEqual((len(sh.splines[0].knots), len(sh.issues)), (shapes.MAX_SIDES, 1))
+        sh = shapes.read_shape(_parametric(3, (10.0, 4, 0, (1.0, 2.0, 3.0), 1)), 3)  # no number: sharp corners
+        self.assertEqual(len(sh.splines[0].knots), 4)
 
     def test_ellipse_outline(self):
-        sh = shapes.read_shape(_parametric(4, (20.0, 40.0, 1.0, 1)), 3)
-        self.assertEqual((len(sh.splines), len(sh.issues)), (1, 1))
+        """The outline is a second spline with both semi-axes plus the thickness, each clamped at 0."""
+        sh = shapes.read_shape(_parametric(4, (20.0, 40.0, 3.0, 1)), 3)
+        self.assertEqual((len(sh.splines), sh.issues), (2, ()))
         _close(self, sh.splines[0].knots[0].point, (20, 0, 0), "ellipse")
+        _close(self, sh.splines[1].knots[0].point + sh.splines[1].knots[1].point, (23, 0, 0, 0, 13, 0), "outline")
+        sh = shapes.read_shape(_parametric(4, (20.0, 40.0, -15.0, 1)), 3)
+        _close(self, sh.splines[1].knots[1].point + sh.splines[1].knots[1].in_vec, (0, 0, 0, 5 * 0.5517862, 0, 0),
+               "inset")
+        sh = shapes.read_shape(_parametric(4, (20.0, 40.0, 3.0, 0)), 3)
+        self.assertEqual(len(sh.splines), 1)
+
+    def test_arc_angles_clamped(self):
+        """from and to are clamped to [0, 360] first: 400 -> 500 is a zero-length arc at 360, 0 -> 720 a full turn
+        ending at 360, 0 -> -90 a zero-length arc at 0."""
+        for start, end, first, span in ((400.0, 500.0, 360, 0), (0.0, 720.0, 0, 360), (0.0, -90.0, 0, 0),
+                                        (40.0, 40.0, 40, 0), (100.0, 50.0, 100, 310), (-30.0, 60.0, 0, 60)):
+            with self.subTest(start=start, end=end):
+                sp = shapes.read_shape(_parametric(6, (10.0, start, end, 0, 0)), 3).splines[0]
+                angles = [math.degrees(math.atan2(k.point[1], k.point[0])) % 360 for k in sp.knots]
+                want = [(first + span * j / 3.0) % 360 for j in range(4)]
+                _close(self, [math.cos(math.radians(a)) for a in angles], [math.cos(math.radians(a)) for a in want],
+                       "cos")
+                _close(self, [math.sin(math.radians(a)) for a in angles], [math.sin(math.radians(a)) for a in want],
+                       "sin")
+        k = shapes.read_shape(_parametric(6, (1000.0, 0.0, 0.0, 0, 0)), 3).splines[0].knots[0]
+        _close(self, k.out_vec, (1000, 1.46484375, 0), "zero-length arc vector")
 
     def test_steps_clamped(self):
         sh = shapes.read_shape(_parametric(7, (5.0,), interp=(1000, 1, 0)), 3)
