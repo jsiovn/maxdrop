@@ -1066,8 +1066,9 @@ def _wrapped(conv, m, map_pid, on_pid, kind, walk, depth, chain, empty=WHITE):
     """The map of a wrapper that has no color of its own (Output, RGB Tint, VRayColor2Bump); without a used map the
     swatch empty: an Output or RGB Tint renders as over a white map, a VRayColor2Bump the color C2B_EMPTY (3ds Max
     2020 renderMap and V-Ray 5.2 renders with the gamma off, maxdrop-em3.76; with it on assumed, Corona not
-    measured). In a normal input (a normal map's normal slot) no graph and an issue: V-Ray tilts the normal by that
-    white, and a constant there is a float (the mean), so no color would stand for it."""
+    measured). In a normal input (a normal map's normal slot) no graph and an issue: V-Ray tilts the normal by an
+    Output's or RGB Tint's white, and a constant there is a float (the mean), so no color would stand for it; a
+    VRayColor2Bump (flat either way) is reported the same, one rule for all three."""
     if conv._on(m, map_pid, on_pid) is None:
         if kind == NORMAL:
             conv._issue(walk, m.index, "%s %r: %s in a normal input, not drawn" % (
