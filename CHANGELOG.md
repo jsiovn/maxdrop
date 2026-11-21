@@ -10,6 +10,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ### Added
 
+- Maps: a Falloff's edited mix curve is drawn as a Float Curve on its ratio, as 3ds Max evaluates it (a curve that
+  bends a reflection or sheen ramp no longer renders linear), and a Mix's Use Curve as its transition zone (a Map
+  Range over the mask, or folded into the mix amount) instead of a line in the report.
 - Shapes: an NGon's corner radius and an Ellipse's outline are drawn as 3ds Max draws them, and a shape that renders
   with a rectangular section gets that section (a hidden bevel object beside it) instead of a round one; none of
   them is a line in the report any more, but a rectangular section on a shape that is not flat, which may turn

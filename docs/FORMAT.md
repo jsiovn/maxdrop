@@ -46,8 +46,9 @@ An object points to others by object index.
   the Editable Mesh of editable_mesh one.
 - `0x2035`: a `u32`, then `(u32 slot, i32 index)` pairs. The first value is the number of reference slots: 16
   for Node and RootNode, 48 for Texmaps and 2 for Bezier Float, Bezier Scale, Bezier Color, Boolean Controller and
-  Grid Reference in every fixture, 2 for MtlBaseLib in stack_basic (and for the point class of Custom Curve
-  Control, nameless in the class directory: texmap_rules' Falloff curves), 34 for VRayMtl (vray_basic,
+  Grid Reference in every fixture, 2 for MtlBaseLib in stack_basic, the point count for the curve of a Custom
+  Curve Control (nameless in the class directory: 2 for a default Falloff curve, 3 and 4 in falloff_curve; see
+  [The Falloff mix curve](#the-falloff-mix-curve)), 34 for VRayMtl (vray_basic,
   vray_maps, vray_wrappers: what the SDK's `NumRefs` reports for a VRayMtl), and for a ParamBlock2 the number of
   its reference slots (25 and 37 in
   standard_physical and vray_wrappers; 37 for the VRayBlendMtl block, see [Parameter blocks](#parameter-blocks)).
@@ -1314,13 +1315,13 @@ The maps of texmap_rules (block 0 each; `convert/texmaps.py`):
 | Class (ClassID) | Parameters |
 |---|---|
 | Bitmap `(0x240, 0)` | 6 apply (cropping / placement on), 9 monoOutput (1 alpha), 10 rgbOutput (1 alpha as gray), 11 alphaSource |
-| Falloff `(0x6EC3730C, 0)` | 0 color1, 1 map1Amount, 2 map1, 3 map1On, 4 color2, 5 map2Amount, 6 map2, 7 map2On, 8 type (0 towards / away, 1 perpendicular / parallel, the default, 2 Fresnel, 3 shadow / light, 4 distance blend), 9 direction (0 viewing), 10 node, 11 mtlIOROverride, 12 ior, 13 extrapolateOn, 14 nearDistance, 15 farDistance (texmap_wrappers); its Output part; the MixCurve is a Curve Control reference, not in the block |
+| Falloff `(0x6EC3730C, 0)` | 0 color1, 1 map1Amount, 2 map1, 3 map1On, 4 color2, 5 map2Amount, 6 map2, 7 map2On, 8 type (0 towards / away, 1 perpendicular / parallel, the default, 2 Fresnel, 3 shadow / light, 4 distance blend), 9 direction (0 viewing), 10 node, 11 mtlIOROverride, 12 ior, 13 extrapolateOn, 14 nearDistance, 15 farDistance (texmap_wrappers); its Output part; the MixCurve is a Curve Control reference, not in the block (below) |
 | VRayDirt `(0x2F567899, 0x090D5EA4)` | 12 occluded_color, 13 unoccluded_color, 17 texmap_unoccluded_color, 18 its on, 19 its multiplier |
 | VRayColor2Bump `(0x31E15D1D, 0x7D7E2810)` | 0 map, 1 height (world units), 2 bump delta scale |
 | VRayColor `(0x58F82B74, 0x73B75D7F)` (vray_texmaps) | 9 color_mode (0 RGB, 1 temperature: V-Ray writes the temperature's color into color), 8 temperature, 0 / 1 / 2 red / green / blue (color again), 4 rgb_multiplier, 3 alpha, 5 color, 10 color_gamma (applied after the multiplier), 11 rgb_primaries; block 1 (6 gamma_correction, 7 gamma_value) is transient |
 | Output `(0x2B0, 0)` | 0 map1, 1 map1Enabled, 2 output (its Output part) |
 | RGB Tint `(0x224, 0)` | 0 red, 1 green, 2 blue, 3 map1, 4 map1Enabled |
-| Mix `(0x230, 0)` | 0 mixAmount (fraction), 1 lower, 2 upper, 3 useCurve, 4 color1, 5 color2, 6 map1, 7 map2, 8 mask, 9 / 10 / 11 their switches |
+| Mix `(0x230, 0)` | 0 mixAmount (fraction), 1 lower, 2 upper (fractions, the defaults 0.3 and 0.7), 3 useCurve, 4 color1, 5 color2, 6 map1, 7 map2, 8 mask, 9 / 10 / 11 their switches; Use Curve below |
 | RGB Multiply `(0x290, 0)` | 0 color1, 1 color2, 2 map1, 3 map2, 4 / 5 their switches, 6 alphaFrom |
 | Color Correction `(0x2D0, 0)` | 0 color, 1 map, 2 rewireMode (0 normal, 1 monochrome, 2 invert, 3 custom), 3..6 rewireR, G, B, A (0..2 R, G, B, 3 A, 4..7 their inverse, 8 monochrome, 9 one, 10 zero; modes 1 and 2 store (8, 8, 8, 3) and (4, 5, 6, 3): texmap_wrappers), 7 hueShift (degrees), 8 saturation (%), 9 tint, 10 tintStrength, 11 lightnessMode (1 advanced), 12 brightness, 13 contrast, 14 exposureMode, 15..17 enableR, G, B, 18 gainRGB (%), 22 gammaRGB |
 | Composite `(0x280, 0)` | tables: 1 mapEnabled, 3 maskEnabled, 5 blendMode (0 normal, 1 average, 2 addition, 3 subtract, 4 darken, 5 multiply, 6 color burn, 7 linear burn, 8 lighten, 9 screen, 10 color dodge, 11 linear dodge, 12 spotlight, 13 spotlight blend, 14 overlay, 15 soft light, 16 hard light, 17 pin light, 18 hard mix, 19 difference, 20 exclusion, 21 hue, 22 saturation, 23 color, 24 value: measured with renderMap), 6 layerName, 8 opacity (%), 9 mapList, 10 mask; 0, 2 and 4 have no name and are empty tables, not saved. As a constructor keyword `name` is the layer names; assigned afterwards it is the map's name (texmap_wrappers names its three) |
@@ -1336,6 +1337,33 @@ switch. On an opacity input V-Ray takes the mean (1, 0.293, 0.667). In a VRayMtl
 a VRayNormalMap's normal slot the white of an empty Output or RGB Tint tilts the normal as a white map does, the
 VRayColor2Bump's color is flat. Corona renders do not run on the machine of the measurement: not measured. MAXScript
 `copy` of an Output map loses map1Enabled (the copy renders its map).
+
+### The Falloff mix curve
+
+A Falloff references a Custom Curve Control `(0x14585773, 0x483A7DCF)`, superclass `0x100`, DLL
+`curvecontrol.dlu` (slot 6 in the fixtures; MaxDrop finds it by its ClassID). Its reference 0 is its curve
+`(0x5F2D3A0A, 0x4BE75269)`, superclass `0x100`, nameless in the class directory (falloff_curve; maxdrop-em3.84):
+
+| Chunk | Content |
+|---|---|
+| `0x1000` | `u32` the point count (2 for the default curve); the head of the curve's `0x2035` is the same number |
+| `0x1030` | one per point, in x order: a container holding `0x1000`, 28 bytes: `f32` x, y of the point, x, y of its in handle, x, y of its out handle (each handle as a position: the point plus the offset MAXScript and the SDK give), `u32` flags (seen: `0x102` the first point, `0x100` the last, `2` and `4` for points set as Bezier and corner) |
+| `0x1020`, `0x1040` | not decoded (a `u32` 0; 28 bytes, the same in every falloff_curve curve) |
+
+The default curve is (0, 0) to (1, 1), its handles on its points: linear. How 3ds Max 2020 evaluates it
+(`ICurve.GetValue` through .NET, matched to 1e-6; falloff_curve's `.curves.jsonl`): segment i is the cubic Bezier
+of point i, its out handle, the in handle of point i + 1 and point i + 1, taken at its x. The flags do not change
+it (0, 1, 2, 3, 4, 8 and 16 give the same values). A point whose y is outside 0..1 is evaluated at the nearest
+bound, its handles moved with it (also after the file is loaded again); between the points the curve is not
+clamped (a handle took it to 1.195). The Falloff renders lerp(color 1, color 2, curve(ratio)), not clamped either
+(Scanline: 152.8 where color 2 is 128 and the curve 1.195), for Perpendicular / Parallel, Towards / Away and Fresnel
+alike (within 8-bit rounding of the renders without the curve put through it). MAXScript reaches the control only
+as `mixCurve.Curve_1` without its points; the fixture's script sets them through the .NET `ICurve` (`Insert`,
+`SetPoint`; `GetPoint`'s point fails to cast in 3ds Max 2020, its handles and flags read).
+
+A Mix's Use Curve has no curve control: renderMap of a Mix of black and white gives, by the mix amount and by a mask
+alike, 0 below lower, 1 from upper on and smoothstep of (x - lower) / (upper - lower) between (lower 0.3, upper 0.7:
+0.04295 at 0.35, 0.15624 at 0.4); with lower at or above upper it is a step at lower.
 
 The Corona classes of corona_physical, corona_legacy, corona_maps, corona_layered, corona_light, corona_more and
 corona_mix_ops (3ds Max 2020 + Corona 12, DLL `coronamaxutils2020.dlt`; block 0 each). CoronaPhysicalMtl's class-directory name starts with a
