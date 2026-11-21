@@ -642,12 +642,12 @@ the primitives fixture and its `primitives.mesh.jsonl`). Lengths in file units, 
 | Box `(0x10, 0)` | 0 length (Y), 1 width (X), 2 height (Z), 3 width segments, 4 length segments, 5 height segments, 6 generate mapping coords |
 | Plane `(0x081F1DFC, 0x77566F65)` | 0 length, 1 width, 2 width segments, 3 length segments, 4 density, 5 render scale, 6 mapping |
 | Pyramid `(0x76BF318A, 0x4BF37B10)` | 0 width, 1 depth, 2 height, 3 width, 4 depth, 5 height segments, 6 mapping |
-| Sphere `(0x11, 0)` | 0 radius, 1 segments, 2 smooth, 3 hemisphere, 4 squash (0 chop), 5 base to pivot, 6 mapping, 7 slice, 8 and 9 its angles |
-| GeoSphere `(0, 0x7F9E)` | 0 radius, 1 segments, 2 base type (0 tetra, 1 octa, 2 icosa), 3 hemisphere, 4 smooth, 5 base to pivot, 6 mapping |
-| Cylinder `(0x12, 0)` | 0 radius, 1 height, 2 height segments, 3 cap segments, 4 sides, 5 smooth, 6 slice, 7 and 8 its angles, 9 mapping |
-| Cone `(0xA86C23DD, 0)` | 0 radius 1, 1 radius 2, 2 height, 3 height segments, 4 cap segments, 5 sides, 6 smooth, 7 slice, 8 and 9 its angles, 10 mapping |
-| Tube `(0x7B21, 0)` | 0 radius 1, 1 radius 2, 2 height, 3 sides, 4 cap segments, 5 height segments, 6 smooth, 7 slice, 8 and 9 its angles, 10 mapping |
-| Torus `(0x20, 0)` | 0 radius 1, 1 radius 2, 2 rotation, 3 twist, 4 segments, 5 sides, 6 smooth (0 none, 1 groups alternating by side, 2 all, 3 alternating by segment), 7 slice, 8 and 9 its angles, 10 mapping |
+| Sphere `(0x11, 0)` | 0 radius, 1 segments, 2 smooth, 3 hemisphere (0 .. 1), 4 squash (0 chop), 5 base to pivot, 6 mapping, 7 slice, 8 slice from, 9 slice to |
+| GeoSphere `(0, 0x7F9E)` | 0 radius, 1 segments, 2 base type (0 tetra, 1 octa, 2 icosa), 3 hemisphere (a switch), 4 smooth, 5 base to pivot, 6 mapping |
+| Cylinder `(0x12, 0)` | 0 radius, 1 height, 2 height segments, 3 cap segments, 4 sides, 5 smooth, 6 slice, 7 slice from, 8 slice to, 9 mapping |
+| Cone `(0xA86C23DD, 0)` | 0 radius 1, 1 radius 2, 2 height, 3 height segments, 4 cap segments, 5 sides, 6 smooth, 7 slice, 8 slice from, 9 slice to, 10 mapping |
+| Tube `(0x7B21, 0)` | 0 radius 1, 1 radius 2, 2 height, 3 sides, 4 cap segments, 5 height segments, 6 smooth, 7 slice, 8 slice from, 9 slice to, 10 mapping |
+| Torus `(0x20, 0)` | 0 radius 1, 1 radius 2, 2 rotation, 3 twist, 4 segments, 5 sides, 6 smooth (0 none, 1 groups alternating by side, 2 all, 3 alternating by segment), 7 slice, **8 slice to, 9 slice from** (the other way round from the rest), 10 mapping |
 
 Real-World Map Size is not in the block: `0x2150{0x0100 u32 1, 0x0110{0x0120 the class (classA, classB,
 superclass, 4), 0x0130 u32 flag}}` in the object's chunk; there is no `0x2150` while mapping is off. Read by
@@ -696,10 +696,47 @@ center vertex and the vertex and triangle counts are 3ds Max's, which the oracle
   (4 on the last of an odd count), 3 the same by segment. UV: U = side / sides, V = segment / segments; Real-World
   Map Size: U = (1 - segment / segments) · 2π · radius 1, V = side / sides · 2π · radius 2.
 
-Not built (the node stays a placeholder, a line in the report): Slice on a Sphere, Cylinder, Cone, Tube or Torus,
-and a Sphere's or GeoSphere's hemisphere. Plane's render scale and density act at render time only (built at the
-viewport size, a line in the report). Teapot is not built. A primitive past 2^21 face corners (`MAX_CORNERS`) is
-refused: a file can ask for any number of segments.
+**Slice and hemispheres** (probed on about 300 meshes of a headless 3ds Max 2020, then the primitives fixture's
+eleven nodes for them). Slice keeps the arc From - To (in 0 .. 360 degrees, 0 a whole turn) and builds it with as many
+steps as the full turn has segments or sides:
+
+- **Sphere hemisphere**: the cut at polar angle (1 - hemisphere) · 180° (hemisphere at most 0.9999). Chopped, the
+  rings keep their places every 360° / segments down to the cut, counted in single precision (k · Δ ≤ cut), then a
+  ring at the cut: a ring that falls on the cut is doubled there, a row of flat faces. Squashed, segments // 2 - 1
+  rings spread over the cut (Δ = cut / (segments / 2 - 1)), the last on it. A base fan to a center on the cut plane,
+  ID 1, group 2 (0 unsmoothed); V by row, 1 - 2k / segments as on the full sphere, the base center one row further;
+  the base flat in real-world mode (U = x - min x, V = max y - y over its rim). Base To Pivot raises it by -radius ·
+  cos(cut), which puts the base on the pivot. Two of the 187 chopped cases probed (20 segments, hemisphere 0.1 and
+  0.3, a ring exactly on the cut) round the other way in 3ds Max: MaxDrop has a row of flat faces more or fewer.
+- **Sphere Slice**: segments + 1 points per ring from To (measured from +Y towards -X), then a point on the axis
+  per ring; each row ends with the faces of its two cut planes, the end's ID 3 group 4, the start's ID 4 group 8 (0
+  unsmoothed); a hemisphere's base fan centers on its last ring's axis point. U across the arc as a fraction of the
+  whole turn; the planes U 1 at the rim, 0 on the axis. Real-world: the planes flat, U from the axis (from the widest
+  ring on the end's plane), V up from the lowest ring; the bottom pole's two plane faces keep the sphere's UVs.
+- **GeoSphere hemisphere**: the faces above the equator of a tetrahedron whose three lower corners are raised onto
+  the equator, of the octahedron, or of the icosahedron split in four at its edges' midpoints (the corner triangles
+  from their corner of the face, the middle one from the midpoint across from the face's first corner), each split
+  in segments as before; a fan from the equator to the center, ID 1, group 2. It stands on the pivot, Base To Pivot
+  or not; the center takes U as a pole does, V 0.5.
+- **Cylinder, Cone Slice**: the profile's rings (bottom cap inside out, side, top cap outside in) from To (from
+  +X, counterclockwise), sides + 1 points each, every ring after a point on the axis, those spread evenly from the
+  bottom center to the top center. Per pair of rings: the start's plane (two triangles, ID 4, group 2), the quads,
+  the end's plane (ID 5, group 4); fans and IDs otherwise as without Slice. A negative height walks the arc back from
+  From instead of flipping the faces, and its U runs down (a face shifted down a turn while its larger U passes 1).
+  The planes' U 0.5 on the axis, V up it; real-world: the start's U from the axis, the end's back from its rim along
+  the direction of the last side step's start, both V up from the lowest point.
+- **Tube Slice**: sides + 1 columns of the profile from From (from +Y towards +X), V = column / (sides + 1); a fan
+  around the profile's middle at each end, the start's ID 5, the end's ID 6, group 1 also unsmoothed; real-world U
+  around the arc times the larger radius, the planes flat (U in from the outer radius at the start, out from the
+  inner one at the end, V up from the lowest point).
+- **Torus Slice**: segments + 1 columns from From, Twist spread over the columns (twist · (column + 1) / (segments +
+  1)); smoothing by segment alternates without a last row apart; a fan around the tube's center at each end, the
+  start's ID 2, the end's ID 3, group 8; real-world as the Tube's.
+
+A Slice whose end lands a float's rounding from U 1 (From 0 To 360, an arc of 0.01°) can give one face's U a whole
+turn from 3ds Max's. Plane's render scale and density act at render time only (built at the viewport size, a line in
+the report). Teapot is not built. A primitive past 2^21 face corners (`MAX_CORNERS`) is refused: a file can ask for
+any number of segments.
 
 ## VRayLight
 

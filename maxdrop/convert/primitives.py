@@ -16,11 +16,10 @@ edge are one quad; a cap's fan stays triangles around its center vertex, so the 
 Max's), smoothing groups and material IDs as 3ds Max assigns them (a Box's sides have IDs 1 to 6), and, when
 Generate Mapping Coords is on, the map channel 1 3ds Max makes, real-world map size included (the UVs are then in
 file units). The pivot is 3ds Max's: a Box, Plane, Pyramid, Cylinder, Cone and Tube stand on it, a Sphere, GeoSphere
-and Torus are centered on it (Base To Pivot raises a Sphere or GeoSphere by its radius).
-
-Not built (PrimitiveError, the node stays a placeholder): a Sphere's hemisphere, a GeoSphere's hemisphere, Slice on a
-Sphere, Cylinder, Cone, Tube or Torus. Plane's render scale and density act only at render time: built at their
-viewport size (an issue when they are not 1).
+and Torus are centered on it (Base To Pivot raises a Sphere or GeoSphere by its radius; a hemisphere stands on it).
+Slice on a Sphere, Cylinder, Cone, Tube or Torus and the hemisphere of a Sphere (chopped or squashed) or a GeoSphere
+are built as 3ds Max builds them, their cut planes and bases with their own IDs, groups and UVs. Plane's render
+scale and density act only at render time: built at their viewport size (an issue when they are not 1).
 
 The file comes from anywhere: a missing block, an animated parameter or one that is no number or not finite raise
 PrimitiveError; segments below 3ds Max's own minimum are raised to it, a mesh past MAX_CORNERS face corners is

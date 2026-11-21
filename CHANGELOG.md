@@ -18,6 +18,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   Blender's default material); with a Multi/Sub-Object, the entry for material ID 1.
 - Extrude: Use Shape IDs is read: each side face gets the material ID of the shape segment it comes from, as in
   3ds Max, so a Multi/Sub-Object puts its sub-materials on the right sides; it is no longer a line in the report.
+- Primitives: Slice on a Sphere, Cylinder, Cone, Tube or Torus and the hemisphere of a Sphere (chopped or squashed)
+  or a GeoSphere are imported as the mesh 3ds Max builds, cut planes and bases with their material IDs, smoothing
+  groups and UVs, instead of a placeholder with a line in the report.
 
 ### Changed
 
