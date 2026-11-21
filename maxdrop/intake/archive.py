@@ -781,6 +781,8 @@ def _load_noreplace():
 def _noreplace_failed(err, src, dst):
     """False when err says there is no such rename here; otherwise the OSError of err (its subclass, as os.rename
     raises it) is raised."""
+    # EINVAL also means a real fault (a folder moved into itself): the fallback's os.rename then raises it, so the
+    # fault is not hidden, only reported one call later.
     if err in _NOREPLACE_UNSUPPORTED:
         return False
     raise OSError(err, os.strerror(err), os.fspath(src), None, os.fspath(dst))
