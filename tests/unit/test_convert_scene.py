@@ -70,6 +70,7 @@ UV_LAYERS = {
     "stack_convert": ["UVMap"],  # its modifiers become Blender modifiers: the base meshes are built
     "stack_shell": ["UVMap"],  # its Shells become Solidify: the base meshes (open boxes) are built
     "standard_physical": ["UVMap"],
+    "standard_shaders": ["UVMap"],
     "saved_as_2017": ["UVMap"],
     "saved_as_2018": ["UVMap"],
     "saved_as_2019": ["UVMap"],

@@ -35,7 +35,7 @@ FLOORS = {"vray_lights": 0, "lights_standard": 0, "lights_photometric": 0, "box_
           "layers_more": 120, "lookat": 120, "modifier_pivot": 120,
           "multi_uv": 120, "pblock_animated": 920, "primitives": 120, "saved_as_2017": 120,
           "saved_as_2018": 120, "saved_as_2019": 120, "shapes": 120, "stack_basic": 120, "stack_convert": 120,
-          "stack_shell": 120, "standard_physical": 290,
+          "stack_shell": 120, "standard_physical": 290, "standard_shaders": 1600,
           "texmap_rules": 1570, "texmap_wrappers": 1690, "units_cm": 120, "units_in": 120, "units_mm": 120, "uvwmap": 120,
           "uvwmap_oblique": 120, "vray_basic": 190, "vray_maps": 630, "vray_more": 2500, "vray_texmaps": 2900,
           "vray_wrappers": 2000}
@@ -54,6 +54,8 @@ scene = importlib.import_module(_PKG + ".reader.scene")
 pblock = importlib.import_module(_PKG + ".reader.pblock")
 materials = importlib.import_module(_PKG + ".reader.materials")
 owner_slots = importlib.import_module(_PKG + ".reader.owner_slots")
+STANDARD_SHADER_SLOT = 2  # a Standard material's reference to its shader
+BLINN_LAYOUT = {classids.PHONG_SHADER, classids.BLINN_SHADER, classids.METAL_SHADER}  # map channels as created
 ChunkError = chunks.ChunkError
 
 
@@ -133,6 +135,28 @@ class Parity:
         else:  # file names are asset ids in the file (resolved by a later reader); nodes, bitmaps: oracle null
             self.skipped += 1
 
+    def stale(self, owner, oracle_block):
+        """skip(pid, k, ours): whether a value of this block is one the file keeps stale while 3ds Max computes its
+        own (standard_shaders):
+        - a Standard material whose shader is not Blinn, Phong or Metal, block 3 mapAmounts at a slot without a
+          map: the file keeps the amounts of the material as created (Blinn's map channels, bump 0.3 at slot 8),
+          3ds Max answers those of its shader's channels (Anisotropic: 0.3 at slot 11). Unused without a map.
+        - a Physical Material's mapM0 ... mapM20 (block 0, 250-270): saved empty, 3ds Max answers the map of
+          parameter id - 150 (mapM1 = base_color_map)."""
+        entry = self.scene.entry(owner)
+        params = {p["id"]: p["value"] for p in oracle_block["params"]}
+        if entry is None or entry.superclass != classids.SC_MATERIAL:
+            return lambda pid, k, ours: False
+        if entry.class_id == classids.STANDARD_MTL and oracle_block["block_id"] == 3:
+            shader = self.scene.entry(self.scene.refs(owner).get(STANDARD_SHADER_SLOT))
+            if shader is not None and shader.class_id not in BLINN_LAYOUT:
+                return lambda pid, k, ours: pid == 2 and params[1][k] is None
+        if entry.class_id == classids.PHYSICAL_MTL and oracle_block["block_id"] == 0:
+            return lambda pid, k, ours: (250 <= pid <= 270 and isinstance(ours, pblock.Reference)
+                                         and ours.index is None and params.get(pid) is not None
+                                         and params.get(pid) == params.get(pid - 150))
+        return lambda pid, k, ours: False
+
     def blocks(self, oracle_blocks, blocks, legacy, owner, where):
         for b in oracle_blocks:
             if b["kind"] == "pb2":
@@ -143,6 +167,7 @@ class Parity:
                 self.case.assertEqual(ours.block_id, b["block_id"], where)
                 self.case.assertEqual(ours.issues, (), where)  # also: as many entries as the header announces
                 self.case.assertTrue(set(ours.ids()) <= {p["id"] for p in b["params"]}, where)
+                skip = self.stale(owner, b)
                 for p in b["params"]:
                     what = "%s block %d param %d %s" % (where, b["block_id"], p["id"], p["name"])
                     rp = ours.param(p["id"])
@@ -166,7 +191,9 @@ class Parity:
                     self.case.assertEqual(len(values), len(theirs), what)
                     for k, (a, t) in enumerate(zip(values, theirs)):
                         at = "%s[%d]" % (what, k) if rp.table else what
-                        if (p["id"], k) in controllers:
+                        if skip(p["id"], k, a):
+                            self.skipped += 1
+                        elif (p["id"], k) in controllers:
                             self.controller(a, controllers[(p["id"], k)], block_index, at)
                         else:
                             self.value(base, a, t, at)

@@ -126,6 +126,7 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1; kept literal: tes
     "stack_convert": ["UVMap"],  # the modifiers become Blender modifiers on the base meshes
     "stack_shell": ["UVMap"],  # the Shells become Solidify on the base meshes (open boxes)
     "standard_physical": ["UVMap"],
+    "standard_shaders": ["UVMap"],
     "saved_as_2017": ["UVMap"],
     "saved_as_2018": ["UVMap"],
     "saved_as_2019": ["UVMap"],

@@ -1081,10 +1081,31 @@ values by the fixture scripts or read by the tests):
 | Multi/Sub-Object `(0x200, 0)` | 0 | 0 materialList, 1 mapEnabled, 2 names, 3 materialIDList (zero-based) |
 | Standard `(2, 0)` | 0 shader | 0 shaderType, 2 twoSided |
 | | 1 extended | 1 opacity (fraction), 6 ior |
-| | 3 maps | 0 mapEnables, 1 maps, 2 mapAmounts (fractions; slot 1 = diffuse) |
-| Physical Material `(0x3D6B1CEC, 0xDEADC001)` | 0 | 1 base_weight, 2 base_color (float color with alpha), 3 reflectivity, 4 roughness, 6 metalness, 10 refl_color, 11 diff_roughness, 30 transparency, 31 trans_color, 33 trans_ior, 50 emission, 51 emit_color, 60 coating, 62 coat_roughness |
+| | 3 maps | 0 mapEnables, 1 maps, 2 mapAmounts (fractions), one element per map channel of the shader, in the shader's order (below) |
+| Its shader (a part at reference 2, superclass Shader `0x10B0`) | 0 | Phong `(0x37, 0)`, Blinn `(0x38, 0)`, Metal `(0x39, 0)`: 0 ambient, 1 diffuse, 2 specular, 6 useSelfIllumColor, 7 selfIllumAmount, 8 selfIllumColor, 9 specularLevel, 10 glossiness, 11 soften (standard_physical, standard_shaders) |
+| | | Anisotropic `(0x2857F460, 0)`: 0 ambient, 1 diffuse, 2 specular, 3 selfIllumColor, 4 diffuseLevel, 5 specularLevel, 6 selfIllumAmount, 7 glossiness, 8 anisotropy, 9 orientation, 14 useSelfIllumColor |
+| | | Oren-Nayar-Blinn `(0x2857F421, 0)`: 0 ambient, 1 diffuse, 2 specular, 3 selfIllumColor, 4 selfIllumAmount, 5 glossiness, 6 specularLevel, 7 soften, 8 diffuseLevel, 9 diffuseRoughness, 13 useSelfIllumColor |
+| | | Multi-Layer `(0x2857F470, 0)`: 0 ambient, 1 diffuse, 2 selfIllumColor, 3 selfIllumAmount, 4 diffuseLevel, 5 diffuseRoughness, 6 / 7 / 8 / 9 / 10 specular, specularLevel, glossiness, anisotropy, orientation of the first layer, 11-15 the same of the second, 19 useSelfIllumColor |
+| | | Translucent Shader `(0x2857F480, 0)`: 0 ambient, 1 diffuse, 2 specular, 3 selfIllumColor, 4 selfIllumAmount, 5 glossiness, 6 specularLevel, 7 diffuseLevel, 8 filter, 9 translucentColor, 10 backsideSpecular, 14 useSelfIllumColor |
+| | | Strauss `(0x2857F450, 0)`: 0 diffuse, 1 glossiness, 2 metalness (standard_shaders). Anisotropic, Oren-Nayar-Blinn, Multi-Layer and Translucent store their diffuse in ambient whatever is set |
+| Physical Material `(0x3D6B1CEC, 0xDEADC001)` | 0 | 1 base_weight, 2 base_color (float color with alpha), 3 reflectivity, 4 roughness, 5 roughness_inv, 6 metalness, 10 refl_color, 11 diff_roughness, 30 transparency, 31 trans_color, 33 trans_ior, 37 thin_walled, 50 emission, 51 emit_color, 52 emit_luminance (cd/m2), 60 coating, 61 coat_color, 62 coat_roughness, 63 coat_roughness_inv, 66 coat_ior; maps 100-120 (`*_map`: 101 base_color, 102 reflectivity, 103 refl_color, 104 roughness, 105 metalness, 109 transparency, 116 emission, 117 emit_color, ...), 130 bump_map, 131 coat_bump_map, 132 displacement_map, 133 cutout_map, each switched on by its id + 50 (`*_map_on`, default on), 230 bump_map_amt (a factor, default 0.3); 250-270 mapM0 ... mapM20 are saved empty, 3ds Max answers the map of id - 150 (standard_physical, standard_shaders) |
 | Bitmap `(0x240, 0)` | 0 | 0-3 clip u, v, w, h, 7 cropPlace, 8 filtering, 12 preMultAlpha, 13 bitmap (asset), 14 coords, 15 output |
 | VRayNormalMap `(0x71FA6E51, 0x72057C2F)` | 0 | 0 normal_map, 2 normal_map_on, 3 normal_map_multiplier, 4 bump_map, 5 bump_map_on, 6 bump_map_multiplier, 1 map_channel, 7 flip_red, 8 flip_green, 9 swap_red_and_green |
+
+A Standard material's map tables follow its shader's map channels (3ds Max 2020, zero-based; `getSubTexmapSlotName`
+and the saved table agree). Blinn, Phong, Metal: 0 ambient, 1 diffuse, 2 specular color, 3 specular level, 4
+glossiness, 5 self-illumination, 6 opacity, 7 filter color, 8 bump, 9 reflection, 10 refraction, 11 displacement.
+Anisotropic: 0 ambient, 1 diffuse, 2 specular color, 3 diffuse level, 4 specular level, 5 glossiness, 6 anisotropy,
+7 orientation, 8 self-illumination, 9 opacity, 10 filter color, 11 bump, 12 reflection, 13 refraction, 14
+displacement. Oren-Nayar-Blinn and Translucent Shader: 0 ambient, 1 diffuse, 2 specular color, 3 glossiness, 4
+specular level, 5 self-illumination, 6 opacity, 7 filter color, 8 diffuse level, 9 diffuse roughness (Translucent:
+translucent color), 10 bump, 11 reflection, 12 refraction, 13 displacement. Multi-Layer: 0 ambient, 1 diffuse, 2
+diffuse level, 3 diffuse roughness, 4-8 specular color, level, glossiness, anisotropy, orientation of the first
+layer, 9-13 of the second, 14 self-illumination, 15 opacity, 16 filter color, 17 bump, 18 reflection, 19 refraction,
+20 displacement. Strauss: 0 color, 1 glossiness, 2 metalness, 3 opacity, 4 refraction filter, 5 bump, 6 reflection,
+7 refraction, 8 displacement. The amounts of channels without a map keep the layout the material was created with
+(Blinn's: bump 0.3 at 8) in the file, while 3ds Max answers its shader's. MaxDrop reads Blinn's channels for every
+shader so far (maxdrop-em3.104).
 
 The maps of texmap_rules (block 0 each; `convert/texmaps.py`):
 

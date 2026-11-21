@@ -81,7 +81,8 @@ in meters: VRayFastSSS2's scatter_radius is in centimeters whatever the system u
 documentation says both). VRayCarPaintMtl's coat_strength is, in V-Ray's documentation, the strength of the coat
 reflections seen from the front; that Fresnel gives the other angles is this rule's reading.
 Parameter ids: docs/FORMAT.md for the classes of the fixtures (the Corona ones: Corona 12; the V-Ray ones: V-Ray 5.2);
-the Standard shaders but Blinn (beside SHADERS) were read from probe scenes 3ds Max 2020 saved, not from a fixture.
+standard_shaders sets every shader's ids and the Physical Material's maps. The Standard map slots (STD_*) are Blinn's
+map channels, not yet the other shaders' (maxdrop-em3.104).
 No bpy, no mathutils.
 """
 import collections
@@ -121,27 +122,22 @@ LUMENS_PER_WATT = 683.0  # luminous efficacy at 555 nm: cd/m2 -> W/(m2 sr)
 MULTI_MATERIALS, MULTI_ENABLED, MULTI_IDS = 0, 1, 3
 
 # Standard: the shader is a part (superclass Shader); its block 0 holds the colors, with ids per shader class
-# (probe scenes saved by 3ds Max 2020 with each shader; only Blinn is in a fixture).
-PHONG_SHADER = ClassId(0x00000037, 0)
-METAL_SHADER = ClassId(0x00000039, 0)
-ANISOTROPIC_SHADER = ClassId(0x2857F460, 0)
-OREN_NAYAR_BLINN_SHADER = ClassId(0x2857F421, 0)
-MULTI_LAYER_SHADER = ClassId(0x2857F470, 0)
-TRANSLUCENT_SHADER = ClassId(0x2857F480, 0)
-STRAUSS_SHADER = ClassId(0x2857F450, 0)  # 0 color, 1 glossiness, 2 metalness
-
+# (fixture standard_shaders).
+# Strauss (classids.STRAUSS_SHADER) has its own: 0 color, 1 glossiness, 2 metalness.
 ShaderIds = collections.namedtuple("ShaderIds", "diffuse specular level glossiness si_amount si_color use_si_color")
 _BLINN_IDS = ShaderIds(1, 2, 9, 10, 7, 8, 6)
 SHADERS = {
-    PHONG_SHADER: _BLINN_IDS,
+    classids.PHONG_SHADER: _BLINN_IDS,
     classids.BLINN_SHADER: _BLINN_IDS,
-    METAL_SHADER: _BLINN_IDS,
-    ANISOTROPIC_SHADER: ShaderIds(1, 2, 5, 7, 6, 3, 14),
-    OREN_NAYAR_BLINN_SHADER: ShaderIds(1, 2, 6, 5, 4, 3, 13),
-    MULTI_LAYER_SHADER: ShaderIds(1, 6, 7, 8, 3, 2, 19),  # the first specular layer
-    TRANSLUCENT_SHADER: ShaderIds(1, 2, 6, 5, 4, 3, 14),
+    classids.METAL_SHADER: _BLINN_IDS,
+    classids.ANISOTROPIC_SHADER: ShaderIds(1, 2, 5, 7, 6, 3, 14),
+    classids.OREN_NAYAR_BLINN_SHADER: ShaderIds(1, 2, 6, 5, 4, 3, 13),
+    classids.MULTI_LAYER_SHADER: ShaderIds(1, 6, 7, 8, 3, 2, 19),  # the first specular layer
+    classids.TRANSLUCENT_SHADER: ShaderIds(1, 2, 6, 5, 4, 3, 14),
 }
-# Standard map slots: index into block 3's tables (mapEnables 0, maps 1, mapAmounts 2)
+# Standard map slots: index into block 3's tables (mapEnables 0, maps 1, mapAmounts 2). The tables follow the
+# shader's map channels: these are Blinn's, Phong's and Metal's; the other shaders order them otherwise
+# (docs/FORMAT.md) and are read with these all the same: maxdrop-em3.104.
 STD_DIFFUSE, STD_SPECULAR, STD_LEVEL, STD_GLOSSINESS, STD_SELF_ILLUM, STD_OPACITY, STD_BUMP, STD_REFLECTION = (
     1, 2, 3, 4, 5, 6, 8, 9)
 STD_DIFFUSE_DEFAULT = (150 / 255,) * 3
@@ -608,7 +604,7 @@ def _std_map(conv, m, slot, ir, invert=False):
 
 def standard_mtl(conv, m, ir):
     """Standard: block 0 shader (2 twoSided), block 1 extended (1 opacity, 6 ior), block 3 maps; the colors in the
-    shader part's block 0 (SHADERS, STRAUSS_SHADER)."""
+    shader part's block 0 (SHADERS; Strauss its own)."""
     ir.two_sided = _flag(m, 2, 0, False)
     ir.ior = _ior(_num(m, 6, 1, 1.5))
     ir.alpha = Input(_clamp01(_num(m, 1, 1, 1.0)), _std_map(conv, m, STD_OPACITY, ir))
@@ -619,7 +615,7 @@ def standard_mtl(conv, m, ir):
     level_map = _std_map(conv, m, STD_LEVEL, ir) or _std_map(conv, m, STD_SPECULAR, ir)
     emit_map = _std_map(conv, m, STD_SELF_ILLUM, ir)
     specular, amount, emit = 0.0, 0.0, None
-    if sid == STRAUSS_SHADER:
+    if sid == classids.STRAUSS_SHADER:
         diffuse, gloss = conv.rgb(s, 0, 0, STD_DIFFUSE_DEFAULT), _num(s, 1, 0, 0.1)
         ir.metallic = Input(_clamp01(_num(s, 2, 0, 0.0)))
         specular = 0.5
@@ -631,7 +627,7 @@ def standard_mtl(conv, m, ir):
             emit = conv.rgb(s, ids.si_color, 0, (0.0, 0.0, 0.0))
         else:
             amount = max(0.0, _num(s, ids.si_amount, 0, 0.0))
-        if sid == METAL_SHADER:
+        if sid == classids.METAL_SHADER:
             ir.metallic = Input(1.0)
     else:
         diffuse, gloss = conv.swatches.color(STD_DIFFUSE_DEFAULT), 0.1

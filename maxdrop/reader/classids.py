@@ -159,7 +159,14 @@ CORONA_COLOR = ClassId(0x68426DCA, 0x372362D4)
 CORONA_MIX = ClassId(0x6847286F, 0x3FFFAAB4)
 STD_UVGEN = ClassId(0x00000100, 0)  # superclass UVGen ("Placement")
 STD_TEXOUTPUT = ClassId(0x00000100, 0)  # superclass TexOutput ("Output"): the same ClassId as STD_UVGEN
+PHONG_SHADER = ClassId(0x00000037, 0)
 BLINN_SHADER = ClassId(0x00000038, 0)
+METAL_SHADER = ClassId(0x00000039, 0)
+ANISOTROPIC_SHADER = ClassId(0x2857F460, 0)
+OREN_NAYAR_BLINN_SHADER = ClassId(0x2857F421, 0)
+MULTI_LAYER_SHADER = ClassId(0x2857F470, 0)
+TRANSLUCENT_SHADER = ClassId(0x2857F480, 0)
+STRAUSS_SHADER = ClassId(0x2857F450, 0)
 STAR_SAMPLER = ClassId(0x25773211, 0)
 
 # Controllers.
@@ -288,7 +295,14 @@ CLASSES = {
     (SC_TEXMAP, CORONA_MIX): "CoronaMix",
     (SC_UVGEN, STD_UVGEN): "Placement",
     (SC_TEXOUTPUT, STD_TEXOUTPUT): "Output",
+    (SC_SHADER, PHONG_SHADER): "Phong",
     (SC_SHADER, BLINN_SHADER): "Blinn",
+    (SC_SHADER, METAL_SHADER): "Metal",
+    (SC_SHADER, ANISOTROPIC_SHADER): "Anisotropic",
+    (SC_SHADER, OREN_NAYAR_BLINN_SHADER): "Oren-Nayar-Blinn",
+    (SC_SHADER, MULTI_LAYER_SHADER): "Multi-Layer",
+    (SC_SHADER, TRANSLUCENT_SHADER): "Translucent Shader",
+    (SC_SHADER, STRAUSS_SHADER): "Strauss",
     (SC_SAMPLER, STAR_SAMPLER): "Max 2.5 Star",
     (SC_CTRL_MATRIX3, PRS): "Position/Rotation/Scale",
     (SC_CTRL_FLOAT, LINEAR_FLOAT): "Linear Float",

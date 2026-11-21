@@ -1,0 +1,2801 @@
+{
+  "file": "standard_shaders.max",
+  "file_version": [22000, 22000],
+  "layers": [
+    {"frozen": false, "hidden": false, "name": "0", "parent": null, "renderable": true}
+  ],
+  "material_graph": [
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "shaderType", "transient": false, "type": 1, "value": 1},
+          {"id": 1, "name": "wire", "transient": false, "type": 4, "value": 0},
+          {"id": 2, "name": "twoSided", "transient": false, "type": 4, "value": 0},
+          {"id": 3, "name": "faceMap", "transient": false, "type": 4, "value": 0},
+          {"id": 4, "name": "faceted", "transient": false, "type": 4, "value": 0},
+          {"id": 5, "name": "shaderByName", "transient": false, "type": 8, "value": "Blinn"}
+        ],
+        "ref": 3
+      },
+      {
+        "block_id": 1,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "opacityType", "transient": false, "type": 1, "value": 0},
+          {"id": 1, "name": "opacity", "transient": false, "type": 6, "value": 1},
+          {"id": 2, "name": "filterColor", "transient": false, "type": 2, "value": [0.5, 0.5, 0.5]},
+          {"id": 3, "name": "filterMap", "transient": false, "type": 15, "value": null},
+          {"id": 4, "name": "opacityFallOffType", "transient": false, "type": 1, "value": 0},
+          {"id": 5, "name": "opacityFallOff", "transient": false, "type": 6, "value": 0},
+          {"id": 6, "name": "ior", "transient": false, "type": 0, "value": 1.5},
+          {"id": 7, "name": "wireSize", "transient": false, "type": 0, "value": 1},
+          {"id": 8, "name": "wireUnits", "transient": false, "type": 1, "value": 0},
+          {"id": 9, "name": "applyReflectionDimming", "transient": false, "type": 4, "value": 0},
+          {"id": 10, "name": "dimLevel", "transient": false, "type": 0, "value": 0},
+          {"id": 11, "name": "reflectionLevel", "transient": false, "type": 0, "value": 3}
+        ],
+        "ref": 4
+      },
+      {
+        "block_id": 2,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "sampler", "transient": false, "type": 1, "value": 3},
+          {"id": 1, "name": "samplerQuality", "transient": false, "type": 0, "value": 0.5},
+          {"id": 2, "name": "samplerEnable", "transient": false, "type": 4, "value": 0},
+          {"id": 4, "name": "samplerAdaptThreshold", "transient": false, "type": 0, "value": 0.1},
+          {"id": 3, "name": "samplerAdaptOn", "transient": false, "type": 4, "value": 1},
+          {"id": 6, "name": "subSampleTextureOn", "transient": false, "type": 4, "value": 1},
+          {"id": 5, "name": "samplerAdvancedOptions", "transient": false, "type": 4, "value": 1},
+          {"id": 7, "name": "samplerByName", "transient": false, "type": 8, "value": "Max 2.5 Star"},
+          {"id": 8, "name": "UserParam0", "transient": false, "type": 0, "value": 0},
+          {"id": 9, "name": "UserParam1", "transient": false, "type": 0, "value": 0},
+          {"id": 10, "name": "samplerUseGlobal", "transient": false, "type": 4, "value": 1}
+        ],
+        "ref": 5
+      },
+      {
+        "block_id": 3,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "mapEnables", "transient": false, "type": 2052, "value": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]},
+          {"id": 1, "name": "maps", "transient": false, "type": 2063, "value": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null]},
+          {"id": 2, "name": "mapAmounts", "transient": false, "type": 2054, "value": [1, 1, 1, 1, 1, 1, 1, 1, 0.3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]},
+          {"id": 3, "name": "adTextureLock", "transient": false, "type": 4, "value": 1}
+        ],
+        "ref": 6
+      },
+      {
+        "block_id": 4,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "bounce", "transient": false, "type": 0, "value": 1},
+          {"id": 1, "name": "staticFriction", "transient": false, "type": 0, "value": 0},
+          {"id": 2, "name": "slidingFriction", "transient": false, "type": 0, "value": 0}
+        ],
+        "ref": 7
+      }
+    ],
+      "class_id": ["0x00000002", "0x00000000"],
+      "class_name": "Standardmaterial",
+      "index": 0,
+      "name": "FixtureBlinn",
+      "parts": [
+      {
+        "blocks": [
+        {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "ambient", "transient": false, "type": 2, "value": [0.0470588, 0.0862745, 0.12549]},
+          {"id": 1, "name": "diffuse", "transient": false, "type": 2, "value": [0.784314, 0.235294, 0.156863]},
+          {"id": 2, "name": "specular", "transient": false, "type": 2, "value": [0.862745, 0.823529, 0.784314]},
+          {"id": 3, "name": "adTextureLock", "transient": false, "type": 4, "value": 1},
+          {"id": 4, "name": "adLock", "transient": false, "type": 4, "value": 0},
+          {"id": 5, "name": "dsLock", "transient": false, "type": 4, "value": 0},
+          {"id": 6, "name": "useSelfIllumColor", "transient": false, "type": 4, "value": 1},
+          {"id": 7, "name": "selfIllumAmount", "transient": false, "type": 6, "value": 0.17},
+          {"id": 8, "name": "selfIllumColor", "transient": false, "type": 2, "value": [0.117647, 0.352941, 0.784314]},
+          {"id": 9, "name": "specularLevel", "transient": false, "type": 6, "value": 0.41},
+          {"id": 10, "name": "glossiness", "transient": false, "type": 6, "value": 0.31},
+          {"id": 11, "name": "soften", "transient": false, "type": 0, "value": 0.1}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000038", "0x00000000"],
+        "ref": 2
+      },
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 0, "value": 0.5},
+          {"index": 1, "type": 4, "value": 0},
+          {"index": 2, "type": 4, "value": 1}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x25773211", "0x00000000"],
+        "ref": 8
+      }
+    ],
+      "subs": [],
+      "superclass": 3072
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "shaderType", "transient": false, "type": 1, "value": 5},
+          {"id": 1, "name": "wire", "transient": false, "type": 4, "value": 0},
+          {"id": 2, "name": "twoSided", "transient": false, "type": 4, "value": 0},
+          {"id": 3, "name": "faceMap", "transient": false, "type": 4, "value": 0},
+          {"id": 4, "name": "faceted", "transient": false, "type": 4, "value": 0},
+          {"id": 5, "name": "shaderByName", "transient": false, "type": 8, "value": "Phong"}
+        ],
+        "ref": 3
+      },
+      {
+        "block_id": 1,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "opacityType", "transient": false, "type": 1, "value": 0},
+          {"id": 1, "name": "opacity", "transient": false, "type": 6, "value": 1},
+          {"id": 2, "name": "filterColor", "transient": false, "type": 2, "value": [0.5, 0.5, 0.5]},
+          {"id": 3, "name": "filterMap", "transient": false, "type": 15, "value": null},
+          {"id": 4, "name": "opacityFallOffType", "transient": false, "type": 1, "value": 0},
+          {"id": 5, "name": "opacityFallOff", "transient": false, "type": 6, "value": 0},
+          {"id": 6, "name": "ior", "transient": false, "type": 0, "value": 1.5},
+          {"id": 7, "name": "wireSize", "transient": false, "type": 0, "value": 1},
+          {"id": 8, "name": "wireUnits", "transient": false, "type": 1, "value": 0},
+          {"id": 9, "name": "applyReflectionDimming", "transient": false, "type": 4, "value": 0},
+          {"id": 10, "name": "dimLevel", "transient": false, "type": 0, "value": 0},
+          {"id": 11, "name": "reflectionLevel", "transient": false, "type": 0, "value": 3}
+        ],
+        "ref": 4
+      },
+      {
+        "block_id": 2,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "sampler", "transient": false, "type": 1, "value": 3},
+          {"id": 1, "name": "samplerQuality", "transient": false, "type": 0, "value": 0.5},
+          {"id": 2, "name": "samplerEnable", "transient": false, "type": 4, "value": 0},
+          {"id": 4, "name": "samplerAdaptThreshold", "transient": false, "type": 0, "value": 0.1},
+          {"id": 3, "name": "samplerAdaptOn", "transient": false, "type": 4, "value": 1},
+          {"id": 6, "name": "subSampleTextureOn", "transient": false, "type": 4, "value": 1},
+          {"id": 5, "name": "samplerAdvancedOptions", "transient": false, "type": 4, "value": 1},
+          {"id": 7, "name": "samplerByName", "transient": false, "type": 8, "value": "Max 2.5 Star"},
+          {"id": 8, "name": "UserParam0", "transient": false, "type": 0, "value": 0},
+          {"id": 9, "name": "UserParam1", "transient": false, "type": 0, "value": 0},
+          {"id": 10, "name": "samplerUseGlobal", "transient": false, "type": 4, "value": 1}
+        ],
+        "ref": 5
+      },
+      {
+        "block_id": 3,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "mapEnables", "transient": false, "type": 2052, "value": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]},
+          {"id": 1, "name": "maps", "transient": false, "type": 2063, "value": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null]},
+          {"id": 2, "name": "mapAmounts", "transient": false, "type": 2054, "value": [1, 1, 1, 1, 1, 1, 1, 1, 0.3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]},
+          {"id": 3, "name": "adTextureLock", "transient": false, "type": 4, "value": 1}
+        ],
+        "ref": 6
+      },
+      {
+        "block_id": 4,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "bounce", "transient": false, "type": 0, "value": 1},
+          {"id": 1, "name": "staticFriction", "transient": false, "type": 0, "value": 0},
+          {"id": 2, "name": "slidingFriction", "transient": false, "type": 0, "value": 0}
+        ],
+        "ref": 7
+      }
+    ],
+      "class_id": ["0x00000002", "0x00000000"],
+      "class_name": "Standardmaterial",
+      "index": 1,
+      "name": "FixturePhong",
+      "parts": [
+      {
+        "blocks": [
+        {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "ambient", "transient": false, "type": 2, "value": [0.0509804, 0.0901961, 0.129412]},
+          {"id": 1, "name": "diffuse", "transient": false, "type": 2, "value": [0.235294, 0.705882, 0.352941]},
+          {"id": 2, "name": "specular", "transient": false, "type": 2, "value": [0.823529, 0.862745, 0.901961]},
+          {"id": 3, "name": "adTextureLock", "transient": false, "type": 4, "value": 1},
+          {"id": 4, "name": "adLock", "transient": false, "type": 4, "value": 0},
+          {"id": 5, "name": "dsLock", "transient": false, "type": 4, "value": 0},
+          {"id": 6, "name": "useSelfIllumColor", "transient": false, "type": 4, "value": 0},
+          {"id": 7, "name": "selfIllumAmount", "transient": false, "type": 6, "value": 0.19},
+          {"id": 8, "name": "selfIllumColor", "transient": false, "type": 2, "value": [0.784314, 0.117647, 0.352941]},
+          {"id": 9, "name": "specularLevel", "transient": false, "type": 6, "value": 0.52},
+          {"id": 10, "name": "glossiness", "transient": false, "type": 6, "value": 0.42},
+          {"id": 11, "name": "soften", "transient": false, "type": 0, "value": 0.1}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000037", "0x00000000"],
+        "ref": 2
+      },
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 0, "value": 0.5},
+          {"index": 1, "type": 4, "value": 0},
+          {"index": 2, "type": 4, "value": 1}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x25773211", "0x00000000"],
+        "ref": 8
+      }
+    ],
+      "subs": [],
+      "superclass": 3072
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "shaderType", "transient": false, "type": 1, "value": 2},
+          {"id": 1, "name": "wire", "transient": false, "type": 4, "value": 0},
+          {"id": 2, "name": "twoSided", "transient": false, "type": 4, "value": 0},
+          {"id": 3, "name": "faceMap", "transient": false, "type": 4, "value": 0},
+          {"id": 4, "name": "faceted", "transient": false, "type": 4, "value": 0},
+          {"id": 5, "name": "shaderByName", "transient": false, "type": 8, "value": "Metal"}
+        ],
+        "ref": 3
+      },
+      {
+        "block_id": 1,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "opacityType", "transient": false, "type": 1, "value": 0},
+          {"id": 1, "name": "opacity", "transient": false, "type": 6, "value": 1},
+          {"id": 2, "name": "filterColor", "transient": false, "type": 2, "value": [0.5, 0.5, 0.5]},
+          {"id": 3, "name": "filterMap", "transient": false, "type": 15, "value": null},
+          {"id": 4, "name": "opacityFallOffType", "transient": false, "type": 1, "value": 0},
+          {"id": 5, "name": "opacityFallOff", "transient": false, "type": 6, "value": 0},
+          {"id": 6, "name": "ior", "transient": false, "type": 0, "value": 1.5},
+          {"id": 7, "name": "wireSize", "transient": false, "type": 0, "value": 1},
+          {"id": 8, "name": "wireUnits", "transient": false, "type": 1, "value": 0},
+          {"id": 9, "name": "applyReflectionDimming", "transient": false, "type": 4, "value": 0},
+          {"id": 10, "name": "dimLevel", "transient": false, "type": 0, "value": 0},
+          {"id": 11, "name": "reflectionLevel", "transient": false, "type": 0, "value": 3}
+        ],
+        "ref": 4
+      },
+      {
+        "block_id": 2,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "sampler", "transient": false, "type": 1, "value": 3},
+          {"id": 1, "name": "samplerQuality", "transient": false, "type": 0, "value": 0.5},
+          {"id": 2, "name": "samplerEnable", "transient": false, "type": 4, "value": 0},
+          {"id": 4, "name": "samplerAdaptThreshold", "transient": false, "type": 0, "value": 0.1},
+          {"id": 3, "name": "samplerAdaptOn", "transient": false, "type": 4, "value": 1},
+          {"id": 6, "name": "subSampleTextureOn", "transient": false, "type": 4, "value": 1},
+          {"id": 5, "name": "samplerAdvancedOptions", "transient": false, "type": 4, "value": 1},
+          {"id": 7, "name": "samplerByName", "transient": false, "type": 8, "value": "Max 2.5 Star"},
+          {"id": 8, "name": "UserParam0", "transient": false, "type": 0, "value": 0},
+          {"id": 9, "name": "UserParam1", "transient": false, "type": 0, "value": 0},
+          {"id": 10, "name": "samplerUseGlobal", "transient": false, "type": 4, "value": 1}
+        ],
+        "ref": 5
+      },
+      {
+        "block_id": 3,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "mapEnables", "transient": false, "type": 2052, "value": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]},
+          {"id": 1, "name": "maps", "transient": false, "type": 2063, "value": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null]},
+          {"id": 2, "name": "mapAmounts", "transient": false, "type": 2054, "value": [1, 1, 1, 1, 1, 1, 1, 1, 0.3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]},
+          {"id": 3, "name": "adTextureLock", "transient": false, "type": 4, "value": 1}
+        ],
+        "ref": 6
+      },
+      {
+        "block_id": 4,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "bounce", "transient": false, "type": 0, "value": 1},
+          {"id": 1, "name": "staticFriction", "transient": false, "type": 0, "value": 0},
+          {"id": 2, "name": "slidingFriction", "transient": false, "type": 0, "value": 0}
+        ],
+        "ref": 7
+      }
+    ],
+      "class_id": ["0x00000002", "0x00000000"],
+      "class_name": "Standardmaterial",
+      "index": 2,
+      "name": "FixtureMetal",
+      "parts": [
+      {
+        "blocks": [
+        {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "ambient", "transient": false, "type": 2, "value": [0.054902, 0.0941176, 0.133333]},
+          {"id": 1, "name": "diffuse", "transient": false, "type": 2, "value": [0.705882, 0.54902, 0.235294]},
+          {"id": 2, "name": "specular", "transient": false, "type": 2, "value": [0.941176, 0.901961, 0.784314]},
+          {"id": 3, "name": "adTextureLock", "transient": false, "type": 4, "value": 1},
+          {"id": 4, "name": "adLock", "transient": false, "type": 4, "value": 0},
+          {"id": 5, "name": "dsLock", "transient": false, "type": 4, "value": 0},
+          {"id": 6, "name": "useSelfIllumColor", "transient": false, "type": 4, "value": 1},
+          {"id": 7, "name": "selfIllumAmount", "transient": false, "type": 6, "value": 0.21},
+          {"id": 8, "name": "selfIllumColor", "transient": false, "type": 2, "value": [0.352941, 0.784314, 0.117647]},
+          {"id": 9, "name": "specularLevel", "transient": false, "type": 6, "value": 0.63},
+          {"id": 10, "name": "glossiness", "transient": false, "type": 6, "value": 0.53},
+          {"id": 11, "name": "soften", "transient": false, "type": 0, "value": 0.1}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000039", "0x00000000"],
+        "ref": 2
+      },
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 0, "value": 0.5},
+          {"index": 1, "type": 4, "value": 0},
+          {"index": 2, "type": 4, "value": 1}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x25773211", "0x00000000"],
+        "ref": 8
+      }
+    ],
+      "subs": [],
+      "superclass": 3072
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "shaderType", "transient": false, "type": 1, "value": 0},
+          {"id": 1, "name": "wire", "transient": false, "type": 4, "value": 0},
+          {"id": 2, "name": "twoSided", "transient": false, "type": 4, "value": 0},
+          {"id": 3, "name": "faceMap", "transient": false, "type": 4, "value": 0},
+          {"id": 4, "name": "faceted", "transient": false, "type": 4, "value": 0},
+          {"id": 5, "name": "shaderByName", "transient": false, "type": 8, "value": "Anisotropic"}
+        ],
+        "ref": 3
+      },
+      {
+        "block_id": 1,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "opacityType", "transient": false, "type": 1, "value": 0},
+          {"id": 1, "name": "opacity", "transient": false, "type": 6, "value": 1},
+          {"id": 2, "name": "filterColor", "transient": false, "type": 2, "value": [0.5, 0.5, 0.5]},
+          {"id": 3, "name": "filterMap", "transient": false, "type": 15, "value": null},
+          {"id": 4, "name": "opacityFallOffType", "transient": false, "type": 1, "value": 0},
+          {"id": 5, "name": "opacityFallOff", "transient": false, "type": 6, "value": 0},
+          {"id": 6, "name": "ior", "transient": false, "type": 0, "value": 1.5},
+          {"id": 7, "name": "wireSize", "transient": false, "type": 0, "value": 1},
+          {"id": 8, "name": "wireUnits", "transient": false, "type": 1, "value": 0},
+          {"id": 9, "name": "applyReflectionDimming", "transient": false, "type": 4, "value": 0},
+          {"id": 10, "name": "dimLevel", "transient": false, "type": 0, "value": 0},
+          {"id": 11, "name": "reflectionLevel", "transient": false, "type": 0, "value": 3}
+        ],
+        "ref": 4
+      },
+      {
+        "block_id": 2,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "sampler", "transient": false, "type": 1, "value": 3},
+          {"id": 1, "name": "samplerQuality", "transient": false, "type": 0, "value": 0.5},
+          {"id": 2, "name": "samplerEnable", "transient": false, "type": 4, "value": 0},
+          {"id": 4, "name": "samplerAdaptThreshold", "transient": false, "type": 0, "value": 0.1},
+          {"id": 3, "name": "samplerAdaptOn", "transient": false, "type": 4, "value": 1},
+          {"id": 6, "name": "subSampleTextureOn", "transient": false, "type": 4, "value": 1},
+          {"id": 5, "name": "samplerAdvancedOptions", "transient": false, "type": 4, "value": 1},
+          {"id": 7, "name": "samplerByName", "transient": false, "type": 8, "value": "Max 2.5 Star"},
+          {"id": 8, "name": "UserParam0", "transient": false, "type": 0, "value": 0},
+          {"id": 9, "name": "UserParam1", "transient": false, "type": 0, "value": 0},
+          {"id": 10, "name": "samplerUseGlobal", "transient": false, "type": 4, "value": 1}
+        ],
+        "ref": 5
+      },
+      {
+        "block_id": 3,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "mapEnables", "transient": false, "type": 2052, "value": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]},
+          {"id": 1, "name": "maps", "transient": false, "type": 2063, "value": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null]},
+          {"id": 2, "name": "mapAmounts", "transient": false, "type": 2054, "value": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0.3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]},
+          {"id": 3, "name": "adTextureLock", "transient": false, "type": 4, "value": 1}
+        ],
+        "ref": 6
+      },
+      {
+        "block_id": 4,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "bounce", "transient": false, "type": 0, "value": 1},
+          {"id": 1, "name": "staticFriction", "transient": false, "type": 0, "value": 0},
+          {"id": 2, "name": "slidingFriction", "transient": false, "type": 0, "value": 0}
+        ],
+        "ref": 7
+      }
+    ],
+      "class_id": ["0x00000002", "0x00000000"],
+      "class_name": "Standardmaterial",
+      "index": 3,
+      "name": "FixtureAnisotropic",
+      "parts": [
+      {
+        "blocks": [
+        {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "ambient", "transient": false, "type": 2, "value": [0.352941, 0.235294, 0.784314]},
+          {"id": 1, "name": "diffuse", "transient": false, "type": 2, "value": [0.352941, 0.235294, 0.784314]},
+          {"id": 2, "name": "specular", "transient": false, "type": 2, "value": [0.745098, 0.784314, 0.823529]},
+          {"id": 3, "name": "selfIllumColor", "transient": false, "type": 2, "value": [0.156863, 0.627451, 0.862745]},
+          {"id": 4, "name": "diffuseLevel", "transient": false, "type": 6, "value": 1},
+          {"id": 5, "name": "specularLevel", "transient": false, "type": 6, "value": 0.74},
+          {"id": 6, "name": "selfIllumAmount", "transient": false, "type": 6, "value": 0.23},
+          {"id": 7, "name": "glossiness", "transient": false, "type": 6, "value": 0.64},
+          {"id": 8, "name": "anisotropy", "transient": false, "type": 6, "value": 0.5},
+          {"id": 9, "name": "orientation", "transient": false, "type": 6, "value": 0},
+          {"id": 10, "name": "unused", "transient": false, "type": 1, "value": 0},
+          {"id": 11, "name": "adTextureLock", "transient": false, "type": 4, "value": 1},
+          {"id": 12, "name": "adLock", "transient": false, "type": 4, "value": 0},
+          {"id": 13, "name": "dsLock", "transient": false, "type": 4, "value": 0},
+          {"id": 14, "name": "useSelfIllumColor", "transient": false, "type": 4, "value": 0}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x2857f460", "0x00000000"],
+        "ref": 2
+      },
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 0, "value": 0.5},
+          {"index": 1, "type": 4, "value": 0},
+          {"index": 2, "type": 4, "value": 1}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x25773211", "0x00000000"],
+        "ref": 8
+      }
+    ],
+      "subs": [],
+      "superclass": 3072
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "shaderType", "transient": false, "type": 1, "value": 4},
+          {"id": 1, "name": "wire", "transient": false, "type": 4, "value": 0},
+          {"id": 2, "name": "twoSided", "transient": false, "type": 4, "value": 0},
+          {"id": 3, "name": "faceMap", "transient": false, "type": 4, "value": 0},
+          {"id": 4, "name": "faceted", "transient": false, "type": 4, "value": 0},
+          {"id": 5, "name": "shaderByName", "transient": false, "type": 8, "value": "Oren-Nayar-Blinn"}
+        ],
+        "ref": 3
+      },
+      {
+        "block_id": 1,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "opacityType", "transient": false, "type": 1, "value": 0},
+          {"id": 1, "name": "opacity", "transient": false, "type": 6, "value": 1},
+          {"id": 2, "name": "filterColor", "transient": false, "type": 2, "value": [0.5, 0.5, 0.5]},
+          {"id": 3, "name": "filterMap", "transient": false, "type": 15, "value": null},
+          {"id": 4, "name": "opacityFallOffType", "transient": false, "type": 1, "value": 0},
+          {"id": 5, "name": "opacityFallOff", "transient": false, "type": 6, "value": 0},
+          {"id": 6, "name": "ior", "transient": false, "type": 0, "value": 1.5},
+          {"id": 7, "name": "wireSize", "transient": false, "type": 0, "value": 1},
+          {"id": 8, "name": "wireUnits", "transient": false, "type": 1, "value": 0},
+          {"id": 9, "name": "applyReflectionDimming", "transient": false, "type": 4, "value": 0},
+          {"id": 10, "name": "dimLevel", "transient": false, "type": 0, "value": 0},
+          {"id": 11, "name": "reflectionLevel", "transient": false, "type": 0, "value": 3}
+        ],
+        "ref": 4
+      },
+      {
+        "block_id": 2,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "sampler", "transient": false, "type": 1, "value": 3},
+          {"id": 1, "name": "samplerQuality", "transient": false, "type": 0, "value": 0.5},
+          {"id": 2, "name": "samplerEnable", "transient": false, "type": 4, "value": 0},
+          {"id": 4, "name": "samplerAdaptThreshold", "transient": false, "type": 0, "value": 0.1},
+          {"id": 3, "name": "samplerAdaptOn", "transient": false, "type": 4, "value": 1},
+          {"id": 6, "name": "subSampleTextureOn", "transient": false, "type": 4, "value": 1},
+          {"id": 5, "name": "samplerAdvancedOptions", "transient": false, "type": 4, "value": 1},
+          {"id": 7, "name": "samplerByName", "transient": false, "type": 8, "value": "Max 2.5 Star"},
+          {"id": 8, "name": "UserParam0", "transient": false, "type": 0, "value": 0},
+          {"id": 9, "name": "UserParam1", "transient": false, "type": 0, "value": 0},
+          {"id": 10, "name": "samplerUseGlobal", "transient": false, "type": 4, "value": 1}
+        ],
+        "ref": 5
+      },
+      {
+        "block_id": 3,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "mapEnables", "transient": false, "type": 2052, "value": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]},
+          {"id": 1, "name": "maps", "transient": false, "type": 2063, "value": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null]},
+          {"id": 2, "name": "mapAmounts", "transient": false, "type": 2054, "value": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0.3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]},
+          {"id": 3, "name": "adTextureLock", "transient": false, "type": 4, "value": 1}
+        ],
+        "ref": 6
+      },
+      {
+        "block_id": 4,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "bounce", "transient": false, "type": 0, "value": 1},
+          {"id": 1, "name": "staticFriction", "transient": false, "type": 0, "value": 0},
+          {"id": 2, "name": "slidingFriction", "transient": false, "type": 0, "value": 0}
+        ],
+        "ref": 7
+      }
+    ],
+      "class_id": ["0x00000002", "0x00000000"],
+      "class_name": "Standardmaterial",
+      "index": 4,
+      "name": "FixtureOrenNayarBlinn",
+      "parts": [
+      {
+        "blocks": [
+        {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "ambient", "transient": false, "type": 2, "value": [0.588235, 0.352941, 0.470588]},
+          {"id": 1, "name": "diffuse", "transient": false, "type": 2, "value": [0.588235, 0.352941, 0.470588]},
+          {"id": 2, "name": "specular", "transient": false, "type": 2, "value": [0.901961, 0.862745, 0.823529]},
+          {"id": 10, "name": "adTextureLock", "transient": false, "type": 4, "value": 1},
+          {"id": 11, "name": "adLock", "transient": false, "type": 4, "value": 0},
+          {"id": 12, "name": "dsLock", "transient": false, "type": 4, "value": 0},
+          {"id": 13, "name": "useSelfIllumColor", "transient": false, "type": 4, "value": 1},
+          {"id": 4, "name": "selfIllumAmount", "transient": false, "type": 6, "value": 0.27},
+          {"id": 3, "name": "selfIllumColor", "transient": false, "type": 2, "value": [0.862745, 0.470588, 0.156863]},
+          {"id": 6, "name": "specularLevel", "transient": false, "type": 6, "value": 0.35},
+          {"id": 5, "name": "glossiness", "transient": false, "type": 6, "value": 0.45},
+          {"id": 7, "name": "soften", "transient": false, "type": 0, "value": 0.1},
+          {"id": 8, "name": "diffuseLevel", "transient": false, "type": 6, "value": 1},
+          {"id": 9, "name": "diffuseRoughness", "transient": false, "type": 6, "value": 0.5}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x2857f421", "0x00000000"],
+        "ref": 2
+      },
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 0, "value": 0.5},
+          {"index": 1, "type": 4, "value": 0},
+          {"index": 2, "type": 4, "value": 1}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x25773211", "0x00000000"],
+        "ref": 8
+      }
+    ],
+      "subs": [],
+      "superclass": 3072
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "shaderType", "transient": false, "type": 1, "value": 3},
+          {"id": 1, "name": "wire", "transient": false, "type": 4, "value": 0},
+          {"id": 2, "name": "twoSided", "transient": false, "type": 4, "value": 0},
+          {"id": 3, "name": "faceMap", "transient": false, "type": 4, "value": 0},
+          {"id": 4, "name": "faceted", "transient": false, "type": 4, "value": 0},
+          {"id": 5, "name": "shaderByName", "transient": false, "type": 8, "value": "Multi-Layer"}
+        ],
+        "ref": 3
+      },
+      {
+        "block_id": 1,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "opacityType", "transient": false, "type": 1, "value": 0},
+          {"id": 1, "name": "opacity", "transient": false, "type": 6, "value": 1},
+          {"id": 2, "name": "filterColor", "transient": false, "type": 2, "value": [0.5, 0.5, 0.5]},
+          {"id": 3, "name": "filterMap", "transient": false, "type": 15, "value": null},
+          {"id": 4, "name": "opacityFallOffType", "transient": false, "type": 1, "value": 0},
+          {"id": 5, "name": "opacityFallOff", "transient": false, "type": 6, "value": 0},
+          {"id": 6, "name": "ior", "transient": false, "type": 0, "value": 1.5},
+          {"id": 7, "name": "wireSize", "transient": false, "type": 0, "value": 1},
+          {"id": 8, "name": "wireUnits", "transient": false, "type": 1, "value": 0},
+          {"id": 9, "name": "applyReflectionDimming", "transient": false, "type": 4, "value": 0},
+          {"id": 10, "name": "dimLevel", "transient": false, "type": 0, "value": 0},
+          {"id": 11, "name": "reflectionLevel", "transient": false, "type": 0, "value": 3}
+        ],
+        "ref": 4
+      },
+      {
+        "block_id": 2,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "sampler", "transient": false, "type": 1, "value": 3},
+          {"id": 1, "name": "samplerQuality", "transient": false, "type": 0, "value": 0.5},
+          {"id": 2, "name": "samplerEnable", "transient": false, "type": 4, "value": 0},
+          {"id": 4, "name": "samplerAdaptThreshold", "transient": false, "type": 0, "value": 0.1},
+          {"id": 3, "name": "samplerAdaptOn", "transient": false, "type": 4, "value": 1},
+          {"id": 6, "name": "subSampleTextureOn", "transient": false, "type": 4, "value": 1},
+          {"id": 5, "name": "samplerAdvancedOptions", "transient": false, "type": 4, "value": 1},
+          {"id": 7, "name": "samplerByName", "transient": false, "type": 8, "value": "Max 2.5 Star"},
+          {"id": 8, "name": "UserParam0", "transient": false, "type": 0, "value": 0},
+          {"id": 9, "name": "UserParam1", "transient": false, "type": 0, "value": 0},
+          {"id": 10, "name": "samplerUseGlobal", "transient": false, "type": 4, "value": 1}
+        ],
+        "ref": 5
+      },
+      {
+        "block_id": 3,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "mapEnables", "transient": false, "type": 2052, "value": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]},
+          {"id": 1, "name": "maps", "transient": false, "type": 2063, "value": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null]},
+          {"id": 2, "name": "mapAmounts", "transient": false, "type": 2054, "value": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]},
+          {"id": 3, "name": "adTextureLock", "transient": false, "type": 4, "value": 1}
+        ],
+        "ref": 6
+      },
+      {
+        "block_id": 4,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "bounce", "transient": false, "type": 0, "value": 1},
+          {"id": 1, "name": "staticFriction", "transient": false, "type": 0, "value": 0},
+          {"id": 2, "name": "slidingFriction", "transient": false, "type": 0, "value": 0}
+        ],
+        "ref": 7
+      }
+    ],
+      "class_id": ["0x00000002", "0x00000000"],
+      "class_name": "Standardmaterial",
+      "index": 5,
+      "name": "FixtureMultiLayer",
+      "parts": [
+      {
+        "blocks": [
+        {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "ambient", "transient": false, "type": 2, "value": [0.392157, 0.666667, 0.627451]},
+          {"id": 1, "name": "diffuse", "transient": false, "type": 2, "value": [0.392157, 0.666667, 0.627451]},
+          {"id": 2, "name": "selfIllumColor", "transient": false, "type": 2, "value": [0.627451, 0.156863, 0.862745]},
+          {"id": 3, "name": "selfIllumAmount", "transient": false, "type": 6, "value": 0.29},
+          {"id": 4, "name": "diffuseLevel", "transient": false, "type": 6, "value": 1},
+          {"id": 5, "name": "diffuseRoughness", "transient": false, "type": 6, "value": 0},
+          {"id": 6, "name": "specular", "transient": false, "type": 2, "value": [0.784314, 0.745098, 0.705882]},
+          {"id": 7, "name": "specularLevel", "transient": false, "type": 6, "value": 0.46},
+          {"id": 8, "name": "glossiness", "transient": false, "type": 6, "value": 0.56},
+          {"id": 9, "name": "anisotropy", "transient": false, "type": 6, "value": 0},
+          {"id": 10, "name": "orientation", "transient": false, "type": 6, "value": 0},
+          {"id": 11, "name": "specular2", "transient": false, "type": 2, "value": [0.196078, 0.235294, 0.27451]},
+          {"id": 12, "name": "specularLevel2", "transient": false, "type": 6, "value": 0.88},
+          {"id": 13, "name": "glossiness2", "transient": false, "type": 6, "value": 0.77},
+          {"id": 14, "name": "anisotropy2", "transient": false, "type": 6, "value": 0},
+          {"id": 15, "name": "orientation2", "transient": false, "type": 6, "value": 0},
+          {"id": 16, "name": "unused", "transient": false, "type": 1, "value": 0},
+          {"id": 17, "name": "adTextureLock", "transient": false, "type": 4, "value": 1},
+          {"id": 18, "name": "adLock", "transient": false, "type": 4, "value": 0},
+          {"id": 19, "name": "useSelfIllumColor", "transient": false, "type": 4, "value": 0}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x2857f470", "0x00000000"],
+        "ref": 2
+      },
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 0, "value": 0.5},
+          {"index": 1, "type": 4, "value": 0},
+          {"index": 2, "type": 4, "value": 1}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x25773211", "0x00000000"],
+        "ref": 8
+      }
+    ],
+      "subs": [],
+      "superclass": 3072
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "shaderType", "transient": false, "type": 1, "value": 7},
+          {"id": 1, "name": "wire", "transient": false, "type": 4, "value": 0},
+          {"id": 2, "name": "twoSided", "transient": false, "type": 4, "value": 0},
+          {"id": 3, "name": "faceMap", "transient": false, "type": 4, "value": 0},
+          {"id": 4, "name": "faceted", "transient": false, "type": 4, "value": 0},
+          {"id": 5, "name": "shaderByName", "transient": false, "type": 8, "value": "Translucent Shader"}
+        ],
+        "ref": 3
+      },
+      {
+        "block_id": 1,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "opacityType", "transient": false, "type": 1, "value": 0},
+          {"id": 1, "name": "opacity", "transient": false, "type": 6, "value": 1},
+          {"id": 2, "name": "filterColor", "transient": false, "type": 2, "value": [0.5, 0.5, 0.5]},
+          {"id": 3, "name": "filterMap", "transient": false, "type": 15, "value": null},
+          {"id": 4, "name": "opacityFallOffType", "transient": false, "type": 1, "value": 0},
+          {"id": 5, "name": "opacityFallOff", "transient": false, "type": 6, "value": 0},
+          {"id": 6, "name": "ior", "transient": false, "type": 0, "value": 1.5},
+          {"id": 7, "name": "wireSize", "transient": false, "type": 0, "value": 1},
+          {"id": 8, "name": "wireUnits", "transient": false, "type": 1, "value": 0},
+          {"id": 9, "name": "applyReflectionDimming", "transient": false, "type": 4, "value": 0},
+          {"id": 10, "name": "dimLevel", "transient": false, "type": 0, "value": 0},
+          {"id": 11, "name": "reflectionLevel", "transient": false, "type": 0, "value": 3}
+        ],
+        "ref": 4
+      },
+      {
+        "block_id": 2,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "sampler", "transient": false, "type": 1, "value": 3},
+          {"id": 1, "name": "samplerQuality", "transient": false, "type": 0, "value": 0.5},
+          {"id": 2, "name": "samplerEnable", "transient": false, "type": 4, "value": 0},
+          {"id": 4, "name": "samplerAdaptThreshold", "transient": false, "type": 0, "value": 0.1},
+          {"id": 3, "name": "samplerAdaptOn", "transient": false, "type": 4, "value": 1},
+          {"id": 6, "name": "subSampleTextureOn", "transient": false, "type": 4, "value": 1},
+          {"id": 5, "name": "samplerAdvancedOptions", "transient": false, "type": 4, "value": 1},
+          {"id": 7, "name": "samplerByName", "transient": false, "type": 8, "value": "Max 2.5 Star"},
+          {"id": 8, "name": "UserParam0", "transient": false, "type": 0, "value": 0},
+          {"id": 9, "name": "UserParam1", "transient": false, "type": 0, "value": 0},
+          {"id": 10, "name": "samplerUseGlobal", "transient": false, "type": 4, "value": 1}
+        ],
+        "ref": 5
+      },
+      {
+        "block_id": 3,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "mapEnables", "transient": false, "type": 2052, "value": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]},
+          {"id": 1, "name": "maps", "transient": false, "type": 2063, "value": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null]},
+          {"id": 2, "name": "mapAmounts", "transient": false, "type": 2054, "value": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0.3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]},
+          {"id": 3, "name": "adTextureLock", "transient": false, "type": 4, "value": 1}
+        ],
+        "ref": 6
+      },
+      {
+        "block_id": 4,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "bounce", "transient": false, "type": 0, "value": 1},
+          {"id": 1, "name": "staticFriction", "transient": false, "type": 0, "value": 0},
+          {"id": 2, "name": "slidingFriction", "transient": false, "type": 0, "value": 0}
+        ],
+        "ref": 7
+      }
+    ],
+      "class_id": ["0x00000002", "0x00000000"],
+      "class_name": "Standardmaterial",
+      "index": 6,
+      "name": "FixtureTranslucent",
+      "parts": [
+      {
+        "blocks": [
+        {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "ambient", "transient": false, "type": 2, "value": [0.666667, 0.431373, 0.313726]},
+          {"id": 1, "name": "diffuse", "transient": false, "type": 2, "value": [0.666667, 0.431373, 0.313726]},
+          {"id": 2, "name": "specular", "transient": false, "type": 2, "value": [0.843137, 0.882353, 0.921569]},
+          {"id": 8, "name": "filter", "transient": false, "type": 2, "value": [0.5, 0.5, 0.5]},
+          {"id": 9, "name": "translucentColor", "transient": false, "type": 2, "value": [0.0784314, 0.156863, 0.235294]},
+          {"id": 10, "name": "backsideSpecular", "transient": false, "type": 4, "value": 1},
+          {"id": 11, "name": "adTextureLock", "transient": false, "type": 4, "value": 1},
+          {"id": 12, "name": "adLock", "transient": false, "type": 4, "value": 0},
+          {"id": 13, "name": "dsLock", "transient": false, "type": 4, "value": 0},
+          {"id": 14, "name": "useSelfIllumColor", "transient": false, "type": 4, "value": 1},
+          {"id": 4, "name": "selfIllumAmount", "transient": false, "type": 6, "value": 0.31},
+          {"id": 3, "name": "selfIllumColor", "transient": false, "type": 2, "value": [0.117647, 0.862745, 0.627451]},
+          {"id": 6, "name": "specularLevel", "transient": false, "type": 6, "value": 0.57},
+          {"id": 5, "name": "glossiness", "transient": false, "type": 6, "value": 0.67},
+          {"id": 7, "name": "diffuseLevel", "transient": false, "type": 6, "value": 1}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x2857f480", "0x00000000"],
+        "ref": 2
+      },
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 0, "value": 0.5},
+          {"index": 1, "type": 4, "value": 0},
+          {"index": 2, "type": 4, "value": 1}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x25773211", "0x00000000"],
+        "ref": 8
+      }
+    ],
+      "subs": [],
+      "superclass": 3072
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "shaderType", "transient": false, "type": 1, "value": 6},
+          {"id": 1, "name": "wire", "transient": false, "type": 4, "value": 0},
+          {"id": 2, "name": "twoSided", "transient": false, "type": 4, "value": 0},
+          {"id": 3, "name": "faceMap", "transient": false, "type": 4, "value": 0},
+          {"id": 4, "name": "faceted", "transient": false, "type": 4, "value": 0},
+          {"id": 5, "name": "shaderByName", "transient": false, "type": 8, "value": "Strauss"}
+        ],
+        "ref": 3
+      },
+      {
+        "block_id": 1,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "opacityType", "transient": false, "type": 1, "value": 0},
+          {"id": 1, "name": "opacity", "transient": false, "type": 6, "value": 1},
+          {"id": 2, "name": "filterColor", "transient": false, "type": 2, "value": [0.5, 0.5, 0.5]},
+          {"id": 3, "name": "filterMap", "transient": false, "type": 15, "value": null},
+          {"id": 4, "name": "opacityFallOffType", "transient": false, "type": 1, "value": 0},
+          {"id": 5, "name": "opacityFallOff", "transient": false, "type": 6, "value": 0},
+          {"id": 6, "name": "ior", "transient": false, "type": 0, "value": 1.5},
+          {"id": 7, "name": "wireSize", "transient": false, "type": 0, "value": 1},
+          {"id": 8, "name": "wireUnits", "transient": false, "type": 1, "value": 0},
+          {"id": 9, "name": "applyReflectionDimming", "transient": false, "type": 4, "value": 0},
+          {"id": 10, "name": "dimLevel", "transient": false, "type": 0, "value": 0},
+          {"id": 11, "name": "reflectionLevel", "transient": false, "type": 0, "value": 3}
+        ],
+        "ref": 4
+      },
+      {
+        "block_id": 2,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "sampler", "transient": false, "type": 1, "value": 3},
+          {"id": 1, "name": "samplerQuality", "transient": false, "type": 0, "value": 0.5},
+          {"id": 2, "name": "samplerEnable", "transient": false, "type": 4, "value": 0},
+          {"id": 4, "name": "samplerAdaptThreshold", "transient": false, "type": 0, "value": 0.1},
+          {"id": 3, "name": "samplerAdaptOn", "transient": false, "type": 4, "value": 1},
+          {"id": 6, "name": "subSampleTextureOn", "transient": false, "type": 4, "value": 1},
+          {"id": 5, "name": "samplerAdvancedOptions", "transient": false, "type": 4, "value": 1},
+          {"id": 7, "name": "samplerByName", "transient": false, "type": 8, "value": "Max 2.5 Star"},
+          {"id": 8, "name": "UserParam0", "transient": false, "type": 0, "value": 0},
+          {"id": 9, "name": "UserParam1", "transient": false, "type": 0, "value": 0},
+          {"id": 10, "name": "samplerUseGlobal", "transient": false, "type": 4, "value": 1}
+        ],
+        "ref": 5
+      },
+      {
+        "block_id": 3,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "mapEnables", "transient": false, "type": 2052, "value": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]},
+          {"id": 1, "name": "maps", "transient": false, "type": 2063, "value": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null]},
+          {"id": 2, "name": "mapAmounts", "transient": false, "type": 2054, "value": [1, 1, 1, 1, 1, 0.3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]},
+          {"id": 3, "name": "adTextureLock", "transient": false, "type": 4, "value": 1}
+        ],
+        "ref": 6
+      },
+      {
+        "block_id": 4,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "bounce", "transient": false, "type": 0, "value": 1},
+          {"id": 1, "name": "staticFriction", "transient": false, "type": 0, "value": 0},
+          {"id": 2, "name": "slidingFriction", "transient": false, "type": 0, "value": 0}
+        ],
+        "ref": 7
+      }
+    ],
+      "class_id": ["0x00000002", "0x00000000"],
+      "class_name": "Standardmaterial",
+      "index": 7,
+      "name": "FixtureStrauss",
+      "parts": [
+      {
+        "blocks": [
+        {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "diffuse", "transient": false, "type": 2, "value": [0.470588, 0.509804, 0.823529]},
+          {"id": 1, "name": "glossiness", "transient": false, "type": 6, "value": 0.37},
+          {"id": 2, "name": "metalness", "transient": false, "type": 6, "value": 0.48}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x2857f450", "0x00000000"],
+        "ref": 2
+      },
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 0, "value": 0.5},
+          {"index": 1, "type": 4, "value": 0},
+          {"index": 2, "type": 4, "value": 1}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x25773211", "0x00000000"],
+        "ref": 8
+      }
+    ],
+      "subs": [],
+      "superclass": 3072
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "material_mode", "transient": false, "type": 1, "value": 0},
+          {"id": 1, "name": "base_weight", "transient": false, "type": 0, "value": 0.8},
+          {"id": 2, "name": "base_color", "transient": false, "type": 23, "value": [0.784314, 0.392157, 0.196078, 1]},
+          {"id": 3, "name": "reflectivity", "transient": false, "type": 0, "value": 0.7},
+          {"id": 4, "name": "roughness", "transient": false, "type": 0, "value": 0.35},
+          {"id": 5, "name": "roughness_inv", "transient": false, "type": 4, "value": 1},
+          {"id": 6, "name": "metalness", "transient": false, "type": 0, "value": 0.25},
+          {"id": 10, "name": "refl_color", "transient": false, "type": 23, "value": [0.823529, 0.784314, 0.745098, 1]},
+          {"id": 11, "name": "diff_roughness", "transient": false, "type": 0, "value": 0},
+          {"id": 12, "name": "brdf_mode", "transient": false, "type": 4, "value": 1},
+          {"id": 13, "name": "brdf_low", "transient": false, "type": 0, "value": 0.05},
+          {"id": 14, "name": "brdf_high", "transient": false, "type": 0, "value": 1},
+          {"id": 15, "name": "brdf_curve", "transient": false, "type": 0, "value": 5},
+          {"id": 20, "name": "anisotropy", "transient": false, "type": 0, "value": 1},
+          {"id": 21, "name": "anisoangle", "transient": false, "type": 0, "value": 0},
+          {"id": 22, "name": "aniso_mode", "transient": false, "type": 1, "value": 0},
+          {"id": 23, "name": "aniso_channel", "transient": false, "type": 1, "value": 0},
+          {"id": 30, "name": "transparency", "transient": false, "type": 0, "value": 0.2},
+          {"id": 31, "name": "trans_color", "transient": false, "type": 23, "value": [0.235294, 0.470588, 0.705882, 1]},
+          {"id": 32, "name": "trans_depth", "transient": false, "type": 0, "value": 0},
+          {"id": 35, "name": "trans_roughness", "transient": false, "type": 0, "value": 0},
+          {"id": 36, "name": "trans_roughness_inv", "transient": false, "type": 4, "value": 0},
+          {"id": 34, "name": "trans_roughness_lock", "transient": false, "type": 4, "value": 1},
+          {"id": 33, "name": "trans_ior", "transient": false, "type": 0, "value": 1.4},
+          {"id": 37, "name": "thin_walled", "transient": false, "type": 4, "value": 1},
+          {"id": 40, "name": "scattering", "transient": false, "type": 0, "value": 0},
+          {"id": 41, "name": "sss_color", "transient": false, "type": 23, "value": [1, 1, 1, 1]},
+          {"id": 42, "name": "sss_depth", "transient": false, "type": 0, "value": 10},
+          {"id": 43, "name": "sss_scale", "transient": false, "type": 0, "value": 1},
+          {"id": 44, "name": "sss_scatter_color", "transient": false, "type": 23, "value": [1, 0.5, 0.25, 1]},
+          {"id": 50, "name": "emission", "transient": false, "type": 0, "value": 0.6},
+          {"id": 51, "name": "emit_color", "transient": false, "type": 23, "value": [0.862745, 0.705882, 0.54902, 1]},
+          {"id": 52, "name": "emit_luminance", "transient": false, "type": 0, "value": 900},
+          {"id": 54, "name": "emit_kelvin", "transient": false, "type": 0, "value": 6500},
+          {"id": 60, "name": "coating", "transient": false, "type": 0, "value": 0.45},
+          {"id": 61, "name": "coat_color", "transient": false, "type": 23, "value": [0.901961, 0.784314, 0.666667, 1]},
+          {"id": 62, "name": "coat_roughness", "transient": false, "type": 0, "value": 0.15},
+          {"id": 63, "name": "coat_roughness_inv", "transient": false, "type": 4, "value": 1},
+          {"id": 64, "name": "coat_affect_color", "transient": false, "type": 0, "value": 0.5},
+          {"id": 65, "name": "coat_affect_roughness", "transient": false, "type": 0, "value": 0.5},
+          {"id": 66, "name": "coat_ior", "transient": false, "type": 0, "value": 1.7},
+          {"id": 100, "name": "base_weight_map", "transient": false, "type": 15, "value": null},
+          {"id": 101, "name": "base_color_map", "transient": false, "type": 15, "value": 9},
+          {"id": 102, "name": "reflectivity_map", "transient": false, "type": 15, "value": 10},
+          {"id": 103, "name": "refl_color_map", "transient": false, "type": 15, "value": null},
+          {"id": 104, "name": "roughness_map", "transient": false, "type": 15, "value": 11},
+          {"id": 105, "name": "metalness_map", "transient": false, "type": 15, "value": 12},
+          {"id": 106, "name": "diff_rough_map", "transient": false, "type": 15, "value": null},
+          {"id": 107, "name": "anisotropy_map", "transient": false, "type": 15, "value": null},
+          {"id": 108, "name": "aniso_angle_map", "transient": false, "type": 15, "value": null},
+          {"id": 109, "name": "transparency_map", "transient": false, "type": 15, "value": 13},
+          {"id": 110, "name": "trans_color_map", "transient": false, "type": 15, "value": null},
+          {"id": 111, "name": "trans_rough_map", "transient": false, "type": 15, "value": null},
+          {"id": 112, "name": "trans_ior_map", "transient": false, "type": 15, "value": null},
+          {"id": 113, "name": "scattering_map", "transient": false, "type": 15, "value": null},
+          {"id": 114, "name": "sss_color_map", "transient": false, "type": 15, "value": null},
+          {"id": 115, "name": "sss_scale_map", "transient": false, "type": 15, "value": null},
+          {"id": 116, "name": "emission_map", "transient": false, "type": 15, "value": 14},
+          {"id": 117, "name": "emit_color_map", "transient": false, "type": 15, "value": 15},
+          {"id": 118, "name": "coat_map", "transient": false, "type": 15, "value": null},
+          {"id": 119, "name": "coat_color_map", "transient": false, "type": 15, "value": null},
+          {"id": 120, "name": "coat_rough_map", "transient": false, "type": 15, "value": null},
+          {"id": 130, "name": "bump_map", "transient": false, "type": 15, "value": 16},
+          {"id": 131, "name": "coat_bump_map", "transient": false, "type": 15, "value": null},
+          {"id": 132, "name": "displacement_map", "transient": false, "type": 15, "value": null},
+          {"id": 133, "name": "cutout_map", "transient": false, "type": 15, "value": 17},
+          {"id": 150, "name": "base_weight_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 151, "name": "base_color_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 152, "name": "reflectivity_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 153, "name": "refl_color_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 154, "name": "roughness_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 155, "name": "metalness_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 156, "name": "diff_rough_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 157, "name": "anisotropy_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 158, "name": "aniso_angle_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 159, "name": "transparency_map_on", "transient": false, "type": 4, "value": 0},
+          {"id": 160, "name": "trans_color_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 161, "name": "trans_rough_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 162, "name": "trans_ior_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 163, "name": "scattering_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 164, "name": "sss_color_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 165, "name": "sss_scale_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 166, "name": "emission_map_on", "transient": false, "type": 4, "value": 0},
+          {"id": 167, "name": "emit_color_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 168, "name": "coat_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 169, "name": "coat_color_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 170, "name": "coat_rough_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 180, "name": "bump_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 181, "name": "coat_bump_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 182, "name": "displacement_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 183, "name": "cutout_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 230, "name": "bump_map_amt", "transient": false, "type": 0, "value": 0.55},
+          {"id": 231, "name": "clearcoat_bump_map_amt", "transient": false, "type": 0, "value": 0.3},
+          {"id": 232, "name": "displacement_map_amt", "transient": false, "type": 0, "value": 1},
+          {"id": 250, "name": "mapM0", "transient": false, "type": 15, "value": null},
+          {"id": 251, "name": "mapM1", "transient": false, "type": 15, "value": 9},
+          {"id": 252, "name": "mapM2", "transient": false, "type": 15, "value": 10},
+          {"id": 254, "name": "mapM4", "transient": false, "type": 15, "value": 11},
+          {"id": 255, "name": "mapM5", "transient": false, "type": 15, "value": 12},
+          {"id": 253, "name": "mapM3", "transient": false, "type": 15, "value": null},
+          {"id": 256, "name": "mapM6", "transient": false, "type": 15, "value": null},
+          {"id": 257, "name": "mapM7", "transient": false, "type": 15, "value": null},
+          {"id": 258, "name": "mapM8", "transient": false, "type": 15, "value": null},
+          {"id": 259, "name": "mapM9", "transient": false, "type": 15, "value": 13},
+          {"id": 260, "name": "mapM10", "transient": false, "type": 15, "value": null},
+          {"id": 261, "name": "mapM11", "transient": false, "type": 15, "value": null},
+          {"id": 262, "name": "mapM12", "transient": false, "type": 15, "value": null},
+          {"id": 263, "name": "mapM13", "transient": false, "type": 15, "value": null},
+          {"id": 264, "name": "mapM14", "transient": false, "type": 15, "value": null},
+          {"id": 265, "name": "mapM15", "transient": false, "type": 15, "value": null},
+          {"id": 266, "name": "mapM16", "transient": false, "type": 15, "value": 14},
+          {"id": 267, "name": "mapM17", "transient": false, "type": 15, "value": 15},
+          {"id": 268, "name": "mapM18", "transient": false, "type": 15, "value": null},
+          {"id": 269, "name": "mapM19", "transient": false, "type": 15, "value": null},
+          {"id": 270, "name": "mapM20", "transient": false, "type": 15, "value": null}
+        ],
+        "ref": 0
+      }
+    ],
+      "class_id": ["0x3d6b1cec", "0xdeadc001"],
+      "class_name": "PhysicalMaterial",
+      "index": 8,
+      "name": "FixturePhysicalMaps",
+      "parts": [],
+      "subs": [
+      {"kind": "map", "slot": 1, "target": 9},
+      {"kind": "map", "slot": 2, "target": 10},
+      {"kind": "map", "slot": 4, "target": 11},
+      {"kind": "map", "slot": 5, "target": 12},
+      {"kind": "map", "slot": 9, "target": 13},
+      {"kind": "map", "slot": 16, "target": 14},
+      {"kind": "map", "slot": 17, "target": 15},
+      {"kind": "map", "slot": 30, "target": 16},
+      {"kind": "map", "slot": 33, "target": 17}
+    ],
+      "superclass": 3072
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "soften", "transient": false, "type": 0, "value": 0},
+          {"id": 1, "name": "color1", "transient": false, "type": 2, "value": [0, 0, 0]},
+          {"id": 2, "name": "color2", "transient": false, "type": 2, "value": [1, 1, 1]},
+          {"id": 3, "name": "map1", "transient": false, "type": 15, "value": null},
+          {"id": 4, "name": "map2", "transient": false, "type": 15, "value": null},
+          {"id": 5, "name": "map1Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 6, "name": "map2Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 7, "name": "coords", "transient": false, "type": 18, "value": null}
+        ],
+        "ref": 1
+      }
+    ],
+      "class_id": ["0x00000200", "0x00000000"],
+      "class_name": "Checker",
+      "index": 9,
+      "name": "FixturePhysMapsBaseMap",
+      "parts": [
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 0, "value": 0},
+          {"index": 1, "type": 0, "value": 0},
+          {"index": 2, "type": 0, "value": 1},
+          {"index": 3, "type": 0, "value": 1},
+          {"index": 4, "type": 0, "value": 0},
+          {"index": 5, "type": 0, "value": 0},
+          {"index": 6, "type": 0, "value": 0},
+          {"index": 7, "type": 0, "value": 1},
+          {"index": 8, "type": 0, "value": 1},
+          {"index": 9, "type": 0, "value": 1},
+          {"index": 10, "type": 1, "value": 1},
+          {"index": 11, "type": 0, "value": 0},
+          {"index": 12, "type": 0, "value": 0}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000100", "0x00000000"],
+        "ref": 0
+      }
+    ],
+      "subs": [],
+      "superclass": 3088
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "color1", "transient": false, "type": 2, "value": [0, 0, 0]},
+          {"id": 1, "name": "color2", "transient": false, "type": 2, "value": [1, 1, 1]},
+          {"id": 2, "name": "map1", "transient": false, "type": 15, "value": null},
+          {"id": 3, "name": "map2", "transient": false, "type": 15, "value": null},
+          {"id": 4, "name": "map1Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 5, "name": "map2Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 6, "name": "size", "transient": false, "type": 0, "value": 635},
+          {"id": 7, "name": "phase", "transient": false, "type": 0, "value": 0},
+          {"id": 8, "name": "levels", "transient": false, "type": 0, "value": 3},
+          {"id": 9, "name": "thresholdLow", "transient": false, "type": 0, "value": 0},
+          {"id": 10, "name": "thresholdHigh", "transient": false, "type": 0, "value": 1},
+          {"id": 11, "name": "type", "transient": false, "type": 1, "value": 0},
+          {"id": 12, "name": "coords", "transient": false, "type": 18, "value": null},
+          {"id": 13, "name": "output", "transient": false, "type": 18, "value": null}
+        ],
+        "ref": 1
+      }
+    ],
+      "class_id": ["0x00000234", "0x00000000"],
+      "class_name": "Noise",
+      "index": 10,
+      "name": "FixturePhysMapsReflectivityMap",
+      "parts": [
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 3, "value": [0, 0, 0]},
+          {"index": 1, "type": 3, "value": [1, 1, 1]},
+          {"index": 2, "type": 3, "value": [0, 0, 0]},
+          {"index": 3, "type": 0, "value": 1},
+          {"index": 4, "type": 0, "value": 0}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000100", "0x00000000"],
+        "ref": 0
+      },
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 0, "value": 1},
+          {"index": 1, "type": 0, "value": 0},
+          {"index": 2, "type": 0, "value": 1},
+          {"index": 3, "type": 0, "value": 1}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000100", "0x00000000"],
+        "ref": 4
+      }
+    ],
+      "subs": [],
+      "superclass": 3088
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "soften", "transient": false, "type": 0, "value": 0},
+          {"id": 1, "name": "color1", "transient": false, "type": 2, "value": [0, 0, 0]},
+          {"id": 2, "name": "color2", "transient": false, "type": 2, "value": [1, 1, 1]},
+          {"id": 3, "name": "map1", "transient": false, "type": 15, "value": null},
+          {"id": 4, "name": "map2", "transient": false, "type": 15, "value": null},
+          {"id": 5, "name": "map1Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 6, "name": "map2Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 7, "name": "coords", "transient": false, "type": 18, "value": null}
+        ],
+        "ref": 1
+      }
+    ],
+      "class_id": ["0x00000200", "0x00000000"],
+      "class_name": "Checker",
+      "index": 11,
+      "name": "FixturePhysMapsRoughnessMap",
+      "parts": [
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 0, "value": 0},
+          {"index": 1, "type": 0, "value": 0},
+          {"index": 2, "type": 0, "value": 1},
+          {"index": 3, "type": 0, "value": 1},
+          {"index": 4, "type": 0, "value": 0},
+          {"index": 5, "type": 0, "value": 0},
+          {"index": 6, "type": 0, "value": 0},
+          {"index": 7, "type": 0, "value": 1},
+          {"index": 8, "type": 0, "value": 1},
+          {"index": 9, "type": 0, "value": 1},
+          {"index": 10, "type": 1, "value": 1},
+          {"index": 11, "type": 0, "value": 0},
+          {"index": 12, "type": 0, "value": 0}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000100", "0x00000000"],
+        "ref": 0
+      }
+    ],
+      "subs": [],
+      "superclass": 3088
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "color1", "transient": false, "type": 2, "value": [0, 0, 0]},
+          {"id": 1, "name": "color2", "transient": false, "type": 2, "value": [1, 1, 1]},
+          {"id": 2, "name": "map1", "transient": false, "type": 15, "value": null},
+          {"id": 3, "name": "map2", "transient": false, "type": 15, "value": null},
+          {"id": 4, "name": "map1Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 5, "name": "map2Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 6, "name": "size", "transient": false, "type": 0, "value": 635},
+          {"id": 7, "name": "phase", "transient": false, "type": 0, "value": 0},
+          {"id": 8, "name": "levels", "transient": false, "type": 0, "value": 3},
+          {"id": 9, "name": "thresholdLow", "transient": false, "type": 0, "value": 0},
+          {"id": 10, "name": "thresholdHigh", "transient": false, "type": 0, "value": 1},
+          {"id": 11, "name": "type", "transient": false, "type": 1, "value": 0},
+          {"id": 12, "name": "coords", "transient": false, "type": 18, "value": null},
+          {"id": 13, "name": "output", "transient": false, "type": 18, "value": null}
+        ],
+        "ref": 1
+      }
+    ],
+      "class_id": ["0x00000234", "0x00000000"],
+      "class_name": "Noise",
+      "index": 12,
+      "name": "FixturePhysMapsMetalnessMap",
+      "parts": [
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 3, "value": [0, 0, 0]},
+          {"index": 1, "type": 3, "value": [1, 1, 1]},
+          {"index": 2, "type": 3, "value": [0, 0, 0]},
+          {"index": 3, "type": 0, "value": 1},
+          {"index": 4, "type": 0, "value": 0}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000100", "0x00000000"],
+        "ref": 0
+      },
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 0, "value": 1},
+          {"index": 1, "type": 0, "value": 0},
+          {"index": 2, "type": 0, "value": 1},
+          {"index": 3, "type": 0, "value": 1}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000100", "0x00000000"],
+        "ref": 4
+      }
+    ],
+      "subs": [],
+      "superclass": 3088
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "soften", "transient": false, "type": 0, "value": 0},
+          {"id": 1, "name": "color1", "transient": false, "type": 2, "value": [0, 0, 0]},
+          {"id": 2, "name": "color2", "transient": false, "type": 2, "value": [1, 1, 1]},
+          {"id": 3, "name": "map1", "transient": false, "type": 15, "value": null},
+          {"id": 4, "name": "map2", "transient": false, "type": 15, "value": null},
+          {"id": 5, "name": "map1Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 6, "name": "map2Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 7, "name": "coords", "transient": false, "type": 18, "value": null}
+        ],
+        "ref": 1
+      }
+    ],
+      "class_id": ["0x00000200", "0x00000000"],
+      "class_name": "Checker",
+      "index": 13,
+      "name": "FixturePhysMapsTransparencyMap",
+      "parts": [
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 0, "value": 0},
+          {"index": 1, "type": 0, "value": 0},
+          {"index": 2, "type": 0, "value": 1},
+          {"index": 3, "type": 0, "value": 1},
+          {"index": 4, "type": 0, "value": 0},
+          {"index": 5, "type": 0, "value": 0},
+          {"index": 6, "type": 0, "value": 0},
+          {"index": 7, "type": 0, "value": 1},
+          {"index": 8, "type": 0, "value": 1},
+          {"index": 9, "type": 0, "value": 1},
+          {"index": 10, "type": 1, "value": 1},
+          {"index": 11, "type": 0, "value": 0},
+          {"index": 12, "type": 0, "value": 0}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000100", "0x00000000"],
+        "ref": 0
+      }
+    ],
+      "subs": [],
+      "superclass": 3088
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "color1", "transient": false, "type": 2, "value": [0, 0, 0]},
+          {"id": 1, "name": "color2", "transient": false, "type": 2, "value": [1, 1, 1]},
+          {"id": 2, "name": "map1", "transient": false, "type": 15, "value": null},
+          {"id": 3, "name": "map2", "transient": false, "type": 15, "value": null},
+          {"id": 4, "name": "map1Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 5, "name": "map2Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 6, "name": "size", "transient": false, "type": 0, "value": 635},
+          {"id": 7, "name": "phase", "transient": false, "type": 0, "value": 0},
+          {"id": 8, "name": "levels", "transient": false, "type": 0, "value": 3},
+          {"id": 9, "name": "thresholdLow", "transient": false, "type": 0, "value": 0},
+          {"id": 10, "name": "thresholdHigh", "transient": false, "type": 0, "value": 1},
+          {"id": 11, "name": "type", "transient": false, "type": 1, "value": 0},
+          {"id": 12, "name": "coords", "transient": false, "type": 18, "value": null},
+          {"id": 13, "name": "output", "transient": false, "type": 18, "value": null}
+        ],
+        "ref": 1
+      }
+    ],
+      "class_id": ["0x00000234", "0x00000000"],
+      "class_name": "Noise",
+      "index": 14,
+      "name": "FixturePhysMapsEmissionMap",
+      "parts": [
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 3, "value": [0, 0, 0]},
+          {"index": 1, "type": 3, "value": [1, 1, 1]},
+          {"index": 2, "type": 3, "value": [0, 0, 0]},
+          {"index": 3, "type": 0, "value": 1},
+          {"index": 4, "type": 0, "value": 0}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000100", "0x00000000"],
+        "ref": 0
+      },
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 0, "value": 1},
+          {"index": 1, "type": 0, "value": 0},
+          {"index": 2, "type": 0, "value": 1},
+          {"index": 3, "type": 0, "value": 1}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000100", "0x00000000"],
+        "ref": 4
+      }
+    ],
+      "subs": [],
+      "superclass": 3088
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "soften", "transient": false, "type": 0, "value": 0},
+          {"id": 1, "name": "color1", "transient": false, "type": 2, "value": [0, 0, 0]},
+          {"id": 2, "name": "color2", "transient": false, "type": 2, "value": [1, 1, 1]},
+          {"id": 3, "name": "map1", "transient": false, "type": 15, "value": null},
+          {"id": 4, "name": "map2", "transient": false, "type": 15, "value": null},
+          {"id": 5, "name": "map1Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 6, "name": "map2Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 7, "name": "coords", "transient": false, "type": 18, "value": null}
+        ],
+        "ref": 1
+      }
+    ],
+      "class_id": ["0x00000200", "0x00000000"],
+      "class_name": "Checker",
+      "index": 15,
+      "name": "FixturePhysMapsEmitColorMap",
+      "parts": [
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 0, "value": 0},
+          {"index": 1, "type": 0, "value": 0},
+          {"index": 2, "type": 0, "value": 1},
+          {"index": 3, "type": 0, "value": 1},
+          {"index": 4, "type": 0, "value": 0},
+          {"index": 5, "type": 0, "value": 0},
+          {"index": 6, "type": 0, "value": 0},
+          {"index": 7, "type": 0, "value": 1},
+          {"index": 8, "type": 0, "value": 1},
+          {"index": 9, "type": 0, "value": 1},
+          {"index": 10, "type": 1, "value": 1},
+          {"index": 11, "type": 0, "value": 0},
+          {"index": 12, "type": 0, "value": 0}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000100", "0x00000000"],
+        "ref": 0
+      }
+    ],
+      "subs": [],
+      "superclass": 3088
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "color1", "transient": false, "type": 2, "value": [0, 0, 0]},
+          {"id": 1, "name": "color2", "transient": false, "type": 2, "value": [1, 1, 1]},
+          {"id": 2, "name": "map1", "transient": false, "type": 15, "value": null},
+          {"id": 3, "name": "map2", "transient": false, "type": 15, "value": null},
+          {"id": 4, "name": "map1Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 5, "name": "map2Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 6, "name": "size", "transient": false, "type": 0, "value": 635},
+          {"id": 7, "name": "phase", "transient": false, "type": 0, "value": 0},
+          {"id": 8, "name": "levels", "transient": false, "type": 0, "value": 3},
+          {"id": 9, "name": "thresholdLow", "transient": false, "type": 0, "value": 0},
+          {"id": 10, "name": "thresholdHigh", "transient": false, "type": 0, "value": 1},
+          {"id": 11, "name": "type", "transient": false, "type": 1, "value": 0},
+          {"id": 12, "name": "coords", "transient": false, "type": 18, "value": null},
+          {"id": 13, "name": "output", "transient": false, "type": 18, "value": null}
+        ],
+        "ref": 1
+      }
+    ],
+      "class_id": ["0x00000234", "0x00000000"],
+      "class_name": "Noise",
+      "index": 16,
+      "name": "FixturePhysMapsBumpMap",
+      "parts": [
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 3, "value": [0, 0, 0]},
+          {"index": 1, "type": 3, "value": [1, 1, 1]},
+          {"index": 2, "type": 3, "value": [0, 0, 0]},
+          {"index": 3, "type": 0, "value": 1},
+          {"index": 4, "type": 0, "value": 0}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000100", "0x00000000"],
+        "ref": 0
+      },
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 0, "value": 1},
+          {"index": 1, "type": 0, "value": 0},
+          {"index": 2, "type": 0, "value": 1},
+          {"index": 3, "type": 0, "value": 1}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000100", "0x00000000"],
+        "ref": 4
+      }
+    ],
+      "subs": [],
+      "superclass": 3088
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "soften", "transient": false, "type": 0, "value": 0},
+          {"id": 1, "name": "color1", "transient": false, "type": 2, "value": [0, 0, 0]},
+          {"id": 2, "name": "color2", "transient": false, "type": 2, "value": [1, 1, 1]},
+          {"id": 3, "name": "map1", "transient": false, "type": 15, "value": null},
+          {"id": 4, "name": "map2", "transient": false, "type": 15, "value": null},
+          {"id": 5, "name": "map1Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 6, "name": "map2Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 7, "name": "coords", "transient": false, "type": 18, "value": null}
+        ],
+        "ref": 1
+      }
+    ],
+      "class_id": ["0x00000200", "0x00000000"],
+      "class_name": "Checker",
+      "index": 17,
+      "name": "FixturePhysMapsCutoutMap",
+      "parts": [
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 0, "value": 0},
+          {"index": 1, "type": 0, "value": 0},
+          {"index": 2, "type": 0, "value": 1},
+          {"index": 3, "type": 0, "value": 1},
+          {"index": 4, "type": 0, "value": 0},
+          {"index": 5, "type": 0, "value": 0},
+          {"index": 6, "type": 0, "value": 0},
+          {"index": 7, "type": 0, "value": 1},
+          {"index": 8, "type": 0, "value": 1},
+          {"index": 9, "type": 0, "value": 1},
+          {"index": 10, "type": 1, "value": 1},
+          {"index": 11, "type": 0, "value": 0},
+          {"index": 12, "type": 0, "value": 0}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000100", "0x00000000"],
+        "ref": 0
+      }
+    ],
+      "subs": [],
+      "superclass": 3088
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "material_mode", "transient": false, "type": 1, "value": 0},
+          {"id": 1, "name": "base_weight", "transient": false, "type": 0, "value": 0.9},
+          {"id": 2, "name": "base_color", "transient": false, "type": 23, "value": [0.27451, 0.54902, 0.823529, 1]},
+          {"id": 3, "name": "reflectivity", "transient": false, "type": 0, "value": 0.55},
+          {"id": 4, "name": "roughness", "transient": false, "type": 0, "value": 0.4},
+          {"id": 5, "name": "roughness_inv", "transient": false, "type": 4, "value": 0},
+          {"id": 6, "name": "metalness", "transient": false, "type": 0, "value": 0.6},
+          {"id": 10, "name": "refl_color", "transient": false, "type": 23, "value": [0.705882, 0.745098, 0.784314, 1]},
+          {"id": 11, "name": "diff_roughness", "transient": false, "type": 0, "value": 0},
+          {"id": 12, "name": "brdf_mode", "transient": false, "type": 4, "value": 1},
+          {"id": 13, "name": "brdf_low", "transient": false, "type": 0, "value": 0.05},
+          {"id": 14, "name": "brdf_high", "transient": false, "type": 0, "value": 1},
+          {"id": 15, "name": "brdf_curve", "transient": false, "type": 0, "value": 5},
+          {"id": 20, "name": "anisotropy", "transient": false, "type": 0, "value": 1},
+          {"id": 21, "name": "anisoangle", "transient": false, "type": 0, "value": 0},
+          {"id": 22, "name": "aniso_mode", "transient": false, "type": 1, "value": 0},
+          {"id": 23, "name": "aniso_channel", "transient": false, "type": 1, "value": 0},
+          {"id": 30, "name": "transparency", "transient": false, "type": 0, "value": 0.3},
+          {"id": 31, "name": "trans_color", "transient": false, "type": 23, "value": [0.784314, 0.588235, 0.392157, 1]},
+          {"id": 32, "name": "trans_depth", "transient": false, "type": 0, "value": 0},
+          {"id": 35, "name": "trans_roughness", "transient": false, "type": 0, "value": 0},
+          {"id": 36, "name": "trans_roughness_inv", "transient": false, "type": 4, "value": 0},
+          {"id": 34, "name": "trans_roughness_lock", "transient": false, "type": 4, "value": 1},
+          {"id": 33, "name": "trans_ior", "transient": false, "type": 0, "value": 1.6},
+          {"id": 37, "name": "thin_walled", "transient": false, "type": 4, "value": 0},
+          {"id": 40, "name": "scattering", "transient": false, "type": 0, "value": 0},
+          {"id": 41, "name": "sss_color", "transient": false, "type": 23, "value": [1, 1, 1, 1]},
+          {"id": 42, "name": "sss_depth", "transient": false, "type": 0, "value": 10},
+          {"id": 43, "name": "sss_scale", "transient": false, "type": 0, "value": 1},
+          {"id": 44, "name": "sss_scatter_color", "transient": false, "type": 23, "value": [1, 0.5, 0.25, 1]},
+          {"id": 50, "name": "emission", "transient": false, "type": 0, "value": 0.4},
+          {"id": 51, "name": "emit_color", "transient": false, "type": 23, "value": [0.392157, 0.588235, 0.980392, 1]},
+          {"id": 52, "name": "emit_luminance", "transient": false, "type": 0, "value": 2400},
+          {"id": 54, "name": "emit_kelvin", "transient": false, "type": 0, "value": 6500},
+          {"id": 60, "name": "coating", "transient": false, "type": 0, "value": 0.2},
+          {"id": 61, "name": "coat_color", "transient": false, "type": 23, "value": [0.588235, 0.784314, 0.980392, 1]},
+          {"id": 62, "name": "coat_roughness", "transient": false, "type": 0, "value": 0.3},
+          {"id": 63, "name": "coat_roughness_inv", "transient": false, "type": 4, "value": 0},
+          {"id": 64, "name": "coat_affect_color", "transient": false, "type": 0, "value": 0.5},
+          {"id": 65, "name": "coat_affect_roughness", "transient": false, "type": 0, "value": 0.5},
+          {"id": 66, "name": "coat_ior", "transient": false, "type": 0, "value": 1.55},
+          {"id": 100, "name": "base_weight_map", "transient": false, "type": 15, "value": null},
+          {"id": 101, "name": "base_color_map", "transient": false, "type": 15, "value": 19},
+          {"id": 102, "name": "reflectivity_map", "transient": false, "type": 15, "value": 20},
+          {"id": 103, "name": "refl_color_map", "transient": false, "type": 15, "value": null},
+          {"id": 104, "name": "roughness_map", "transient": false, "type": 15, "value": 21},
+          {"id": 105, "name": "metalness_map", "transient": false, "type": 15, "value": 22},
+          {"id": 106, "name": "diff_rough_map", "transient": false, "type": 15, "value": null},
+          {"id": 107, "name": "anisotropy_map", "transient": false, "type": 15, "value": null},
+          {"id": 108, "name": "aniso_angle_map", "transient": false, "type": 15, "value": null},
+          {"id": 109, "name": "transparency_map", "transient": false, "type": 15, "value": 23},
+          {"id": 110, "name": "trans_color_map", "transient": false, "type": 15, "value": null},
+          {"id": 111, "name": "trans_rough_map", "transient": false, "type": 15, "value": null},
+          {"id": 112, "name": "trans_ior_map", "transient": false, "type": 15, "value": null},
+          {"id": 113, "name": "scattering_map", "transient": false, "type": 15, "value": null},
+          {"id": 114, "name": "sss_color_map", "transient": false, "type": 15, "value": null},
+          {"id": 115, "name": "sss_scale_map", "transient": false, "type": 15, "value": null},
+          {"id": 116, "name": "emission_map", "transient": false, "type": 15, "value": 24},
+          {"id": 117, "name": "emit_color_map", "transient": false, "type": 15, "value": 25},
+          {"id": 118, "name": "coat_map", "transient": false, "type": 15, "value": null},
+          {"id": 119, "name": "coat_color_map", "transient": false, "type": 15, "value": null},
+          {"id": 120, "name": "coat_rough_map", "transient": false, "type": 15, "value": null},
+          {"id": 130, "name": "bump_map", "transient": false, "type": 15, "value": 26},
+          {"id": 131, "name": "coat_bump_map", "transient": false, "type": 15, "value": null},
+          {"id": 132, "name": "displacement_map", "transient": false, "type": 15, "value": null},
+          {"id": 133, "name": "cutout_map", "transient": false, "type": 15, "value": 27},
+          {"id": 150, "name": "base_weight_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 151, "name": "base_color_map_on", "transient": false, "type": 4, "value": 0},
+          {"id": 152, "name": "reflectivity_map_on", "transient": false, "type": 4, "value": 0},
+          {"id": 153, "name": "refl_color_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 154, "name": "roughness_map_on", "transient": false, "type": 4, "value": 0},
+          {"id": 155, "name": "metalness_map_on", "transient": false, "type": 4, "value": 0},
+          {"id": 156, "name": "diff_rough_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 157, "name": "anisotropy_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 158, "name": "aniso_angle_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 159, "name": "transparency_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 160, "name": "trans_color_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 161, "name": "trans_rough_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 162, "name": "trans_ior_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 163, "name": "scattering_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 164, "name": "sss_color_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 165, "name": "sss_scale_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 166, "name": "emission_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 167, "name": "emit_color_map_on", "transient": false, "type": 4, "value": 0},
+          {"id": 168, "name": "coat_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 169, "name": "coat_color_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 170, "name": "coat_rough_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 180, "name": "bump_map_on", "transient": false, "type": 4, "value": 0},
+          {"id": 181, "name": "coat_bump_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 182, "name": "displacement_map_on", "transient": false, "type": 4, "value": 1},
+          {"id": 183, "name": "cutout_map_on", "transient": false, "type": 4, "value": 0},
+          {"id": 230, "name": "bump_map_amt", "transient": false, "type": 0, "value": 0.8},
+          {"id": 231, "name": "clearcoat_bump_map_amt", "transient": false, "type": 0, "value": 0.3},
+          {"id": 232, "name": "displacement_map_amt", "transient": false, "type": 0, "value": 1},
+          {"id": 250, "name": "mapM0", "transient": false, "type": 15, "value": null},
+          {"id": 251, "name": "mapM1", "transient": false, "type": 15, "value": 19},
+          {"id": 252, "name": "mapM2", "transient": false, "type": 15, "value": 20},
+          {"id": 254, "name": "mapM4", "transient": false, "type": 15, "value": 21},
+          {"id": 255, "name": "mapM5", "transient": false, "type": 15, "value": 22},
+          {"id": 253, "name": "mapM3", "transient": false, "type": 15, "value": null},
+          {"id": 256, "name": "mapM6", "transient": false, "type": 15, "value": null},
+          {"id": 257, "name": "mapM7", "transient": false, "type": 15, "value": null},
+          {"id": 258, "name": "mapM8", "transient": false, "type": 15, "value": null},
+          {"id": 259, "name": "mapM9", "transient": false, "type": 15, "value": 23},
+          {"id": 260, "name": "mapM10", "transient": false, "type": 15, "value": null},
+          {"id": 261, "name": "mapM11", "transient": false, "type": 15, "value": null},
+          {"id": 262, "name": "mapM12", "transient": false, "type": 15, "value": null},
+          {"id": 263, "name": "mapM13", "transient": false, "type": 15, "value": null},
+          {"id": 264, "name": "mapM14", "transient": false, "type": 15, "value": null},
+          {"id": 265, "name": "mapM15", "transient": false, "type": 15, "value": null},
+          {"id": 266, "name": "mapM16", "transient": false, "type": 15, "value": 24},
+          {"id": 267, "name": "mapM17", "transient": false, "type": 15, "value": 25},
+          {"id": 268, "name": "mapM18", "transient": false, "type": 15, "value": null},
+          {"id": 269, "name": "mapM19", "transient": false, "type": 15, "value": null},
+          {"id": 270, "name": "mapM20", "transient": false, "type": 15, "value": null}
+        ],
+        "ref": 0
+      }
+    ],
+      "class_id": ["0x3d6b1cec", "0xdeadc001"],
+      "class_name": "PhysicalMaterial",
+      "index": 18,
+      "name": "FixturePhysicalOff",
+      "parts": [],
+      "subs": [
+      {"kind": "map", "slot": 1, "target": 19},
+      {"kind": "map", "slot": 2, "target": 20},
+      {"kind": "map", "slot": 4, "target": 21},
+      {"kind": "map", "slot": 5, "target": 22},
+      {"kind": "map", "slot": 9, "target": 23},
+      {"kind": "map", "slot": 16, "target": 24},
+      {"kind": "map", "slot": 17, "target": 25},
+      {"kind": "map", "slot": 30, "target": 26},
+      {"kind": "map", "slot": 33, "target": 27}
+    ],
+      "superclass": 3072
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "soften", "transient": false, "type": 0, "value": 0},
+          {"id": 1, "name": "color1", "transient": false, "type": 2, "value": [0, 0, 0]},
+          {"id": 2, "name": "color2", "transient": false, "type": 2, "value": [1, 1, 1]},
+          {"id": 3, "name": "map1", "transient": false, "type": 15, "value": null},
+          {"id": 4, "name": "map2", "transient": false, "type": 15, "value": null},
+          {"id": 5, "name": "map1Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 6, "name": "map2Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 7, "name": "coords", "transient": false, "type": 18, "value": null}
+        ],
+        "ref": 1
+      }
+    ],
+      "class_id": ["0x00000200", "0x00000000"],
+      "class_name": "Checker",
+      "index": 19,
+      "name": "FixturePhysOffBaseMap",
+      "parts": [
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 0, "value": 0},
+          {"index": 1, "type": 0, "value": 0},
+          {"index": 2, "type": 0, "value": 1},
+          {"index": 3, "type": 0, "value": 1},
+          {"index": 4, "type": 0, "value": 0},
+          {"index": 5, "type": 0, "value": 0},
+          {"index": 6, "type": 0, "value": 0},
+          {"index": 7, "type": 0, "value": 1},
+          {"index": 8, "type": 0, "value": 1},
+          {"index": 9, "type": 0, "value": 1},
+          {"index": 10, "type": 1, "value": 1},
+          {"index": 11, "type": 0, "value": 0},
+          {"index": 12, "type": 0, "value": 0}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000100", "0x00000000"],
+        "ref": 0
+      }
+    ],
+      "subs": [],
+      "superclass": 3088
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "color1", "transient": false, "type": 2, "value": [0, 0, 0]},
+          {"id": 1, "name": "color2", "transient": false, "type": 2, "value": [1, 1, 1]},
+          {"id": 2, "name": "map1", "transient": false, "type": 15, "value": null},
+          {"id": 3, "name": "map2", "transient": false, "type": 15, "value": null},
+          {"id": 4, "name": "map1Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 5, "name": "map2Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 6, "name": "size", "transient": false, "type": 0, "value": 635},
+          {"id": 7, "name": "phase", "transient": false, "type": 0, "value": 0},
+          {"id": 8, "name": "levels", "transient": false, "type": 0, "value": 3},
+          {"id": 9, "name": "thresholdLow", "transient": false, "type": 0, "value": 0},
+          {"id": 10, "name": "thresholdHigh", "transient": false, "type": 0, "value": 1},
+          {"id": 11, "name": "type", "transient": false, "type": 1, "value": 0},
+          {"id": 12, "name": "coords", "transient": false, "type": 18, "value": null},
+          {"id": 13, "name": "output", "transient": false, "type": 18, "value": null}
+        ],
+        "ref": 1
+      }
+    ],
+      "class_id": ["0x00000234", "0x00000000"],
+      "class_name": "Noise",
+      "index": 20,
+      "name": "FixturePhysOffReflectivityMap",
+      "parts": [
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 3, "value": [0, 0, 0]},
+          {"index": 1, "type": 3, "value": [1, 1, 1]},
+          {"index": 2, "type": 3, "value": [0, 0, 0]},
+          {"index": 3, "type": 0, "value": 1},
+          {"index": 4, "type": 0, "value": 0}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000100", "0x00000000"],
+        "ref": 0
+      },
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 0, "value": 1},
+          {"index": 1, "type": 0, "value": 0},
+          {"index": 2, "type": 0, "value": 1},
+          {"index": 3, "type": 0, "value": 1}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000100", "0x00000000"],
+        "ref": 4
+      }
+    ],
+      "subs": [],
+      "superclass": 3088
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "soften", "transient": false, "type": 0, "value": 0},
+          {"id": 1, "name": "color1", "transient": false, "type": 2, "value": [0, 0, 0]},
+          {"id": 2, "name": "color2", "transient": false, "type": 2, "value": [1, 1, 1]},
+          {"id": 3, "name": "map1", "transient": false, "type": 15, "value": null},
+          {"id": 4, "name": "map2", "transient": false, "type": 15, "value": null},
+          {"id": 5, "name": "map1Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 6, "name": "map2Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 7, "name": "coords", "transient": false, "type": 18, "value": null}
+        ],
+        "ref": 1
+      }
+    ],
+      "class_id": ["0x00000200", "0x00000000"],
+      "class_name": "Checker",
+      "index": 21,
+      "name": "FixturePhysOffRoughnessMap",
+      "parts": [
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 0, "value": 0},
+          {"index": 1, "type": 0, "value": 0},
+          {"index": 2, "type": 0, "value": 1},
+          {"index": 3, "type": 0, "value": 1},
+          {"index": 4, "type": 0, "value": 0},
+          {"index": 5, "type": 0, "value": 0},
+          {"index": 6, "type": 0, "value": 0},
+          {"index": 7, "type": 0, "value": 1},
+          {"index": 8, "type": 0, "value": 1},
+          {"index": 9, "type": 0, "value": 1},
+          {"index": 10, "type": 1, "value": 1},
+          {"index": 11, "type": 0, "value": 0},
+          {"index": 12, "type": 0, "value": 0}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000100", "0x00000000"],
+        "ref": 0
+      }
+    ],
+      "subs": [],
+      "superclass": 3088
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "color1", "transient": false, "type": 2, "value": [0, 0, 0]},
+          {"id": 1, "name": "color2", "transient": false, "type": 2, "value": [1, 1, 1]},
+          {"id": 2, "name": "map1", "transient": false, "type": 15, "value": null},
+          {"id": 3, "name": "map2", "transient": false, "type": 15, "value": null},
+          {"id": 4, "name": "map1Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 5, "name": "map2Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 6, "name": "size", "transient": false, "type": 0, "value": 635},
+          {"id": 7, "name": "phase", "transient": false, "type": 0, "value": 0},
+          {"id": 8, "name": "levels", "transient": false, "type": 0, "value": 3},
+          {"id": 9, "name": "thresholdLow", "transient": false, "type": 0, "value": 0},
+          {"id": 10, "name": "thresholdHigh", "transient": false, "type": 0, "value": 1},
+          {"id": 11, "name": "type", "transient": false, "type": 1, "value": 0},
+          {"id": 12, "name": "coords", "transient": false, "type": 18, "value": null},
+          {"id": 13, "name": "output", "transient": false, "type": 18, "value": null}
+        ],
+        "ref": 1
+      }
+    ],
+      "class_id": ["0x00000234", "0x00000000"],
+      "class_name": "Noise",
+      "index": 22,
+      "name": "FixturePhysOffMetalnessMap",
+      "parts": [
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 3, "value": [0, 0, 0]},
+          {"index": 1, "type": 3, "value": [1, 1, 1]},
+          {"index": 2, "type": 3, "value": [0, 0, 0]},
+          {"index": 3, "type": 0, "value": 1},
+          {"index": 4, "type": 0, "value": 0}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000100", "0x00000000"],
+        "ref": 0
+      },
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 0, "value": 1},
+          {"index": 1, "type": 0, "value": 0},
+          {"index": 2, "type": 0, "value": 1},
+          {"index": 3, "type": 0, "value": 1}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000100", "0x00000000"],
+        "ref": 4
+      }
+    ],
+      "subs": [],
+      "superclass": 3088
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "soften", "transient": false, "type": 0, "value": 0},
+          {"id": 1, "name": "color1", "transient": false, "type": 2, "value": [0, 0, 0]},
+          {"id": 2, "name": "color2", "transient": false, "type": 2, "value": [1, 1, 1]},
+          {"id": 3, "name": "map1", "transient": false, "type": 15, "value": null},
+          {"id": 4, "name": "map2", "transient": false, "type": 15, "value": null},
+          {"id": 5, "name": "map1Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 6, "name": "map2Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 7, "name": "coords", "transient": false, "type": 18, "value": null}
+        ],
+        "ref": 1
+      }
+    ],
+      "class_id": ["0x00000200", "0x00000000"],
+      "class_name": "Checker",
+      "index": 23,
+      "name": "FixturePhysOffTransparencyMap",
+      "parts": [
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 0, "value": 0},
+          {"index": 1, "type": 0, "value": 0},
+          {"index": 2, "type": 0, "value": 1},
+          {"index": 3, "type": 0, "value": 1},
+          {"index": 4, "type": 0, "value": 0},
+          {"index": 5, "type": 0, "value": 0},
+          {"index": 6, "type": 0, "value": 0},
+          {"index": 7, "type": 0, "value": 1},
+          {"index": 8, "type": 0, "value": 1},
+          {"index": 9, "type": 0, "value": 1},
+          {"index": 10, "type": 1, "value": 1},
+          {"index": 11, "type": 0, "value": 0},
+          {"index": 12, "type": 0, "value": 0}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000100", "0x00000000"],
+        "ref": 0
+      }
+    ],
+      "subs": [],
+      "superclass": 3088
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "color1", "transient": false, "type": 2, "value": [0, 0, 0]},
+          {"id": 1, "name": "color2", "transient": false, "type": 2, "value": [1, 1, 1]},
+          {"id": 2, "name": "map1", "transient": false, "type": 15, "value": null},
+          {"id": 3, "name": "map2", "transient": false, "type": 15, "value": null},
+          {"id": 4, "name": "map1Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 5, "name": "map2Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 6, "name": "size", "transient": false, "type": 0, "value": 635},
+          {"id": 7, "name": "phase", "transient": false, "type": 0, "value": 0},
+          {"id": 8, "name": "levels", "transient": false, "type": 0, "value": 3},
+          {"id": 9, "name": "thresholdLow", "transient": false, "type": 0, "value": 0},
+          {"id": 10, "name": "thresholdHigh", "transient": false, "type": 0, "value": 1},
+          {"id": 11, "name": "type", "transient": false, "type": 1, "value": 0},
+          {"id": 12, "name": "coords", "transient": false, "type": 18, "value": null},
+          {"id": 13, "name": "output", "transient": false, "type": 18, "value": null}
+        ],
+        "ref": 1
+      }
+    ],
+      "class_id": ["0x00000234", "0x00000000"],
+      "class_name": "Noise",
+      "index": 24,
+      "name": "FixturePhysOffEmissionMap",
+      "parts": [
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 3, "value": [0, 0, 0]},
+          {"index": 1, "type": 3, "value": [1, 1, 1]},
+          {"index": 2, "type": 3, "value": [0, 0, 0]},
+          {"index": 3, "type": 0, "value": 1},
+          {"index": 4, "type": 0, "value": 0}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000100", "0x00000000"],
+        "ref": 0
+      },
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 0, "value": 1},
+          {"index": 1, "type": 0, "value": 0},
+          {"index": 2, "type": 0, "value": 1},
+          {"index": 3, "type": 0, "value": 1}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000100", "0x00000000"],
+        "ref": 4
+      }
+    ],
+      "subs": [],
+      "superclass": 3088
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "soften", "transient": false, "type": 0, "value": 0},
+          {"id": 1, "name": "color1", "transient": false, "type": 2, "value": [0, 0, 0]},
+          {"id": 2, "name": "color2", "transient": false, "type": 2, "value": [1, 1, 1]},
+          {"id": 3, "name": "map1", "transient": false, "type": 15, "value": null},
+          {"id": 4, "name": "map2", "transient": false, "type": 15, "value": null},
+          {"id": 5, "name": "map1Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 6, "name": "map2Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 7, "name": "coords", "transient": false, "type": 18, "value": null}
+        ],
+        "ref": 1
+      }
+    ],
+      "class_id": ["0x00000200", "0x00000000"],
+      "class_name": "Checker",
+      "index": 25,
+      "name": "FixturePhysOffEmitColorMap",
+      "parts": [
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 0, "value": 0},
+          {"index": 1, "type": 0, "value": 0},
+          {"index": 2, "type": 0, "value": 1},
+          {"index": 3, "type": 0, "value": 1},
+          {"index": 4, "type": 0, "value": 0},
+          {"index": 5, "type": 0, "value": 0},
+          {"index": 6, "type": 0, "value": 0},
+          {"index": 7, "type": 0, "value": 1},
+          {"index": 8, "type": 0, "value": 1},
+          {"index": 9, "type": 0, "value": 1},
+          {"index": 10, "type": 1, "value": 1},
+          {"index": 11, "type": 0, "value": 0},
+          {"index": 12, "type": 0, "value": 0}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000100", "0x00000000"],
+        "ref": 0
+      }
+    ],
+      "subs": [],
+      "superclass": 3088
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "color1", "transient": false, "type": 2, "value": [0, 0, 0]},
+          {"id": 1, "name": "color2", "transient": false, "type": 2, "value": [1, 1, 1]},
+          {"id": 2, "name": "map1", "transient": false, "type": 15, "value": null},
+          {"id": 3, "name": "map2", "transient": false, "type": 15, "value": null},
+          {"id": 4, "name": "map1Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 5, "name": "map2Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 6, "name": "size", "transient": false, "type": 0, "value": 635},
+          {"id": 7, "name": "phase", "transient": false, "type": 0, "value": 0},
+          {"id": 8, "name": "levels", "transient": false, "type": 0, "value": 3},
+          {"id": 9, "name": "thresholdLow", "transient": false, "type": 0, "value": 0},
+          {"id": 10, "name": "thresholdHigh", "transient": false, "type": 0, "value": 1},
+          {"id": 11, "name": "type", "transient": false, "type": 1, "value": 0},
+          {"id": 12, "name": "coords", "transient": false, "type": 18, "value": null},
+          {"id": 13, "name": "output", "transient": false, "type": 18, "value": null}
+        ],
+        "ref": 1
+      }
+    ],
+      "class_id": ["0x00000234", "0x00000000"],
+      "class_name": "Noise",
+      "index": 26,
+      "name": "FixturePhysOffBumpMap",
+      "parts": [
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 3, "value": [0, 0, 0]},
+          {"index": 1, "type": 3, "value": [1, 1, 1]},
+          {"index": 2, "type": 3, "value": [0, 0, 0]},
+          {"index": 3, "type": 0, "value": 1},
+          {"index": 4, "type": 0, "value": 0}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000100", "0x00000000"],
+        "ref": 0
+      },
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 0, "value": 1},
+          {"index": 1, "type": 0, "value": 0},
+          {"index": 2, "type": 0, "value": 1},
+          {"index": 3, "type": 0, "value": 1}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000100", "0x00000000"],
+        "ref": 4
+      }
+    ],
+      "subs": [],
+      "superclass": 3088
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "soften", "transient": false, "type": 0, "value": 0},
+          {"id": 1, "name": "color1", "transient": false, "type": 2, "value": [0, 0, 0]},
+          {"id": 2, "name": "color2", "transient": false, "type": 2, "value": [1, 1, 1]},
+          {"id": 3, "name": "map1", "transient": false, "type": 15, "value": null},
+          {"id": 4, "name": "map2", "transient": false, "type": 15, "value": null},
+          {"id": 5, "name": "map1Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 6, "name": "map2Enabled", "transient": false, "type": 4, "value": 1},
+          {"id": 7, "name": "coords", "transient": false, "type": 18, "value": null}
+        ],
+        "ref": 1
+      }
+    ],
+      "class_id": ["0x00000200", "0x00000000"],
+      "class_name": "Checker",
+      "index": 27,
+      "name": "FixturePhysOffCutoutMap",
+      "parts": [
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 0, "value": 0},
+          {"index": 1, "type": 0, "value": 0},
+          {"index": 2, "type": 0, "value": 1},
+          {"index": 3, "type": 0, "value": 1},
+          {"index": 4, "type": 0, "value": 0},
+          {"index": 5, "type": 0, "value": 0},
+          {"index": 6, "type": 0, "value": 0},
+          {"index": 7, "type": 0, "value": 1},
+          {"index": 8, "type": 0, "value": 1},
+          {"index": 9, "type": 0, "value": 1},
+          {"index": 10, "type": 1, "value": 1},
+          {"index": 11, "type": 0, "value": 0},
+          {"index": 12, "type": 0, "value": 0}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000100", "0x00000000"],
+        "ref": 0
+      }
+    ],
+      "subs": [],
+      "superclass": 3088
+    }
+  ],
+  "materials": [
+    {"class_id": ["0x00000002", "0x00000000"], "class_name": "Standardmaterial", "index": 0, "name": "FixtureBlinn", "sub_count": 0},
+    {"class_id": ["0x00000002", "0x00000000"], "class_name": "Standardmaterial", "index": 1, "name": "FixturePhong", "sub_count": 0},
+    {"class_id": ["0x00000002", "0x00000000"], "class_name": "Standardmaterial", "index": 2, "name": "FixtureMetal", "sub_count": 0},
+    {"class_id": ["0x00000002", "0x00000000"], "class_name": "Standardmaterial", "index": 3, "name": "FixtureAnisotropic", "sub_count": 0},
+    {"class_id": ["0x00000002", "0x00000000"], "class_name": "Standardmaterial", "index": 4, "name": "FixtureOrenNayarBlinn", "sub_count": 0},
+    {"class_id": ["0x00000002", "0x00000000"], "class_name": "Standardmaterial", "index": 5, "name": "FixtureMultiLayer", "sub_count": 0},
+    {"class_id": ["0x00000002", "0x00000000"], "class_name": "Standardmaterial", "index": 6, "name": "FixtureTranslucent", "sub_count": 0},
+    {"class_id": ["0x00000002", "0x00000000"], "class_name": "Standardmaterial", "index": 7, "name": "FixtureStrauss", "sub_count": 0},
+    {"class_id": ["0x3d6b1cec", "0xdeadc001"], "class_name": "PhysicalMaterial", "index": 8, "name": "FixturePhysicalMaps", "sub_count": 0},
+    {"class_id": ["0x3d6b1cec", "0xdeadc001"], "class_name": "PhysicalMaterial", "index": 9, "name": "FixturePhysicalOff", "sub_count": 0}
+  ],
+  "max_version": [22000, 2020],
+  "node_count": 10,
+  "nodes": [
+    {
+      "base_class_id": ["0x1bf8338d", "0x192f6098"],
+      "base_class_name": "Editable_Poly",
+      "base_faces": 6,
+      "base_superclass": 16,
+      "base_verts": 8,
+      "bbox_max": [10, 10, 20],
+      "bbox_min": [-10, -10, 0],
+      "camera": null,
+      "eval_faces": 12,
+      "eval_maps": null,
+      "eval_mesh": null,
+      "eval_verts": 8,
+      "frozen": false,
+      "handle": 1,
+      "hidden": false,
+      "index": 0,
+      "instances": [1],
+      "layer": "0",
+      "material": 0,
+      "modifiers": [],
+      "name": "FixtureBlinnBox",
+      "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "renderable": true,
+      "shape": null,
+      "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]
+    },
+    {
+      "base_class_id": ["0x1bf8338d", "0x192f6098"],
+      "base_class_name": "Editable_Poly",
+      "base_faces": 6,
+      "base_superclass": 16,
+      "base_verts": 8,
+      "bbox_max": [50, 10, 20],
+      "bbox_min": [30, -10, 0],
+      "camera": null,
+      "eval_faces": 12,
+      "eval_maps": null,
+      "eval_mesh": null,
+      "eval_verts": 8,
+      "frozen": false,
+      "handle": 2,
+      "hidden": false,
+      "index": 1,
+      "instances": [2],
+      "layer": "0",
+      "material": 1,
+      "modifiers": [],
+      "name": "FixturePhongBox",
+      "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 40, 0, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "renderable": true,
+      "shape": null,
+      "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 40, 0, 0]
+    },
+    {
+      "base_class_id": ["0x1bf8338d", "0x192f6098"],
+      "base_class_name": "Editable_Poly",
+      "base_faces": 6,
+      "base_superclass": 16,
+      "base_verts": 8,
+      "bbox_max": [90, 10, 20],
+      "bbox_min": [70, -10, 0],
+      "camera": null,
+      "eval_faces": 12,
+      "eval_maps": null,
+      "eval_mesh": null,
+      "eval_verts": 8,
+      "frozen": false,
+      "handle": 3,
+      "hidden": false,
+      "index": 2,
+      "instances": [3],
+      "layer": "0",
+      "material": 2,
+      "modifiers": [],
+      "name": "FixtureMetalBox",
+      "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 80, 0, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "renderable": true,
+      "shape": null,
+      "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 80, 0, 0]
+    },
+    {
+      "base_class_id": ["0x1bf8338d", "0x192f6098"],
+      "base_class_name": "Editable_Poly",
+      "base_faces": 6,
+      "base_superclass": 16,
+      "base_verts": 8,
+      "bbox_max": [130, 10, 20],
+      "bbox_min": [110, -10, 0],
+      "camera": null,
+      "eval_faces": 12,
+      "eval_maps": null,
+      "eval_mesh": null,
+      "eval_verts": 8,
+      "frozen": false,
+      "handle": 4,
+      "hidden": false,
+      "index": 3,
+      "instances": [4],
+      "layer": "0",
+      "material": 3,
+      "modifiers": [],
+      "name": "FixtureAnisotropicBox",
+      "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 120, 0, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "renderable": true,
+      "shape": null,
+      "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 120, 0, 0]
+    },
+    {
+      "base_class_id": ["0x1bf8338d", "0x192f6098"],
+      "base_class_name": "Editable_Poly",
+      "base_faces": 6,
+      "base_superclass": 16,
+      "base_verts": 8,
+      "bbox_max": [170, 10, 20],
+      "bbox_min": [150, -10, 0],
+      "camera": null,
+      "eval_faces": 12,
+      "eval_maps": null,
+      "eval_mesh": null,
+      "eval_verts": 8,
+      "frozen": false,
+      "handle": 5,
+      "hidden": false,
+      "index": 4,
+      "instances": [5],
+      "layer": "0",
+      "material": 4,
+      "modifiers": [],
+      "name": "FixtureOrenNayarBlinnBox",
+      "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 160, 0, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "renderable": true,
+      "shape": null,
+      "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 160, 0, 0]
+    },
+    {
+      "base_class_id": ["0x1bf8338d", "0x192f6098"],
+      "base_class_name": "Editable_Poly",
+      "base_faces": 6,
+      "base_superclass": 16,
+      "base_verts": 8,
+      "bbox_max": [210, 10, 20],
+      "bbox_min": [190, -10, 0],
+      "camera": null,
+      "eval_faces": 12,
+      "eval_maps": null,
+      "eval_mesh": null,
+      "eval_verts": 8,
+      "frozen": false,
+      "handle": 6,
+      "hidden": false,
+      "index": 5,
+      "instances": [6],
+      "layer": "0",
+      "material": 5,
+      "modifiers": [],
+      "name": "FixtureMultiLayerBox",
+      "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 200, 0, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "renderable": true,
+      "shape": null,
+      "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 200, 0, 0]
+    },
+    {
+      "base_class_id": ["0x1bf8338d", "0x192f6098"],
+      "base_class_name": "Editable_Poly",
+      "base_faces": 6,
+      "base_superclass": 16,
+      "base_verts": 8,
+      "bbox_max": [250, 10, 20],
+      "bbox_min": [230, -10, 0],
+      "camera": null,
+      "eval_faces": 12,
+      "eval_maps": null,
+      "eval_mesh": null,
+      "eval_verts": 8,
+      "frozen": false,
+      "handle": 7,
+      "hidden": false,
+      "index": 6,
+      "instances": [7],
+      "layer": "0",
+      "material": 6,
+      "modifiers": [],
+      "name": "FixtureTranslucentBox",
+      "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 240, 0, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "renderable": true,
+      "shape": null,
+      "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 240, 0, 0]
+    },
+    {
+      "base_class_id": ["0x1bf8338d", "0x192f6098"],
+      "base_class_name": "Editable_Poly",
+      "base_faces": 6,
+      "base_superclass": 16,
+      "base_verts": 8,
+      "bbox_max": [290, 10, 20],
+      "bbox_min": [270, -10, 0],
+      "camera": null,
+      "eval_faces": 12,
+      "eval_maps": null,
+      "eval_mesh": null,
+      "eval_verts": 8,
+      "frozen": false,
+      "handle": 8,
+      "hidden": false,
+      "index": 7,
+      "instances": [8],
+      "layer": "0",
+      "material": 7,
+      "modifiers": [],
+      "name": "FixtureStraussBox",
+      "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 280, 0, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "renderable": true,
+      "shape": null,
+      "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 280, 0, 0]
+    },
+    {
+      "base_class_id": ["0x1bf8338d", "0x192f6098"],
+      "base_class_name": "Editable_Poly",
+      "base_faces": 6,
+      "base_superclass": 16,
+      "base_verts": 8,
+      "bbox_max": [330, 10, 20],
+      "bbox_min": [310, -10, 0],
+      "camera": null,
+      "eval_faces": 12,
+      "eval_maps": null,
+      "eval_mesh": null,
+      "eval_verts": 8,
+      "frozen": false,
+      "handle": 9,
+      "hidden": false,
+      "index": 8,
+      "instances": [9],
+      "layer": "0",
+      "material": 8,
+      "modifiers": [],
+      "name": "FixturePhysicalMapsBox",
+      "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 320, 0, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "renderable": true,
+      "shape": null,
+      "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 320, 0, 0]
+    },
+    {
+      "base_class_id": ["0x1bf8338d", "0x192f6098"],
+      "base_class_name": "Editable_Poly",
+      "base_faces": 6,
+      "base_superclass": 16,
+      "base_verts": 8,
+      "bbox_max": [370, 10, 20],
+      "bbox_min": [350, -10, 0],
+      "camera": null,
+      "eval_faces": 12,
+      "eval_maps": null,
+      "eval_mesh": null,
+      "eval_verts": 8,
+      "frozen": false,
+      "handle": 10,
+      "hidden": false,
+      "index": 9,
+      "instances": [10],
+      "layer": "0",
+      "material": 9,
+      "modifiers": [],
+      "name": "FixturePhysicalOffBox",
+      "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 360, 0, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "renderable": true,
+      "shape": null,
+      "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 360, 0, 0]
+    }
+  ],
+  "oracle_version": 10,
+  "render": {"camera": null, "height": 480, "pixel_aspect": 1, "width": 640},
+  "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
+  "time": 0,
+  "units": {"display_metric": "meters", "display_type": "Generic", "display_us": "ft_Frac_In", "system_scale": 1, "system_type": "millimeters"}
+}

@@ -4,14 +4,15 @@
 
 """Tests of maxdrop/convert/materials.py, the material rules: no Blender. vray_basic's IR against values computed by
 hand from its authoring script (tools/fixtures/vray_basic.ms), vray_maps' map slots, vray_wrappers' peels, vray_more's
-VRayLightMtl, VRayFastSSS2, car paints and other wrappers, and each rule on synthetic parameters (the Standard
-shaders but Blinn have no fixture). standard_physical's Standard and Physical Material and box_poly_standard's
-Standard against values computed by hand from their scripts; vray_wrappers' Multi/Sub-Object by material ID and the
-slot plan of its box.
+VRayLightMtl, VRayFastSSS2, car paints and other wrappers, and each rule on synthetic parameters. standard_physical's
+Standard and Physical Material, box_poly_standard's Standard, standard_shaders' Standard shaders and Physical map slots
+against values computed by hand from their scripts (and the ids by the names the oracle gives them); vray_wrappers'
+Multi/Sub-Object by material ID and the slot plan of its box.
 
     python -I -m unittest discover tests
 """
 import importlib
+import json
 import math
 import os
 import sys
@@ -39,6 +40,7 @@ colors = importlib.import_module(_PKG + ".convert.colors")
 texmaps = importlib.import_module(_PKG + ".convert.texmaps")
 cfb = importlib.import_module(_PKG + ".reader.cfb")
 chunks = importlib.import_module(_PKG + ".reader.chunks")
+classdir = importlib.import_module(_PKG + ".reader.classdir")
 classids = importlib.import_module(_PKG + ".reader.classids")
 pblock = importlib.import_module(_PKG + ".reader.pblock")
 reader_materials = importlib.import_module(_PKG + ".reader.materials")
@@ -664,11 +666,11 @@ class Standard(unittest.TestCase, Close):
                 self.close(ir.specular.value, 0.4)
                 self.close(ir.emission_color.value, (0.0, 1.0, 0.0), "self-illumination color")
                 self.close(ir.emission_strength, 1.0)
-                self.close(ir.metallic.value, 1.0 if sid == mat.METAL_SHADER else 0.0)
+                self.close(ir.metallic.value, 1.0 if sid == classids.METAL_SHADER else 0.0)
                 self.assertEqual(conv.stats.issues, [])
 
     def test_strauss(self):
-        conv, ir = _convert(_standard(0, mat.STRAUSS_SHADER, {0: (1.0, 0.0, 0.0), 1: 0.8, 2: 0.6}))
+        conv, ir = _convert(_standard(0, classids.STRAUSS_SHADER, {0: (1.0, 0.0, 0.0), 1: 0.8, 2: 0.6}))
         self.close(ir.base_color.value, (1.0, 0.0, 0.0))
         self.close(ir.roughness.value, 0.2)
         self.close(ir.metallic.value, 0.6)
@@ -766,6 +768,170 @@ class Physical(unittest.TestCase, Close):
         self.close(ir.base_color.value, (0.5,) * 3)
         self.close((ir.roughness.value, ir.metallic.value, ir.specular.value, ir.ior), (0.0, 0.0, 1.0, 1.52))
         self.close(ir.emission_strength, 0.0)
+
+
+def _oracle_graph(name):
+    with open(os.path.join(FIXTURE_DIR, name + ".oracle.json"), encoding="ascii") as f:
+        return {e["name"]: e for e in json.load(f)["material_graph"]}
+
+
+def _names(block):
+    return {p["id"]: p["name"] for p in block["params"]}
+
+
+class StandardShaders(unittest.TestCase, Close):
+    """tools/fixtures/standard_shaders.ms, by hand (gamma off: sRGB s/255 -> linear): one Standard material per
+    shader. The ids are also checked by the names 3ds Max gives them in the oracle, apart from SHADERS."""
+
+    # material: (shader, diffuse, specular, level %, glossiness %, self-illumination amount %, its color, color on)
+    VALUES = {
+        "FixtureBlinn": ("BLINN_SHADER", (200, 60, 40), (220, 210, 200), 41, 31, 17, (30, 90, 200), True),
+        "FixturePhong": ("PHONG_SHADER", (60, 180, 90), (210, 220, 230), 52, 42, 19, (200, 30, 90), False),
+        "FixtureMetal": ("METAL_SHADER", (180, 140, 60), (240, 230, 200), 63, 53, 21, (90, 200, 30), True),
+        "FixtureAnisotropic": ("ANISOTROPIC_SHADER", (90, 60, 200), (190, 200, 210), 74, 64, 23, (40, 160, 220),
+                               False),
+        "FixtureOrenNayarBlinn": ("OREN_NAYAR_BLINN_SHADER", (150, 90, 120), (230, 220, 210), 35, 45, 27,
+                                  (220, 120, 40), True),
+        "FixtureMultiLayer": ("MULTI_LAYER_SHADER", (100, 170, 160), (200, 190, 180), 46, 56, 29, (160, 40, 220),
+                              False),
+        "FixtureTranslucent": ("TRANSLUCENT_SHADER", (170, 110, 80), (215, 225, 235), 57, 67, 31, (30, 220, 160),
+                               True),
+    }
+    FIELDS = {"diffuse": "diffuse", "specular": "specular", "level": "specularLevel", "glossiness": "glossiness",
+              "si_amount": "selfIllumAmount", "si_color": "selfIllumColor", "use_si_color": "useSelfIllumColor"}
+
+    @classmethod
+    def setUpClass(cls):
+        cf, graph, cls.by_name = _fixture("standard_shaders")
+        with cf:
+            cls.conv = mat.MaterialConverter(graph)
+            cls.irs = {n: cls.conv.convert(cls.by_name[n]) for n in list(cls.VALUES) + ["FixtureStrauss"]}
+        cls.oracle = _oracle_graph("standard_shaders")
+
+    def shader_block(self, name):
+        """(ClassId, parameter names by id) of the shader part of a Standard material in the oracle."""
+        parts = [p for p in self.oracle[name]["parts"] if p["class_id"] != ["0x25773211", "0x00000000"]]
+        self.assertEqual(len(parts), 1, name)  # the sampler is the other part
+        cid = classdir.ClassId(*(int(h, 16) for h in parts[0]["class_id"]))
+        return cid, _names(parts[0]["blocks"][0])
+
+    def test_each_shader_by_hand(self):
+        for name, (shader, diffuse, spec, level, gloss, amount, si_color, si_on) in self.VALUES.items():
+            with self.subTest(name):
+                ir = self.irs[name]
+                self.assertEqual((ir.name, ir.source, ir.unknown), (name, "Standard", False))
+                self.close(ir.base_color.value, _lins(*diffuse))
+                self.close(ir.roughness.value, 1.0 - gloss / 100.0)
+                self.close(ir.specular.value, level / 100.0 * sum(_lins(*spec)) / 3)
+                if si_on:  # its own color at strength 1
+                    self.close(ir.emission_color.value, _lins(*si_color))
+                    self.close(ir.emission_strength, 1.0)
+                else:  # the diffuse at the amount
+                    self.close(ir.emission_color.value, _lins(*diffuse))
+                    self.close(ir.emission_strength, amount / 100.0)
+                self.close(ir.metallic.value, 1.0 if shader == "METAL_SHADER" else 0.0)
+                self.assertIsNone(ir.base_color.map)
+
+    def test_strauss(self):
+        ir = self.irs["FixtureStrauss"]
+        self.close(ir.base_color.value, _lins(120, 130, 210))
+        self.close((ir.roughness.value, ir.metallic.value, ir.specular.value), (1.0 - 0.37, 0.48, 0.5))
+        self.close(ir.emission_strength, 0.0)
+
+    def test_ids_name_the_parameters(self):
+        for name, values in self.VALUES.items():
+            with self.subTest(name):
+                sid, names = self.shader_block(name)
+                self.assertEqual(sid, getattr(classids, values[0]))
+                ids = mat.SHADERS[sid]
+                self.assertEqual({field: names[getattr(ids, field)] for field in self.FIELDS}, self.FIELDS)
+        sid, names = self.shader_block("FixtureStrauss")
+        self.assertEqual(sid, classids.STRAUSS_SHADER)
+        self.assertEqual((names[0], names[1], names[2]), ("diffuse", "glossiness", "metalness"))
+        self.assertEqual(set(mat.SHADERS), {getattr(classids, v[0]) for v in self.VALUES.values()})
+
+    def test_no_issues(self):
+        self.assertEqual((self.conv.stats.issues, dict(self.conv.stats.unknown)), ([], {}))
+
+
+class PhysicalMaps(unittest.TestCase, Close):
+    """tools/fixtures/standard_shaders.ms's two Physical Materials, by hand (gamma off): the same nine map slots in
+    both, each switched off in one of them (every switch defaults to on, so a wrong switch id reads on)."""
+
+    # the ids physical_mtl reads, by the name 3ds Max gives them
+    IDS = {1: "base_weight", 2: "base_color", 3: "reflectivity", 4: "roughness", 5: "roughness_inv", 6: "metalness",
+           10: "refl_color", 30: "transparency", 31: "trans_color", 33: "trans_ior", 37: "thin_walled",
+           50: "emission", 51: "emit_color", 52: "emit_luminance", 60: "coating", 61: "coat_color",
+           62: "coat_roughness", 63: "coat_roughness_inv", 66: "coat_ior", 101: "base_color_map",
+           102: "reflectivity_map", 104: "roughness_map", 105: "metalness_map", 109: "transparency_map",
+           116: "emission_map", 117: "emit_color_map", 130: "bump_map", 133: "cutout_map", 230: "bump_map_amt"}
+
+    @classmethod
+    def setUpClass(cls):
+        cf, graph, cls.by_name = _fixture("standard_shaders")
+        with cf:
+            cls.conv = mat.MaterialConverter(graph)
+            cls.maps = cls.conv.convert(cls.by_name["FixturePhysicalMaps"])
+            cls.off = cls.conv.convert(cls.by_name["FixturePhysicalOff"])
+        cls.oracle = _oracle_graph("standard_shaders")
+
+    def map(self, name, invert=False):
+        return mat.MapRef(self.by_name["FixturePhys" + name + "Map"], 1.0, invert)
+
+    def test_maps(self):
+        ir = self.maps
+        self.assertEqual((ir.source, ir.unknown, ir.issues), ("Physical Material", False, []))
+        base = tuple(c * 0.8 for c in _lins(200, 100, 50))
+        self.close(ir.base_color.value, tuple(b * 0.8 + t * 0.2 for b, t in zip(base, _lins(60, 120, 180))))
+        self.assertEqual(ir.base_color.map, self.map("MapsBase"))
+        self.close(ir.specular.value, 0.7 * sum(_lins(210, 200, 190)) / 3)
+        self.assertEqual(ir.specular.map, self.map("MapsReflectivity"))
+        self.close(ir.roughness.value, 1.0 - 0.35, "roughness_inv")
+        self.assertEqual(ir.roughness.map, self.map("MapsRoughness", invert=True))
+        self.close(ir.metallic.value, 0.25)
+        self.assertEqual(ir.metallic.map, self.map("MapsMetalness"))
+        self.close(ir.transmission.value, 0.2)
+        self.assertIsNone(ir.transmission.map)  # transparency_map_on off
+        self.close(ir.ior, 1.4)
+        self.assertTrue(ir.thin_walled)
+        self.close(ir.emission_color.value, _lins(220, 180, 140))
+        self.assertEqual(ir.emission_color.map, self.map("MapsEmitColor"))  # emission_map_on off: the color map
+        self.close(ir.emission_strength, 0.6 * 900.0 / 683.0)
+        self.close((ir.coat_weight, ir.coat_roughness, ir.coat_ior), (0.45, 1.0 - 0.15, 1.7))
+        self.close(ir.coat_color, _lins(230, 200, 170))
+        self.assertEqual((ir.bump.index, ir.bump.invert), (self.map("MapsBump").index, False))
+        self.close(ir.bump.amount, 0.55, "bump_map_amt")
+        self.assertIsNone(ir.normal)
+        self.assertEqual(ir.alpha.map, self.map("MapsCutout"))
+
+    def test_off(self):
+        ir = self.off
+        self.assertEqual(ir.issues, [])
+        base = tuple(c * 0.9 for c in _lins(70, 140, 210))
+        self.close(ir.base_color.value, tuple(b * 0.7 + t * 0.3 for b, t in zip(base, _lins(200, 150, 100))))
+        self.close(ir.specular.value, 0.55 * sum(_lins(180, 190, 200)) / 3)
+        self.close((ir.roughness.value, ir.metallic.value, ir.transmission.value, ir.ior), (0.4, 0.6, 0.3, 1.6))
+        for name in ("base_color", "specular", "roughness", "metallic", "alpha"):
+            self.assertIsNone(getattr(ir, name).map, name)
+        self.assertEqual(ir.transmission.map, self.map("OffTransparency"))
+        self.assertFalse(ir.thin_walled)
+        self.close(ir.emission_color.value, _lins(100, 150, 250))
+        self.assertEqual(ir.emission_color.map, self.map("OffEmission"))  # the weight map, the color map off
+        self.close(ir.emission_strength, 2400.0 / 683.0, "the weight map stands for the weight")
+        self.close((ir.coat_weight, ir.coat_roughness, ir.coat_ior), (0.2, 0.3, 1.55))
+        self.close(ir.coat_color, _lins(150, 200, 250))
+        self.assertEqual((ir.bump, ir.normal), (None, None))  # bump_map_on off
+
+    def test_ids_name_the_parameters(self):
+        for name in ("FixturePhysicalMaps", "FixturePhysicalOff"):
+            with self.subTest(name):
+                names = _names(self.oracle[name]["blocks"][0])
+                self.assertEqual({pid: names[pid] for pid in self.IDS}, self.IDS)
+                for pid in (101, 102, 104, 105, 109, 116, 117, 130, 133):  # each switch at its map's id + 50
+                    self.assertEqual(names[pid + 50], names[pid] + "_on")
+
+    def test_no_issues(self):
+        self.assertEqual(self.conv.stats.issues, [])
 
 
 def _multi(index, entries, name="Multi", ids=True):
