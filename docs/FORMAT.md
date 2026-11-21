@@ -1018,6 +1018,30 @@ picker and Material Editor switches off).
   Bitmap of a 128 grey sRGB JPEG: gamma on, the 128 swatch renders byte 187 (0.502 linear) and the JPEG 128; gamma
   off, both 128. The rule is in `maxdrop/convert/colors.py`.
 - Corpus scenes A (saved as 3ds Max 2012) and B: the same chunk and layout; A `0`, B `1`.
+- Images, the input gamma and the temperature colors (maxdrop-em3.38), V-Ray 5.2 renders of VRayLightMtl planes
+  with 128 grey 8-bit images, read as V-Ray's internal linear value (`getPixels ... linear:true`, the EXR):
+
+  | Map | on, input 2.2 | on, input 1.0 | off (input 2.2 or 1.0) |
+  |---|---|---|---|
+  | Bitmap, automatic gamma | 0.219 | 0.502 | 0.502 |
+  | Bitmap, override 2.2 / 1.0 | 0.219 / 0.502 | 0.219 / 0.502 | 0.502 / 0.502 |
+  | VRayBitmap From 3ds Max / Auto, sRGB / None | 0.219 / 0.216 / 0.502 | 0.502 / 0.216 / 0.502 | 0.502 / 0.216 / 0.502 |
+  | CoronaBitmap automatic / 2.2 / 1.0 | 0.219 / 0.219 / 0.502 | the same | the same |
+  | Bitmap of a 0.5 EXR, automatic | 0.5 | 0.5 | 0.5 |
+  | VRayColor / CoronaColor 3000 K | (1, 0.486, 0.151) / (1, 0.477, 0.154) | the same | the same |
+
+  The 8-bit output gets the output gamma with the gamma on (swatch 128 -> byte 186) and the internal value as it is
+  with it off (128): a gamma-off scene is display-referred, its internal value v is srgb_to_linear(v) in Blender.
+  So with the gamma on an automatic Bitmap (and VRayBitmap From 3ds Max) takes the file input gamma; with it off a
+  Bitmap is read as stored whatever its override, and a temperature color is decoded as a swatch is. CoronaBitmap
+  and VRayBitmap Auto / sRGB apply their own curve in every case, so with the gamma off V-Ray shows them darker
+  than an sRGB image (and an EXR shows its value as stored): not converted. Reopening the saved scenes from disk
+  renders the same.
+- LUT mode belongs to the session: a scene saved in it (Scene `1`, Config `0`) opens as `#gamma` from a `#none` or
+  `#gamma` session and renders as gamma on (swatch 186, the PNG 128); a `#lut` session stays in LUT mode for a file
+  whose chunk says `1` (and renders as gamma off there: 128, 128). MaxDrop reads the file's `1` as gamma on.
+- A Corona render does not run on this machine (`Corona license not found` under `3dsmaxbatch`): Corona's own
+  swatches are not measured.
 
 ## Summary properties
 

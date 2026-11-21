@@ -46,6 +46,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ### Fixed
 
+- Images and the scene's gamma: in a scene saved with the gamma on and a file input gamma other than 2.2, a Bitmap
+  with automatic gamma (and a VRayBitmap whose transfer function is From 3ds Max) is read with that input gamma, as
+  3ds Max reads it (input gamma 1.0: linear, where MaxDrop read it as sRGB). In a scene saved with the gamma off, a
+  Bitmap's gamma override does nothing, as in 3ds Max: the image is read as sRGB (an override of 1.0 made it too
+  bright). Measured in V-Ray 5.2 renders; the report names an input gamma other than 2.2.
+- CoronaColor: a temperature in a scene saved with the gamma off is decoded from sRGB like every other color there
+  (and like VRayColor's temperature), as V-Ray renders it: 3000 K showed too pale.
 - Maps in a scene saved with the gamma off: a colored constant on a mask (a VRayColor, a CoronaColor, a Mix's or
   Falloff's own color) takes the mean of its swatch before the sRGB curve, as V-Ray renders a mask: a red mask over
   a black-to-white Mix gives 0.09 instead of 0.33, which showed much too bright. Other data inputs (roughness,

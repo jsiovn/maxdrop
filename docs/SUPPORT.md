@@ -102,9 +102,14 @@ nodes. Color swatches follow the gamma setting the scene was saved with (Gamma a
 the gamma on (2.2, 3ds Max's default since 2014) a swatch's value is taken as linear, as 3ds Max and V-Ray render it
 (a 128 grey swatch is 0.502 in Blender); with the gamma off it is decoded from sRGB, so it shows as in 3ds Max (128
 grey is 0.216). A file that does not store the setting is taken as gamma on, and the report says so. The report
-names the rule it used. A scene saved in LUT mode is read as gamma on (the file stores it so). Image files are
-sRGB either way, EXR and HDR files linear (or what their own gamma says). Turn materials off with
-**Object Filter**.
+names the rule it used. A scene saved in LUT mode is read as gamma on (the file stores it so, and 3ds Max opens it
+so). Image files are sRGB either way, EXR and HDR files linear (or what their own gamma says), with two exceptions
+that follow 3ds Max: with the gamma on, a Bitmap with automatic gamma (and a VRayBitmap whose transfer function is
+From 3ds Max) is read with the scene's file input gamma (1.0: linear; the report names an input gamma other than
+2.2); with the gamma off, a Bitmap's gamma override does nothing (sRGB). A CoronaColor or VRayColor temperature is a
+color like a swatch: decoded from sRGB with the gamma off. Not converted: with the gamma off, V-Ray shows a
+CoronaBitmap, a VRayBitmap in Auto or sRGB and an EXR darker than MaxDrop does. A Corona render was not measured.
+Turn materials off with **Object Filter**.
 
 | Material | This version |
 |---|---|
@@ -126,10 +131,10 @@ sRGB either way, EXR and HDR files linear (or what their own gamma says). Turn m
 | Channel | This version |
 |---|---|
 | Base color, metallic, roughness, IOR, opacity (alpha), specular, transmission, emission color and strength, coat, subsurface | **Imported**, by input name. **Thin Wall** exists from Blender 5.0: on 4.2 and 4.5 a thin-walled material is listed in the report instead |
-| Bitmap | **Imported** as an Image Texture: tiling, offset, the U, V and W angles (about the map's center, as 3ds Max turns it), tile and mirror per direction (mirror as 3ds Max draws it: two copies per tile, the second one mirrored; it wins over tile), cropping and placing, the map channel (a UV Map node; channel 0, the vertex colors, is drawn on channel 1 and named in the report), the Output's invert, level, offset and amount, its alpha. Color maps in sRGB, data maps (roughness, metallic, opacity, normal, bump) Non-Color; a color map read as linear (an EXR or HDR file, gamma 1.0) or with a gamma override other than 2.2 in Linear Rec.709, so Blender converts it into the scene's working space (Non-Color where Blender's color management config lacks it), the override applied as a gamma; automatic gamma reads an EXR or HDR file as linear, as 3ds Max does |
+| Bitmap | **Imported** as an Image Texture: tiling, offset, the U, V and W angles (about the map's center, as 3ds Max turns it), tile and mirror per direction (mirror as 3ds Max draws it: two copies per tile, the second one mirrored; it wins over tile), cropping and placing, the map channel (a UV Map node; channel 0, the vertex colors, is drawn on channel 1 and named in the report), the Output's invert, level, offset and amount, its alpha. Color maps in sRGB, data maps (roughness, metallic, opacity, normal, bump) Non-Color; a color map read as linear (an EXR or HDR file, gamma 1.0) or with a gamma override other than 2.2 in Linear Rec.709, so Blender converts it into the scene's working space (Non-Color where Blender's color management config lacks it), the override applied as a gamma; automatic gamma reads an EXR or HDR file as linear, as 3ds Max does, and an 8-bit file with the scene's file input gamma when the gamma is on; with the gamma off the override does nothing, as in 3ds Max |
 | CoronaBitmap | **Imported** like a Bitmap: UVW scale and offset, W angle, tiling or mirror per direction, cropping and placing, the map channel, gamma (automatic reads an EXR or HDR file as linear, as Corona does), alpha output |
-| VRayBitmap (VRayHDRI) | **Imported** like a Bitmap: its coordinates, cropping and placing, alpha output; its transfer function on color maps (None as linear, Inverse gamma applied, sRGB; Auto and From 3ds Max as sRGB, as linear for an EXR or HDR file; data maps are read as they are, as for a Bitmap); its overall and render multipliers scale it. The environment mapping types (spherical, angular, cubic, mirrored ball) are drawn with the UVs |
-| CoronaColor | **Imported** as a color: RGB, HDR, temperature (Corona's own colors, measured) or hex, times its multiplier |
+| VRayBitmap (VRayHDRI) | **Imported** like a Bitmap: its coordinates, cropping and placing, alpha output; its transfer function on color maps (None as linear, Inverse gamma applied, sRGB; Auto as sRGB, From 3ds Max as a Bitmap's automatic gamma, both linear for an EXR or HDR file; data maps are read as they are, as for a Bitmap); its overall and render multipliers scale it. The environment mapping types (spherical, angular, cubic, mirrored ball) are drawn with the UVs |
+| CoronaColor | **Imported** as a color: RGB, HDR, temperature (Corona's own colors, measured; decoded from sRGB with the gamma off, as a swatch) or hex, times its multiplier |
 | VRayColor | **Imported** as a color: RGB or temperature, times its RGB multiplier, with its color gamma. Its alpha and RGB primaries are not converted |
 | CoronaMix | **Imported** as nodes for the Mix, Multiply, Add, Subtract, Divide, Minimum, Maximum and Difference operations (with the mix map as mask), "mix in sRGB" as Corona does it (in gamma 2.2), the layer multipliers and offsets too; the other operations (Gamma and the blend modes after Difference) are **simplified** to the first bitmap below |
 | Mix, RGB Multiply, Color Correction | **Imported** as nodes (Mix, Hue/Saturation, Bright/Contrast, Gamma), Color Correction's rewiring too (monochrome, invert, custom channels; an alpha source is drawn as opaque). A Mix curve and the tint, pivot and lift of Color Correction are not converted |
