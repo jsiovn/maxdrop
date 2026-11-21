@@ -28,9 +28,9 @@ Texture graphs (convert/texmaps.py) become nodes, a node of the IR shared by sev
 datablocks; see Images below), with its placement as a Mapping node and a UV Map node for a map channel other than
 1; Invert, Mix, Multiply, Blend (Gamma nodes around a Mix node of its operation), ColorCorrect (its rewiring as
 Invert, the mean or Separate / Combine Color, then Hue/Saturation/Value, Bright/Contrast, gain, Gamma), Composite
-(per layer its blend at factor 1, then a Mix by opacity x mask), Facing (Layer Weight Facing, Fresnel, or the Geometry node's Normal . Incoming), Adjust (a map's
-Output, as an image's), Tint (Separate Color, three scales, two adds), NormalMap (Normal Map node, flips through
-Separate / Combine Color), Bump (Bump node). A texture file that
+(per layer its blend at factor 1, then a Mix by opacity x mask), Facing (Layer Weight Facing, Fresnel, or the
+Geometry node's Normal . Incoming), Adjust (a map's Output, as an image's), Tint (Separate Color, three scales, two
+adds), NormalMap (Normal Map node, flips through Separate / Combine Color), Bump (Bump node). A texture file that
 was not found (or does not load) keeps its Image Texture node, without an image and not connected. The texture
 lookup (convert.textures) reports a file not found by name; the builder reports a file that does not load. The graph
 above the node carries on without it (a Mix gives its other side, a normal map without its image nothing) and an
