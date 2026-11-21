@@ -642,6 +642,7 @@
       "camera": null,
       "eval_faces": 12,
       "eval_maps": null,
+      "eval_mesh": null,
       "eval_verts": 8,
       "frozen": false,
       "handle": 1,
@@ -672,6 +673,7 @@
       "camera": null,
       "eval_faces": 12,
       "eval_maps": null,
+      "eval_mesh": null,
       "eval_verts": 8,
       "frozen": false,
       "handle": 2,
@@ -692,7 +694,7 @@
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 40, 0, 0]
     }
   ],
-  "oracle_version": 8,
+  "oracle_version": 9,
   "render": {"camera": null, "height": 480, "pixel_aspect": 1, "width": 640},
   "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
   "time": 0,

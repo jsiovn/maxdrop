@@ -4,9 +4,9 @@
 
 """Tests of maxdrop/convert/extrude.py, the Extrude modifier on a shape: no Blender. Every extruded node of the
 extrude fixture against its 3ds Max oracle (world bounding box within 1e-3, vertex count, triangle count), closed
-manifolds with outward normals for the capped ones, the hole of the holed cap, the open one without caps, material
-IDs, mapping coordinates; 3ds Max's interpolation counts (found with its own Extrude: steps, optimize, adaptive);
-the ear clipping of outlines with holes; damaged and hostile parameters.
+manifolds with outward normals for the capped ones, the hole of the holed cap, the open one without caps; material
+IDs by the way a face looks and map channel 1's vertex count and range against the oracle's eval_mesh; mapping
+coordinates; 3ds Max's interpolation counts (found with its own Extrude: steps, optimize, adaptive); the ear clipping of outlines with holes; damaged and hostile parameters.
 
     python -I -m unittest discover tests
 """
@@ -83,11 +83,26 @@ def _face_area_z(md, f):
     return 0.5 * float(numpy.sum(p[:, 0] * numpy.roll(p[:, 1], -1) - numpy.roll(p[:, 0], -1) * p[:, 1]))
 
 
+def _face_area(md, f):
+    """The area of face f (half the length of its Newell normal)."""
+    s, t = int(md.loop_starts[f]), int(md.loop_totals[f])
+    p = md.positions[md.loop_vertices[s:s + t]].astype(numpy.float64)
+    return 0.5 * float(numpy.linalg.norm(numpy.cross(p, numpy.roll(p, -1, axis=0)).sum(axis=0)))
+
+
 @unittest.skipIf(numpy is None, "numpy missing")
 class Fixture(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.desc = conv.read(FIXTURE)
+        cls.data = {}  # the reader MeshData of each mesh, by name: its map channels keep their map vertices
+        real = conv.mesh_description
+
+        def describing(key, name, data, *args, **kw):
+            cls.data[name] = data
+            return real(key, name, data, *args, **kw)
+
+        with mock.patch.object(conv, "mesh_description", describing):
+            cls.desc = conv.read(FIXTURE)
         with open(FIXTURE[:-4] + ".oracle.json", encoding="utf-8") as f:
             cls.oracle = {n["name"]: n for n in json.load(f)["nodes"]}
         cls.nodes = {n.name: n for n in cls.desc.nodes}
@@ -153,6 +168,35 @@ class Fixture(unittest.TestCase):
                 self.assertEqual(_face_area_z(md, f) > 0, mat == extrude.TOP_ID, name)
         _node, md = self.mesh("FixtureExtAdaptive")  # Generate Material IDs off
         self.assertEqual(set(md.material_indices.tolist()), {0})
+
+    def test_material_ids_and_map_channel_1_equal_the_oracle(self):
+        """Per material ID the triangles facing +Z, -Z and sideways in object space, and map channel 1's vertex
+        count and range, as 3ds Max's evaluated mesh has them (docs/ORACLE.md, eval_mesh)."""
+        for name in CAPPED + ("FixtureExtOpen",):
+            _node, md = self.mesh(name)
+            want = self.oracle[name]["eval_mesh"]
+            hist = {}
+            for f in range(len(md.loop_starts)):
+                z = _face_area_z(md, f)  # the winding normal's z, times the polygon's area
+                if abs(z) <= 1e-4 * _face_area(md, f):
+                    side = 3
+                else:
+                    side = 1 if z > 0 else 2
+                row = hist.setdefault(int(md.material_indices[f]) + 1, [0, 0, 0])
+                row[side - 1] += int(md.loop_totals[f]) - 2  # 3ds Max counts triangles
+            self.assertEqual([[i] + hist[i] for i in sorted(hist)], want["material_ids"], name)
+            channel = self.data[name].maps.get(1)
+            self.assertEqual(channel is None, want["map_channel_1"] is None, name)
+            if channel is None:
+                continue
+            uvw = numpy.asarray(channel.uvw, dtype=numpy.float64)
+            used = uvw[numpy.unique(channel.indices)]
+            self.assertEqual(len(uvw), want["map_channel_1"]["count"], name)
+            for got, key in ((used.min(axis=0), "min"), (used.max(axis=0), "max")):  # 6 significant digits
+                numpy.testing.assert_allclose(got, want["map_channel_1"][key], rtol=1e-5, atol=1e-6, err_msg=name)
+            uv = dict(md.uv_layers)["UVMap"]  # what Blender gets: u and v of the same vertices
+            numpy.testing.assert_allclose(uv.min(axis=0), want["map_channel_1"]["min"][:2], rtol=1e-5, atol=1e-6)
+            numpy.testing.assert_allclose(uv.max(axis=0), want["map_channel_1"]["max"][:2], rtol=1e-5, atol=1e-6)
 
     def test_mapping_coordinates(self):
         _node, md = self.mesh("FixtureExtRect")

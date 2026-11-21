@@ -736,6 +736,10 @@
           ]
         }
       ],
+      "eval_mesh": {
+        "map_channel_1": {"count": 150, "max": [0.833333, 0.833333, 0.833333], "min": [0.166667, 0.166667, 0.166667]},
+        "material_ids": [[1, 32, 0, 0], [2, 0, 32, 0], [3, 16, 16, 0], [4, 16, 16, 0], [5, 16, 16, 0], [6, 16, 16, 0]]
+      },
       "eval_verts": 98,
       "frozen": false,
       "handle": 1,
@@ -766,6 +770,10 @@
       "camera": null,
       "eval_faces": 12,
       "eval_maps": null,
+      "eval_mesh": {
+        "map_channel_1": {"count": 24, "max": [1, 1, 0], "min": [0, 0, 0]},
+        "material_ids": [[1, 2, 0, 0], [2, 0, 2, 0], [3, 0, 0, 2], [4, 0, 0, 2], [5, 0, 0, 2], [6, 0, 0, 2]]
+      },
       "eval_verts": 8,
       "frozen": false,
       "handle": 2,
@@ -796,6 +804,10 @@
       "camera": null,
       "eval_faces": 12,
       "eval_maps": null,
+      "eval_mesh": {
+        "map_channel_1": {"count": 24, "max": [1, 1, 0], "min": [0, 0, 0]},
+        "material_ids": [[1, 2, 0, 0], [2, 0, 2, 0], [3, 0, 2, 0], [4, 2, 0, 0], [5, 0, 2, 0], [6, 2, 0, 0]]
+      },
       "eval_verts": 8,
       "frozen": false,
       "handle": 3,
@@ -826,6 +838,10 @@
       "camera": null,
       "eval_faces": 12,
       "eval_maps": null,
+      "eval_mesh": {
+        "map_channel_1": {"count": 24, "max": [1, 1, 0], "min": [0, 0, 0]},
+        "material_ids": [[1, 2, 0, 0], [2, 0, 2, 0], [3, 0, 2, 0], [4, 2, 0, 0], [5, 0, 2, 0], [6, 2, 0, 0]]
+      },
       "eval_verts": 8,
       "frozen": false,
       "handle": 4,
@@ -856,6 +872,10 @@
       "camera": null,
       "eval_faces": 12,
       "eval_maps": null,
+      "eval_mesh": {
+        "map_channel_1": {"count": 24, "max": [1, 1, 0], "min": [0, 0, 0]},
+        "material_ids": [[1, 2, 0, 0], [2, 0, 2, 0], [3, 2, 0, 0], [4, 2, 0, 0], [5, 2, 0, 0], [6, 2, 0, 0]]
+      },
       "eval_verts": 8,
       "frozen": false,
       "handle": 5,
@@ -886,6 +906,10 @@
       "camera": null,
       "eval_faces": 12,
       "eval_maps": null,
+      "eval_mesh": {
+        "map_channel_1": {"count": 24, "max": [1, 1, 0], "min": [0, 0, 0]},
+        "material_ids": [[1, 2, 0, 0], [2, 0, 2, 0], [3, 2, 0, 0], [4, 2, 0, 0], [5, 2, 0, 0], [6, 2, 0, 0]]
+      },
       "eval_verts": 8,
       "frozen": false,
       "handle": 6,
@@ -906,7 +930,7 @@
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 160, 0, 0]
     }
   ],
-  "oracle_version": 8,
+  "oracle_version": 9,
   "render": {"camera": null, "height": 480, "pixel_aspect": 1, "width": 640},
   "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
   "time": 0,

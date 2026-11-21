@@ -17,7 +17,7 @@ global MaxDropOracle
 
 struct MaxDropOracleStruct
 (
-	version = 8,
+	version = 9,
 
 	fn num v =
 	(
@@ -267,6 +267,56 @@ struct MaxDropOracleStruct
 		block items 6
 	),
 
+	-- what an evaluated mesh carries per face: the triangles of each material ID (1-based, as 3ds Max shows it) by
+	-- the way they face in object space (the vertices of snapshotAsMesh taken back by the inverse object transform,
+	-- the winding normal's z: up, down, side; a degenerate face is side), and map channel 1's vertex count and
+	-- range over the map vertices its faces use; null unless a modifier made the mesh
+	fn evalMeshJson n =
+	(
+		if n.modifiers.count == 0 or superClassOf n != GeometryClass do return "null"
+		local s = try (snapshotAsMesh n) catch undefined
+		if s == undefined do return "null"
+		local inv = inverse n.objectTransform
+		local hist = #()
+		for f = 1 to s.numfaces do
+		(
+			local fc = getFace s f
+			local a = (getVert s fc[1]) * inv
+			local nrm = cross (((getVert s fc[2]) * inv) - a) (((getVert s fc[3]) * inv) - a)
+			local z = if (length nrm) < 1e-12 then 0.0 else (normalize nrm).z
+			local k = if z > 1e-4 then 2 else (if z < -1e-4 then 3 else 4)
+			local id = getFaceMatID s f
+			while hist.count < id do append hist #(hist.count + 1, 0, 0, 0)
+			hist[id][k] += 1
+		)
+		local ids = for h in hist where (h[2] + h[3] + h[4]) > 0 collect list (for x in h collect x as string)
+		local map1 = "null"
+		if meshop.getMapSupport s 1 do
+		(
+			local used = #{}
+			for f = 1 to s.numfaces do
+			(
+				local mf = meshop.getMapFace s 1 f
+				for x in #(mf.x, mf.y, mf.z) do used[x as integer] = true
+			)
+			local lo = undefined
+			local hi = undefined
+			for i in used do
+			(
+				local t = meshop.getMapVert s 1 i
+				if lo == undefined then (lo = t; hi = t)
+				else
+				(
+					lo = [amin lo.x t.x, amin lo.y t.y, amin lo.z t.z]
+					hi = [amax hi.x t.x, amax hi.y t.y, amax hi.z t.z]
+				)
+			)
+			map1 = inline #(#("count", (meshop.getNumMapVerts s 1) as string), #("max", vec hi), #("min", vec lo))
+		)
+		free s
+		obj #(#("map_channel_1", map1), #("material_ids", list ids)) 6
+	),
+
 	-- a camera's state as 3ds Max (and V-Ray) render it: CameraObject::EvalCameraState at frame 0, the horizontal FOV in
 	-- degrees after zoom, lens breathing and a specified FOV. A lens shift changes the state's FOV (Physical and
 	-- VRayPhysicalCamera) but not the rendered one, which renders show: the state is read with the shift at 0, then
@@ -323,6 +373,7 @@ struct MaxDropOracleStruct
 			#("camera", cameraJson n), \
 			#("eval_faces", intOrNull ev[2]), \
 			#("eval_maps", evalMapsJson n), \
+			#("eval_mesh", evalMeshJson n), \
 			#("eval_verts", intOrNull ev[1]), \
 			#("frozen", bool inode.IsObjectFrozen), \
 			#("handle", n.handle as string), \
