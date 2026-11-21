@@ -922,9 +922,9 @@ ozone, 9 invisible, 12 sky model, 14 / 19 affect diffuse / its contribution, 15 
 0 enabled, 1 IES file (an asset of type `Photometric`), 7 color temperature, 8 color, 9 color mode (1 temperature), 10
 power, 11 targeted, 14 / 30 affect diffuse / contribution, 15 / 31 affect specular / contribution, 32 intensity type (0
 lm, 1 cd), 34 override intensity. 10 is lumens in both units of the override (the panel converts a cd value with
-the IES file, by its rated lumens over its peak candela: by 1 before a file was read, as in the photometric fixture,
-whose 300 cd are stored as 300); 33 (`intensity_value`) is stored stale (0). 4 cast shadows; 5 use light shape (0 no, 1 for shadows only, 2 for illumination
-and shadows), 21 override shape (off: the IES file's shape), 22 shape, 23 height, 24 width, 25 length, 26 diameter
+the IES file: an isotropic 100 cd file rated 500 lm stores 100 cd as 500; the photometric fixture, whose file does
+not exist, stored its 300 cd as 300); 33 (`intensity_value`) is stored stale (0). 4 cast shadows; 5 use light shape
+(0 no, 1 for shadows only, 2 for illumination and shadows), 21 override shape (off: the IES file's shape), 22 shape, 23 height, 24 width, 25 length, 26 diameter
 (world units), 35 `shape_actual` (-1 without a file). The shapes, in the order of the panel's list (the stored value),
 with the sizes the panel enables (H W L D): 0 point; 1 rectangle H W L; 2 circle D; 3 sphere D; 4 vertical cylinder H D;
 5 / 6 horizontal cylinder along the length / width L D / W D; 7 / 8 ellipse, 9 / 10 ellipsoid (length / width), 11
@@ -957,7 +957,7 @@ as bright as V-Ray:
 lumens of 1256.6, 500 or -1 in its header): with the intensity override off V-Ray scales the file's candelas by power /
 rated lumens. Rated 1256.6: power 1256.6 (what loading the file sets) 0.0667 (100 cd), power 1000 0.0531 (1000 lm).
 Rated 500: power 500 (set on load) 0.0667, power 1000 0.1334 (200 cd, not 1000 lm). Rated -1: loading sets the
-power to the file's flux, 1256.64. With the override on, the power is the flux whatever the header says: rated 500,
+power to the file's flux, 1256.64 (0.0667); power 1000 0.0531. With the override on, the power is the flux whatever the header says: rated 500,
 1000 lm 0.0531; 100 cd (the panel stores 500 lm) 0.0265; rated 1256.6, 100 cd (stored 1256.6) 0.0667. Power 0 renders
 black, override on or off, with every file. So the power is the light's flux with the override on, and without it only
 when the file's rated lumens are its flux (an absolute file's -1, or a relative one of a luminaire without losses);

@@ -262,8 +262,11 @@ class SunAndIes(unittest.TestCase):
             ld, issues = describe(ies(power=300.0, override=1, intensity_type=intensity_type))
             self.assertAlmostEqual(ld.watts, 300.0 / 683.0, delta=1e-12)
             self.assertEqual(issues, [L.IES_FILE % "a.ies"])
-        ld, issues = describe(ies(power=0.0))
-        self.assertEqual((ld.watts, issues), (0.0, [L.IES_ZERO, L.IES_FILE % "a.ies"]))
+        for override in (0, 1):
+            ld, issues = describe(ies(power=0.0, override=override))
+            self.assertEqual((ld.watts, issues), (0.0, [L.IES_ZERO, L.IES_FILE % "a.ies"]), override)
+        ld, issues = describe(ies(power=-5.0))
+        self.assertEqual((ld.watts, issues), (0.0, [L.NEGATIVE % ("power", -5.0), L.IES_FILE % "a.ies"]))
 
     def test_ies_shadow_switch(self):
         self.assertEqual(L._IES_PARAMS["shadow"], (0, 4, 1))
@@ -272,7 +275,7 @@ class SunAndIes(unittest.TestCase):
 
     def test_ies_light_shape(self):
         sizes = {"height": 300.0, "width": 200.0, "length": 400.0, "diameter": 100.0}
-        file = [L.IES_RATED, L.IES_FILE % "a.ies"]  # by its power: the line of the file's rated lumens too
+        file = [L.IES_RATED, L.IES_FILE % "a.ies"]  # no override: IES_RATED too
         ld, issues = describe(ies(**sizes))  # no override: the IES file's shape, not read
         self.assertEqual((ld.radius, issues), (0.0, file))
         ld, issues = describe(ies(override_shape=1, shape_type=L.IES_SPHERE, use_shape=0, **sizes))

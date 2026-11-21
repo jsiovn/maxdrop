@@ -96,9 +96,10 @@ watts at 683 lm/W: 4 pi I / 683 for a point or spot light of on-axis intensity I
 - VRaySun -> SUN of SUN_IRRADIANCE W/m^2 per unit of its multiplier (the rules source's 100 klx / 683; V-Ray 5.2
   measured 102.7 klx at the zenith), angle SUN_ANGLE x its size multiplier, its filter color; the sky model's
   dimming and color are not imported (issues).
-- VRayIES: its power in lm (with the intensity overridden in cd, the power is that intensity: x 4 pi) -> SPOT of
-  WEB_CONE, power lm / 683, its color or temperature, the IES file named in an issue; a power of 0 (V-Ray then takes
-  the file's own) is 0 W, an issue. With its light shape used and overridden, the spot's radius is half the largest
+- VRayIES: its power in lm (V-Ray's flux with the intensity overridden, in either unit; without the override V-Ray
+  scales the IES file by power over its rated lumens, which are not read: an issue) -> SPOT of WEB_CONE, power
+  lm / 683, its color or temperature, the IES file named in an issue; a power of 0 (dark in V-Ray too) is 0 W, an
+  issue. With its light shape used and overridden, the spot's radius is half the largest
   size the shape uses (IES_SHAPES: a sphere's diameter exactly, any other shape an issue); without the override
   V-Ray takes the file's shape, which is not read: radius 0.
 - Skylight: not built (the reason; its World is later work). environment_sky finds a VRaySky as the environment map
@@ -265,7 +266,8 @@ SHAPE = "its %s shape is %s"
 WEB_FILE = "its photometric web %s is approximated by a spot of 170 degrees"
 IES_FILE = "its IES file %s is approximated by a spot of 170 degrees"
 IES_ZERO = "power 0: it gives no light, in V-Ray too: 0 W"
-IES_RATED = "its power is taken as its flux: V-Ray scales the IES file's candelas by the power over the file's "     "rated lumens, which are not read"
+IES_RATED = ("its power is taken as its flux: V-Ray scales the IES file's candelas by the power over the file's "
+             "rated lumens, which are not read")
 IES_SHAPE = "its %s light shape is a sphere %g m across"
 NO_FILE = "(no file)"
 SUN_ZENITH = "its strength is the sun's at the zenith: the sky model's dimming toward the horizon is not imported"
@@ -896,7 +898,7 @@ def _describe_ies(key, name, v, meters, swatches, issues):
     lm = _nonnegative("power", v["power"], issues)
     if v["power"] == 0:
         issues.append(IES_ZERO)
-    elif not v["override"]:
+    elif lm > 0 and not v["override"]:  # a negative power is 0 W, said by _nonnegative
         issues.append(IES_RATED)
     color = colors.GAMMA_OFF.color(texmaps.kelvin_rgb(v["temperature"])) if v["color_mode"] == 1 else \
         swatches.color(v["color"])

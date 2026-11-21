@@ -52,6 +52,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ### Fixed
 
+- Lights: a VRayIES whose intensity is overridden in cd is as bright as V-Ray renders it: its stored power is
+  already the flux in lumens, it was taken as candelas (4π times too bright). Without the override, a line in the
+  report says the power is taken as the flux (V-Ray scales the IES file by the power over the file's rated lumens,
+  which are not read), and power 0 says the light is dark in V-Ray too, not that V-Ray takes the file's own
+  intensity. Measured in V-Ray 5.2.
 - Lights: a scaled V-Ray sphere light takes its X scale alone, as V-Ray does: its radius grows with it (Blender's
   point light keeps its radius whatever its object's scale), its power in the area units with its square; a
   larger Y or Z scale no longer makes it brighter.
