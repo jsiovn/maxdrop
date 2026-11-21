@@ -3073,16 +3073,15 @@ def _node_kinds(material):
 
 
 def _upstream(socket):
-    """The bl_idnames of every node that feeds socket, directly or further up."""
-    out, todo, seen = set(), [socket], set()
+    """Every node that feeds socket, directly or further up."""
+    out, todo = {}, [socket]
     while todo:
         for link in todo.pop().links:
             n = link.from_node
-            if n.name not in seen:
-                seen.add(n.name)
-                out.add(n.bl_idname)
+            if n.name not in out:
+                out[n.name] = n
                 todo.extend(n.inputs)
-    return out
+    return list(out.values())
 
 
 def check_reflection_falloff():
@@ -3091,9 +3090,12 @@ def check_reflection_falloff():
     for name, kind in (("FixtureVReflPerp", "ShaderNodeLayerWeight"), ("FixtureVReflFresnel", "ShaderNodeFresnel")):
         m = bpy.data.materials.get(name)
         socket = _principled(m).inputs["Specular IOR Level"] if m is not None else None
-        kinds = _upstream(socket) if socket is not None else set()
-        check("vray_texmaps/%s: the reflection Falloff into Specular IOR Level by %s" % (name, kind),
-              socket is not None and socket.is_linked and {kind, "ShaderNodeMix"} <= kinds, str(sorted(kinds)))
+        nodes = _upstream(socket) if socket is not None else []
+        by_facing = [n for n in nodes if n.bl_idname == "ShaderNodeMix"
+                     and getattr(_from(_input(n, "Factor_Float")), "bl_idname", None) == kind]
+        check("vray_texmaps/%s: the reflection Falloff into Specular IOR Level, a Mix by %s" % (name, kind),
+              socket is not None and socket.is_linked and len(by_facing) == 1,
+              str(sorted(n.bl_idname for n in nodes)))
 
 
 def check_wrapper_nodes():

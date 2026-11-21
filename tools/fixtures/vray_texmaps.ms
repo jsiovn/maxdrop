@@ -3,7 +3,7 @@
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
 -- Twelve Editable Poly boxes with a VRayMtl each, for V-Ray's own maps: VRayBitmap (VRayHDRI before V-Ray 5: the
--- same class) and VRayColor, and the wrappers above them.
+-- same class) and VRayColor, the wrappers above them, and a Falloff in a VRayMtl's reflection.
 -- FixtureVBDiffuse: a VRayBitmap in diffuse with its defaults (transfer function Auto), one with spherical mapping
 -- in reflection. FixtureVBPlace: a VRayBitmap in diffuse with an overall multiplier of 1.5, a render multiplier of
 -- 2, tiling 2 x 3, offset 0.1 / 0.2, W angle 30 and blur 0.8 in its own Placement; in reflection one with transfer

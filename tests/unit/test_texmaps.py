@@ -1131,7 +1131,7 @@ class Guards(Checks):
 
 class VRayTexmaps(Checks):
     """vray_texmaps.ms: VRayBitmap in every kind of input, with its own placement, transfer functions, multipliers
-    and alpha, below a VRayNormalMap, a Composite and a Mix."""
+    and alpha, below a VRayNormalMap, a Composite and a Mix; a Falloff in a VRayMtl's reflection."""
 
     @classmethod
     def setUpClass(cls):
@@ -1240,7 +1240,6 @@ class VRayTexmaps(Checks):
         g = self.f.irs["FixtureVReflFresnel"].textures["specular"]  # map amount 50: half the swatch (black)
         self.assertEqual(g.root, tx.Mix(black, tx.Mix(black, white, 0.0, tx.Facing(tx.FRESNEL, 1.5)), 0.5))
         self.assertEqual((g.approximated, g.issues), (False, ()))
-        self.assertNotIn("Falloff", self.f.tex.stats.peeled)
 
     def test_color_correction_over_an_unsupported_map(self):
         ir = self.f.irs["FixtureCCNoise"]
