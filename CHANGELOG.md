@@ -29,6 +29,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ### Fixed
 
+- Bitmap, CoronaBitmap, VRayBitmap: Mirror is drawn as 3ds Max draws it, two copies per tile with the second one
+  mirrored (a cropped image too), and it wins over Tile: a mirrored map with the default tiling is no longer drawn
+  as a plain repeat. Tile, mirror and neither are kept per direction also without a crop (Tile U only no longer
+  repeats in V).
 - Shapes: an Arc with both Pie Slice and Reverse on starts where 3ds Max starts it (at its From angle, then the
   center), so its first vertex and an Extrude's side UVs on it are 3ds Max's.
 - Extrude: the side UVs of a closed spline drawn the other way round (a clockwise outline, a counter-clockwise hole)
