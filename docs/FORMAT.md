@@ -830,8 +830,10 @@ stands does not matter), and nothing once the box is deleted. What a Pick mesh i
 (which deletes the picked node) leaves in the file is not known.
 
 **Dome light → World.** The first dome node that is on becomes the scene's World (a new World, assigned to the
-scene; the one before is kept, the report says so); another dome node, an instance of it too, or one that is off is
-a line in the report; dome nodes stay empties (not placeholders). Measured in V-Ray 5.2 (scratch scenes): a white
+scene; the one before is kept, with a fake user when it has no other, and the report says so; in an import of
+several files the first file's dome); another dome node, an instance of it too, or one that is off is a line in the
+report; dome nodes stay empties (not placeholders). A World that cannot be built is a line in the report, the scene
+is imported all the same. Measured in V-Ray 5.2 (scratch scenes): a white
 floor under a white dome of multiplier 1 renders 1.00018 in the default units, 0.00213024 in lm and lm/m²/sr, 1.43109
 in W and W/m²/sr (a dome has no area: the flux and the radiance units agree); Cycles renders a white floor under a
 white World of strength S at S (1.00002 for 1). So the World's strength is the multiplier × 1500 / (683 π), ×

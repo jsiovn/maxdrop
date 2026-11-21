@@ -101,7 +101,7 @@ watts at 683 lm/W: 4 pi I / 683 for a point or spot light of on-axis intensity I
   the file's own) is 0 W, an issue. With its light shape used and overridden, the spot's radius is half the largest
   size the shape uses (IES_SHAPES: a sphere's diameter exactly, any other shape an issue); without the override
   V-Ray takes the file's shape, which is not read: radius 0.
-- Skylight: not built (the reason; World is later work: a dome light is the World). environment_sky finds a VRaySky as the environment map
+- Skylight: not built (the reason; its World is later work). environment_sky finds a VRaySky as the environment map
   (RenderEnvironment reference ENVIRONMENT_MAP_SLOT) for convert.scene's report line.
 
 Every light shines along its local -Z, as Blender's spot, area and sun lights do: the node transform stays. Off ->
@@ -277,7 +277,8 @@ GLOSSY = ("affect specular %s, affect reflections %s: Cycles has one switch for 
           "rays; EEVEE's specular factor follows affect specular")
 NOT_FINITE = "the power is out of range (sizes %g, %g): 0 W"
 OUT_OF_RANGE = "the power is out of range: 0 W"
-MAX_POWER = 3.4028234663852886e38  # the largest float32: what a Blender light holds
+MAX_FLOAT = 3.4028234663852886e38  # the largest float32: what a Blender light's power or radius holds
+MAX_POWER = MAX_FLOAT
 CONTRIBUTION = "%s contribution %g: Blender's %s factor, which only EEVEE uses"
 
 
@@ -610,7 +611,7 @@ def describe(key, name, values, meters, swatches, scale=1.0):
         ld.size_y = ld.size
     else:
         ld.radius = size0 * meters * math.sqrt(scale)
-        if not ld.radius <= MAX_POWER:  # past the float32 range a Blender light's radius holds
+        if not ld.radius <= MAX_FLOAT:  # past the float32 range a Blender light's radius holds
             ld.radius = 0.0
     return ld, issues
 
@@ -708,14 +709,16 @@ def dome_texture(graph_ir, material_graph):
     MaterialGraph) reads the map's projection."""
     if graph_ir is None:
         return None, [DOME_NO_TEXTURE]
-    # the converter names an environment mapping for a material input; for a dome it is the expected case
-    issues = [x for x in graph_ir.issues if "environment mapping" not in x]
+    issues = list(graph_ir.issues)
     img = graph_ir.root
     if not isinstance(img, texmaps.Image):
         return None, issues + [DOME_ROOT % type(img).__name__]
-    if img.found is None:
+    m = material_graph.get(img.index) if material_graph is not None else None
+    if m is not None:  # the converter names the root's environment mapping: wrong for a material, expected here
+        own = tuple("%s %r: environment mapping" % (cls, m.name) for cls in ("Bitmap", "VRayBitmap"))
+        issues = [x for x in issues if not x.startswith(own)]
+    if img.found is None or m is None:
         return None, issues + [DOME_NOT_FOUND % img.name]
-    m = material_graph.get(img.index)
     cid = classids.ClassId(*m.class_id)
     turn = 0.0
     if cid == classids.VRAY_BITMAP:
@@ -739,7 +742,7 @@ def dome_texture(graph_ir, material_graph):
         uv = next((p for _s, p in sorted(m.parts.items()) if p.superclass == classids.SC_UVGEN), None)
         env = reader_materials.placement(material_graph.scene, uv.index).env_mapping if uv is not None else None
         if not img.mapping.environment or env != ENV_SPHERICAL:
-            issues.append(DOME_PROJECTION % (img.name, _ENV_PROJECTIONS.get(env, "environment %r" % (env,)) if
+            issues.append(DOME_PROJECTION % (img.name, _ENV_PROJECTIONS.get(env, "an unknown environment mapping") if
                                              img.mapping.environment else "texture"))
         turn = math.pi / 2.0
         mp = img.mapping
@@ -909,7 +912,7 @@ def _ies_radius(v, meters, issues):
         return 0.0
     name, sizes = IES_SHAPES.get(v["shape_type"], ("", ()))
     across = max((abs(v[k]) for k in sizes), default=0.0) * meters
-    if not across <= MAX_POWER:  # past the float32 range a Blender light's radius holds (also inf, NaN)
+    if not across <= MAX_FLOAT:  # past the float32 range a Blender light's radius holds (also inf, NaN)
         across = 0.0
     if across > 0 and v["shape_type"] != IES_SPHERE:
         issues.append(IES_SHAPE % (name, across))

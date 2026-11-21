@@ -35,7 +35,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Lights: a VRayLight dome becomes the scene's World instead of an empty: its color or temperature, or its
   spherical texture (VRayBitmap or Bitmap) turned and locked as V-Ray shows it, its strength as bright as V-Ray 5.2
   times Light Strength, a hemisphere when spherical is off, invisible and the affect switches. The World before is
-  kept and the report names both; a second dome is a line in the report. A mesh light's report line names the
+  kept (with a fake user, so saving keeps it) and the report names both; a second dome, also one in a later file of
+  the same import, is a line in the report. A mesh light's report line names the
   node whose mesh it emits.
 - CoronaMix: the Add, Subtract, Divide, Minimum, Maximum and Difference operations are imported as nodes, in gamma
   2.2 when "mix in sRGB" is on as Corona does it, and the layer multipliers and offsets are applied, instead of the

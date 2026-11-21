@@ -337,7 +337,7 @@ class _Tree:
         self.builder, self.material, self.ir = builder, material, ir
         self.label = "material %s" % (material.name,)
         self.skipped = set()  # the Principled inputs the IR needs that this Blender lacks
-        tree = compat.material_node_tree(material)
+        tree = compat.node_tree(material)
         self.nodes, self.links = tree.nodes, tree.links
         self.nodes.clear()
         self.memo, self.uvs, self.texture_nodes = {}, {}, {}

@@ -67,10 +67,11 @@ world scale puts on its area (lights.area_scale, 1 but for a VRayLight), so inst
 issues of its parameters are named on its first node, those of a description on the first node of that key. A
 VRayLight's mesh light or a Skylight (not built yet), or a light whose parameters cannot be read, is an EMPTY with
 the reason as an issue, on every node, not counted as a placeholder. A VRayLight dome is an EMPTY too (its children
-stay placed), not a placeholder: the first dome node that is on (in walk order) gives desc.dome (lights.describe_dome),
-the World build/ makes; any other dome node, an instance of it too, and one that is off are an issue each (Blender has
-one World). A VRaySky as the environment map is an issue labelled ENVIRONMENT. describe(..., assets) takes the scene's reader.assets.AssetTable for the names of the
-web and IES files (read() reads it).
+stay placed), not a placeholder: the first dome node that is on (in walk order) gives desc.dome
+(lights.describe_dome), the World build/ makes; any other dome node, an instance of it too, and one that is off are
+an issue each (Blender has one World). A VRaySky as the environment map is an issue labelled ENVIRONMENT.
+describe(..., assets) takes the scene's reader.assets.AssetTable for the names of the web and IES files (read()
+reads it).
 
 A camera (Free, Target, Physical, VRayPhysicalCamera) becomes a CAMERA (convert.cameras): the lens, sensor, shift,
 clipping and orthographic width that frame what 3ds Max renders. It is keyed by its base object index and, when its
@@ -676,10 +677,13 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
 
 def _node_name(scene, i):
     """The name of node i, None when i is no node of the scene or its record cannot be read."""
+    if not 0 <= i < len(scene):
+        return None
     try:
-        return scene.node(i).name or None if 0 <= i < len(scene) else None
+        node = scene.node(i)
     except ChunkError:  # not a node, or its record cannot be read
         return None
+    return node.name or None
 
 
 def _dome(desc, values, node, name, swatches, world):

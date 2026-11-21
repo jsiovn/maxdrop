@@ -391,8 +391,8 @@ class DomeRules(unittest.TestCase):
 
 
 class _Map:
-    def __init__(self, class_id, params, parts=None):
-        self.class_id, self.params, self.parts = class_id, params, parts or {}
+    def __init__(self, class_id, params, parts=None, name="sky"):
+        self.class_id, self.params, self.parts, self.name = class_id, params, parts or {}, name
 
     def param(self, pid, block_id=None, tab=0, default=None):
         return self.params.get(pid, default)
@@ -424,8 +424,9 @@ class DomeTextureRules(unittest.TestCase):
 
     def test_a_vray_bitmap_in_spherical_mapping(self):
         env = "VRayBitmap 'sky': environment mapping (type 2), drawn with the UVs"
-        dt, issues = L.dome_texture(self.ir(self.image(), [env]), self.vray({L.VB_H_ROTATION: 0.5}))
-        self.assertEqual((dt.image.name, dt.turn, dt.amount, issues), ("sky.hdr", 0.5, 1.0, []))
+        other = "VRayBitmap 'sky2': environment mapping (type 2), drawn with the UVs"  # not the root's: kept
+        dt, issues = L.dome_texture(self.ir(self.image(), [env, other]), self.vray({L.VB_H_ROTATION: 0.5}))
+        self.assertEqual((dt.image.name, dt.turn, dt.amount, issues), ("sky.hdr", 0.5, 1.0, [other]))
 
     def test_its_amount_and_the_issues_of_what_is_not_imported(self):
         img = self.image(output=texmaps.TexOutput(invert=True, amount=3.0), gamma=2.2,
@@ -446,7 +447,8 @@ class DomeTextureRules(unittest.TestCase):
         self.assertEqual((dt.turn, issues), (math.pi / 2.0, [L.DOME_PROJECTION % ("sky.hdr", "texture")]))
         tiled = self.image(mapping=texmaps.Mapping(tiling=(2.0, 1.0), environment=True))
         dt, issues = L.dome_texture(self.ir(tiled), graph)
-        self.assertEqual(issues, [L.DOME_PROJECTION % ("sky.hdr", "environment None"), L.DOME_PLACEMENT % "sky.hdr"])
+        self.assertEqual(issues, [L.DOME_PROJECTION % ("sky.hdr", "an unknown environment mapping"),
+                                  L.DOME_PLACEMENT % "sky.hdr"])
 
     def test_no_texture_the_color(self):
         self.assertEqual(L.dome_texture(None, None), (None, [L.DOME_NO_TEXTURE]))
@@ -454,6 +456,8 @@ class DomeTextureRules(unittest.TestCase):
                          (None, ["x", L.DOME_ROOT % "Constant"]))
         lost = texmaps.Image(3, "gone.png")
         self.assertEqual(L.dome_texture(self.ir(lost), None), (None, [L.DOME_NOT_FOUND % "gone.png"]))
+        env = "VRayBitmap 'sky': environment mapping (type 2), drawn with the UVs"  # the root's: not named
+        self.assertEqual(L.dome_texture(self.ir(lost, [env]), self.vray({})), (None, [L.DOME_NOT_FOUND % "gone.png"]))
 
 
 @unittest.skipIf(conv is None, "numpy missing")

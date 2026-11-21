@@ -74,7 +74,9 @@
 # Modified for MaxDrop, 2026-11-21 (jsiovn). The material slots also hold those of shapes built as curves.
 # Modified for MaxDrop, 2026-11-21 (jsiovn). The material converter gets the import's meters per unit (SSS radii).
 # Modified for MaxDrop, 2026-11-21 (jsiovn). A VRayLight dome becomes the scene's World (its texture converted with
-# the scene's), the report says so; a failed or cancelled build puts the previous World back and removes the new one.
+# the scene's), the first of a run; the World before keeps a fake user and the report says so. A World that cannot be
+# built is an issue, not a failed import; a failed or cancelled build puts the World before back and removes the new
+# one.
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -510,20 +512,61 @@ def _dome_texture(sc, dd, table, max_path, dirs, image_search):
     return convert_lights.dome_texture(graph_ir, graph)
 
 
-def _make_world(scene, dd, builder, strength, axis):
+def _make_world(scene, dd, builder, strength, axis, state):
     """Make the World of the dome dd (build.world) and assign it to scene: its texture's image through the import's
-    MaterialBuilder (None when it does not load: the World has the dome's color)."""
+    MaterialBuilder (None when it does not load: the World has the dome's color). The World before gets a fake user
+    when it would be left without one, so that saving keeps it. state, the run's world state (_world_state): records
+    the World made and the one faked. None, or the reason the World is not built: a failure removes what it made
+    (one World never costs the scene)."""
     from .build import world as build_world
-    image = builder.image(dd.texture.image, "World") if dd.texture is not None else None
-    scene.world = build_world.make_world(dd, image, strength, axis)
+    worlds = {w.as_pointer() for w in bpy.data.worlds}
+    images = {i.as_pointer() for i in bpy.data.images}
+    try:
+        image = builder.image(dd.texture.image, "World") if dd.texture is not None else None
+        world = build_world.make_world(dd, image, strength, axis)
+    except Exception as e:
+        print("MaxDrop: World of dome light %s not built:\n%s" % (dd.name, traceback.format_exc()), end="")
+        for kind, known in (("worlds", worlds), ("images", images)):  # the World first: it frees its image
+            blocks = getattr(bpy.data, kind)
+            for block in [b for b in blocks if b.as_pointer() not in known and not b.users]:
+                blocks.remove(block)
+        return "the World is not built (%s: %s): the scene keeps its World" % (type(e).__name__, e)
+    before = scene.world
+    scene.world = world
+    state["made"] = world
+    if before is not None and not before.users and not before.use_fake_user:
+        before.use_fake_user = True
+        state["faked"] = before
+    return None
 
 
-def _restore_world(scene, world):
-    """Put scene's World back to world (None when it was removed meanwhile)."""
+def _world_state():
+    """A run's world state: the World its first dome made ("made") and the World before it, faked ("faked")."""
+    return {}
+
+
+def _name_of(block):
+    try:
+        return block.name
+    except ReferenceError:
+        return "removed"
+
+
+def _restore_world(scene, world, state=None):
+    """Put scene's World back to world (None when it was removed meanwhile); a fake user state recorded on it is
+    taken off again."""
     try:
         scene.world = world
     except ReferenceError:
         scene.world = None
+    faked = state.pop("faked", None) if state is not None else None
+    if faked is not None:
+        try:
+            faked.use_fake_user = False
+        except ReferenceError:
+            pass
+    if state is not None:
+        state.pop("made", None)
 
 
 def _remove(cols, before):
@@ -714,7 +757,7 @@ def _store_last(source, wm):
 
 
 def _scene_steps(opts, scene, view_layer, max_path, pack=None, pack_name="", dirs=(), threaded=False,
-                 progress=_quiet, made=None):
+                 progress=_quiet, made=None, world=None):
     """Step generator of one .max: read, describe and build it with its materials into a collection named after it
     in view_layer's active collection, set scene's render size and camera, then publish its import report (console
     and the text "MaxDrop Report"). pack: archive.unpack()'s result when the scene came from a scene pack, pack_name
@@ -723,7 +766,8 @@ def _scene_steps(opts, scene, view_layer, max_path, pack=None, pack_name="", dir
     (objects, collections, meshes, curves, lights, cameras, materials, images) before the exception goes on.
     threaded: the reading in a worker thread (_in_thread), yielding _WAIT meanwhile, stopped when closed;
     progress(text, fraction of the scene) is told what it does; made: a list the scene's build.collections.Collections
-    is appended to once built."""
+    is appended to once built; world: the run's world state (_world_state; None: a run of this file alone): a dome
+    becomes the World only when no earlier file of the run made one."""
     from .build import cameras as build_cameras
     from .build import collections as build_collections
     from .build import materials as build_materials
@@ -744,7 +788,9 @@ def _scene_steps(opts, scene, view_layer, max_path, pack=None, pack_name="", dir
     cols = build_collections.make(desc, view_layer.active_layer_collection.collection, os.path.splitext(name)[0])
     builder = build_materials.MaterialBuilder()
     axis = axis_conversion(from_forward=opts.axis_forward, from_up=opts.axis_up).to_4x4()
-    world_before = scene.world
+    world = _world_state() if world is None else world
+    world_before, earlier = scene.world, world.get("made")
+    world_issue = None
     try:
         steps = build_objects.build_steps(desc, cols.root, cols, view_layer, slots=slots,
                                           material=builder.make if materials else None,
@@ -760,11 +806,12 @@ def _scene_steps(opts, scene, view_layer, max_path, pack=None, pack_name="", dir
         settings_skipped = build_modifiers.add(desc, built)
         kept = build_objects.track_targets(desc, built) if opts.keep_targets else []
         build_collections.finish(cols, view_layer)
-        build_cameras.set_render(scene, desc, built)  # a failed build leaves the scene's alone
-        if desc.dome is not None:
-            _make_world(scene, desc.dome, builder, opts.light_strength, axis.to_3x3())
+        if desc.dome is not None and earlier is None:
+            world_issue = _make_world(scene, desc.dome, builder, opts.light_strength, axis.to_3x3(), world)
+        build_cameras.set_render(scene, desc, built)  # last: a failed build leaves the scene's alone
     except BaseException:
-        _restore_world(scene, world_before)  # first: the new World then has no user and goes with the rest
+        if earlier is None and world.get("made") is not None:  # this file's World: put the one before back first,
+            _restore_world(scene, world_before, world)        # so the new one has no user and goes with the rest
         _remove(cols, before)
         raise
     if made is not None:
@@ -784,8 +831,17 @@ def _scene_steps(opts, scene, view_layer, max_path, pack=None, pack_name="", dir
     if read.light_note:
         rep.issues.append(("color swatches", read.light_note))
     if desc.dome is not None:
-        was = world_before.name if world_before is not None else None
-        rep.world = "the dome light %s%s" % (desc.dome.name, ", in place of %s (kept)" % was if was else "")
+        dome = desc.dome.name or "object %d" % desc.dome.node
+        if earlier is not None:
+            rep.issues.append((dome, "light: dome light not imported: an earlier file of this import gave the World "
+                                     "(%s)" % _name_of(earlier)))
+        elif world_issue is not None:
+            rep.issues.append((dome, "light: " + world_issue))
+        else:
+            was = world_before.name if world_before is not None else None
+            rep.world = "the dome light %s%s" % (dome, ", in place of %s (kept)" % was if was else "")
+        if not materials:  # with materials the builder's issues come with theirs
+            rep.issues.extend(x for x in builder.issues() if x[0] == "World")
     if materials:
         conv_stats, tex_stats, lookup, swatches = counts or (None, None, None, None)
         made_materials = sum(m is not None for m in built.materials.values())
@@ -834,6 +890,7 @@ class _Run:
         self.import_scene = import_scene
         self.lines, self.text, self.fraction = [], "", 0.0
         self._made, self._before, self._render = [], None, None
+        self.world = _world_state()  # the World the run's first dome made, the World before it if faked
         # The runner's close of its steps, for _stop_active; stopped once that closed them.
         self.close, self.stopped = (lambda: None), False
 
@@ -883,7 +940,7 @@ class _Run:
                     else:
                         lines, rep = yield from _scene_steps(
                             self.opts, self.scene, self.view_layer, max_path, result, pack_name, self.dirs,
-                            threaded=threaded, progress=self._at(index), made=self._made)
+                            threaded=threaded, progress=self._at(index), made=self._made, world=self.world)
                 except _UNREADABLE as e:
                     failed.append("%s: %s" % (os.path.basename(max_path), _reason(e)))
                     continue
@@ -938,7 +995,7 @@ class _Run:
                 bpy.data.collections.remove(col)
         self._made = []
         camera, values, world = self._render
-        _restore_world(self.scene, world)  # before the removal: a World the run made then has no user
+        _restore_world(self.scene, world, self.world)  # before the removal: a World the run made then has no user
         for kind in _MADE:  # meshes and curves first: they free their materials, a removed material its images
             blocks = getattr(bpy.data, kind)
             for block in [b for b in blocks if b.as_pointer() not in self._before[kind] and not b.users]:
@@ -1109,7 +1166,7 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
                 _store_last(self, context.window_manager)
                 return {'CANCELLED'}
         run.import_scene = lambda max_path, result, pack_name: self._import_scene(context, max_path, result,
-                                                                                 pack_name)
+                                                                                 pack_name, run.world)
         window = context.window
         if window:
             window.cursor_set('WAIT')
@@ -1131,11 +1188,11 @@ class IMPORT_SCENE_OT_maxdrop(bpy.types.Operator, ImportHelper):
         for level, line in lines:
             self.report({level}, line)
 
-    def _import_scene(self, context, max_path, pack=None, pack_name=""):
-        """One .max imported at once (_scene_steps): ([(report level, line)], the convert.report.Report); one of
-        _UNREADABLE when the file cannot be read."""
+    def _import_scene(self, context, max_path, pack=None, pack_name="", world=None):
+        """One .max imported at once (_scene_steps; world: the run's world state): ([(report level, line)], the
+        convert.report.Report); one of _UNREADABLE when the file cannot be read."""
         return _drain(_scene_steps(ImportOptions.of(self), context.scene, context.view_layer, max_path, pack,
-                                   pack_name, prefs.texture_dirs(context)))
+                                   pack_name, prefs.texture_dirs(context), world=world))
 
     def invoke(self, context, event):
         # A filepath remembered from an earlier run is not "set": only a drop's or a caller's own path is listed.

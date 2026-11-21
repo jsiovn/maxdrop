@@ -13,9 +13,6 @@ def node_tree(block):
     return block.node_tree
 
 
-material_node_tree = node_tree
-
-
 try:
     from bpy_extras.io_utils import poll_file_object_drop
 except ImportError:

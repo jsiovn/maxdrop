@@ -45,18 +45,19 @@ modifiers), the report names the modifiers not applied, and the node whose pivot
 in place. lookat: the nodes aimed by a Look At controller or a LookAt Constraint have 3ds Max's world matrices (above),
 the Target objects are empties; imported again with Keep Targets, each Look At a Track To can follow gets one aimed at
 its target's object, with the same evaluated world matrix, and the report names the two it cannot follow (a roll, the
-Y axis). vray_lights: each VRayLight node a light object (mesh and dome lights empties, the dome the World), its
-light of the
-description's type, shape and size and of the shape the fixture script made, its -Z axis along the oracle's, its
+Y axis). vray_lights: each VRayLight node a light object (mesh and dome lights empties, the dome the World), its light
+of the description's type, shape and size and of the shape the fixture script made, its -Z axis along the oracle's, its
 energy the watts 3ds Max computed with the rules source's function times the default Light Strength (the disc's 4 / pi,
 the double-sided plane's half), its color, the off light hidden in viewport and render, the invisible one unseen by
 the camera and glossy rays; the instance shares the plane's light, the disc's instance scaled 2, 1.5, 1 has its
 own, three times as strong; imported again with Light Strength 2, twice the
 power. vray_dome: the dome is the scene's World (its texture image, strength, hemisphere, the Mapping rotations
 that look its texels up where V-Ray does, camera visibility off), the report's World line, the World before it
-kept; the second dome and the mesh light empties; the spheres' radii and powers (X scale only); an Esc after the World
-was made, and a build that fails after it, put the World before back and remove the new one. lights_standard, lights_photometric (and lookat's target spot): each light of the type, spot cone, power and
-color of the rules (STOCK_LIGHTS), its -Z axis along the oracle's, its flags, its shadow switch (STOCK_SHADOWS);
+kept with a fake user; the second dome and the mesh light empties; the spheres' radii and powers (X scale only);
+undo() after the run, and a build that fails after the World, put the World before back (no fake user) and remove
+the new one; a World that cannot be built leaves the scene imported, a line in the report; of two files with a dome
+the first gives the World. lights_standard, lights_photometric (and lookat's target spot): each light of the type,
+spot cone, power and color of the rules (STOCK_LIGHTS), its -Z axis along the oracle's, its flags, its shadow switch (STOCK_SHADOWS);
 the Skylight an empty.
 Cameras (cameras, lookat): each camera node a camera object of the description's type, sensor fit HORIZONTAL, sensor,
 lens, shift, clipping and orthographic width, Blender's horizontal field of view (angle_x) within 0.05 degrees of 3ds
@@ -344,6 +345,7 @@ def empty_scene():
     for material in list(bpy.data.materials):
         bpy.data.materials.remove(material)
     world = bpy.data.worlds.get(USER_WORLD) or bpy.data.worlds.new(USER_WORLD)  # a dome replaces the scene's World
+    world.use_fake_user = False
     bpy.context.scene.world = world
     for other in [w for w in bpy.data.worlds if w != world]:
         bpy.data.worlds.remove(other)
@@ -806,8 +808,9 @@ def check_dome(desc):
     light, the scaled one has its own. The report says the World and the one it replaced, which is kept."""
     from maxdrop import ops
     world = bpy.context.scene.world
-    check("vray_dome: FixtureDome is the World, UserWorld kept", world is not None and world.name == "FixtureDome" and
-          bpy.data.worlds.get(USER_WORLD) is not None, world.name if world else "none")
+    user = bpy.data.worlds.get(USER_WORLD)
+    check("vray_dome: FixtureDome is the World, UserWorld kept with a fake user", world is not None and
+          world.name == "FixtureDome" and user is not None and user.use_fake_user, world.name if world else "none")
     if world is None or world.name != "FixtureDome":
         return
     nodes = world.node_tree.nodes
@@ -864,8 +867,9 @@ def check_dome_undo(path):
         pass
     made = bpy.context.scene.world is not None and bpy.context.scene.world.name == "FixtureDome"
     run.undo()
-    check("dome undo: undo() after the run: the World before is back, nothing made",
-          made and _state() == before, "%s | %s" % (_state(), before))
+    check("dome undo: undo() after the run: the World before is back without a fake user, nothing made",
+          made and _state() == before and not bpy.data.worlds[USER_WORLD].use_fake_user,
+          "%s | %s" % (_state(), before))
     empty_scene()
     for img in list(bpy.data.images):
         bpy.data.images.remove(img)
@@ -890,7 +894,52 @@ def check_dome_undo(path):
     finally:
         ops._make_world = original
     check("dome undo: a build that fails after the World puts the World before back, nothing made",
-          failed and _state() == before, "%s | %s" % (_state(), before))
+          failed and _state() == before and not bpy.data.worlds[USER_WORLD].use_fake_user,
+          "%s | %s" % (_state(), before))
+
+    # a World that cannot be built: the scene is imported, the World stays, a line in the report
+    from maxdrop.build import world as build_world
+    empty_scene()
+    for img in list(bpy.data.images):
+        bpy.data.images.remove(img)
+    real = build_world.make_world
+
+    def broken(*args, **kwargs):
+        bpy.data.worlds.new("Half")
+        raise RuntimeError("maxdrop test: World fails")
+
+    build_world.make_world = broken
+    try:
+        result = bpy.ops.import_scene.maxdrop(filepath=path)
+    finally:
+        build_world.make_world = real
+    text = bpy.data.texts.get("MaxDrop Report")
+    body = text.as_string() if text is not None else ""
+    check("dome undo: a World that cannot be built: the scene imported, its World kept, nothing left, a report line",
+          result == {'FINISHED'} and len(bpy.data.objects) == 7 and bpy.context.scene.world.name == USER_WORLD and
+          [w.name for w in bpy.data.worlds] == [USER_WORLD] and not bpy.data.images and
+          "the World is not built (RuntimeError: maxdrop test: World fails)" in body,
+          "%s %d %s %s" % (result, len(bpy.data.objects), [w.name for w in bpy.data.worlds], body[-400:]))
+
+    # two files with a dome: the first gives the World, the second's dome is a line in the report
+    lights = os.path.join(os.path.dirname(path), "vray_lights.max")
+    empty_scene()
+    for img in list(bpy.data.images):
+        bpy.data.images.remove(img)
+    before = _state()
+    run = _cancel_run([path, lights])
+    for _ in run.steps():
+        pass
+    text = bpy.data.texts.get("MaxDrop Report")
+    body = text.as_string() if text is not None else ""
+    names = sorted(w.name for w in bpy.data.worlds)
+    check("dome undo: two files with a dome: the first file's dome is the World, the second's a line in the report",
+          bpy.context.scene.world.name == "FixtureDome" and names == ["FixtureDome", USER_WORLD] and
+          "dome light not imported: an earlier file of this import gave the World (FixtureDome)" in body,
+          "%s %s" % (names, body[-600:]))
+    run.undo()
+    check("dome undo: two files undone: the World before is back without a fake user, nothing made",
+          _state() == before and not bpy.data.worlds[USER_WORLD].use_fake_user, "%s | %s" % (_state(), before))
     empty_scene()
 
 
