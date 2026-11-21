@@ -1984,9 +1984,11 @@ def check_found_textures():
                 uv = [n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeUVMap"]
                 comb = _from(_from(cropped.inputs["Vector"]).inputs["Vector"])
                 ops = [getattr(_from(comb.inputs[a]), "operation", None) for a in ("X", "Y")] if comb else []
-                check("texmap_rules: place_crop.png on map channel 3, cropped, mirrored in U and clipped in V",
-                      cropped.extension == 'CLIP' and any(n.uv_map == "UVChannel_3" for n in uv)
-                      and ops == ['PINGPONG', 'MULTIPLY_ADD'],
+                double = _from(_from(_from(comb.inputs["X"]).inputs[0]).inputs["Vector"]) if comb else None
+                check("texmap_rules: place_crop.png on map channel 3, cropped, mirrored (U doubled) in U and clipped "
+                      "in V", cropped.extension == 'CLIP' and any(n.uv_map == "UVChannel_3" for n in uv)
+                      and ops == ['PINGPONG', 'MULTIPLY_ADD'] and getattr(double, "operation", None) == 'MULTIPLY'
+                      and close(list(_input(double, "Vector_001").default_value), [2.0, 1.0, 1.0], 1e-6),
                       "%s %s %s" % (cropped.extension, [n.uv_map for n in uv], ops))
                 check("texmap_rules: place_place.png on map channel 0 drawn on UV channel 1, reported",
                       not any(n.uv_map == "UVChannel_0" for mat in bpy.data.materials
@@ -2380,9 +2382,14 @@ def check_builder_debt():
 
         tex, comb = _crop_case(builder, cm, tx, found, "CropMirrorNoTile",
                                tx.Mapping(tile=(False, False), mirror=(True, True)), crop)
-        chain = [_from(comb.inputs[a]).operation for a in ("X", "Y")]
-        check("builder debt: mirror on with tile off still mirrors (mirror tiles), image EXTEND",
-              tex.extension == 'EXTEND' and chain == ['PINGPONG', 'PINGPONG'], "%s %s" % (tex.extension, chain))
+        pings = [_from(comb.inputs[a]) for a in ("X", "Y")]
+        chain = [n.operation for n in pings]
+        double = _from(_from(pings[0].inputs[0]).inputs["Vector"])
+        check("builder debt: mirror on with tile off still mirrors (mirror tiles), both axes doubled, image EXTEND",
+              tex.extension == 'EXTEND' and chain == ['PINGPONG', 'PINGPONG']
+              and double.bl_idname == "ShaderNodeVectorMath" and double.operation == 'MULTIPLY'
+              and close(list(_input(double, "Vector_001").default_value), [2.0, 2.0, 1.0], 1e-6),
+              "%s %s %s" % (tex.extension, chain, double.bl_idname))
 
         tex, comb = _crop_case(builder, cm, tx, found, "PlaceMixed", tx.Mapping(tile=(True, False)),
                                tx.Crop(0.25, 0.0, 0.5, 0.25, place=True))
@@ -2472,14 +2479,16 @@ def check_builder_debt():
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+_ONE_MIRROR = ("8 24 40 55 72 88 104 119 136 152 168 184 200 216 231 248 248 231 216 200 184 168 152 136 119 104 88 72 "
+               "55 40 24 8")
 # 3ds Max 2020 renderMap (scanline, filter off, Bitmap filtering none) of a 64 x 64 ramp, red 4 x its column, green
 # 4 x its row from the top (bead maxdrop-em3.60): (label, Mapping keywords, crop (u, v, w, h, place) or None, render
-# size, 'row' at y or 'col' at x, that index, the channel, its values; '-' black: outside a placed image)
+# size, 'row' at y or 'col' at x, that index, the channel, its values; '-' black: outside the image)
 _MIRROR_ROWS = (
     ("mirror U, tiling 1", dict(mirror=(True, False)), None, (32, 8), "row", 4, "R",
-     "8 24 40 55 72 88 104 119 136 152 168 184 200 216 231 248 248 231 216 200 184 168 152 136 119 104 88 72 55 40 24 8"),
+     _ONE_MIRROR),
     ("mirror U, tile off", dict(tile=(False, True), mirror=(True, False)), None, (32, 8), "row", 4, "R",
-     "8 24 40 55 72 88 104 119 136 152 168 184 200 216 231 248 248 231 216 200 184 168 152 136 119 104 88 72 55 40 24 8"),
+     _ONE_MIRROR),
     ("mirror U, tiling 0.5", dict(tiling=(0.5, 1.0), mirror=(True, False)), None, (32, 8), "row", 4, "R",
      "131 139 147 156 164 171 180 187 195 204 212 220 228 235 244 252 252 244 235 228 220 212 204 195 187 180 171 164 "
      "156 147 139 131"),
@@ -2495,10 +2504,30 @@ _MIRROR_ROWS = (
     ("mirror U, placed", dict(mirror=(True, False)), (0.25, 0.0, 0.5, 1.0, True), (32, 8), "row", 4, "R",
      "- - - - 16 48 80 112 144 176 208 239 - - - - - - - - 239 208 176 144 112 80 48 16 - - - -"),
     ("mirror both, along U", dict(mirror=(True, True)), None, (32, 32), "row", 16, "R",
-     "8 24 40 55 72 88 104 119 136 152 168 184 200 216 231 248 248 231 216 200 184 168 152 136 119 104 88 72 55 40 24 8"),
+     _ONE_MIRROR),
     ("mirror both, along V", dict(mirror=(True, True)), None, (32, 32), "col", 3, "G",
      "248 231 216 200 184 168 152 136 119 104 88 72 55 40 24 8 8 24 40 55 72 88 104 119 136 152 168 184 200 216 231 "
      "248"),
+    ("mirror V", dict(mirror=(False, True)), None, (32, 32), "col", 3, "G",
+     "248 231 216 200 184 168 152 136 119 104 88 72 55 40 24 8 8 24 40 55 72 88 104 119 136 152 168 184 200 216 231 "
+     "248"),
+    ("mirror V, along U", dict(mirror=(False, True)), None, (32, 32), "row", 16, "R",
+     "4 12 19 28 36 44 52 60 68 75 84 91 100 108 116 124 131 139 147 156 164 171 180 187 195 204 212 220 228 235 244 "
+     "252"),
+    ("mirror U, V clipped at tiling 2, along U", dict(tiling=(1.0, 2.0), tile=(True, False), mirror=(True, False)),
+     None, (32, 32), "row", 16, "R", _ONE_MIRROR),
+    ("mirror U, V clipped at tiling 2, along V", dict(tiling=(1.0, 2.0), tile=(True, False), mirror=(True, False)),
+     None, (32, 32), "col", 3, "G",
+     "- - - - - - - - 8 24 40 55 72 88 104 119 136 152 168 184 200 216 231 248 - - - - - - - -"),
+    ("crop, mirror U, V clipped at tiling 2, along U",
+     dict(tiling=(1.0, 2.0), tile=(True, False), mirror=(True, False)), (0.25, 0.25, 0.5, 0.5, False), (32, 32),
+     "row", 16, "R",
+     "68 75 84 91 100 108 116 124 131 139 147 156 164 171 180 187 187 180 171 164 156 147 139 131 124 116 108 100 91 "
+     "84 75 68"),
+    ("crop, mirror U, V clipped at tiling 2, along V",
+     dict(tiling=(1.0, 2.0), tile=(True, False), mirror=(True, False)), (0.25, 0.25, 0.5, 0.5, False), (32, 32),
+     "col", 3, "G",
+     "- - - - - - - - 68 75 84 91 100 108 116 124 131 139 147 156 164 171 180 187 - - - - - - - -"),
     ("mirror U, W 90, along V", dict(angle=(0.0, 0.0, math.pi / 2), mirror=(True, False)), None, (16, 16), "col", 8,
      "R", "16 48 80 112 144 176 208 239 239 208 176 144 112 80 48 16"),
     ("mirror U, W 90, along U", dict(angle=(0.0, 0.0, math.pi / 2), mirror=(True, False)), None, (16, 16), "row", 8,
@@ -2529,8 +2558,7 @@ def _sample_vector(socket, uv):
     if n.bl_idname == "ShaderNodeCombineXYZ":
         return Vector([_sample_value(n.inputs[a], uv) for a in "XYZ"])
     if n.bl_idname == "ShaderNodeMath":
-        a = _sample_value(n.inputs[0], uv)
-        b, c = n.inputs[1].default_value, n.inputs[2].default_value
+        a, b, c = (_sample_value(n.inputs[i], uv) for i in range(3))
         return {'PINGPONG': lambda: _pingpong(a, b), 'FLOOR': lambda: math.floor(a),
                 'WRAP': lambda: a - (b - c) * math.floor((a - c) / (b - c)), 'MULTIPLY_ADD': lambda: a * b + c,
                 }[n.operation]()
@@ -2630,9 +2658,10 @@ def check_builder_mirror():
         comb = _from(tex.inputs["Vector"])
         x, y = (_from(comb.inputs[a]) for a in ("X", "Y")) if comb is not None else (None, None)
         sep = x and _from(x.inputs[0])
-        check("builder mirror: mirror U, tile V: times (2, 1, 1) -> ping-pong X, wrap Y -> image EXTEND",
-              tex.extension == 'EXTEND' and comb.bl_idname == "ShaderNodeCombineXYZ" and x.operation == 'PINGPONG'
-              and y.operation == 'WRAP' and sep.bl_idname == "ShaderNodeSeparateXYZ"
+        check("builder mirror: mirror U, tile V: times (2, 1, 1) -> ping-pong X, Y straight through -> image REPEAT "
+              "(no wrap node: its jump would draw a seam in EEVEE)",
+              tex.extension == 'REPEAT' and comb.bl_idname == "ShaderNodeCombineXYZ" and x.operation == 'PINGPONG'
+              and y == sep and sep.bl_idname == "ShaderNodeSeparateXYZ"
               and double(_from(sep.inputs["Vector"]), [2.0, 1.0, 1.0]),
               "%s %s" % (tex.extension, comb and comb.bl_idname))
 

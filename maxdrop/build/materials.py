@@ -116,12 +116,16 @@ def per_axis(mapping, crop):
 
 def extension(mapping, crop=None):
     """The Image Texture extension of a placement: Blender has one for both axes. Both axes alike without a crop:
-    theirs. Otherwise the nodes repeat per axis and keep the coordinates inside the image or its crop rectangle
-    (EXTEND: no bleed from its opposite edge), unless the image is placed or an axis clips (CLIP)."""
+    theirs. Mirror on one axis and tile on the other without a crop: REPEAT, the nodes ping-pong the mirrored axis
+    only (a wrap in the nodes jumps, and EEVEE draws a seam there where it picks the texture's detail level).
+    Otherwise the nodes repeat per axis and keep the coordinates inside the image or its crop rectangle (EXTEND: no
+    bleed from its opposite edge), unless the image is placed or an axis clips (CLIP)."""
     axes = repeat_axes(mapping)
     if not per_axis(mapping, crop):
         return axes[0]
-    return 'CLIP' if (crop is not None and crop.place) or 'CLIP' in axes else 'EXTEND'
+    if (crop is not None and crop.place) or 'CLIP' in axes:
+        return 'CLIP'
+    return 'EXTEND' if crop is not None else 'REPEAT'
 
 
 # the first bytes of every image format Blender reads that has a signature (TGA has none: _targa; WebP apart)
@@ -621,12 +625,13 @@ class _Tree:
 
     def repeat_cell(self, vector, mapping, crop, depth):
         """The UV of the 0..1 cell (the image's, or a crop's), per axis: wrapped (tile), ping-ponged (mirror, after
-        mirror_scale doubled it) or left as it is (clip). A cropped image's clipped axis goes c + K floor(c),
-        K = 1 / size + 1: 0 <= c < 1 stays, any other c lands outside the image once the crop mapping scales it into
-        the crop rectangle. An image without a crop or a placed one needs nothing there: the CLIP extension, or the
-        TEXTURE mapping, already sends a c outside 0..1 out of the image."""
+        mirror_scale doubled it) or left as it is (clip; tile under the REPEAT extension). A cropped image's clipped
+        axis goes c + K floor(c), K = 1 / size + 1: 0 <= c < 1 stays, any other c lands outside the image once the
+        crop mapping scales it into the crop rectangle. An image without a crop or a placed one needs nothing there:
+        the CLIP extension, or the TEXTURE mapping, already sends a c outside 0..1 out of the image."""
         axes = repeat_axes(mapping)
         clip_out = crop is None or crop.place
+        wrap = extension(mapping, crop) != 'REPEAT'
         if axes == ('REPEAT', 'REPEAT'):
             frac = self.node("ShaderNodeVectorMath", depth + 1)
             frac.operation = 'FRACTION'
@@ -649,7 +654,7 @@ class _Tree:
                 n.inputs[1].default_value = 1.0 / max(size, _EPS) + 1.0
                 self.links.new(v, n.inputs[2])
                 v = n.outputs[0]
-            elif how != 'CLIP':
+            elif how == 'MIRROR' or (how == 'REPEAT' and wrap):
                 n = self.node("ShaderNodeMath", depth + 1)
                 self.links.new(v, n.inputs[0])
                 if how == 'REPEAT':
