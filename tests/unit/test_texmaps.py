@@ -1672,7 +1672,7 @@ class LostMaps(Checks):
 
 class SwatchRule(Checks):
     """Every swatch of a map goes through the scene's rule: linear with the gamma on (or unknown), sRGB with it off;
-    the kelvin fit and the HDR color do not."""
+    the HDR color does not, CoronaColor's temperature only with the gamma off."""
 
     def _root(self, swatches, *objects, kind=tx.COLOR):
         tex = tx.TexmapConverter(FakeGraph(*objects), _table(), swatches=swatches)
