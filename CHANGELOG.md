@@ -8,6 +8,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ## [Unreleased]
 
+### Added
+
+- Shapes: an NGon's corner radius and an Ellipse's outline are drawn as 3ds Max draws them, and a shape that renders
+  with a rectangular section gets that section (a hidden bevel object beside it) instead of a round one; none of
+  them is a line in the report any more, but a rectangular section on a shape that is not flat, which may turn
+  otherwise than in 3ds Max.
+
 ### Changed
 
 - Import: Esc while a windowed import reads a very large mesh stops the reading inside that mesh, so the next
@@ -15,6 +22,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ### Fixed
 
+- Shapes: an Arc whose from and to angles are equal is a point, not a full circle, and angles below 0 or past 360
+  are held there as 3ds Max holds them (from 10 to 370 ends at 360 instead of going round to 10).
 - Modifiers: an object with a world-space modifier (a Map Scaler or another space-warp binding) on its stack arrives
   as its mesh, with the binding named in the report among the modifiers not applied, instead of as a placeholder of
   an unnamed class.

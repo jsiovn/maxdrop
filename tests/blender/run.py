@@ -22,7 +22,8 @@ oracle has no map channels or smoothing groups of a base mesh: those expectation
 shapes: each shape node a curve object (3D, FREE handles) with the oracle's splines, point counts and cyclic flags,
 its points where 3ds Max has its knots, each segment's middle (mathutils.geometry.interpolate_bezier) where 3ds Max
 interpolates it (the straight segment included), the resolution from the steps, a bevel and faces only on the
-renderable FixtureLine.
+renderable FixtureLine. shapes_more: the same for its NGon corners, Ellipse outlines and Arcs; a rectangular section
+a hidden bevel object in the import's collection, its corners where 3ds Max's render mesh has them.
 Converted modifiers (TurboSmooth, MeshSmooth, Shell, Symmetry): each object's Blender modifiers in 3ds Max's order with
 the description's settings and mirror empties, creases where a smoother separates by smoothing groups, and the
 evaluated mesh with 3ds Max's vertex and triangle counts, world box and shading (flat faces, smooth regions and hard
@@ -364,11 +365,13 @@ def run_fixture(path, modules):
     mirrors = sum(1 for n in desc.nodes for m in n.converted if m.mirror is not None)
     shears = [ob for ob in bpy.data.objects if ob.get("maxdrop_helper") == "shear"]
     sheared = any(n.sheared and n.parent is None for n in desc.nodes)  # controllers: FixtureScaleAxis
-    check("%s: one object per node, one empty per mirror object, one for top-level sheared nodes" % name,
-          len(desc.nodes) == len(nodes) == len(bpy.data.objects) - len(helpers) - len(shears)
-          and len(helpers) == mirrors and len(shears) == int(sheared),
-          "%d objects, %d nodes, %d mirror empties, %d shear empties" % (len(bpy.data.objects), len(nodes),
-                                                                         len(helpers), len(shears)))
+    sections = [ob for ob in bpy.data.objects if ob.get("maxdrop_helper") == "section"]
+    sectioned = sum(1 for cd in desc.curves.values() if cd.section is not None)
+    check("%s: one object per node, one empty per mirror object, one for top-level sheared nodes, one per section"
+          % name, len(desc.nodes) == len(nodes) == len(bpy.data.objects) - len(helpers) - len(shears) - len(sections)
+          and len(helpers) == mirrors and len(shears) == int(sheared) and len(sections) == sectioned,
+          "%d objects, %d nodes, %d mirror empties, %d shear empties, %d sections" % (
+              len(bpy.data.objects), len(nodes), len(helpers), len(shears), len(sections)))
     check("%s: nodes in oracle order" % name, [n.name for n in desc.nodes] == [n["name"] for n in nodes])
     obs = objects_of(desc)
     meshes = {ob.data.name: ob.data for ob in obs if ob.type == 'MESH'}
@@ -495,6 +498,8 @@ def run_fixture(path, modules):
         shaped = sum(1 for o in nodes if o["shape"] is not None)
         check("shapes: one curve per shape node, one mesh", len(curves) == shaped == 13 and len(meshes) == 1,
               str(curves))
+    if name == "shapes_more":
+        check_shapes_more(obs, meters)
     if name == "hierarchy":
         mirrored = [n.name for n in desc.nodes if n.mirrored]
         check("hierarchy: FixtureLeaf is the mirrored node", mirrored == ["FixtureLeaf"], str(mirrored))
@@ -958,11 +963,14 @@ def check_curve(label, ob, shape, meters):
     steps = 12 if shape["adaptive"] else shape["steps"] + 1
     check(label + ": resolution from the steps", cu.resolution_u == steps and
           all(sp.resolution_u == steps for sp in cu.splines), "%d vs %d" % (cu.resolution_u, steps))
-    if shape["renderable"]:
+    if shape["renderable"] and shape["rectangular"]:
+        check_section(label, ob, shape, meters)
+    elif shape["renderable"]:
         check(label + ": a bevel of the thickness", abs(cu.bevel_depth - shape["thickness"] / 2 * meters) < 1e-9 and
-              cu.bevel_resolution == (shape["sides"] - 4) // 2, "%g, %d" % (cu.bevel_depth, cu.bevel_resolution))
+              cu.bevel_resolution == (shape["sides"] - 4) // 2 and cu.bevel_mode == 'ROUND',
+              "%g, %d, %s" % (cu.bevel_depth, cu.bevel_resolution, cu.bevel_mode))
     else:
-        check(label + ": no bevel", cu.bevel_depth == 0, str(cu.bevel_depth))
+        check(label + ": no bevel", cu.bevel_depth == 0 and cu.bevel_object is None, str(cu.bevel_depth))
     for k, (sp, w) in enumerate(zip(cu.splines, want)):
         pts = sp.bezier_points
         n = len(pts)
@@ -987,6 +995,60 @@ def check_curve(label, ob, shape, meters):
     faces = len(mesh.polygons)
     evaluated.to_mesh_clear()
     check(label + ": faces exactly when it renders", (faces > 0) == shape["renderable"], str(faces))
+
+
+def check_section(label, ob, shape, meters):
+    """A rectangular section: a bevel object of the width x length rectangle (any angle), hidden, unselectable, in
+    the import's collection tree (the cleanup removes that tree; an unlinked one is lost on save)."""
+    cu = ob.data
+    sec = cu.bevel_object
+    check(label + ": a bevel object, no round bevel", cu.bevel_mode == 'OBJECT' and sec is not None and
+          sec.type == 'CURVE' and cu.bevel_depth == 0, "%s %r %g" % (cu.bevel_mode, sec, cu.bevel_depth))
+    if sec is None or sec.type != 'CURVE':
+        return
+    root = bpy.data.collections.get(label.split("/")[0])  # the import's collection is named after the file
+    flags = (sec.hide_viewport, sec.hide_render, sec.hide_select, sec.get("maxdrop_helper"))
+    check(label + ": the section object hidden, marked, in the import's collection",
+          flags == (True, True, True, "section") and root is not None and sec.name in root.all_objects,
+          "%s %s" % (flags, [c.name for c in sec.users_collection]))
+    pts = [p.co for sp in sec.data.splines for p in sp.points]
+    half = math.hypot(shape["width"], shape["length"]) / 2 * meters
+    check(label + ": the section a closed 2D rectangle of width x length", sec.data.dimensions == '2D' and
+          sec.data.fill_mode == 'NONE' and len(sec.data.splines) == 1 and sec.data.splines[0].use_cyclic_u and
+          len(pts) == 4 and all(abs(math.hypot(p.x, p.y) - half) < 1e-9 for p in pts) and
+          abs((pts[0] - pts[1]).length - shape["width"] * meters) < 1e-9 and
+          abs((pts[1] - pts[2]).length - shape["length"] * meters) < 1e-9, str([tuple(p) for p in pts]))
+
+
+def check_shapes_more(obs, meters):
+    """The rectangular sections against 3ds Max's render meshes (snapshotAsMesh renderMesh:true; the fixture's
+    script): FixtureSection, a line along X with width 4, length 1 and angle 30, has at x = 0 the corners
+    (Y, Z) = (-1.48205, 1.43301), (1.98205, -0.566987), (1.48205, -1.43301), (-1.98205, 0.566987); FixtureSectionLoop,
+    a circle of radius 10 with width 3, length 1.5, spans 8.49005 .. 11.5099 out from its center (3ds Max mitres at
+    its polyline points, Blender a little less) and Z -0.75 .. 0.75."""
+    by_name = {ob.name: ob for ob in obs}
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+
+    def verts(ob):
+        evaluated = ob.evaluated_get(depsgraph)
+        mesh = evaluated.to_mesh()
+        out = [Vector(v.co) / meters for v in mesh.vertices]
+        evaluated.to_mesh_clear()
+        return out
+
+    got = sorted((round(v.y, 4), round(v.z, 4)) for v in verts(by_name["FixtureSection"]) if abs(v.x) < 1e-6)
+    want = sorted((round(y, 4), round(z, 4)) for y, z in ((-1.48205, 1.43301), (1.98205, -0.566987),
+                                                          (1.48205, -1.43301), (-1.98205, 0.566987)))
+    check("shapes_more/FixtureSection: the section's corners where 3ds Max renders them",
+          len(got) == 4 and close([c for p in got for c in p], [c for p in want for c in p], 1e-3),
+          "%s vs %s" % (got, want))
+    loop = verts(by_name["FixtureSectionLoop"])
+    radial = [math.hypot(v.x, v.y) for v in loop]
+    zs = [v.z for v in loop]
+    check("shapes_more/FixtureSectionLoop: the section across the circle and up",
+          abs(min(radial) - 8.49005) < 0.02 and abs(max(radial) - 11.5099) < 0.02 and
+          abs(min(zs) + 0.75) < 1e-6 and abs(max(zs) - 0.75) < 1e-6,
+          "%g .. %g, z %g .. %g" % (min(radial), max(radial), min(zs), max(zs)))
 
 
 def check_modifier_pivot(obs, meters):
@@ -1488,6 +1550,14 @@ def check_cancel(textured, other):
           "%s %d %s" % (ended, len(run._made), report and report.as_string()[:200]))
     run.undo()
     check("cancel: undo() after a finished run removes it", _state() == before, "%s | %s" % (_state(), before))
+
+    run = _cancel_run([os.path.join(os.path.dirname(other), "shapes_more.max")])  # its sections: hidden objects
+    steps = run.steps()
+    ended = not _advance(steps, lambda: False)
+    sections = sum(1 for ob in bpy.data.objects if ob.get("maxdrop_helper") == "section")
+    run.undo()
+    check("cancel: undo() removes the rectangular sections' objects and curves too",
+          ended and sections == 2 and _state() == before, "%d sections | %s | %s" % (sections, _state(), before))
     bpy.data.materials.remove(keep_material)
     bpy.data.images.remove(keep_image)
 

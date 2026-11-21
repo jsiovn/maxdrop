@@ -34,7 +34,7 @@ without a parent, so a sheared top-level node gets one: the empty SHEAR_HELPER a
 made only when needed and listed in built.helpers. It is not baked into the mesh instead because most such nodes
 are empties (placeholders) and the object's own world matrix would stay off.
 An EMPTY node becomes a plain-axes empty with the custom property maxdrop_class; a CURVE node an object of its
-Curve, which gets no material; a LIGHT node an object of its Light (build.lights, power times light_strength), with
+Curve, which gets no material (a rectangular section's hidden bevel object goes into collection: build.curves); a LIGHT node an object of its Light (build.lights, power times light_strength), with
 the light's object flags; a CAMERA node an object of its Camera (build.cameras).
 
 With collections (build.collections.make), each object goes into its layer's collection, else into collection.
@@ -57,7 +57,7 @@ from . import lights as build_lights
 
 MAX_UV_LAYERS = 8
 CLASS_PROPERTY = "maxdrop_class"
-HELPER_PROPERTY = "maxdrop_helper"
+HELPER_PROPERTY = build_curves.HELPER_PROPERTY  # the shear helper; build.curves marks section objects too
 SHEAR_HELPER = "MaxDrop Shear"
 TRACK_TO_NAME = "MaxDrop Target"
 # build_steps() makes a mesh of more face corners than this in several steps (mesh_steps), so that Esc and redraws do
@@ -281,7 +281,7 @@ def build_steps(desc, collection, collections=None, view_layer=None, slots=None,
         done += 1
         yield done, total
     for key, cd in desc.curves.items():
-        built.curves[key] = build_curves.make_curve(cd)
+        built.curves[key] = build_curves.make_curve(cd, collection)
         done += 1
         yield done, total
     for key, ld in desc.lights.items():

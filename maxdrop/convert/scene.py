@@ -43,7 +43,9 @@ shared like a mesh, its offset baked into the knots: one Bezier spline per splin
 left and right handles. A segment 3ds Max draws straight (segment type line) gets handles a third of the way along
 its chord, whatever the stored vectors. Resolution: 3ds Max's steps + 1 segments per Bezier segment, ADAPTIVE for
 an adaptive shape. A shape that renders (Enable In Renderer) gets a round bevel of its thickness (Max's thickness
-is the diameter) with about as many sides; a rectangular section is drawn round (an issue).
+is the diameter) with about as many sides, or with a rectangular section a section: the rectangle width x length
+turned by its angle, which build.curves makes a bevel object of (3ds Max's frame and Blender's agree on a curve
+flat in XY; on another one an issue says the section may turn otherwise).
 
 A standard primitive (Box, Plane, Pyramid, Sphere, GeoSphere, Cylinder, Cone, Tube, Torus) becomes the mesh 3ds Max
 builds from its parameters (convert.primitives) and from there on is a mesh like any other; one with an option that is
@@ -250,12 +252,14 @@ class SplineDescription:
 class CurveDescription:
     """One curve in meters, offset baked: splines [SplineDescription]; resolution the Bezier resolution (segments
     per Bezier segment); bevel_depth the bevel's radius (0: no bevel), bevel_resolution its round profile's
-    resolution; users the object indices of the nodes that share it, in walk order."""
-    __slots__ = ("key", "name", "splines", "resolution", "bevel_depth", "bevel_resolution", "users")
+    resolution; section None, or the four (x, y) corners in meters of a rectangular section (profile x across the
+    curve, y up: Blender's bevel object), which replaces the round bevel; users the object indices of the nodes that
+    share it, in walk order."""
+    __slots__ = ("key", "name", "splines", "resolution", "bevel_depth", "bevel_resolution", "section", "users")
 
-    def __init__(self, key, name, splines, resolution, bevel_depth=0.0, bevel_resolution=0):
+    def __init__(self, key, name, splines, resolution, bevel_depth=0.0, bevel_resolution=0, section=None):
         self.key, self.name, self.splines, self.resolution = key, name, splines, resolution
-        self.bevel_depth, self.bevel_resolution = bevel_depth, bevel_resolution
+        self.bevel_depth, self.bevel_resolution, self.section = bevel_depth, bevel_resolution, section
         self.users = []
 
     def __repr__(self):
@@ -471,15 +475,37 @@ def curve_description(key, name, shape, offset, meters):
         splines.append(SplineDescription([place(k.point) for k in sp.knots], [place(p) for p in left],
                                          [place(p) for p in right], sp.closed))
     resolution = ADAPTIVE if shape.adaptive else shape.steps + 1
-    depth, profile = 0.0, 0
+    depth, profile, section = 0.0, 0, None
     r = shape.render
-    if r.renderable and r.thickness > 0:
-        if r.rectangular:
-            issues.append("a rectangular section (%g x %g) is drawn round, %g across" % (r.width, r.length,
-                                                                                        r.thickness))
+    if r.renderable and r.rectangular:
+        if r.width > 0 and r.length > 0:
+            section = rectangular_section(r.width * meters, r.length * meters, r.section_angle)
+            if not _flat(splines):
+                issues.append("a rectangular section on a curve that is not flat in XY may turn otherwise than in "
+                              "3ds Max")
+    elif r.renderable and r.thickness > 0:
         depth = r.thickness / 2.0 * meters
         profile = max(0, (r.sides - 4) // 2)  # Blender's round profile has 4 + 2 * resolution sides
-    return CurveDescription(key, name, splines, resolution, depth, profile), issues
+    return CurveDescription(key, name, splines, resolution, depth, profile, section), issues
+
+
+def rectangular_section(width, length, angle):
+    """The corners of 3ds Max's rectangular section in Blender's bevel profile: width across the curve (profile x),
+    length up (y), turned by angle degrees counter-clockwise in the profile, which is 3ds Max's angle (the
+    shapes_more fixture's render mesh)."""
+    a = math.radians(angle)
+    c, s = math.cos(a), math.sin(a)
+    x, y = width / 2.0, length / 2.0
+    return [(px * c - py * s, px * s + py * c) for px, py in ((x, y), (-x, y), (-x, -y), (x, -y))]
+
+
+def _flat(splines):
+    """Whether every point and handle of splines (meters) lies in one plane of constant z."""
+    zs = [p[2] for sd in splines for ps in (sd.points, sd.left, sd.right) for p in ps]
+    if not zs:
+        return True
+    extent = max(abs(c) for sd in splines for p in sd.points for c in p)
+    return max(zs) - min(zs) <= 1e-6 * (1.0 + extent)
 
 
 def sheared(m):

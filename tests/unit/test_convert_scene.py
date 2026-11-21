@@ -14,6 +14,7 @@ import collections
 import glob
 import importlib
 import json
+import math
 import os
 import sys
 import types
@@ -130,9 +131,7 @@ PRIMITIVE_CLASSES = {("0x00000010", "0x00000000"), ("0x00000011", "0x00000000"),
 PLACEHOLDERS = {"lookat": {"Point": 1}}
 NO_DECAY = "light: no decay: Blender's light falls off with the square of the distance; as bright as in 3ds Max at 1 m"
 # the issues the fixtures are made to raise
-ISSUES = {"shapes_more": ["shape: a rectangular section (3 x 1.5) is drawn round, 1 across",
-                          "shape: a rectangular section (4 x 1) is drawn round, 1 across"],
-          "uvwmap": ["uvw map: a UVW Map above Bend is not evaluated",
+ISSUES = {"uvwmap": ["uvw map: a UVW Map above Bend is not evaluated",
                      "uvw map: shrink-wrap mapping is not evaluated: the stored channel stays"],
           "stack_convert": ["modifiers: TurboSmooth above Bend is not converted"],
           "lookat": [NO_DECAY],  # its target spot (its Perspective viewport is a note of the report, no issue)
@@ -502,10 +501,31 @@ class Curves(unittest.TestCase):
         knots = [k(shapes.CORNER, shapes.CURVE, (0, 0, 0), (0, 0, 0), (0, 0, 0)),
                  k(shapes.CORNER, shapes.LINE, (3, 0, 0), (3, 0, 0), (3, 0, 0))]
         cd, issues = conv.curve_description("k", "n", self._shape(knots, closed=True, renderable=True, thickness=4.0,
-                                                                  sides=3, rectangular=True), None, 1.0)
+                                                                  sides=3), None, 1.0)
         self.assertEqual((cd.splines[0].right[1], cd.splines[0].left[0]), ((2, 0, 0), (1, 0, 0)))
-        self.assertEqual((cd.bevel_depth, cd.bevel_resolution), (2.0, 0))
-        self.assertEqual(len(issues), 1)  # the rectangular section is drawn round
+        self.assertEqual((cd.bevel_depth, cd.bevel_resolution, cd.section), (2.0, 0, None))
+        self.assertEqual(issues, [])
+
+    def test_rectangular_section_off_the_plane(self):
+        """A section on a curve that is not flat in XY is drawn, with an issue; width or length 0 draws none."""
+        k = shapes.Knot
+
+        def section(z, **kw):
+            knots = [k(shapes.CORNER, shapes.LINE, (0, 0, 0), (0, 0, 0), (0, 0, 0)),
+                     k(shapes.CORNER, shapes.LINE, (10, 0, z), (10, 0, z), (10, 0, z))]
+            render = dict(renderable=True, rectangular=True, width=4.0, length=1.0)
+            render.update(kw)
+            return conv.curve_description("k", "n", self._shape(knots, **render), None, 1.0)
+
+        cd, issues = section(0)
+        self.assertEqual((len(cd.section), issues, cd.bevel_depth), (4, [], 0.0))
+        cd, issues = section(5)
+        self.assertEqual((len(cd.section), len(issues)), (4, 1))
+        self.assertIn("not flat", issues[0])
+        cd, issues = section(0, width=0.0)
+        self.assertEqual((cd.section, cd.bevel_depth, issues), (None, 0.0, []))
+        cd, issues = section(0, renderable=False)
+        self.assertEqual((cd.section, issues), (None, []))
 
     @unittest.skipIf(numpy is None, "numpy missing")  # shapes.max has a box: its mesh is read with numpy
     def test_refused_shape_is_a_placeholder_with_an_issue(self):
@@ -1024,11 +1044,17 @@ class Fixtures(unittest.TestCase):
                         numpy.testing.assert_allclose(mid, knot["mid"], atol=1e-4, err_msg="%s knot %d" % (label, k))
                 s = o["shape"]
                 self.assertEqual(cd.resolution, conv.ADAPTIVE if s["adaptive"] else s["steps"] + 1, label)
-                if s["renderable"]:
+                if s["renderable"] and s["rectangular"]:
+                    self.assertEqual(cd.bevel_depth, 0.0, label)
+                    x, y = s["width"] / 2 * desc.meters, s["length"] / 2 * desc.meters
+                    numpy.testing.assert_allclose(sorted(numpy.hypot(*numpy.transpose(cd.section))),
+                                                  [math.hypot(x, y)] * 4, rtol=1e-9, err_msg=label)
+                elif s["renderable"]:
                     self.assertAlmostEqual(cd.bevel_depth, s["thickness"] / 2 * desc.meters, places=9)
                     self.assertEqual(cd.bevel_resolution, (s["sides"] - 4) // 2, label)
+                    self.assertIsNone(cd.section, label)
                 else:
-                    self.assertEqual(cd.bevel_depth, 0.0, label)
+                    self.assertEqual((cd.bevel_depth, cd.section), (0.0, None), label)
 
     def test_shapes_are_not_placeholders(self):
         desc = dict((n, d) for n, d, _o in self.cases)["shapes"]
@@ -1036,6 +1062,20 @@ class Fixtures(unittest.TestCase):
         self.assertEqual(len(desc.curves), 13)
         line = next(n for n in desc.nodes if n.name == "FixtureLine")
         self.assertEqual(desc.curves[line.curve].bevel_resolution, 2)  # 8 sides
+
+    def test_rectangular_sections(self):
+        """FixtureSection (width 4, length 1, angle 30): the corners of 3ds Max's render mesh at its first point,
+        (Y, Z) = (-1.48205, 1.43301), (1.98205, -0.566987), ..., in Blender's profile, whose x is the line's -Y."""
+        desc = dict((n, d) for n, d, _o in self.cases)["shapes_more"]
+        by_name = {n.name: desc.curves[n.curve] for n in desc.nodes if n.kind == conv.CURVE}
+        m = desc.meters
+        numpy.testing.assert_allclose(by_name["FixtureSection"].section,
+                                      numpy.array([(1.48205, 1.43301), (-1.98205, -0.566987), (-1.48205, -1.43301),
+                                                   (1.98205, 0.566987)]) * m, atol=1e-5 * m)
+        loop = by_name["FixtureSectionLoop"].section
+        numpy.testing.assert_allclose(loop, numpy.array([(1.5, 0.75), (-1.5, 0.75), (-1.5, -0.75), (1.5, -0.75)]) * m,
+                                      atol=1e-12)
+        self.assertEqual(sum(1 for cd in desc.curves.values() if cd.section is not None), 2)
 
     def test_material_indices_from_the_reader(self):
         desc = dict((n, d) for n, d, _o in self.cases)["box_poly_standard"]

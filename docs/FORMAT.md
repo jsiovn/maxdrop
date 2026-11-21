@@ -393,7 +393,8 @@ A field whose value is zero is left out: the top of every box has mask `0x30`, t
 `maxdrop/reader/shapes.py` reads them; `tests/unit/test_shapes.py` checks every shape node of every fixture against
 the oracle's `shape`: what 3ds Max's own conversion to an Editable Spline gives (knot types, segment types,
 positions and vectors within 1e-4, closed flags, interpolation and rendering settings). shapes has one node per
-case below. The classes, superclass `0x40` (shape):
+case below; shapes_more the settings shapes leaves out (NGon corner radius, Ellipse outline, Arc angles out of
+range, a Rectangle's corner radius past half a side, rectangular sections). The classes, superclass `0x40` (shape):
 
 | Class (ClassID) | Kept as |
 |---|---|
@@ -409,8 +410,15 @@ Every shape has the rendering block at reference slot 0, an old ParamBlock of 28
 their interpolation in another at slot 2 (0 steps, 1 optimize, 2 adaptive). Of the rendering block, set to distinct
 values in a scratch file of 3ds Max 2020 and in FixtureLine: 0 thickness (the diameter), 1 sides, 2 angle (degrees),
 3 to 5 the same for the viewport, 6 Enable In Renderer, 7 generate mapping coordinates, 8 Enable In Viewport, 9 use
-viewport settings, 11 rectangular, 12 width, 13 length, 14 the rectangular angle, 21 the auto-smooth threshold
-(radians).
+viewport settings, 11 rectangular, 12 width, 13 length, 14 the rectangular angle (degrees; shapes_more's
+FixtureSection: 30 beside a round angle of 15), 21 the auto-smooth threshold (radians).
+
+A rectangular section, as 3ds Max renders it (`snapshotAsMesh renderMesh:true`, shapes_more and probes): the width
+lies across the curve in its plane, the length along the plane's normal (a line along X: Y +-width / 2, Z +-length /
+2; along Z: X and Y; a Circle: radial and Z), turned by the angle (FixtureSection, at its first point: (Y, Z) =
+(-1.48205, 1.43301), (1.98205, -0.566987) and their opposites), capped at the ends of an open spline. Blender's bevel
+object maps profile x to the line's -Y and y to Z: the rectangle turned by +angle in the profile gives the same
+corners on a curve flat in XY (convert.scene `rectangular_section`).
 
 An Editable Spline keeps a BezierShape `0x1010`:
 
@@ -440,18 +448,31 @@ knot's magnitude.
 The parametric shapes are made by the reader the way 3ds Max makes them, fitted to the oracle:
 
 - a circular arc of angle *a* gets vectors of radius times `veccalc(a)` along its tangents, where `veccalc` is the
-  3ds Max SDK's bisection that makes the mean distance of 10 points of the segment from the center equal the
-  radius: 0.5517857 for 90 degrees (the textbook 4/3 tan(a/4) is 0.552285);
+  3ds Max SDK's float32 bisection that makes the mean distance of 10 points of the segment from the center equal
+  the radius: 0.5517862 for 90 degrees (the SDK's CIRCLE_VECTOR_LENGTH; the textbook 4/3 tan(a/4) is 0.552285). In
+  float32 the loop stops early on small angles: 1.5 / 1024 for 0 (a zero-length Arc, radius 10 and 1000), 0.0010986
+  for a sixth of a degree (a double bisection gives about 0 and 0.00097);
 - Circle: 4 Bezier knots from angle 0, counter-clockwise; Ellipse: the same scaled to width / 2 and length / 2;
+  with its outline on (ParamBlock2 id 3, the flag alone: thickness 0 gives two coincident splines) a second spline,
+  the same with both semi-axes plus the thickness (id 2), each clamped at 0 (FixtureEllOutline 3, FixtureEllInset
+  -15: semi-axes 5 and 0), same start and direction;
 - Rectangle: without a corner radius 4 Bezier-corner knots from (width / 2, length / 2), counter-clockwise, each
   vector a third of the way to its neighbour; with one 8, each pair at the ends of a side, both vectors along that
-  side, radius x `veccalc(90 degrees)` long;
+  side, radius x `veccalc(90 degrees)` long; a radius past half a side is not clamped (the knots cross:
+  FixtureRectOver, 10 x 30 with 8; a probe with 10 x 12 and 20);
 - Arc: always 4 Bezier knots, 3 equal segments (FixtureArc 170 degrees, FixturePie 90, FixtureArcWide 350), the
   first in vector and the last out vector at their knot; pie adds the center and closes the spline; reverse runs
-  from `to` back to `from`;
+  from `to` back to `from`. `from` and `to` are clamped to [0, 360] first, then a `to` below `from` adds 360:
+  from = to is a zero-length arc, its knots at `from` (FixtureArcSame; also 400 -> 500 at 360, 0 -> -90 at 0),
+  10 -> 370 ends at 360 (FixtureArcOver), -30 -> 60 starts at 0 (FixtureArcUnder), 100 -> 50 runs 310 degrees
+  (FixtureArcWrap), 0 -> 360 and 0 -> 720 are a full turn;
 - NGon: scribe 0 puts the corners at radius / cos(180 degrees / sides) (the radius is the apothem), scribe 1 at the
   radius, the first at angle 0; Bezier-corner knots with vectors a third of the way to the neighbours, or with
-  circular a Bezier knot per corner with vectors of the arc between them.
+  circular a Bezier knot per corner with vectors of the arc between them. A corner radius *c* (not circular, which
+  ignores it) makes two Bezier knots per corner, at *c* x tan(180 degrees / sides) from it along the sides to the
+  previous and the next corner (the one before corner 0 first), both vectors along their side, that distance x
+  `veccalc(90 degrees)` long, whatever the corner's angle; not clamped (FixtureNGonCorner, FixtureNGonCornerIn,
+  FixtureNGonCornerRound, FixtureNGonCornerBig: 4 sides with 30, the knots cross).
 
 ## Extrude
 
@@ -1232,10 +1253,9 @@ Not shown by any fixture yet, so not stated above:
   8-bit text, the code page the summary records (the machine's ANSI code page is assumed), the layer name in the
   same code page. Their FileAssetMetaData strings are still read as UTF-16, and an older `ClassDirectory` stream
   as `ClassDirectory3`.
-- Of shapes ([Shapes](#shapes)): NGon's corner radius and Ellipse's outline (no fixture sets them: drawn without,
-  an issue), an Arc whose `from` equals `to` (taken as a full turn), the order of a reversed pie's knots (the center
-  last), a Rectangle whose corner radius is more than half a side (its knots cross; 3ds Max's handling is not
-  known), the rectangular rendering section; the `f32` and the last `u32` of a knot, `0x2904`, `0x1070` of the
+- Of shapes ([Shapes](#shapes)): the order of a reversed pie's knots (the center last), a rectangular section on a
+  curve that is not flat in XY (Blender's twist and 3ds Max's may differ: an issue), the angle of a round section
+  (not drawn); the `f32` and the last `u32` of a knot, `0x2904`, `0x1070` of the
   BezierShape and `0x2150` (on some Editable Splines and Lines); the other shape classes (Star, Text, Helix, Donut,
   Section, NURBS curves...), which stay placeholders.
 - Of a modifier stack ([Modifiers](#modifiers)): `0x204B`, `0x2501`, `0x2502`, `0x2512` and `0x2513`; how the
