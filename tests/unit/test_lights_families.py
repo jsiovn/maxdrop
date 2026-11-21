@@ -256,12 +256,12 @@ class SunAndIes(unittest.TestCase):
 
     def test_ies_power_and_override(self):
         ld, issues = describe(ies(power=1500.0))
-        self.assertEqual((ld.kind, ld.spot_size, issues), ("SPOT", L.WEB_CONE, [L.IES_FILE % "a.ies"]))
+        self.assertEqual((ld.kind, ld.spot_size, issues), ("SPOT", L.WEB_CONE, [L.IES_RATED, L.IES_FILE % "a.ies"]))
         self.assertAlmostEqual(ld.watts, 1500.0 / 683.0, delta=1e-12)
-        ld, _ = describe(ies(power=300.0, override=1, intensity_type=1))
-        self.assertAlmostEqual(ld.watts, 300.0 * CD, delta=1e-12)
-        ld, _ = describe(ies(power=300.0, override=1, intensity_type=0))
-        self.assertAlmostEqual(ld.watts, 300.0 / 683.0, delta=1e-12)
+        for intensity_type in (1, 0):  # the stored power is lumens in both units (V-Ray's panel converts cd)
+            ld, issues = describe(ies(power=300.0, override=1, intensity_type=intensity_type))
+            self.assertAlmostEqual(ld.watts, 300.0 / 683.0, delta=1e-12)
+            self.assertEqual(issues, [L.IES_FILE % "a.ies"])
         ld, issues = describe(ies(power=0.0))
         self.assertEqual((ld.watts, issues), (0.0, [L.IES_ZERO, L.IES_FILE % "a.ies"]))
 
@@ -272,13 +272,14 @@ class SunAndIes(unittest.TestCase):
 
     def test_ies_light_shape(self):
         sizes = {"height": 300.0, "width": 200.0, "length": 400.0, "diameter": 100.0}
+        file = [L.IES_RATED, L.IES_FILE % "a.ies"]  # by its power: the line of the file's rated lumens too
         ld, issues = describe(ies(**sizes))  # no override: the IES file's shape, not read
-        self.assertEqual((ld.radius, issues), (0.0, [L.IES_FILE % "a.ies"]))
+        self.assertEqual((ld.radius, issues), (0.0, file))
         ld, issues = describe(ies(override_shape=1, shape_type=L.IES_SPHERE, use_shape=0, **sizes))
-        self.assertEqual((ld.radius, issues), (0.0, [L.IES_FILE % "a.ies"]))
+        self.assertEqual((ld.radius, issues), (0.0, file))
         for use in (1, 2):  # for shadows only, for illumination and shadows
             ld, issues = describe(ies(override_shape=1, shape_type=L.IES_SPHERE, use_shape=use, **sizes))
-            self.assertEqual((ld.radius, issues), (0.05, [L.IES_FILE % "a.ies"]), use)
+            self.assertEqual((ld.radius, issues), (0.05, file), use)
         for shape, across, name in ((0, 0.0, None), (1, 0.4, "rectangle"), (2, 0.1, "circle"),
                                     (4, 0.3, "vertical cylinder"), (5, 0.4, "horizontal cylinder"),
                                     (6, 0.2, "horizontal cylinder"), (14, 0.2, "vertical circle"),
@@ -286,13 +287,13 @@ class SunAndIes(unittest.TestCase):
             ld, issues = describe(ies(override_shape=1, shape_type=shape, **sizes))
             self.assertAlmostEqual(ld.radius, across / 2.0, delta=1e-12, msg=shape)
             want = [L.IES_SHAPE % (name, across)] if name else []
-            self.assertEqual(issues, [L.IES_FILE % "a.ies"] + want, shape)
+            self.assertEqual(issues, file + want, shape)
         ld, _ = describe(ies(override_shape=1, shape_type=L.IES_SPHERE, diameter=-100.0))
         self.assertAlmostEqual(ld.radius, 0.05, delta=1e-12)
         ld, issues = describe(ies(override_shape=1, shape_type=1))  # every size 0
-        self.assertEqual((ld.radius, issues), (0.0, [L.IES_FILE % "a.ies"]))
+        self.assertEqual((ld.radius, issues), (0.0, file))
         ld, issues = describe(ies(override_shape=1, shape_type=1, width=math.inf))
-        self.assertEqual((ld.radius, issues), (0.0, [L.IES_FILE % "a.ies"]))
+        self.assertEqual((ld.radius, issues), (0.0, file))
         self.assertEqual(set(L.IES_SHAPES), set(range(17)))
 
     def test_ies_color(self):
@@ -489,7 +490,7 @@ class Fixtures(unittest.TestCase):
             "PhWeb": ("SPOT", None, 0.0, 0.0, 0.08) + web + (400.0 * CD, True, both),
             "PhOff": point + (0.0, 0.0, 0.0, 1000.0 * CD, False, both),
             "IesPower": ("SPOT", None, 0.0, 0.0, 0.2) + web + (1500.0 / 683.0, True, both),
-            "IesOverride": ("SPOT", None, 0.0, 0.0, 0.05) + web + (300.0 * CD, True, (True, False)),
+            "IesOverride": ("SPOT", None, 0.0, 0.0, 0.05) + web + (300.0 / 683.0, True, (True, False)),
             "PhTPoint": point + (0.0, 0.0, 0.0, 100.0 * CD, True, both),
             "PhTSphere": point + (0.13, 0.0, 0.0, 100.0 * CD, True, both)})
 

@@ -264,7 +264,8 @@ NEGATIVE = "%s %g is negative: 0 W"
 SHAPE = "its %s shape is %s"
 WEB_FILE = "its photometric web %s is approximated by a spot of 170 degrees"
 IES_FILE = "its IES file %s is approximated by a spot of 170 degrees"
-IES_ZERO = "power 0: V-Ray takes the IES file's own intensity, which is not read: 0 W"
+IES_ZERO = "power 0: it gives no light, in V-Ray too: 0 W"
+IES_RATED = "its power is taken as its flux: V-Ray scales the IES file's candelas by the power over the file's "     "rated lumens, which are not read"
 IES_SHAPE = "its %s light shape is a sphere %g m across"
 NO_FILE = "(no file)"
 SUN_ZENITH = "its strength is the sun's at the zenith: the sky model's dimming toward the horizon is not imported"
@@ -889,11 +890,14 @@ def _describe_sun(key, name, v, meters, swatches, issues):
 
 
 def _describe_ies(key, name, v, meters, swatches, issues):
-    # power holds the override's value in its own unit (the stored intensity_value is a stale alias)
-    lm = v["power"] * (4.0 * math.pi if v["override"] and v["intensity_type"] == 1 else 1.0)
-    lm = _nonnegative("power", lm, issues)
+    # Measured (docs/FORMAT.md, "Power, measured"): the stored power is lumens in both units of the override (V-Ray's
+    # panel converts cd with the file) and V-Ray renders that flux; without the override it scales the file's
+    # candelas by power / the file's rated lumens, the flux only when those are the file's own. Power 0 is dark.
+    lm = _nonnegative("power", v["power"], issues)
     if v["power"] == 0:
         issues.append(IES_ZERO)
+    elif not v["override"]:
+        issues.append(IES_RATED)
     color = colors.GAMMA_OFF.color(texmaps.kelvin_rgb(v["temperature"])) if v["color_mode"] == 1 else \
         swatches.color(v["color"])
     ld = LightDescription(key, name, SPOT, watts=lm / LUMENS_PER_WATT, power=lm / LUMENS_PER_WATT, color=color,
