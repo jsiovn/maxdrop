@@ -30,6 +30,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Maps: a Bitmap that tiles or mirrors in one direction and not in the other, or a placed image that tiles, no
   longer shows a thin dark line at each tile and mirror line (EEVEE and Cycles): what it clips is now cut by a mask
   instead of Blender's Clip extension, which faded the image's border toward black.
+- Lights: a VRayIES whose intensity is not overridden is as bright as V-Ray renders it when its IES file is found
+  (by the texture lookup's rules): its power is scaled by the file's own flux over its rated lumens, as V-Ray scales
+  the file (a relative-photometry file whose rated lumens exceed its luminaire's flux no longer arrives too bright).
+  A file not found, or one MaxDrop does not read (photometric type A or B, damaged), keeps the power as the flux,
+  a line in the report.
 
 ## [1.0.1] - 2026-11-22
 

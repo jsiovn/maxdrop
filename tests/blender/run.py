@@ -93,6 +93,8 @@ channel 1 and reported, a texture file without image data reported, a material w
 reported; a material conversion that raises leaves the scene imported without materials, the report says why.
 Images already in the file (an earlier import's) are reused by file and color space, unless modified, packed,
 generated or linked from a library; vray_maps imported twice with its textures adds no image the second time.
+lights_photometric copied beside a self-authored fixture_web.ies (rated 500 lm, 100 cd everywhere): IesPower's energy
+is 1500 x 400 pi / 500 / 683 W x Light Strength, IesOverride's stays 300 / 683 W, no rated-lumens line in the report.
 The performance budget of one big mesh (tests/blender/bench.py) runs last, without file arguments.
 Prints `FIXTURES PASSED` (exit 0) or `FIXTURES FAILED` (exit 1).
 """
@@ -3553,6 +3555,36 @@ def check_light_note_on_failure(max_path):
     empty_scene()
 
 
+def check_ies_header(max_path):
+    """max_path (lights_photometric) copied beside a self-authored fixture_web.ies, rated 500 lm, 100 cd in every
+    direction: the import finds it, IesPower (1500, override off) gets 1500 x 400 pi / 500 lm, IesOverride (override
+    on) keeps 300 lm; the report has no rated-lumens line for it."""
+    from maxdrop import ops
+    from maxdrop.convert import lights
+    empty_scene()
+    scratch = tempfile.mkdtemp(prefix="maxdrop-ies-")
+    try:
+        dst = os.path.join(scratch, os.path.basename(max_path))
+        shutil.copy(max_path, dst)
+        with open(os.path.join(scratch, "fixture_web.ies"), "wb") as f:
+            f.write(b"IESNA:LM-63-2002\n[TEST] MaxDrop test\nTILT=NONE\n1 500 1 3 1 1 2 0 0 0\n1 1 0\n0 90 180\n0\n"
+                    b"100 100 100\n")
+        result = bpy.ops.import_scene.maxdrop(filepath=dst)
+        energy = {n: bpy.data.objects[n].data.energy for n in ("IesPower", "IesOverride") if n in bpy.data.objects}
+        want = {"IesPower": 1500.0 * 400.0 * math.pi / 500.0 / 683.0 * ops.LIGHT_STRENGTH,
+                "IesOverride": 300.0 / 683.0 * ops.LIGHT_STRENGTH}
+        check("ies header: IesPower is power x the file's flux / its rated lumens, IesOverride its power",
+              result == {'FINISHED'} and set(energy) == set(want)
+              and all(abs(energy[n] - w) <= w * 1e-5 for n, w in want.items()), "%s %s vs %s" % (result, energy, want))
+        text = bpy.data.texts.get("MaxDrop Report")
+        body = text.as_string() if text is not None else ""
+        check("ies header: no rated-lumens line in the report", text is not None and lights.IES_RATED not in body,
+              body[-600:])
+    finally:
+        empty_scene()
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def check_reader_defect(first, second):
     """A TypeError or KeyError of the reading (a reader defect, never raised on purpose) reports the file as not
     imported, its type in the reason, instead of ending the operator: in a run of two files, synchronous and with the
@@ -4263,6 +4295,8 @@ def main():
                                      os.path.join(ROOT, "tests", "fixtures", "multi_uv.max"))),
                                  ("asset table once", lambda: check_asset_table_once(
                                      os.path.join(ROOT, "tests", "fixtures", "vray_lights.max"))),
+                                 ("ies header", lambda: check_ies_header(
+                                     os.path.join(ROOT, "tests", "fixtures", "lights_photometric.max"))),
                                  ("benchmark", lambda: _bench().run(check))):
             try:
                 run_check()
