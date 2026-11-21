@@ -517,6 +517,22 @@ class Synthetic(unittest.TestCase):
         self.assertEqual(issues, [])
         self.assertAlmostEqual(_volume(data.positions, data), 80.0, places=4)
 
+    def test_a_turned_outline_starts_at_its_last_point(self):
+        """3ds Max turns the whole polyline: the side U starts at the last point of a clockwise outline
+        (arc_pie_reverse's FixtureClockwiseExt), then runs counter-clockwise."""
+        data, _issues = extrude.extrude(_shape([self.square(4, clockwise=True)]), self.params(mapping=True))
+        ch = data.maps[1]
+        us = {}
+        for f in range(len(data.loop_starts)):
+            s, t = int(data.loop_starts[f]), int(data.loop_totals[f])
+            p = data.positions[data.loop_vertices[s:s + t]]
+            if numpy.ptp(p[:, 2]) == 0:  # a cap
+                continue
+            for v, i in zip(data.loop_vertices[s:s + t].tolist(), ch.indices[s:s + t].tolist()):
+                if data.positions[v][2] == 0:
+                    us.setdefault(tuple(float(c) for c in data.positions[v][:2]), set()).add(round(float(ch.uvw[i][0]), 6))
+        self.assertEqual(us, {(0.0, 0.0): {0.0, 1.0}, (4.0, 0.0): {0.25}, (4.0, 4.0): {0.5}, (0.0, 4.0): {0.75}})
+
     def test_negative_amount_and_segments(self):
         data, _issues = extrude.extrude(_shape([self.square(4)]), self.params(amount=-5.0, segments=3))
         self.assertEqual(len(data.positions), 16)

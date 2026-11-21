@@ -23,15 +23,16 @@ segment none and a curved one 2^d - 1, d the smallest depth up to 5 at which eve
 The sides join segments + 1 copies of each polyline along the object's Z, one per level, amount * level / segments
 up; a closed polyline also gets a cap at level 0 (Cap Start) and at the last level (Cap End). Closed polylines nest
 even-odd: one inside an even number of others is a solid, inside an odd number a hole of its innermost container.
-Every solid is turned counter-clockwise and every hole clockwise seen from +Z before the sides are made, and a
-negative amount reverses the sides, so the normals point out whatever way the splines run; an open polyline keeps its
-own direction (its faces look to the right of it). A cap without holes is one n-gon, a cap with holes is ear-clipped
-after a bridge to each hole, which gives the triangle count 3ds Max gives. The cap facing +Z gets material ID 1, the
-one facing -Z ID 2, the sides ID 3 (zero-based here: 0, 1, 2) when Generate Material IDs is on, else every face
-ID 1; with Use Shape IDs too each side face takes the material ID of the spline segment it comes from (the caps
-keep 1 and 2). Smooth gives the sides smoothing groups that change only at a corner or Bezier corner knot, the caps
-group 16; without it the sides have none. Mapping: the sides' U runs along each polyline (0 to 1, or its length with
-Real-World Map Size), V up the levels (0 to 1, or the height); the caps map the shape's XY box (0 to 1, or its size).
+Every solid is turned counter-clockwise and every hole clockwise seen from +Z (a turned polyline starts at its last
+point) before the sides are made, and a negative amount reverses the sides, so the normals point out whatever way the
+splines run; an open polyline keeps its own direction (its faces look to the right of it). A cap without holes is one
+n-gon, a cap with holes is ear-clipped after a bridge to each hole, which gives the triangle count 3ds Max gives. The
+cap facing +Z gets material ID 1, the one facing -Z ID 2, the sides ID 3 (zero-based here: 0, 1, 2) when Generate
+Material IDs is on, else every face ID 1; with Use Shape IDs too each side face takes the material ID of the spline
+segment it comes from (the caps keep 1 and 2). Smooth gives the sides smoothing groups that change only at a corner
+or Bezier corner knot, the caps group 16; without it the sides have none. Mapping: the sides' U runs along each
+polyline from its first point (0 to 1, or its length with Real-World Map Size), V up the levels (0 to 1, or the
+height); the caps map the shape's XY box (0 to 1, or its size).
 
 The file comes from anywhere: a parameter that is animated or no number raises ExtrudeError; segments are clamped
 to 1 .. MAX_SEGMENTS; a mesh past MAX_VERTICES raises ExtrudeError; a holed cap past MAX_CAP_POINTS or one that
@@ -597,9 +598,10 @@ def extrude(shape, params):
         for j in closed:
             if (_area(closed[j]) > 0) != (j in solids):
                 pl = lines[j]
-                pts, hard = pl.points[::-1], pl.hard[::-1]
-                # the first point first; column k now runs where column n - 1 - k ran, the other way
-                lines[j] = Polyline(pts[-1:] + pts[:-1], hard[-1:] + hard[:-1], True, pl.ids[::-1])
+                # the whole polyline turned, its last point now first, as 3ds Max turns it (arc_pie_reverse: the
+                # side U starts there); column k now runs where column n - 2 - k ran, the last where it ran
+                ids = pl.ids[::-1]
+                lines[j] = Polyline(pl.points[::-1], pl.hard[::-1], True, ids[1:] + ids[:1])
                 closed[j] = [(p[0], p[1]) for p in lines[j].points]
 
     base, start = [], 0
