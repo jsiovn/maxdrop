@@ -17,15 +17,19 @@ hidden, renderable and frozen flags, world matrices (1e-4, in file units), world
 vertex and face counts, UV layers, sharp edges and flat faces, material indices, which objects share a mesh (the
 oracle's instances), outward normals as rendered (the inverse transpose of the world matrix times each face normal
 points away from the oracle's bounding box center, also on the mirrored object) and the class of each placeholder. The
-oracle has no map channels or smoothing groups: those expectations come from the fixture scripts (tools/fixtures/*.ms).
+oracle has no map channels or smoothing groups of a base mesh: those expectations come from the fixture scripts
+(tools/fixtures/*.ms).
 shapes: each shape node a curve object (3D, FREE handles) with the oracle's splines, point counts and cyclic flags,
 its points where 3ds Max has its knots, each segment's middle (mathutils.geometry.interpolate_bezier) where 3ds Max
 interpolates it (the straight segment included), the resolution from the steps, a bevel and faces only on the
 renderable FixtureLine.
 Converted modifiers (TurboSmooth, MeshSmooth, Shell, Symmetry): each object's Blender modifiers in 3ds Max's order with
 the description's settings and mirror empties, creases where a smoother separates by smoothing groups, and the
-evaluated mesh with 3ds Max's vertex and triangle counts and world box (stack_convert, stack_basic, modifier_pivot);
-stack_convert imported with Modifiers: Ignore gets none.
+evaluated mesh with 3ds Max's vertex and triangle counts, world box and shading (flat faces, smooth regions and hard
+edges, the oracle's eval_mesh.smoothing; SMOOTHING_DIFFERS pins Blender's where it differs: a Shell's rim, a weld);
+under a Solidify its triangles facing up, down and sideways in object space as 3ds Max's (stack_shell: Shells on
+one side of the original and inside out) (stack_convert, stack_shell, stack_basic, modifier_pivot); stack_convert
+imported with Modifiers: Ignore gets none.
 primitives (convert/primitives.py): each node a mesh with 3ds Max's vertex and triangle counts (eval_verts, eval_faces)
 and world box, its UV layer (none without Generate Mapping Coords), sharp edges, the unsmoothed GeoSphere flat, normals
 outward but for the Planes (up, or down for the one of negative width) and the Box of negative width (in, as 3ds Max
@@ -118,6 +122,7 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1; kept literal: tes
     "shapes": ["UVMap"],  # FixtureBox; the shapes are curves
     "stack_basic": ["UVMap"],  # FixtureTurbo's UVW Map writes channel 1; no other modifier is applied
     "stack_convert": ["UVMap"],  # the modifiers become Blender modifiers on the base meshes
+    "stack_shell": ["UVMap"],  # the Shells become Solidify on the base meshes (open boxes)
     "standard_physical": ["UVMap"],
     "saved_as_2017": ["UVMap"],
     "saved_as_2018": ["UVMap"],
@@ -144,6 +149,7 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1; kept literal: tes
 SHARP_EDGES = {"editable_mesh": 8, "modifier_pivot": {"FixtureSmooth": 0, None: 24},
                "stack_basic": {"FixtureTurbo": 0, None: 12},
                "stack_convert": {"FixtureTurboOne": 0, "FixtureMeshSmooth": 0, "FixtureOrder": 0, None: 12},
+               "stack_shell": 8,  # boxes without their top: the 4 vertical and the 4 bottom edges
                # boxes of 3 x 2 x 2 segments: 28; the cylinder's rims 2 x 16; the sphere is smooth
                "uvwmap": {"FixtureUVWCyl": 32, "FixtureUVWSphere": 0, "FixtureUVWSharedB": 12, None: 28},
                # smooth spheres, the rims of a 10-sided cylinder
@@ -764,6 +770,68 @@ def check_extruded(label, ob, node, o, meters, plan):
 # 3ds Max leaves the seam of FixtureOrder's shelled boxes unwelded (32 vertices before the TurboSmooth, 100 after);
 # Blender's Mirror welds it (84): the same surface, so only the box is compared there
 EVAL_COUNT_DIFFERS = {"FixtureOrder"}
+# Blender's evaluated (flat, regions, hard edges) where it is not 3ds Max's, pinned so that a change shows. 3ds Max
+# gives a Shell's rim smoothing groups of its own, hard against both surfaces (every stack_shell box: 11 regions, 24
+# hard edges); Blender's Solidify smooths the rim into both surfaces, until the rim is converted (a tech-debt bead
+# under maxdrop-em3). FixtureSymmetryTurned: Blender's Mirror welds the corner 0.062 off the plane onto it, where 3ds
+# Max slices beside it (the vertex and triangle counts agree; one more region and hard edge).
+SMOOTHING_DIFFERS = {"FixtureShellOut": (0, 3, 16), "FixtureShellIn": (0, 3, 16), "FixtureShellCrossed": (0, 3, 16),
+                     "FixtureShellNegative": (0, 3, 16), "FixtureShellRim": (0, 3, 16),
+                     "FixtureSymmetryTurned": (0, 7, 17)}
+FACING_TOLERANCE = 1e-4  # the oracle's: a winding normal's z within it faces sideways
+
+
+def _smoothing(mesh):
+    """How an evaluated mesh is shaded, as the oracle's eval_mesh.smoothing: (flat, regions, hard edges): the
+    triangles of flat faces; the smooth faces joined through the edges with exactly two faces, both smooth, not
+    sharp, counted; such edges marked sharp."""
+    n = len(mesh.polygons)
+    attr = mesh.attributes.get("sharp_face")
+    flat = [d.value for d in attr.data] if attr else [False] * n
+    attr = mesh.attributes.get("sharp_edge")
+    sharp = [d.value for d in attr.data] if attr else [False] * len(mesh.edges)
+    faces_of = collections.defaultdict(list)
+    for p in mesh.polygons:
+        for i in p.loop_indices:
+            faces_of[mesh.loops[i].edge_index].append(p.index)
+    parent = list(range(n))
+
+    def root(f):
+        while parent[f] != f:
+            parent[f] = parent[parent[f]]
+            f = parent[f]
+        return f
+
+    hard = 0
+    for e, fs in faces_of.items():
+        if len(fs) != 2 or flat[fs[0]] or flat[fs[1]]:
+            continue
+        if sharp[e]:
+            hard += 1
+        else:
+            a, b = root(fs[0]), root(fs[1])
+            if a != b:
+                parent[a] = b
+    return (sum(len(p.vertices) - 2 for p in mesh.polygons if flat[p.index]),
+            len({root(p.index) for p in mesh.polygons if not flat[p.index]}), hard)
+
+
+def _facing(mesh, mw, meters, object_transform):
+    """The evaluated triangles by the way they face in 3ds Max's object space, as the oracle's eval_mesh counts
+    them, summed over material IDs: [up, down, side]. The world vertices (file units) are taken back by the
+    inverse of the oracle's object transform (rows, row vectors); a face's triangles share its winding normal."""
+    t = object_transform
+    to_object = Matrix(((t[0], t[3], t[6], t[9]), (t[1], t[4], t[7], t[10]), (t[2], t[5], t[8], t[11]),
+                        (0.0, 0.0, 0.0, 1.0))).inverted()
+    pts = [to_object @ ((mw @ v.co) / meters) for v in mesh.vertices]
+    counts = [0, 0, 0]
+    for p in mesh.polygons:
+        v = [pts[i] for i in p.vertices]
+        for k in range(1, len(v) - 1):
+            nrm = (v[k] - v[0]).cross(v[k + 1] - v[0])
+            z = nrm.normalized().z if nrm.length > 1e-12 else 0.0
+            counts[0 if z > FACING_TOLERANCE else 1 if z < -FACING_TOLERANCE else 2] += 1
+    return counts
 
 
 def _setting_ok(got, want):
@@ -814,6 +882,8 @@ def check_converted(label, ob, node, o, meters, desc):
         world = [mw @ v.co for v in mesh.vertices]
         triangles = sum(len(p.vertices) - 2 for p in mesh.polygons)
         counts = (len(mesh.vertices), triangles)
+        smoothing = _smoothing(mesh)
+        facing = _facing(mesh, mw, meters, o["object_transform"])
     finally:
         ev.to_mesh_clear()
     lo = [min(p[k] for p in world) / meters for k in range(3)]
@@ -830,6 +900,18 @@ def check_converted(label, ob, node, o, meters, desc):
         check(label + ": evaluated vertex and triangle counts = 3ds Max's", counts == (o["eval_verts"],
                                                                                        o["eval_faces"]),
               "%d, %d vs %s, %s" % (counts + (o["eval_verts"], o["eval_faces"])))
+        sm = o["eval_mesh"]["smoothing"]
+        want = (sm["flat"], sm["regions"], sm["hard_edges"])
+        if o["name"] in SMOOTHING_DIFFERS:
+            check(label + ": evaluated shading (flat, regions, hard edges) as pinned, 3ds Max's %s" % (want,),
+                  smoothing == SMOOTHING_DIFFERS[o["name"]] and smoothing != want, str(smoothing))
+        else:
+            check(label + ": evaluated shading (flat, regions, hard edges) = 3ds Max's", smoothing == want,
+                  "%s vs %s" % (smoothing, want))
+        if any(c.kind == 'SOLIDIFY' for c in node.converted):  # a Shell's side and facing (inside out or not)
+            want = [sum(h[k] for h in o["eval_mesh"]["material_ids"]) for k in (1, 2, 3)]
+            check(label + ": evaluated triangles facing up, down, sideways = 3ds Max's", facing == want,
+                  "%s vs %s" % (facing, want))
 
 
 def check_ignore_option(path, modules):

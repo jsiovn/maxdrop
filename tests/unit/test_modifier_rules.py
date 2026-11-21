@@ -6,7 +6,7 @@
 Symmetry as Blender modifiers, no Blender. The stack_convert fixture: each node's converted modifiers in order with
 the settings its script set (tools/fixtures/stack_convert.ms), the mirror frames, the mesh shading a smoother sets,
 a TurboSmooth above a Bend not converted, nothing converted with the option off, the report's counts; stack_basic's
-TurboSmooth above its applied UVW Map. Hand-made blocks: defaults, clamps, refusals and the Solidify arithmetic.
+TurboSmooth above its applied UVW Map; stack_shell's one-sided and inside-out Shells. Hand-made blocks: defaults, clamps, refusals and the Solidify arithmetic.
 tests/blender/run.py checks the built modifiers against 3ds Max's evaluated meshes.
 
     python -I -m unittest discover tests
@@ -26,6 +26,7 @@ except ImportError:  # optional here: CI installs it, Blender ships it
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 FIXTURE = os.path.join(ROOT, "tests", "fixtures", "stack_convert.max")
 STACK_BASIC = os.path.join(ROOT, "tests", "fixtures", "stack_basic.max")
+STACK_SHELL = os.path.join(ROOT, "tests", "fixtures", "stack_shell.max")
 MM = 0.001  # the fixture's unit
 
 _PKG = "maxdrop_convert_test"  # the same package as test_convert_scene: the add-on's __init__ never runs
@@ -74,6 +75,9 @@ CONVERTED = {
     "FixtureOrder": [_solidify(0.0, 1.0), _mirror(X, False, True, True, 0.1), _subsurf(1, 1)],
     "FixtureBlocked": [],
 }
+# From tools/fixtures/stack_shell.ms: (inner, outer) of each open box's Shell
+SHELLS = {"FixtureShellOut": (-1.0, 2.0), "FixtureShellIn": (3.0, -1.0), "FixtureShellCrossed": (-2.0, 1.0),
+          "FixtureShellNegative": (-1.0, -2.0), "FixtureShellRim": (0.0, 1.0)}
 SHADING = {"FixtureTurboOne": rules.SMOOTH, "FixtureTurboRender": rules.CREASE, "FixtureMeshSmooth": rules.SMOOTH,
            "FixtureOrder": rules.SMOOTH}
 SHARP_EDGES_BOX = 12  # a poly box: a smoothing group per side
@@ -170,6 +174,21 @@ class Fixture(unittest.TestCase):
         self.assertTrue(all(len(md.sharp_edges) == SHARP_EDGES_BOX and not md.creases
                             for md in desc.meshes.values()))
         self.assertEqual(sum(report.gather(desc).modifiers.values()), 12)
+
+    def test_stack_shell_one_sided_and_inside_out(self):
+        desc = conv.read(STACK_SHELL)
+        self.assertEqual(sorted(n.name for n in desc.nodes), sorted(SHELLS))
+        self.assertEqual(desc.issues, [])  # auto smooth on: the override (off here) would not be named either
+        for node in desc.nodes:
+            want = dict(_solidify(*SHELLS[node.name])[1])
+            self.assertEqual([m.kind for m in node.converted], [SOLIDIFY], node.name)
+            got = dict(node.converted[0].settings)
+            self.assertEqual(sorted(got), sorted(want), node.name)
+            self.assertTrue(all(_close(got[a], want[a]) for a in want), "%s: %r" % (node.name, got))
+            self.assertEqual(node.modifiers, (), node.name)
+        flips = {n.name: dict(n.converted[0].settings)["use_flip_normals"] for n in desc.nodes}
+        self.assertEqual(flips, {"FixtureShellOut": False, "FixtureShellIn": False, "FixtureShellCrossed": True,
+                                 "FixtureShellNegative": True, "FixtureShellRim": False})
 
     def test_stack_basic_turbosmooth_above_its_uvw_map(self):
         desc = conv.read(STACK_BASIC)

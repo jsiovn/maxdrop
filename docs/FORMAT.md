@@ -516,7 +516,7 @@ Max 2020 with every parameter set apart from its default, then the stack_convert
 | Symmetry | 0 axis (0 X, 1 Y, 2 Z), 1 slice along mirror, 2 weld seam, 3 threshold, 4 flip |
 
 What 3ds Max 2020 makes, against Blender's evaluated meshes (`tests/blender/run.py`, the oracle's `eval_verts`,
-`eval_faces` and box after the stack):
+`eval_faces`, box and `eval_mesh.smoothing` after the stack):
 
 - **TurboSmooth, MeshSmooth NURMS / quad output**: Catmull-Clark on the control points, not the limit surface: a
   box gives 26 vertices after one iteration, 98 after two, and Blender's Subdivision Surface with
@@ -524,7 +524,17 @@ What 3ds Max 2020 makes, against Blender's evaluated meshes (`tests/blender/run.
   is another scheme (80 vertices after two iterations). Separate by smoothing groups keeps the vertex count and
   hardens the edges between groups (a crease of 1 in Blender).
 - **Shell**: the new surfaces lie at -inner and +outer amount along the vertex normals, not at an even thickness: a
-  box with outer amount 2 grows by 2 / √3 along each axis (Solidify with `use_even_offset` off).
+  box with outer amount 2 grows by 2 / √3 along each axis (Solidify with `use_even_offset` off). Both may lie on
+  one side of the original (inner -1, outer 2; inner 3, outer -1): Solidify's offset (hi + lo) / (hi - lo) past
+  -1 .. 1 places them alike (no hard range). The outer surface faces out and the inner one in wherever they lie, so
+  inner + outer < 0 turns the shell inside out (negative signed volume): Solidify with `use_flip_normals`
+  (stack_shell, checked by the facing of the open boxes' triangles). The rim of an open mesh: 3ds Max gives it
+  smoothing groups of its own, hard against both surfaces; auto smooth (id 14, on by default, angle id 15, 45°)
+  also splits it where two rim faces meet at a sharper angle, and with auto smooth off the rim is one group, the
+  override's (ids 4, 5) when set, which merges into a surface face of that group (an open box: 11 regions and 24
+  hard edges; a plane with auto smooth 6 and 12, without 3 and 8). Solidify smooths the rim into both surfaces (the
+  open box: 3 regions, 16 hard edges); marking the open edges sharp before it gives 3ds Max's open box on Blender
+  4.2 and 5.2 (not done yet).
 - **Symmetry**: the mirror plane is in the gizmo's space, q = p * context * inverse(gizmo), as UVW Map's; without
   flip the side where q along the axis is positive stays, sliced at the plane; without slice the whole object is
   mirrored and both copies stay (FixtureSymmetryNoSlice: 16 vertices). Weld seam: 3ds Max slices beside a vertex

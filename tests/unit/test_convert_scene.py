@@ -68,6 +68,7 @@ UV_LAYERS = {
     "shapes": ["UVMap"],  # FixtureBox; the shapes are curves
     "stack_basic": ["UVMap"],  # FixtureTurbo's UVW Map writes channel 1; no other modifier is applied
     "stack_convert": ["UVMap"],  # its modifiers become Blender modifiers: the base meshes are built
+    "stack_shell": ["UVMap"],  # its Shells become Solidify: the base meshes (open boxes) are built
     "standard_physical": ["UVMap"],
     "saved_as_2017": ["UVMap"],
     "saved_as_2018": ["UVMap"],
@@ -93,6 +94,7 @@ UV_LAYERS = {
 SHARP_EDGES_POLY_BOX = 12  # one smoothing group per side: every edge of the box
 SHARP_EDGES_EDITABLE_MESH = 8  # group 1 on top and bottom, 2 on the sides: the rims of top and bottom
 SHARP_EDGES_TALL_BOX = 24  # modifier_pivot's four height segments: 4 x 4 vertical side edges and both rims
+SHARP_EDGES_OPEN_BOX = 8  # stack_shell's boxes without their top: the 4 vertical and the 4 bottom edges
 # extrude: the vertical edges at corner knots (one per level) and both rims of every capped outline
 SHARP_EDGES_EXTRUDE = {"FixtureExtRect": 4 * 2 + 8, "FixtureExtL": 6 + 12, "FixtureExtHole": 4 + 8 + 56,
                        "FixtureExtIsland": 12 + 24, "FixtureExtOpen": 0, "FixtureExtMirror": 8 + 64,
@@ -910,7 +912,8 @@ class Fixtures(unittest.TestCase):
     def test_sharp_edges_from_smoothing_groups(self):
         for name, desc, _o in self.cases:
             want = {"editable_mesh": SHARP_EDGES_EDITABLE_MESH,
-                    "modifier_pivot": SHARP_EDGES_TALL_BOX, "uvwmap": 28}.get(name, SHARP_EDGES_POLY_BOX)
+                    "modifier_pivot": SHARP_EDGES_TALL_BOX, "uvwmap": 28,
+                    "stack_shell": SHARP_EDGES_OPEN_BOX}.get(name, SHARP_EDGES_POLY_BOX)
             for md in desc.meshes.values():
                 if name == "primitives":  # FixtureBox is a name of other fixtures too
                     want = SHARP_EDGES_PRIMITIVES[md.name]
