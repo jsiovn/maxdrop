@@ -217,13 +217,7 @@ class Fixture(unittest.TestCase):
                         and o["eval_mesh"]["map_channel_1"]["corners"] is not None)
         self.assertEqual(mapped, ["FixtureExtAdaptive", "FixtureExtRect"])  # the two with mapping coordinates
         for name in mapped:
-            want = self.oracle[name]["eval_mesh"]["map_channel_1"]["corners"]
-            theirs = [(numpy.asarray(c[0:3], dtype=numpy.float64), numpy.asarray(c[3:6], dtype=numpy.float64),
-                       numpy.asarray(c[6:9], dtype=numpy.float64), None) for c in want]
-            self.assertTrue(all(abs(numpy.linalg.norm(c[1]) - 1.0) < 1e-4 for c in theirs), name)
-            got = _corners(_reader_faces(self.data[name], ids=False))
-            self.assertEqual(_unmatched(theirs, got), [], name)
-            self.assertEqual(_unmatched(got, theirs), [], name)
+            _check_corners(self, self.data[name], self.oracle[name], name)
 
     def test_mapping_coordinates(self):
         _node, md = self.mesh("FixtureExtRect")
@@ -360,8 +354,9 @@ def _reader_faces(data, ids=True):
 
 
 def _tolerance(v):
-    """1e-4, relative above 1: the values have 6 significant digits (a real-world U reaches tens of units)."""
-    return 1e-4 * max(1.0, float(numpy.abs(v).max()))
+    """1e-4, relative (2e-5) above 5: the oracle's values have 6 significant digits (a real-world U reaches tens of
+    units)."""
+    return max(1e-4, 2e-5 * float(numpy.abs(v).max()))
 
 
 def _unmatched(a, b):
@@ -371,13 +366,27 @@ def _unmatched(a, b):
         return list(a)
     pos, nrm, uvw = (numpy.asarray([d[k] for d in b], dtype=numpy.float64) for k in range(3))
     mats = [d[3] for d in b]
+    flat = ~nrm.any(axis=1)  # a degenerate triangle has no normal: [0, 0, 0] in the oracle
     out = []
     for c in a:
-        ok = ((numpy.abs(pos - c[0]).max(axis=1) < _tolerance(c[0])) & (nrm @ c[1] > 0.9999)
+        facing = (nrm @ c[1] > 0.9999) | flat if c[1].any() else numpy.ones(len(b), dtype=bool)
+        ok = ((numpy.abs(pos - c[0]).max(axis=1) < _tolerance(c[0])) & facing
               & (numpy.abs(uvw - c[2]).max(axis=1) < _tolerance(c[2])))
         if not any(ok[k] and mats[k] == c[3] for k in numpy.flatnonzero(ok)):
             out.append(c)
     return out
+
+
+def _check_corners(test, data, node, name):
+    """Every corner of map channel 1 of a reader MeshData against the oracle's eval_mesh corners (object space),
+    both ways: position, face normal, map vertex."""
+    want = node["eval_mesh"]["map_channel_1"]["corners"]
+    theirs = [(numpy.asarray(c[0:3], dtype=numpy.float64), numpy.asarray(c[3:6], dtype=numpy.float64),
+               numpy.asarray(c[6:9], dtype=numpy.float64), None) for c in want]
+    test.assertTrue(all(abs(numpy.linalg.norm(c[1]) - 1.0) < 1e-4 or not c[1].any() for c in theirs), name)
+    got = _corners(_reader_faces(data, ids=False))
+    test.assertEqual(_unmatched(theirs, got), [], name)
+    test.assertEqual(_unmatched(got, theirs), [], name)
 
 
 @unittest.skipIf(numpy is None, "numpy missing")
@@ -413,6 +422,12 @@ class ReversedPies(unittest.TestCase):
             md = self.desc.meshes[nodes[name].mesh]
             want = self.oracle[name]["eval_mesh"]["smoothing"]["hard_edges"]
             self.assertEqual(len(md.sharp_edges), want - 6 if name.startswith("FixturePie") else want, name)
+
+    def test_every_corner_equals_the_oracle(self):
+        """The oracle's eval_mesh corners of every extruded node, as the dump's."""
+        self.assertEqual(sorted(n for n, o in self.oracle.items() if o["eval_mesh"]), sorted(self.dump))
+        for name in self.dump:
+            _check_corners(self, self.data[name], self.oracle[name], name)
 
     def test_every_corner_equals_3ds_max(self):
         """Position, face normal, map vertex and material ID of every corner, both ways: the side U starts where

@@ -228,6 +228,9 @@ class OracleFiles(unittest.TestCase):
                 self.assertEqual(len(m["corners"]), 3 * faces)
                 self.assertTrue(all(len(c) == 9 and all(isinstance(v, (int, float)) for v in c)
                                     for c in m["corners"]))
+                for c in m["corners"]:  # a unit normal, or none for a degenerate triangle
+                    length = sum(x * x for x in c[3:6]) ** 0.5
+                    self.assertTrue(abs(length - 1) < 1e-4 or c[3:6] == [0, 0, 0], c)
             if m["min"] is None:  # no face uses a map vertex: no range
                 self.assertIsNone(m["max"])
             else:
