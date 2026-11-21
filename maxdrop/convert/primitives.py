@@ -781,25 +781,52 @@ def _tube(b, p):
     mats = np.repeat(np.array((2, 0, 3, 1), dtype=np.int64), counts)
     groups = np.repeat(np.array((sides_group, cap_group, sides_group, cap_group), dtype=np.int64), counts)
     m = len(rho)
-    sin = np.array([math.sin(j * _TAU / ns) for j in range(ns)], dtype=np.float64)[:, None]
-    cos = np.array([math.cos(j * _TAU / ns) for j in range(ns)], dtype=np.float64)[:, None]
+    pie = p.slice
+    start, arc = _pie(p)
+    first = -(start + arc)  # Slice: from the From angle, turning the tube's way
+    cols = ns + 1 if pie else ns
+    angles = [first + j * arc / ns for j in range(cols)] if pie else [j * _TAU / ns for j in range(ns)]
+    sin = np.array([math.sin(a) for a in angles], dtype=np.float64)[:, None]
+    cos = np.array([math.cos(a) for a in angles], dtype=np.float64)[:, None]
     grid = b.points(_stack(np, rho * sin, rho * cos, z, dtype=np.float64))
-    if p.real_world:
+    rw = p.real_world
+    if rw:
         steps = np.concatenate((np.full(nh, h / nh), np.full(nc, abs(r1 - r2) / nc)))
         along = np.cumsum(np.concatenate(((0.0,), steps, steps)))  # 0.0 + the first step, as before
-        around = _TAU * abs(big)
+        around = arc * abs(big)
 
         def uv(q, j):
             return ((1.0 - j / ns) * around, along[q])
     else:
+        across = ns + 1 if pie else ns  # with Slice 3ds Max divides by the columns, not the steps
+
         def uv(q, j):
-            return (q / m, j / ns)
+            return (q / m, j / across)
     j = np.arange(ns, dtype=np.int64)[:, None]
     q = np.arange(m, dtype=np.int64)[None, :]
-    j1, q1 = (j + 1) % ns, (q + 1) % m
+    j1, q1 = (j + 1 if pie else (j + 1) % ns), (q + 1) % m
     b.faces(_stack(np, grid[j, q], grid[j, q1], grid[j1, q1], grid[j1, q]).reshape(-1, 4),
             np.broadcast_to(mats[q], (ns, m)).reshape(-1), np.broadcast_to(groups[q], (ns, m)).reshape(-1),
             _corners(np, uv(q, j), uv(q + 1, j), uv(q + 1, j + 1), uv(q, j + 1)).reshape(-1, 4, 2))
+    if not pie:
+        return
+    # the cut planes: a fan around the profile's middle at each end, the start's ID 5, the end's ID 6, group 1
+    mid = (r1 + r2) / 2.0
+    centers = b.points(_stack(np, mid * sin[[0, -1], 0], mid * cos[[0, -1], 0], h / 2.0, dtype=np.float64))
+    q, q1 = q[0], q1[0]
+    if rw:  # flat, V up from the lowest point; U in from the outer radius at the start, out from the inner at the end
+        widest, narrowest, lowest = max(abs(r1), abs(r2)), min(abs(r1), abs(r2)), min(0.0, h)
+        ar = np.abs(np.append(rho, rho[0]))
+        pv = np.append(z, z[0]) - lowest
+        su, eu = widest - ar, ar - narrowest
+        mv = h / 2.0 - lowest
+        s_uv = _corners(np, (widest - abs(mid), mv), (su[q + 1], pv[q + 1]), (su[q], pv[q]))
+        e_uv = _corners(np, (abs(mid) - narrowest, mv), (eu[q], pv[q]), (eu[q + 1], pv[q + 1]))
+    else:
+        s_uv = _corners(np, (0.5, 1.0), ((q + 1) / m, 0.0), (q / m, 0.0))
+        e_uv = _corners(np, (1.0, 0.5), (q / m, ns / across), ((q + 1) / m, ns / across))
+    b.faces(_stack(np, centers[0], grid[0][q1], grid[0][q]), 4, 1, s_uv)
+    b.faces(_stack(np, centers[1], grid[-1][q], grid[-1][q1]), 5, 1, e_uv)
 
 
 def _alternate(np, k, n):
@@ -962,7 +989,8 @@ def _faces(p):
         rings = v["height_segs"] + 2 * v["cap_segs"] - 1
         return v["sides"] * (rings + 1) + (4 * (rings - 1) if v["slice"] else 0)
     if c == classids.TUBE:
-        return v["sides"] * 2 * (v["height_segs"] + v["cap_segs"])
+        profile = 2 * (v["height_segs"] + v["cap_segs"])
+        return v["sides"] * profile + (2 * profile if v["slice"] else 0)
     return v["segs"] * v["sides"]
 
 
@@ -970,7 +998,7 @@ def build(p):
     """(MeshData of Params p, issues); PrimitiveError for what is not built."""
     issues = []
     c = p.class_id
-    if p.values.get("slice") and c not in (classids.SPHERE, classids.CYLINDER, classids.CONE):
+    if p.values.get("slice") and c not in (classids.SPHERE, classids.CYLINDER, classids.CONE, classids.TUBE):
         raise PrimitiveError("%s with Slice on is not built yet" % p.name)
     if c == classids.GEOSPHERE and p.hemisphere:
         raise PrimitiveError("a GeoSphere's hemisphere is not built yet")
