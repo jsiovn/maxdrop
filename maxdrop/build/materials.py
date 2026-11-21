@@ -15,13 +15,25 @@ Diffuse Roughness from 4.5, so on an older Blender a value the IR asks for there
 nodes' inputs are looked up by identifier (Fac, Bright, A_Color...), which stays the same while their names change
 between versions.
 
-Inputs: Base Color, Metallic, Roughness, IOR, Alpha, Specular IOR Level (SPECULAR_LEVEL times the IR's specular:
-a reflection weight, 1 being the full Fresnel reflection at the IOR, Blender's 0.5), Transmission Weight, Emission
+Inputs: Base Color, Metallic, Roughness, IOR, Alpha, Specular IOR Level (the IR's specular is a reflection weight,
+1 being the full Fresnel reflection at the IOR, Blender's 0.5; see Reflection weight below), Transmission Weight, Emission
 Color and Strength, Coat Weight, Roughness, IOR and Tint, Subsurface Weight, Radius (the IR's subsurface color, per
 channel) and Scale (its radius in meters), Sheen Weight, Tint and Roughness, Thin Wall, Normal. A material with layers
 (a CoronaLayeredMtl) has a Principled BSDF per layer, each mixed over the ones below by a Mix Shader (factor: the
 layer's amount times its mask); the render method follows every one of them. A color graph on a float input (specular,
 transmission) goes through the mean of its channels, the measure convert/materials.py uses.
+
+Reflection weight: V-Ray (and 3ds Max's Physical and Corona materials) multiply the whole Fresnel curve by it, where
+Specular IOR Level scales only the reflectance facing the camera and the curve still rises to 1 at grazing. So a
+weight w between 0 and 1, or a map, is a Mix Shader (WEIGHT_LABEL) by w between a twin of the filled Principled BSDF
+(TWIN_LABEL: the same links and values, Specular IOR Level 0) and the BSDF at SPECULAR_LEVEL: w F spec + (1 - w F)
+diffuse, V-Ray's split. Measured on V-Ray 5.2 (bead maxdrop-em3.119, the maxdrop-em3.34 scene, reflection grey 128 at
+IOR 1.6, black diffuse, white environment): 0.0415 / 0.0789 at 0.8-0.88 / 0.9-0.95 of the sphere's radius, Cycles
+the same, EEVEE about 7 % lower (as for a white reflection); the Specular IOR Level 0.25 drawn before gave 0.053 /
+0.121. The lone BSDF (Specular IOR Level SPECULAR_LEVEL x w) stays where the twin would change nothing: a constant
+w of 0 or at least 1, a constant Metallic of 1, a constant Transmission Weight of 1 (Specular IOR Level does not
+change a transmissive Principled's reflection, measured in Cycles). Every material class follows: the rule reads
+the IR's weight, whatever made it (Standard, Physical, CoronaLegacyMtl: not measured against their renderers).
 
 Data maps (a map on roughness, metallic or alpha, a mask, a bump height: a graph drawn as a float) take the mean of
 their channels too: wherever a float graph comes out as a color socket (an image's Color, a Color Correction, a
@@ -87,6 +99,7 @@ from ..convert import scene as convert_scene
 from ..convert import texmaps as tx
 
 SPECULAR_LEVEL = 0.5
+TWIN_LABEL, WEIGHT_LABEL = "Without reflection", "Reflection weight"  # reflection_weight()'s nodes
 MAX_LAYER_DEPTH = 8  # layers within layers drawn (convert/materials.py already stops a deeper or cyclic chain)
 X_STEP, Y_STEP = 300, 280
 COLOR, FLOAT = "color", "float"
@@ -410,23 +423,67 @@ class _Tree:
         s = self.bsdf_input(name)
         if s is None:
             return False
+        v = self.float_value(inp, graph, scale)
+        self.feed(s, v)
+        return isinstance(v, bpy.types.NodeSocket)
+
+    def float_value(self, inp, graph, scale=1.0):
+        """A float input's value times scale: a node output when a node drives it, else a float."""
         self.start_row()
         color = graph is not None and graph.kind == tx.COLOR
         v = MISSING if graph is None else (
             self.graph(graph.root, COLOR, 1) if color else self.graph(graph.root, FLOAT, 0))
         if not isinstance(v, bpy.types.NodeSocket):
-            _default(s, _mean(inp.value if v is MISSING else v) * scale)
-            return False
+            return _mean(inp.value if v is MISSING else v) * scale
         if color:
-            v = self.mean_of(v, 0, scale / 3.0)
-        elif scale != 1.0:
-            mul = self.node("ShaderNodeMath", 0)
-            mul.operation = 'MULTIPLY'
-            self.links.new(v, mul.inputs[0])
-            mul.inputs[1].default_value = scale
-            v = mul.outputs[0]
-        self.links.new(v, s)
-        return True
+            return self.mean_of(v, 0, scale / 3.0)
+        if scale != 1.0:
+            return self.times(v, scale, 0)
+        return v
+
+    def specular(self, ir):
+        """Specular IOR Level from the IR's reflection weight; the weight (a node output or a float) when it needs
+        reflection_weight()'s Mix Shader, else None (the level alone draws it)."""
+        s = self.bsdf_input("Specular IOR Level")
+        if s is None:
+            return None
+        graph = ir.textures.get("specular")
+        if self.constant_at_least("Metallic", 1.0) or self.constant_at_least("Transmission Weight", 1.0):
+            self.float_input("Specular IOR Level", ir.specular, graph, SPECULAR_LEVEL)
+            return None
+        w = self.float_value(ir.specular, graph)
+        if not isinstance(w, bpy.types.NodeSocket) and not 0.0 < w < 1.0:
+            _default(s, w * SPECULAR_LEVEL)
+            return None
+        _default(s, SPECULAR_LEVEL)
+        return w
+
+    def constant_at_least(self, name, bound):
+        s = self.bsdf.inputs.get(name)
+        return s is not None and not s.is_linked and s.default_value >= bound
+
+    def reflection_weight(self, bsdf, weight):
+        """bsdf (at the IOR's full Fresnel) mixed by weight over a twin without reflection: the Mix Shader's
+        output. The twin has bsdf's links and values, but Specular IOR Level 0."""
+        self.start_row()
+        twin = self.nodes.new("ShaderNodeBsdfPrincipled")
+        twin.label = TWIN_LABEL
+        twin.location = (bsdf.location[0], self.row - Y_STEP)
+        self.columns[-1] = self.row - 2 * Y_STEP
+        twin.distribution, twin.subsurface_method = bsdf.distribution, bsdf.subsurface_method
+        for src, dst in zip(bsdf.inputs, twin.inputs):
+            if src.is_linked:
+                self.links.new(src.links[0].from_socket, dst)
+            elif hasattr(src, "default_value"):
+                dst.default_value = src.default_value
+        twin.inputs["Specular IOR Level"].default_value = 0.0
+        mix = self.nodes.new("ShaderNodeMixShader")
+        mix.label = WEIGHT_LABEL
+        mix.location = (bsdf.location[0] + X_STEP * 0.5, twin.location[1])
+        self.feed(mix.inputs[0], weight)
+        self.links.new(_out(twin, "BSDF"), mix.inputs[1])
+        self.links.new(_out(bsdf, "BSDF"), mix.inputs[2])
+        return mix.outputs[0]
 
     def build(self):
         """Fill the material from its IR: its Principled BSDF, then each layer (MaterialIR.layers, bottom first,
@@ -435,9 +492,8 @@ class _Tree:
         ir = self.ir
         alphas = []
         top = self.layered(self.bsdf, ir, alphas, 0)
-        if top is not None:
-            out = next(n for n in self.nodes if n.bl_idname == "ShaderNodeOutputMaterial")
-            self.links.new(top, _in(out, "Surface"))
+        out = next(n for n in self.nodes if n.bl_idname == "ShaderNodeOutputMaterial")
+        self.links.new(top, _in(out, "Surface"))
         m = self.material
         if any(linked for linked, _v in alphas):
             m.surface_render_method = 'DITHERED'
@@ -448,12 +504,12 @@ class _Tree:
         m.roughness = min(1.0, max(0.0, _mean(ir.roughness.value)))
 
     def layered(self, bsdf, ir, alphas, level):
-        """Fill bsdf from ir and mix ir's layers over it: the shader output on top (None for a lone BSDF, already
-        linked). alphas gets (alpha linked, alpha value or None) of every BSDF filled."""
-        alphas.append(self.fill(bsdf, ir))
+        """Fill bsdf from ir and mix ir's layers over it: the shader output on top. alphas gets (alpha linked, alpha
+        value or None) of every IR filled."""
+        below, alpha = self.fill(bsdf, ir)
+        alphas.append(alpha)
         if not ir.layers or level >= MAX_LAYER_DEPTH:
-            return None
-        below = _out(bsdf, "BSDF")
+            return below
         for layer in ir.layers:
             self.start_row()
             node = self.nodes.new("ShaderNodeBsdfPrincipled")
@@ -475,19 +531,20 @@ class _Tree:
                 weight = layer.amount * (1.0 if factor is MISSING else _mean(factor))
                 mix.inputs[0].default_value = min(1.0, max(0.0, weight))
             self.links.new(below, mix.inputs[1])
-            self.links.new(sub if sub is not None else _out(node, "BSDF"), mix.inputs[2])
+            self.links.new(sub, mix.inputs[2])
             below = mix.outputs[0]
         return below
 
     def fill(self, bsdf, ir):
-        """Set a Principled BSDF's inputs from a MaterialIR: (alpha linked, the constant alpha or None)."""
+        """Set a Principled BSDF's inputs from a MaterialIR: (the shader output, (alpha linked, the constant alpha
+        or None)); the output is bsdf's, or a Mix Shader's over a twin of it (reflection_weight)."""
         self.bsdf, tex = bsdf, ir.textures
         self.color_input("Base Color", ir.base_color, tex.get("base_color"))
         self.float_input("Metallic", ir.metallic, tex.get("metallic"))
         self.float_input("Roughness", ir.roughness, tex.get("roughness"))
-        self.float_input("Specular IOR Level", ir.specular, tex.get("specular"), SPECULAR_LEVEL)
         self.value("IOR", ir.ior)
         self.float_input("Transmission Weight", ir.transmission, tex.get("transmission"))
+        weight = self.specular(ir)
         self.color_input("Emission Color", ir.emission_color, tex.get("emission_color"))
         self.value("Emission Strength", ir.emission_strength)
         alpha_map = self.float_input("Alpha", ir.alpha, tex.get("alpha"))
@@ -514,7 +571,8 @@ class _Tree:
         if ir.thin_walled:
             self.value("Thin Wall", True)
         alpha = self.bsdf_input("Alpha", needed=False)
-        return alpha_map, (None if alpha is None or alpha_map else alpha.default_value)
+        top = _out(bsdf, "BSDF") if weight is None else self.reflection_weight(bsdf, weight)
+        return top, (alpha_map, (None if alpha is None or alpha_map else alpha.default_value))
 
     def graph(self, node, space, depth):
         """The output (a node socket) or constant of an IR node in a space; in FLOAT a color socket through the mean

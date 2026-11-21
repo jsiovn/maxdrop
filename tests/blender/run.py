@@ -315,6 +315,7 @@ EXTRUDE_EULER = {"FixtureExtRect": 2, "FixtureExtL": 2, "FixtureExtHole": 0, "Fi
                  "FixtureHoleExt": 0}
 VALUE_TOLERANCE = 1e-4
 SPECULAR_LEVEL = 0.5  # the IR's specular is a reflection weight: 1 is Blender's Specular IOR Level 0.5
+TWIN_LABEL, WEIGHT_LABEL = "Without reflection", "Reflection weight"  # a weight between 0 and 1 (maxdrop-em3.119)
 DEG = math.pi / 180.0
 failures = []
 
@@ -1376,9 +1377,84 @@ def _irs(path):
     return desc, slots
 
 
+def _bsdfs(material):
+    """The Principled BSDFs of a material, the twins of a reflection weight left out."""
+    return [n for n in material.node_tree.nodes if n.bl_idname == "ShaderNodeBsdfPrincipled" and n.label != TWIN_LABEL]
+
+
+def _shaders(material):
+    """The Mix Shaders of a material's layers (a reflection weight's left out)."""
+    return [n for n in material.node_tree.nodes if n.bl_idname == "ShaderNodeMixShader" and n.label != WEIGHT_LABEL]
+
+
 def _principled(material):
-    nodes = [n for n in material.node_tree.nodes if n.bl_idname == "ShaderNodeBsdfPrincipled"]
+    nodes = _bsdfs(material)
     return nodes[0] if len(nodes) == 1 else None
+
+
+def _weight_mix(p):
+    """The reflection weight's Mix Shader over Principled p, None when p's Specular IOR Level alone draws it."""
+    out = next(s for s in p.outputs if s.identifier == "BSDF")
+    return next((link.to_node for link in out.links if link.to_node.bl_idname == "ShaderNodeMixShader"
+                 and link.to_node.label == WEIGHT_LABEL), None)
+
+
+def _specular_socket(p):
+    """The input the IR's specular drives: the reflection weight's factor, else Specular IOR Level."""
+    mix = _weight_mix(p)
+    return mix.inputs[0] if mix is not None else p.inputs["Specular IOR Level"]
+
+
+def _constant_one(p, name):
+    s = p.inputs.get(name)
+    return s is not None and not s.is_linked and s.default_value >= 1.0
+
+
+def check_specular(label, p, ir, present):
+    """Specular IOR Level from the IR's reflection weight w: a weight map or a constant between 0 and 1 is a Mix
+    Shader by w over a twin without reflection (Specular IOR Level 0.5 on p), else 0.5 x w on p alone; so is a
+    constant metal or full transmission."""
+    folded = _fold(ir.textures["specular"].root, present) if "specular" in ir.textures else LOST
+    linked = folded is MAP
+    w = None if linked else _mean(ir.specular.value if folded is LOST else folded)
+    lone = _constant_one(p, "Metallic") or _constant_one(p, "Transmission Weight") or (not linked and not 0 < w < 1)
+    s, mix = p.inputs["Specular IOR Level"], _weight_mix(p)
+    if lone:
+        check("%s: Specular IOR Level %s, no reflection weight" % (label, "linked" if linked else "value"),
+              mix is None and s.is_linked == linked and (linked or _value_ok(s, w * SPECULAR_LEVEL)),
+              "mix %s, linked %s, %r vs %r" % (mix is not None, s.is_linked, s.default_value, w))
+        return
+    fac = mix.inputs[0] if mix is not None else None
+    check("%s: reflection weight %s over a twin, Specular IOR Level 0.5" % (label, "linked" if linked else "value"),
+          mix is not None and not s.is_linked and _value_ok(s, SPECULAR_LEVEL) and fac.is_linked == linked
+          and (linked or _value_ok(fac, w)),
+          "mix %s, level %r, factor %r vs %r" % (mix is not None, s.default_value,
+                                                  None if fac is None else fac.default_value, w))
+    if mix is not None:
+        check_twin(label, p, mix)
+
+
+def check_twin(label, p, mix):
+    """The Mix Shader's first shader is p's twin: p's links and values, Specular IOR Level 0; its second p."""
+    twin = _from(mix.inputs[1])
+    ok = twin is not None and twin.bl_idname == "ShaderNodeBsdfPrincipled" and twin.label == TWIN_LABEL \
+        and _from(mix.inputs[2]) == p
+    bad = []
+    if ok:
+        for a, b in zip(p.inputs, twin.inputs):
+            if a.identifier == "Specular IOR Level":
+                same = not b.is_linked and b.default_value == 0.0
+            elif a.is_linked:
+                same = b.is_linked and b.links[0].from_socket == a.links[0].from_socket
+            elif hasattr(a, "default_value"):
+                va, vb = a.default_value, b.default_value
+                same = not b.is_linked and (close(list(va), list(vb), 1e-6) if hasattr(va, "__len__")
+                                            else abs(float(va) - float(vb)) <= 1e-6)
+            else:
+                same = True
+            if not same:
+                bad.append(a.identifier)
+    check(label + ": the twin is the Principled BSDF without reflection", ok and bad == [], str(bad))
 
 
 def _layers_of(ir):
@@ -1508,8 +1584,7 @@ def check_principled(label, material, ir, present=False):
     value the graph folds to, or the IR's when its images are missing), the render method, one Image Texture node
     per file. present: whether the texture files were found."""
     layers = _layers_of(ir)
-    bsdfs = [n for n in material.node_tree.nodes if n.bl_idname == "ShaderNodeBsdfPrincipled"] \
-        if material is not None and material.node_tree else []
+    bsdfs = _bsdfs(material) if material is not None and material.node_tree else []
     p = bsdfs[0] if len(bsdfs) == 1 + len(layers) else None
     check(label + ": one Principled BSDF, and one per layer", p is not None, "%d for %d layers" % (len(bsdfs),
                                                                                               len(layers)))
@@ -1522,12 +1597,12 @@ def check_principled(label, material, ir, present=False):
         ("Base Color", "base_color", ir.base_color.value, None),
         ("Metallic", "metallic", ir.metallic.value, 1.0),
         ("Roughness", "roughness", ir.roughness.value, 1.0),
-        ("Specular IOR Level", "specular", ir.specular.value, SPECULAR_LEVEL),
         ("Transmission Weight", "transmission", ir.transmission.value, 1.0),
         ("Emission Color", "emission_color", ir.emission_color.value, None),
         ("Alpha", "alpha", ir.alpha.value, 1.0),
     ]
     alpha = None
+    check_specular(label, p, ir, present)
     for socket, key, want, scale in wants:
         s = p.inputs[socket]
         folded = _fold(tex[key].root, present) if key in tex else LOST
@@ -1579,12 +1654,12 @@ def check_layers(label, material, layers, present=False):
     """A layered material: a Mix Shader per layer, the last one into the output; a layer whose mask graph a node
     drives has a linked factor, any other its amount (times the mask's constant)."""
     nodes = material.node_tree.nodes
-    mixes = [n for n in nodes if n.bl_idname == "ShaderNodeMixShader"]
+    mixes = _shaders(material)
     check(label + ": a Mix Shader per layer", len(mixes) == len(layers), "%d for %d" % (len(mixes), len(layers)))
     out = next(n for n in nodes if n.bl_idname == "ShaderNodeOutputMaterial")
     surface = out.inputs["Surface"]
     check(label + ": the top Mix Shader is the surface",
-          surface.is_linked and surface.links[0].from_node.bl_idname == "ShaderNodeMixShader")
+          surface.is_linked and surface.links[0].from_node in mixes)
     plain = []
     for layer in layers:
         folded = _fold(layer.graph.root, present) if layer.graph is not None else LOST
@@ -2489,11 +2564,12 @@ def check_builder():
         nm = next(n for n in mb.node_tree.nodes if n.bl_idname == "ShaderNodeNormalMap")
         check("builder: map channel 2 is UVChannel_2, for the image and the normal map's tangents",
               uv == ["UVChannel_2"] and nm.uv_map == "UVChannel_2", "%s %s" % (uv, nm.uv_map))
-        spec = _principled(ma).inputs["Specular IOR Level"]
-        dot = spec.links[0].from_node if spec.is_linked else None
-        check("builder: a color graph on the specular goes through the mean, times 0.5",
-              dot is not None and dot.operation == 'DOT_PRODUCT'
-              and close(list(dot.inputs[1].default_value), [1 / 6.0] * 3, 1e-6))
+        pa = _principled(ma)
+        spec, mix = pa.inputs["Specular IOR Level"], _weight_mix(pa)
+        dot = _from(mix.inputs[0]) if mix is not None else None
+        check("builder: a color graph on the specular goes through the mean into the reflection weight, level 0.5",
+              not spec.is_linked and spec.default_value == SPECULAR_LEVEL and dot is not None
+              and dot.operation == 'DOT_PRODUCT' and close(list(dot.inputs[1].default_value), [1 / 3.0] * 3, 1e-6))
         check("builder: the viewport color is the base color", close(list(ma.diffuse_color)[:3], [0.5] * 3, 1e-6))
         check_builder_wiring(ma, mb, builder, cm, tx, srgb, data, lost, gamma)
         check_wrapper_wiring(builder, cm, tx, srgb, data)
@@ -2539,12 +2615,13 @@ def check_builder_blend():
               add is not None and not add.clamp_result and gammas == [round(1 / 2.2, 4)] * 2 + [2.2], str(gammas))
         floor = [n for n in nodes if n.bl_idname == "ShaderNodeVectorMath" and n.operation == 'MAXIMUM']
         check("blend: subtract floored at 0", len(floor) == 1)
-        pb = next(n for n in nodes if n.bl_idname == "ShaderNodeBsdfPrincipled")
-        spec = pb.inputs["Specular IOR Level"]
-        check("blend: two constants folded (max), the mean times 0.5", not spec.is_linked
-              and abs(spec.default_value - (0.5 + 0.4 + 0.9) / 3 * 0.5) < 1e-5, str(spec.default_value))
-        bsdfs = [n for n in nodes if n.bl_idname == "ShaderNodeBsdfPrincipled"]
-        shaders = [n for n in nodes if n.bl_idname == "ShaderNodeMixShader"]
+        bsdfs, shaders = _bsdfs(m), _shaders(m)
+        pb = bsdfs[0]
+        spec, mix = pb.inputs["Specular IOR Level"], _weight_mix(pb)
+        check("blend: two constants folded (max), the mean as the reflection weight", not spec.is_linked
+              and spec.default_value == SPECULAR_LEVEL and mix is not None and not mix.inputs[0].is_linked
+              and abs(mix.inputs[0].default_value - (0.5 + 0.4 + 0.9) / 3) < 1e-5,
+              str(mix.inputs[0].default_value if mix else None))
         check("layers: a Principled BSDF and a Mix Shader per layer", len(bsdfs) == 3 and len(shaders) == 2)
         plain = [n for n in shaders if not n.inputs[0].is_linked]
         masked = [n for n in shaders if n.inputs[0].is_linked]
@@ -2560,6 +2637,60 @@ def check_builder_blend():
         for img in list(bpy.data.images):
             bpy.data.images.remove(img)
         shutil.rmtree(scratch, ignore_errors=True)
+
+
+def check_builder_weight():
+    """A reflection weight (bead maxdrop-em3.119): between 0 and 1, or a map, a Mix Shader by the weight over a
+    twin without reflection; 0, 1, a metal and full glass keep the lone Principled at 0.5 x the weight; a layer
+    gets a twin of its own."""
+    from maxdrop.build import materials as build_materials
+    from maxdrop.convert import materials as cm
+    empty_scene()
+    builder = build_materials.MaterialBuilder()
+
+    def make(name, **kw):
+        return builder.make(cm.MaterialIR(70, name, "test", base_color=cm.Input((0.2, 0.3, 0.4)), **kw))
+
+    for name, kw, mixed, level in (
+            ("None", dict(specular=cm.Input(0.0)), False, 0.0),
+            ("Grey", dict(specular=cm.Input(0.4), roughness=cm.Input(0.3), alpha=cm.Input(0.5)), True, 0.5),
+            ("White", dict(specular=cm.Input(1.0)), False, 0.5),
+            ("Metal", dict(specular=cm.Input(0.4), metallic=cm.Input(1.0)), False, 0.2),
+            ("Glass", dict(specular=cm.Input(0.4), transmission=cm.Input(1.0)), False, 0.2),
+            ("HalfGlass", dict(specular=cm.Input(0.4), transmission=cm.Input(0.5)), True, 0.5)):
+        m = make(name, **kw)
+        p = _principled(m)
+        mix = _weight_mix(p) if p is not None else None
+        level_ok = p is not None and abs(p.inputs["Specular IOR Level"].default_value - level) < 1e-6
+        check("weight: %s: %s, Specular IOR Level %.1f" % (name, "a reflection weight" if mixed else "a lone BSDF",
+                                                           level), level_ok and (mix is not None) == mixed)
+        out = next(n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeOutputMaterial")
+        top = _from(out.inputs["Surface"])
+        check("weight: %s: the surface is the %s" % (name, "Mix Shader" if mixed else "Principled BSDF"),
+              top == (mix if mixed else p))
+        if mixed:
+            check("weight: %s: the factor is the weight" % name, abs(mix.inputs[0].default_value - 0.4) < 1e-6)
+            check_twin("weight: " + name, p, mix)
+            twin = _from(mix.inputs[1])
+            check("weight: %s: the twin keeps the BSDF's alpha and transmission" % name,
+                  abs(twin.inputs["Alpha"].default_value - p.inputs["Alpha"].default_value) < 1e-6
+                  and abs(twin.inputs["Transmission Weight"].default_value
+                          - p.inputs["Transmission Weight"].default_value) < 1e-6)
+    m = make("BlendedGrey", specular=cm.Input(0.4), alpha=cm.Input(0.5))
+    check("weight: a constant alpha below 1 still blends", m.surface_render_method == 'BLENDED',
+          m.surface_render_method)
+    top = cm.MaterialIR(71, "GreyTop", "test", specular=cm.Input(0.6))
+    ir = cm.MaterialIR(72, "Layered", "test", specular=cm.Input(1.0))
+    ir.layers = [cm.Layer(top, 0.5)]
+    m = builder.make(ir)
+    bsdfs, shaders = _bsdfs(m), _shaders(m)
+    weights = [n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeMixShader" and n.label == WEIGHT_LABEL]
+    layer_mix = shaders[0] if len(shaders) == 1 else None
+    check("weight: a grey layer over a white base: one weight, on the layer, into the layer's Mix Shader",
+          len(bsdfs) == 2 and len(weights) == 1 and _weight_mix(bsdfs[0]) is None and layer_mix is not None
+          and _weight_mix(bsdfs[1]) == weights[0] and _from(layer_mix.inputs[2]) == weights[0]
+          and _from(layer_mix.inputs[1]) == bsdfs[0], "%d BSDFs, %d weights" % (len(bsdfs), len(weights)))
+    empty_scene()
 
 
 def check_builder_mono():
@@ -2602,8 +2733,7 @@ def check_builder_mono():
             return
         mixed = _color_into_float(m)
         check("mono: no color output linked into a float input", mixed == [], str(mixed))
-        p = next(n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeBsdfPrincipled"
-                 and n.inputs["Roughness"].is_linked)
+        p = next(n for n in _bsdfs(m) if n.inputs["Roughness"].is_linked)
         rough = _meaned(p.inputs["Roughness"])
         check("mono: a colored roughness image through the mean",
               getattr(rough, "bl_idname", None) == "ShaderNodeTexImage")
@@ -2627,7 +2757,7 @@ def check_builder_mono():
         check("mono: a colored bump height through the mean",
               getattr(bump, "bl_idname", None) == "ShaderNodeBump"
               and getattr(_meaned(_input(bump, "Height")), "bl_idname", None) == "ShaderNodeTexImage")
-        shader = next((n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeMixShader"), None)
+        shader = next(iter(_shaders(m)), None)
         check("mono: a layer mask through the mean", shader is not None
               and getattr(_meaned(shader.inputs[0]), "bl_idname", None) == "ShaderNodeTexImage")
         dots = [n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeVectorMath" and n.operation == 'DOT_PRODUCT']
@@ -3370,7 +3500,7 @@ def check_builder_wiring(ma, mb, builder, cm, tx, srgb, data, lost, gamma):
     check("wiring: roughness 1 - the mean of the data image", inv.bl_idname == "ShaderNodeMath"
           and inv.operation == 'SUBTRACT' and inv.inputs[0].default_value == 1.0
           and getattr(_meaned(inv.inputs[1]), "bl_idname", None) == "ShaderNodeTexImage")
-    dot = _from(pa.inputs["Specular IOR Level"])
+    dot = _from(_specular_socket(pa))
     mul = _from(dot.inputs[0])
     check("wiring: specular map times 2 through a Multiply Mix", mul.bl_idname == "ShaderNodeMix"
           and mul.blend_type == 'MULTIPLY' and _input(mul, "Factor_Float").default_value == 1.0
@@ -3490,7 +3620,7 @@ def check_reflection_falloff():
     Weight for perpendicular / parallel, the Fresnel node for Fresnel), not its color 1."""
     for name, kind in (("FixtureVReflPerp", "ShaderNodeLayerWeight"), ("FixtureVReflFresnel", "ShaderNodeFresnel")):
         m = bpy.data.materials.get(name)
-        socket = _principled(m).inputs["Specular IOR Level"] if m is not None else None
+        socket = _specular_socket(_principled(m)) if m is not None else None
         nodes = _upstream(socket) if socket is not None else []
         by_facing = [n for n in nodes if n.bl_idname == "ShaderNodeMix"
                      and getattr(_from(_input(n, "Factor_Float")), "bl_idname", None) == kind]
@@ -3580,7 +3710,7 @@ def check_wrapper_wiring(builder, cm, tx, srgb, data):
           ma.bl_idname == "ShaderNodeMath" and ma.operation == 'MULTIPLY_ADD'
           and (ma.inputs[1].default_value, ma.inputs[2].default_value) == (-0.5, 0.5)
           and dot.operation == 'DOT_PRODUCT' and geo == {"Normal", "Incoming"})
-    dot = _from(_from(p.inputs["Specular IOR Level"]).inputs[0])
+    dot = _from(_from(_specular_socket(p)).inputs[0])
     check("wrappers: Color Correction monochrome: the mean of the channels",
           dot.bl_idname == "ShaderNodeVectorMath" and dot.operation == 'DOT_PRODUCT'
           and close(list(_input(dot, "Vector_001").default_value), [1 / 3.0] * 3, 1e-6)
@@ -3949,6 +4079,7 @@ def main():
                                  ("found textures", check_found_textures), ("builder", check_builder),
                                  ("builder debt", check_builder_debt), ("builder mirror", check_builder_mirror),
                                  ("builder blend", check_builder_blend), ("builder mono", check_builder_mono),
+                                 ("builder weight", check_builder_weight),
                                  ("curve step", check_curve_step),
                                  ("linear fallback", check_linear_fallback),
                                  ("image reuse", check_image_reuse), ("double import", check_double_import),
