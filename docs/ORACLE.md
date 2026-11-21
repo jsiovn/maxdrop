@@ -140,6 +140,6 @@ reference target, bitmap, matrix).
 - The 22 fixtures before stack_basic, 2026-11-17: under 0.4 s each to load, under 0.7 s to dump (vray_texmaps, the slowest, 0.64 s).
 - Scene A (746 nodes) and scene B (2,251 nodes), 3ds Max 2020, 2026-11-15: A loaded in 10 to 50 s (warm or cold
   disk cache) and dumped in 5 s, B loaded in 5 s and dumped in 17 s; the Max process peaked at 3.1 GB. Their dumps are kept outside the
-  repository. Both were layout 8: layout 9's `eval_mesh` walks every face of every modified mesh in MAXScript,
+  repository. Both predate layout 9, whose's `eval_mesh` walks every face of every modified mesh in MAXScript:
   so a scene with deep TurboSmooth stacks dumps slower than this.
 - The 40 fixtures at layout 9, 2026-11-21: 0.6 s at most to dump (vray_texmaps).
