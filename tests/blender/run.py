@@ -1391,6 +1391,9 @@ def check_principled(label, material, ir, present=False):
     loose = [n.label for n in material.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage" and n.image is None
              and any(o.is_linked for o in n.outputs)]
     check(label + ": an Image Texture node without an image feeds nothing", loose == [], str(loose))
+    mixed = _color_into_float(material)
+    check(label + ": no color output linked into a float input (a data map is the mean of its channels)",
+          mixed == [], str(mixed))
 
 
 def check_layers(label, material, layers, present=False):
@@ -1489,10 +1492,26 @@ def _input(node, identifier):
     return next(s for s in node.inputs if s.identifier == identifier)
 
 
+def _meaned(socket):
+    """The node whose output a DOT_PRODUCT by (1/3, 1/3, 1/3) turns into the float feeding socket, else None."""
+    dot = _from(socket)
+    if dot is None or dot.bl_idname != "ShaderNodeVectorMath" or dot.operation != 'DOT_PRODUCT' \
+            or not close(list(_input(dot, "Vector_001").default_value), [1 / 3.0] * 3, 1e-6):
+        return None
+    return _from(_input(dot, "Vector"))
+
+
+def _color_into_float(material):
+    """Every link of a material's tree from a color output into a float input, as 'node.output -> node.input':
+    Blender converts there by its luminance, where 3ds Max and V-Ray take the mean of the channels."""
+    return ["%s.%s -> %s.%s" % (k.from_node.name, k.from_socket.identifier, k.to_node.name, k.to_socket.identifier)
+            for k in material.node_tree.links if k.from_socket.type == 'RGBA' and k.to_socket.type == 'VALUE']
+
+
 def check_vray_maps_nodes(textured):
     """FixtureVRayMaps' bitmaps: tiling, offset and W angle as Mapping values (the authoring script's numbers),
-    extension REPEAT. With its textures: the gloss map inverted (1 - x) into the Mix of the roughness, the bump map a
-    Bump node, FixtureVRayNormal's Normal Map node (strength 0.85, its green flipped) under its bump map's Bump node.
+    extension REPEAT. With its textures: the gloss map's mean inverted (1 - x) into the Mix of the roughness, the bump
+    map's mean a Bump node's height, FixtureVRayNormal's Normal Map node (strength 0.85, its green flipped) under its bump map's Bump node.
     Without them: no Normal Map node and the Normal input free."""
     m = bpy.data.materials.get("FixtureVRayMaps")
     for file, tile, offset, angle in (("fixture_diffuse.png", 2.0, 0.1, 15.0), ("fixture_reflect.png", 3.0, 0.2, 25.0),
@@ -1511,8 +1530,8 @@ def check_vray_maps_nodes(textured):
         return
     mix = _from(_principled(m).inputs["Roughness"])
     inv = _from(_input(mix, "B_Float")) if mix is not None and mix.bl_idname == "ShaderNodeMix" else None
-    gloss = _from(inv.inputs[1]) if inv is not None and inv.bl_idname == "ShaderNodeMath" else None
-    check("vray_maps: the gloss map as 1 - x into the roughness Mix at 73 %, glossiness 1 beside it",
+    gloss = _meaned(inv.inputs[1]) if inv is not None and inv.bl_idname == "ShaderNodeMath" else None
+    check("vray_maps: the gloss map as 1 - its mean into the roughness Mix at 73 %, glossiness 1 beside it",
           gloss is not None and gloss.label == "fixture_gloss.png" and inv.operation == 'SUBTRACT'
           and abs(inv.inputs[0].default_value - 1.0) < 1e-6 and abs(_input(mix, "Factor_Float").default_value - 0.73)
           < 1e-5 and abs(_input(mix, "A_Float").default_value) < 1e-6)
@@ -1520,7 +1539,7 @@ def check_vray_maps_nodes(textured):
     check("vray_maps: the bump map through a Bump node of strength 0.64",
           bump is not None and bump.bl_idname == "ShaderNodeBump" and not bump.invert
           and abs(bump.inputs["Strength"].default_value - 0.64) < 1e-5
-          and _from(bump.inputs["Height"]).label == "fixture_bump.png")
+          and getattr(_meaned(bump.inputs["Height"]), "label", None) == "fixture_bump.png")
     top = _from(_principled(n).inputs["Normal"])
     nm = _from(top.inputs["Normal"]) if top is not None and top.bl_idname == "ShaderNodeBump" else None
     comb = _from(nm.inputs["Color"]) if nm is not None and nm.bl_idname == "ShaderNodeNormalMap" else None
@@ -1530,7 +1549,7 @@ def check_vray_maps_nodes(textured):
           sep is not None and sep.bl_idname == "ShaderNodeSeparateColor"
           and green.inputs[1].links[0].from_socket.identifier == "Green"
           and _from(comb.inputs["Red"]) == sep and abs(nm.inputs["Strength"].default_value - 0.85) < 1e-5
-          and _from(top.inputs["Height"]).label == "fixture_normal_bump.png"
+          and getattr(_meaned(top.inputs["Height"]), "label", None) == "fixture_normal_bump.png"
           and _from(sep.inputs["Color"]).label == "fixture_normal.png")
 
 
@@ -2243,6 +2262,84 @@ def check_builder_blend():
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def check_builder_mono():
+    """Colored data maps on float inputs (bead maxdrop-em3.42): V-Ray 5.2 takes a data map as the mean of its
+    channels (red 1 / 3, measured on a Mix mask, a reflection glossiness and an opacity map), Blender's link from a
+    color output into a float input its luminance (red 0.2126). Every float input a map feeds (an image, a Color
+    Correction over one, a Mix of images and its mask, a layer mask, a bump height) goes through one DOT_PRODUCT by
+    (1/3, 1/3, 1/3); an image's alpha stays as it is."""
+    from maxdrop.build import materials as build_materials
+    from maxdrop.convert import materials as cm
+    from maxdrop.convert import texmaps as tx
+    from maxdrop.convert import textures as ct
+    empty_scene()
+    for img in list(bpy.data.images):
+        bpy.data.images.remove(img)
+    scratch = tempfile.mkdtemp(prefix="maxdrop-mono-")
+    try:
+        png = os.path.join(scratch, "mono.png")
+        _write_png(png)
+        found = ct.Found(png, ct.SCENE)
+        a = tx.Image(1, "mono.png", "mono.png", "", found, colorspace=tx.NON_COLOR)
+        b = tx.Image(2, "mono.png", "mono.png", "", found, colorspace=tx.NON_COLOR,
+                     mapping=tx.Mapping(tiling=(2.0, 2.0)))
+        alpha = tx.Image(3, "mono.png", "mono.png", "", found, colorspace=tx.NON_COLOR, alpha=True)
+        ir = cm.MaterialIR(50, "Mono", "test", base_color=cm.Input((0.5,) * 3, cm.MapRef(1)),
+                           roughness=cm.Input(0.5, cm.MapRef(1)), metallic=cm.Input(0.0, cm.MapRef(1)),
+                           alpha=cm.Input(1.0, cm.MapRef(1)), transmission=cm.Input(0.0, cm.MapRef(1)))
+        ir.textures = {
+            "base_color": tx.TextureGraphIR(tx.Mix(tx.Constant((0.0,) * 3), a, 0.0, b), tx.COLOR),
+            "roughness": tx.TextureGraphIR(a, tx.DATA),
+            "metallic": tx.TextureGraphIR(tx.ColorCorrect(a, hue=0.25), tx.DATA),
+            "alpha": tx.TextureGraphIR(tx.Mix(a, b, 0.0, b), tx.DATA),
+            "transmission": tx.TextureGraphIR(alpha, tx.DATA),
+            "bump": tx.TextureGraphIR(tx.Bump(b, 1.0), tx.BUMP)}
+        layer = cm.MaterialIR(51, "MonoTop", "test")
+        ir.layers = [cm.Layer(layer, 1.0, cm.MapRef(1), tx.TextureGraphIR(a, tx.DATA))]
+        m = build_materials.MaterialBuilder().make(ir)
+        check("mono: material built", m is not None)
+        if m is None:
+            return
+        mixed = _color_into_float(m)
+        check("mono: no color output linked into a float input", mixed == [], str(mixed))
+        p = next(n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeBsdfPrincipled"
+                 and n.inputs["Roughness"].is_linked)
+        rough = _meaned(p.inputs["Roughness"])
+        check("mono: a colored roughness image through the mean",
+              getattr(rough, "bl_idname", None) == "ShaderNodeTexImage")
+        hue = _meaned(p.inputs["Metallic"])
+        check("mono: a Color Correction on the metallic, the mean after its hue",
+              getattr(hue, "bl_idname", None) == "ShaderNodeHueSaturation")
+        mix = _from(p.inputs["Alpha"])
+        sides = [_meaned(_input(mix, k)) for k in ("A_Float", "B_Float", "Factor_Float")] \
+            if mix is not None and mix.bl_idname == "ShaderNodeMix" else []
+        check("mono: a float Mix of images by an image mask, each side and the mask through the mean",
+              len(sides) == 3 and all(getattr(n, "bl_idname", None) == "ShaderNodeTexImage" for n in sides)
+              and mix.data_type == 'FLOAT', str(sides))
+        base = _from(p.inputs["Base Color"])
+        check("mono: the mask of a color Mix through the mean, its sides in color",
+              getattr(_meaned(_input(base, "Factor_Float")), "bl_idname", None) == "ShaderNodeTexImage"
+              and _from(_input(base, "B_Color")).bl_idname == "ShaderNodeTexImage")
+        trans = p.inputs["Transmission Weight"]
+        check("mono: an image's alpha straight into the float input",
+              trans.is_linked and trans.links[0].from_socket.identifier == "Alpha")
+        bump = _from(p.inputs["Normal"])
+        check("mono: a colored bump height through the mean",
+              getattr(bump, "bl_idname", None) == "ShaderNodeBump"
+              and getattr(_meaned(_input(bump, "Height")), "bl_idname", None) == "ShaderNodeTexImage")
+        shader = next((n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeMixShader"), None)
+        check("mono: a layer mask through the mean", shader is not None
+              and getattr(_meaned(shader.inputs[0]), "bl_idname", None) == "ShaderNodeTexImage")
+        dots = [n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeVectorMath" and n.operation == 'DOT_PRODUCT']
+        check("mono: one mean per image in a float graph (two images, and the Color Correction)", len(dots) == 3,
+              str(len(dots)))
+    finally:
+        empty_scene()
+        for img in list(bpy.data.images):
+            bpy.data.images.remove(img)
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def check_linear_fallback():
     """A color management config without Linear Rec.709 (a custom OCIO config; the stock one of every supported
     version has it): a linear color image falls back to Non-Color, shares the datablock of the same file as data,
@@ -2273,12 +2370,13 @@ def check_linear_fallback():
         m = builder.make(ir)
         p = _principled(m)
         gam = _from(p.inputs["Base Color"])
-        rough = _from(p.inputs["Roughness"])
+        rough = _meaned(p.inputs["Roughness"])
         tex = _from(gam.inputs["Color"]) if gam is not None and gam.bl_idname == "ShaderNodeGamma" else None
         check("linear fallback: Non-Color, one datablock with the data image, the Gamma node kept",
               tex is not None and abs(gam.inputs["Gamma"].default_value - 1.8) < 1e-6
               and tex.image is not None and tex.image.colorspace_settings.name == tx.NON_COLOR
-              and rough.image is not None and tex.image.as_pointer() == rough.image.as_pointer()
+              and rough is not None and rough.image is not None
+              and tex.image.as_pointer() == rough.image.as_pointer()
               and len(bpy.data.images) == 1,
               "%s %s" % (getattr(gam, "bl_idname", None), [i.colorspace_settings.name for i in bpy.data.images]))
     finally:
@@ -2319,7 +2417,7 @@ def check_image_reuse():
                     for k, c in enumerate(colorspaces))
             ir.textures = {"base_color": tx.TextureGraphIR(a, tx.COLOR), "roughness": tx.TextureGraphIR(b, tx.DATA)}
             m = build_materials.MaterialBuilder().make(ir)
-            return _from(_principled(m).inputs["Base Color"]).image, _from(_principled(m).inputs["Roughness"]).image
+            return _from(_principled(m).inputs["Base Color"]).image, _meaned(_principled(m).inputs["Roughness"]).image
 
         def names():
             return [(i.name, i.colorspace_settings.name, i.is_dirty, i.source, bool(i.packed_file), bool(i.library))
@@ -2966,10 +3064,13 @@ def check_builder_wiring(ma, mb, builder, cm, tx, srgb, data, lost, gamma):
           mix.bl_idname == "ShaderNodeMix" and mix.blend_type == 'MIX' and not _input(mix, "A_Color").is_linked
           and close(list(_input(mix, "A_Color").default_value)[:3], [0.5] * 3, 1e-6)
           and _from(_input(mix, "B_Color")).image.colorspace_settings.name == "sRGB"
-          and _from(_input(mix, "Factor_Float")).image.colorspace_settings.name == "Non-Color")
+          and getattr(getattr(_meaned(_input(mix, "Factor_Float")), "image", None), "colorspace_settings",
+                      None) is not None
+          and _meaned(_input(mix, "Factor_Float")).image.colorspace_settings.name == "Non-Color")
     inv = _from(pa.inputs["Roughness"])
-    check("wiring: roughness 1 - the data image", inv.bl_idname == "ShaderNodeMath" and inv.operation == 'SUBTRACT'
-          and inv.inputs[0].default_value == 1.0 and _from(inv.inputs[1]).bl_idname == "ShaderNodeTexImage")
+    check("wiring: roughness 1 - the mean of the data image", inv.bl_idname == "ShaderNodeMath"
+          and inv.operation == 'SUBTRACT' and inv.inputs[0].default_value == 1.0
+          and getattr(_meaned(inv.inputs[1]), "bl_idname", None) == "ShaderNodeTexImage")
     dot = _from(pa.inputs["Specular IOR Level"])
     mul = _from(dot.inputs[0])
     check("wiring: specular map times 2 through a Multiply Mix", mul.bl_idname == "ShaderNodeMix"
@@ -3049,8 +3150,9 @@ def check_builder_wiring(ma, mb, builder, cm, tx, srgb, data, lost, gamma):
     mc, md = builder.make(c), builder.make(d)
     b = _from(_principled(mc).inputs["Normal"])
     check("wiring: a negative bump amount inverts the Bump node", b.invert and b.inputs["Strength"].default_value == 0.5)
-    mask = _from(_input(_from(_principled(mc).inputs["Base Color"]), "Factor_Float"))
-    check("wiring: a mask with a gamma override gets no Gamma node", mask.bl_idname == "ShaderNodeTexImage")
+    mask = _meaned(_input(_from(_principled(mc).inputs["Base Color"]), "Factor_Float"))
+    check("wiring: a mask with a gamma override gets no Gamma node, only the mean",
+          getattr(mask, "bl_idname", None) == "ShaderNodeTexImage")
     pd = _principled(md)
     check("wiring: missing images leave the IR's values: Normal free, alpha 0.8 (BLENDED), base color the swatch",
           not pd.inputs["Normal"].is_linked and not pd.inputs["Alpha"].is_linked
@@ -3547,7 +3649,7 @@ def main():
         for label, run_check in (("material slots", lambda: check_material_slots(modules)),
                                  ("found textures", check_found_textures), ("builder", check_builder),
                                  ("builder debt", check_builder_debt), ("builder mirror", check_builder_mirror),
-                                 ("builder blend", check_builder_blend),
+                                 ("builder blend", check_builder_blend), ("builder mono", check_builder_mono),
                                  ("linear fallback", check_linear_fallback),
                                  ("image reuse", check_image_reuse), ("double import", check_double_import),
                                  ("worker errors", check_worker_errors),

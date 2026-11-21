@@ -23,6 +23,15 @@ channel) and Scale (its radius in meters), Sheen Weight, Tint and Roughness, Thi
 layer's amount times its mask); the render method follows every one of them. A color graph on a float input (specular,
 transmission) goes through the mean of its channels, the measure convert/materials.py uses.
 
+Data maps (a map on roughness, metallic or alpha, a mask, a bump height: a graph drawn as a float) take the mean of
+their channels too: wherever a float graph comes out as a color socket (an image's Color, a Color Correction,
+Adjust, Tint, Blend or a blend-mode Composite) one Vector Math DOT_PRODUCT by (1/3, 1/3, 1/3) follows it, so no
+color output is linked into a float input, where Blender would convert by its luminance (0.2126, 0.7152, 0.0722 in
+EEVEE and Cycles, 4.2 to 5.2). Measured on V-Ray 5.2 (bead maxdrop-em3.42, stripes of pure red, green, blue, yellow,
+cyan and magenta): a Mix mask, a VRayMtl reflection glossiness map and an opacity map each give 1/3 for red, green
+and blue and 2/3 for the others, where the luminance gave 0.21, 0.72 and 0.07. The same rule, not measured, for a
+metallic map, a bump height (3ds Max's own mono value is that mean) and Corona's materials.
+
 Texture graphs (convert/texmaps.py) become nodes, a node of the IR shared by several inputs once per material: Image
 -> Image Texture (its image datablock reused per file and color space: one file used in two color spaces is two
 datablocks; see Images below), with its placement as a Mapping node and a UV Map node for a map channel other than
@@ -404,11 +413,7 @@ class _Tree:
             _default(s, _mean(inp.value if v is MISSING else v) * scale)
             return False
         if color:
-            dot = self.node("ShaderNodeVectorMath", 0)
-            dot.operation = 'DOT_PRODUCT'
-            self.links.new(v, _in(dot, "Vector"))
-            _in(dot, "Vector_001").default_value = (scale / 3.0,) * 3
-            v = _out(dot, "Value")
+            v = self.mean_of(v, 0, scale / 3.0)
         elif scale != 1.0:
             mul = self.node("ShaderNodeMath", 0)
             mul.operation = 'MULTIPLY'
@@ -507,11 +512,23 @@ class _Tree:
         return alpha_map, (None if alpha is None or alpha_map else alpha.default_value)
 
     def graph(self, node, space, depth):
-        """The output (a node socket) or constant of an IR node in a space."""
+        """The output (a node socket) or constant of an IR node in a space; in FLOAT a color socket through the mean
+        of its channels (see Data maps above)."""
         key = (id(node), space)
         if key not in self.memo:
-            self.memo[key] = self._build(node, space, depth)
+            v = self._build(node, space, depth)
+            if space == FLOAT and isinstance(v, bpy.types.NodeSocket) and v.type in ('RGBA', 'VECTOR'):
+                v = self.mean_of(v, depth)
+            self.memo[key] = v
         return self.memo[key]
+
+    def mean_of(self, v, depth, weight=1.0 / 3.0):
+        """Color socket v as a float: a DOT_PRODUCT by (weight, weight, weight), the mean for 1/3."""
+        dot = self.node("ShaderNodeVectorMath", depth)
+        dot.operation = 'DOT_PRODUCT'
+        self.links.new(v, _in(dot, "Vector"))
+        _in(dot, "Vector_001").default_value = (weight,) * 3
+        return _out(dot, "Value")
 
     def _build(self, n, space, depth):
         if isinstance(n, tx.Constant):
@@ -872,11 +889,7 @@ class _Tree:
         def mono():
             nonlocal mean
             if mean is None:
-                dot = self.node("ShaderNodeVectorMath", depth)
-                dot.operation = 'DOT_PRODUCT'
-                self.links.new(v, _in(dot, "Vector"))
-                _in(dot, "Vector_001").default_value = (1.0 / 3.0,) * 3
-                mean = _out(dot, "Value")
+                mean = self.mean_of(v, depth)
             return mean
         if channels == tx.REWIRE_MONO:
             return mono()
@@ -1008,18 +1021,11 @@ class _Tree:
         return result
 
     def weight(self, n, depth):
-        """A Composite mask as a float: a color socket (an image) through the mean of its channels, as 3ds Max
-        weighs it (Blender's own color to float conversion is a luminance); MISSING without one."""
+        """A Composite mask as a float (an image through the mean of its channels, as every float graph: graph());
+        MISSING without one."""
         if n is None:
             return MISSING
-        v = self.graph(n, FLOAT, depth + 1)
-        if not isinstance(v, bpy.types.NodeSocket) or v.type not in ('RGBA', 'VECTOR'):
-            return v
-        dot = self.node("ShaderNodeVectorMath", depth)
-        dot.operation = 'DOT_PRODUCT'
-        self.links.new(v, _in(dot, "Vector"))
-        _in(dot, "Vector_001").default_value = (1.0 / 3.0,) * 3
-        return _out(dot, "Value")
+        return self.graph(n, FLOAT, depth + 1)
 
     def times(self, socket, factor, depth):
         """socket x factor (a float socket or constant) as a Math node's output."""
