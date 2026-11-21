@@ -4,14 +4,14 @@
 
 -- Photometric lights and VRayIES (system unit millimeters): a point Free Light, isotropic, Kelvin 3000, and its
 -- instance; a rotated point Free Light, spotlight, dimmed to 50 %; a Free Rectangle, a Free Disc and a Free Line of
--- uniform diffuse distribution; an isotropic Free Sphere; an isotropic Free Cylinder that leaves out specular; a
--- Target Disc aimed at its target with a web distribution; a switched-off Free Light with a filter color; a VRayIES
--- by its power; a VRayIES whose intensity is overridden in cd, in temperature mode; a Target Light of each other
--- shape, isotropic, aimed straight down. A light made by MAXScript has its shadows off: PhPoint (and so its instance)
--- and PhSpot switch them on (baseObject.castShadows: a light node's castShadows is the node's render flag); a VRayIES
--- has them on, IesOverride switches them off. IesPower's light shape is overridden as a rectangle, IesOverride's as
--- a sphere. The web file and the IES file are a bare file name that does not exist (no path goes into the file). Needs V-Ray (5, the one this was authored with); the scene stays on the default
--- renderer.
+-- uniform diffuse distribution; an isotropic Free Sphere; an isotropic Free Cylinder that leaves out specular; a Target
+-- Disc aimed at its target with a web distribution; a switched-off Free Light with a filter color; a VRayIES by its
+-- power; a VRayIES whose intensity is overridden in cd, in temperature mode; a Target Light of each other shape,
+-- isotropic, aimed straight down. A light made by MAXScript has its shadows off: PhPoint (and so its instance) and
+-- PhSpot switch them on (baseObject.castShadows: a light node's castShadows is the node's render flag); a VRayIES has
+-- them on, IesOverride switches them off. IesPower's light shape is overridden as a rectangle, IesOverride's as a
+-- sphere. The web file and the IES file are a bare file name that does not exist (no path goes into the file). Needs
+-- V-Ray (5, the one this was authored with); the scene stays on the default renderer.
 -- Authored for MaxDrop's tests (see CONTRIBUTING.md, "Test files"): it resets the scene, so run it in a 3ds Max
 -- session with nothing to keep, then sanitize and check the saved file before it goes into tests/fixtures/.
 (

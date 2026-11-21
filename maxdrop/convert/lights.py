@@ -80,10 +80,10 @@ watts at 683 lm/W: 4 pi I / 683 for a point or spot light of on-axis intensity I
   (RenderEnvironment reference ENVIRONMENT_MAP_SLOT) for convert.scene's report line.
 
 Every light shines along its local -Z, as Blender's spot, area and sun lights do: the node transform stays. Off ->
-hidden; affect diffuse / specular and V-Ray's contributions as for the VRayLight; ambient only, far attenuation:
-issues. Shadows off (a standard light's chunk 0x2570, a photometric light's castShadows, a VRayIES's
-cast_shadows; a VRaySun has no switch) -> shadow False; when the switch is not stored, on. A negative multiplier or intensity is 0 W (an issue). Their instances share one description (area_scale is 1
-but for VRayLights).
+hidden; affect diffuse / specular and V-Ray's contributions as for the VRayLight; ambient only, far attenuation: issues.
+Shadows off (a standard light's chunk 0x2570, a photometric light's castShadows, a VRayIES's cast_shadows; a VRaySun has
+no switch) -> shadow False; when the switch is not stored, on. A negative multiplier or intensity is 0 W (an issue).
+Their instances share one description (area_scale is 1 but for VRayLights).
 
 The file comes from anywhere: a parameter that is animated, missing or no finite number takes its default (the
 animated one an issue; for a standard light a missing one too); a block that cannot be read raises LightError (a
@@ -180,8 +180,8 @@ IES_SHAPES = {0: ("point", ()), 1: ("rectangle", ("height", "width", "length")),
               7: ("ellipse", ("height", "width", "length")), 8: ("ellipse", ("height", "width", "length")),
               9: ("ellipsoid", ("height", "width", "length")), 10: ("ellipsoid", ("height", "width", "length")),
               11: ("elliptic cylinder", ("height", "width", "length")),
-              12: ("elliptic cylinder", ("height", "width", "length")),
-              13: ("elliptic cylinder", ("height", "width", "length")), 14: ("vertical circle", ("width",)),
+              12: ("horizontal elliptic cylinder", ("height", "width", "length")),
+              13: ("horizontal elliptic cylinder", ("height", "width", "length")), 14: ("vertical circle", ("width",)),
               15: ("vertical ellipse", ("height", "width")), 16: ("cuboid", ("height", "width", "length"))}
 
 P_ON, P_TYPE, P_SIZE0, P_SIZE1, P_COLOR, P_MULTIPLIER = 0, 1, 2, 3, 7, 8
@@ -701,7 +701,7 @@ def _ies_radius(v, meters, issues):
         return 0.0
     name, sizes = IES_SHAPES.get(v["shape_type"], ("", ()))
     across = max((abs(v[k]) for k in sizes), default=0.0) * meters
-    if not across <= MAX_POWER:  # past what a Blender light holds
+    if not across <= MAX_POWER:  # past the float32 range a Blender light's radius holds (also inf, NaN)
         across = 0.0
     if across > 0 and v["shape_type"] != IES_SPHERE:
         issues.append(IES_SHAPE % (name, across))

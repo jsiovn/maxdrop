@@ -870,24 +870,23 @@ light's switch, which is `light.baseObject.castShadows` (saves of one change eac
 light MAXScript makes has its shadows off, the two scenes of the corpus have them on.
 3ds Max 2020 refuses a spotlight distribution on a cylinder.
 
-**VRaySun** `(0x732C0383, 0x7D993776)`, block 0: 0 enabled, 1 turbidity, 2 intensity multiplier, 3 size multiplier,
-5 ozone, 9 invisible, 12 sky model, 14 / 19 affect diffuse / its contribution, 15 / 20 affect specular / its
-contribution, 17 filter color, 18 color mode (0 filter, 1 direct, 2 override); no shadow switch in V-Ray 5.2 (16
-`cast_atmospheric_shadows` only). A targeted VRaySun is a Look At node. **VRayIES** `(0x2EAF2F07, 0x7EC44F31)`, block 0: 0 enabled, 1 IES file (an asset of type `Photometric`), 7
-color temperature, 8 color, 9 color mode (1 temperature), 10 power, 11 targeted, 14 / 30 affect diffuse /
-contribution, 15 / 31 affect specular / contribution, 32 intensity type (0 lm, 1 cd), 34 override intensity. With
-the intensity overridden, 10 holds the override's value in its unit; 33 (`intensity_value`) is stored stale (0). 4
-cast shadows; 5 use light shape (0 no, 1 for shadows only, 2 for illumination and shadows), 21 override shape (off:
-the IES file's shape), 22 shape, 23 height, 24 width, 25 length, 26 diameter (world units), 35 `shape_actual` (-1
-without a file). The shapes, in the order of the panel's list (the stored value), with the sizes the panel enables
-(H W L D): 0 point; 1 rectangle H W L; 2 circle D; 3 sphere D; 4 vertical cylinder H D; 5 / 6 horizontal cylinder
-along the length / width L D / W D; 7 / 8 ellipse, 9 / 10 ellipsoid (length / width), 11 elliptic cylinder, 12 / 13
-horizontal elliptic cylinder (length / width) H W L; 14 vertical circle W; 15 vertical ellipse H W; 16 cuboid H W L.
-MaxDrop gives the spot the radius of half the largest of those sizes when the shape is used and overridden (a
-sphere's exactly, another shape a line in the report).
-Reference 1 is a Target Light object of its own (no node). **Skylight** `(0x7BF61478, 0x522E4705)`: not built.
-**VRaySky** `(0x48480B4E, 0x62FF5A90)` (superclass Texmap): the environment map is RenderEnvironment's reference 5
-(the lights_standard fixture).
+**VRaySun** `(0x732C0383, 0x7D993776)`, block 0: 0 enabled, 1 turbidity, 2 intensity multiplier, 3 size multiplier, 5
+ozone, 9 invisible, 12 sky model, 14 / 19 affect diffuse / its contribution, 15 / 20 affect specular / its contribution,
+17 filter color, 18 color mode (0 filter, 1 direct, 2 override); no shadow switch in V-Ray 5.2 (16
+`cast_atmospheric_shadows` only). A targeted VRaySun is a Look At node. **VRayIES** `(0x2EAF2F07, 0x7EC44F31)`, block 0:
+0 enabled, 1 IES file (an asset of type `Photometric`), 7 color temperature, 8 color, 9 color mode (1 temperature), 10
+power, 11 targeted, 14 / 30 affect diffuse / contribution, 15 / 31 affect specular / contribution, 32 intensity type (0
+lm, 1 cd), 34 override intensity. With the intensity overridden, 10 holds the override's value in its unit; 33
+(`intensity_value`) is stored stale (0). 4 cast shadows; 5 use light shape (0 no, 1 for shadows only, 2 for illumination
+and shadows), 21 override shape (off: the IES file's shape), 22 shape, 23 height, 24 width, 25 length, 26 diameter
+(world units), 35 `shape_actual` (-1 without a file). The shapes, in the order of the panel's list (the stored value),
+with the sizes the panel enables (H W L D): 0 point; 1 rectangle H W L; 2 circle D; 3 sphere D; 4 vertical cylinder H D;
+5 / 6 horizontal cylinder along the length / width L D / W D; 7 / 8 ellipse, 9 / 10 ellipsoid (length / width), 11
+elliptic cylinder, 12 / 13 horizontal elliptic cylinder (length / width) H W L; 14 vertical circle W; 15 vertical
+ellipse H W; 16 cuboid H W L. MaxDrop gives the spot the radius of half the largest of those sizes when the shape is
+used and overridden (a sphere's exactly, another shape a line in the report). A VRayIES's reference 1 is a Target Light
+object of its own (no node). **Skylight** `(0x7BF61478, 0x522E4705)`: not built. **VRaySky** `(0x48480B4E, 0x62FF5A90)`
+(superclass Texmap): the environment map is RenderEnvironment's reference 5 (the lights_standard fixture).
 
 **Power, measured.** The calibration scene of [VRayLight](#vraylight) (a white VRayMtl floor, one light 1 m above it
 pointing down, V-Ray linear, gamma off, no GI, the mean of the 8 × 8 center pixels): V-Ray's pixel is the floor's
