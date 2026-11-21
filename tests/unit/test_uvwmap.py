@@ -446,6 +446,36 @@ class Synthetic(unittest.TestCase):
         self.assertAlmostEqual(float(u[0]), float((u[1] + u[2]) / 2), places=6)
         self.assertAlmostEqual(float(out.maps[1].uvw[0, 1]), 1.0, places=6)
 
+    def fan_u(self, maptype, pole, a=(1, -0.3, 0.3), b=(1, 0.3, 0.3)):
+        """U of the corners (pole, a, b) of one triangle under the identity gizmo of radius 1."""
+        data = _quad_mesh([pole, a, b], [(0, 1, 2)])
+        return uvwmap.apply(data, self.params(maptype=maptype), IDENTITY, IDENTITY).maps[1].uvw[:, 0].astype(float)
+
+    def test_a_cylindrical_pole_gets_one_half(self):
+        # 3ds Max shares one map vertex at U 0.5 on the axis of a cylindrical map, whatever the face
+        for pole in ((0, 0, 0), (1e-9, -2e-9, 0), (5e-5, 5e-5, 0), (0, 9e-5, 0.4)):
+            u = self.fan_u(uvwmap.CYLINDRICAL, pole)
+            self.assertAlmostEqual(u[0], 0.5, places=6, msg=pole)
+            self.assertNotAlmostEqual(u[0], (u[1] + u[2]) / 2, places=2)
+
+    def test_a_cylindrical_pole_goes_round_with_its_face(self):
+        # across the seam the other corners go up a turn (3ds Max: 0.5 and the two just above and below 0)
+        u = self.fan_u(uvwmap.CYLINDRICAL, (0, 0, 0), (0.2, -1, 0.3), (-0.2, -1, 0.3))
+        self.assertAlmostEqual(u[0], 1.5, places=6)
+        self.assertTrue(0.9 < u[1] < 1.1 and 0.9 < u[2] < 1.1, u)
+
+    def test_a_cylindrical_pole_is_found_by_its_distance_to_the_axis(self):
+        # (8e-5, 8e-5) is 1.13e-4 radii off the axis: it has an angle (3ds Max: 0.375 there too)
+        self.assertAlmostEqual(self.fan_u(uvwmap.CYLINDRICAL, (8e-5, 8e-5, 0))[0], 0.375, places=6)
+        self.assertAlmostEqual(self.fan_u(uvwmap.CYLINDRICAL, (2e-4, 0, 0))[0], 0.25, places=6)
+
+    def test_a_spherical_pole_is_found_per_axis_relative_to_r(self):
+        for pole in ((0, 0, 1), (1e-9, 1e-9, 1), (8e-5, 8e-5, 1), (-4e-5, 0, 0.5), (0, 0, 0)):
+            u = self.fan_u(uvwmap.SPHERICAL, pole)
+            self.assertAlmostEqual(u[0], (u[1] + u[2]) / 2, places=6, msg=pole)
+        for pole, want in (((2e-4, 0, 1), 0.25), ((6e-5, 0, 0.5), 0.25)):  # 1.2e-4 of r = 0.5
+            self.assertAlmostEqual(self.fan_u(uvwmap.SPHERICAL, pole)[0], want, places=6, msg=pole)
+
     def test_flip_then_tile(self):
         data = _quad_mesh([(-1, -1, 0), (1, -1, 0), (1, 1, 0)], [(0, 1, 2)])
         out = uvwmap.apply(data, self.params(uflip=True, utile=3.0), IDENTITY, IDENTITY)

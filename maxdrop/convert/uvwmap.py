@@ -28,7 +28,10 @@ tiled (times its tile).
 
 Seams: a face with an edge across the seam (where u wraps from 1 to 0) gets +1 on its corners below 0.5, so it does
 not smear across the texture (3ds Max shares map vertices and may shift other faces by a whole turn too: the same
-image). A corner on the axis of a cylindrical or spherical map (no angle) takes the mean U of the rest of its face.
+image). A corner on the axis of a round map has no angle: on a cylindrical map it gets U 0.5 (a turn up with the
+rest of its face across the seam), on a spherical map the mean U of the rest of its face. On the axis means within
+POLE_TOLERANCE of it, as in 3ds Max: |(X, Y)| below it (cylindrical), each of |X| and |Y| below it times r
+(spherical), so that a turned gizmo's float residue is a pole, not an arbitrary angle.
 
 The file comes from anywhere: a parameter that is animated or no number, a zero or non-finite size, a map channel
 outside 0 .. 99 or a gizmo that cannot be evaluated or inverted raise UVWMapError (the stored channel stays).
@@ -50,6 +53,9 @@ SUPPORTED = (PLANAR, CYLINDRICAL, SPHERICAL, BOX)
 AXIS_X, AXIS_Y, AXIS_Z = 0, 1, 2
 SLOT_GIZMO, SLOT_PARAMS = 0, 1
 MAX_CHANNEL = 99
+# found in 3ds Max 2020 by pushing an axis vertex off: 9.5e-5 is still a pole, 1.05e-4 is not (both kinds; exactly at
+# 1e-4 its single-precision results disagree with each other)
+POLE_TOLERANCE = 1e-4
 _FATAL = (controllers.UNKNOWN_CLASS, controllers.DAMAGED, controllers.NON_FINITE)
 
 # (a, b, c) of the mapping frame from the gizmo-space point q, by (planar-like or round, alignment): index of q and
@@ -212,6 +218,7 @@ def apply(data, params, gizmo_tm, context_tm):
             u = 0.5 + numpy.arctan2(big_x, -big_y) / (2.0 * math.pi)
             ring = numpy.hypot(big_x, big_y)
             if kind == CYLINDRICAL:
+                pole = ring < POLE_TOLERANCE
                 v, w = c / height + 0.5, ring
                 capped = numpy.zeros(len(u), dtype=bool)
                 if params.cap:
@@ -227,7 +234,8 @@ def apply(data, params, gizmo_tm, context_tm):
                                                   -1.0, 1.0)) / math.pi
                 w = r
                 capped = numpy.zeros(len(u), dtype=bool)
-            u = _seam(numpy, u, big_x, big_y, ~capped, starts, totals, face)
+                pole = (numpy.maximum(numpy.abs(big_x), numpy.abs(big_y)) < POLE_TOLERANCE * r) | (r == 0)
+            u = _seam(numpy, u, big_x, big_y, ~capped, pole, kind == CYLINDRICAL, starts, totals, face)
         uvw = numpy.stack((u, v, w), axis=1)
     for k, (flip, tile) in enumerate(((params.uflip, params.utile), (params.vflip, params.vtile),
                                       (params.wflip, params.wtile))):
@@ -244,10 +252,11 @@ def apply(data, params, gizmo_tm, context_tm):
                              data.material_ids, maps, data.stored_vertices, data.stored_faces)
 
 
-def _seam(numpy, u, big_x, big_y, side, starts, totals, face):
+def _seam(numpy, u, big_x, big_y, side, pole, cylindrical, starts, totals, face):
     """u of the side (not cap) corners of a round map with the seam and the axis handled per face: a face with an
-    edge across the seam (the half-plane X = 0, Y > 0, where u wraps) gets +1 on its corners below 0.5; a corner on
-    the axis (no angle) takes the mean u of the rest of its face."""
+    edge across the seam (the half-plane X = 0, Y > 0, where u wraps) between two corners off the axis gets +1 on
+    those below 0.5; a corner on the axis (pole: no angle) gets 0.5 on a cylindrical map (1.5 on a face across the
+    seam), else the mean u of the rest of its face."""
     if not len(starts):
         return u
     following = numpy.arange(1, len(u) + 1)
@@ -255,13 +264,14 @@ def _seam(numpy, u, big_x, big_y, side, starts, totals, face):
     x0, y0, x1, y1 = big_x, big_y, big_x[following], big_y[following]
     with numpy.errstate(divide="ignore", invalid="ignore"):
         y_at = y0 + (y1 - y0) * (x0 / (x0 - x1))
-    across = side & side[following] & ((x0 < 0) != (x1 < 0)) & (y_at > 0)
-    crossing = (numpy.add.reduceat(across.astype(numpy.int64), starts) > 0)[face]
-    # exact zero, no tolerance: a rotated gizmo can leave a pole at about 1e-17 (an arbitrary angle), but no fixture
-    # has one to show what 3ds Max does there
-    pole = side & (big_x == 0) & (big_y == 0)
+    pole = side & pole
     angled = side & ~pole
+    # a pole's X and Y are a residue whose sign means nothing: its edges never cross the seam
+    across = angled & angled[following] & ((x0 < 0) != (x1 < 0)) & (y_at > 0)
+    crossing = (numpy.add.reduceat(across.astype(numpy.int64), starts) > 0)[face]
     u = numpy.where(angled & crossing & (u < 0.5), u + 1.0, u)
+    if cylindrical:
+        return numpy.where(pole, numpy.where(crossing, 1.5, 0.5), u)
     if pole.any():
         total = numpy.add.reduceat(numpy.where(angled, u, 0.0), starts)[face]
         count = numpy.add.reduceat(angled.astype(numpy.float64), starts)[face]
