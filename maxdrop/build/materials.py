@@ -774,7 +774,7 @@ class _Tree:
         if vector is not None:
             self.links.new(vector, _in(tex, "Vector"))
         clip = clip_axes(img.mapping, img.crop)
-        if clip:
+        if clip and tex.image is not None:
             self.clip_masks[id(img)] = self.clip_mask(vector, clip, depth + 1)
         return tex
 

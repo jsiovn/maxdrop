@@ -3286,26 +3286,32 @@ def _sample_image(tex, uv, mask=None):
     return xy
 
 
+CLIP_LABEL = "Clip"  # build/materials.py's CLIP_LABEL (the package is imported inside the checks)
+
+
+def _clip_mask_input(node):
+    """The input of a Clip node that carries the clip mask (Math MULTIPLY for Alpha, Vector Math SCALE for Color)."""
+    return node.inputs[1] if node.bl_idname == "ShaderNodeMath" else _input(node, "Scale")
+
+
 def _image_of(socket):
     """(the Image Texture feeding an input, the input of its Clip node that carries the clip mask, or None without
     one)."""
     n = _from(socket)
-    if n is not None and n.label == "Clip":
-        mask = n.inputs[1] if n.bl_idname == "ShaderNodeMath" else _input(n, "Scale")
-        return _from(n.inputs[0]), mask
+    if n is not None and n.label == CLIP_LABEL:
+        return _from(n.inputs[0]), _clip_mask_input(n)
     return n, None
 
 
 def _clip_axes_of(tex):
     """The axes ("X", "Y") an Image Texture's clip mask tests (Math COMPARE, |x - 0.5| <= 0.5, of the vector the
     node reads), [] without a mask; None for a mask of another form or Clip nodes that disagree."""
-    clips = [n for n in tex.id_data.nodes if n.label == "Clip" and _from(n.inputs[0]) == tex]
+    clips = [n for n in tex.id_data.nodes if n.label == CLIP_LABEL and _from(n.inputs[0]) == tex]
     if not clips:
         return []
     found = set()
     for clip in clips:
-        mask = clip.inputs[1] if clip.bl_idname == "ShaderNodeMath" else _input(clip, "Scale")
-        todo, axes = [_from(mask)], []
+        todo, axes = [_from(_clip_mask_input(clip))], []
         while todo:
             n = todo.pop()
             if n is None or n.bl_idname != "ShaderNodeMath":
@@ -3447,7 +3453,7 @@ def check_builder_clip_mask():
         outs = clips_of(tex)
         check("builder clip mask: an alpha image tiled in U, clipped in V: EXTEND, its Alpha only through a Clip node "
               "masking V", tex.extension == 'EXTEND' and list(outs) == ["Alpha"]
-              and all(n.label == "Clip" for n in outs["Alpha"]) and _clip_axes_of(tex) == ["Y"], str(outs))
+              and all(n.label == CLIP_LABEL for n in outs["Alpha"]) and _clip_axes_of(tex) == ["Y"], str(outs))
 
         top = tx.Image(2, "shared.png", "shared.png", "", found, mapping=mixed)
         bottom = tx.Image(3, "shared.png", "shared.png", "", found)
@@ -3460,17 +3466,38 @@ def check_builder_clip_mask():
         texes = [n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage" and n.inputs["Vector"].is_linked]
         tex = texes[0] if len(texes) == 1 else None
         outs = clips_of(tex) if tex is not None else {}
-        clip_nodes = [n for n in m.node_tree.nodes if n.label == "Clip"]
+        clip_nodes = [n for n in m.node_tree.nodes if n.label == CLIP_LABEL]
         check("builder clip mask: a Composite layer and the emission read one mixed-axis image: its Color and its "
               "Alpha (the layer's factor) each through one Clip node, the same mask",
               tex is not None and sorted(outs) == ["Alpha", "Color"]
-              and all(n.label == "Clip" and n in clip_nodes for ns in outs.values() for n in ns)
-              and len(clip_nodes) == 2 and len({_from(n.inputs[1] if n.bl_idname == "ShaderNodeMath"
-                                                      else _input(n, "Scale")) for n in clip_nodes}) == 1
+              and all(n.label == CLIP_LABEL and n in clip_nodes for ns in outs.values() for n in ns)
+              and len(clip_nodes) == 2 and len({_from(_clip_mask_input(n)) for n in clip_nodes}) == 1
               and _clip_axes_of(tex) == ["Y"],
               "%d textures, %s, %d Clip nodes" % (len(texes), sorted(outs), len(clip_nodes)))
         for name in ("Base Color", "Emission Color"):
             check("builder clip mask: %s linked" % name, _principled(m).inputs[name].is_linked)
+        check("builder clip mask: the tests' Clip label is the builder's",
+              CLIP_LABEL == build_materials.CLIP_LABEL, build_materials.CLIP_LABEL)
+
+        rough = tx.Image(4, "shared.png", "shared.png", "", found, colorspace=tx.NON_COLOR, mapping=mixed)
+        ir = cm.MaterialIR(52, "ClipData", "test", roughness=cm.Input(0.5, cm.MapRef(1)))
+        ir.textures = {"roughness": tx.TextureGraphIR(rough, tx.DATA)}
+        m = builder.make(ir)
+        tex = next(n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage")
+        outs = clips_of(tex)
+        mean = _meaned(_principled(m).inputs["Roughness"])
+        check("builder clip mask: a data map (roughness) over a mixed-axis image: the mean of its masked Color",
+              list(outs) == ["Color"] and all(n.label == CLIP_LABEL for n in outs["Color"])
+              and mean is not None and mean.label == CLIP_LABEL and _from(mean.inputs[0]) == tex,
+              "%s %s" % (outs, getattr(mean, "bl_idname", None)))
+
+        lost = tx.Image(5, "nothere.png", "C:\\x\\nothere.png", "", None, mapping=mixed)
+        ir = cm.MaterialIR(53, "ClipLost", "test", base_color=cm.Input((0.1, 0.2, 0.3), cm.MapRef(1)))
+        ir.textures = {"base_color": tx.TextureGraphIR(lost, tx.COLOR)}
+        m = builder.make(ir)
+        check("builder clip mask: a missing image gets no mask nodes",
+              not any(n.bl_idname == "ShaderNodeMath" and n.operation == 'COMPARE' for n in m.node_tree.nodes)
+              and not any(n.label == CLIP_LABEL for n in m.node_tree.nodes))
     finally:
         empty_scene()
         for img in list(bpy.data.images):
