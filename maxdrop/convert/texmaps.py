@@ -51,9 +51,9 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
   not measured). An environment mapping type (angular, cubic, spherical, mirrored ball), a map source, ACEScg
   primaries, RGB output intensity, an unusable transfer function or multiplier are issues.
 - CoronaColor -> Constant (color and hex as swatches, the HDR color linear, the temperature Corona's own linear
-  color from CORONA_KELVIN, times the multiplier). VRayColor -> Constant: its swatch times its RGB multiplier, then to the
-  power of its color gamma (that order measured), made linear as a swatch; in temperature mode its color holds
-  V-Ray's temperature color. Its
+  color from CORONA_KELVIN, times the multiplier). VRayColor -> Constant: its swatch times its RGB multiplier, then
+  to the power of its color gamma (that order measured), made linear as a swatch; in temperature mode its color
+  holds V-Ray's temperature color. Its
   alpha below 1, RGB primaries other than sRGB and unusable values are issues. CoronaMix: operation mix ->
   Mix(bottom, top, amount, mask), multiply -> Multiply, add, subtract, divide, min, max and difference -> Blend (in
   gamma 2.2 with mix in sRGB on, as Corona does: CM_BLENDS), the last two under a Mix for an amount below 1 or a
@@ -509,14 +509,19 @@ def corona_kelvin(kelvin):
 
 
 def blend_value(op, a, b, gamma=1.0):
-    """Blend's result for two constants (linear RGB tuples or floats), as the builder draws it."""
+    """Blend's result for two constants (linear RGB tuples or floats), as the builder draws it: a Gamma node leaves
+    a channel at or below 0 as it is. Inputs held within +-MAX_MULTIPLIER (no overflow)."""
+    def power(v, p):
+        return v ** p if v > 0.0 else v
+
     def one(x, y):
+        x, y = (min(MAX_MULTIPLIER, max(-MAX_MULTIPLIER, v)) for v in (x, y))
         if gamma != 1.0:
-            x, y = max(0.0, x) ** (1.0 / gamma), max(0.0, y) ** (1.0 / gamma)
+            x, y = power(x, 1.0 / gamma), power(y, 1.0 / gamma)
         r = {BLEND_ADD: lambda: x + y, BLEND_SUBTRACT: lambda: max(0.0, x - y),
              BLEND_DIVIDE: lambda: x / y if y != 0.0 else x, BLEND_MIN: lambda: min(x, y),
              BLEND_MAX: lambda: max(x, y), BLEND_DIFFERENCE: lambda: abs(x - y)}[op]()
-        return max(0.0, r) ** gamma if gamma != 1.0 else r
+        return power(r, gamma) if gamma != 1.0 else r
     if isinstance(a, tuple):
         return tuple(one(x, y) for x, y in zip(a, b))
     return one(a, b)
@@ -1291,6 +1296,7 @@ def _corona_layer(node, mult, offset):
     Adjust; the node itself when they change nothing."""
     if mult == 1.0 and offset == 0.0:
         return node
+    mult, offset = (min(MAX_MULTIPLIER, max(-MAX_MULTIPLIER, v)) for v in (mult, offset))
     add = offset * CM_OFFSET_SCALE
     if isinstance(node, Constant):
         v = node.value

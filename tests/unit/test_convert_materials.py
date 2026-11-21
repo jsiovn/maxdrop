@@ -89,6 +89,8 @@ class FakeGraph:
         self.objects = {o.index: o for o in objects}
 
     def get(self, i):
+        if not 0 <= i:  # as MaterialGraph.get: TypeError for None
+            raise chunks.ChunkError("object %d is not a material or map" % i)
         if i not in self.objects:
             raise chunks.ChunkError("object %d is not a material or map" % i)
         return self.objects[i]
@@ -1375,6 +1377,26 @@ class CoronaSynthetic(unittest.TestCase, Close):
         self.assertTrue(inner.layers[0].ir.unknown, "the cycle back to a: grey")
         self.assertTrue(any("material cycle" in r for _i, r in conv.stats.issues))
         self.assertTrue(any("is not a material" in r for _i, r in conv.stats.issues), "the map in layer 2")
+
+    def test_layered_with_an_empty_wrapper_or_a_dangling_layer(self):
+        layered = _corona(0, classids.CORONA_LAYERED_MTL, p1000=Ref(1), p1001=[Ref(2), Ref(9)])
+        empty = FakeMtl(2, classids.VRAY_2SIDED_MTL, "Empty", {0: {0: Ref(None), 1: Ref(None)}})
+        conv, ir = _convert(layered, _corona(1, classids.CORONA_PHYSICAL_MTL), empty)
+        self.assertEqual(ir.source, "CoronaLayeredMtl")
+        self.assertTrue(all(la.ir.unknown for la in ir.layers), "the empty wrapper: grey, no exception")
+
+    def test_layered_fan_out_is_bounded(self):
+        objects = [_corona(i, classids.CORONA_LAYERED_MTL, p1000=Ref(20), p1001=[Ref(i + 1)] * 16) for i in range(9)]
+        objects.append(_corona(9, classids.CORONA_PHYSICAL_MTL))
+        objects.append(_corona(20, classids.CORONA_PHYSICAL_MTL))
+        conv, ir = _convert(*objects)
+        self.assertLessEqual(conv.bsdf_count(ir), mat.MAX_LAYER_BSDFS)
+        self.assertTrue(any("Principled BSDFs not mixed" in r for _i, r in conv.stats.issues))
+
+    def test_complex_ior_extremes(self):
+        for n, k in ((-1.0, 0.0), (1e200, 1e200), (0.0, 0.0)):
+            f0 = mat.f0_from_complex_ior(n, k)
+            self.assertTrue(0.0 <= f0 <= 1.0, (n, k, f0))
 
     def test_layered_caps_its_layers(self):
         n = mat.MAX_LAYERS + 2

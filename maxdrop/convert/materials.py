@@ -139,6 +139,8 @@ SHELL_RENDER_INDEX, SHELL_SUBS = 1, (2, 3)  # renderMtlIndex; originalMaterial, 
 CORONA_BASE, CORONA_LAYERS, CORONA_AMOUNTS, CORONA_MASKS, CORONA_LAYERS_ON, CORONA_MASKS_ON, CORONA_MASK_AMOUNTS = (
     1000, 1001, 1002, 1003, 1004, 1005, 1006)
 MAX_LAYERS = 16  # layers mixed over a CoronaLayeredMtl's base (Corona offers 10)
+MAX_LAYER_BSDFS = 64  # Principled BSDFs one material may draw, its layers' layers counted at each use
+MAX_COMPLEX_IOR = 100.0  # n and k of a complex IOR are held within 0..this
 DEFAULT_METERS = 0.0254  # meters per system unit of a scene that does not say: 3ds Max's default, inches
 
 LUMENS_PER_WATT = 683.0  # luminous efficacy at 555 nm: cd/m2 -> W/(m2 sr)
@@ -297,6 +299,7 @@ def _scene_meters(graph):
 def f0_from_complex_ior(n, k):
     """The Fresnel reflectance at normal incidence of a conductor of complex IOR n + ik:
     ((n - 1)^2 + k^2) / ((n + 1)^2 + k^2)."""
+    n, k = (min(MAX_COMPLEX_IOR, max(0.0, v)) for v in (n, k))
     return ((n - 1.0) ** 2 + k * k) / ((n + 1.0) ** 2 + k * k)
 
 
@@ -313,6 +316,7 @@ class MaterialConverter:
         self._done, self._peels, self._counted = {}, {}, set()
         self._multis, self._for, self._reported = {}, {}, set()
         self._active = []  # the materials whose rule is running: a layer that comes back to one is a cycle
+        self._bsdfs = {}  # id(MaterialIR) -> (the IR, the Principled BSDFs it draws): bsdf_count
 
     def rgb(self, m, pid, block, default):
         """A swatch parameter as linear RGB by the scene's rule; default is the swatch value (0..1) used when the
@@ -422,6 +426,13 @@ class MaterialConverter:
             out.append((k, v.index))
         return out
 
+    def bsdf_count(self, ir):
+        """The Principled BSDFs build/materials.py draws for ir: one, plus its layers' at each use."""
+        k = id(ir)
+        if k not in self._bsdfs:
+            self._bsdfs[k] = (ir, 1 + sum(self.bsdf_count(layer.ir) for layer in ir.layers))
+        return self._bsdfs[k][1]
+
     def _mixes_layers(self, m):
         """A CoronaLayeredMtl with a base and a layer on is a material of its own (corona_layered_mtl); without either
         it is a wrapper of the one it has."""
@@ -482,7 +493,10 @@ class MaterialConverter:
         elif index in self._active or len(self._active) >= MAX_PEEL:
             reason = ("material cycle through object %d" % index if index in self._active else
                       "more than %d layered materials below object %d" % (MAX_PEEL, self._active[0]))
-            return self._grey(index, reason)  # not kept: from elsewhere the same object converts
+            # Not kept for this object, but the materials converting above it keep IRs built around the grey:
+            # only a damaged or crafted file (3ds Max authors neither a cycle nor 8 nested layered materials) gets
+            # a result that depends on the order of conversion.
+            return self._grey(index, reason)
         else:
             self._active.append(index)
             try:
@@ -942,8 +956,9 @@ def corona_light_mtl(conv, m, ir):
 def corona_layered_mtl(conv, m, ir):
     """CoronaLayeredMtl with a base and a layer on (block 0, CORONA_*): the base's IR, named after the layered
     material, with every layer that is on and set as a Layer (its amount, its mask where masksOn, the mask amount);
-    at most MAX_LAYERS. A base or layer that is a Multi/Sub-Object gives its first entry (an issue). Returns the IR:
-    the textures are the base's, the masks' graphs made here."""
+    at most MAX_LAYERS, and no more than MAX_LAYER_BSDFS Principled BSDFs in all (the rest left out, an issue). A
+    base or layer that is a Multi/Sub-Object gives its first entry (an issue). Returns the IR: the textures are the
+    base's, the masks' graphs made here."""
     base_index = m.param(CORONA_BASE, 0).index
     base = conv.convert(base_index)
     if base is None:  # not a material (the peel checks only that it is set)
@@ -952,15 +967,21 @@ def corona_layered_mtl(conv, m, ir):
                               textures=dict(base.textures), issues=list(base.issues), layers=list(base.layers))
     layers = conv.corona_layers(m)
     for sub in [base_index] + [i for _k, i in layers]:
-        if conv.is_class(conv.peel(sub)[0], classids.SC_MATERIAL, classids.MULTI_SUB_MTL):
+        peeled = conv.peel(sub)[0]
+        if peeled is not None and conv.is_class(peeled, classids.SC_MATERIAL, classids.MULTI_SUB_MTL):
             conv.issue(m.index, "%s: Multi/Sub-Object %d mixed as its first entry" % (out.name, sub), out)
     if len(layers) > MAX_LAYERS:
         conv.issue(m.index, "%s: %d layers, only the first %d mixed" % (out.name, len(layers), MAX_LAYERS), out)
+    total = 1 + sum(conv.bsdf_count(layer.ir) for layer in out.layers)
     for k, index in layers[:MAX_LAYERS]:
         layer = conv.convert(index)
         if layer is None:
             conv.issue(m.index, "%s: layer %d is not a material" % (out.name, index), out)
             continue
+        total += conv.bsdf_count(layer)
+        if total > MAX_LAYER_BSDFS:
+            conv.issue(m.index, "%s: layers past %d Principled BSDFs not mixed" % (out.name, MAX_LAYER_BSDFS), out)
+            break
         amount = max(0.0, _num_tab(m, CORONA_AMOUNTS, k, 1.0))
         mask = None
         if _flag_tab(m, CORONA_MASKS_ON, k, True):

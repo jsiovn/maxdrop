@@ -958,9 +958,18 @@ class CoronaSynthetic(Checks):
         self.close(tx.blend_value(tx.BLEND_DIFFERENCE, 0.2, 0.5), 0.3)
         self.close(tx.blend_value(tx.BLEND_MIN, 0.2, 0.5), 0.2)
         self.close(tx.blend_value(tx.BLEND_MAX, 0.2, 0.5), 0.5)
+        self.close(tx.blend_value(tx.BLEND_ADD, -0.1, 0.25, 2.2), (-0.1 + 0.25 ** (1 / 2.2)) ** 2.2,
+                   "a negative channel through a Gamma node as it is")
+        self.assertTrue(math.isfinite(tx.blend_value(tx.BLEND_ADD, 1e308, 1e308, 2.2)), "no overflow")
+
+    def test_corona_mix_huge_multiplier_folds(self):
+        tex = _tex(_cmix(1, p200=0, p202=1e300, p203=1e300, p208=(1.0, 1.0, 1.0), p209=(1.0, 1.0, 1.0)))
+        root = tex.convert(mat.MapRef(1), tx.COLOR).root
+        self.assertTrue(all(math.isfinite(c) for c in root.value))
 
     def test_corona_mix_peeled_does_not_convert_its_layers_first(self):
-        tex = _tex(_cmix(1, [2, 3], p200=7, p206=Ref(2), p207=Ref(3)), _cbitmap(2), FakeMap(3, (0x1234, 0), cls="Noise"))
+        tex = _tex(_cmix(1, [2, 3], p200=7, p206=Ref(2), p207=Ref(3)), _cbitmap(2),
+                   FakeMap(3, (0x1234, 0), cls="Noise"))
         g = tex.convert(mat.MapRef(1), tx.COLOR)
         self.assertEqual(g.root.name, "a.png")
         self.assertEqual(tex.stats.unsupported, collections.Counter(), "the bottom Noise is never drawn")

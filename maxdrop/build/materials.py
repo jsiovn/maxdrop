@@ -27,8 +27,8 @@ Texture graphs (convert/texmaps.py) become nodes, a node of the IR shared by sev
 -> Image Texture (its image datablock reused per file and color space: one file used in two color spaces is two
 datablocks; see Images below), with its placement as a Mapping node and a UV Map node for a map channel other than
 1; Invert, Mix, Multiply, Blend (Gamma nodes around a Mix node of its operation), ColorCorrect (its rewiring as
-Invert, the mean or Separate / Combine Color, then Hue/Saturation/Value, Bright/Contrast, gain, Gamma), Composite (per layer its blend at factor 1, then a Mix by
-opacity x mask), Facing (Layer Weight Facing, Fresnel, or the Geometry node's Normal . Incoming), Adjust (a map's
+Invert, the mean or Separate / Combine Color, then Hue/Saturation/Value, Bright/Contrast, gain, Gamma), Composite
+(per layer its blend at factor 1, then a Mix by opacity x mask), Facing (Layer Weight Facing, Fresnel, or the Geometry node's Normal . Incoming), Adjust (a map's
 Output, as an image's), Tint (Separate Color, three scales, two adds), NormalMap (Normal Map node, flips through
 Separate / Combine Color), Bump (Bump node). A texture file that
 was not found (or does not load) keeps its Image Texture node, without an image and not connected. The texture
@@ -457,7 +457,9 @@ class _Tree:
                 self.start_row()
                 factor = self.graph(layer.graph.root, FLOAT, 1)
             if isinstance(factor, bpy.types.NodeSocket):
-                factor = self.times(factor, layer.amount, 0) if layer.amount != 1.0 else factor
+                if layer.amount != 1.0:
+                    factor = self.times(factor, layer.amount, 0)
+                    factor.node.use_clamp = True
                 self.links.new(factor, mix.inputs[0])
             else:
                 weight = layer.amount * (1.0 if factor is MISSING else _mean(factor))
