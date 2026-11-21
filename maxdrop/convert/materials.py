@@ -30,7 +30,8 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   color (as in every rule, a reflection weight: 1 is the full Fresnel reflection at the IOR, which
   build/materials.py draws as Specular IOR Level 0.5, and a weight between 0 and 1 as a Mix Shader by it over a
   twin without reflection, so the whole curve scales as V-Ray scales it; with Fresnel on a white and a grey one
-  match V-Ray 5.2 at every angle, measured in the maxdrop-em3.34 and maxdrop-em3.119 plans); emission = self-illumination color times its multiplier; transmission = the mean of the refraction color,
+  match V-Ray 5.2 at every angle, measured in the maxdrop-em3.34 and maxdrop-em3.119 plans);
+  emission = self-illumination color times its multiplier; transmission = the mean of the refraction color,
   ior and thin-walled from the refraction parameters; maps where their slot is on, with their multiplier as the
   amount; a normal map (VRayNormalMap, Normal Bump, CoronaNormal) in a bump slot is the normal input, any other
   map the bump input. Added here: a refracting material takes its base color from the refraction color (mixed by
@@ -144,6 +145,7 @@ CORONA_BASE, CORONA_LAYERS, CORONA_AMOUNTS, CORONA_MASKS, CORONA_LAYERS_ON, CORO
     1000, 1001, 1002, 1003, 1004, 1005, 1006)
 MAX_LAYERS = 16  # layers mixed over a CoronaLayeredMtl's base (Corona offers 10)
 MAX_LAYER_BSDFS = 64  # Principled BSDFs one material may draw, its layers' layers counted at each use
+# (each may come with a twin without reflection, build/materials.py's reflection weight: at most twice as many nodes)
 MAX_COMPLEX_IOR = 100.0  # n and k of a complex IOR are held within 0..this
 DEFAULT_METERS = 0.0254  # meters per system unit of a scene that does not say: 3ds Max's default, inches
 
@@ -431,7 +433,8 @@ class MaterialConverter:
         return out
 
     def bsdf_count(self, ir):
-        """The Principled BSDFs build/materials.py draws for ir: one, plus its layers' at each use."""
+        """The Principled BSDFs build/materials.py draws for ir: one, plus its layers' at each use (a reflection
+        weight's twin not counted: each BSDF draws at most one)."""
         k = id(ir)
         if k not in self._bsdfs:
             self._bsdfs[k] = (ir, 1 + sum(self.bsdf_count(layer.ir) for layer in ir.layers))

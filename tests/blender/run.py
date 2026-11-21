@@ -1412,16 +1412,18 @@ def _constant_one(p, name):
 
 def check_specular(label, p, ir, present):
     """Specular IOR Level from the IR's reflection weight w: a weight map or a constant between 0 and 1 is a Mix
-    Shader by w over a twin without reflection (Specular IOR Level 0.5 on p), else 0.5 x w on p alone; so is a
-    constant metal or full transmission."""
+    Shader by w over a twin without reflection (Specular IOR Level 0.5 on p), else 0.5 x w (w taken at most 1) on p
+    alone; a constant metal or full transmission is 0.5 x w alone."""
     folded = _fold(ir.textures["specular"].root, present) if "specular" in ir.textures else LOST
     linked = folded is MAP
     w = None if linked else _mean(ir.specular.value if folded is LOST else folded)
-    lone = _constant_one(p, "Metallic") or _constant_one(p, "Transmission Weight") or (not linked and not 0 < w < 1)
+    metal_glass = _constant_one(p, "Metallic") or _constant_one(p, "Transmission Weight")
+    lone = metal_glass or (not linked and not 0 < w < 1)
     s, mix = p.inputs["Specular IOR Level"], _weight_mix(p)
     if lone:
         check("%s: Specular IOR Level %s, no reflection weight" % (label, "linked" if linked else "value"),
-              mix is None and s.is_linked == linked and (linked or _value_ok(s, w * SPECULAR_LEVEL)),
+              mix is None and s.is_linked == linked and (linked or _value_ok(s, w * SPECULAR_LEVEL if metal_glass
+                                                                       else max(0.0, min(1.0, w)) * SPECULAR_LEVEL)),
               "mix %s, linked %s, %r vs %r" % (mix is not None, s.is_linked, s.default_value, w))
         return
     fac = mix.inputs[0] if mix is not None else None
@@ -1696,8 +1698,7 @@ def check_fixture_materials(name, plan, desc, obs):
                 if ir.source == "CoronaPhysicalMtl":
                     corona.append(material)
     if name == "corona_physical":  # absolute: check_principled follows the IR, which drew 0.25 (maxdrop-em3.121)
-        sockets = [(m.name, n.inputs["Specular IOR Level"]) for m in corona for n in m.node_tree.nodes
-                   if n.bl_idname == "ShaderNodeBsdfPrincipled"]
+        sockets = [(m.name, n.inputs["Specular IOR Level"]) for m in corona for n in _bsdfs(m)]
         levels = [(name, s.is_linked, round(s.default_value, 6)) for name, s in sockets]
         check("corona_physical: every CoronaPhysicalMtl reflects the IOR's own Fresnel (Specular IOR Level 0.5)",
               len(levels) >= 3 and all(not linked and v == 0.5 for _n, linked, v in levels), str(levels))
@@ -2655,6 +2656,7 @@ def check_builder_weight():
             ("None", dict(specular=cm.Input(0.0)), False, 0.0),
             ("Grey", dict(specular=cm.Input(0.4), roughness=cm.Input(0.3), alpha=cm.Input(0.5)), True, 0.5),
             ("White", dict(specular=cm.Input(1.0)), False, 0.5),
+            ("Above", dict(specular=cm.Input(1.6)), False, 0.5),
             ("Metal", dict(specular=cm.Input(0.4), metallic=cm.Input(1.0)), False, 0.2),
             ("Glass", dict(specular=cm.Input(0.4), transmission=cm.Input(1.0)), False, 0.2),
             ("HalfGlass", dict(specular=cm.Input(0.4), transmission=cm.Input(0.5)), True, 0.5)):
@@ -2690,6 +2692,19 @@ def check_builder_weight():
           len(bsdfs) == 2 and len(weights) == 1 and _weight_mix(bsdfs[0]) is None and layer_mix is not None
           and _weight_mix(bsdfs[1]) == weights[0] and _from(layer_mix.inputs[2]) == weights[0]
           and _from(layer_mix.inputs[1]) == bsdfs[0], "%d BSDFs, %d weights" % (len(bsdfs), len(weights)))
+    if len(bsdfs) == 2 and len(weights) == 1:
+        check_twin("weight: the layer", bsdfs[1], weights[0])
+    ir = cm.MaterialIR(73, "GreyUnder", "test", specular=cm.Input(0.3))
+    ir.layers = [cm.Layer(top, 0.5)]
+    m = builder.make(ir)
+    bsdfs, shaders = _bsdfs(m), _shaders(m)
+    under = _weight_mix(bsdfs[0]) if bsdfs else None
+    layer_mix = shaders[0] if len(shaders) == 1 else None
+    check("weight: a grey base under a grey layer: the base's weight below the layer's Mix Shader",
+          len(bsdfs) == 2 and under is not None and layer_mix is not None and _from(layer_mix.inputs[1]) == under
+          and _weight_mix(bsdfs[1]) is not None and _from(layer_mix.inputs[2]) == _weight_mix(bsdfs[1]))
+    if under is not None:
+        check_twin("weight: the base under a layer", bsdfs[0], under)
     empty_scene()
 
 
@@ -3616,7 +3631,7 @@ def _upstream(socket):
 
 
 def check_reflection_falloff():
-    """vray_texmaps imported: a Falloff in a VRayMtl's reflection drives Specular IOR Level by the angle (Layer
+    """vray_texmaps imported: a Falloff in a VRayMtl's reflection drives the reflection weight by the angle (Layer
     Weight for perpendicular / parallel, the Fresnel node for Fresnel), not its color 1."""
     for name, kind in (("FixtureVReflPerp", "ShaderNodeLayerWeight"), ("FixtureVReflFresnel", "ShaderNodeFresnel")):
         m = bpy.data.materials.get(name)
@@ -3624,7 +3639,7 @@ def check_reflection_falloff():
         nodes = _upstream(socket) if socket is not None else []
         by_facing = [n for n in nodes if n.bl_idname == "ShaderNodeMix"
                      and getattr(_from(_input(n, "Factor_Float")), "bl_idname", None) == kind]
-        check("vray_texmaps/%s: the reflection Falloff into Specular IOR Level, a Mix by %s" % (name, kind),
+        check("vray_texmaps/%s: the reflection Falloff into the reflection weight, a Mix by %s" % (name, kind),
               socket is not None and socket.is_linked and len(by_facing) == 1,
               str(sorted(n.bl_idname for n in nodes)))
 

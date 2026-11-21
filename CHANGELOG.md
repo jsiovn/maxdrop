@@ -19,7 +19,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Materials: a grey reflection (a VRayMtl's reflection color, a Standard, Physical or Corona reflection level below
   full) or a reflection map no longer brightens toward the silhouette: the whole Fresnel curve is scaled by it, as
   V-Ray does, through a Mix Shader over a copy of the Principled BSDF without reflection (a grey 128 sphere at IOR
-  1.6 was about 50 % too bright near its rim in Cycles; it now matches V-Ray 5.2).
+  1.6 was about 50 % too bright near its rim in Cycles; it now matches V-Ray 5.2; the other renderers' materials
+  follow the same rule, not checked against them).
 
 ## [1.0.1] - 2026-11-22
 

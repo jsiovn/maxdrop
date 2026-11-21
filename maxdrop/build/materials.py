@@ -16,8 +16,8 @@ nodes' inputs are looked up by identifier (Fac, Bright, A_Color...), which stays
 between versions.
 
 Inputs: Base Color, Metallic, Roughness, IOR, Alpha, Specular IOR Level (the IR's specular is a reflection weight,
-1 being the full Fresnel reflection at the IOR, Blender's 0.5; see Reflection weight below), Transmission Weight, Emission
-Color and Strength, Coat Weight, Roughness, IOR and Tint, Subsurface Weight, Radius (the IR's subsurface color, per
+1 being the full Fresnel reflection at the IOR, Blender's 0.5; see Reflection weight below), Transmission Weight,
+Emission Color and Strength, Coat Weight, Roughness, IOR and Tint, Subsurface Weight, Radius (the IR's subsurface color, per
 channel) and Scale (its radius in meters), Sheen Weight, Tint and Roughness, Thin Wall, Normal. A material with layers
 (a CoronaLayeredMtl) has a Principled BSDF per layer, each mixed over the ones below by a Mix Shader (factor: the
 layer's amount times its mask); the render method follows every one of them. A color graph on a float input (specular,
@@ -31,8 +31,9 @@ diffuse, V-Ray's split. Measured on V-Ray 5.2 (bead maxdrop-em3.119, the maxdrop
 IOR 1.6, black diffuse, white environment): 0.0415 / 0.0789 at 0.8-0.88 / 0.9-0.95 of the sphere's radius, Cycles
 the same, EEVEE about 7 % lower (as for a white reflection); the Specular IOR Level 0.25 drawn before gave 0.053 /
 0.121. The lone BSDF (Specular IOR Level SPECULAR_LEVEL x w) stays where the twin would change nothing: a constant
-w of 0 or at least 1, a constant Metallic of 1, a constant Transmission Weight of 1 (Specular IOR Level does not
-change a transmissive Principled's reflection, measured in Cycles). Every material class follows: the rule reads
+w of 0 or at least 1 (above 1 counted as 1, as a map is by the Mix Shader's factor), a constant Metallic of 1, a
+constant Transmission Weight of 1 (Specular IOR Level does not change a transmissive Principled's reflection,
+measured in Cycles; so the refracting share of a partly transmissive one keeps its full reflection). Every material class follows: the rule reads
 the IR's weight, whatever made it (Standard, Physical, CoronaLegacyMtl: not measured against their renderers).
 
 Data maps (a map on roughness, metallic or alpha, a mask, a bump height: a graph drawn as a float) take the mean of
@@ -453,7 +454,7 @@ class _Tree:
             return None
         w = self.float_value(ir.specular, graph)
         if not isinstance(w, bpy.types.NodeSocket) and not 0.0 < w < 1.0:
-            _default(s, w * SPECULAR_LEVEL)
+            _default(s, max(0.0, min(1.0, w)) * SPECULAR_LEVEL)
             return None
         _default(s, SPECULAR_LEVEL)
         return w
