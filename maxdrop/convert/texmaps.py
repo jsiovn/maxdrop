@@ -20,8 +20,9 @@ space; the builder falls back to Non-Color where the color space is missing) and
 a gamma (1.0: none); on the other inputs an image is data and the override is not applied. Constants are linear, a
 swatch made so by the scene's swatch rule (convert/colors.py: linear with the gamma on, the sRGB curve with it off):
 in a COLOR graph always linear RGB (also when the input itself is a float, as specular and transmission are: the
-builder takes the mean of the graph's color there, the measure materials.py uses), elsewhere a float, the mean of the
-linear color.
+builder takes the mean of the graph's color there, the measure materials.py uses), elsewhere a float: the scene's rule
+applied to the mean of the swatch (V-Ray 5.2 renders a red mask as 1 / 3 before any gamma; TexmapConverter._swatch),
+the mean of the color for one that is linear already (CoronaColor's HDR color and temperature).
 
 The graph's nodes (frozen dataclasses): Image (an image map: the file as the scene stores it, the one the texture lookup
 found, Mapping, Crop, TexOutput, color space, gamma, alpha), Constant, Invert, Mix(a, b, factor, mask), Multiply,
@@ -732,9 +733,20 @@ class TexmapConverter:
     def _constant(self, m, pid, kind, default):
         """A color parameter as a Constant of the input's kind."""
         v = m.param(pid, 0)
-        rgb = v if isinstance(v, tuple) and len(v) >= 3 and all(_finite(c) for c in v[:3]) else default
-        lin = self.swatches.color(rgb)
-        return Constant(lin if kind == COLOR else sum(lin) / 3.0)
+        return self._swatch(v if isinstance(v, tuple) and len(v) >= 3 and all(_finite(c) for c in v[:3]) else default,
+                            kind)
+
+    def _swatch(self, rgb, kind):
+        """A swatch (0..1 per channel) as a Constant of the input's kind: on a color input the linear color, on any
+        other the scene's rule applied to the mean of the swatch, each channel clamped to 0..1 first. V-Ray 5.2
+        takes a constant mask as the mean of the swatch, before any gamma: a Mix black -> white by a red (255 0 0)
+        VRayColor renders 0.333 linear with the gamma on and byte 85 with it off, which the decoded mean (0.0908)
+        shows in Blender and the mean of the decoded color (0.333) does not (docs/plans/2026-11-21-maxdrop-em3.36-
+        data-constants.md). Measured on a mask only: with the gamma off a decoded number is exact for a mask
+        between black and white, not for one between two colors, nor for a roughness or opacity constant."""
+        if kind == COLOR:
+            return Constant(self.swatches.color(rgb))
+        return Constant(self.swatches.channel(sum(min(1.0, max(0.0, c)) for c in rgb[:3]) / 3.0))
 
     def _on(self, m, map_pid, on_pid, tab=0):
         """The object index of the map a parameter uses: set and its switch (on_pid, None: none) on; else None."""
@@ -1246,8 +1258,7 @@ def _corona_color(conv, m, kind, walk, depth, chain):
     if swatch is None:
         v = m.param(CC_COLOR, 0)
         swatch = v[:3] if isinstance(v, tuple) and len(v) >= 3 and all(_finite(c) for c in v[:3]) else (1.0,) * 3
-    lin = conv.swatches.color(tuple(c * mult for c in swatch))
-    return Constant(lin if kind == COLOR else sum(lin) / 3.0)
+    return conv._swatch(tuple(c * mult for c in swatch), kind)
 
 
 def _vray_color(conv, m, kind, walk, depth, chain):
@@ -1255,8 +1266,8 @@ def _vray_color(conv, m, kind, walk, depth, chain):
     (renderMap in 3ds Max: (100 gray, multiplier 2, gamma 2) -> 255 * (200 / 255) ^ 2), then made linear by the
     scene's rule like every swatch. In temperature mode color holds V-Ray's own temperature color, taken through
     the same rule (not measured with the gamma off, where it is decoded from sRGB unlike CoronaColor's kelvin). A
-    mono input takes the color, not the alpha (measured with a Mix mask); on a data input the Constant is the mean
-    of the linear color, as every constant's."""
+    mono input takes the color, not the alpha (measured with a Mix mask); on a data input the Constant is the
+    scene's rule applied to the mean of the swatch, as every swatch constant's (_swatch)."""
     mode = m.param(VC_MODE, 0)
     v = m.param(VC_COLOR, 0)
     if not (isinstance(v, tuple) and len(v) >= 3 and all(_finite(c) for c in v[:3])):
@@ -1287,8 +1298,7 @@ def _vray_color(conv, m, kind, walk, depth, chain):
     if primaries not in (None, 0):
         conv._issue(walk, m.index, "VRayColor %r: RGB primaries %r drawn as sRGB" % (m.name, primaries))
     scaled = tuple(min(1.0, max(0.0, c * float(mult))) for c in swatch)
-    lin = conv.swatches.color(tuple(c ** float(gamma) for c in scaled))
-    return Constant(lin if kind == COLOR else sum(lin) / 3.0)
+    return conv._swatch(tuple(c ** float(gamma) for c in scaled), kind)
 
 
 def _corona_layer(node, mult, offset):

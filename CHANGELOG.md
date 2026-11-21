@@ -46,6 +46,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ### Fixed
 
+- Maps in a scene saved with the gamma off: a colored constant on a mask, roughness or other data input (a
+  VRayColor, a CoronaColor, a Mix's or Falloff's own color) takes the mean of its swatch before the sRGB curve, as
+  V-Ray renders it: a red mask over a black-to-white Mix gives 0.09 instead of 0.33, which showed much too bright.
+  Grey constants and scenes with the gamma on are unchanged.
 - Bitmap, CoronaBitmap, VRayBitmap: Mirror is drawn as 3ds Max draws it, two copies per tile with the second one
   mirrored (a cropped image too), and it wins over Tile: a mirrored map with the default tiling is no longer drawn
   as a plain repeat. Tile, mirror and neither are kept per direction also without a crop (Tile U only no longer

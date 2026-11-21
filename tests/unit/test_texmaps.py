@@ -209,8 +209,8 @@ class TexmapRules(Checks):
 
     def test_falloff_without_a_map_is_its_colors(self):
         t = self.f.irs["FixtureTexPeel"].textures
-        g = t["metallic"].root  # a data input: the means
-        self.close((g.a.value, g.b.value), (sum(_lin(c) for c in (200, 100, 50)) / 3.0, 1.0))
+        g = t["metallic"].root  # a data input: the mean of each swatch, then the rule (the gamma is off)
+        self.close((g.a.value, g.b.value), (_lin((200 + 100 + 50) / 3.0), 1.0))
         g = t["emission_color"].root  # map1 switched off: color1
         self.close(g.a.value, (1.0, 0.0, 0.0))
         self.close(g.b.value, (1.0, 1.0, 1.0))
@@ -773,7 +773,7 @@ class CoronaMaps(Checks):
 
     def test_corona_color_is_a_constant(self):
         root = self.f.irs["FixtureCoronaMaps"].textures["metallic"].root
-        self.close(root.value, sum(_lin(c) for c in (100, 150, 200)) / 3, "a data input: the mean")
+        self.close(root.value, _lin(150), "a data input: the mean of the swatch, then the rule")
 
     def test_corona_mix_with_a_mask(self):
         root = self.f.irs["FixtureCoronaMaps"].textures["emission_color"].root
@@ -1699,6 +1699,32 @@ class SwatchRule(Checks):
                 for m in (vc, cco, hexed):
                     self.close(self._root(rule, m).value, (want,) * 3, m.cls)
                 self.close(self._root(rule, vc, kind=tx.DATA).value, want, "a data input: the mean")
+
+    def test_data_constants_are_the_rule_of_the_mean_swatch(self):
+        # V-Ray 5.2 render of a Mix black -> white by a VRayColor mask (docs/plans/2026-11-21-maxdrop-em3.36-data-
+        # constants.md): red 255 0 0 renders 0.333 linear with the gamma on and byte 85 with it off, which a linear
+        # srgb_to_linear(1 / 3) = 0.0908 shows; grey 64 renders 0.251 linear on, byte 64 off.
+        red, grey = (1.0, 0.0, 0.0), (64 / 255,) * 3
+        cases = ((colors.GAMMA_ON, red, 1 / 3), (colors.UNKNOWN, red, 1 / 3), (colors.GAMMA_OFF, red, 0.0908417),
+                 (colors.GAMMA_ON, grey, 64 / 255), (colors.GAMMA_OFF, grey, _lin(64)))
+        for rule, rgb, want in cases:
+            maps = (FakeMap(1, tx.MIX, {4: rgb, 5: rgb}, cls="Mix"),
+                    FakeMap(1, classids.VRAY_COLOR, {5: rgb}, cls="VRayColor"),
+                    _ccolor(1, p52=rgb),
+                    _ccolor(1, p50=3, p59="#%02X%02X%02X" % tuple(round(c * 255) for c in rgb)))
+            for m in maps:
+                with self.subTest(rule=rule, rgb=rgb, cls=m.cls, method=m.param(50, 0)):
+                    root = self._root(rule, m, kind=tx.DATA)
+                    self.close(root.a.value if m.cls == "Mix" else root.value, want)
+                    self.close(self._root(rule, m, kind=tx.COLOR).value if m.cls != "Mix" else
+                               self._root(rule, m).a.value, rule.color(rgb), "a color input: the linear color")
+
+    def test_linear_corona_colors_on_a_data_input_are_the_mean(self):
+        # the HDR color and the temperature are linear already: no rule, the mean of the linear color
+        for rule in (colors.GAMMA_ON, colors.GAMMA_OFF):
+            self.close(self._root(rule, _ccolor(1, p50=1, p58=(1.5, 0.0, 0.0)), kind=tx.DATA).value, 0.5)
+            self.close(self._root(rule, _ccolor(1, p50=2, p51=3000.0), kind=tx.DATA).value,
+                       sum(tx.corona_kelvin(3000.0)) / 3.0)
 
     def test_kelvin_and_hdr_whatever_the_rule(self):
         kelvin, hdr = _ccolor(1, p50=2, p51=3000.0), _ccolor(1, p50=1, p58=(0.25, 0.5, 2.0))
