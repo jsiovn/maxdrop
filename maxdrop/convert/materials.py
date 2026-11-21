@@ -714,6 +714,7 @@ def _car_paint(conv, m, ir, base_gloss, bump_pid):
     ir.specular = Input(_clamp01(_num(m, 4, 0, 0.5)))
     ir.coat_color = conv.rgb(m, 27, 0, (1.0, 1.0, 1.0))
     ir.coat_roughness = _roughness(_num(m, 39, 0, 1.0), False)
+    # a missing multiplier is read as 100: the car paints' as-created value is not recorded (FastSSS2's bump: 30)
     conv.bump_slot(ir, conv.map_ref(m, bump_pid, bump_pid + 1, bump_pid + 2, 0, ir=ir))
 
 
