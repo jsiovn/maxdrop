@@ -35,6 +35,7 @@ classdir = importlib.import_module(_PKG + ".reader.classdir")
 classids = importlib.import_module(_PKG + ".reader.classids")
 scene = importlib.import_module(_PKG + ".reader.scene")
 ct = importlib.import_module(_PKG + ".reader.controllers")
+pblock = importlib.import_module(_PKG + ".reader.pblock")
 ChunkError = chunks.ChunkError
 
 
@@ -61,11 +62,28 @@ _CLASSES = [
     (0x118F7C01, 0xFEEE238B, 0x900D, "ScaleXYZ"), (0x442313, 0, 0x900C, "TCB Rotation"),
     (0x2008, 0, 0x900B, "Bezier Position"), (0x442315, 0, 0x900D, "TCB Scale"), (0x442311, 0, 0x9003, "TCB Float"),
     (0x2021, 0, 0x900C, "LookAt Constraint"), (0x7777, 0, 0x9008, "Some Matrix3"),
+    (0x2001, 0, 0x9003, "Linear Float"), (0x2002, 0, 0x900B, "Linear Position"),
+    (0x2003, 0, 0x900C, "Linear Rotation"), (0x2004, 0, 0x900D, "Linear Scale"), (0x442312, 0, 0x900B, "TCB Position"),
+    (0x2009, 0, 0x900C, "Smooth Rotation"), (0x4B4B1000, 0, 0x9003, "Float List"), (0x7778, 0, 0x9003, "Some Float"),
 ]
 (C_NODE, C_ROOT, C_PRS, C_POSXYZ, C_EULER, C_BSCALE, C_BFLOAT, C_PB2, C_POSLIST, C_ROTLIST, C_SCALELIST,
- C_LOOKAT, C_SCALEXYZ, C_TCBROT, C_BPOS, C_TCBSCALE, C_TCBFLOAT, C_LOOKAT_CONSTRAINT, C_UNKNOWN_M3) = \
+ C_LOOKAT, C_SCALEXYZ, C_TCBROT, C_BPOS, C_TCBSCALE, C_TCBFLOAT, C_LOOKAT_CONSTRAINT, C_UNKNOWN_M3,
+ C_LINFLOAT, C_LINPOS, C_LINROT, C_LINSCALE, C_TCBPOS, C_SMOOTHROT, C_FLOATLIST, C_UNKNOWN_FLOAT) = \
     range(len(_CLASSES))
 CLASSES = classdir.ClassDirectory.parse(b"".join(class_entry(*c) for c in _CLASSES))
+# the keyframe classes as the controllers fixture shows them: (class index, key chunk, bytes per key, value floats)
+KEYFRAMED = {"Linear Float": (C_LINFLOAT, 0x2511, 12, 1), "TCB Float": (C_TCBFLOAT, 0x2520, 40, 1),
+             "Bezier Float": (C_BFLOAT, 0x2525, 28, 1), "Linear Position": (C_LINPOS, 0x2513, 20, 3),
+             "TCB Position": (C_TCBPOS, 0x2521, 64, 3), "Bezier Position": (C_BPOS, 0x2526, 80, 3),
+             "Linear Rotation": (C_LINROT, 0x2514, 24, 4), "TCB Rotation": (C_TCBROT, 0x2522, 92, 4),
+             "Smooth Rotation": (C_SMOOTHROT, 0x2527, 88, 4), "Linear Scale": (C_LINSCALE, 0x2515, 36, 7),
+             "TCB Scale": (C_TCBSCALE, 0x2523, 112, 7), "Bezier Scale": (C_BSCALE, 0x2528, 148, 7)}
+VALUE_CHUNK = {1: 0x2501, 3: 0x2503, 4: 0x2504, 7: 0x2505}
+FOREVER, AT_FRAME_30, NEVER = (-2 ** 31, 2 ** 31 - 1), (4800, 4800), (-2 ** 31, -2 ** 31)
+
+
+def pb2_entry(pid, ptype, flags, body):
+    return leaf(0x100E, struct.pack("<HIII", pid, ptype, flags, 0) + body)
 
 
 def refs34(*indices):
@@ -80,6 +98,42 @@ def float_keys(*keys):
 def scale_keys(*keys):
     """Bezier Scale keys: (time, (sx, sy, sz, qx, qy, qz, qw)) -> 148 bytes each."""
     return leaf(0x2528, b"".join(struct.pack("<iI7f28f", t, 0x1680, *v, *([0.0] * 28)) for t, v in keys))
+
+
+def keys_of(name, *keys):
+    """The key chunk of keyframe class name: (time, value tuple) per key, the rest of each record zero."""
+    _c, cid, size, count = KEYFRAMED[name]
+    return leaf(cid, b"".join(struct.pack("<iI%df" % count, t, 0, *v).ljust(size, b"\0") for t, v in keys))
+
+
+def keyframed(b, name, saved=None, interval=None, keys=None):
+    """An object of keyframe class name: its saved value (a tuple), the interval it holds for, a key chunk."""
+    c, _cid, _size, count = KEYFRAMED[name]
+    parts = [] if saved is None else [leaf(VALUE_CHUNK[count], struct.pack("<%df" % count, *saved))]
+    if interval is not None:
+        parts.append(leaf(0x2500, struct.pack("<ii", *interval)))
+    if keys is not None:
+        parts.append(keys)
+    return b.add(node(c, *parts))
+
+
+class Anim(float):
+    """A list weight held by a Bezier Float controller (a table element tagged 0x80) instead of stored."""
+
+
+def list_block(b, *weights):
+    """A list controller's ParamBlock2 as 3ds Max 2020 writes it: parameter 0 the weights, a float table (an Anim is
+    a controller in the block's next reference slot), parameter 1 a bool."""
+    body, slots = struct.pack("<BI", 0, len(weights)), []
+    for w in weights:
+        if isinstance(w, Anim):
+            body += b"\x80"
+            slots.append(b.flt(float(w)))
+        else:
+            body += struct.pack("<Bf", 0xC0, w)
+    entries = [pb2_entry(0, 0x800, 0x921089, body), pb2_entry(1, 4, 0x820000, struct.pack("<Bi", 0x40, 0))]
+    head = leaf(0x0009, struct.pack("<IHIHI", 0x1E, 0, 0x55F03700, len(entries), 0))
+    return b.add(node(C_PB2, *([refs34(*slots)] if slots else []), head, *entries))
 
 
 class Build:
@@ -319,16 +373,156 @@ class TestValues(MatrixCase):
         angles = (0.3, 0.2, 0.1)
         n = b.node(b.prs(None, b.euler(angles, order=4)))
         self.assertMatrix(b.transforms().world(n), ct.euler_matrix(angles, 4))
+        for stored in (7, 106, -1):  # 106: XYX, an Euler order that repeats an axis
+            b = Build()
+            n = b.node(b.prs(None, b.euler(angles, order=stored)))
+            t = b.transforms()
+            self.assertMatrix(t.world(n), ct.euler_matrix(angles, 0))
+            self.assertEqual([i.reason for i in t.issues], [ct.EULER_ORDER])
+
+    def test_euler_order_as_3ds_max_saves_it(self):
+        # controllers fixture: XYZ saved as 0, XZY ... ZYX as 101 ... 105
+        angles = (0.3, 0.2, 0.1)
+        for stored, order in ((0, 0), (100, 0), (101, 1), (102, 2), (103, 3), (104, 4), (105, 5)):
+            b = Build()
+            n = b.node(b.prs(None, b.euler(angles, order=stored)))
+            t = b.transforms()
+            self.assertMatrix(t.world(n), ct.euler_matrix(angles, order))
+            self.assertEqual(t.issues, [])
+
+    def test_float_controllers(self):
         b = Build()
-        n = b.node(b.prs(None, b.euler(angles, order=7)))
+        lin = b.add(node(C_LINFLOAT, leaf(0x2501, struct.pack("<f", 11))))
+        tcb = b.add(node(C_TCBFLOAT, leaf(0x2501, struct.pack("<f", -22))))
+        flist = b.add(node(C_FLOATLIST, refs34(b.flt(30.0), b.flt(7.0), None, None, list_block(b, 0.5, 1.0)),
+                           leaf(0x1010, struct.pack("<i", 2))))
+        n = b.node(b.prs(b.add(node(C_POSXYZ, refs34(lin, tcb, flist)))))
         t = b.transforms()
-        self.assertMatrix(t.world(n), ct.euler_matrix(angles, 0))
-        self.assertEqual([i.reason for i in t.issues], [ct.EULER_ORDER])
+        self.assertMatrix(t.world(n), ct.translation((11, -22, 22)))  # 0.5 * 30 + 1.0 * 7
+        self.assertEqual(t.issues, [])
+
+
+def _rotz(degrees):
+    """A Max quaternion of a turn about Z."""
+    h = math.radians(degrees) / 2
+    return (0.0, 0.0, math.sin(h), math.cos(h))
+
+
+# two values per keyframe value size: a key at an earlier and one at a later time
+KEY_VALUES = {1: ((2.0,), (6.0,)), 3: ((1.0, 2.0, 3.0), (6.0, 7.0, 8.0)), 4: (_rotz(30), _rotz(90)),
+              7: ((2.0, 3.0, 4.0, 0.0, 0.0, 0.0, 1.0), (1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0))}
+STALE = {1: (99.0,), 3: (99.0, 99.0, 99.0), 4: _rotz(170), 7: (9.0, 9.0, 9.0, 0.0, 0.0, 0.0, 1.0)}
+
+
+class TestKeyframe(MatrixCase):
+    """Keyframe controllers: the saved value where its interval holds time 0, else the keys at time 0."""
+
+    @staticmethod
+    def expected(name, value):
+        count = KEYFRAMED[name][3]
+        if count == 1:
+            return ct.translation((value[0], 0.0, 0.0))
+        if count == 3:
+            return ct.translation(value)
+        if count == 4:
+            return ct.quat_matrix(value)
+        return ct.scale_matrix(value[:3], value[3:])
+
+    @staticmethod
+    def world(name, **kw):
+        """(world matrix, issues) of a node whose controller of keyframe class name is made with kw."""
+        b = Build()
+        obj = keyframed(b, name, **kw)
+        count = KEYFRAMED[name][3]
+        if count == 1:
+            prs = b.prs(b.add(node(C_POSXYZ, refs34(obj))))
+        else:
+            prs = b.prs(*[obj if k == {3: 0, 4: 1, 7: 2}[count] else None for k in range(3)])
+        n = b.node(prs)
+        t = b.transforms()
+        return t.world(n), t.issues
+
+    def test_every_class_reads_its_keys(self):
+        for name, (_c, _cid, _size, count) in KEYFRAMED.items():
+            first, last = KEY_VALUES[count]
+            with self.subTest(name):
+                got, issues = self.world(name, saved=STALE[count], interval=AT_FRAME_30,
+                                         keys=keys_of(name, (0, first), (8000, last)))
+                self.assertMatrix(got, self.expected(name, first))
+                self.assertEqual(issues, [])
+                got, issues = self.world(name, saved=STALE[count], interval=AT_FRAME_30,
+                                         keys=keys_of(name, (-800, first), (-400, last)))
+                self.assertMatrix(got, self.expected(name, last))  # after the last key: its value
+                self.assertEqual(issues, [])
+                got, issues = self.world(name, keys=keys_of(name, (160, first), (800, last)))
+                self.assertMatrix(got, self.expected(name, first))  # before the first key: its value
+                self.assertEqual(issues, [])
+
+    def test_saved_value_whose_interval_holds_time_0(self):
+        for interval in (FOREVER, (0, 0), (-160, 4800)):
+            with self.subTest(interval=interval):
+                got, issues = self.world("Linear Position", saved=(4, 5, 6), interval=interval,
+                                         keys=keys_of("Linear Position", (0, (1, 2, 3)), (800, (6, 7, 8))))
+                self.assertMatrix(got, ct.translation((4, 5, 6)))
+                self.assertEqual(issues, [])
+
+    def test_saved_value_that_holds_never_takes_the_keys(self):
+        got, issues = self.world("Bezier Float", saved=(0.0,), interval=NEVER,
+                                 keys=keys_of("Bezier Float", (16000, (5.0,))))
+        self.assertMatrix(got, ct.translation((5, 0, 0)))
+        self.assertEqual(issues, [])
+
+    def test_between_keys(self):
+        for name, (_c, _cid, _size, count) in KEYFRAMED.items():
+            first, last = KEY_VALUES[count]
+            with self.subTest(name):
+                got, issues = self.world(name, saved=STALE[count], interval=AT_FRAME_30,
+                                         keys=keys_of(name, (-1600, first), (6400, last)))  # 0 a fifth of the way
+                if count == 4:
+                    want = ct.quat_matrix(_rotz(42))
+                else:
+                    want = self.expected(name, tuple(a + (b - a) * 0.2 for a, b in zip(first, last)))
+                self.assertMatrix(got, want)
+                # Linear is exact; Bezier and TCB follow tangents that are not read
+                self.assertEqual([i.reason for i in issues], [] if name.startswith("Linear") else
+                                 [ct.KEYS_INTERPOLATED])
+
+    def test_key_chunk_of_another_class(self):
+        tcb_keys = keys_of("TCB Position", (0, (1, 2, 3)))
+        got, issues = self.world("Linear Position", saved=(4, 5, 6), interval=AT_FRAME_30, keys=tcb_keys)
+        self.assertMatrix(got, ct.translation((4, 5, 6)))
+        self.assertEqual([i.reason for i in issues], [ct.KEYS_UNKNOWN])
+        got, issues = self.world("Linear Position", keys=tcb_keys)
+        self.assertMatrix(got, ct.IDENTITY)
+        self.assertEqual([i.reason for i in issues], [ct.KEYS_UNKNOWN])
+
+    def test_damaged_keys_or_interval(self):
+        got, issues = self.world("TCB Scale", saved=(2, 2, 2, 0, 0, 0, 1), interval=AT_FRAME_30,
+                                 keys=leaf(0x2523, b"\0" * 113))
+        self.assertMatrix(got, ct.scale_matrix((2, 2, 2)))  # a stale value beats keys that cannot be read
+        self.assertEqual([i.reason for i in issues], [ct.KEYS_UNKNOWN])
+        b = Build()
+        obj = b.add(node(C_LINPOS, leaf(0x2503, struct.pack("<3f", 1, 2, 3)), leaf(0x2500, b"\0" * 4),
+                         keys_of("Linear Position", (0, (1, 2, 3)))))
+        n = b.node(b.prs(obj))
+        t = b.transforms()
+        self.assertEqual(t.world(n), ct.IDENTITY)
+        self.assertTrue(t.issues[0].reason.startswith(ct.DAMAGED), t.issues)
+
+    def test_slerp(self):
+        self.assertMatrix(ct.quat_matrix(ct.slerp(_rotz(0), _rotz(180), 0.5)), ct.quat_matrix(_rotz(90)))
+        flipped = tuple(-v for v in _rotz(90))  # the same rotation: the shorter arc still
+        self.assertMatrix(ct.quat_matrix(ct.slerp(_rotz(30), flipped, 0.5)), ct.quat_matrix(_rotz(60)))
+        self.assertMatrix(ct.quat_matrix(ct.slerp((0, 0, 0, 0), _rotz(90), 0.5)), ct.quat_matrix(_rotz(45)))
+        self.assertMatrix(ct.quat_matrix(ct.slerp(_rotz(10), _rotz(10 + 1e-7), 0.3)), ct.quat_matrix(_rotz(10)))
+        for bad in ((math.nan, 0, 0, 1), (0, 0, 0, math.inf)):
+            self.assertFalse(ct._finite(ct.quat_matrix(ct.slerp(bad, _rotz(90), 0.5))))
+        self.assertMatrix(ct.quat_matrix(ct.slerp((0, 0, 3, 3), _rotz(0), 0.5)), ct.quat_matrix(_rotz(45)))
 
 
 class TestLists(MatrixCase):
     def weights(self, b, *values):
-        return b.add(node(C_PB2, refs34(*(b.flt(v) if v is not None else None for v in values))))
+        return list_block(b, *values)
 
     def test_position_list_is_a_weighted_sum(self):
         b = Build()
@@ -343,7 +537,7 @@ class TestLists(MatrixCase):
     def test_missing_weight_is_one(self):
         b = Build()
         p1, p2 = b.xyz(C_POSXYZ, (1, 2, 3)), b.xyz(C_POSXYZ, (10, 20, 30))
-        lst = b.add(node(C_POSLIST, refs34(p1, p2, None, None, self.weights(b, 0.0, None)),
+        lst = b.add(node(C_POSLIST, refs34(p1, p2, None, None, self.weights(b, 0.0)),
                          leaf(0x1010, struct.pack("<i", 2))))
         n = b.node(b.prs(lst))
         t = b.transforms()
@@ -360,7 +554,7 @@ class TestLists(MatrixCase):
     def test_sparse_slots_without_0x1010(self):
         b = Build()
         p1, p2 = b.xyz(C_POSXYZ, (1, 0, 0)), b.xyz(C_POSXYZ, (0, 1, 0))
-        lst = b.add(node(C_POSLIST, refs34(p1, None, None, p2, self.weights(b, 1.0, None, None, 1.0))))
+        lst = b.add(node(C_POSLIST, refs34(p1, None, None, p2, self.weights(b, 1.0, 0.0, 0.0, 1.0))))
         n = b.node(b.prs(lst))
         t = b.transforms()
         self.assertMatrix(t.world(n), ct.translation((1, 1, 0)))
@@ -403,6 +597,35 @@ class TestLists(MatrixCase):
         n = b.node(b.prs(None, None, lst))
         self.assertMatrix(b.transforms().world(n), ct.scale_matrix((4, 2, 2)))
 
+    def test_animated_weight(self):
+        # an animated weight is a controller in the block's next reference slot (the corpus), a stored one a value
+        b = Build()
+        p1, p2 = b.xyz(C_POSXYZ, (1, 2, 3)), b.xyz(C_POSXYZ, (10, 20, 30))
+        lst = b.add(node(C_POSLIST, refs34(p1, p2, None, None, self.weights(b, Anim(2.0), 0.5)),
+                         leaf(0x1010, struct.pack("<i", 2))))
+        n = b.node(b.prs(lst))
+        t = b.transforms()
+        self.assertMatrix(t.world(n), ct.translation((7, 14, 21)))
+        self.assertEqual(t.issues, [])
+
+    def test_weights_not_stored_or_damaged(self):
+        b = Build()
+        p1, p2 = b.xyz(C_POSXYZ, (1, 2, 3)), b.xyz(C_POSXYZ, (10, 20, 30))
+        head = leaf(0x0009, struct.pack("<IHIHI", 0x1E, 0, 0x55F03700, 1, 0))
+        damaged = b.add(node(C_PB2, head, pb2_entry(0, 0x800, 0x921089, struct.pack("<BI", 0, 9) + b"\xc0")))
+        lst = b.add(node(C_POSLIST, refs34(p1, p2, None, None, damaged), leaf(0x1010, struct.pack("<i", 2))))
+        n = b.node(b.prs(lst))
+        t = b.transforms()
+        self.assertMatrix(t.world(n), ct.translation((11, 22, 33)))
+        self.assertEqual([i.reason.split(":")[0] for i in t.issues], [ct.LIST_BLOCK, ct.LIST_WEIGHT, ct.LIST_WEIGHT])
+        b = Build()  # a block without its header: the list is damaged, the node at identity
+        lst = b.add(node(C_POSLIST, refs34(b.xyz(C_POSXYZ, (1, 2, 3)), None, None, None, b.add(node(C_PB2))),
+                         leaf(0x1010, struct.pack("<i", 1))))
+        n = b.node(b.prs(lst))
+        t = b.transforms()
+        self.assertEqual(t.world(n), ct.IDENTITY)
+        self.assertTrue(t.issues[0].reason.startswith(ct.DAMAGED), t.issues)
+
 
 class TestUnsupportedAndDamaged(MatrixCase):
     def test_unknown_transform_controller_is_identity(self):
@@ -418,7 +641,7 @@ class TestUnsupportedAndDamaged(MatrixCase):
 
     def test_unknown_sub_controller(self):
         b = Build()
-        tcb = b.add(node(C_TCBFLOAT, leaf(0x2501, struct.pack("<f", 9))))
+        tcb = b.add(node(C_UNKNOWN_FLOAT, leaf(0x2501, struct.pack("<f", 9))))
         pos = b.add(node(C_POSXYZ, refs34(b.flt(1.0), tcb, b.flt(3.0))))
         n = b.node(b.prs(pos))
         t = b.transforms()
@@ -495,7 +718,7 @@ class TestUnsupportedAndDamaged(MatrixCase):
         self.assertMatrix(t.world(sibling), ct.translation((7, 0, 0)))
         b = Build()
         lst = b.add(node(C_ROTLIST, refs34(b.euler((0, 0, 1)), None, None,
-                                           b.add(node(C_PB2, refs34(b.flt(float("inf"))))))))
+                                           list_block(b, Anim(float("inf"))))))
         n = b.node(b.prs(None, lst))
         t = b.transforms()
         self.assertEqual(t.world(n), ct.IDENTITY)
@@ -507,8 +730,8 @@ class TestUnsupportedAndDamaged(MatrixCase):
         for outer in (0.0, 0.5, 1.0, 2.0):
             b = Build()
             inner = b.add(node(C_ROTLIST, refs34(b.euler((0, 0, 1)), None, None,
-                                                 b.add(node(C_PB2, refs34(b.flt(float("inf"))))))))
-            lst = b.add(node(C_ROTLIST, refs34(inner, None, None, b.add(node(C_PB2, refs34(b.flt(outer)))))))
+                                                 list_block(b, Anim(float("inf"))))))
+            lst = b.add(node(C_ROTLIST, refs34(inner, None, None, list_block(b, Anim(outer)))))
             n = b.node(b.prs(None, lst))
             sibling = b.node(b.simple_prs((7, 0, 0)))
             t = b.transforms()
@@ -559,7 +782,7 @@ class TestUnsupportedAndDamaged(MatrixCase):
 
         def in_list(b, q):
             rot = b.add(node(C_TCBROT, leaf(0x2504, struct.pack("<4f", *q))))
-            return b.prs(None, b.add(node(C_ROTLIST, refs34(rot, None, None, b.add(node(C_PB2, refs34(b.flt(0.5))))))))
+            return b.prs(None, b.add(node(C_ROTLIST, refs34(rot, None, None, list_block(b, 0.5)))))
 
         for bad in (float("nan"), float("inf"), -float("inf")):
             for q in ((bad, 0.0, 0.0, 1.0), (0.0, 0.0, 0.0, bad)):
@@ -690,10 +913,6 @@ MAX_CONSTRAINT = {
     (1, False, 0, False, 0, 0): m3((0.19245, -0.19245, -0.96225), (0.680414, -0.680414, 0.272165),
                                    (-0.707107, -0.707107, 0)),
 }
-
-
-def pb2_entry(pid, ptype, flags, body):
-    return leaf(0x100E, struct.pack("<HIII", pid, ptype, flags, 0) + body)
 
 
 def constraint_block(owner, weights, targets=0, settings=None, slots=()):
@@ -994,6 +1213,101 @@ class TestFixtures(unittest.TestCase):
                             self.assertLessEqual(abs(a - e), TOLERANCE, "%s node %d %s[%d]: %r vs %r" %
                                                  (name, o["index"], key, k, a, e))
                 self.assertEqual(t.issues, [], name)
+
+
+CONTROLLERS = os.path.join(ROOT, "tests", "fixtures", "controllers.max")
+
+
+@unittest.skipUnless(os.path.exists(CONTROLLERS), "no controllers fixture")
+class TestControllersFixture(unittest.TestCase):
+    """controllers.max holds what tools/fixtures/controllers.ms says: a regenerated fixture that lost a controller
+    would still pass the oracle comparison above."""
+
+    CLASSES = {
+        "FixtureScaleXYZ": {"ScaleXYZ"},
+        "FixtureLinear": {"Linear Position", "Linear Rotation", "Linear Scale"},
+        "FixtureTCB": {"TCB Position", "TCB Rotation", "TCB Scale"},
+        "FixtureBezier": {"Bezier Position", "Smooth Rotation", "Bezier Scale"},
+        "FixtureLinearKeyed": {"Linear Position", "Linear Rotation", "Linear Scale"},
+        "FixtureTCBKeyed": {"TCB Position", "TCB Rotation", "TCB Scale"},
+        "FixtureBezierKeyed": {"Bezier Position", "Smooth Rotation", "Bezier Scale"},
+        "FixtureLinearBetween": {"Linear Position", "Linear Rotation", "Linear Scale"},
+        "FixtureTCBBefore": {"TCB Position", "TCB Rotation", "TCB Scale"},
+        "FixturePosList": {"Position List"},
+        "FixtureRotList": {"Rotation List"},
+        "FixtureScaleList": {"Scale List"},
+        "FixtureFloats": {"Linear Float", "TCB Float", "Float List"},
+        "FixtureFloatsKeyed": {"Linear Float", "TCB Float"},
+        "FixtureCam": {"Look At"},
+    }
+    EULER = {"FixtureEulerMulti": 0, "FixtureEulerXZY": 101, "FixtureEulerYZX": 102, "FixtureEulerYXZ": 103,
+             "FixtureEulerZXY": 104, "FixtureEulerZYX": 105}
+
+    @classmethod
+    def setUpClass(cls):
+        cls.cf = cfb.CompoundFile(CONTROLLERS)
+        cls.s = scene.Scene.from_file(cls.cf)
+        cls.nodes = {cls.s.node(i).name: i for i in cls.s.walk()}
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.cf.close()
+
+    def tree(self, name):
+        """The controllers below node name's transform controller, itself included."""
+        s, out, todo = self.s, [], [self.s.node(self.nodes[name]).tm]
+        while todo:
+            i = todo.pop()
+            entry = s.entry(i)
+            if i in out or entry is None or entry.superclass == classids.SC_BASENODE:
+                continue
+            out.append(i)
+            todo.extend(r for r in s.refs(i).values() if r is not None)
+        return out
+
+    def test_controller_classes(self):
+        for name, want in self.CLASSES.items():
+            names = {self.s.entry(i).name for i in self.tree(name)}
+            self.assertLessEqual(want, names, name)
+
+    def test_euler_orders(self):
+        for name, stored in self.EULER.items():
+            euler = self.s.refs(self.s.node(self.nodes[name]).tm)[1]
+            self.assertEqual(self.s.chunk(euler).first(0x1003).unpack("<i")[0], stored, name)
+            angles = [self.s.chunk(f).first(0x7127).first(0x2501).unpack("<f")[0]
+                      for f in (self.s.refs(euler)[k] for k in range(3))]
+            self.assertTrue(all(abs(a) > 0.3 for a in angles), (name, angles))  # three angles: the order matters
+
+    def test_scale_axis_turned(self):
+        bscale = self.s.refs(self.s.node(self.nodes["FixtureScaleAxis"]).tm)[2]
+        value = self.s.chunk(bscale).first(0x2505).unpack("<7f")
+        self.assertEqual([round(v, 4) for v in value[:3]], [2.0, 0.5, 1.0])
+        self.assertLess(abs(value[6]), 0.99)  # the axis quaternion is a turn, not the identity
+
+    def test_keyed_values_saved_at_frame_30(self):
+        # every keyed controller's saved value holds at frame 30 only: the keys decide the frame-0 value
+        keyed = 0
+        for name in self.nodes:
+            if name == "FixtureCam.Target":
+                continue
+            for i in self.tree(name):
+                chunk = self.s.chunk(i)
+                for holder in (chunk, chunk.first(0x7127) if chunk.container else None):
+                    if holder is None or not holder.container:
+                        continue
+                    if any(c.id in range(0x2510, 0x2530) for c in holder.children):
+                        keyed += 1
+                        self.assertEqual(holder.first(0x2500).unpack("<ii"), AT_FRAME_30, (name, i))
+        self.assertEqual(keyed, 23)
+
+    def test_list_weights_stored(self):
+        for name in ("FixturePosList", "FixtureRotList", "FixtureScaleList", "FixtureFloats"):
+            lists = [i for i in self.tree(name) if self.s.entry(i).name.endswith(" List")]
+            self.assertEqual(len(lists), 1, name)
+            refs = self.s.refs(lists[0])
+            block = next(r for r in refs.values() if self.s.entry(r).superclass == classids.SC_PARAMETER_BLOCK2)
+            pb = pblock.ParamBlock2.from_chunk(self.s.chunk(block), self.s.refs(block), refs, len(self.s))
+            self.assertEqual(pb.value(0), [0.5, 1.0] if name == "FixtureFloats" else [0.5, 0.5], name)
 
 
 if __name__ == "__main__":

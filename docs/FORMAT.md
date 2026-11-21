@@ -194,16 +194,67 @@ oracle).
 
 - Matrices are in Max's row-vector convention: a point times the matrix, row 4 = translation, `A * B` applies `A`
   first; this is the oracle's 12-float layout.
-- Every fixture node's controller is a Position/Rotation/Scale `(0x2005, 0)` (but lookat's, see
-  [Look At](#look-at)) with reference slots 0 = Position XYZ
-  `(0x118F7E02, 0xFFEE238A)`, 1 = Euler XYZ `(0x2012, 0)`, 2 = Bezier Scale `(0x2010, 0)`. Position XYZ and Euler
-  XYZ reference three Bezier Float `(0x2007, 0)` in slots 0, 1, 2 (x, y, z).
-- A Bezier Float's value is an `f32` in `0x2501`, inside a `0x7127` container in every fixture.
-- Euler angles are radians. Euler XYZ has `0x1003` = `i32` 0 in every fixture (the axis order; 0 = XYZ).
-  hierarchy: FixtureRoot's Z angle `0.5236` gives row 1 = `[0.866025, 0.5, 0]`, a standard row-vector rotation.
-- Bezier Scale holds `0x2505`: 3 x `f32` scale, then the scale axis as a 4 x `f32` quaternion. hierarchy:
-  FixtureLeaf (`scale = [-1,1,1]` in the script) stores `[-1, -1, -1]`; with that, the oracle's rotation rows
-  (`[-0.866025, -0.5, 0]`, ..., `[0, 0, -1]`) come out exactly.
+- Every fixture node's controller is a Position/Rotation/Scale `(0x2005, 0)` (but lookat's and the controllers
+  fixture's camera, see [Look At](#look-at)) with reference slots 0 = position, 1 = rotation, 2 = scale; by default
+  Position XYZ `(0x118F7E02, 0xFFEE238A)`, Euler XYZ `(0x2012, 0)` and Bezier Scale `(0x2010, 0)`. Position XYZ,
+  Euler XYZ and ScaleXYZ `(0x118F7C01, 0xFEEE238B)` reference three float controllers in slots 0, 1, 2 (x, y, z;
+  ScaleXYZ's in percent in MAXScript, stored as factors).
+- Euler angles are radians. hierarchy: FixtureRoot's Z angle `0.5236` gives row 1 = `[0.866025, 0.5, 0]`, a
+  standard row-vector rotation. `0x1003` = `i32` axis order: 0 for XYZ (X applied first; also after switching
+  another order back to XYZ), 101, 102, 103, 104, 105 for XZY, YZX, YXZ, ZXY, ZYX (the first letter applied first),
+  106, 107, 108 for XYX, YZY, ZXZ (not read: an issue, XYZ used). controllers: FixtureEulerMulti and one node per
+  other Tait-Bryan order, each with three angles.
+- Bezier Scale holds `0x2505`: 3 x `f32` scale, then the scale axis as a 4 x `f32` quaternion, scale matrix =
+  `Q^-1 * S * Q`. hierarchy: FixtureLeaf (`scale = [-1,1,1]` in the script) stores `[-1, -1, -1]`; with that, the
+  oracle's rotation rows (`[-0.866025, -0.5, 0]`, ..., `[0, 0, -1]`) come out exactly. controllers:
+  FixtureScaleAxis (scale `[2, 0.5, 1]` along a turned axis) matches the oracle; the other order, `Q * S * Q^-1`,
+  misses by 1.2.
+
+Keyframe controllers (controllers fixture; every class read here is a 3ds Max 2020 class id it shows):
+
+| Class | ClassId | Value chunk | Key chunk, bytes per key |
+|---|---|---|---|
+| Linear Float | `(0x2001, 0)` | `0x2501` f32 | `0x2511`, 12 |
+| TCB Float | `(0x442311, 0)` | `0x2501` | `0x2520`, 40 |
+| Bezier Float | `(0x2007, 0)` | `0x2501`, in `0x7127` | `0x2525`, 28 |
+| Linear Position | `(0x2002, 0)` | `0x2503` 3 x f32 | `0x2513`, 20 |
+| TCB Position | `(0x442312, 0)` | `0x2503` | `0x2521`, 64 |
+| Bezier Position | `(0x2008, 0)` | `0x2503` | `0x2526`, 80 |
+| Linear Rotation | `(0x2003, 0)` | `0x2504` quaternion | `0x2514`, 24 |
+| TCB Rotation | `(0x442313, 0)` | `0x2504` | `0x2522`, 92 |
+| Smooth Rotation (MAXScript `Bezier_Rotation`) | `(0x2009, 0)` | `0x2504` | `0x2527`, 88 |
+| Linear Scale | `(0x2004, 0)` | `0x2505` | `0x2515`, 36 |
+| TCB Scale | `(0x442315, 0)` | `0x2505` | `0x2523`, 112 |
+| Bezier Scale | `(0x2010, 0)` | `0x2505` | `0x2528`, 148 |
+
+- The value chunk is the value at the time slider when the file was saved, and `0x2500` (2 x `i32` ticks) the
+  interval it holds for: `(-2^31, 2^31-1)` (forever) without keys, `(4800, 4800)` (frame 30) on every keyed
+  controller of the controllers fixture, saved at frame 30. FixtureLinearKeyed's `0x2503` is `[-48, 64, 13]`, 60 %
+  of the way between its keys at frames 0 and 50, while the oracle at frame 0 has the frame-0 key. So the value
+  chunk is used when its interval holds time 0, the keys otherwise (FixtureBezierKeys: keys at frames 0, 20 and 50,
+  `0x2501` = 36.6667, oracle -20, the frame-0 key).
+- A key record: `i32` time (ticks, 160 per frame at 30 fps), `u32` flags, the value (1, 3, 4 or 7 floats as the
+  value chunk), then the class's tangents or TCB parameters. TCB Rotation keeps the absolute quaternion there and
+  an angle-axis relative to the previous key later in the record. `0x3003` = the first and last key's time
+  (`(-2^31, -2^31)` without keys), `0x3002` 0 for Linear and 4 for TCB and Bezier when keyed.
+- At time 0: a key at 0 gives its value (FixtureBezierKeys, the keyed nodes, the lists' animated entries); before
+  the first key, the first key's value (FixtureTCBBefore, keys at frames 10 and 50); between two Linear keys, linear
+  (FixtureLinearBetween, keys at -10 and 40: position `[-56, 93, 11]`, scale rows of length 1.1, 1.0, 1.4) and the
+  rotation by slerp.
+- Linear and TCB Float hold `0x2501` directly in the object; Bezier Float in `0x7127` in every fixture.
+
+List controllers: Float List `(0x4B4B1000, 0)`, Position List `(0x4B4B1002, 0)`, Rotation List `(0x4B4B1003, 0)`,
+Scale List `(0x4B4B1004, 0)`. `0x1010` = entry count, `0x1020` = active entry, entries at reference slots 0..n-1,
+a ParamBlock2 at a later slot (4) whose parameter 0 is the weights, a float table: stored values (0.5, 0.5 on
+FixturePosList, FixtureRotList, FixtureScaleList; 0.5, 1.0 on FixtureFloats' Float List), a controller in the
+block's reference slots where animated. Each entry weighs as the oracle shows:
+
+- Position and Float List: the weighted sum (FixturePosList `0.5 * [40, 40, 0] + 0.5 * [10, 20, 30]` =
+  `[25, 30, 15]`; FixtureFloats `0.5 * 30 + 1.0 * 7` = 22).
+- Scale List: the product of `I + (S - I) * weight` per entry (FixtureScaleList `[1.5, 2, 0.75]` from `[2, 1, 1]`
+  and `[1, 3, 0.5]` at 50 %).
+- Rotation List: each entry's rotation turned by its weight along its own axis, a later entry applied first
+  (FixtureRotList: 30 deg about X and 80 deg about Z at 50 % give Z 40 deg, then X 15 deg).
 - Local = scale * rotation * position; world = local * parent world, up the whole chain. hierarchy: FixtureLeaf
   (position `[25, 5, 0]` under FixtureChild under the rotated FixtureRoot) lands on `[40.1314, 26.8301, 0]`.
 - Object offset = scale (`0x096C`, along its axis) * rotation (`0x096B`) * position (`0x096A`); the object's world
@@ -1174,20 +1225,20 @@ Not shown by any fixture yet, so not stated above:
 - Controllers seen only in the corpus (scenes A and B, compared with their oracle; `controllers.py` relies on
   them):
   - a Bezier Float with its `0x2501` directly in the object, not in `0x7127` (under ScaleXYZ, list weights);
-  - keys: `0x2525` in a Bezier Float (28 bytes per key: `i32` time, `u32` flags, `f32` value, four `f32`), `0x2528`
-    in a Bezier Scale (148 bytes, the 7-float value at byte 8). Every key chunk holds one key (at time 0, 200 or
-    16000). Where the key's value differs from the saved value chunk (1 float, 3 scales), the oracle at frame 0
-    agrees with the saved value;
-  - the scale axis of Bezier Scale (`Q^-1 * S * Q` with the stored quaternion; the other order misses 10 nodes of
-    scene B) and the Euler order XYZ = X applied first (ZYX misses over half of scene B);
-  - ScaleXYZ `(0x118F7C01, 0xFEEE238B)`: three Bezier Float, x, y, z;
-  - Position List `(0x4B4B1002, 0)` and Rotation List `(0x4B4B1003, 0)`: `0x1010` = entry count, `0x1020` = active
-    entry, entries at reference slots 0..n-1, a ParamBlock2 at a later slot whose reference slots 0..n-1 are the
-    weights (Bezier Float); only weights 1 and 0 occur, so how entries combine is not pinned down;
+  - list weights held by controllers (Bezier Float) in the list block's reference slots, with weights 1 and 0;
+  - every keyed controller of a transform has a `0x2500` interval holding time 0 (scene A 259, scene B 326, and 450
+    forever with one key). Three Bezier Scales, interval `(0, 0)`, have a key at time 0 whose value differs from the
+    saved value (by under 2 %): the oracle agrees with the saved value, which the interval rule picks. One Bezier
+    Float with the empty interval `(-2^31, -2^31)` and its one key at 16000 is a Noise modifier's, not a
+    transform's: what 3ds Max makes of it is not known;
   - Look At `(0x2006, 0)` on a camera and a light of each scene: evaluated as [Look At](#look-at) says, their
     world matrices equal the oracle's (all 662 nodes without modifiers of scene A, all 2,042 of scene B).
-- Controllers taken from the 3ds Max SDK without any file showing them: Linear Position, Rotation and Scale
-  (`0x2002`, `0x2003`, `0x2004`), Bezier Position and Rotation (`0x2008`, `0x2009`), TCB Position, Rotation and
-  Scale (`0x442312`, `0x442313`, `0x442315`), their value chunks (`0x2503` point, `0x2504` quaternion, `0x2505`
-  scale), and the Euler orders 1 to 5. Scale List `(0x4B4B1004, 0)` is in a fixture's class directory, but no
-  file has one on a node: how its entries and weights combine is taken from the other lists.
+- Controllers no file shows yet (`controllers.py` assumes them): a controller without `0x2500` (none in the corpus or
+  the fixtures; its value chunk is used, with an issue when several keys animate it); Bezier and TCB interpolation
+  between two keys (linear, an issue: their tangents are not read); how Linear Scale interpolates a turned scale
+  axis (slerp; the fixture's axes are the identity); the bare Euler orders 1 to 5 and 100 (read as the SDK numbers
+  them: 1 = XZY ... 5 = ZYX, 100 = XYZ); the Euler orders 106 to 108 (an issue); the order of a Scale List's
+  entries (the fixture's two scales are both along the axes, so they commute) and the weight of a Rotation List
+  entry that turns about more than one axis (the fixture's turn about one axis each); parameter 1 of a list's
+  block (an `i32` 0 in every list: presumably Average, which would divide by the weights' sum); the out-of-range
+  types (a constant value before the first key and after the last is taken).

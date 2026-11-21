@@ -32,6 +32,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   or infinite pivot rotation is reported as a non-finite transform instead of read as no rotation without a word;
   a non-finite pivot position or pivot scale is now reported too. Such a node is placed without its transform (its
   children still placed under it), or for a pivot, without its object offset, as other non-finite transforms are.
+- Transforms: an animated object in a file saved with the time slider away from frame 0 stands where 3ds Max shows
+  it at frame 0, read from its keys, instead of where it was at the saved frame. Linear Float, TCB Float and Float
+  List controllers (under Position XYZ, Euler XYZ or ScaleXYZ) are read instead of left at zero; list controllers
+  use their weights (they were taken as 100 % unless animated); the Euler orders other than XYZ are applied
+  instead of read as XYZ.
 
 ## [1.0.0] - 2026-11-21
 

@@ -554,7 +554,9 @@ class TestFixtures(unittest.TestCase):
                  "CamTarget.Target": 0x4800, "CamTargetOrtho.Target": 0x4800, "CamPhysShift.Target": 0x4800,
                  "CamVRayShift.Target": 0x4800, "CamVRayTarget.Target": 0x4800}
         heads = {"Node": 16, "RootNode": 16, "Texmaps": 48, "Bezier Float": 2, "Bezier Scale": 2, "Bezier Color": 2,
-                 "Boolean Controller": 2, "Grid Reference": 2, "VRayMtl": 34, "MtlBaseLib": 2,
+                 "Bezier Position": 2, "Smooth Rotation": 2, "Linear Float": 2, "Linear Position": 2,
+                 "Linear Rotation": 2, "Linear Scale": 2, "TCB Float": 2, "TCB Position": 2, "TCB Rotation": 2,
+                 "TCB Scale": 2, "Boolean Controller": 2, "Grid Reference": 2, "VRayMtl": 34, "MtlBaseLib": 2,
                  "": 2}  # Custom Curve Control's point class, nameless in the class directory (texmap_rules' Falloffs)
         varies = {"ParamBlock2"}  # the number of reference slots of its descriptor: 25 and 37 in the fixtures
         for path in FIXTURES:

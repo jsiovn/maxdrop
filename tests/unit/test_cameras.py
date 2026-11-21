@@ -442,7 +442,7 @@ class Fixtures(unittest.TestCase):
                     cls.cases[name[:-4]] = (conv.read(os.path.join(FIXTURES, name)), oracle)
 
     def test_every_camera_has_the_oracles_fov(self):
-        self.assertEqual(sorted(self.cases), ["cameras", "lookat"])
+        self.assertEqual(sorted(self.cases), ["cameras", "controllers", "lookat"])
         for name, (desc, oracle) in self.cases.items():
             for node, o in zip(desc.nodes, oracle["nodes"]):
                 if o["camera"] is None:

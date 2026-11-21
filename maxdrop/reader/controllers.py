@@ -16,17 +16,21 @@ p * M, row 4 holds the translation, and A * B applies A first. That is the layou
 Local = scale * rotation * position (PRS); world = local * parent world through the whole parent chain.
 Negative scale is kept as it is (a mirrored node has a negative determinant).
 
-Controllers are dispatched on (superclass, ClassId). A Bezier Float holds its value in 0x2501, directly or inside
-0x7127, and its keys in 0x2525 (28 bytes each: i32 time, u32 flags, f32 value, then tangents); a Bezier Scale holds
-0x2505 (3 x f32 scale, then the scale axis as a 4 x f32 quaternion) and keys in 0x2528 (148 bytes each, the value
-at byte 8). The saved value is the one used, also beside keys: in the corpus it is what 3ds Max reports at frame 0
-where the two differ (one key each), so several keys only add an issue (the saved value may be another frame's).
-Without a saved value the keys are evaluated at time 0: the first key's value at or before it, the last key's
-after it (out-of-range types are not read), linear between two keys (an issue: Max follows Bezier tangents).
-Euler angles are radians; a Max quaternion (x, y, z, w) as stored is the conjugate of the usual one, so the
-standard column-vector formula applied to it gives the row-vector matrix. List controllers keep their entry
-count in 0x1010 and the entries at reference slots 0..n-1; their weights are the float controllers at reference
-slots 0..n-1 of the list's ParamBlock2.
+Controllers are dispatched on (superclass, ClassId). A keyframe controller (Linear, Bezier or TCB Float, Position,
+Rotation or Scale) saves its value at the time slider of the save in 0x2501 (float), 0x2503 (point), 0x2504
+(quaternion) or 0x2505 (3 x f32 scale, then the scale axis as a 4 x f32 quaternion), directly or inside 0x7127,
+with 0x2500, the interval that value holds for (forever without keys), and its keys in a chunk of its class
+(_KEYFRAMED: i32 time, u32 flags, the value at byte 8, then tangents or TCB parameters). The saved value is used
+when its interval holds time 0; otherwise the keys are evaluated at time 0: the first key's value at or before it,
+the last key's after it (out-of-range types are not read), between two keys linear for a Linear controller
+(rotation by slerp), linear with an issue for the others (Max follows their tangents). A saved value without an
+interval is used as it is, with an issue when several keys animate it (it may be another frame's). Euler angles
+are radians, the axis order (0x1003) 0 for XYZ and 100 + order for the others; a Max quaternion (x, y, z, w) as stored is the conjugate of the usual one, so the standard
+column-vector formula applied to it gives the row-vector matrix. List controllers keep their entry count in 0x1010
+and the entries at reference slots 0..n-1; their weights are parameter 0 of the list's ParamBlock2 (a float table:
+stored values, or controllers where animated). A list sums its entries times their weights (Float and Position
+List), multiplies I + (S - I) * weight (Scale List) or the rotations turned by their weights, a later entry first
+(Rotation List).
 
 A Look At controller (a Matrix3 controller: target cameras and lights) and a LookAt Constraint (a rotation
 controller in a PRS) give the node's world matrix from the world positions of other nodes (the target, the
@@ -39,11 +43,11 @@ more than MAX_LOOK_AT_DEPTH others is damaged.
 
 Anything not supported gives identity (zero position, no rotation, unit scale) for that controller and an Issue:
 an unknown class (also a Look At or a constraint outside a node, as a modifier's gizmo, and a constraint anywhere
-but a PRS's rotation), keys of an unknown layout, a list weight without a controller, an Euler order other than
+but a PRS's rotation), keys of an unknown layout, a list weight that is not stored, an Euler order other than
 the six Tait-Bryan ones, a damaged controller (a reference cycle, a chain deeper than MAX_DEPTH, a payload too
 short) or a non-finite result. The file comes from anywhere: one bad controller poisons only its own
-node's local matrix. Classes without a committed fixture are 3ds Max SDK ids, named in docs/FORMAT.md as
-unverified. No bpy, no mathutils, no numpy.
+node's local matrix. Every class read here is in a committed fixture (docs/FORMAT.md). No bpy, no mathutils, no
+numpy.
 """
 import bisect
 import collections
@@ -51,7 +55,6 @@ import math
 import struct
 
 from . import chunks, classids, pblock
-from .classdir import ClassId
 from .errors import MaxFileError
 
 ChunkError = chunks.ChunkError
@@ -65,8 +68,9 @@ IDENTITY = ((1.0, 0.0, 0.0, 0.0), (0.0, 1.0, 0.0, 0.0), (0.0, 0.0, 1.0, 0.0), (0
 UNKNOWN_CLASS = "unknown controller class"
 KEYS_UNKNOWN = "keys of an unknown layout, not read"
 KEYS_INTERPOLATED = "between two keys, interpolated linearly"
-ANIMATED = "several keys, the saved value used"
-LIST_WEIGHT = "list weight without a controller, 1.0 used"
+ANIMATED = "several keys beside a saved value without its interval, the saved value used"
+LIST_WEIGHT = "list weight not stored, 1.0 used"
+LIST_BLOCK = "damaged list weights, 1.0 used where unread"
 EULER_ORDER = "unsupported Euler order, XYZ used"
 NO_CONTROLLER = "node without a transform controller"
 DAMAGED = "damaged controller"
@@ -94,26 +98,33 @@ class LookAt(collections.namedtuple("LookAt", "target axis flip roll target_up")
     __slots__ = ()
 
 
-# Controllers no committed fixture has: 3ds Max SDK class ids (all with classB 0), unverified (docs/FORMAT.md).
-LINEAR_POSITION = ClassId(0x00002002, 0)
-LINEAR_ROTATION = ClassId(0x00002003, 0)
-LINEAR_SCALE = ClassId(0x00002004, 0)
-BEZIER_POSITION = ClassId(0x00002008, 0)
-BEZIER_ROTATION = ClassId(0x00002009, 0)
-TCB_POSITION = ClassId(0x00442312, 0)
-TCB_ROTATION = ClassId(0x00442313, 0)
-TCB_SCALE = ClassId(0x00442315, 0)
-SCALE_XYZ = ClassId(0x118F7C01, 0xFEEE238B)
-
-_FLOAT_VALUE, _FLOAT_WRAP, _FLOAT_KEYS = 0x2501, 0x7127, 0x2525
-_POINT_VALUE, _QUAT_VALUE, _SCALE_VALUE, _SCALE_KEYS = 0x2503, 0x2504, 0x2505, 0x2528
+_FLOAT_VALUE, _POINT_VALUE, _QUAT_VALUE, _SCALE_VALUE = 0x2501, 0x2503, 0x2504, 0x2505
+_INTERVAL, _WRAP = 0x2500, 0x7127
 _EULER_ORDER = 0x1003
+_EULER_ORDER_BASE = 100  # 3ds Max 2020 saves XYZ as 0 and the other orders as 100 + order
 _LIST_COUNT = 0x1010
-_KEY_IDS = range(0x2520, 0x2530)
-_FLOAT_KEY = struct.Struct("<iIf")  # time, flags, value; 16 more bytes of tangents follow
-_FLOAT_KEY_SIZE = 28
-_SCALE_KEY_SIZE = 148
+_LIST_WEIGHTS = 0  # parameter of the list's ParamBlock2
+_KEY_IDS = range(0x2510, 0x2530)
+_KEY_VALUE = 8  # a key record: i32 time, u32 flags, then the value
 _TIME = struct.Struct("<i")
+_INTERVAL_FORMAT = "<ii"  # start and end time
+# keyframe controllers: (superclass, ClassId) -> (value chunk, floats of the value, key chunk, bytes per key)
+_KEYFRAMED = {
+    (classids.SC_CTRL_FLOAT, classids.LINEAR_FLOAT): (_FLOAT_VALUE, 1, 0x2511, 12),
+    (classids.SC_CTRL_FLOAT, classids.TCB_FLOAT): (_FLOAT_VALUE, 1, 0x2520, 40),
+    (classids.SC_CTRL_FLOAT, classids.BEZIER_FLOAT): (_FLOAT_VALUE, 1, 0x2525, 28),
+    (classids.SC_CTRL_POSITION, classids.LINEAR_POSITION): (_POINT_VALUE, 3, 0x2513, 20),
+    (classids.SC_CTRL_POSITION, classids.TCB_POSITION): (_POINT_VALUE, 3, 0x2521, 64),
+    (classids.SC_CTRL_POSITION, classids.BEZIER_POSITION): (_POINT_VALUE, 3, 0x2526, 80),
+    (classids.SC_CTRL_ROTATION, classids.LINEAR_ROTATION): (_QUAT_VALUE, 4, 0x2514, 24),
+    (classids.SC_CTRL_ROTATION, classids.TCB_ROTATION): (_QUAT_VALUE, 4, 0x2522, 92),
+    (classids.SC_CTRL_ROTATION, classids.BEZIER_ROTATION): (_QUAT_VALUE, 4, 0x2527, 88),
+    (classids.SC_CTRL_SCALE, classids.LINEAR_SCALE): (_SCALE_VALUE, 7, 0x2515, 36),
+    (classids.SC_CTRL_SCALE, classids.TCB_SCALE): (_SCALE_VALUE, 7, 0x2523, 112),
+    (classids.SC_CTRL_SCALE, classids.BEZIER_SCALE): (_SCALE_VALUE, 7, 0x2528, 148),
+}
+_LINEAR = frozenset((classids.LINEAR_FLOAT, classids.LINEAR_POSITION, classids.LINEAR_ROTATION,
+                     classids.LINEAR_SCALE))
 _LOOK_AXIS, _LOOK_FLIP, _LOOK_TARGET_UP = 0x0100, 0x0110, 0x0201
 # the LookAt Constraint's ParamBlock2 (3 viewline length, 12 viewline length absolute: display only)
 (_LC_WEIGHTS, _LC_TARGETS, _LC_RELATIVE, _LC_SET_ORIENTATION, _LC_AXIS, _LC_AXIS_FLIP, _LC_UP_AXIS, _LC_UP_WORLD,
@@ -225,6 +236,42 @@ def _weighted_quat(m, weight):
     k = math.sin(h) / n
     # stored the Max way: the conjugate of the standard quaternion
     return quat_matrix((-x * k, -y * k, -z * k, math.cos(h)))
+
+
+def _unit_quat(q):
+    """q normalized; identity for a zero quaternion (as quat_matrix), None when it is not finite."""
+    n = math.sqrt(sum(v * v for v in q))
+    if not math.isfinite(n):
+        return None
+    return tuple(v / n for v in q) if n > 1e-30 else (0.0, 0.0, 0.0, 1.0)
+
+
+def slerp(a, b, f):
+    """The rotation a fraction f of the way from quaternion a to b, along the shorter arc; NaN when either is not
+    finite (quat_matrix then gives a matrix that is not finite)."""
+    a, b = _unit_quat(a), _unit_quat(b)
+    if a is None or b is None or not math.isfinite(f):
+        return (math.nan,) * 4
+    d = sum(x * y for x, y in zip(a, b))
+    if d < 0.0:
+        b, d = tuple(-v for v in b), -d
+    if d > 0.9999995:  # sin(theta) too small to divide by: the same rotation to float precision
+        return tuple(x + (y - x) * f for x, y in zip(a, b))
+    theta = math.acos(min(d, 1.0))
+    s = math.sin(theta)
+    wa, wb = math.sin((1.0 - f) * theta) / s, math.sin(f * theta) / s
+    return tuple(wa * x + wb * y for x, y in zip(a, b))
+
+
+def _interpolate(a, b, f, value_id):
+    """The key value a fraction f of the way from a to b: components linearly, a quaternion (a rotation, a scale's
+    axis) by slerp."""
+    if value_id == _QUAT_VALUE:
+        return slerp(a, b, f)
+    lerp = tuple(x + (y - x) * f for x, y in zip(a, b))
+    if value_id == _SCALE_VALUE:
+        return lerp[:3] + slerp(a[3:], b[3:], f)
+    return lerp
 
 
 def _scale_value(chunk):
@@ -382,13 +429,28 @@ class _Eval:
                 self.issue(i, KEYS_UNKNOWN)
                 return
 
-    def _saved_or_keyed(self, i, saved, keys, size, value_at):
-        """The saved value when there is one (with an issue when keys animate it), else the keys at time 0;
-        None without either."""
-        if keys is None:
+    def _keyframe(self, i):
+        """Keyframe controller i's value at time 0 as a tuple of floats; None without a saved value or keys."""
+        sc, cid = self.kind(i)
+        value_id, count, key_id, size = _KEYFRAMED[(sc, cid)]
+        chunk = self.scene.chunk(i)
+        if not chunk.container:
+            return None
+        saved = interval = keys = None
+        for holder in (chunk, chunk.first(_WRAP)):
+            if holder is None or not holder.container:
+                continue
+            self._keys(i, holder, key_id)
+            value = holder.first(value_id)
+            if saved is None and value is not None:
+                saved = _scale_value(value) if value_id == _SCALE_VALUE else value.unpack("<%df" % count)
+                held = holder.first(_INTERVAL)
+                interval = held.unpack(_INTERVAL_FORMAT) if held is not None else None
+            keys = keys or holder.first(key_id)
+        if keys is None or saved is not None and interval is not None and interval[0] <= 0 <= interval[1]:
             return saved
         n, rest = divmod(keys.payload_size, size)
-        if saved is not None:
+        if saved is not None and (rest or n == 0 or interval is None):
             if rest:
                 self.issue(i, KEYS_UNKNOWN)
             elif n > 1:
@@ -402,6 +464,11 @@ class _Eval:
         if n > MAX_KEYS:
             raise ChunkError("object %d: %d keys, more than %d" % (i, n, MAX_KEYS))
         view = keys.view()
+        fmt = "<%df" % count
+
+        def value_at(k):
+            return struct.unpack_from(fmt, view, k * size + _KEY_VALUE)
+
         times = [_TIME.unpack_from(view, k * size)[0] for k in range(n)]
         if any(b < a for a, b in zip(times, times[1:])):
             raise ChunkError("object %d: key times out of order" % i)
@@ -410,12 +477,9 @@ class _Eval:
             return value_at(0)
         if k == n or times[k - 1] == 0:
             return value_at(k - 1)
-        self.issue(i, KEYS_INTERPOLATED)
-        f = -times[k - 1] / (times[k] - times[k - 1])
-        a, b = value_at(k - 1), value_at(k)
-        if isinstance(a, float):
-            return a + (b - a) * f
-        return tuple(x + (y - x) * f for x, y in zip(a, b))
+        if cid not in _LINEAR:
+            self.issue(i, KEYS_INTERPOLATED)
+        return _interpolate(value_at(k - 1), value_at(k), -times[k - 1] / (times[k] - times[k - 1]), value_id)
 
     def scalar(self, i, default):
         if i is None:
@@ -428,40 +492,33 @@ class _Eval:
     def _scalar(self, i, default):
         with self.at(i):
             sc, cid = self.kind(i)
-            if sc == classids.SC_CTRL_FLOAT and cid == classids.BEZIER_FLOAT:
-                return self._bezier_float(i, default)
+            if (sc, cid) in _KEYFRAMED and sc == classids.SC_CTRL_FLOAT:
+                value = self._keyframe(i)
+                return default if value is None else float(value[0])
+            if sc == classids.SC_CTRL_FLOAT and cid == classids.FLOAT_LIST:
+                total = 0.0
+                for entry, w in self._list(i):
+                    total += w * self.scalar(entry, default)
+                return total
             self.issue(i, UNKNOWN_CLASS)
             return default
-
-    def _bezier_float(self, i, default):
-        chunk = self.scene.chunk(i)
-        if not chunk.container:
-            return default
-        saved = keys = None
-        for holder in (chunk, chunk.first(_FLOAT_WRAP)):
-            if holder is None or not holder.container:
-                continue
-            self._keys(i, holder, _FLOAT_KEYS)
-            value = holder.first(_FLOAT_VALUE)
-            if saved is None and value is not None:
-                saved = value.unpack("<f")[0]
-            keys = keys or holder.first(_FLOAT_KEYS)
-        view = keys.view() if keys is not None else None
-        value = self._saved_or_keyed(i, saved, keys, _FLOAT_KEY_SIZE,
-                                     lambda k: float(_FLOAT_KEY.unpack_from(view, k * _FLOAT_KEY_SIZE)[2]))
-        return default if value is None else value
 
     def _floats3(self, i, default):
         refs = self.scene.refs(i)
         return tuple(self.scalar(refs.get(k), default) for k in range(3))
 
-    def _value(self, i, cid, count):
-        chunk = self.scene.chunk(i)
-        if not chunk.container:
-            return None
-        self._keys(i, chunk, None)
-        value = chunk.first(cid)
-        return None if value is None else value.unpack("<%df" % count)
+    def _weights(self, i, refs):
+        """(block, weights) of list controller i: parameter 0 of its ParamBlock2, each element a number or an
+        Animated; (None, []) without a block."""
+        block = next((r for r in refs.values() if self.kind(r)[0] == classids.SC_PARAMETER_BLOCK2), None)
+        if block is None:
+            return None, []
+        pb = pblock.ParamBlock2.from_chunk(self.scene.chunk(block), self.scene.refs(block), refs, len(self.scene),
+                                           self.kind(i))
+        if pb.issues:  # a damaged entry reads as missing: weight 1.0
+            self.issue(i, "%s: %s" % (LIST_BLOCK, pb.issues[0]))
+        weights = pb.value(_LIST_WEIGHTS, [])
+        return block, weights if isinstance(weights, list) else [weights]
 
     def _list(self, i):
         """[(entry index, weight)] of a list controller."""
@@ -475,21 +532,20 @@ class _Eval:
             slots = range(n)
         else:
             slots = sorted(k for k, r in refs.items() if self.kind(r)[0] != classids.SC_PARAMETER_BLOCK2)
-        block = next((r for r in refs.values() if self.kind(r)[0] == classids.SC_PARAMETER_BLOCK2), None)
-        weights = self.scene.refs(block) if block is not None else {}
+        block, weights = self._weights(i, refs)
         out = []
         for k in slots:
             entry = refs.get(k)
             if entry is None:
                 continue
-            weight = weights.get(k)
-            if weight is None:
+            w = weights[k] if k < len(weights) else None
+            if isinstance(w, pblock.Animated) and w.index is not None:
+                with self.at(block):
+                    w = self.scalar(w.index, 1.0)
+            if isinstance(w, bool) or not isinstance(w, (int, float)):
                 self.issue(i, LIST_WEIGHT)
                 w = 1.0
-            else:
-                with self.at(block):
-                    w = self.scalar(weight, 1.0)
-            out.append((entry, w))
+            out.append((entry, float(w)))
         return out
 
     def position(self, i):
@@ -506,8 +562,8 @@ class _Eval:
             if sc == classids.SC_CTRL_POSITION:
                 if cid == classids.POSITION_XYZ:
                     return self._floats3(i, 0.0)
-                if cid in (BEZIER_POSITION, TCB_POSITION, LINEAR_POSITION):
-                    return self._value(i, _POINT_VALUE, 3) or (0.0, 0.0, 0.0)
+                if (sc, cid) in _KEYFRAMED:
+                    return self._keyframe(i) or (0.0, 0.0, 0.0)
                 if cid == classids.POSITION_LIST:
                     total = [0.0, 0.0, 0.0]
                     for entry, w in self._list(i):
@@ -534,12 +590,14 @@ class _Eval:
                     chunk = self.scene.chunk(i)
                     order = chunk.first(_EULER_ORDER) if chunk.container else None
                     order = order.unpack("<i")[0] if order is not None else 0
+                    if order >= _EULER_ORDER_BASE:
+                        order -= _EULER_ORDER_BASE
                     if order not in EULER_ORDERS:
                         self.issue(i, EULER_ORDER)
                         order = 0
                     return euler_matrix(self._floats3(i, 0.0), order)
-                if cid in (TCB_ROTATION, LINEAR_ROTATION, BEZIER_ROTATION):
-                    q = self._value(i, _QUAT_VALUE, 4)
+                if (sc, cid) in _KEYFRAMED:
+                    q = self._keyframe(i)
                     return quat_matrix(q) if q is not None else IDENTITY
                 if cid == classids.ROTATION_LIST:
                     # each entry pre-rotates what came before, as a relative controller does
@@ -562,16 +620,10 @@ class _Eval:
         with self.at(i):
             sc, cid = self.kind(i)
             if sc == classids.SC_CTRL_SCALE:
-                if cid == classids.BEZIER_SCALE:
-                    return self._bezier_scale(i)
-                if cid in (TCB_SCALE, LINEAR_SCALE):
-                    chunk = self.scene.chunk(i)
-                    if not chunk.container:
-                        return IDENTITY
-                    self._keys(i, chunk, None)
-                    v = _scale_value(chunk.first(_SCALE_VALUE))
+                if (sc, cid) in _KEYFRAMED:
+                    v = self._keyframe(i)
                     return scale_matrix(v[:3], v[3:]) if v is not None else IDENTITY
-                if cid == SCALE_XYZ:
+                if cid == classids.SCALE_XYZ:
                     return scale_matrix(self._floats3(i, 1.0))
                 if cid == classids.SCALE_LIST:
                     m = IDENTITY
@@ -584,19 +636,6 @@ class _Eval:
                     return m
             self.issue(i, UNKNOWN_CLASS)
             return IDENTITY
-
-    def _bezier_scale(self, i):
-        chunk = self.scene.chunk(i)
-        if not chunk.container:
-            return IDENTITY
-        self._keys(i, chunk, _SCALE_KEYS)
-        keys = chunk.first(_SCALE_KEYS)
-        value = chunk.first(_SCALE_VALUE)
-        saved = _scale_value(value)
-        view = keys.view() if keys is not None else None
-        v = self._saved_or_keyed(i, saved, keys, _SCALE_KEY_SIZE,
-                                 lambda k: struct.unpack_from("<7f", view, k * _SCALE_KEY_SIZE + 8))
-        return IDENTITY if v is None else scale_matrix(v[:3], v[3:])
 
     def matrix(self, i):
         with self.at(i):
