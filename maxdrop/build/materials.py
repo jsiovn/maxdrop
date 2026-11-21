@@ -42,14 +42,14 @@ datablocks; see Images below), with its placement as a Mapping node and a UV Map
 Invert, the mean or Separate / Combine Color, then Hue/Saturation/Value, Bright/Contrast, gain, Gamma), Composite
 (per layer its blend at factor 1, then a Mix by opacity x mask), Facing (Layer Weight Facing, Fresnel, or the
 Geometry node's Normal . Incoming), Remap (Float Curve, its points straight between them, not clipped; the Mix it
-drives does not clamp its factor), Smoothstep (Map Range SMOOTHSTEP, or a Math GREATER_THAN step), Adjust (a map's
+drives does not clamp its factor), Smoothstep (Map Range SMOOTHSTEP, or a step: 1 - LESS_THAN), Adjust (a map's
 Output, as an image's), Tint (Separate Color, three scales, two adds), NormalMap (Normal Map node, flips through
-Separate / Combine Color), Bump (Bump node). A texture file that
-was not found (or does not load) keeps its Image Texture node, without an image and not connected. The texture
-lookup (convert.textures) reports a file not found by name; the builder reports a file that does not load. The graph
-above the node carries on without it (a Mix gives its other side, a normal map without its image nothing) and an
-input left without a map keeps the IR's value. An empty image node renders black in EEVEE and magenta in Cycles, and
-in a normal or alpha input it would wreck the shading or hide the object.
+Separate / Combine Color), Bump (Bump node). A texture file that was not found (or does not load) keeps its Image
+Texture node, without an image and not connected. The texture lookup (convert.textures) reports a file not found by
+name; the builder reports a file that does not load. The graph above the node carries on without it (a Mix gives its
+other side, a normal map without its image nothing) and an input left without a map keeps the IR's value. An empty
+image node renders black in EEVEE and magenta in Cycles, and in a normal or alpha input it would wreck the shading
+or hide the object.
 
 Placement, the 3ds Max convention (StdUVGen: scaled and turned about the map's center, offset in UV fractions):
 sample = R(u, v, w angles) S(tiling) (uv - 0.5 - offset) + 0.5, one Mapping node (POINT): uv_transform(). Per axis
@@ -956,10 +956,7 @@ class _Tree:
         mapping = fc.mapping
         mapping.use_clip = False
         mapping.extend = 'HORIZONTAL'
-        curve = mapping.curves[0]
-        points = curve.points
-        while len(points) > 2:
-            points.remove(points[-1])
+        points = mapping.curves[0].points  # a new Float Curve has two points: moved to the first two
         for p, (x, y) in zip(points, n.points[:2]):
             p.location = (x, y)
         for x, y in n.points[2:]:
@@ -972,16 +969,21 @@ class _Tree:
         return _out(fc, "Value")
 
     def smoothstep(self, n, depth):
-        """Mix's Use Curve on a float (a float socket): Map Range SMOOTHSTEP from lower..upper to 0..1, or a
-        GREATER_THAN step at lower when lower >= upper; MISSING without its input."""
-        v = self.graph(n.input, FLOAT, depth + 1)
+        """Mix's Use Curve on a float (a float socket): Map Range SMOOTHSTEP from lower..upper to 0..1, or a step
+        when lower >= upper, 1 from lower on (1 - LESS_THAN: 3ds Max gives 1 at lower itself, an 8-bit mask can hit
+        it); MISSING without its input."""
+        v = self.graph(n.input, FLOAT, depth + 2)
         if v is MISSING:
             return MISSING
         if n.lower >= n.upper:
+            less = self.node("ShaderNodeMath", depth + 1)
+            less.operation = 'LESS_THAN'
+            self.feed(less.inputs[0], v)
+            less.inputs[1].default_value = n.lower
             step = self.node("ShaderNodeMath", depth)
-            step.operation = 'GREATER_THAN'
-            self.feed(step.inputs[0], v)
-            step.inputs[1].default_value = n.lower
+            step.operation = 'SUBTRACT'
+            step.inputs[0].default_value = 1.0
+            self.links.new(less.outputs[0], step.inputs[1])
             return step.outputs[0]
         mr = self.node("ShaderNodeMapRange", depth)
         mr.data_type = 'FLOAT'

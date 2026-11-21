@@ -64,16 +64,16 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
   does: CM_BLENDS), the last two under a Mix for an amount below 1 or a mask; any other operation peeled to its
   first bitmap (an issue); each layer times its multiplier plus its offset (CM_OFFSET_SCALE), measured.
 - Kept as nodes (the allow-list): Mix (color 1 / 2 where a map is off or missing, the mask, the mix amount; Use
-  Curve as mix_factor: folded into the mix amount, over a mask a Smoothstep), RGB Multiply, Color Correction (its rewiring first: monochrome, invert or custom
-  channels, an alpha source drawn as one or zero, an issue; hue shift in turns, saturation as a factor; lightness
-  either standard, brightness and contrast as fractions, or advanced, gain and gamma, whichever is chosen; tint and
-  the advanced pivot and lift are not converted: an issue), Composite (each layer's blend mode in BLENDS and its mask
-  as a data node; a layer in another mode peels the Composite), Falloff (types 0 to 2 in the viewing direction:
-  Mix(side 1, side 2) by a Facing, a side lerp(color, map, map amount); its own Output as an Adjust; an edited
-  MixCurve as a Remap of the Facing (curve_samples; one that cannot be read is drawn linear, an issue); another type
-  or direction is peeled to map 1, else color 1, counted, an issue), Output (its Output part
-  as an Adjust) and RGB Tint (a Tint unless the identity). Measured in 3ds Max 2020 (renderMap, a rendered sphere for
-  the Falloff): see the constants below.
+  Curve as mix_factor: folded into the mix amount, over a mask a Smoothstep), RGB Multiply, Color Correction (its
+  rewiring first: monochrome, invert or custom channels, an alpha source drawn as one or zero, an issue; hue shift
+  in turns, saturation as a factor; lightness either standard, brightness and contrast as fractions, or advanced,
+  gain and gamma, whichever is chosen; tint and the advanced pivot and lift are not converted: an issue), Composite
+  (each layer's blend mode in BLENDS and its mask as a data node; a layer in another mode peels the Composite),
+  Falloff (types 0 to 2 in the viewing direction: Mix(side 1, side 2) by a Facing, a side lerp(color, map, map
+  amount); its own Output as an Adjust; an edited MixCurve as a Remap of the Facing (curve_samples; one that cannot
+  be read is drawn linear, an issue); another type or direction is peeled to map 1, else color 1, counted, an
+  issue), Output (its Output part as an Adjust) and RGB Tint (a Tint unless the identity). Measured in 3ds Max 2020
+  (renderMap, a rendered sphere for the Falloff): see the constants below.
 - Peeled to the first usable map below, an approximation counted by class: VRayDirt (the unoccluded map when on,
   else the unoccluded color), VRayColor2Bump (its map). An Output or RGB Tint without a map (or with it off) is
   drawn as over a white map, its own Output or tint applied; a VRayColor2Bump without a map (it has no switch) is
@@ -104,7 +104,8 @@ Each map object counts at most once in stats.peeled or stats.unsupported, each i
 comes from anywhere: a reference cycle, a chain deeper than MAX_DEPTH, a reference to an object that is not a map or
 a damaged object end that branch (an issue), a shared map is converted once (no blow-up through repeated
 references), and unreadable Placement, Output or BitmapInfo chunks take the defaults. Those chunks are read by
-reader/materials.py (placement, output_invert, bitmap_gamma, mix_curve); what they hold is judged here. No bpy, no mathutils.
+reader/materials.py (placement, output_invert, bitmap_gamma, mix_curve); what they hold is judged here. No bpy, no
+mathutils.
 """
 import collections
 import dataclasses
@@ -220,8 +221,10 @@ FO_IOR_OVERRIDE, FO_IOR = 11, 12
 TOWARDS, PERPENDICULAR, FRESNEL = "towards", "perpendicular", "fresnel"  # Facing modes
 FALLOFF_TYPES = {0: TOWARDS, 1: PERPENDICULAR, 2: FRESNEL}
 # A Falloff's MixCurve as a polyline: a Bezier segment in CURVE_STEPS steps of x (32: within 1e-3 of 3ds Max's values
-# on falloff_curve); a curve within CURVE_IDENTITY of y = x everywhere is no node
-CURVE_STEPS, CURVE_IDENTITY = 32, 1e-6
+# on falloff_curve); a curve within CURVE_IDENTITY of y = x everywhere is no node. At most MAX_CURVE_SAMPLES points
+# (Blender bakes a Float Curve into a table of 256 entries anyway): a curve of many points gets fewer steps per
+# segment, then is resampled at even x, so a hostile curve costs neither time nor a huge node
+CURVE_STEPS, CURVE_IDENTITY, MAX_CURVE_SAMPLES = 32, 1e-6, 256
 # Mix, block 0: 1 lower, 2 upper (Use Curve's transition zone, 3ds Max's defaults 0.3 and 0.7)
 MIX_LOWER, MIX_UPPER = 1, 2
 # Composite blend modes (blendMode, per layer); measured with renderMap: result = lerp(below, blend(below, layer),
@@ -381,7 +384,8 @@ class Facing:
 @dataclasses.dataclass(frozen=True)
 class Remap:
     """A float input through a curve: points, (x, y) pairs with x ascending, joined by straight lines and flat past
-    the ends (a Falloff's mix curve, curve_samples). Its result is not clamped."""
+    the ends (a Falloff's mix curve, curve_samples; flat is assumed, a Falloff's ratio stays within 0..1). Its result
+    is not clamped."""
     input: object
     points: tuple
 
@@ -1053,25 +1057,43 @@ def curve_samples(points):
     and Falloff renders): segment i the cubic Bezier point i, its out handle, the in handle of point i + 1, point
     i + 1, its y at x; the flags do not change it; a point's y outside 0..1 is taken at the nearest bound, its handles
     moved with it; between the points the curve is not clamped. As a polyline, (x, y) pairs x ascending: a segment
-    whose handles lie on its points is straight (its ends), any other one CURVE_STEPS steps of x. None when it is
-    y = x (the default curve): no node."""
+    whose handles lie on its points is straight (its ends), any other one CURVE_STEPS steps of x (fewer, and the
+    result resampled, past MAX_CURVE_SAMPLES). None when it is y = x (the default curve): no node."""
     pts = []
     for p in points:
         (x, y), (ix, iy), (ox, oy) = p.point, p.in_handle, p.out_handle
         shift = min(1.0, max(0.0, y)) - y
         pts.append(((x, y + shift), (ix, iy + shift), (ox, oy + shift)))
+    segments = list(zip(pts, pts[1:]))
+    curved = sum(1 for (p0, _i0, o0), (p1, i1, _o1) in segments if p1[0] > p0[0] and not (o0 == p0 and i1 == p1))
+    steps = max(1, min(CURVE_STEPS, (MAX_CURVE_SAMPLES - len(pts)) // max(1, curved)))
     out = [pts[0][0]]
-    for (p0, _in0, out0), (p1, in1, _out1) in zip(pts, pts[1:]):
+    for (p0, _in0, out0), (p1, in1, _out1) in segments:
         if p1[0] <= p0[0] or (out0 == p0 and in1 == p1):
             out.append(p1)
             continue
-        for k in range(1, CURVE_STEPS + 1):
-            x = p0[0] + (p1[0] - p0[0]) * k / CURVE_STEPS
-            out.append((x, p1[1] if k == CURVE_STEPS else _bezier_y(p0, out0, in1, p1, x)))
+        for k in range(1, steps + 1):
+            x = p0[0] + (p1[0] - p0[0]) * k / steps
+            out.append((x, p1[1] if k == steps else _bezier_y(p0, out0, in1, p1, x)))
+    if len(out) > MAX_CURVE_SAMPLES:
+        out = _resampled(out, MAX_CURVE_SAMPLES)
     if out[0][0] <= 0.0 and out[-1][0] >= 1.0 and all(abs(y - x) <= CURVE_IDENTITY for x, y in out) and \
             abs(out[0][1]) <= CURVE_IDENTITY and abs(out[-1][1] - 1.0) <= CURVE_IDENTITY:
         return None
     return tuple(out)
+
+
+def _resampled(points, n):
+    """The polyline points (x ascending) at n even steps of x from its first x to its last."""
+    x0, x1 = points[0][0], points[-1][0]
+    out, k = [], 0
+    for j in range(n):
+        x = x0 + (x1 - x0) * j / (n - 1)
+        while k < len(points) - 2 and points[k + 1][0] <= x:
+            k += 1
+        (xa, ya), (xb, yb) = points[k], points[k + 1]
+        out.append((x, yb if xb <= xa else ya + (yb - ya) * min(1.0, max(0.0, (x - xa) / (xb - xa)))))
+    return out
 
 
 def mix_factor(x, lower, upper):

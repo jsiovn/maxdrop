@@ -313,14 +313,15 @@ def mix_curve(scene, m):
         if not 0 <= target < len(scene):
             continue
         entry = scene.entry(target)
-        if entry is not None and entry.superclass == classids.SC_REF_MAKER and                 tuple(entry.class_id) == tuple(classids.CURVE_CONTROL):
+        if entry is not None and entry.superclass == classids.SC_REF_MAKER and \
+                entry.class_id == classids.CURVE_CONTROL:
             control = target
             break
     if control is None:
         return None
     curve = scene.refs(control).get(0)
     entry = scene.entry(curve) if curve is not None else None
-    if entry is None or entry.superclass != classids.SC_REF_MAKER or tuple(entry.class_id) != tuple(classids.CURVE):
+    if entry is None or entry.superclass != classids.SC_REF_MAKER or entry.class_id != classids.CURVE:
         raise _curve_error(control, "no curve at its reference 0")
     chunk = scene.chunk(curve)
     count = chunk.first(_CURVE_COUNT) if chunk.container else None

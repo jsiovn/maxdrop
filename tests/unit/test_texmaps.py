@@ -1113,6 +1113,7 @@ class Guards(Checks):
         self.assertIsInstance(g.root.mask, tx.Smoothstep)
         self.assertIsInstance(g.root.mask.input, tx.Image)
         self.assertEqual((g.root.mask.lower, g.root.mask.upper), (0.2, 0.9))
+        self.close(g.root.factor, tx.mix_factor(0.4, 0.2, 0.9))  # the builder's fallback when the mask is missing
         self.assertEqual(g.issues, ())
         mix = FakeMap(1, tx.MIX, {0: 0.4, 6: Ref(2), 8: Ref(3)}, [2, 3])  # without Use Curve: the mask itself
         self.assertIsInstance(_tex(mix, _bitmap(2), _bitmap(3)).convert(mat.MapRef(1), tx.COLOR).root.mask, tx.Image)
@@ -2171,6 +2172,16 @@ class FalloffCurve(Checks):
                                  P((1, 1), (1, 1), (1, 1), 0)))
         self.assertEqual(max(y for _x, y in high), 1.0)
         self.assertEqual(high[-1], (1, 1))
+        # many points: at most MAX_CURVE_SAMPLES, still the curve (a sine through 1000 Bezier points)
+        many = [P((k / 999.0, 0.5 + 0.4 * math.sin(k / 50.0)), (k / 999.0 - 3e-4, 0.5 + 0.4 * math.sin(k / 50.0)),
+                  (k / 999.0 + 3e-4, 0.5 + 0.4 * math.sin(k / 50.0)), 2) for k in range(1000)]
+        start = time.perf_counter()
+        dense = tx.curve_samples(many)
+        self.assertLess(time.perf_counter() - start, 0.1)
+        self.assertLessEqual(len(dense), tx.MAX_CURVE_SAMPLES)
+        self.assertEqual((dense[0][0], dense[-1][0]), (0.0, 1.0))
+        for x, y in dense:
+            self.assertAlmostEqual(y, 0.5 + 0.4 * math.sin(x * 999.0 / 50.0), delta=0.02)
         jump = tx.curve_samples((P((0, 0), (0, 0), (0, 0), 0), P((0.5, 0.2), (0.5, 0.2), (0.5, 0.2), 0),
                                  P((0.5, 0.9), (0.5, 0.9), (0.5, 0.9), 0), P((1, 1), (1, 1), (1, 1), 0)))
         self.assertEqual(jump, ((0, 0), (0.5, 0.2), (0.5, 0.9), (1, 1)))

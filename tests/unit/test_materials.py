@@ -564,10 +564,6 @@ class MapParts(unittest.TestCase):
                 self.assertEqual([i for i in ids if i in text], [])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 CURVE_MAP, CURVE_CONTROL, CURVE, CURVE_OTHER = 0, 1, 2, 3
 CURVE_CLASSES = classdir.ClassDirectory([
     classdir.ClassEntry(CURVE_MAP, classids.FALLOFF, classids.SC_TEXMAP, "Falloff", -1, None),
@@ -610,7 +606,8 @@ class MixCurve(unittest.TestCase):
                 for got, exp in ((p.point, xy), (p.in_handle, h_in), (p.out_handle, h_out)):
                     self.assertTrue(all(math.isclose(a, b, abs_tol=1e-6) for a, b in zip(got, exp)), (got, exp))
                 self.assertEqual(p.flags, flags)
-            counts = {name: len(materials.mix_curve(s, m)) for name, m in maps.items() if m.class_id == classids.FALLOFF}
+            counts = {name: len(materials.mix_curve(s, m)) for name, m in maps.items()
+                      if m.class_id == classids.FALLOFF}
             self.assertEqual(counts, {"FixtureCurveBezier": 3, "FixtureCurveCorner": 4, "FixtureCurveOvershoot": 3,
                                       "FixtureCurveClamped": 4, "FixtureCurveLinear": 2})
             for name in ("FixtureMixCurve", "FixtureMixCurveAmount", "FixtureMixCurveStep"):
@@ -655,3 +652,7 @@ class MixCurve(unittest.TestCase):
         s = scene.Scene(container(0x2025, container(CURVE_MAP, refs(-1, 1)), container(CURVE_CONTROL)), CURVE_CLASSES)
         with self.assertRaises(materials.ChunkError):  # a curve control without its curve
             materials.mix_curve(s, materials.MaterialGraph(s).get(0))
+
+
+if __name__ == "__main__":
+    unittest.main()
