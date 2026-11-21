@@ -29,6 +29,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ### Fixed
 
+- UVW Map: a corner on the axis of a cylindrical or spherical map (the pole of a sphere, the center of a cap) gets
+  the U 3ds Max gives it: a turned gizmo no longer gives it an arbitrary angle (a texture smeared at the pole), and
+  on a cylindrical map it takes U 0.5 as in 3ds Max instead of the mean of its face.
 - Shapes: an Arc whose from and to angles are equal is a point, not a full circle, and angles below 0 or past 360
   are held there as 3ds Max holds them (from 10 to 370 ends at 360 instead of going round to 10).
 - Modifiers: an object with a world-space modifier (a Map Scaler or another space-warp binding) on its stack arrives

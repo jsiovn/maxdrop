@@ -533,7 +533,8 @@ above the Extrude, which are not evaluated.
 ## UVW Map
 
 The UVW Map modifier (ClassID `(0xF72B1, 0)`, superclass `0x810`; `convert/uvwmap.py`, `tests/unit/test_uvwmap.py`
-against the oracle's `eval_maps` of the uvwmap and uvwmap_oblique fixtures, and of modifier_pivot and stack_basic)
+against the oracle's `eval_maps` of the uvwmap, uvwmap_oblique and uvwmap_pole fixtures, and of modifier_pivot and
+stack_basic)
 references
 `[gizmo Position/Rotation/Scale, old ParamBlock]`:
 
@@ -575,8 +576,16 @@ within 1e-4 for planar and box, 1e-3 for the round types):
 - **Flip, tile**: per component, flipped (1 - value), then times its tile.
 - **Seam**: 3ds Max shares map vertices and may shift a face's U by a whole turn, also on faces that do not cross the
   seam; the image is the same. MaxDrop gives +1 to the corners below 0.5 of a face with an edge across the seam
-  (X = 0, Y > 0) and the mean U of the face to a corner on the axis. A face that goes around the axis
-  (FixtureUVWCylAxisX: 4 triangles) has no single U; there the two differ.
+  (X = 0, Y > 0) between two corners off the axis. A face that goes around the axis (FixtureUVWCylAxisX: 4
+  triangles; uvwmap_pole's 6 at a vertex pushed past the bound) has no single U; there the two differ.
+- **Axis**: a corner on the axis has no angle. Cylindrical: U 0.5, one map vertex shared by every face (MaxDrop: 1.5
+  on a face across the seam, whose other corners it moves up a turn). Spherical: the mean U of the face's other
+  corners. On the axis means within about 1e-4 of it, so that a turned gizmo's float residue (about 1e-7) is a
+  pole: cylindrical |(X, Y)| < 1e-4, spherical |X| and |Y| each < 1e-4 · r. Found by pushing an axis vertex off on
+  scratch scenes (9.5e-5 still a pole, 1.05e-4 not; (7.5e-5, 7.5e-5) not on a cylinder, (9.5e-5, 9.5e-5) still on a
+  sphere; a sphere's bound halves where Z at the pole is 0.5); exactly at 1e-4 3ds Max's single-precision results
+  disagree with each other. uvwmap_pole: the axis vertices of cylinders and spheres under turned gizmos, also pushed
+  just inside and past the bound; every corner equals 3ds Max's.
 
 Evaluated: the UVW Maps that render right above the base object or above an applied Extrude (FixtureUVWExtrude;
 FixtureUVWTwo, two in a row). One above another modifier (FixtureUVWAboveBend), a switched-off one (FixtureUVWOff)
