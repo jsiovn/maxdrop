@@ -363,15 +363,21 @@ class TestSynthetic(unittest.TestCase):
         self.assertEqual(sh.render, shapes.DEFAULT_RENDER)
 
     def test_arc_wraps_and_pie_reversed(self):
-        """to below from runs on past 360 degrees; a reversed pie keeps its center and is closed."""
+        """to below from runs on past 360 degrees; a reversed pie is the closed pie reversed with its first knot
+        kept first: from, the center, to, back to from (arc_pie_reverse, as 3ds Max orders it)."""
         sh = shapes.read_shape(_parametric(6, (10.0, 270.0, 90.0, 1, 1)), 3)
         sp = sh.splines[0]
         self.assertTrue(sp.closed)
         _close(self, [c for k in sp.knots for c in k.point[:2]],
-                   [0, 10, 10 * math.cos(math.radians(30)), 5, 10 * math.cos(math.radians(30)), -5, 0, -10, 0, 0],
+                   [0, -10, 0, 0, 0, 10, 10 * math.cos(math.radians(30)), 5, 10 * math.cos(math.radians(30)), -5],
                    "pie")
-        self.assertEqual(sp.knots[0].in_vec, sp.knots[0].point)
-        self.assertEqual(sp.knots[3].out_vec, sp.knots[3].point)
+        self.assertEqual(sp.knots[0].out_vec, sp.knots[0].point)
+        self.assertNotEqual(sp.knots[0].in_vec, sp.knots[0].point)
+        self.assertEqual(sp.knots[2].in_vec, sp.knots[2].point)
+        sh = shapes.read_shape(_parametric(6, (10.0, 270.0, 90.0, 0, 1)), 3)  # reverse alone: to back to from
+        _close(self, [c for k in sh.splines[0].knots for c in k.point[:2]],
+               [0, 10, 10 * math.cos(math.radians(30)), 5, 10 * math.cos(math.radians(30)), -5, 0, -10], "reversed")
+        self.assertFalse(sh.splines[0].closed)
 
 
 def _children(body):

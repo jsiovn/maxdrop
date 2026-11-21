@@ -27,7 +27,7 @@ their interpolation in slot 2 (old ParamBlock: 0 steps, 1 optimize, 2 adaptive).
 way 3ds Max makes them (every segment material ID 1, zero-based 0), checked against 3ds Max's own conversion to an
 Editable Spline (the oracle): a circular arc of angle a has vectors of radius * veccalc(a), the SDK's float32
 bisection for the vector length (0.5517862 for 90 degrees, not the textbook 0.5523); an Arc always has 3 segments,
-its angles clamped to [0, 360]; an NGon's corner radius makes two knots per corner, an Ellipse's outline a second
+its angles clamped to [0, 360], a reversed pie starting at `from`, then the center; an NGon's corner radius makes two knots per corner, an Ellipse's outline a second
 spline. Every shape keeps its rendering block in slot 0 (old ParamBlock: 0 thickness, 1 sides, 2 angle in
 degrees, 6 Enable In Renderer, 8 Enable In Viewport, 11 rectangular, 12 width, 13 length, 14 the rectangular
 section's angle in degrees).
@@ -245,12 +245,12 @@ def _arc(params, _issues):
     knots = _arc_knots(abs(radius), math.radians(start), math.radians(span) / 3.0, 4)
     knots[0] = knots[0]._replace(in_vec=knots[0].point)
     knots[-1] = knots[-1]._replace(out_vec=knots[-1].point)
-    if params.flag(4):
-        knots = _reversed(knots)
     pie = params.flag(3)
     if pie:  # closed through the center
         center = _p(0, 0)
         knots.append(Knot(BEZIER, CURVE, center, center, center))
+    if params.flag(4):  # a closed pie keeps its first knot first: from, the center, to ... (arc_pie_reverse)
+        knots = _reversed(knots[:1]) + _reversed(knots[1:]) if pie else _reversed(knots)
     return [Spline(knots, pie)]
 
 
