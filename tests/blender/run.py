@@ -23,7 +23,9 @@ shapes: each shape node a curve object (3D, FREE handles) with the oracle's spli
 its points where 3ds Max has its knots, each segment's middle (mathutils.geometry.interpolate_bezier) where 3ds Max
 interpolates it (the straight segment included), the resolution from the steps, a bevel and faces only on the
 renderable FixtureLine. shapes_more: the same for its NGon corners, Ellipse outlines and Arcs; a rectangular section
-a hidden bevel object in the import's collection, its corners where 3ds Max's render mesh has them.
+a hidden bevel object in the import's collection, its corners where 3ds Max's render mesh has them; FixtureCurveStd's
+Standard material and FixtureCurveMulti's Multi/Sub-Object entry for ID 1 in one slot on their curves, no slot on the
+other curves.
 Converted modifiers (TurboSmooth, MeshSmooth, Shell, Symmetry): each object's Blender modifiers in 3ds Max's order with
 the description's settings and mirror empties, creases where a smoother separates by smoothing groups, and the
 evaluated mesh with 3ds Max's vertex and triangle counts, world box and shading (flat faces, smooth regions and hard
@@ -66,7 +68,9 @@ matrices equal the products of the locals, through the helper empty for top-leve
 (a scale along a turned axis) is such a top-level node in a fixture. Material
 slots (build with convert.materials.assign): vray_wrappers' Multi/Sub-Object box with its faces set to IDs 1, 3
 and 7 lands them on the slots of FixtureSubOne, an empty one (ID 3 is switched off) and FixtureSubSeven; the same
-mesh shared with the Shell box gets slots linked to each object; standard_physical's boxes one slot each.
+mesh shared with the Shell box gets slots linked to each object; standard_physical's boxes one slot each;
+shapes_more's FixtureCurveStd and FixtureCurveMulti made to share one curve get one empty slot on it, linked to each
+object with its own material, and FixtureBox given FixtureCurveRed shares that Blender material with the curve.
 Materials (build.materials through the operator): each face on its material's slot, each slot's material named after
 the 3ds Max material, its Principled inputs equal to the MaterialIR the same file converts to (values, or linked when
 a texture graph drives them), the render method, one Image Texture node per file; vray_maps' Mapping values by hand
@@ -1061,6 +1065,12 @@ def check_shapes_more(obs, meters):
           abs(min(radial) - 8.49005) < 0.02 and abs(max(radial) - 11.5099) < 0.02 and
           abs(min(zs) + 0.75) < 1e-6 and abs(max(zs) - 0.75) < 1e-6,
           "%g .. %g, z %g .. %g" % (min(radial), max(radial), min(zs), max(zs)))
+    slots = {ob.name: [(s.link, s.material and s.material.name) for s in ob.material_slots]
+             for ob in obs if ob.type == 'CURVE'}
+    want = dict.fromkeys(slots, [])
+    want.update(FixtureCurveStd=[('DATA', "FixtureCurveRed")], FixtureCurveMulti=[('DATA', "FixtureCurveSubOne")])
+    check("shapes_more: a curve's 3ds Max material in one slot on the curve (a Multi/Sub-Object's ID 1), none on "
+          "the others", slots == want and len(slots) == 15, str(slots))
 
 
 def check_modifier_pivot(obs, meters):
@@ -1314,7 +1324,7 @@ def check_fixture_materials(name, plan, desc, obs):
     the slot plan of _irs)."""
     by_index = {node.index: ob for node, ob in zip(desc.nodes, obs)}
     checked = set()
-    for slots in plan.values():
+    for slots in list(plan.values()) + list(plan.curves.values()):
         for s, irs in enumerate(slots.slots):
             for node, ir in zip(slots.users, irs):
                 ob = by_index[node]
@@ -2945,8 +2955,9 @@ def check_shear(modules):
         failures.append("shear: helper left over")
 
 
-def _plan(path, edit=None):
-    """convert.scene.read of path, edit(desc) applied, then its slot plan."""
+def _plan(path, edit=None, pick=None):
+    """convert.scene.read of path, edit(desc) applied, then its slot plan; pick(desc, materials) may change the
+    {node index: material object index} the plan is made from."""
     from maxdrop.convert import materials as convert_materials
     from maxdrop.convert import scene as convert_scene
     from maxdrop.reader import cfb, materials as reader_materials, scene as reader_scene
@@ -2956,7 +2967,10 @@ def _plan(path, edit=None):
     with cfb.CompoundFile(path) as cf:
         sc = reader_scene.Scene.from_file(cf)
         conv = convert_materials.MaterialConverter(reader_materials.MaterialGraph(sc))
-        slots = convert_materials.assign(desc, convert_materials.node_materials(sc, desc), conv)
+        materials = convert_materials.node_materials(sc, desc)
+        if pick is not None:
+            pick(desc, materials)
+        slots = convert_materials.assign(desc, materials, conv)
     return desc, slots
 
 
@@ -3012,6 +3026,52 @@ def check_material_slots(modules):
     check("material slots: Standard and Physical boxes, one slot each",
           got == {"FixtureStandardBox": ["FixtureStandard"], "FixturePhysicalBox": ["FixturePhysical"]}
           and all(v == [0] * 6 for v in faces.values()), "%s %s" % (got, faces))
+    check_curve_slots(modules, make)
+
+
+def check_curve_slots(modules, make):
+    """shapes_more: FixtureCurveStd (FixtureCurveRed) and FixtureCurveMulti (ID 1: FixtureCurveSubOne) made to share
+    one curve: an empty slot on the curve, linked to each object with its own material; FixtureBox given
+    FixtureCurveRed: the mesh and the curve share one Blender material; build_steps counts the curve's slots."""
+    build_objects = modules[2]
+    nodes_of = {}
+
+    def share(desc):
+        nodes_of.update((n.name, n) for n in desc.nodes)
+        std, multi = nodes_of["FixtureCurveStd"], nodes_of["FixtureCurveMulti"]
+        del desc.curves[multi.curve]
+        multi.curve = std.curve
+        desc.curves[std.curve].users = sorted([std.index, multi.index])
+
+    def pick(desc, materials):
+        materials[nodes_of["FixtureBox"].index] = materials[nodes_of["FixtureCurveStd"].index]
+
+    empty_scene()
+    desc, slots = _plan(os.path.join(ROOT, "tests", "fixtures", "shapes_more.max"), share, pick)
+    steps = build_objects.build_steps(desc, bpy.context.scene.collection, slots=slots, material=make)
+    counts = []
+    while True:
+        try:
+            counts.append(next(steps))
+        except StopIteration as end:
+            built = end.value
+            break
+    total = build_objects.steps_of(desc, slots)
+    check("curve slots: build_steps ends at steps_of, which counts the curve plans",
+          counts[-1] == (total, total) and len(slots.curves) == 1
+          and total == build_objects.steps_of(desc, dict(slots)) + 1, "%s %d" % (counts[-1:], total))
+    obs = {n.name: built.objects[n.index] for n in desc.nodes}
+    std, multi, box = obs["FixtureCurveStd"], obs["FixtureCurveMulti"], obs["FixtureBox"]
+    got = [(s.link, s.material and s.material.name) for ob in (std, multi) for s in ob.material_slots]
+    check("curve slots: a curve shared by objects with different materials, its slot linked to each object",
+          std.data is multi.data and list(std.data.materials) == [None]
+          and got == [('OBJECT', "FixtureCurveRed"), ('OBJECT', "FixtureCurveSubOne")], str(got))
+    reds = [m.name for m in bpy.data.materials if m.name.startswith("FixtureCurveRed")]
+    check("curve slots: a mesh and a curve with the same 3ds Max material share one Blender material",
+          reds == ["FixtureCurveRed"] and box.data.materials[0] is std.material_slots[0].material, str(reds))
+    plain = sorted(ob.name for ob in obs.values() if ob.type == 'CURVE' and len(ob.data.materials))
+    check("curve slots: curves without a material get no slot", plain == ["FixtureCurveMulti", "FixtureCurveStd"],
+          str(plain))
 
 
 def _bench():

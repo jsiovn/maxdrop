@@ -12,7 +12,8 @@
     ir.base_color.value, ir.base_color.map        # linear RGB, MapRef(index, amount, invert) or None
     conv.material_for(index, mat_id)    # the MaterialIR a face with that zero-based material ID renders with
                                         # (Multi/Sub-Objects resolved), None for an empty slot
-    slots = assign(desc, node_materials(scene, desc), conv)   # {mesh key: MeshSlots}, for build/objects.py
+    slots = assign(desc, node_materials(scene, desc), conv)   # Slots {mesh key: MeshSlots}, for build/objects.py
+    slots.curves                        # {curve key: MeshSlots}: the slot of each curve with a material
     conv.peel(index)                    # (object index of the renderable material or None, reason)
     conv.stats.peeled, conv.stats.unknown, conv.stats.issues
 
@@ -72,7 +73,9 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
 
 The slots of a mesh (assign): its distinct face IDs, each keyed by the materials its users (the nodes sharing the
 mesh) get for that ID; one slot per key, in ID order, faces remapped to their slot. A material that is not a
-Multi/Sub-Object gives one slot; an empty key (no material) is a slot only beside others.
+Multi/Sub-Object gives one slot; an empty key (no material) is a slot only beside others. A curve (a shape node
+built as a curve) has one slot, keyed by the materials its users get for material ID 1, none when no user has one:
+the shape reader does not read the segments' material IDs.
 
 Colors are 3ds Max swatches, clamped to 0..1 and made linear by the scene's swatch rule (convert/colors.py): the
 value itself when the scene was saved with the gamma on (or does not say), the sRGB curve when it was off.
@@ -803,8 +806,9 @@ RULES = {
 
 
 class MeshSlots:
-    """The material slots of one mesh: users the object indices of the nodes sharing it (MeshDescription.users);
-    slots [[MaterialIR or None per user]] per slot (None: an empty slot); indices int32 per face, its slot."""
+    """The material slots of one mesh or curve: users the object indices of the nodes sharing it
+    (MeshDescription.users, CurveDescription.users); slots [[MaterialIR or None per user]] per slot (None: an empty
+    slot); indices int32 per face, its slot (empty for a curve: every spline is on slot 0)."""
     __slots__ = ("users", "slots", "indices")
 
     def __init__(self, users, slots, indices):
@@ -812,6 +816,16 @@ class MeshSlots:
 
     def __repr__(self):
         return "MeshSlots(%d users, %d slots)" % (len(self.users), len(self.slots))
+
+
+class Slots(dict):
+    """assign()'s result: {mesh key: MeshSlots}, and curves {curve key: MeshSlots} (mesh and curve keys can be
+    equal: two dicts)."""
+    __slots__ = ("curves",)
+
+    def __init__(self):
+        super().__init__()
+        self.curves = {}
 
 
 def node_materials(scene, desc):
@@ -827,12 +841,18 @@ def node_materials(scene, desc):
 
 
 def assign(desc, materials, conv):
-    """{mesh key: MeshSlots} for the meshes of desc. materials: {node object index: material object index or None}
-    (node_materials). A mesh's distinct face IDs, ascending, are grouped by the materials its users get for them
-    (material_for, by identity): one slot per group in order of first appearance. A mesh whose only group has no
-    material gets no slot."""
+    """Slots {mesh key: MeshSlots} for the meshes of desc, its curves {curve key: MeshSlots} for the curves of desc.
+    materials: {node object index: material object index or None} (node_materials). A mesh's distinct face IDs,
+    ascending, are grouped by the materials its users get for them (material_for, by identity): one slot per group
+    in order of first appearance. A mesh whose only group has no material gets no slot. A curve's one slot holds
+    what its users get for material ID 1 (zero-based 0); a curve none of whose users gets a material is left out."""
     import numpy
-    out = {}
+    out = Slots()
+    for key, cd in desc.curves.items():
+        users = list(cd.users)
+        irs = [conv.material_for(materials.get(u), 0) for u in users]
+        if any(ir is not None for ir in irs):
+            out.curves[key] = MeshSlots(users, [irs], numpy.zeros(0, dtype=numpy.int32))
     for key, md in desc.meshes.items():
         users = list(md.users)
         faces = numpy.asarray(md.material_indices, dtype=numpy.int64).ravel()

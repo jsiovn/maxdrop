@@ -14,8 +14,11 @@
 -- FixtureSection: a straight Line along X, renderable with a rectangular section (width 4, length 1, angle 30) and
 -- a round angle of 15 (a value apart from the rectangular one). FixtureSectionLoop: a Circle with a rectangular
 -- section (width 3, length 1.5).
+-- FixtureCurveStd: a renderable Circle with a Standard material (FixtureCurveRed). FixtureCurveMulti: a renderable
+-- Line with a Multi/Sub-Object (ID 1 FixtureCurveSubOne, ID 2 FixtureCurveSubTwo), its segments at ID 1. They come
+-- after FixtureBox, so the nodes above keep their handles.
 -- FixtureBox, a box with a Standard material, is there for the import smoke test, which expects a mesh and a
--- material from every fixture; the shapes have no material.
+-- material from every fixture; the other shapes have no material.
 -- Authored for MaxDrop's tests (see CONTRIBUTING.md, "Test files"): it resets the scene, so run it in a 3ds Max
 -- session with nothing to keep, then sanitize and check the saved file before it goes into tests/fixtures/.
 (
@@ -58,6 +61,25 @@
 	local slab = Box name:"FixtureBox" length:10 width:10 height:2 mapcoords:true pos:[0,40,0]
 	convertToPoly slab
 	slab.material = StandardMaterial name:"FixtureGrey" diffuse:(color 128 128 128)
+
+	local red = Circle name:"FixtureCurveStd" radius:5 pos:[80,-140,0]
+	red.render_renderable = true
+	red.render_thickness = 1.0
+	red.material = StandardMaterial name:"FixtureCurveRed" diffuse:(color 200 30 20)
+
+	local wire = line name:"FixtureCurveMulti"
+	addNewSpline wire
+	addKnot wire 1 #corner #line [0,0,0]
+	addKnot wire 1 #corner #line [10,0,0]
+	addKnot wire 1 #corner #line [10,10,0]
+	updateShape wire
+	wire.render_renderable = true
+	wire.render_thickness = 1.0
+	wire.pos = [120,-140,0]
+	local multi = MultiMaterial name:"FixtureCurveMulti" numsubs:2
+	multi.materialList[1] = StandardMaterial name:"FixtureCurveSubOne" diffuse:(color 20 30 200)
+	multi.materialList[2] = StandardMaterial name:"FixtureCurveSubTwo" diffuse:(color 20 200 30)
+	wire.material = multi
 
 	makeDir @"C:\maxdrop_fixtures" all:true
 	saveMaxFile @"C:\maxdrop_fixtures\shapes_more.max" quiet:true

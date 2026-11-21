@@ -14,6 +14,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   with a rectangular section gets that section (a hidden bevel object beside it) instead of a round one; none of
   them is a line in the report any more, but a rectangular section on a shape that is not flat, which may turn
   otherwise than in 3ds Max.
+- Shapes: a shape imported as a curve gets its material (a renderable railing, cable or frame no longer renders with
+  Blender's default material); with a Multi/Sub-Object, the entry for material ID 1.
 
 ### Changed
 

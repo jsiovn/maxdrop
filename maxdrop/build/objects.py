@@ -23,7 +23,8 @@ use in place of auto smooth: the same result on 4.2, 4.5 and 5.2 without a modif
 through its own layer, not the active one; Blender keeps at most MAX_UV_LAYERS, the channels past it are counted
 in dropped_uv_layers. Without slots, the faces keep 3ds Max's material IDs and get no material slot. With slots
 (convert.materials.assign: {mesh key: MeshSlots}), each face goes to its slot; a slot holds the same material for
-every object sharing the mesh, or each object's own (the slot linked to the object); an empty slot holds none.
+every object sharing the mesh, or each object's own (the slot linked to the object); an empty slot holds none. A
+curve in slots.curves gets its one slot the same way.
 
 Objects are made in walk order, so a parent exists before its children. The parent is set by node index with an
 identity matrix_parent_inverse and matrix_basis = the node's local matrix, so Blender's world matrix is 3ds Max's
@@ -34,7 +35,8 @@ without a parent, so a sheared top-level node gets one: the empty SHEAR_HELPER a
 made only when needed and listed in built.helpers. It is not baked into the mesh instead because most such nodes
 are empties (placeholders) and the object's own world matrix would stay off.
 An EMPTY node becomes a plain-axes empty with the custom property maxdrop_class; a CURVE node an object of its
-Curve, which gets no material (a rectangular section's hidden bevel object goes into collection: build.curves); a
+Curve, with the slot of slots.curves (a rectangular section's hidden bevel object goes into collection, without a
+material: build.curves); a
 LIGHT node an object of its Light (build.lights, power times light_strength), with the light's object flags; a
 CAMERA node an object of its Camera (build.cameras).
 
@@ -220,22 +222,30 @@ def _material(built, ir, make):
     return built.materials[ir.index]
 
 
+def _curve_plans(slots):
+    """slots.curves of a convert.materials.Slots, {} for a plain {mesh key: MeshSlots}."""
+    return getattr(slots, "curves", None) or {}
+
+
 def _slots(built, slots, make):
-    """The material slots of each mesh: on the mesh when every user has the same material there, else empty on
-    the mesh and linked to each object with its own. Yields after each mesh's slots."""
-    for key, plan in slots.items():
-        mesh = built.meshes.get(key)
-        if mesh is not None:
-            _mesh_slots(built, mesh, plan, make)
-        yield
+    """The material slots of each mesh, then of each curve: on the data when every user has the same material
+    there, else empty on the data and linked to each object with its own. Yields after each mesh's or curve's
+    slots."""
+    for found, plans in ((built.meshes, slots), (built.curves, _curve_plans(slots))):
+        for key, plan in plans.items():
+            data = found.get(key)
+            if data is not None:
+                _data_slots(built, data, plan, make)
+            yield
 
 
-def _mesh_slots(built, mesh, plan, make):
+def _data_slots(built, data, plan, make):
+    """plan's slots on data (a Mesh or a Curve) and its users' objects."""
     for s, irs in enumerate(plan.slots):
         if all(ir is irs[0] for ir in irs):
-            mesh.materials.append(_material(built, irs[0], make))
+            data.materials.append(_material(built, irs[0], make))
             continue
-        mesh.materials.append(None)
+        data.materials.append(None)
         for node, ir in zip(plan.users, irs):
             ob = built.objects.get(node)
             if ob is not None:
@@ -247,17 +257,18 @@ def _mesh_slots(built, mesh, plan, make):
 def build(desc, collection, collections=None, view_layer=None, slots=None, material=None, light_strength=1.0):
     """Every node of desc as an Object linked to collection, or to its layer's collection of collections; the
     Built result. view_layer: where a hidden node is hidden (hide_set), the context's when None. slots: {mesh key:
-    convert.materials.MeshSlots}, each face's slot and each slot's materials; material: make(MaterialIR) -> a
+    convert.materials.MeshSlots}, each face's slot and each slot's materials (convert.materials.Slots: its curves
+    too); material: make(MaterialIR) -> a
     Material, called once per Max material (no material in the slots without it); light_strength: the factor on
     every light's power."""
     return _drain(build_steps(desc, collection, collections, view_layer, slots, material, light_strength))
 
 
 def steps_of(desc, slots=None):
-    """The number of steps build_steps() takes for desc: one per mesh, curve, light, camera, node and mesh with
-    material slots."""
+    """The number of steps build_steps() takes for desc: one per mesh, curve, light, camera, node, and mesh or
+    curve with material slots."""
     return (len(desc.meshes) + len(desc.curves) + len(desc.lights) + len(desc.cameras) + len(desc.nodes)
-            + len(slots or {}))
+            + len(slots or {}) + len(_curve_plans(slots)))
 
 
 def build_steps(desc, collection, collections=None, view_layer=None, slots=None, material=None,
@@ -268,7 +279,7 @@ def build_steps(desc, collection, collections=None, view_layer=None, slots=None,
     leaves what it made so far for the caller to remove (everything is linked into collection or the layers'
     collections, or is data of those objects)."""
     built = Built()
-    slots = slots or {}
+    slots = {} if slots is None else slots  # not "or": a Slots without meshes may still hold curves
     total, done = steps_of(desc, slots), 0
     view_layer = view_layer or bpy.context.view_layer
     for key, md in desc.meshes.items():

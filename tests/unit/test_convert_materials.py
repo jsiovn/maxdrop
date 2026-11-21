@@ -1033,11 +1033,12 @@ class MultiSub(unittest.TestCase):
         self.assertEqual(conv.material_for(1, 0).name, "Deep")
 
 
-def _desc(**meshes):
-    """A SceneDescription stand-in: meshes {key: (users, face material IDs)}."""
+def _desc(curves=None, **meshes):
+    """A SceneDescription stand-in: meshes {key: (users, face material IDs)}, curves {key: users}."""
     return types.SimpleNamespace(meshes={k: types.SimpleNamespace(users=u, material_indices=numpy.array(f,
                                                                                                       dtype=numpy.int32))
-                                         for k, (u, f) in meshes.items()})
+                                         for k, (u, f) in meshes.items()},
+                                 curves={k: types.SimpleNamespace(users=u) for k, u in (curves or {}).items()})
 
 
 def _lin(s):
@@ -1275,6 +1276,35 @@ class Assign(unittest.TestCase):
         self.assertEqual((self.names(plan["a"].slots), plan["a"].indices.tolist()), ([["Plain", "Plain"]], [0, 0, 0]))
         self.assertEqual((plan["b"].slots, plan["b"].indices.tolist()), ([], [0, 0]))
         self.assertEqual((self.names(plan["c"].slots), plan["c"].indices.tolist()), ([], []))
+        self.assertEqual(plan.curves, {})
+
+    def test_curves(self):
+        """One slot: what each user gets for material ID 1 (a Multi/Sub-Object by that ID, none when its entry is
+        off); no plan when no user has a material. The same key for a mesh and a curve: two dicts."""
+        objs = (_vray(4, "Plain"), _vray(5, "Other"), _multi(6, [(0, Ref(5), 1), (1, Ref(4), 1)]),
+                _multi(7, [(0, Ref(4), 0), (1, Ref(5), 1)]))
+        conv = mat.MaterialConverter(FakeGraph(*objs))
+        curves = {"one": [1, 2], "two": [3, 4], "multi": [5], "off": [6], "bare": [7], "k": [8]}
+        plan = mat.assign(_desc(curves=curves, k=([1], [0])), {1: 4, 2: 4, 3: 4, 4: 5, 5: 6, 6: 7, 7: None, 8: 5},
+                          conv)
+        self.assertIsInstance(plan, mat.Slots)
+        got = {k: (p.users, self.names(p.slots), p.indices.tolist()) for k, p in plan.curves.items()}
+        self.assertEqual(got, {"one": ([1, 2], [["Plain", "Plain"]], []), "two": ([3, 4], [["Plain", "Other"]], []),
+                               "multi": ([5], [["Other"]], []), "k": ([8], [["Other"]], [])})
+        self.assertEqual(plan.curves["k"].indices.dtype.name, "int32")
+        self.assertEqual(self.names(plan["k"].slots), [["Plain"]])
+
+    def test_fixture_curves(self):
+        """shapes_more: FixtureCurveStd has a Standard material, FixtureCurveMulti a Multi/Sub-Object (ID 1:
+        FixtureCurveSubOne); the other shapes none."""
+        cf, graph, _by_name = _fixture("shapes_more")
+        with cf:
+            s = reader_scene.Scene.from_file(cf)
+            desc = importlib.import_module(_PKG + ".convert.scene").describe(s, 0.001, None)
+            plan = mat.assign(desc, mat.node_materials(s, desc), mat.MaterialConverter(graph))
+        names = {n.index: n.name for n in desc.nodes}
+        got = {names[p.users[0]]: self.names(p.slots) for p in plan.curves.values()}
+        self.assertEqual(got, {"FixtureCurveStd": [["FixtureCurveRed"]], "FixtureCurveMulti": [["FixtureCurveSubOne"]]})
 
 
 if __name__ == "__main__":
