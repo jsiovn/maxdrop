@@ -235,8 +235,8 @@ def _scene(*objects):
 
 class TestSynthetic(unittest.TestCase):
     def test_world_space_derived_object(self):
-        """0x2033 (a scratch file of 3ds Max 2020 with a Map Scaler binding): [world-space modifiers, the object's
-        derived object]; its modifiers come last, marked world_space."""
+        """0x2033 (stack_wsm's FixtureWSM, a Map Scaler binding): [world-space modifiers, the object's derived
+        object]; its modifiers come last, marked world_space."""
         s = _scene(node(0), _modifier(1, leaf(0x0100)), _modifier(2, leaf(0x0100)),
                    _derived(0x2032, (1, 0), [_context()]), _derived(0x2033, (2, 3), [_context()]))
         st = modifiers.Modifiers(s).object_stack(4)

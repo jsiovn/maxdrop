@@ -7,7 +7,7 @@
     with CompoundFile(path) as cf:
         classes = ClassDirectory.from_file(cf)
     entry = classes.get(chunk.id)       # a Scene child's id is its class index, or a special id past the
-                                        # directory (0x2032, a derived object), for which get() gives None
+                                        # directory (0x2032 or 0x2033, a derived object), for which get() gives None
     entry.class_id == classids.EDITABLE_POLY; entry.superclass; entry.name; entry.dll_name
 
 ClassDirectory3 (ClassDirectory in older files) holds one 0x2040 container per class: 0x2060 = i32 dll index,

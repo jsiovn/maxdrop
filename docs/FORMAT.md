@@ -76,8 +76,9 @@ Reference slots of a node, checked on every node of every fixture (`test_scene.p
 - slot 1: the object. With no modifier it is the base object, whose ClassID and superclass equal the oracle's
   `base_class_id` and `base_superclass`. With modifiers it is a derived object: special id `0x2032`, past the
   class directory, whose references are its modifiers top to bottom and then the base object (modifier_pivot:
-  Bend, UVW Map, Editable Poly, the oracle's order; `Scene.object_stack` follows them, and a world-space
-  derived object `0x2033` above one, stack_wsm; see [Modifiers](#modifiers)). Nodes whose stacks end in the same base object are exactly the oracle's `instances`
+  Bend, UVW Map, Editable Poly, the oracle's order; `Scene.object_stack` follows them, also through a
+  world-space derived object `0x2033` above it or above the base object, stack_wsm; see [Modifiers](#modifiers)).
+  Nodes whose stacks end in the same base object are exactly the oracle's `instances`
   (instances: three instances share the source's object, the copy has its own; modifier_pivot: a bare source and two references with modifiers of their own,
   three slot-1 objects on one base object);
 - slot 3: the material, present exactly when the oracle names one (the group head of layers_flags has no

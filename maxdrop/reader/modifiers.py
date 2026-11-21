@@ -19,7 +19,7 @@ stack first; the object can be another derived object (a reference: the modifier
 the shared ones). Its k-th 0x2500 is the modifier context of reference slot k: 0x2510 = a Matrix3 (12 x f32, rows
 1 to 4, then u32 flags) and 0x2511 = the context's box (min, max), +1e30 .. -1e30 when Max had not computed it
 before saving. A world-space modifier sits in a 0x2033 derived object, [world-space modifiers, the object's derived
-object], so it comes above every object-space modifier. A modifier keeps 0x39BF{0x0100: UTF-16 name, empty = the
+object or its base object], so it comes above every object-space modifier. A modifier keeps 0x39BF{0x0100: UTF-16 name, empty = the
 class name; 0x0110 present: off; 0x0120: off in the viewport; 0x0130: off in the renderer}. Its parameter blocks
 and gizmo controller (superclass 0x9008) are among its references. docs/FORMAT.md says which fixture shows what.
 
