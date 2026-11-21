@@ -843,32 +843,61 @@ def _torus(b, p):
     np = b.np
     big, small, ns, nt = p.radius1, p.radius2, p.segs, p.sides
     rotation, twist = p.rotation, p.twist  # radians, as stored
-    s = np.arange(ns, dtype=np.int64)[:, None]
+    pie = p.slice
+    start, arc = _pie(p)
+    cols = ns + 1 if pie else ns
+    angles = [-(start + arc) + k * arc / ns for k in range(cols)] if pie else [k * _TAU / ns for k in range(ns)]
+    s = np.arange(cols, dtype=np.int64)[:, None]
     t = np.arange(nt, dtype=np.int64)[None, :]
-    sin = np.array([math.sin(k * _TAU / ns) for k in range(ns)], dtype=np.float64)[:, None]
-    cos = np.array([math.cos(k * _TAU / ns) for k in range(ns)], dtype=np.float64)[:, None]
-    psi = t * _TAU / nt + rotation + twist * (s + 1) / ns
+    sin = np.array([math.sin(a) for a in angles], dtype=np.float64)[:, None]
+    cos = np.array([math.cos(a) for a in angles], dtype=np.float64)[:, None]
+    psi = t * _TAU / nt + rotation + twist * (s + 1) / cols  # with Slice, over the columns
     rho = big + small * np.cos(psi)
-    grid = b.points(_stack(np, rho * sin, rho * cos, small * np.sin(psi), dtype=np.float64))
+    zs = small * np.sin(psi)
+    grid = b.points(_stack(np, rho * sin, rho * cos, zs, dtype=np.float64))
+    s = s[:ns]
     mode = p.smooth
     if mode == 0:
         group = np.zeros((ns, nt), dtype=np.int64)
     elif mode == 1:
         group = _alternate(np, t, nt)
-    elif mode == 3:
-        group = _alternate(np, s, ns)
+    elif mode == 3:  # with Slice the segments do not close: no last row apart
+        group = np.where(s % 2 == 0, 2, 1) if pie else _alternate(np, s, ns)
     else:
         group = np.ones((ns, nt), dtype=np.int64)
     if p.real_world:
         def uv(t, s):
-            return ((1.0 - s / ns) * _TAU * abs(big), t / nt * _TAU * abs(small))
+            return ((1.0 - s / ns) * arc * abs(big), t / nt * _TAU * abs(small))
     else:
+        across = ns + 1 if pie else ns  # with Slice 3ds Max divides by the columns, not the steps
+
         def uv(t, s):
-            return (t / nt, s / ns)
-    s1, t1 = (s + 1) % ns, (t + 1) % nt
+            return (t / nt, s / across)
+    s1, t1 = (s + 1 if pie else (s + 1) % ns), (t + 1) % nt
     b.faces(_stack(np, grid[s, t], grid[s, t1], grid[s1, t1], grid[s1, t]).reshape(-1, 4), 0,
             np.broadcast_to(group, (ns, nt)).reshape(-1),
             _corners(np, uv(t, s), uv(t + 1, s), uv(t + 1, s + 1), uv(t, s + 1)).reshape(-1, 4, 2))
+    if not pie:
+        return
+    # the cut planes: a fan around the tube's center at each end, the start's ID 2, the end's ID 3, group 8
+    centers = b.points(_stack(np, big * sin[[0, -1], 0], big * cos[[0, -1], 0], 0.0, dtype=np.float64))
+    t, t1 = t[0], t1[0]
+    if p.real_world:  # flat, V up from the lowest point; U in from the outer point at the start, out at the end
+        ends = []
+        for col, outward in ((0, False), (-1, True)):
+            rr, zz = np.append(rho[col], rho[col][0]), np.append(zs[col], zs[col][0])
+            low, inner, outer = zz.min(), rr.min(), rr.max()
+            pu = rr - inner if outward else outer - rr
+            mid = ((big - inner) if outward else (outer - big), -low)
+            ends.append((mid, pu, zz - low))
+        (sm, su, sv), (em, eu, ev) = ends
+        s_uv = _corners(np, sm, (su[t + 1], sv[t + 1]), (su[t], sv[t]))
+        e_uv = _corners(np, em, (eu[t], ev[t]), (eu[t + 1], ev[t + 1]))
+    else:
+        s_uv = _corners(np, (0.5, 1.0), ((t + 1) / nt, 0.0), (t / nt, 0.0))
+        e_uv = _corners(np, (1.0, 0.5), (t / nt, ns / across), ((t + 1) / nt, ns / across))
+    b.faces(_stack(np, centers[0], grid[0][t1], grid[0][t]), 1, 8, s_uv)
+    b.faces(_stack(np, centers[1], grid[-1][t], grid[-1][t1]), 2, 8, e_uv)
 
 
 def _f32(x):
@@ -991,15 +1020,13 @@ def _faces(p):
     if c == classids.TUBE:
         profile = 2 * (v["height_segs"] + v["cap_segs"])
         return v["sides"] * profile + (2 * profile if v["slice"] else 0)
-    return v["segs"] * v["sides"]
+    return v["segs"] * v["sides"] + (2 * v["sides"] if v["slice"] else 0)
 
 
 def build(p):
     """(MeshData of Params p, issues); PrimitiveError for what is not built."""
     issues = []
     c = p.class_id
-    if p.values.get("slice") and c not in (classids.SPHERE, classids.CYLINDER, classids.CONE, classids.TUBE):
-        raise PrimitiveError("%s with Slice on is not built yet" % p.name)
     if c == classids.GEOSPHERE and p.hemisphere:
         raise PrimitiveError("a GeoSphere's hemisphere is not built yet")
     faces = _faces(p)
