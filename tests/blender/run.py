@@ -59,8 +59,10 @@ camera (lookat: FixtureCam); cameras holds eleven camera objects with a Camera e
 size and camera stay as they were.
 Each fixture's import report is published (build.report) and must say nothing was left out; the one the
 operator published for vray_wrappers lists its three peeled wrappers by class. A changed layers_more description
-checks a hidden parent layer, which no fixture has: its child layer is out of the view layer with it. A hand-made description with sheared local matrices (top-level and parented, hidden, a zero scale) checks that
-Blender's world matrices equal the products of the locals, through the helper empty for top-level ones. Material
+checks a hidden parent layer, which no fixture has: its child layer is out of the view layer with it. A hand-made
+description with sheared local matrices (top-level and parented, hidden, a zero scale) checks that Blender's world
+matrices equal the products of the locals, through the helper empty for top-level ones; controllers' FixtureScaleAxis
+(a scale along a turned axis) is such a top-level node in a fixture. Material
 slots (build with convert.materials.assign): vray_wrappers' Multi/Sub-Object box with its faces set to IDs 1, 3
 and 7 lands them on the slots of FixtureSubOne, an empty one (ID 3 is switched off) and FixtureSubSeven; the same
 mesh shared with the Shell box gets slots linked to each object; standard_physical's boxes one slot each.
@@ -139,7 +141,7 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1; kept literal: tes
     "lights_standard": [],
     "lights_photometric": [],
     "cameras": [],  # its box, without Generate Mapping Coords
-    "controllers": [],  # Point helpers and a camera: no mesh
+    "controllers": [],  # boxes without Generate Mapping Coords
     "vray_wrappers": ["UVMap"],
     "uvwmap": {"FixtureUVWGizmo": ["UVMap", "UVChannel_2"], "FixtureUVWTwo": ["UVMap", "UVChannel_3"]},  # else UVMap
     "uvwmap_oblique": ["UVMap"],
@@ -356,9 +358,13 @@ def run_fixture(path, modules):
     nodes = oracle["nodes"]
     helpers = [ob for ob in bpy.data.objects if ob.get("maxdrop_helper") == "mirror"]
     mirrors = sum(1 for n in desc.nodes for m in n.converted if m.mirror is not None)
-    check("%s: one object per node, one empty per mirror object" % name,
-          len(desc.nodes) == len(nodes) == len(bpy.data.objects) - len(helpers) and len(helpers) == mirrors,
-          "%d objects, %d nodes, %d mirror empties" % (len(bpy.data.objects), len(nodes), len(helpers)))
+    shears = [ob for ob in bpy.data.objects if ob.get("maxdrop_helper") == "shear"]
+    sheared = any(n.sheared and n.parent is None for n in desc.nodes)  # controllers: FixtureScaleAxis
+    check("%s: one object per node, one empty per mirror object, one for top-level sheared nodes" % name,
+          len(desc.nodes) == len(nodes) == len(bpy.data.objects) - len(helpers) - len(shears)
+          and len(helpers) == mirrors and len(shears) == int(sheared),
+          "%d objects, %d nodes, %d mirror empties, %d shear empties" % (len(bpy.data.objects), len(nodes),
+                                                                         len(helpers), len(shears)))
     check("%s: nodes in oracle order" % name, [n.name for n in desc.nodes] == [n["name"] for n in nodes])
     obs = objects_of(desc)
     meshes = {ob.data.name: ob.data for ob in obs if ob.type == 'MESH'}

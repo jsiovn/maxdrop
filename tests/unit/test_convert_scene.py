@@ -85,7 +85,7 @@ UV_LAYERS = {
     "lights_standard": [],
     "lights_photometric": [],
     "cameras": [],  # its box, without Generate Mapping Coords; the cameras are no mesh
-    "controllers": [],  # Point helpers and a camera: no mesh
+    "controllers": [],  # boxes without Generate Mapping Coords
     "vray_wrappers": ["UVMap"],
     # per mesh: every box, the cylinder and the sphere have channel 1; two UVW Maps write channels 2 and 3
     "uvwmap": collections.defaultdict(lambda: ["UVMap"], {"FixtureUVWGizmo": ["UVMap", "UVChannel_2"],
@@ -123,7 +123,7 @@ PRIMITIVE_CLASSES = {("0x00000010", "0x00000000"), ("0x00000011", "0x00000000"),
                      ("0x00000020", "0x00000000"), ("0xa86c23dd", "0x00000000"), ("0x00007b21", "0x00000000"),
                      ("0x00000000", "0x00007f9e"), ("0x081f1dfc", "0x77566f65"), ("0x76bf318a", "0x4bf37b10")}
 # placeholders the fixtures hold: lookat's Point helper
-PLACEHOLDERS = {"lookat": {"Point": 1}, "controllers": {"Point": 22}}
+PLACEHOLDERS = {"lookat": {"Point": 1}}
 NO_DECAY = "light: no decay: Blender's light falls off with the square of the distance; as bright as in 3ds Max at 1 m"
 # the issues the fixtures are made to raise
 ISSUES = {"uvwmap": ["uvw map: a UVW Map above Bend is not evaluated",
