@@ -6,7 +6,8 @@
 extrude fixture against its 3ds Max oracle (world bounding box within 1e-3, vertex count, triangle count), closed
 manifolds with outward normals for the capped ones, the hole of the holed cap, the open one without caps; material
 IDs by the way a face looks and map channel 1's vertex count and range against the oracle's eval_mesh; mapping
-coordinates; 3ds Max's interpolation counts (found with its own Extrude: steps, optimize, adaptive); the ear clipping of outlines with holes; damaged and hostile parameters.
+coordinates; 3ds Max's interpolation counts (found with its own Extrude: steps, optimize, adaptive); the ear
+clipping of outlines with holes; damaged and hostile parameters.
 
     python -I -m unittest discover tests
 """
@@ -174,18 +175,19 @@ class Fixture(unittest.TestCase):
         count and range, as 3ds Max's evaluated mesh has them (docs/ORACLE.md, eval_mesh)."""
         for name in CAPPED + ("FixtureExtOpen",):
             _node, md = self.mesh(name)
+            data = self.data[name]  # object space, before the object offset, as the oracle takes it back to
             want = self.oracle[name]["eval_mesh"]
             hist = {}
-            for f in range(len(md.loop_starts)):
-                z = _face_area_z(md, f)  # the winding normal's z, times the polygon's area
-                if abs(z) <= 1e-4 * _face_area(md, f):
+            for f in range(len(data.loop_starts)):
+                z = _face_area_z(data, f)  # the winding normal's z, times the polygon's area
+                if abs(z) <= 1e-4 * _face_area(data, f):
                     side = 3
                 else:
                     side = 1 if z > 0 else 2
-                row = hist.setdefault(int(md.material_indices[f]) + 1, [0, 0, 0])
-                row[side - 1] += int(md.loop_totals[f]) - 2  # 3ds Max counts triangles
+                row = hist.setdefault(int(_mats(data)[f]) + 1, [0, 0, 0])
+                row[side - 1] += int(data.loop_totals[f]) - 2  # 3ds Max counts triangles
             self.assertEqual([[i] + hist[i] for i in sorted(hist)], want["material_ids"], name)
-            channel = self.data[name].maps.get(1)
+            channel = data.maps.get(1)
             self.assertEqual(channel is None, want["map_channel_1"] is None, name)
             if channel is None:
                 continue
@@ -195,8 +197,8 @@ class Fixture(unittest.TestCase):
             for got, key in ((used.min(axis=0), "min"), (used.max(axis=0), "max")):  # 6 significant digits
                 numpy.testing.assert_allclose(got, want["map_channel_1"][key], rtol=1e-5, atol=1e-6, err_msg=name)
             uv = dict(md.uv_layers)["UVMap"]  # what Blender gets: u and v of the same vertices
-            numpy.testing.assert_allclose(uv.min(axis=0), want["map_channel_1"]["min"][:2], rtol=1e-5, atol=1e-6)
-            numpy.testing.assert_allclose(uv.max(axis=0), want["map_channel_1"]["max"][:2], rtol=1e-5, atol=1e-6)
+            for got, key in ((uv.min(axis=0), "min"), (uv.max(axis=0), "max")):
+                numpy.testing.assert_allclose(got, want["map_channel_1"][key][:2], rtol=1e-5, atol=1e-6, err_msg=name)
 
     def test_mapping_coordinates(self):
         _node, md = self.mesh("FixtureExtRect")

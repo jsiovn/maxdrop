@@ -209,8 +209,12 @@ class OracleFiles(unittest.TestCase):
         m = mesh["map_channel_1"]
         if m is not None:
             self.assertEqual(list(m), ["count", "max", "min"])
-            self.assertGreater(m["count"], 0)
-            self.assertTrue(all(lo <= hi for lo, hi in zip(m["min"], m["max"])), m)
+            self.assertGreaterEqual(m["count"], 0)
+            if m["min"] is None:  # no face uses a map vertex: no range
+                self.assertIsNone(m["max"])
+            else:
+                self.assertEqual((len(m["min"]), len(m["max"])), (3, 3), m)
+                self.assertTrue(all(lo <= hi for lo, hi in zip(m["min"], m["max"])), m)
 
     def _check_block(self, b, size):
         self.assertEqual(list(b), BLOCK_KEYS)
