@@ -641,7 +641,7 @@ class Parameters(unittest.TestCase):
     def test_clamped_and_approximated(self):
         p, issues = extrude.read_params(FakeScene(), _modifier({1: 0, 4: 1, 5: 0, 7: 1, 8: 1}))
         self.assertEqual(p.segments, 1)
-        self.assertEqual(len(issues), 3)  # segments, grid caps, patch output (shape IDs are read)
+        self.assertEqual(len(issues), 2)  # segments, patch output (grid caps and shape IDs are made)
         self.assertTrue(p.shape_ids)
         p, _issues = extrude.read_params(FakeScene(), _modifier({1: 10 ** 9}))
         self.assertEqual(p.segments, extrude.MAX_SEGMENTS)
@@ -945,6 +945,207 @@ class Synthetic(unittest.TestCase):
             mid = (a + b) / 2.0
             normal = numpy.array([b[1] - a[1], a[0] - b[0]])  # the right of a -> b: where the face looks
             self.assertLess(numpy.dot(normal, mid[:2] - (5.0, 5.0)), 0)  # towards the center of the small square
+
+
+def _f32(v):
+    """v as a MAXScript float (single precision): its point arithmetic rounds each result so."""
+    return float(numpy.float32(v))
+
+
+def _sub32(a, b):
+    return float(numpy.float32(a) - numpy.float32(b))
+
+
+def _add32(a, b):
+    return float(numpy.float32(a) + numpy.float32(b))
+
+
+def _poly(points):
+    return shapes.Spline(_knots([(_f32(x), _f32(y), _f32(z)) for x, y, z in points]), True)
+
+
+def _rect(w, h, cx=0.0, cy=0.0):
+    """A Rectangle w across and h up about (cx, cy), its knots as 3ds Max lays them."""
+    x, y = _f32(w) / 2, _f32(h) / 2
+    return _poly([(cx + x, cy + y, 0), (cx - x, cy + y, 0), (cx - x, cy - y, 0), (cx + x, cy - y, 0)])
+
+
+def _box(x0, y0, x1, y1):
+    return _poly([(x0, y0, 0), (x1, y0, 0), (x1, y1, 0), (x0, y1, 0)])
+
+
+def _hole(cx, cy, hw, hh):
+    """The probes' square holes: drawn clockwise, each corner a MAXScript sum (cx - hw ...)."""
+    hw, hh = _f32(hw), _f32(hh)
+    x0, x1, y0, y1 = _sub32(cx, hw), _add32(cx, hw), _sub32(cy, hh), _add32(cy, hh)
+    return _poly([(x0, y0, 0), (x0, y1, 0), (x1, y1, 0), (x1, y0, 0)])
+
+
+def _circle_at(radius, cx=0.0, cy=0.0):
+    knots = []
+    for k in shapes._circle(4, radius):
+        knots.append(k._replace(**{f: (getattr(k, f)[0] + cx, getattr(k, f)[1] + cy, getattr(k, f)[2])
+                                   for f in ("point", "in_vec", "out_vec")}))
+    return shapes.Spline(tuple(knots), True)
+
+
+def _turned_circle(radius, cx=0.0, cy=0.0):
+    """A circle whose knots lie on the diagonals (the probes' Circle45), the usual 4 / 3 (sqrt 2 - 1) vectors."""
+    k = 4 * (math.sqrt(2) - 1) / 3 * radius
+    knots = []
+    for a in (45, 135, 225, 315):
+        r = math.radians(a)
+        p = (cx + radius * math.cos(r), cy + radius * math.sin(r), 0.0)
+        t = (-math.sin(r) * k, math.cos(r) * k, 0.0)
+        knots.append(shapes.Knot(shapes.BEZIER, shapes.CURVE, p, tuple(a - b for a, b in zip(p, t)),
+                                 tuple(a + b for a, b in zip(p, t))))
+    return shapes.Spline(tuple(knots), True)
+
+
+def _square40(*holes):
+    return [_box(-20, -20, 20, 20)] + list(holes)
+
+
+# Grid caps probed in 3ds Max 2020 (snapshotAsMesh of each shape under an Extrude with Cap Type Grid, Cap Start and
+# Cap End, 1 segment unless named): name -> (splines, shape steps, extra parameters, vertices, faces). Hole_s: a
+# square hole s wide at (3.3, 3.3) in a 40-wide square, the grid refined by it (s = 2 and 1.9: 37 and 39 divisions).
+GRID_PROBES = {
+    "Rect30x20": (lambda: [_rect(30, 20)], 6, {}, 890, 1776),
+    "Rect300x200": (lambda: [_rect(300, 200)], 6, {}, 890, 1776),
+    "Rect3x2": (lambda: [_rect(3, 2)], 6, {}, 890, 1776),
+    "Circle10": (lambda: [_circle_at(10)], 2, {}, 690, 1376),
+    "Circle45": (lambda: [_turned_circle(10)], 2, {}, 738, 1472),
+    "Thin100x1": (lambda: [_rect(100, 1)], 6, {}, 890, 1776),
+    "CircleSteps20": (lambda: [_circle_at(10)], 20, {}, 866, 1728),
+    "TwoSquares": (lambda: [_rect(10, 10), _rect(4, 4, 30, 0)], 6, {}, 1780, 3552),
+    "HoleRect": (lambda: [_rect(40, 40), _circle_at(8, 4, 2)], 6, {}, 836, 1672),
+    "Island": (lambda: [_rect(40, 40), _rect(24, 24), _rect(10, 10)], 6, {}, 1450, 2896),
+    "Triangle": (lambda: [_poly([(0, 0, 0), (20, 0, 0), (5, 15, 0)])], 6, {}, 442, 880),
+    "LShape": (lambda: [_poly([(0, 0, 0), (20, 0, 0), (20, 8, 0), (8, 8, 0), (8, 25, 0), (0, 25, 0)])], 6,
+               {"amount": -15.0, "segments": 3}, 542, 1080),
+    "Clockwise": (lambda: [_poly([(0, 0, 0), (0, 20, 0), (30, 20, 0), (30, 0, 0)])], 6, {}, 890, 1776),
+    "Diamond": (lambda: [_poly([(10, 0, 0), (0, 10, 0), (-10, 0, 0), (0, -10, 0)])], 6, {}, 442, 880),
+    "RectAndOpen": (lambda: [_rect(10, 10), shapes.Spline(_knots([(20, 0, 0), (40, 10, 0)]), False)], 6, {},
+                    894, 1778),
+    "TinyHole": (lambda: _square40(_poly([(0.5, 0.5, 0), (0.5, 1.2, 0), (1.2, 1.2, 0), (1.2, 0.5, 0)])), 6, {},
+                 5216, 10432),
+    "CapStartOnly": (lambda: [_rect(30, 20)], 6, {"cap_end": False}, 449, 892),
+    "CapEndOnly": (lambda: [_rect(30, 20)], 6, {"cap_start": False, "segments": 2}, 453, 900),
+    "Pinch": (lambda: [_poly([(0, 0, 0), (10, 0, 0), (10, 10, 0), (20, 10, 0), (20, 20, 0), (10, 20, 0),
+                              (10, 10.0001, 0), (0, 10.0001, 0)])], 6, {}, 458, 912),
+    "Sliver": (lambda: [_poly([(0, 0, 0), (40, 0, 0), (40, 0.5, 0), (0, 30, 0)])], 6, {}, 466, 928),
+    "Overlap": (lambda: [_box(0, 0, 20, 20), _box(10, 10, 30, 30)], 6, {}, 1780, 3552),
+    "HoleWide": (lambda: _square40(_hole(3.3, 3.3, 5, 0.35)), 6, {}, 2148, 4296),
+    "HoleTall": (lambda: _square40(_hole(3.3, 3.3, 0.35, 5)), 6, {}, 2148, 4296),
+    "Big400Hole7": (lambda: [_box(-200, -200, 200, 200), _hole(33, 33, 3.5, 3.5)], 6, {}, 5216, 10432),
+    "SmallSolidBeside": (lambda: _square40(_box(30, 0, 30.7, 0.7)), 6, {}, 1780, 3552),
+    "HoleCircle45": (lambda: _square40(_turned_circle(1.0, 3.3, 3.3)), 2, {}, 3226, 6452),
+    "TwoHoles": (lambda: _square40(_poly([(-11.5, -11.5, 0), (-11.5, -8.5, 0), (-8.5, -8.5, 0), (-8.5, -11.5, 0)]),
+                                   _poly([(9.1, 9.1, 0), (9.1, 10.9, 0), (10.9, 10.9, 0), (10.9, 9.1, 0)])), 6, {},
+                 3696, 7396),
+    "Notch": (lambda: [_poly([(-20, -20, 0), (20, -20, 0), (20, 20, 0), (1.0, 20, 0), (0.8, 0.6, 0), (0.6, 20, 0),
+                              (-20, 20, 0)])], 6, {}, 896, 1788),
+    "IslandInHole": (lambda: _square40(_box(-10, -10, 10, 10), _box(2.8, 2.8, 3.8, 3.8)), 6, {}, 1546, 3088),
+    "RaisedZ3": (lambda: [_poly([(0, 0, 3), (30, 0, 3), (30, 20, 3), (0, 20, 3)])], 6, {}, 890, 1776),
+    "Wide60x20Hole3": (lambda: [_box(0, 0, 60, 20), _hole(20.3, 7.3, 1.5, 1.5)], 6, {}, 1642, 3284),
+    "Tall20x60Hole3": (lambda: [_box(0, 0, 20, 60), _hole(7.3, 20.3, 1.5, 1.5)], 6, {}, 1642, 3284),
+    "Wide60x20Hole1x5": (lambda: [_box(0, 0, 60, 20), _hole(20.3, 7.3, 0.5, 2.5)], 6, {}, 2158, 4316),
+    "Straddle": (lambda: _square40(_hole(3.05, 3.45, 0.15, 0.15)), 6, {}, 5218, 10436),
+    "ThinDiagonal": (lambda: [_poly([(0, 0, 0), (1, 0, 0), (41, 40, 0), (40, 40, 0)])], 6, {}, 8, 12),
+}
+for _s, _v, _f in ((20.0, 698, 1396), (12.0, 826, 1652), (8.0, 866, 1732), (5.0, 880, 1760), (4.0, 890, 1780),
+                   (3.0, 1360, 2720), (2.5, 1930, 3860), (2.375, 2056, 4112), (2.0, 2896, 5792), (1.9, 3208, 6416),
+                   (1.8, 3706, 7412), (1.5, 5210, 10420), (1.2, 5210, 10420), (1.0, 5216, 10432),
+                   (0.8, 5216, 10432), (0.7, 5216, 10432), (0.5, 5218, 10436), (0.3, 5218, 10436)):
+    GRID_PROBES["Hole_%g" % _s] = ((lambda s=_s: _square40(_hole(3.3, 3.3, _f32(s) / 2, _f32(s) / 2))), 6, {}, _v,
+                                   _f)
+
+
+@unittest.skipIf(numpy is None, "numpy missing")
+class GridCaps(unittest.TestCase):
+    """Cap Type Grid: 3ds Max 2020's vertex and face counts of the probed shapes, closed meshes that enclose what
+    the morph caps enclose, the grid's divisions, its points' height and mapping, and the guards."""
+
+    def make(self, name, **kw):
+        splines, steps, extra, _v, _f = GRID_PROBES[name]
+        params = extrude.DEFAULT._replace(**dict(dict(amount=2.0, cap_type=extrude.CAP_GRID), **dict(extra, **kw)))
+        return extrude.extrude(_shape(splines(), steps=steps), params)
+
+    def test_counts_equal_3ds_max(self):
+        for name, (_splines, _steps, _extra, verts, faces) in GRID_PROBES.items():
+            data, issues = self.make(name)
+            self.assertEqual(issues, [], name)
+            self.assertEqual((len(data.positions), int((data.loop_totals - 2).sum())), (verts, faces), name)
+
+    def test_caps_are_closed_and_enclose_the_morph_caps_volume(self):
+        for name in GRID_PROBES:
+            data, _issues = self.make(name)
+            morph, _issues = self.make(name, cap_type=extrude.CAP_MORPH)
+            want = _volume(morph.positions, morph)
+            self.assertAlmostEqual(_volume(data.positions, data), want, delta=1e-4 * max(1.0, abs(want)), msg=name)
+            if name in ("RectAndOpen", "Overlap", "CapStartOnly", "CapEndOnly", "RaisedZ3"):
+                continue  # an open side, overlapping solids, one cap, the grid off the outline's height
+            edges = _edges(data)
+            self.assertTrue(all(c == 1 for c in edges.values()), name)
+            self.assertTrue(all((b, a) in edges for a, b in edges), name)
+
+    def test_divisions(self):
+        """20, raised by a hole to floor(0.95 x span / (s / 2)), at most 50: on the float32 values of the points, so
+        exact ratios fall either way (2.3f .. 4.3f in 40: 37.99999 -> 37; 18.8f .. 21.8f in 60: 38 -> 38)."""
+        div = extrude._divisions
+        self.assertEqual([div(40.0, []), div(40.0, [5.0]), div(40.0, [3.0]), div(40.0, [1.8]), div(40.0, [0.1])],
+                         [20, 20, 25, 42, 50])
+        self.assertEqual(div(40.0, [3.0, 1.8]), 42)
+        self.assertEqual(div(40.0, [_add32(3.3, 1.0) - _sub32(3.3, 1.0)]), 37)
+        self.assertEqual(div(60.0, [_add32(20.3, 1.5) - _sub32(20.3, 1.5)]), 38)
+        self.assertEqual(div(40.0, [0.0, float("nan")]), 20)
+        self.assertEqual(div(1e30, [1e-30]), 50)
+
+    def test_grid_points(self):
+        """21 x 21 points from 2.5 % of the box plus a thousandth of a division, at z 0 and the amount whatever the
+        shape's z (3ds Max's RaisedZ3: its outline at 3 and 5, its grid at 0 and 2); the cap maps them like its
+        other points (3ds Max: u 0.02505 at the first grid point of a 30-wide box)."""
+        data, _issues = self.make("RaisedZ3")
+        grid = data.positions[8:].astype(numpy.float64)
+        self.assertEqual(sorted(set(grid[:, 2].tolist())), [0.0, 2.0])
+        self.assertAlmostEqual(float(grid[:, 0].min()), 0.751425, places=5)
+        self.assertAlmostEqual(float(grid[:, 1].max()), 19.50095, places=5)
+        data, _issues = self.make("Rect30x20", mapping=True)
+        ch = data.maps[1]
+        uvw = numpy.asarray(ch.uvw, dtype=numpy.float64)
+        us = sorted(set(numpy.round(uvw[numpy.unique(ch.indices)][:, 0], 5).tolist()))
+        self.assertIn(0.02505, us)
+        self.assertEqual((us[0], us[-1]), (0.0, 1.0))
+
+    def test_without_a_whole_cell_the_cap_is_a_morph_cap(self):
+        data, _issues = self.make("ThinDiagonal")
+        self.assertEqual(sorted(data.loop_totals.tolist()), [4, 4, 4, 4, 4, 4])  # two n-gons, four sides
+
+    def test_a_grid_cap_past_a_guard_is_a_morph_cap(self):
+        morph, _issues = self.make("Rect30x20", cap_type=extrude.CAP_MORPH)
+        for patch, value, reason in (("MAX_GRID_TESTS", 10, "more than 10 tests"),
+                                     ("MAX_VERTICES", 200, "past 200 vertices"),
+                                     ("MAX_CAP_POINTS", 3, "more than 3 outline points")):
+            with mock.patch.object(extrude, patch, value):
+                data, issues = self.make("Rect30x20")
+            self.assertEqual(len(data.positions), len(morph.positions), patch)
+            self.assertEqual(len(issues), 1, patch)
+            self.assertIn("1 grid cap made as morph cap: " + reason, issues[0], patch)
+        with mock.patch.object(extrude, "MAX_GRID_TESTS", 10):
+            data, issues = self.make("TwoSquares")
+        self.assertEqual(issues, ["2 grid caps made as morph caps: more than 10 tests to lay out the grids"])
+
+    def test_only_cap_type_1_is_grid(self):
+        for cap_type in (0, 2, -1):
+            data, _issues = self.make("Rect30x20", cap_type=cap_type)
+            self.assertEqual(len(data.positions), 8, cap_type)
+
+    def test_cells_touching_only_at_a_corner(self):
+        """Two cells that share one corner: two band loops through it, each round its own cell."""
+        filled = numpy.array([[True, False], [False, True]])
+        index = numpy.arange(9).reshape(3, 3)
+        loops = extrude._cell_loops(filled, index)
+        self.assertEqual(sorted(sorted(lp) for lp in loops), [[0, 1, 3, 4], [4, 5, 7, 8]])
 
 
 if __name__ == "__main__":

@@ -26,19 +26,27 @@ even-odd: one inside an even number of others is a solid, inside an odd number a
 Every solid is turned counter-clockwise and every hole clockwise seen from +Z (a turned polyline starts at its last
 point) before the sides are made, and a negative amount reverses the sides, so the normals point out whatever way the
 splines run; an open polyline keeps its own direction (its faces look to the right of it). A cap without holes is one
-n-gon, a cap with holes is ear-clipped after a bridge to each hole, which gives the triangle count 3ds Max gives. The
-cap facing +Z gets material ID 1, the one facing -Z ID 2, the sides ID 3 (zero-based here: 0, 1, 2) when Generate
-Material IDs is on, else every face ID 1; with Use Shape IDs too each side face takes the material ID of the spline
-segment it comes from (the caps keep 1 and 2). Smooth gives the sides smoothing groups that change only at a corner
-or Bezier corner knot, the caps group 16; without it the sides have none. Mapping: the sides' U runs along each
-polyline from its first point (0 to 1, or its length with Real-World Map Size), V up the levels (0 to 1, or the
-height); the caps map the shape's XY box (0 to 1, or its size).
+n-gon, a cap with holes is ear-clipped after a bridge to each hole, which gives the triangle count 3ds Max gives.
+Grid caps (cap type 1) add 3ds Max's grid points inside each solid: a grid over the box of its outline, 20 divisions
+per axis, more for a small hole (floor(0.95 x size / half the hole's extent), at most 50), the points at 2.5 % from
+the box plus a thousandth of a division; the cells that lie wholly inside the solid are quads and the band between
+them and the outline is ear-clipped like a cap with holes (a cap of n outline points, k grid points and h holes:
+n + 2k + 2h - 2 triangles, as 3ds Max). The grid points lie at z 0 and the levels' heights whatever the shape's z,
+as 3ds Max puts them; a solid without a whole cell gets the morph cap. The cap facing +Z gets material ID 1, the one
+facing -Z ID 2, the sides ID 3 (zero-based here: 0, 1, 2) when Generate Material IDs is on, else every face ID 1;
+with Use Shape IDs too each side face takes the material ID of the spline segment it comes from (the caps keep 1 and
+2). Smooth gives the sides smoothing groups that change only at a corner or Bezier corner knot, the caps group 16;
+without it the sides have none. Mapping: the sides' U runs along each polyline from its first point (0 to 1, or its
+length with Real-World Map Size), V up the levels (0 to 1, or the height); the caps map the shape's XY box (0 to 1,
+or its size).
 
 The file comes from anywhere: a parameter that is animated or no number raises ExtrudeError; segments are clamped
 to 1 .. MAX_SEGMENTS; a mesh past MAX_VERTICES raises ExtrudeError; a holed cap past MAX_CAP_POINTS or one that
 cannot be bridged is left open, and outlines that take more than MAX_NEST_TESTS to nest get no caps (an issue
 each); the holed cap that passes the mesh's MAX_CLIP_STEPS and those after it are left open (an issue, and one
-more that counts the rest). docs/FORMAT.md says which fixture shows what.
+more that counts the rest); a grid cap past MAX_CAP_POINTS, the mesh's MAX_GRID_TESTS or MAX_VERTICES, or whose
+band cannot be triangulated is made as a morph cap (an issue per reason). docs/FORMAT.md says which fixture shows
+what.
 No bpy; numpy is imported when a mesh is made.
 """
 import collections
@@ -64,6 +72,10 @@ MAX_CAP_POINTS = 5000  # a holed cap is ear-clipped in Python: quadratic
 MAX_CLIP_STEPS = 1 << 25  # the holed caps of one mesh: a 5000-point cap takes up to about 8 million, 3 s
 MAX_LOOPS = 4000  # closed polylines nested against each other: quadratic
 MAX_NEST_TESTS = 1 << 24  # point-edge tests telling which outline lies in which: about 2 s in Python
+MAX_GRID_TESTS = 1 << 25  # point-edge and cell-edge tests of the grid caps of one mesh (numpy): about a second
+GRID_DIVISIONS, GRID_MAX_DIVISIONS = 20, 50
+GRID_MARGIN, GRID_SPAN, GRID_SHIFT = 0.025, 0.95, 0.001  # of the box; of a division
+GRID = -1  # the polyline of a grid point's key (GRID, i): point i of the mesh's grid points
 _STRAIGHT = 1e-6  # relative distance of a vector from the chord
 
 
@@ -126,8 +138,6 @@ def read_params(scene, modifier):
                int(_number(block, P_OUTPUT, d.output)), flag(P_MAPPING, d.mapping),
                flag(P_MATERIAL_IDS, d.material_ids), flag(P_SHAPE_IDS, d.shape_ids), flag(P_SMOOTH, d.smooth),
                real_world)
-    if p.cap_type == CAP_GRID:
-        issues.append("grid caps are made as morph caps")
     if p.output != OUTPUT_MESH:
         issues.append("%s output is made as a mesh" % ("patch" if p.output == OUTPUT_PATCH else "NURBS"))
     return p, issues
@@ -542,13 +552,191 @@ def _sides(numpy, pl, base, first, params, side_id):
     return loops, groups, mats, numpy.stack(mquads, axis=-1).reshape(-1), uvw.reshape(-1, 3)
 
 
-def _caps(closed, solids, issues):
-    """{solid: [[(polyline, point), ...]]}: each cap polygon counter-clockwise; a holed cap that cannot be
-    triangulated is left out (an issue; those after the budget is spent, one issue for all)."""
+def _divisions(span, sizes):
+    """3ds Max's grid divisions along one axis of a solid span across: 20, raised by each hole of extent s on that
+    axis to floor(0.95 x span / (s / 2)), at most 50."""
+    n = GRID_DIVISIONS
+    for s in sizes:
+        if s > 0:
+            r = GRID_SPAN * span / (s / 2.0)
+            n = max(n, GRID_MAX_DIVISIONS if not r < GRID_MAX_DIVISIONS else int(math.floor(r)))
+    return n
+
+
+def _charge_grid(tests, count):
+    tests[0] -= count
+    if tests[0] < 0:
+        raise CapError("more than %d tests to lay out the grids" % MAX_GRID_TESTS)
+
+
+def _grid(numpy, outline, holes, tests):
+    """(points, quads, loops) of a solid's grid, None when no cell of it lies wholly inside the solid: points the
+    grid points (x, y) that are corners of such a cell, quads those cells counter-clockwise and loops the boundary of
+    their union (point indices, the cells on the right), both as indices into points. outline counter-clockwise,
+    holes clockwise; tests a one-item list of point-edge tests left (CapError when spent)."""
+    rings = [numpy.asarray(r, dtype=numpy.float64) for r in [outline] + list(holes)]
+    lo, hi = rings[0].min(axis=0), rings[0].max(axis=0)
+    w, h = float(hi[0] - lo[0]), float(hi[1] - lo[1])
+    if not (w > 0 and h > 0):
+        return None
+    nx = _divisions(w, [float(numpy.ptp(r[:, 0])) for r in rings[1:]])
+    ny = _divisions(h, [float(numpy.ptp(r[:, 1])) for r in rings[1:]])
+    dx, dy = GRID_SPAN * w / nx, GRID_SPAN * h / ny
+    xs = lo[0] + GRID_MARGIN * w + dx * (numpy.arange(nx + 1) + GRID_SHIFT)
+    ys = lo[1] + GRID_MARGIN * h + dy * (numpy.arange(ny + 1) + GRID_SHIFT)
+    a = numpy.concatenate(rings)
+    b = numpy.concatenate([numpy.roll(r, -1, axis=0) for r in rings])
+    _charge_grid(tests, (ny + 1) * len(a))
+    # even-odd per row: the x where each edge crosses the row, counted right of each grid point
+    ay, by = a[:, 1][None, :], b[:, 1][None, :]
+    row = ys[:, None]
+    crossing = (ay > row) != (by > row)
+    with numpy.errstate(divide="ignore", invalid="ignore"):
+        cx = a[:, 0][None, :] + (row - ay) * (b[:, 0] - a[:, 0])[None, :] / (by - ay)
+    inside = numpy.zeros((ny + 1, nx + 1), dtype=bool)
+    for j in range(ny + 1):
+        at = numpy.sort(cx[j][crossing[j]])
+        inside[j] = (len(at) - numpy.searchsorted(at, xs, side="right")) % 2 == 1
+    filled = inside[:-1, :-1] & inside[:-1, 1:] & inside[1:, :-1] & inside[1:, 1:]
+    # a cell an outline or hole edge touches is not wholly inside (a slit, a hole within the cell)
+    for p, q in zip(a, b):
+        x0, x1 = min(p[0], q[0]), max(p[0], q[0])
+        y0, y1 = min(p[1], q[1]), max(p[1], q[1])
+        if x1 < xs[0] or x0 > xs[-1] or y1 < ys[0] or y0 > ys[-1]:
+            continue
+        i0, i1 = (min(max(int(math.floor((v - xs[0]) / dx)), 0), nx - 1) for v in (x0, x1))
+        j0, j1 = (min(max(int(math.floor((v - ys[0]) / dy)), 0), ny - 1) for v in (y0, y1))
+        if not filled[j0:j1 + 1, i0:i1 + 1].any():
+            continue
+        _charge_grid(tests, (i1 - i0 + 1) * (j1 - j0 + 1))
+        rx0, rx1 = xs[i0:i1 + 1][None, :], xs[i0 + 1:i1 + 2][None, :]
+        ry0, ry1 = ys[j0:j1 + 1][:, None], ys[j0 + 1:j1 + 2][:, None]
+        d = q - p
+        t0 = numpy.zeros((j1 - j0 + 1, i1 - i0 + 1))
+        t1 = numpy.ones_like(t0)
+        hit = numpy.ones(t0.shape, dtype=bool)
+        for pk, qk in ((-d[0], p[0] - rx0), (d[0], rx1 - p[0]), (-d[1], p[1] - ry0), (d[1], ry1 - p[1])):
+            qk = numpy.broadcast_to(qk, t0.shape)
+            if pk == 0:
+                hit &= qk >= 0
+                continue
+            t = qk / pk
+            if pk < 0:
+                t0 = numpy.maximum(t0, t)
+            else:
+                t1 = numpy.minimum(t1, t)
+        filled[j0:j1 + 1, i0:i1 + 1] &= ~(hit & (t0 <= t1))
+    if not filled.any():
+        return None
+    kept = numpy.zeros((ny + 1, nx + 1), dtype=bool)
+    for dj in (0, 1):
+        for di in (0, 1):
+            kept[dj:ny + dj, di:nx + di] |= filled
+    index = numpy.full(kept.shape, -1, dtype=numpy.int64)
+    jj, ii = numpy.nonzero(kept)
+    index[jj, ii] = numpy.arange(len(jj))
+    points = list(zip(xs[ii].tolist(), ys[jj].tolist()))
+    cj, ci = numpy.nonzero(filled)
+    quads = numpy.stack([index[cj, ci], index[cj, ci + 1], index[cj + 1, ci + 1], index[cj + 1, ci]], axis=1)
+    return points, quads.tolist(), _cell_loops(filled, index)
+
+
+def _cell_loops(filled, index):
+    """The boundary loops of the union of the filled cells as indices of their corners, each run with the cells on
+    its right (clockwise round a group of cells, counter-clockwise round a gap in it); where two cells touch only at
+    a corner the loop turns right, so each loop hugs its own cells."""
+    ny, nx = filled.shape
+
+    def cell(j, i):
+        return 0 <= j < ny and 0 <= i < nx and bool(filled[j, i])
+
+    out = {}  # corner (i, j) -> the corners the boundary runs on to
+    rows, cols = filled.nonzero()
+    for j, i in zip(rows.tolist(), cols.tolist()):
+        for ok, a, b in ((cell(j, i - 1), (i, j), (i, j + 1)), (cell(j + 1, i), (i, j + 1), (i + 1, j + 1)),
+                         (cell(j, i + 1), (i + 1, j + 1), (i + 1, j)), (cell(j - 1, i), (i + 1, j), (i, j))):
+            if not ok:
+                out.setdefault(a, []).append(b)
+    loops = []
+    # start where one edge leaves (never at a corner two cells share): the walk then closes where it began
+    for start in sorted(out, key=lambda c: (len(out[c]) != 1, c)):
+        while out[start]:
+            loop, prev, at = [], None, start
+            while True:
+                nxt = out[at]
+                if len(nxt) > 1 and prev is not None:
+                    din = (at[0] - prev[0], at[1] - prev[1])
+                    nxt.sort(key=lambda c: din[0] * (c[1] - at[1]) - din[1] * (c[0] - at[0]))
+                loop.append(int(index[at[1], at[0]]))
+                prev, at = at, nxt.pop(0)
+                if at == start:
+                    break
+            loops.append(loop)
+    return loops
+
+
+def _grid_cap(numpy, closed, s, hs, first, tests, budget):
+    """(polygons, points) of solid s's grid cap: polygons of keys, (polyline, point) or (GRID, first + i), counter-
+    clockwise; points the grid points it adds. None when no cell is whole (a morph cap); CapError when the grid or
+    its band cannot be made."""
+    g = _grid(numpy, closed[s], [closed[x] for x in hs], tests)
+    if g is None:
+        return None
+    points, quads, cell_loops = g
+    keys = [(s, k) for k in range(len(closed[s]))]
+    rings = [list(range(len(keys)))]
+    for x in hs:
+        rings.append([len(keys) + k for k in range(len(closed[x]))])
+        keys.extend((x, k) for k in range(len(closed[x])))
+    xy = [closed[j][k] for j, k in keys]
+    offset = len(keys)
+    keys.extend((GRID, first + i) for i in range(len(points)))
+    xy.extend(points)
+    rings.extend([[offset + i for i in loop] for loop in cell_loops])
+    nest_issues = []
+    regions = _nest({r: [xy[i] for i in ring] for r, ring in enumerate(rings)}, nest_issues)
+    if regions is None or nest_issues:
+        raise CapError("its band does not nest")
+    polys = [[keys[offset + i] for i in quad] for quad in quads]
+    for r, inner in regions.items():
+        outer = rings[r] if _area([xy[i] for i in rings[r]]) > 0 else rings[r][::-1]
+        holes = [rings[x] if _area([xy[i] for i in rings[x]]) < 0 else rings[x][::-1] for x in inner]
+        polys.extend([keys[i] for i in t] for t in triangulate(xy, outer, holes, budget))
+    return polys, points
+
+
+def _caps(closed, solids, issues, grid=False, numpy=None, room=0):
+    """({solid: [[(polyline, point) or (GRID, i), ...]]}, grid points): each cap polygon counter-clockwise; a holed
+    cap that cannot be triangulated is left out (an issue; those after the budget is spent, one issue for all). With
+    grid, each solid gets its grid cap while the grid points stay within room (each a vertex per cap); a grid cap
+    that cannot be made is a morph cap (an issue per reason)."""
     out = {}
     budget = [MAX_CLIP_STEPS]  # shared: many holed caps must not each take the whole budget
+    tests = [MAX_GRID_TESTS]
+    points, morph = [], collections.Counter()
     spent = 0
     for s, hs in solids.items():
+        if grid:
+            count = len(closed[s]) + sum(len(closed[x]) for x in hs)
+            made = None
+            if count > MAX_CAP_POINTS:
+                morph["more than %d outline points" % MAX_CAP_POINTS] += 1
+            elif tests[0] < 0:  # spent by an earlier solid: the same reason
+                morph["more than %d tests to lay out the grids" % MAX_GRID_TESTS] += 1
+            elif budget[0] < 0:
+                morph["more than %d steps to triangulate the caps" % MAX_CLIP_STEPS] += 1
+            else:
+                try:
+                    made = _grid_cap(numpy, closed, s, hs, len(points), tests, budget)
+                except CapError as exc:
+                    morph[str(exc)] += 1
+                if made is not None and len(points) + len(made[1]) > room:
+                    morph["past %d vertices" % MAX_VERTICES] += 1
+                    made = None
+            if made is not None:
+                out[s] = made[0]
+                points.extend(made[1])
+                continue
         if not hs:
             out[s] = [[(s, k) for k in range(len(closed[s]))]]
             continue
@@ -569,9 +757,12 @@ def _caps(closed, solids, issues):
             issues.append("a cap with holes is left open: %s" % exc)
             continue
         out[s] = [[ids[i] for i in t] for t in tris]
+    for reason, n in sorted(morph.items()):
+        issues.append("%d grid cap%s made as morph cap%s: %s" % (n, "" if n == 1 else "s", "" if n == 1 else "s",
+                                                                  reason))
     if spent:
         issues.append("%d more cap%s with holes left open: no steps left" % (spent, "" if spent == 1 else "s"))
-    return out
+    return out, points
 
 
 def extrude(shape, params):
@@ -608,12 +799,21 @@ def extrude(shape, params):
     for pl in lines:
         base.append(start)
         start += len(pl.points) * levels
-    positions = numpy.empty((start, 3), dtype=numpy.float64)
+    caps = ([0] if params.cap_start else []) + ([segs] if params.cap_end else [])
+    cap_faces, grid = {}, []
+    if solids and caps:
+        cap_faces, grid = _caps(closed, solids, issues, params.cap_type == CAP_GRID, numpy,
+                                (MAX_VERTICES - start) // len(caps))
+    positions = numpy.empty((start + len(grid) * len(caps), 3), dtype=numpy.float64)
     rise = params.amount * numpy.arange(levels, dtype=numpy.float64) / segs
     for j, pl in enumerate(lines):
         block = numpy.tile(numpy.asarray(pl.points, dtype=numpy.float64), (levels, 1))
         block[:, 2] += numpy.repeat(rise, len(pl.points))
         positions[base[j]:base[j] + len(block)] = block
+    for slot, level in enumerate(caps):  # each cap's own grid points, at z 0 plus the level's rise (3ds Max's)
+        at = start + slot * len(grid)
+        positions[at:at + len(grid), :2] = numpy.asarray(grid, dtype=numpy.float64).reshape(-1, 2)
+        positions[at:at + len(grid), 2] = rise[level]
     if not (numpy.abs(positions) < float(numpy.finfo(numpy.float32).max)).all():
         raise ExtrudeError("the mesh does not fit single precision (amount %g)" % params.amount)
 
@@ -631,28 +831,28 @@ def extrude(shape, params):
             uvw_parts.append(uvw)
             mapped += len(uvw)
 
-    caps = ([0] if params.cap_start else []) + ([segs] if params.cap_end else [])
-    cap_faces = _caps(closed, solids, issues) if solids and caps else {}
     faces, cap_mats, map_faces, cap_uvw = [], [], [], []
     if cap_faces:
         xs = [p[0] for j in solids for p in closed[j]]
         ys = [p[1] for j in solids for p in closed[j]]
         x0, y0 = min(xs), min(ys)
         w, h = max(xs) - x0, max(ys) - y0
-    for level in caps:
+    for slot, level in enumerate(caps):
         up = (level == segs) == (params.amount >= 0)  # this cap faces +Z
         mat = (TOP_ID if up else BOTTOM_ID) if params.material_ids else 0
         index = {}
+        first = start + slot * len(grid)
         for polys in cap_faces.values():
             for poly in polys:
                 loop = poly if up else poly[::-1]
-                faces.append([base[j] + level * len(lines[j].points) + k for j, k in loop])
+                faces.append([first + k if j == GRID else base[j] + level * len(lines[j].points) + k
+                              for j, k in loop])
                 cap_mats.append(mat)
                 if not params.mapping:
                     continue
                 for j, k in loop:
                     if (j, k) not in index:
-                        x, y = closed[j][k]
+                        x, y = grid[k] if j == GRID else closed[j][k]
                         u, v = x - x0, y - y0
                         if not params.real_world:
                             u, v = (u / w if w else 0.0), (v / h if h else 0.0)
