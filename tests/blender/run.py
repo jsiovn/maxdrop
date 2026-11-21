@@ -1688,6 +1688,56 @@ def check_falloff_curve(textured):
               "%s %s" % (getattr(factor, "bl_idname", None), getattr(image, "bl_idname", None)))
 
 
+def check_curve_step():
+    """A Remap with two points at one x (curve_samples' vertical step: a segment with no width) as a Float Curve:
+    the points stay in their order, also when the step is the first two points (set, not added) or comes out of
+    curve_samples, and the curve evaluates as the polyline on either side of the step (at the step x itself
+    either side is right) and flat past the ends."""
+    from maxdrop.build import materials as build_materials
+    from maxdrop.convert import materials as cm
+    from maxdrop.convert import texmaps as tx
+    from maxdrop.reader.materials import CurvePoint
+
+    def polyline(points, x):
+        if x <= points[0][0]:
+            return points[0][1]
+        for (xa, ya), (xb, yb) in zip(points, points[1:]):
+            if xa <= x < xb:
+                return ya + (yb - ya) * (x - xa) / (xb - xa)
+        return points[-1][1]
+
+    corner = [CurvePoint((0.0, 1.0), (0.0, 1.0), (0.2, 1.0), 0), CurvePoint((0.5, 0.9), (0.4, 0.9), (0.5, 0.9), 0),
+              CurvePoint((0.5, 0.1), (0.5, 0.1), (0.6, 0.1), 0), CurvePoint((1.0, 0.0), (0.9, 0.0), (1.0, 0.0), 0)]
+    cases = (("falling step", ((0.0, 1.0), (0.5, 0.9), (0.5, 0.1), (1.0, 0.0))),
+             ("rising step", ((0.0, 0.0), (0.5, 0.2), (0.5, 0.8), (1.0, 1.0))),
+             ("step in the first two points", ((0.2, 0.9), (0.2, 0.1), (1.0, 0.0))),
+             ("step from curve_samples", tx.curve_samples(corner)))
+    empty_scene()
+    builder = build_materials.MaterialBuilder()
+    for label, points in cases:
+        ir = cm.MaterialIR(1, "CurveStep", "test", base_color=cm.Input((0.5, 0.5, 0.5), cm.MapRef(1)))
+        mix = tx.Mix(tx.Constant((0.0, 0.0, 0.0)), tx.Constant((1.0, 1.0, 1.0)), 0.0, tx.Remap(tx.Facing(), points))
+        ir.textures = {"base_color": tx.TextureGraphIR(mix, tx.COLOR)}
+        material = builder.make(ir)
+        fc = next((n for n in material.node_tree.nodes if n.bl_idname == "ShaderNodeFloatCurve"), None) \
+            if material is not None else None
+        if fc is None:
+            check("curve step/%s: a Float Curve" % label, False)
+            continue
+        mapping = fc.mapping
+        mapping.initialize()
+        stored = [tuple(p.location) for p in mapping.curves[0].points]
+        steps = [a[0] for a, b in zip(points, points[1:]) if a[0] == b[0]]
+        check("curve step/%s: the points kept in their order" % label,
+              len(stored) == len(points) and all(close(a, b, 1e-6) for a, b in zip(stored, points)),
+              "%d points, at the step %s" % (len(stored), [p for p in stored if any(abs(p[0] - s) < 1e-6
+                                                                                 for s in steps)]))
+        xs = [k / 64.0 for k in range(-4, 69)] + [x + d for x in steps for d in (-0.01, 0.01)]
+        err = max(abs(mapping.evaluate(mapping.curves[0], x) - polyline(points, x)) for x in xs
+                  if all(abs(x - s) > 0.005 for s in steps))
+        check("curve step/%s: evaluates as the polyline beside the step, within 0.001" % label, err < 1e-3, str(err))
+
+
 def check_wrappers_report():
     """Right after the operator imported vray_wrappers: the text MaxDrop Report counts the materials and lists the
     wrappers it peeled by class, and the summary warns about them."""
@@ -3890,6 +3940,7 @@ def main():
                                  ("found textures", check_found_textures), ("builder", check_builder),
                                  ("builder debt", check_builder_debt), ("builder mirror", check_builder_mirror),
                                  ("builder blend", check_builder_blend), ("builder mono", check_builder_mono),
+                                 ("curve step", check_curve_step),
                                  ("linear fallback", check_linear_fallback),
                                  ("image reuse", check_image_reuse), ("double import", check_double_import),
                                  ("worker errors", check_worker_errors),

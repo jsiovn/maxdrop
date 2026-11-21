@@ -798,6 +798,7 @@ class _Tree:
         self.feed(a, va)
         self.feed(b, vb)
         self.feed(_in(node, "Factor_Float"), n.factor if mask is MISSING else mask)
+        # Only a Remap mask unclamps: a Smoothstep one's clamped Map Range (or step) never leaves 0..1.
         if isinstance(n.mask, tx.Remap) and mask is not MISSING:
             node.clamp_factor = False  # 3ds Max mixes by a Falloff's curve unclamped (measured: 1.195 renders 1.195)
         return result

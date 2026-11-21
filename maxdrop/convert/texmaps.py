@@ -1038,7 +1038,8 @@ def _falloff_peel(conv, m, kind, walk, depth, chain):
 
 
 def _bezier_y(p0, c1, c2, p3, x):
-    """y of the cubic Bezier p0, c1, c2, p3 where its x is x (bisection on the curve parameter)."""
+    """y of the cubic Bezier p0, c1, c2, p3 where its x is x (bisection on the curve parameter, which assumes x(t)
+    rises: handles far past the neighbouring points make it fold back, and y is then only near; a fixed 40 steps)."""
     def at(t, i):
         s = 1.0 - t
         return s * s * s * p0[i] + 3.0 * s * s * t * c1[i] + 3.0 * s * t * t * c2[i] + t * t * t * p3[i]
@@ -1058,7 +1059,8 @@ def curve_samples(points):
     i + 1, its y at x; the flags do not change it; a point's y outside 0..1 is taken at the nearest bound, its handles
     moved with it; between the points the curve is not clamped. As a polyline, (x, y) pairs x ascending: a segment
     whose handles lie on its points is straight (its ends), any other one CURVE_STEPS steps of x (fewer, and the
-    result resampled, past MAX_CURVE_SAMPLES). None when it is y = x (the default curve): no node."""
+    result resampled, past MAX_CURVE_SAMPLES). None when it is y = x (the default curve): no node. points: two or more
+    (reader mix_curve's bound; an empty one raises IndexError)."""
     pts = []
     for p in points:
         (x, y), (ix, iy), (ox, oy) = p.point, p.in_handle, p.out_handle
