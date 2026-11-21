@@ -1474,6 +1474,9 @@ def _fold(n, present):
         return LOST if v is LOST else MAP
     if isinstance(n, tx.Facing):
         return MAP
+    if isinstance(n, (tx.Remap, tx.Smoothstep)):  # a float through a curve: a node over its input
+        v = _fold(n.input, present)
+        return LOST if v is LOST else MAP
     if isinstance(n, tx.Composite):
         layers = [(v, la) for v, la in ((_fold(la.node, present), la) for la in n.layers) if v is not LOST]
         if not layers:
@@ -1613,6 +1616,8 @@ def check_fixture_materials(name, plan, desc, obs):
                 check("%s/%s: material named after the 3ds Max material" % (name, material.name),
                       material.name.split(".")[0] == (ir.name or "Material").split(".")[0], ir.name)
                 check_principled("%s/%s" % (name, material.name), material, ir)
+    if name == "falloff_curve":
+        check_falloff_curve(textured=False)
     if name == "vray_maps":
         check_vray_maps_nodes(textured=False)
         text = bpy.data.texts.get("MaxDrop Report")
@@ -1625,6 +1630,58 @@ def check_fixture_materials(name, plan, desc, obs):
         empty = [n.label for m in bpy.data.materials for n in m.node_tree.nodes
                  if n.bl_idname == "ShaderNodeTexImage" and n.image is not None]
         check("vray_maps: texture nodes without an image when the files are missing", empty == [], str(empty))
+
+
+def check_falloff_curve(textured):
+    """falloff_curve imported: each edited Falloff curve is a Float Curve on the Falloff's ratio that evaluates as 3ds
+    Max 2020 does (tests/fixtures/falloff_curve.curves.jsonl, x = k / 64) and drives an unclamped Mix; the default
+    curve makes none. Each Mix's Use Curve: textured, a Map Range SMOOTHSTEP (lower < upper) or a GREATER_THAN
+    step over its mask; without the mask's file, the mix amount through the curve."""
+    with open(os.path.join(ROOT, "tests", "fixtures", "falloff_curve.curves.jsonl"), encoding="ascii") as f:
+        rows = {r["name"]: r["y"] for r in map(json.loads, f)}
+    ratios = {"FixtureCurveBezier": "ShaderNodeLayerWeight", "FixtureCurveCorner": "ShaderNodeMath",
+              "FixtureCurveOvershoot": "ShaderNodeFresnel", "FixtureCurveClamped": "ShaderNodeLayerWeight"}
+    for name, ratio in ratios.items():
+        mix = _from(_principled(bpy.data.materials[name]).inputs["Base Color"])
+        fc = _from(_input(mix, "Factor_Float"))
+        ok = fc is not None and fc.bl_idname == "ShaderNodeFloatCurve"
+        check("falloff_curve/%s: a Float Curve drives the Mix, unclamped" % name,
+              ok and not mix.clamp_factor and _from(_input(fc, "Value")).bl_idname == ratio
+              and abs(_input(fc, "Factor").default_value - 1.0) < 1e-6,
+              "%s %s" % (getattr(fc, "bl_idname", None), getattr(mix, "clamp_factor", None)))
+        if ok:
+            mapping = fc.mapping
+            mapping.initialize()
+            err = max(abs(mapping.evaluate(mapping.curves[0], k / 64.0) - y) for k, y in enumerate(rows[name]))
+            check("falloff_curve/%s: the Float Curve evaluates as 3ds Max's curve" % name, err < 5e-3, str(err))
+    linear = bpy.data.materials["FixtureCurveLinear"]
+    check("falloff_curve: the default curve makes no Float Curve",
+          not any(n.bl_idname == "ShaderNodeFloatCurve" for n in linear.node_tree.nodes)
+          and _from(_input(_from(_principled(linear).inputs["Base Color"]), "Factor_Float")).bl_idname
+          == "ShaderNodeLayerWeight")
+    amount = _from(_principled(bpy.data.materials["FixtureMixCurveAmount"]).inputs["Base Color"])
+    check("falloff_curve: a Mix's Use Curve folded into its amount (0.4 -> 0.15625)",
+          amount.bl_idname == "ShaderNodeMix" and _from(_input(amount, "Factor_Float")) is None
+          and abs(_input(amount, "Factor_Float").default_value - 0.15625) < 1e-4)
+    for name, kind in (("FixtureMixCurve", "SMOOTHSTEP"), ("FixtureMixCurveStep", "GREATER_THAN")):
+        mix = _from(_principled(bpy.data.materials[name]).inputs["Base Color"])
+        factor = _from(_input(mix, "Factor_Float"))
+        if not textured:
+            check("falloff_curve/%s: without its mask's file, the mix amount through the curve (0)" % name,
+                  factor is None and abs(_input(mix, "Factor_Float").default_value) < 1e-6)
+            continue
+        if kind == "SMOOTHSTEP":
+            ok = factor is not None and factor.bl_idname == "ShaderNodeMapRange" and \
+                factor.interpolation_type == 'SMOOTHSTEP' and factor.clamp and \
+                close([_input(factor, k).default_value for k in ("From Min", "From Max", "To Min", "To Max")],
+                      [0.2, 0.9, 0.0, 1.0], 1e-6)
+        else:
+            ok = factor is not None and factor.bl_idname == "ShaderNodeMath" and factor.operation == 'GREATER_THAN' \
+                and abs(factor.inputs[1].default_value - 0.6) < 1e-6
+        image = _from(_input(factor, "Value") if kind == "SMOOTHSTEP" else factor.inputs[0]) if factor else None
+        check("falloff_curve/%s: Use Curve as a %s over its mask image" % (name, kind),
+              ok and image is not None and image.bl_idname in ("ShaderNodeTexImage", "ShaderNodeVectorMath"),
+              "%s %s" % (getattr(factor, "bl_idname", None), getattr(image, "bl_idname", None)))
 
 
 def check_wrappers_report():
@@ -2191,7 +2248,8 @@ def check_found_textures():
     scratch = tempfile.mkdtemp(prefix="maxdrop-textures-")
     linear = []  # the images the IR puts in Linear Rec.709, over every fixture
     try:
-        for name in ("vray_maps", "texmap_rules", "corona_maps", "corona_light", "vray_texmaps", "texmap_wrappers"):
+        for name in ("vray_maps", "texmap_rules", "corona_maps", "corona_light", "vray_texmaps", "texmap_wrappers",
+                     "falloff_curve"):
             empty_scene()
             for ob in list(bpy.data.images):
                 bpy.data.images.remove(ob)
@@ -2271,6 +2329,8 @@ def check_found_textures():
                 check_wrapper_nodes()
             if name == "vray_texmaps":
                 check_reflection_falloff()
+            if name == "falloff_curve":
+                check_falloff_curve(textured=True)
         check("found textures: a linear color image (VRayBitmap transfer function None) imported in Linear Rec.709",
               "vtx_linear.png" in linear, str(linear))
     finally:

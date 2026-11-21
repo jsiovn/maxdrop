@@ -41,8 +41,10 @@ datablocks; see Images below), with its placement as a Mapping node and a UV Map
 1; Invert, Mix, Multiply, Blend (Gamma nodes around a Mix node of its operation), ColorCorrect (its rewiring as
 Invert, the mean or Separate / Combine Color, then Hue/Saturation/Value, Bright/Contrast, gain, Gamma), Composite
 (per layer its blend at factor 1, then a Mix by opacity x mask), Facing (Layer Weight Facing, Fresnel, or the
-Geometry node's Normal . Incoming), Adjust (a map's Output, as an image's), Tint (Separate Color, three scales, two
-adds), NormalMap (Normal Map node, flips through Separate / Combine Color), Bump (Bump node). A texture file that
+Geometry node's Normal . Incoming), Remap (Float Curve, its points straight between them, not clipped; the Mix it
+drives does not clamp its factor), Smoothstep (Map Range SMOOTHSTEP, or a Math GREATER_THAN step), Adjust (a map's
+Output, as an image's), Tint (Separate Color, three scales, two adds), NormalMap (Normal Map node, flips through
+Separate / Combine Color), Bump (Bump node). A texture file that
 was not found (or does not load) keeps its Image Texture node, without an image and not connected. The texture
 lookup (convert.textures) reports a file not found by name; the builder reports a file that does not load. The graph
 above the node carries on without it (a Mix gives its other side, a normal map without its image nothing) and an
@@ -552,6 +554,10 @@ class _Tree:
             return self.composite(n, space, depth)
         if isinstance(n, tx.Facing):
             return self.facing(n, depth)
+        if isinstance(n, tx.Remap):
+            return self.remap(n, depth)
+        if isinstance(n, tx.Smoothstep):
+            return self.smoothstep(n, depth)
         if isinstance(n, tx.Adjust):
             return self.adjust(n, depth)
         if isinstance(n, tx.Tint):
@@ -792,6 +798,8 @@ class _Tree:
         self.feed(a, va)
         self.feed(b, vb)
         self.feed(_in(node, "Factor_Float"), n.factor if mask is MISSING else mask)
+        if isinstance(n.mask, tx.Remap) and mask is not MISSING:
+            node.clamp_factor = False  # 3ds Max mixes by a Falloff's curve unclamped (measured: 1.195 renders 1.195)
         return result
 
     def multiply(self, n, space, depth):
@@ -937,6 +945,52 @@ class _Tree:
         self.links.new(_out(dot, "Value"), m.inputs[0])
         m.inputs[1].default_value, m.inputs[2].default_value = -0.5, 0.5
         return m.outputs[0]
+
+    def remap(self, n, depth):
+        """A float through a polyline (a float socket): a Float Curve whose points are VECTOR (straight between
+        them), not clipped (3ds Max's curve can leave 0..1), flat past the ends; MISSING without its input."""
+        v = self.graph(n.input, FLOAT, depth + 1)
+        if v is MISSING:
+            return MISSING
+        fc = self.node("ShaderNodeFloatCurve", depth)
+        mapping = fc.mapping
+        mapping.use_clip = False
+        mapping.extend = 'HORIZONTAL'
+        curve = mapping.curves[0]
+        points = curve.points
+        while len(points) > 2:
+            points.remove(points[-1])
+        for p, (x, y) in zip(points, n.points[:2]):
+            p.location = (x, y)
+        for x, y in n.points[2:]:
+            points.new(x, y)
+        for p in points:
+            p.handle_type = 'VECTOR'
+        mapping.update()
+        _in(fc, "Factor").default_value = 1.0
+        self.feed(_in(fc, "Value"), v)
+        return _out(fc, "Value")
+
+    def smoothstep(self, n, depth):
+        """Mix's Use Curve on a float (a float socket): Map Range SMOOTHSTEP from lower..upper to 0..1, or a
+        GREATER_THAN step at lower when lower >= upper; MISSING without its input."""
+        v = self.graph(n.input, FLOAT, depth + 1)
+        if v is MISSING:
+            return MISSING
+        if n.lower >= n.upper:
+            step = self.node("ShaderNodeMath", depth)
+            step.operation = 'GREATER_THAN'
+            self.feed(step.inputs[0], v)
+            step.inputs[1].default_value = n.lower
+            return step.outputs[0]
+        mr = self.node("ShaderNodeMapRange", depth)
+        mr.data_type = 'FLOAT'
+        mr.interpolation_type = 'SMOOTHSTEP'
+        mr.clamp = True
+        self.feed(_in(mr, "Value"), v)
+        _in(mr, "From Min").default_value, _in(mr, "From Max").default_value = n.lower, n.upper
+        _in(mr, "To Min").default_value, _in(mr, "To Max").default_value = 0.0, 1.0
+        return _out(mr, "Result")
 
     def adjust(self, n, depth):
         """A wrapper's Output over its input (a color socket), as an image's."""
