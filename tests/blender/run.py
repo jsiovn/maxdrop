@@ -1511,8 +1511,8 @@ def _color_into_float(material):
 def check_vray_maps_nodes(textured):
     """FixtureVRayMaps' bitmaps: tiling, offset and W angle as Mapping values (the authoring script's numbers),
     extension REPEAT. With its textures: the gloss map's mean inverted (1 - x) into the Mix of the roughness, the bump
-    map's mean a Bump node's height, FixtureVRayNormal's Normal Map node (strength 0.85, its green flipped) under its bump map's Bump node.
-    Without them: no Normal Map node and the Normal input free."""
+    map's mean a Bump node's height, FixtureVRayNormal's Normal Map node (strength 0.85, its green flipped) under its
+    bump map's Bump node. Without them: no Normal Map node and the Normal input free."""
     m = bpy.data.materials.get("FixtureVRayMaps")
     for file, tile, offset, angle in (("fixture_diffuse.png", 2.0, 0.1, 15.0), ("fixture_reflect.png", 3.0, 0.2, 25.0),
                                       ("fixture_gloss.png", 4.0, 0.3, 35.0), ("fixture_bump.png", 5.0, 0.4, 45.0),
@@ -3060,13 +3060,12 @@ def check_builder_wiring(ma, mb, builder, cm, tx, srgb, data, lost, gamma):
     """The links and values of the hand-made IRs' nodes, against numbers worked out by hand."""
     pa, pb = _principled(ma), _principled(mb)
     mix = _from(pa.inputs["Base Color"])
-    check("wiring: base color Mix: A the swatch, B the sRGB image, the mask image on the factor",
+    mask = _meaned(_input(mix, "Factor_Float")) if mix.bl_idname == "ShaderNodeMix" else None
+    check("wiring: base color Mix: A the swatch, B the sRGB image, the mask image's mean on the factor",
           mix.bl_idname == "ShaderNodeMix" and mix.blend_type == 'MIX' and not _input(mix, "A_Color").is_linked
           and close(list(_input(mix, "A_Color").default_value)[:3], [0.5] * 3, 1e-6)
           and _from(_input(mix, "B_Color")).image.colorspace_settings.name == "sRGB"
-          and getattr(getattr(_meaned(_input(mix, "Factor_Float")), "image", None), "colorspace_settings",
-                      None) is not None
-          and _meaned(_input(mix, "Factor_Float")).image.colorspace_settings.name == "Non-Color")
+          and getattr(mask, "image", None) is not None and mask.image.colorspace_settings.name == "Non-Color")
     inv = _from(pa.inputs["Roughness"])
     check("wiring: roughness 1 - the mean of the data image", inv.bl_idname == "ShaderNodeMath"
           and inv.operation == 'SUBTRACT' and inv.inputs[0].default_value == 1.0

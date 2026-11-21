@@ -47,9 +47,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 ### Fixed
 
 - Colored data maps: a colored map on roughness, metallic or opacity, a Mix or layer mask or a bump height
-  gives the mean of its channels, as V-Ray renders it (measured in V-Ray 5.2: pure red, green or blue gives
-  1/3), where Blender's own conversion weighed them by luminance (red 0.21, green 0.72, blue 0.07), so such a
-  map rendered too rough or too smooth, too opaque or too clear.
+  gives the mean of its channels, where Blender's own conversion weighed them by luminance (red 0.21, green 0.72,
+  blue 0.07), so such a map rendered too rough or too smooth, too opaque or too clear. Measured in V-Ray 5.2 on a
+  Mix mask, a glossiness map and an opacity map: pure red, green or blue gives 1/3.
 - Images and the scene's gamma: in a scene saved with the gamma on and a file input gamma other than 2.2, a Bitmap
   with automatic gamma (and a VRayBitmap whose transfer function is From 3ds Max) is read with that input gamma, as
   3ds Max reads it (input gamma 1.0: linear, where MaxDrop read it as sRGB). In a scene saved with the gamma off, a

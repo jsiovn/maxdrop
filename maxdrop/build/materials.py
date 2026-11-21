@@ -24,13 +24,16 @@ layer's amount times its mask); the render method follows every one of them. A c
 transmission) goes through the mean of its channels, the measure convert/materials.py uses.
 
 Data maps (a map on roughness, metallic or alpha, a mask, a bump height: a graph drawn as a float) take the mean of
-their channels too: wherever a float graph comes out as a color socket (an image's Color, a Color Correction,
-Adjust, Tint, Blend or a blend-mode Composite) one Vector Math DOT_PRODUCT by (1/3, 1/3, 1/3) follows it, so no
-color output is linked into a float input, where Blender would convert by its luminance (0.2126, 0.7152, 0.0722 in
-EEVEE and Cycles, 4.2 to 5.2). Measured on V-Ray 5.2 (bead maxdrop-em3.42, stripes of pure red, green, blue, yellow,
-cyan and magenta): a Mix mask, a VRayMtl reflection glossiness map and an opacity map each give 1/3 for red, green
-and blue and 2/3 for the others, where the luminance gave 0.21, 0.72 and 0.07. The same rule, not measured, for a
-metallic map, a bump height (3ds Max's own mono value is that mean) and Corona's materials.
+their channels too: wherever a float graph comes out as a color socket (an image's Color, a Color Correction, a
+Blend or a blend-mode Composite) one Vector Math DOT_PRODUCT by (1/3, 1/3, 1/3) follows it, so no color output is
+linked into a float input, where Blender would convert by its luminance (0.2126, 0.7152, 0.0722 in EEVEE and Cycles,
+4.2 to 5.2). A vector socket (Adjust, Tint, an image's Output), which Blender already averages, gets the same node,
+so every float graph ends the same way. Measured on V-Ray 5.2 (bead maxdrop-em3.42, stripes of pure red, green,
+blue, yellow, cyan and magenta): a Mix mask, a VRayMtl reflection glossiness map and an opacity map each give 1/3
+for red, green and blue and 2/3 for the others, where the luminance gave 0.21, 0.72 and 0.07. The same rule, not
+measured, for a metallic map, a layer or Composite mask, a bump height (3ds Max's own mono value is that mean) and
+Corona's materials. A Multiply of two maps in a float graph is the product of their means, not the mean of their
+product (not measured either: maxdrop-em3.124).
 
 Texture graphs (convert/texmaps.py) become nodes, a node of the IR shared by several inputs once per material: Image
 -> Image Texture (its image datablock reused per file and color space: one file used in two color spaces is two
