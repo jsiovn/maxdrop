@@ -29,8 +29,8 @@ own direction (its faces look to the right of it). A cap without holes is one n-
 after a bridge to each hole, which gives the triangle count 3ds Max gives. The cap facing +Z gets material ID 1, the
 one facing -Z ID 2, the sides ID 3 (zero-based here: 0, 1, 2) when Generate Material IDs is on, else every face
 ID 1; with Use Shape IDs too each side face takes the material ID of the spline segment it comes from (the caps
-keep 1 and 2). Smooth gives the sides smoothing groups that change only at a corner or Bezier corner knot, the caps group
-16; without it the sides have none. Mapping: the sides' U runs along each polyline (0 to 1, or its length with
+keep 1 and 2). Smooth gives the sides smoothing groups that change only at a corner or Bezier corner knot, the caps
+group 16; without it the sides have none. Mapping: the sides' U runs along each polyline (0 to 1, or its length with
 Real-World Map Size), V up the levels (0 to 1, or the height); the caps map the shape's XY box (0 to 1, or its size).
 
 The file comes from anywhere: a parameter that is animated or no number raises ExtrudeError; segments are clamped

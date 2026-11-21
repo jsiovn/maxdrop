@@ -594,6 +594,31 @@ class Synthetic(unittest.TestCase):
         lines = extrude.polylines(_shape([sq]))
         self.assertEqual((lines[0].points, lines[0].ids), ([(0, 0, 0), (4, 0, 0), (4, 4, 0)], [5, 7, 8]))
 
+    def test_use_shape_ids_on_a_turned_outline_with_a_closing_knot_and_steps(self):
+        """A clockwise outline whose last knot lies on its first (a zero-length closing segment), with a curved
+        segment in steps: the closing column goes, every other face keeps its segment's ID after the turn."""
+        k = shapes.Knot
+        c, ln = shapes.CURVE, shapes.LINE
+        outline = shapes.Spline((k(shapes.CORNER, ln, (0, 0, 0), (0, 0, 0), (0, 0, 0), 4),
+                                 k(shapes.BEZIER_CORNER, c, (0, 10, 0), (0, 10, 0), (4, 14, 0), 5),
+                                 k(shapes.BEZIER_CORNER, ln, (10, 10, 0), (6, 14, 0), (10, 10, 0), 6),
+                                 k(shapes.CORNER, ln, (10, 0, 0), (10, 0, 0), (10, 0, 0), 7),
+                                 k(shapes.CORNER, ln, (0, 0, 0), (0, 0, 0), (0, 0, 0), 9)), True)
+        lines = extrude.polylines(_shape([outline], steps=3))
+        self.assertEqual(len(lines[0].points), 7)  # 4 knots and 3 steps, the closing knot dropped
+        self.assertEqual(lines[0].ids, [4, 5, 5, 5, 5, 6, 7])
+        data, _issues = extrude.extrude(_shape([outline], steps=3), self.params(shape_ids=True))
+        got = self.side_ids(data)
+        self.assertEqual({key: got[key] for key in ((0, 0.0), (0, 10.0), (1, 0.0))},
+                         {(0, 0.0): {4}, (0, 10.0): {6}, (1, 0.0): {7}})
+        curved = [int(_mats(data)[f]) for f in range(len(data.loop_starts))
+                  if abs(_face_area_z(data, f)) <= 1e-6 and data.positions[data.loop_vertices[
+                      int(data.loop_starts[f]):int(data.loop_starts[f]) + 4]][:, 1].min() > 10.0 - 1e-6
+                  and data.positions[data.loop_vertices[
+                      int(data.loop_starts[f]):int(data.loop_starts[f]) + 4]][:, 1].max() > 10.0 + 1e-6]
+        self.assertEqual(curved, [5] * 4)
+        self.assertNotIn(9, set(_mats(data).tolist()))
+
     def test_shape_ids_need_generated_material_ids(self):
         """Probe B: Use Shape IDs without Generate Material IDs gives every face ID 1; Generate Material IDs alone
         gives the sides ID 3."""

@@ -497,8 +497,8 @@ def run_fixture(path, modules):
         check_modifier_pivot(obs, meters)
     if name == "extrude":
         kinds = [ob.type for ob in obs]
-        check("extrude: nine meshes, the switched-off Extrude a curve", kinds == ['MESH'] * 7 + ['CURVE'] + ['MESH'] * 2,
-              str(kinds))
+        check("extrude: nine meshes, the switched-off Extrude a curve",
+              kinds == ['MESH'] * 7 + ['CURVE'] + ['MESH'] * 2, str(kinds))
     if name == "shapes":
         curves = sorted(c.name for c in bpy.data.curves)
         shaped = sum(1 for o in nodes if o["shape"] is not None)
