@@ -140,7 +140,8 @@ class Parity:
         own (standard_shaders):
         - a Standard material whose shader is not Blinn, Phong or Metal, block 3 mapAmounts at a slot without a
           map: the file keeps the amounts of the material as created (Blinn's map channels, bump 0.3 at slot 8),
-          3ds Max answers those of its shader's channels (Anisotropic: 0.3 at slot 11). Unused without a map.
+          3ds Max answers those of its shader's channels (Anisotropic: 0.3 at slot 11). Every amount without a
+          map is skipped (only those two slots differ): none is used.
         - a Physical Material's mapM0 ... mapM20 (block 0, 250-270): saved empty, 3ds Max answers the map of
           parameter id - 150 (mapM1 = base_color_map)."""
         entry = self.scene.entry(owner)
@@ -148,7 +149,8 @@ class Parity:
         if entry is None or entry.superclass != classids.SC_MATERIAL:
             return lambda pid, k, ours: False
         if entry.class_id == classids.STANDARD_MTL and oracle_block["block_id"] == 3:
-            shader = self.scene.entry(self.scene.refs(owner).get(STANDARD_SHADER_SLOT))
+            slot = self.scene.refs(owner).get(STANDARD_SHADER_SLOT)
+            shader = self.scene.entry(slot) if slot is not None else None
             if shader is not None and shader.class_id not in BLINN_LAYOUT:
                 return lambda pid, k, ours: pid == 2 and params[1][k] is None
         if entry.class_id == classids.PHYSICAL_MTL and oracle_block["block_id"] == 0:

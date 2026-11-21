@@ -810,10 +810,10 @@ class StandardShaders(unittest.TestCase, Close):
 
     def shader_block(self, name):
         """(ClassId, parameter names by id) of the shader part of a Standard material in the oracle."""
-        parts = [p for p in self.oracle[name]["parts"] if p["class_id"] != ["0x25773211", "0x00000000"]]
-        self.assertEqual(len(parts), 1, name)  # the sampler is the other part
-        cid = classdir.ClassId(*(int(h, 16) for h in parts[0]["class_id"]))
-        return cid, _names(parts[0]["blocks"][0])
+        parts = [(classdir.ClassId(*(int(h, 16) for h in p["class_id"])), p) for p in self.oracle[name]["parts"]]
+        parts = [(cid, p) for cid, p in parts if cid != classids.STAR_SAMPLER]  # the other part: the sampler
+        self.assertEqual(len(parts), 1, name)
+        return parts[0][0], _names(parts[0][1]["blocks"][0])
 
     def test_each_shader_by_hand(self):
         for name, (shader, diffuse, spec, level, gloss, amount, si_color, si_on) in self.VALUES.items():
@@ -856,15 +856,9 @@ class StandardShaders(unittest.TestCase, Close):
 
 class PhysicalMaps(unittest.TestCase, Close):
     """tools/fixtures/standard_shaders.ms's two Physical Materials, by hand (gamma off): the same nine map slots in
-    both, each switched off in one of them (every switch defaults to on, so a wrong switch id reads on)."""
-
-    # the ids physical_mtl reads, by the name 3ds Max gives them
-    IDS = {1: "base_weight", 2: "base_color", 3: "reflectivity", 4: "roughness", 5: "roughness_inv", 6: "metalness",
-           10: "refl_color", 30: "transparency", 31: "trans_color", 33: "trans_ior", 37: "thin_walled",
-           50: "emission", 51: "emit_color", 52: "emit_luminance", 60: "coating", 61: "coat_color",
-           62: "coat_roughness", 63: "coat_roughness_inv", 66: "coat_ior", 101: "base_color_map",
-           102: "reflectivity_map", 104: "roughness_map", 105: "metalness_map", 109: "transparency_map",
-           116: "emission_map", 117: "emit_color_map", 130: "bump_map", 133: "cutout_map", 230: "bump_map_amt"}
+    both, each switched off in one of them. The ids are checked by the names the oracle gives them (mat.PHYSICAL,
+    which physical_mtl reads; the switches at a fixed offset): the values alone cannot tell apart two ids that
+    hold the same value in both materials."""
 
     @classmethod
     def setUpClass(cls):
@@ -923,12 +917,16 @@ class PhysicalMaps(unittest.TestCase, Close):
         self.assertEqual((ir.bump, ir.normal), (None, None))  # bump_map_on off
 
     def test_ids_name_the_parameters(self):
+        """Every id of mat.PHYSICAL, which physical_mtl reads, and each map's switch name their parameters."""
         for name in ("FixturePhysicalMaps", "FixturePhysicalOff"):
             with self.subTest(name):
                 names = _names(self.oracle[name]["blocks"][0])
-                self.assertEqual({pid: names[pid] for pid in self.IDS}, self.IDS)
-                for pid in (101, 102, 104, 105, 109, 116, 117, 130, 133):  # each switch at its map's id + 50
-                    self.assertEqual(names[pid + 50], names[pid] + "_on")
+                self.assertEqual({key: names[pid] for key, pid in mat.PHYSICAL.items()},
+                                 {key: key for key in mat.PHYSICAL})
+                maps = [key for key in mat.PHYSICAL if key.endswith("_map")]
+                self.assertEqual(len(maps), 9)
+                for key in maps:
+                    self.assertEqual(names[mat.PHYSICAL[key] + mat.PHYSICAL_SWITCH], key + "_on")
 
     def test_no_issues(self):
         self.assertEqual(self.conv.stats.issues, [])

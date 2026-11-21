@@ -123,7 +123,7 @@ MULTI_MATERIALS, MULTI_ENABLED, MULTI_IDS = 0, 1, 3
 
 # Standard: the shader is a part (superclass Shader); its block 0 holds the colors, with ids per shader class
 # (fixture standard_shaders).
-# Strauss (classids.STRAUSS_SHADER) has its own: 0 color, 1 glossiness, 2 metalness.
+# Strauss (classids.STRAUSS_SHADER) has its own: 0 diffuse, 1 glossiness, 2 metalness.
 ShaderIds = collections.namedtuple("ShaderIds", "diffuse specular level glossiness si_amount si_color use_si_color")
 _BLINN_IDS = ShaderIds(1, 2, 9, 10, 7, 8, 6)
 SHADERS = {
@@ -135,6 +135,18 @@ SHADERS = {
     classids.MULTI_LAYER_SHADER: ShaderIds(1, 6, 7, 8, 3, 2, 19),  # the first specular layer
     classids.TRANSLUCENT_SHADER: ShaderIds(1, 2, 6, 5, 4, 3, 14),
 }
+# Physical Material, block 0: the ids physical_mtl reads, keyed by the names 3ds Max gives them (fixture
+# standard_shaders checks every one against its oracle); a map's switch (`<name>_on`) is at its id + PHYSICAL_SWITCH.
+PHYSICAL = {
+    "base_weight": 1, "base_color": 2, "reflectivity": 3, "roughness": 4, "roughness_inv": 5, "metalness": 6,
+    "refl_color": 10, "transparency": 30, "trans_color": 31, "trans_ior": 33, "thin_walled": 37, "emission": 50,
+    "emit_color": 51, "emit_luminance": 52, "coating": 60, "coat_color": 61, "coat_roughness": 62,
+    "coat_roughness_inv": 63, "coat_ior": 66, "base_color_map": 101, "reflectivity_map": 102, "roughness_map": 104,
+    "metalness_map": 105, "transparency_map": 109, "emission_map": 116, "emit_color_map": 117, "bump_map": 130,
+    "cutout_map": 133, "bump_map_amt": 230,  # the bump amount: a factor
+}
+PHYSICAL_SWITCH = 50
+
 # Standard map slots: index into block 3's tables (mapEnables 0, maps 1, mapAmounts 2). The tables follow the
 # shader's map channels: these are Blinn's, Phong's and Metal's; the other shaders order them otherwise
 # (docs/FORMAT.md) and are read with these all the same: maxdrop-em3.104.
@@ -649,45 +661,51 @@ def standard_mtl(conv, m, ir):
 
 
 def physical_mtl(conv, m, ir):
-    """Physical Material, block 0: 1 base_weight, 2 base_color, 3 reflectivity, 4 roughness, 5 roughness_inv,
-    6 metalness, 10 refl_color, 30 transparency, 31 trans_color, 33 trans_ior, 37 thin_walled, 50 emission,
-    51 emit_color, 52 emit_luminance, 60 coating, 61 coat_color, 62 coat_roughness, 63 coat_roughness_inv,
-    66 coat_ior; maps 101 base_color, 102 reflectivity, 104 roughness, 105 metalness, 109 transparency,
-    116 emission, 117 emit_color, 130 bump (amount 230, a factor), 133 cutout, each switched on by id + 50."""
-    weight = _clamp01(_num(m, 1, 0, 1.0))
-    base = tuple(c * weight for c in conv.rgb(m, 2, 0, (0.5, 0.5, 0.5)))
-    t = _clamp01(_num(m, 30, 0, 0.0))
+    """Physical Material, block 0, by the ids of PHYSICAL; each map switched on by its id + PHYSICAL_SWITCH."""
+    P = PHYSICAL
+
+    def num(name, default):
+        return _num(m, P[name], 0, default)
+
+    def slot(name, invert=False, amount=None):
+        pid = P[name + "_map"]
+        return conv.map_ref(m, pid, pid + PHYSICAL_SWITCH, None if amount is None else P[amount], 0, invert=invert,
+                            ir=ir, percent=False)
+
+    weight = _clamp01(num("base_weight", 1.0))
+    base = tuple(c * weight for c in conv.rgb(m, P["base_color"], 0, (0.5, 0.5, 0.5)))
+    t = _clamp01(num("transparency", 0.0))
     if t > 0:
-        base = _mix(base, conv.rgb(m, 31, 0, (1.0, 1.0, 1.0)), t)
-    ir.base_color = Input(base, conv.map_ref(m, 101, 151, None, 0, ir=ir))
-    inverted = _flag(m, 5, 0, False)
-    r = _clamp01(_num(m, 4, 0, 0.0))
-    ir.roughness = Input(1.0 - r if inverted else r, conv.map_ref(m, 104, 154, None, 0, invert=inverted, ir=ir))
-    ir.metallic = Input(_clamp01(_num(m, 6, 0, 0.0)), conv.map_ref(m, 105, 155, None, 0, ir=ir))
-    ir.specular = Input(_clamp01(max(0.0, _num(m, 3, 0, 1.0)) * mean(conv.rgb(m, 10, 0, (1.0, 1.0, 1.0)))),
-                        conv.map_ref(m, 102, 152, None, 0, ir=ir))
-    ir.transmission = Input(t, conv.map_ref(m, 109, 159, None, 0, ir=ir))
-    ir.ior = _ior(_num(m, 33, 0, 1.52))
-    ir.thin_walled = _flag(m, 37, 0, False)
+        base = _mix(base, conv.rgb(m, P["trans_color"], 0, (1.0, 1.0, 1.0)), t)
+    ir.base_color = Input(base, slot("base_color"))
+    inverted = _flag(m, P["roughness_inv"], 0, False)
+    r = _clamp01(num("roughness", 0.0))
+    ir.roughness = Input(1.0 - r if inverted else r, slot("roughness", invert=inverted))
+    ir.metallic = Input(_clamp01(num("metalness", 0.0)), slot("metalness"))
+    reflection = mean(conv.rgb(m, P["refl_color"], 0, (1.0, 1.0, 1.0)))
+    ir.specular = Input(_clamp01(max(0.0, num("reflectivity", 1.0)) * reflection), slot("reflectivity"))
+    ir.transmission = Input(t, slot("transparency"))
+    ir.ior = _ior(num("trans_ior", 1.52))
+    ir.thin_walled = _flag(m, P["thin_walled"], 0, False)
     # A map in a weight slot stands for the weight, one in a color slot only for the color: weight 0 and a color
     # map is no emission. The IR has no strength map, so the weight map drives the color when no color map does.
-    color_map = conv.map_ref(m, 117, 167, None, 0, ir=ir)
-    weight_map = conv.map_ref(m, 116, 166, None, 0, ir=ir)
-    emission = max(0.0, _num(m, 50, 0, 0.0))
+    color_map = slot("emit_color")
+    weight_map = slot("emission")
+    emission = max(0.0, num("emission", 0.0))
     if emission > 0 or weight_map is not None:
         if color_map is not None and weight_map is not None:
             conv.issue(m.index, "Physical Material: emission weight map %d not used beside the color map"
                        % weight_map.index, ir)
-        ir.emission_color = Input(conv.rgb(m, 51, 0, (1.0, 1.0, 1.0)), color_map or weight_map)
-        luminance = max(0.0, _num(m, 52, 0, 1500.0))
+        ir.emission_color = Input(conv.rgb(m, P["emit_color"], 0, (1.0, 1.0, 1.0)), color_map or weight_map)
+        luminance = max(0.0, num("emit_luminance", 1500.0))
         ir.emission_strength = (1.0 if weight_map is not None else emission) * luminance / LUMENS_PER_WATT
-    ir.coat_weight = _clamp01(_num(m, 60, 0, 0.0))
-    ir.coat_color = conv.rgb(m, 61, 0, (1.0, 1.0, 1.0))
-    c = _clamp01(_num(m, 62, 0, 0.0))
-    ir.coat_roughness = 1.0 - c if _flag(m, 63, 0, False) else c
-    ir.coat_ior = _ior(_num(m, 66, 0, 1.52))
-    conv.bump_slot(ir, conv.map_ref(m, 130, 180, 230, 0, ir=ir, percent=False))
-    ir.alpha = Input(1.0, conv.map_ref(m, 133, 183, None, 0, ir=ir))
+    ir.coat_weight = _clamp01(num("coating", 0.0))
+    ir.coat_color = conv.rgb(m, P["coat_color"], 0, (1.0, 1.0, 1.0))
+    c = _clamp01(num("coat_roughness", 0.0))
+    ir.coat_roughness = 1.0 - c if _flag(m, P["coat_roughness_inv"], 0, False) else c
+    ir.coat_ior = _ior(num("coat_ior", 1.52))
+    conv.bump_slot(ir, slot("bump", amount="bump_map_amt"))
+    ir.alpha = Input(1.0, slot("cutout"))
 
 
 def _corona_amount_map(conv, m, map_pid, ir, invert=False):
