@@ -1130,6 +1130,23 @@ class Guards(Checks):
         self.assertEqual([tx.mix_factor(x, 0.5, 0.5) for x in (0.4999, 0.5, 0.6)], [0.0, 1.0, 1.0])  # a step
         self.assertEqual([tx.mix_factor(x, 0.7, 0.3) for x in (0.5, 0.69, 0.7)], [0.0, 0.0, 1.0])  # a step at lower
 
+    def test_edited_mix_curve_in_every_kind(self):
+        """An edited curve puts the Facing under a Remap whatever the input (a VRayMtl reflection is a data input,
+        the case of a bent reflection ramp), and the Remap is the curve's polyline."""
+        P = reader_materials.CurvePoint
+        points = (P((0, 0), (0, 0), (0, 0), 0x102), P((0.5, 0.2), (0.5, 0.2), (0.5, 0.2), 4),
+                  P((1, 1), (1, 1), (1, 1), 0x100))
+        old = reader_materials.mix_curve
+        reader_materials.mix_curve = lambda _scene, _m: points
+        try:
+            for kind in (tx.COLOR, tx.DATA):
+                g = _tex(_falloff(1, name="fo")).convert(mat.MapRef(1), kind)
+                self.assertEqual(g.root.mask, tx.Remap(tx.Facing(tx.PERPENDICULAR, 1.6), ((0, 0), (0.5, 0.2), (1, 1))),
+                                 kind)
+                self.assertEqual(g.issues, ())
+        finally:
+            reader_materials.mix_curve = old
+
     def test_unreadable_mix_curve_is_drawn_linear(self):
         def broken(_scene, _m):
             raise chunks.ChunkError("the curve control at object 9: no point count")

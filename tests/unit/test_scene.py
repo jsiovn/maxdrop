@@ -601,6 +601,8 @@ class TestFixtures(unittest.TestCase):
                         self.assertTrue(all(slot < head for slot in slots), (s.entry(i).name, head, slots))
                         if s.entry(i).name not in varies:
                             seen.setdefault(s.entry(i).name, set()).add(head)
+                        elif s.entry(i).class_id == classids.CURVE:
+                            self.assertEqual(head, chunk.first(0x1000).unpack("<I")[0], "a curve's point count")
                 self.assertEqual(seen, {k: {v} for k, v in heads.items() if k in seen})
                 self.assertTrue({"Node", "RootNode", "Texmaps"} <= set(seen))
                 del chunk, pairs
