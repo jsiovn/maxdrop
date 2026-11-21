@@ -222,7 +222,7 @@ class Damaged(unittest.TestCase):
         self.assertEqual(pb.param(3).raw[:2], b"\x03\x00")  # unknown element size: kept raw
         self.assertIsNone(pb.value(3))
         self.assertIsNotNone(pb.param(5))
-        self.assertEqual(len(pb.issues), 4)  # three entries, and the 2-byte one may have held block references
+        self.assertEqual(len(pb.issues), 4)  # three entries, and the 2-byte one may have held slots
         self.assertIn("block references and controllers after parameter 5 unresolved", pb.issues)
 
     def test_damaged_reference_table_leaves_later_slots_empty(self):
@@ -249,9 +249,17 @@ class Damaged(unittest.TestCase):
         self.assertEqual((pb.get(2), pb.get(3)), (Reference(None), Animated(None)))
         self.assertIn("block references and controllers after parameter 1 unresolved", pb.issues)
 
-    def test_damaged_table_that_cannot_be_animated_keeps_every_slot(self):
-        cut = leaf(0x100E, head(1, STRING | TAB, 0) + b"\x00" + struct.pack("<I", 1) + b"\x40\x10\x00\x00\x00")
+    def test_damaged_table_without_the_animatable_flag_leaves_later_slots_empty(self):
+        # a controller tag counts whatever the flags say, so the flag cannot clear a damaged table
+        cut = leaf(0x100E, head(1, FLOAT | TAB, 0) + b"\x00" + struct.pack("<I", 2) + b"\x80\xc0")
         pb = parse(block(cut, scalar(2, MTL, 0, 0x40), scalar(3, FLOAT, ANIM, 0x80)), block_refs={0: 100, 1: 101})
+        self.assertIsNotNone(pb.param(1).error)
+        self.assertEqual((pb.get(2), pb.get(3)), (Reference(None), Animated(None)))
+        self.assertIn("block references and controllers after parameter 1 unresolved", pb.issues)
+
+    def test_damaged_scalar_without_a_slot_type_keeps_every_slot(self):
+        pb = parse(block(scalar(1, STRING, 0, 0x40, struct.pack("<I", 16)), scalar(2, MTL, 0, 0x40),
+                         scalar(3, FLOAT, ANIM, 0x80)), block_refs={0: 100, 1: 101})
         self.assertIsNotNone(pb.param(1).error)
         self.assertEqual((pb.get(2), pb.get(3)), (Reference(100), Animated(101)))
 

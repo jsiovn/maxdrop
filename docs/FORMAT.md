@@ -872,7 +872,7 @@ parameter of every block of every material and map in every fixture against the 
 parameter id, within 1e-5 (relative above 1): 193 values in vray_basic, 637 in vray_maps, 2,024 in vray_wrappers,
 295 in standard_physical. An animated parameter is checked against the oracle's `controllers`: the reader's
 controller is the block reference 3ds Max holds it at, of the same class, and its saved value is the value at frame 0
-(pblock_animated: 7 controllers). `tests/unit/test_pblock.py` covers each rule on synthetic bytes.
+(pblock_animated: 6 controllers). `tests/unit/test_pblock.py` covers each rule on synthetic bytes.
 
 A ParamBlock2 is an object of class `(0x82, 0)`, superclass `0x82`, referenced by its owner (the material, map or
 part whose parameters it holds):
@@ -946,8 +946,8 @@ Reference parameters, checked against the oracle's targets on every fixture:
   `texmap_blend_multiplier` element 0 at 20 (39 slots); VRayNormalMap `normal_map` 0, the controller of
   `normal_map_multiplier` 1, `bump_map` 2, the controller of `bump_map_multiplier` 3; VRayMtl block 1 (no block
   references) `diffuse` 0, `reflection_glossiness` 1. A parameter without a controller takes no slot. A damaged
-  entry that may have taken slots (head unreadable, a block-held reference type, an animatable table) leaves every
-  later slot unresolved.
+  entry that may have taken slots (head unreadable, a block-held reference type, any table, a scalar cut before
+  its tag) leaves every later slot unresolved.
 
 Transient parameters are mostly not stored (VRayMtl: 25 of the 80 parameters of block 1, among them
 `bump_multiplier` 102 and the `texmap_*` 109-128 that mirror block 4). Some are stored anyway with a stale value

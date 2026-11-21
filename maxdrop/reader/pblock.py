@@ -178,13 +178,12 @@ def _entry(buf, strings=chunks.WIDE):
 
 def _may_take_slots(ptype, flags, data):
     """Whether a damaged entry may have held block references or controllers: its head unreadable, a reference type
-    without a stored index, or an animatable table (or scalar cut before its tag). A scalar's tag is read before its
-    value, and a controller has no value, so an animatable scalar damaged after its tag holds a value."""
-    if ptype is None:
+    without a stored index, any table (a controller tag counts whatever the flags say), or a scalar cut before its
+    tag. A scalar's tag is read before its value, and a controller has no value, so a scalar damaged after its tag
+    holds a value."""
+    if ptype is None or ptype & TABLE or len(data) <= _ENTRY_HEAD.size:
         return True
-    if ptype & ~TABLE in REFERENCE_TYPES and not flags & (P_OWNERS_REF | P_NO_REF):
-        return True
-    return bool(flags & P_ANIMATABLE) and bool(ptype & TABLE or len(data) <= _ENTRY_HEAD.size)
+    return ptype & ~TABLE in REFERENCE_TYPES and not flags & (P_OWNERS_REF | P_NO_REF)
 
 
 def _asset_id(chunk):

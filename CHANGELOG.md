@@ -15,6 +15,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ### Fixed
 
+- Materials: a material or map with an animated parameter beside maps of its own (a VRayBlendMtl with an animated
+  blend color, a VRayNormalMap with an animated multiplier) gets its maps from the right place instead of one
+  shifted or lost (the bump map of such a VRayNormalMap was dropped).
 - Import: a defect in MaxDrop's reader (a TypeError or KeyError while reading a file) reports that file as not
   imported, with the error in the reason and its traceback in the console for a bug report, instead of ending the
   import with a Python error. The other files of the run are still imported.

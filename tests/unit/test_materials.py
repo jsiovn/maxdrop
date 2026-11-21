@@ -71,6 +71,8 @@ def _saved_value(chunk):
     """A Bezier Float's or Bezier Color's saved value (0x2501, directly or inside 0x7127): a float or a tuple."""
     holder = chunk.first(0x7127) or chunk
     value = holder.first(0x2501)
+    if value is None:
+        raise AssertionError("controller at %d without a saved value (0x2501)" % chunk.offset)
     floats = value.unpack("<%df" % (value.payload_size // 4))
     return floats[0] if len(floats) == 1 else floats
 
