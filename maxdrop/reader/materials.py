@@ -54,6 +54,7 @@ _NAME = 0x4001
 
 # Placement (UVGen) object: u32 leaves; flags bits; coordinate source values
 _UV_FLAGS, _UV_AXIS, _UV_MAPPING_TYPE, _UV_SOURCE, _UV_CHANNEL = 0x9002, 0x9003, 0x9005, 0x9006, 0x900B
+_UV_ENVIRONMENT = 0x9009
 _U_TILE, _V_TILE, _U_MIRROR, _V_MIRROR, _REAL_WORLD = 0x1, 0x2, 0x4, 0x8, 0x08000000
 UV_EXPLICIT, UV_OBJECT_XYZ, UV_VERTEX_COLOR, UV_WORLD_XYZ = 0, 1, 2, 3
 # Output (TexOutput) part: its flags leaf
@@ -71,11 +72,16 @@ class Issue(collections.namedtuple("Issue", "index reason")):
     __slots__ = ()
 
 
-class Placement(collections.namedtuple("Placement", "tile mirror real_world axis environment source channel")):
+class Placement(collections.namedtuple("Placement", "tile mirror real_world axis environment source channel "
+                                                    "env_mapping")):
     """A Placement object's chunk settings. tile, mirror: (u, v); real_world: real-world map size; axis (0 UV, 1 VW,
     2 WU), source (UV_*) and channel: as stored, None without their chunk; environment: a mapping type other than
-    texture."""
+    texture; env_mapping: the environment projection (1 spherical, 2 cylindrical, 3 shrink-wrap, 4 screen, kept
+    also in texture mode; None without its chunk)."""
     __slots__ = ()
+
+
+Placement.__new__.__defaults__ = (None,)
 
 
 class MtlBase:
@@ -244,13 +250,13 @@ def _leaf_u32s(scene, index, ids):
 
 def placement(scene, index):
     """The Placement of the UVGen object index; a missing flags chunk means both axes tiled, nothing mirrored."""
-    raw = _leaf_u32s(scene, index, (_UV_FLAGS, _UV_AXIS, _UV_MAPPING_TYPE, _UV_SOURCE, _UV_CHANNEL))
+    raw = _leaf_u32s(scene, index, (_UV_FLAGS, _UV_AXIS, _UV_MAPPING_TYPE, _UV_SOURCE, _UV_CHANNEL, _UV_ENVIRONMENT))
     flags = raw.get(_UV_FLAGS, _U_TILE | _V_TILE)
     return Placement(tile=(bool(flags & _U_TILE), bool(flags & _V_TILE)),
                      mirror=(bool(flags & _U_MIRROR), bool(flags & _V_MIRROR)),
                      real_world=bool(flags & _REAL_WORLD), axis=raw.get(_UV_AXIS),
                      environment=raw.get(_UV_MAPPING_TYPE, 0) != 0, source=raw.get(_UV_SOURCE),
-                     channel=raw.get(_UV_CHANNEL))
+                     channel=raw.get(_UV_CHANNEL), env_mapping=raw.get(_UV_ENVIRONMENT))
 
 
 def output_invert(scene, index):

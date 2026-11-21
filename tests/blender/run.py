@@ -45,13 +45,17 @@ modifiers), the report names the modifiers not applied, and the node whose pivot
 in place. lookat: the nodes aimed by a Look At controller or a LookAt Constraint have 3ds Max's world matrices (above),
 the Target objects are empties; imported again with Keep Targets, each Look At a Track To can follow gets one aimed at
 its target's object, with the same evaluated world matrix, and the report names the two it cannot follow (a roll, the
-Y axis). vray_lights: each VRayLight node a light object (mesh and dome lights empties), its light of the
+Y axis). vray_lights: each VRayLight node a light object (mesh and dome lights empties, the dome the World), its
+light of the
 description's type, shape and size and of the shape the fixture script made, its -Z axis along the oracle's, its
 energy the watts 3ds Max computed with the rules source's function times the default Light Strength (the disc's 4 / pi,
 the double-sided plane's half), its color, the off light hidden in viewport and render, the invisible one unseen by
 the camera and glossy rays; the instance shares the plane's light, the disc's instance scaled 2, 1.5, 1 has its
 own, three times as strong; imported again with Light Strength 2, twice the
-power. lights_standard, lights_photometric (and lookat's target spot): each light of the type, spot cone, power and
+power. vray_dome: the dome is the scene's World (its texture image, strength, hemisphere, the Mapping rotations
+that look its texels up where V-Ray does, camera visibility off), the report's World line, the World before it
+kept; the second dome and the mesh light empties; the spheres' radii and powers (X scale only); an Esc after the World
+was made, and a build that fails after it, put the World before back and remove the new one. lights_standard, lights_photometric (and lookat's target spot): each light of the type, spot cone, power and
 color of the rules (STOCK_LIGHTS), its -Z axis along the oracle's, its flags, its shadow switch (STOCK_SHADOWS);
 the Skylight an empty.
 Cameras (cameras, lookat): each camera node a camera object of the description's type, sensor fit HORIZONTAL, sensor,
@@ -152,6 +156,7 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1; kept literal: tes
     "vray_texmaps": ["UVMap"],
     "vray_more": ["UVMap"],
     "vray_lights": [],  # lights and a target: no mesh
+    "vray_dome": [],  # lights and a box without Generate Mapping Coords
     "lights_standard": [],
     "lights_photometric": [],
     "cameras": [],  # its box, without Generate Mapping Coords
@@ -201,7 +206,11 @@ INSIDE_OUT = {"FixtureBoxInside"}
 VRAY_LIGHT_WATTS = {"FixturePlane": 0.0527086444, "FixturePlaneInst": 0.0527086444, "FixturePlaneLm": 2.19619322,
                     "FixtureDisc": 0.00975400303, "FixtureSphere": 40.0, "FixtureSphereKelvin": 0.252661914,
                     "FixtureOff": 0.00439238735, "FixtureInvisible": 20.0, "FixtureTargeted": 25.0,
-                    "FixtureDiscScaled": 0.00975400303}
+                    "FixtureDiscScaled": 0.00975400303,
+                    # vray_dome (tools/fixtures/vray_dome.ms): the rules' watts by hand (W/m2/sr: pi m 4 pi r^2; W: m),
+                    # which V-Ray's X-scale rule leaves as they are for these scales
+                    "FixtureSphereTall": math.pi * 2.0 * 4.0 * math.pi * 0.005 ** 2, "FixtureSphereWide": 40.0,
+                    "FixtureSphereWideInst": 40.0}
 # the scaled disc: its area times 2 x 1.5, as V-Ray lights it (measured)
 VRAY_LIGHT_POWER = {"FixtureDisc": 4.0 / math.pi, "FixturePlaneLm": 0.5, "FixtureDiscScaled": 4.0 / math.pi * 3.0}
 VRAY_LIGHT_SHAPES = {"FixturePlane": ('AREA', 'RECTANGLE', 0.04, 0.02, 0.0),
@@ -212,7 +221,11 @@ VRAY_LIGHT_SHAPES = {"FixturePlane": ('AREA', 'RECTANGLE', 0.04, 0.02, 0.0),
                      "FixtureOff": ('AREA', 'RECTANGLE', 0.02, 0.02, 0.0), "FixtureInvisible": ('AREA', 'DISK', 0.02,
                                                                                                0.0, 0.0),
                      "FixtureTargeted": ('AREA', 'RECTANGLE', 0.02, 0.01, 0.0),
-                     "FixtureDiscScaled": ('AREA', 'DISK', 0.03, 0.0, 0.0)}
+                     "FixtureDiscScaled": ('AREA', 'DISK', 0.03, 0.0, 0.0),
+                     # vray_dome: radius 5 mm times the X scale (1, 2, 1), whatever the Y and Z scale
+                     "FixtureSphereTall": ('POINT', None, 0.0, 0.0, 0.005),
+                     "FixtureSphereWide": ('POINT', None, 0.0, 0.0, 0.01),
+                     "FixtureSphereWideInst": ('POINT', None, 0.0, 0.0, 0.005)}
 VRAY_LIGHT_COLORS = {"FixturePlane": (1.0, 0.57758, 0.304987), "FixturePlaneInst": (1.0, 0.57758, 0.304987),
                      "FixtureDisc": (0.187821, 0.351533, 1.0), "FixtureDiscScaled": (0.187821, 0.351533, 1.0),
                      "FixtureSphereKelvin": (1.0, 0.5304, 0.265643)}
@@ -222,6 +235,8 @@ CAMERA_SHIFTS = {"CamPhysShift": (-0.1, 0.15), "CamVRayShift": (-0.1, -0.25)}
 CAMERA_SENSORS = {"CamVRayTarget": 30.0}
 FOV_TOLERANCE = 0.05  # degrees
 KEPT_SIZE = (1234, 567, 50)  # the scene's render size before each import (empty_scene)
+USER_WORLD = "UserWorld"  # the scene's World before each import (empty_scene)
+BARE_MESHES = {"FixtureMeshSource"}  # meshes a fixture leaves without a material: vray_dome's mesh light source
 
 # lights_standard, lights_photometric (tools/fixtures/*.ms) and lookat's target spot: Blender's light type, spot
 # size in degrees and blend, and the watts of the rules (docs/FORMAT.md, "Standard and photometric lights") from
@@ -328,6 +343,10 @@ def empty_scene():
     bpy.context.scene.camera = None
     for material in list(bpy.data.materials):
         bpy.data.materials.remove(material)
+    world = bpy.data.worlds.get(USER_WORLD) or bpy.data.worlds.new(USER_WORLD)  # a dome replaces the scene's World
+    bpy.context.scene.world = world
+    for other in [w for w in bpy.data.worlds if w != world]:
+        bpy.data.worlds.remove(other)
 
 
 def close(a, b, tolerance):
@@ -569,7 +588,8 @@ def run_fixture(path, modules):
         check("layers_flags: no layer excluded (none is hidden in 3ds Max)", excluded == [], str(excluded))
     if name == "layers_more":
         check_layers_more(root, obs, view_layer)
-    bare = sorted(ob.name for ob in obs if ob.type == 'MESH' and not any(sl.material for sl in ob.material_slots))
+    bare = sorted(ob.name for ob in obs if ob.type == 'MESH' and not any(sl.material for sl in ob.material_slots)
+                  and ob.name not in BARE_MESHES)
     check("%s: a material on every mesh" % name, bare == [], str(bare))
     check_fixture_materials(name, plan, desc, obs)
     rep = convert_report.gather(desc, source=os.path.basename(path), objects_built=len(obs),
@@ -619,7 +639,16 @@ def run_fixture(path, modules):
               len(lit) == 10 and len(bpy.data.lights) == 9 and bpy.data.objects["FixturePlane"].data ==
               bpy.data.objects["FixturePlaneInst"].data and bpy.data.objects["FixtureDisc"].data !=
               bpy.data.objects["FixtureDiscScaled"].data, "%s, %d lights" % (lit, len(bpy.data.lights)))
+        world = bpy.context.scene.world
+        strength = world.node_tree.nodes.get("Background").inputs["Strength"].default_value if world else None
+        from maxdrop import ops
+        check("vray_lights: its dome (white, multiplier 1 in the default units) is the World, strength 1500 / (683 pi) "
+              "x Light Strength", world is not None and world.name == "FixtureDome" and strength is not None and
+              abs(strength - 1500.0 / (683.0 * math.pi) * ops.LIGHT_STRENGTH) < 1e-5 and
+              bpy.data.worlds.get(USER_WORLD) is not None, "%s %s" % (world and world.name, strength))
         check_light_strength(path)
+    if name == "vray_dome":
+        check_dome(desc)
     if name in ("lights_standard", "lights_photometric"):
         lit = [ob for ob in obs if ob.type == 'LIGHT']
         shared = {"lights_standard": ("StdOmni", "StdOmniInst"), "lights_photometric": ("PhPoint", "PhPointInst")}
@@ -767,6 +796,102 @@ def check_stock_light(label, ob, ld, o):
     check(label + ": camera, diffuse and glossy visibility, diffuse and specular factors", flags == want, str(flags))
     check(label + ": shadows as in 3ds Max", light.use_shadow == ld.shadow == (o["name"] in STOCK_SHADOWS),
           "%s, %s" % (light.use_shadow, ld.shadow))
+
+
+def check_dome(desc):
+    """vray_dome: the dome is the World: Background strength (through the hemisphere's Math nodes) = 2 x 1500 /
+    (683 pi) x Light Strength, its color an Environment Texture of fixture_dome.png, the texture's Mapping (scale 1, -1,
+    1; turned 60 degrees about Z: -30 of the VRayBitmap's horizontal rotation, then the mirrored dome turned 90 about Z)
+    and the hemisphere's (the dome's -90 about Z), camera rays off, diffuse and glossy on. The two spheres share one
+    light, the scaled one has its own. The report says the World and the one it replaced, which is kept."""
+    from maxdrop import ops
+    world = bpy.context.scene.world
+    check("vray_dome: FixtureDome is the World, UserWorld kept", world is not None and world.name == "FixtureDome" and
+          bpy.data.worlds.get(USER_WORLD) is not None, world.name if world else "none")
+    if world is None or world.name != "FixtureDome":
+        return
+    nodes = world.node_tree.nodes
+    env = next((n for n in nodes if n.bl_idname == "ShaderNodeTexEnvironment"), None)
+    times = next((n for n in nodes if n.bl_idname == "ShaderNodeMath" and n.operation == 'MULTIPLY'), None)
+    above = next((n for n in nodes if n.bl_idname == "ShaderNodeMath" and n.operation == 'GREATER_THAN'), None)
+    maps = {tuple(round(v, 6) for v in n.inputs["Scale"].default_value): n for n in nodes
+            if n.bl_idname == "ShaderNodeMapping"}
+    want = 2.0 * 1500.0 / (683.0 * math.pi) * ops.LIGHT_STRENGTH
+    check("vray_dome: hemisphere strength = 2 x 1500 / (683 pi) x Light Strength, masked by Z > 0",
+          times is not None and above is not None and abs(times.inputs[1].default_value - want) < 1e-5 and
+          times.inputs[0].links and times.inputs[0].links[0].from_node == above,
+          "%s" % (times and times.inputs[1].default_value))
+    check("vray_dome: an Environment Texture of fixture_dome.png drives the color",
+          env is not None and env.image is not None and env.image.name.startswith("fixture_dome") and
+          nodes["Background"].inputs["Color"].links and
+          nodes["Background"].inputs["Color"].links[0].from_node == env, str(env and env.image))
+    tex, up = maps.get((1.0, -1.0, 1.0)), maps.get((1.0, 1.0, 1.0))
+    check("vray_dome: the texture's Mapping turned 60 degrees about Z, the hemisphere's -90",
+          tex is not None and up is not None and
+          close(tuple(tex.inputs["Rotation"].default_value), (0.0, 0.0, math.radians(60.0)), 1e-5) and
+          close(tuple(up.inputs["Rotation"].default_value), (0.0, 0.0, math.radians(-90.0)), 1e-5),
+          "%s %s" % (tex and tuple(tex.inputs["Rotation"].default_value),
+                     up and tuple(up.inputs["Rotation"].default_value)))
+    rays = world.cycles_visibility
+    check("vray_dome: invisible: camera rays off, diffuse and glossy on", (rays.camera, rays.diffuse, rays.glossy) ==
+          (False, True, True), str((rays.camera, rays.diffuse, rays.glossy)))
+    for name in ("FixtureDomeColor", "FixtureMeshLight"):
+        ob = bpy.data.objects.get(name)
+        check("vray_dome: %s an empty" % name, ob is not None and ob.type == 'EMPTY', ob and ob.type)
+    check("vray_dome: three sphere objects, three lights (the scaled instance its own)",
+          len([ob for ob in bpy.data.objects if ob.type == 'LIGHT']) == 3 and len(bpy.data.lights) == 3 and
+          bpy.data.objects["FixtureSphereWide"].data != bpy.data.objects["FixtureSphereWideInst"].data,
+          str(len(bpy.data.lights)))
+
+
+def check_dome_undo(path):
+    """vray_dome: the report names the World and the one it replaced; undo() of a finished modal run (the World is
+    made at the end of the build), and a build that fails after making the World, put the scene's World back and
+    remove the new one with everything else the run made."""
+    from maxdrop import ops
+    empty_scene()
+    result = bpy.ops.import_scene.maxdrop(filepath=path)
+    text = bpy.data.texts.get("MaxDrop Report")
+    body = text.as_string() if text is not None else ""
+    check("dome undo: the report names the World and the one it replaced", result == {'FINISHED'} and
+          "\nWorld: the dome light FixtureDome, in place of %s (kept)\n" % USER_WORLD in body, body[:600])
+    empty_scene()
+    for img in list(bpy.data.images):  # so that the run loads the dome's image anew, and undo() must remove it
+        bpy.data.images.remove(img)
+    before = _state()
+    run = _cancel_run([path])
+    for _ in run.steps():
+        pass
+    made = bpy.context.scene.world is not None and bpy.context.scene.world.name == "FixtureDome"
+    run.undo()
+    check("dome undo: undo() after the run: the World before is back, nothing made",
+          made and _state() == before, "%s | %s" % (_state(), before))
+    empty_scene()
+    for img in list(bpy.data.images):
+        bpy.data.images.remove(img)
+    before = _state()
+    original = ops._make_world
+
+    def failing(*args, **kwargs):
+        original(*args, **kwargs)
+        raise RuntimeError("maxdrop test: build fails after the World")
+
+    ops._make_world = failing
+    try:
+        steps = _cancel_run([path]).steps()
+        failed = False
+        try:
+            for _ in steps:
+                pass
+        except RuntimeError:
+            failed = True
+        except Exception as e:  # the runner may wrap it
+            failed = "maxdrop test" in str(e)
+    finally:
+        ops._make_world = original
+    check("dome undo: a build that fails after the World puts the World before back, nothing made",
+          failed and _state() == before, "%s | %s" % (_state(), before))
+    empty_scene()
 
 
 def check_light_strength(path):
@@ -1596,15 +1721,16 @@ def _write_png(path):
 
 
 CANCEL_KINDS = ("objects", "meshes", "curves", "lights", "cameras", "materials", "images", "collections", "texts",
-                "node_groups")
+                "node_groups", "worlds")
 
 
 def _state():
-    """What a cancelled run must leave as it found it: the datablocks of each kind, the scene camera, render size."""
+    """What a cancelled run must leave as it found it: the datablocks of each kind, the scene camera, render size,
+    the scene's World."""
     r = bpy.context.scene.render
     return ({kind: sorted(b.as_pointer() for b in getattr(bpy.data, kind)) for kind in CANCEL_KINDS},
             bpy.context.scene.camera, (r.resolution_x, r.resolution_y, r.resolution_percentage, r.pixel_aspect_x,
-                                       r.pixel_aspect_y))
+                                       r.pixel_aspect_y), bpy.context.scene.world)
 
 
 def _cancel_run(paths):
@@ -3662,6 +3788,8 @@ def main():
                                      os.path.join(ROOT, "tests", "fixtures", "vray_maps.max"))),
                                  ("light note on failure", lambda: check_light_note_on_failure(
                                      os.path.join(ROOT, "tests", "fixtures", "vray_lights.max"))),
+                                 ("dome undo", lambda: check_dome_undo(
+                                     os.path.join(ROOT, "tests", "fixtures", "vray_dome.max"))),
                                  ("reader defect", lambda: check_reader_defect(
                                      os.path.join(ROOT, "tests", "fixtures", "primitives.max"),
                                      os.path.join(ROOT, "tests", "fixtures", "multi_uv.max"))),

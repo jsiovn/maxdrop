@@ -10,6 +10,7 @@
     desc.curves[node.curve]             # CurveDescription of a shape node, shared the same way
     desc.lights[node.light]             # convert.lights LightDescription of a LIGHT node, shared the same way
     desc.cameras[node.camera]           # convert.cameras CameraDescription of a CAMERA node, shared the same way
+    desc.dome                           # convert.lights DomeDescription of the dome light that is the World, or None
     desc.camera                         # the node index of the scene camera, None without a camera
     desc.render                         # convert.cameras RenderSettings (render size), None when not stored
     desc.placeholders                   # Counter: class name -> nodes built as an empty
@@ -64,9 +65,11 @@ standard Omni, Spot and Direct a point, spot and sun light; a photometric light 
 distribution; a VRaySun a sun; a VRayIES a spot. It is keyed by its base object index and the factor the node's
 world scale puts on its area (lights.area_scale, 1 but for a VRayLight), so instances of one scale share it; the
 issues of its parameters are named on its first node, those of a description on the first node of that key. A
-VRayLight's mesh or dome light or a Skylight (not built yet), or a light whose parameters cannot be read, is an EMPTY
-with the reason as an issue, on every node, not counted as a placeholder. A VRaySky as the environment map is an
-issue labelled ENVIRONMENT. describe(..., assets) takes the scene's reader.assets.AssetTable for the names of the
+VRayLight's mesh light or a Skylight (not built yet), or a light whose parameters cannot be read, is an EMPTY with
+the reason as an issue, on every node, not counted as a placeholder. A VRayLight dome is an EMPTY too (its children
+stay placed), not a placeholder: the first dome node that is on (in walk order) gives desc.dome (lights.describe_dome),
+the World build/ makes; any other dome node, an instance of it too, and one that is off are an issue each (Blender has
+one World). A VRaySky as the environment map is an issue labelled ENVIRONMENT. describe(..., assets) takes the scene's reader.assets.AssetTable for the names of the
 web and IES files (read() reads it).
 
 A camera (Free, Target, Physical, VRayPhysicalCamera) becomes a CAMERA (convert.cameras): the lens, sensor, shift,
@@ -283,17 +286,18 @@ class LayerDescription:
 class SceneDescription:
     """nodes in walk order, meshes {key: MeshDescription}, curves {key: CurveDescription}, lights {key:
     convert.lights.LightDescription} and cameras {key: convert.cameras.CameraDescription} in order of first use,
+    dome the convert.lights.DomeDescription of the World (None without a dome light that is on),
     camera the scene camera's node index, camera_note why it is the first camera when that is no issue (None: the
     view 3ds Max renders, or an issue says why), render the convert.cameras.RenderSettings (None when not stored),
     meters per file unit, unit the reader's SystemUnit (None when the file does not say), layers, placeholders,
     unknown_controllers and issues."""
     __slots__ = ("nodes", "meshes", "curves", "lights", "cameras", "camera", "camera_note", "render", "meters",
-                 "unit", "layers", "placeholders", "unknown_controllers", "issues")
+                 "unit", "layers", "placeholders", "unknown_controllers", "issues", "dome")
 
     def __init__(self, meters, unit=None):
         self.nodes, self.meshes, self.meters, self.unit, self.layers = [], {}, meters, unit, []
         self.curves, self.lights, self.cameras, self.camera, self.render = {}, {}, {}, None, None
-        self.camera_note = None
+        self.camera_note, self.dome = None, None
         self.placeholders = collections.Counter()
         self.unknown_controllers = collections.Counter()
         self.issues = []
@@ -643,7 +647,7 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
         if kind == EMPTY and not (base is not None and (scene.is_a(base, classids.SC_HELPER, classids.DUMMY) or
                                                         scene.is_a(base, classids.SC_GEOMOBJECT,
                                                                    classids.TARGET_OBJECT) or base in unlit
-                                                        or base in unseen)):
+                                                        or base in light_params or base in unseen)):
             desc.placeholders[class_name] += 1
         flags = {} if node is None else dict(hidden=node.hidden, frozen=node.frozen, renderable=node.renderable,
                                              group_head=node.group_head, group_member=node.group_member)
@@ -670,14 +674,33 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
     return desc
 
 
+def _node_name(scene, i):
+    """The name of node i, None when i is no node of the scene or its record cannot be read."""
+    try:
+        return scene.node(i).name or None if 0 <= i < len(scene) else None
+    except ChunkError:  # not a node, or its record cannot be read
+        return None
+
+
+def _dome(desc, values, node, name, swatches, world):
+    """A dome light's node: desc.dome when it is the first that is on, else an issue."""
+    if not values[lights.P_ON]:
+        desc.issues.append((node, "light: " + lights.DOME_OFF))
+    elif desc.dome is not None:
+        desc.issues.append((node, "light: " + lights.SECOND_DOME % (desc.dome.name or "object %d" % desc.dome.node)))
+    else:
+        desc.dome, issues = lights.describe_dome(node, name, values, swatches, world)
+        desc.issues.extend((node, "light: %s" % x) for x in issues)
+
+
 def _light(scene, desc, unlit, params, base, node, name, meters, swatches, world, assets=None):
     """The key in desc.lights of light base on node (world: its reader world matrix), made on first use; None when it
-    is not built (unlit caches the reason, an issue on every node). params caches the light's values, whose issues
-    are named on the first node; a description's on the first node of its key."""
+    is not built (unlit caches the reason, an issue on every node) and for a dome (_dome). params caches the light's
+    values, whose issues are named on the first node; a description's on the first node of its key."""
     if base not in params and base not in unlit:
         try:
             values, issues = lights.read_params(scene, base, assets)
-            reason = lights.not_built(values)
+            reason = lights.not_built(values, lambda i: _node_name(scene, i))
         except ChunkError as exc:
             values, issues, reason = None, [], "parameters cannot be read: %s" % exc
         desc.issues.extend((node, "light: %s" % x) for x in issues)
@@ -687,6 +710,9 @@ def _light(scene, desc, unlit, params, base, node, name, meters, swatches, world
             unlit[base] = reason
     if base in unlit:
         desc.issues.append((node, "light: not built: %s" % unlit[base]))
+        return None
+    if lights.is_dome(params[base]):
+        _dome(desc, params[base], node, name, swatches, world)
         return None
     scale = lights.area_scale(params[base], world)
     key = (base, scale)

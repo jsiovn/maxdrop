@@ -73,6 +73,8 @@
 # file as not imported, with its traceback in the console, instead of ending the operator.
 # Modified for MaxDrop, 2026-11-21 (jsiovn). The material slots also hold those of shapes built as curves.
 # Modified for MaxDrop, 2026-11-21 (jsiovn). The material converter gets the import's meters per unit (SSS radii).
+# Modified for MaxDrop, 2026-11-21 (jsiovn). A VRayLight dome becomes the scene's World (its texture converted with
+# the scene's), the report says so; a failed or cancelled build puts the previous World back and removes the new one.
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -129,7 +131,7 @@ _UNREADABLE = (OSError, ValueError, IndexError, struct.error, MemoryError, Recur
 _DEFECTS = (TypeError, KeyError)
 # What a build makes besides objects and collections, in the order a failed build removes them. Addresses, not
 # names: a new datablock could reuse the address of one freed meanwhile, but the build frees none.
-_MADE = ("meshes", "curves", "lights", "cameras", "materials", "images")
+_MADE = ("meshes", "curves", "lights", "cameras", "materials", "worlds", "images")
 # The render settings build.cameras.set_render() changes, put back when a run is cancelled.
 _RENDER = ("resolution_x", "resolution_y", "resolution_percentage", "pixel_aspect_x", "pixel_aspect_y")
 # A modal run: seconds of work per timer event, the timer's interval, the steps of the progress shown in the cursor,
@@ -492,6 +494,38 @@ def _material_slots(sc, desc, table, max_path, dirs, image_search, meters=None):
     return slots, (conv.stats, tex.stats, index.report, swatches)
 
 
+def _dome_texture(sc, dd, table, max_path, dirs, image_search):
+    """(convert.lights DomeTexture of the dome dd's texture map, or None, issues): the map converted as a color input
+    with a converter of its own (the materials' counters stay theirs), its file looked up as the textures are."""
+    from .convert import colors as convert_colors
+    from .convert import lights as convert_lights
+    from .convert import materials as convert_materials
+    from .convert import texmaps as convert_texmaps
+    from .convert import textures as convert_textures
+    from .reader import materials as reader_materials
+    graph = reader_materials.MaterialGraph(sc)
+    index = convert_textures.TextureIndex(max_path, dirs, scene_subfolders=image_search)
+    tex = convert_texmaps.TexmapConverter(graph, table, textures=index, swatches=convert_colors.of_scene(sc))
+    graph_ir = tex.convert(convert_materials.MapRef(dd.texmap), convert_texmaps.COLOR, dd.color)
+    return convert_lights.dome_texture(graph_ir, graph)
+
+
+def _make_world(scene, dd, builder, strength, axis):
+    """Make the World of the dome dd (build.world) and assign it to scene: its texture's image through the import's
+    MaterialBuilder (None when it does not load: the World has the dome's color)."""
+    from .build import world as build_world
+    image = builder.image(dd.texture.image, "World") if dd.texture is not None else None
+    scene.world = build_world.make_world(dd, image, strength, axis)
+
+
+def _restore_world(scene, world):
+    """Put scene's World back to world (None when it was removed meanwhile)."""
+    try:
+        scene.world = world
+    except ReferenceError:
+        scene.world = None
+
+
 def _remove(cols, before):
     """Remove what a failed build left: the objects of the file's collection tree, the collections, and the meshes,
     curves, lights, cameras, materials and images made since before ({kind: the as_pointer() of each datablock before
@@ -622,6 +656,13 @@ def _read_file(max_path, opts, dirs, cancel):
         desc = convert_scene.describe(sc, meters, unit, convert_modifiers=opts.modifiers == 'KEEP',
                                       assets=table, views=cameras.saved_views(cf), cancel=cancel)
         read.slots, read.counts, read.failed = None, None, []
+        if desc.dome is not None and desc.dome.texmap is not None:
+            try:
+                desc.dome.texture, issues = _dome_texture(sc, desc.dome, table, max_path, dirs, opts.use_image_search)
+            except Exception as e:  # a texture rule's bug costs the World its texture, never the scene
+                print("MaxDrop: dome texture of %s not converted:\n%s" % (name, traceback.format_exc()), end="")
+                issues = ["its texture is not converted (%s: %s): the World has its color" % (type(e).__name__, e)]
+            desc.issues.extend((desc.dome.node, "light: %s" % x) for x in issues)
         if 'MATERIAL' in opts.object_filter:
             # asked here, not inside: the except below would take a Cancelled for a material rule's bug
             if cancel is not None and cancel():
@@ -702,6 +743,8 @@ def _scene_steps(opts, scene, view_layer, max_path, pack=None, pack_name="", dir
     before = {kind: {d.as_pointer() for d in getattr(bpy.data, kind)} for kind in _MADE}
     cols = build_collections.make(desc, view_layer.active_layer_collection.collection, os.path.splitext(name)[0])
     builder = build_materials.MaterialBuilder()
+    axis = axis_conversion(from_forward=opts.axis_forward, from_up=opts.axis_up).to_4x4()
+    world_before = scene.world
     try:
         steps = build_objects.build_steps(desc, cols.root, cols, view_layer, slots=slots,
                                           material=builder.make if materials else None,
@@ -717,8 +760,11 @@ def _scene_steps(opts, scene, view_layer, max_path, pack=None, pack_name="", dir
         settings_skipped = build_modifiers.add(desc, built)
         kept = build_objects.track_targets(desc, built) if opts.keep_targets else []
         build_collections.finish(cols, view_layer)
-        build_cameras.set_render(scene, desc, built)  # last: a failed build leaves the scene's alone
+        build_cameras.set_render(scene, desc, built)  # a failed build leaves the scene's alone
+        if desc.dome is not None:
+            _make_world(scene, desc.dome, builder, opts.light_strength, axis.to_3x3())
     except BaseException:
+        _restore_world(scene, world_before)  # first: the new World then has no user and goes with the rest
         _remove(cols, before)
         raise
     if made is not None:
@@ -737,6 +783,9 @@ def _scene_steps(opts, scene, view_layer, max_path, pack=None, pack_name="", dir
                       for i, reason in kept)
     if read.light_note:
         rep.issues.append(("color swatches", read.light_note))
+    if desc.dome is not None:
+        was = world_before.name if world_before is not None else None
+        rep.world = "the dome light %s%s" % (desc.dome.name, ", in place of %s (kept)" % was if was else "")
     if materials:
         conv_stats, tex_stats, lookup, swatches = counts or (None, None, None, None)
         made_materials = sum(m is not None for m in built.materials.values())
@@ -745,7 +794,6 @@ def _scene_steps(opts, scene, view_layer, max_path, pack=None, pack_name="", dir
                                      blender=bpy.app.version_string, swatches=swatches,
                                      build_issues=failed + builder.issues())
     del desc
-    axis = axis_conversion(from_forward=opts.axis_forward, from_up=opts.axis_up).to_4x4()
     if axis != Matrix.Identity(4):
         for ob in built.roots():
             ob.matrix_basis = axis @ ob.matrix_basis
@@ -807,7 +855,7 @@ class _Run:
         archive = _archive()
         self._before = {kind: {d.as_pointer() for d in getattr(bpy.data, kind)} for kind in _MADE + ("texts",)}
         render = self.scene.render
-        self._render = (self.scene.camera, [getattr(render, name) for name in _RENDER])
+        self._render = (self.scene.camera, [getattr(render, name) for name in _RENDER], self.scene.world)
         try:
             resolved, summaries, written = [], [], []  # resolved: [(.max path, unpack result, archive path)]
             for index, path in enumerate(self.paths):
@@ -889,13 +937,14 @@ class _Run:
             for col in list(cols.layers.values()) + [cols.root]:
                 bpy.data.collections.remove(col)
         self._made = []
+        camera, values, world = self._render
+        _restore_world(self.scene, world)  # before the removal: a World the run made then has no user
         for kind in _MADE:  # meshes and curves first: they free their materials, a removed material its images
             blocks = getattr(bpy.data, kind)
             for block in [b for b in blocks if b.as_pointer() not in self._before[kind] and not b.users]:
                 blocks.remove(block)
         for text in [t for t in bpy.data.texts if t.as_pointer() not in self._before["texts"]]:
             bpy.data.texts.remove(text)
-        camera, values = self._render
         try:
             self.scene.camera = camera
         except ReferenceError:  # an object removed meanwhile: the scene keeps none

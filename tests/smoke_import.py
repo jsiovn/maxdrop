@@ -72,12 +72,15 @@ FIXTURE = {"modifiers": 0, "issues": 0, "placeholders": 0, "lights_only": False}
 # What the oracle does not tell: a UVW Map of a type MaxDrop does not evaluate (shrink-wrap), and the issues each
 # fixture is made to raise (ISSUES in tests/unit/test_convert_scene.py)
 NOT_EVALUATED = {"FixtureUVWShrink"}
-FIXTURE_ISSUES = {"uvwmap.max": 2, "stack_convert.max": 1, "vray_lights.max": 4, "lookat.max": 1,
+FIXTURE_ISSUES = {"uvwmap.max": 2, "stack_convert.max": 1, "vray_lights.max": 3, "vray_dome.max": 2, "lookat.max": 1,
                   "lights_standard.max": 17, "lights_photometric.max": 10, "cameras.max": 6}
+# issues a fixture adds when imported from a pack without its maps (two_scenes): vray_dome's dome texture not found
+MAPLESS_ISSUES = {"vray_dome.max": 1}
 # placeholders of classes MaxDrop does not build yet: lookat's Point
 FIXTURE_PLACEHOLDERS = {"lookat.max": 1}
-# fixtures without a mesh: a light must arrive instead of a mesh with a material
-LIGHTS_ONLY = {"vray_lights.max", "lights_standard.max", "lights_photometric.max"}
+# fixtures of lights (without a mesh, or vray_dome's box without a material): a light must arrive instead of a mesh
+# with a material
+LIGHTS_ONLY = {"vray_lights.max", "vray_dome.max", "lights_standard.max", "lights_photometric.max"}
 
 
 def oracle_modifiers(path):
@@ -349,8 +352,13 @@ def two_scenes(max_path, scratch, ops):
     check("Scene Pack panel: names it again when the Scene field changes", labels[-2:] == ["Unpacks into", second],
           str(labels))
     check("Scene Pack panel: the preview wrote nothing", not os.path.exists(os.path.join(folder, "two")))
-    import_one(zip_path, "two scenes in a .zip, %s named" % SECOND, max_name=SECOND, pack_name="two.zip",
-               pack_scene=SECOND)
+    extra = 0 if argv else MAPLESS_ISSUES.get(name, 0)  # the pack holds the two .max files, no map
+    FIXTURE["issues"] += extra
+    try:
+        import_one(zip_path, "two scenes in a .zip, %s named" % SECOND, max_name=SECOND, pack_name="two.zip",
+                   pack_scene=SECOND)
+    finally:
+        FIXTURE["issues"] -= extra
     check("two scenes in a .zip: the named scene is unpacked into its own folder",
           os.path.isfile(os.path.join(folder, "two", "second", SECOND)))
     check("two scenes in a .zip: the unpack drops the popup's previews", ops._norm(zip_path) not in ops._TARGETS)

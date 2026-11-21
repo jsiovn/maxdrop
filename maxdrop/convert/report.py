@@ -27,6 +27,8 @@ swatch rule (convert.colors.Swatches: its line, and its note as an issue when th
 attribute. The blocks follow the order of the log of the 3ds Max -> FBX exporter these rules come from: the scene,
 the materials, the textures. A texture not found in a scene just unpacked from a pack says whether the archive
 held a file of that name and why it was not written: that tells an archive at fault from the lookup.
+rep.world names the dome light that became the scene's World (and the World it replaced), a line of its own: not an
+issue.
 
 The report names nodes and files of the user's scene: it is shown to the user and never written into the
 repository. Lists are cut after MAX_LISTED entries. No bpy.
@@ -59,7 +61,7 @@ class Report:
                  "dropped_uv_layers", "unknown_controller_nodes", "geometry_errors", "issues", "pack", "pack_name",
                  "materials_built", "materials", "wrappers", "grey_materials", "maps_peeled", "maps_unsupported",
                  "sockets_skipped", "blender", "textures_found", "textures_missing", "texture_search_stopped",
-                 "material_issues", "swatches")
+                 "material_issues", "swatches", "world")
 
     def __init__(self, source=""):
         self.source, self.unit, self.meters = source, None, 1.0
@@ -86,6 +88,7 @@ class Report:
         self.textures_found = []  # [(lookup rule name, files found)] in lookup order
         self.textures_missing, self.texture_search_stopped, self.material_issues = [], [], []
         self.swatches = ""  # how color swatches were made linear (the scene's gamma)
+        self.world = ""  # the dome light that is the scene's World now, and the World it replaced
 
     def add_modifiers(self, outcome, class_names):
         """Count one node's modifiers under outcome (APPLIED, CONVERTED or IGNORED): each class once."""
@@ -163,6 +166,8 @@ class Report:
             lines.append("Render size: %s; scene camera: %s" % (self.render_size or NO_RENDER_SIZE,
                                                                 self.scene_camera or "none")
                          + (", " + self.scene_camera_note if self.scene_camera_note else ""))
+        if self.world:
+            lines.append("World: " + self.world)
         lines.append("Layers: %d (%d hidden)" % (self.layers, self.hidden_layers))
         lines.append("Objects hidden: %d, not renderable: %d, frozen: %d" % (self.hidden, self.unrenderable,
                                                                              self.frozen))

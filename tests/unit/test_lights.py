@@ -8,7 +8,10 @@ The ported formulas (watts per units mode and type, the Kelvin color) against va
 vray_lights fixture (tools/fixtures/vray_lights.ms) read through convert.scene against what 3ds Max 2020 + V-Ray 5.2
 said of it: the watts its rules source's own ocbaby_exsVrayLightWatts computed in 3ds Max on each light, the Kelvin
 color of ocbaby_exsKelvinRGB, sizes, flags and the instance sharing one light; hand-made parameter values and blocks
-for the issues (animated, texture, directional, the glossy switch, contributions, a missing block).
+for the issues (animated, texture, directional, the glossy switch, contributions, a missing block). The vray_dome
+fixture (tools/fixtures/vray_dome.ms): the dome that is the World, its texture's projection, the second dome and the
+mesh light named, the scaled spheres as V-Ray 5.2 renders them (X scale only); hand-made texture graphs for the
+rules of dome_texture.
 """
 import importlib
 import math
@@ -20,6 +23,7 @@ from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 FIXTURE = os.path.join(ROOT, "tests", "fixtures", "vray_lights.max")
+DOME_FIXTURE = os.path.join(ROOT, "tests", "fixtures", "vray_dome.max")
 
 # A package named apart from the add-on whose path is maxdrop/: relative imports resolve, maxdrop/__init__.py (which
 # imports bpy) never runs.
@@ -30,6 +34,7 @@ if _PKG not in sys.modules:
     sys.modules[_PKG] = _pkg
 lights = importlib.import_module(_PKG + ".convert.lights")
 colors = importlib.import_module(_PKG + ".convert.colors")
+texmaps = importlib.import_module(_PKG + ".convert.texmaps")
 pblock = importlib.import_module(_PKG + ".reader.pblock")
 classids = importlib.import_module(_PKG + ".reader.classids")
 try:
@@ -127,9 +132,16 @@ class Describe(unittest.TestCase):
         self.assertEqual((ld.power, issues), (8.0, []))
 
     def test_not_built(self):
-        for kind, reason in ((L.MESH, L.NOT_YET[L.MESH]), (L.DOME, L.NOT_YET[L.DOME]),
+        for kind, reason in ((L.MESH, L.MESH_LIGHT), (L.DOME, "a dome light is the World, not a light"),
                              (7, "type 7 is not a VRayLight type")):
             self.assertEqual(L.describe(1, "x", values(type=kind), MM, colors.GAMMA_ON), (None, [reason]))
+
+    def test_a_mesh_light_names_its_picked_node(self):
+        v = values(type=L.MESH, mesh_source=7)
+        self.assertEqual(L.not_built(v, {7: "Box"}.get), L.MESH_LIGHT + " (picked from Box)")
+        self.assertEqual(L.not_built(v, {}.get), L.MESH_LIGHT)  # no node of the scene
+        self.assertEqual(L.not_built(values(type=L.MESH, mesh_source=None), {7: "Box"}.get), L.MESH_LIGHT)
+        self.assertIsNone(L.not_built(values(type=L.DOME)))
 
     def test_flags_and_issues(self):
         ld, issues = L.describe(1, "x", values(on=0, invisible=1, texmap=5, directional=0.4, affect_specular=0,
@@ -153,6 +165,8 @@ class Scale(unittest.TestCase):
         self.assertEqual(L.area_scale(values(type=L.SPHERE, units=L.UNITS_LM_M2_SR), self.ROWS), 4.0)
         for units in (L.UNITS_LM, L.UNITS_W):
             self.assertEqual(L.area_scale(values(units=units), self.ROWS), 1.0)
+            # a sphere's radius follows its X scale in every units mode: its key holds it
+            self.assertEqual(L.area_scale(values(type=L.SPHERE, units=units), self.ROWS), 4.0)
         self.assertEqual(L.area_scale(values(), ((0.0,) * 3,) * 4), 1.0)  # a zero scale
         self.assertEqual(L.area_scale(values(), ((float("inf"), 0.0, 0.0),) * 4), 1.0)
 
@@ -161,6 +175,21 @@ class Scale(unittest.TestCase):
         b, _ = L.describe(1, "b", values(units=L.UNITS_W_M2_SR), MM, colors.GAMMA_ON, 3.0)
         self.assertAlmostEqual(b.watts, 3.0 * a.watts, delta=1e-12)
         self.assertEqual((a.size, a.size_y), (b.size, b.size_y))  # Blender scales the object's light itself
+
+    def test_a_sphere_takes_its_x_scale_only(self):
+        """V-Ray 5.2 renders: (1, 2, 1), (1, 1, 2) and (1, 2, 3) leave a sphere as it is, (2, 1, 1) quadruples its
+        flux in the area units and doubles its radius (in lm and W the flux stays)."""
+        def rows(sx, sy, sz):
+            return ((sx, 0.0, 0.0), (0.0, sy, 0.0), (0.0, 0.0, sz), (0.0, 0.0, 0.0))
+        for units in (L.UNITS_W_M2_SR, L.UNITS_W):
+            v = values(type=L.SPHERE, size0=5.0, units=units)
+            one, _ = L.describe(1, "a", v, MM, colors.GAMMA_ON)
+            for scale in ((1.0, 2.0, 1.0), (1.0, 1.0, 2.0), (1.0, 2.0, 3.0)):
+                self.assertEqual(L.area_scale(v, rows(*scale)), 1.0, scale)
+            s = L.area_scale(v, rows(2.0, 1.0, 1.0))
+            wide, _ = L.describe(1, "b", v, MM, colors.GAMMA_ON, s)
+            self.assertAlmostEqual(wide.radius, 2.0 * one.radius, delta=1e-12)
+            self.assertAlmostEqual(wide.watts, (4.0 if units == L.UNITS_W_M2_SR else 1.0) * one.watts, delta=1e-12)
 
     def test_a_power_out_of_range_is_zero(self):
         ld, issues = L.describe(1, "x", values(size0=1e30, size1=1e30, multiplier=1e30, units=L.UNITS_W_M2_SR),
@@ -240,12 +269,16 @@ class SceneHook(unittest.TestCase):
                                        (11, "light: not built: parameters cannot be read: damaged")])
         self.assertEqual((desc.lights, dict(desc.placeholders)), ({}, {}))
 
-    def test_a_dome_is_named_on_every_node(self):
+    def test_the_first_dome_is_the_world_the_others_are_named(self):
         desc, keys = self.hook(lambda scene, i, assets=None: (values(type=L.DOME), ["read"]),
                                [self.IDENTITY, self.IDENTITY])
         self.assertEqual(keys, [None, None])
-        self.assertEqual(desc.issues, [(10, "light: read"), (10, "light: not built: " + L.NOT_YET[L.DOME]),
-                                       (11, "light: not built: " + L.NOT_YET[L.DOME])])
+        self.assertEqual((desc.dome.node, desc.dome.name, desc.lights, dict(desc.placeholders)), (10, "n10", {}, {}))
+        self.assertEqual(desc.issues, [(10, "light: read"), (11, "light: " + L.SECOND_DOME % "n10")])
+
+    def test_a_dome_that_is_off_is_not_the_world(self):
+        desc, keys = self.hook(lambda scene, i, assets=None: (values(type=L.DOME, on=0), []), [self.IDENTITY])
+        self.assertEqual((keys, desc.dome, desc.issues), ([None], None, [(10, "light: " + L.DOME_OFF)]))
 
     def test_issues_once_per_light_and_per_scale(self):
         desc, keys = self.hook(lambda scene, i, assets=None: (values(double_sided=1), ["read"]),
@@ -315,6 +348,164 @@ class Fixture(unittest.TestCase):
         for name in ("FixtureMesh", "FixtureDome", "FixtureTargeted.Target"):
             self.assertEqual(self.by_name[name].kind, conv.EMPTY, name)
         self.assertEqual(dict(self.desc.placeholders), {})
+        dome = self.desc.dome  # type 1, multiplier 1 in the default units, white
+        self.assertEqual((dome.name, dome.color, dome.hemisphere, dome.texmap), ("FixtureDome", (1.0, 1.0, 1.0),
+                                                                                 False, None))
+        self.assertAlmostEqual(dome.radiance, L.DOME_RADIANCE[L.UNITS_DEFAULT], delta=1e-12)
+
+
+class DomeRules(unittest.TestCase):
+    ROWS = ((0.0, 2.0, 0.0), (-2.0, 0.0, 0.0), (0.0, 0.0, 2.0), (1.0, 2.0, 3.0))  # turned 90 about Z, scaled 2
+
+    def test_strength_per_units_mode(self):
+        """V-Ray 5.2 white floor under a white dome of multiplier 1: 1.00018 (default), 0.00213024 (lm modes),
+        1.43109 (W modes); Cycles 1.0 per unit of World strength: so radiance x Light Strength 1.43."""
+        for units, pixel in ((0, 1.00018), (1, 0.00213024), (2, 0.00213024), (3, 1.43109), (4, 1.43109)):
+            dd, issues = L.describe_dome(1, "d", values(type=L.DOME, units=units, multiplier=2.0), colors.GAMMA_ON,
+                                         self.ROWS)
+            self.assertEqual(issues, [])
+            self.assertAlmostEqual(dd.radiance * 1.43 / 2.0, pixel, delta=pixel * 0.001, msg=units)
+
+    def test_flags_rotation_and_texture_switch(self):
+        dd, issues = L.describe_dome(4, "d", values(type=L.DOME, dome_spherical=0, dome_locked=1, invisible=1,
+                                                    affect_diffuse=0, affect_reflections=0, texmap=9),
+                                     colors.GAMMA_ON, self.ROWS)
+        self.assertEqual((dd.node, dd.hemisphere, dd.locked, dd.camera, dd.diffuse, dd.glossy, dd.texmap),
+                         (4, True, True, False, False, True, 9))
+        self.assertEqual(issues, [L.GLOSSY % ("on", "off")])
+        for got, want in zip(dd.rotation, ((0.0, -1.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0))):
+            for a, b in zip(got, want):
+                self.assertAlmostEqual(a, b, delta=1e-12)
+        dd, _ = L.describe_dome(4, "d", values(type=L.DOME, texmap=9, texmap_on=0), colors.GAMMA_ON, self.ROWS)
+        self.assertIsNone(dd.texmap)
+
+    def test_a_mirrored_or_flat_node_and_a_negative_multiplier(self):
+        mirrored = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, -1.0), (0.0, 0.0, 0.0))
+        dd, issues = L.describe_dome(1, "d", values(type=L.DOME), colors.GAMMA_ON, mirrored)
+        self.assertEqual((dd.rotation[2][2], issues), (1.0, [L.DOME_MIRRORED]))
+        flat = ((0.0, 0.0, 0.0),) * 4
+        dd, issues = L.describe_dome(1, "d", values(type=L.DOME, multiplier=-1.0), colors.GAMMA_ON, flat)
+        self.assertEqual((dd.radiance, dd.rotation[0], issues), (0.0, (1.0, 0.0, 0.0),
+                                                                 [L.NEGATIVE % ("multiplier", -1.0), L.DOME_FLAT]))
+
+
+class _Map:
+    def __init__(self, class_id, params, parts=None):
+        self.class_id, self.params, self.parts = class_id, params, parts or {}
+
+    def param(self, pid, block_id=None, tab=0, default=None):
+        return self.params.get(pid, default)
+
+
+class _Graph:
+    scene = None
+
+    def __init__(self, maps):
+        self.maps = maps
+
+    def get(self, i):
+        return self.maps[i]
+
+
+class DomeTextureRules(unittest.TestCase):
+    FOUND = object()
+
+    def image(self, **changes):
+        return texmaps.Image(3, "sky.hdr", found=self.FOUND, **changes)
+
+    def ir(self, root, issues=()):
+        return texmaps.TextureGraphIR(root, texmaps.COLOR, False, tuple(issues))
+
+    def vray(self, params):
+        p = {L.texmaps.VB_MAP_TYPE: L.VB_SPHERICAL}
+        p.update(params)
+        return _Graph({3: _Map(tuple(classids.VRAY_BITMAP), p)})
+
+    def test_a_vray_bitmap_in_spherical_mapping(self):
+        env = "VRayBitmap 'sky': environment mapping (type 2), drawn with the UVs"
+        dt, issues = L.dome_texture(self.ir(self.image(), [env]), self.vray({L.VB_H_ROTATION: 0.5}))
+        self.assertEqual((dt.image.name, dt.turn, dt.amount, issues), ("sky.hdr", 0.5, 1.0, []))
+
+    def test_its_amount_and_the_issues_of_what_is_not_imported(self):
+        img = self.image(output=texmaps.TexOutput(invert=True, amount=3.0), gamma=2.2,
+                         crop=texmaps.Crop(0.0, 0.0, 0.5, 0.5))
+        dt, issues = L.dome_texture(self.ir(img), self.vray({texmaps.VB_MAP_TYPE: 0, L.VB_V_ROTATION: math.pi}))
+        self.assertEqual(dt.amount, 3.0)
+        self.assertEqual(issues, [L.DOME_PROJECTION % ("sky.hdr", "angular"), L.DOME_VERTICAL % ("sky.hdr", 180.0),
+                                  L.DOME_OUTPUT % "sky.hdr", L.DOME_GAMMA % ("sky.hdr", 2.2),
+                                  L.DOME_CROP % "sky.hdr"])
+
+    def test_a_bitmap_is_turned_a_quarter(self):
+        graph = _Graph({3: _Map(tuple(classids.BITMAP_TEX), {})})  # no Placement part: texture mapping
+        dt, issues = L.dome_texture(self.ir(self.image()), graph)
+        self.assertEqual((dt.turn, issues), (math.pi / 2.0, [L.DOME_PROJECTION % ("sky.hdr", "texture")]))
+        tiled = self.image(mapping=texmaps.Mapping(tiling=(2.0, 1.0), environment=True))
+        dt, issues = L.dome_texture(self.ir(tiled), graph)
+        self.assertEqual(issues, [L.DOME_PROJECTION % ("sky.hdr", "environment None"), L.DOME_PLACEMENT % "sky.hdr"])
+
+    def test_no_texture_the_color(self):
+        self.assertEqual(L.dome_texture(None, None), (None, [L.DOME_NO_TEXTURE]))
+        self.assertEqual(L.dome_texture(self.ir(texmaps.Constant((1.0, 0.0, 0.0)), ["x"]), None),
+                         (None, ["x", L.DOME_ROOT % "Constant"]))
+        lost = texmaps.Image(3, "gone.png")
+        self.assertEqual(L.dome_texture(self.ir(lost), None), (None, [L.DOME_NOT_FOUND % "gone.png"]))
+
+
+@unittest.skipIf(conv is None, "numpy missing")
+class DomeFixture(unittest.TestCase):
+    """vray_dome: what 3ds Max 2020 + V-Ray 5.2 stored and rendered."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.desc = conv.read(DOME_FIXTURE)
+        cls.by_name = {n.name: n for n in cls.desc.nodes}
+
+    def test_the_dome(self):
+        dd = self.desc.dome
+        self.assertEqual((dd.name, dd.node, dd.hemisphere, dd.locked, dd.camera, dd.diffuse, dd.glossy),
+                         ("FixtureDome", self.by_name["FixtureDome"].index, True, True, False, True, True))
+        self.assertAlmostEqual(dd.radiance, 2.0 * L.DOME_RADIANCE[L.UNITS_DEFAULT], delta=1e-9)
+        self.assertIsNotNone(dd.texmap)
+        for got, want in zip(dd.rotation, ((0.0, -1.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0))):  # 90 about Z
+            for a, b in zip(got, want):
+                self.assertAlmostEqual(a, b, delta=1e-6)
+
+    def test_domes_and_the_mesh_light_are_empties_not_placeholders(self):
+        for name in ("FixtureDome", "FixtureDomeColor", "FixtureMeshLight"):
+            self.assertEqual(self.by_name[name].kind, conv.EMPTY, name)
+        self.assertEqual(dict(self.desc.placeholders), {})
+
+    def test_spheres_take_the_x_scale(self):
+        tall, wide, inst = (self.desc.lights[self.by_name[n].light] for n in
+                            ("FixtureSphereTall", "FixtureSphereWide", "FixtureSphereWideInst"))
+        # tall: W/m2/sr, multiplier 2, radius 5 mm, scale 1, 1, 2.5: as unscaled
+        self.assertAlmostEqual(tall.watts, math.pi * 2.0 * 4.0 * math.pi * 0.005 ** 2, delta=1e-12)
+        self.assertEqual(tall.radius, 0.005)
+        self.assertEqual((wide.watts, inst.watts), (40.0, 40.0))  # W: the flux stays
+        self.assertAlmostEqual(wide.radius, 0.01, delta=1e-12)
+        self.assertEqual(inst.radius, 0.005)
+
+    def test_the_texture_rules_on_the_fixture(self):
+        reader_materials = importlib.import_module(_PKG + ".reader.materials")
+        cfb = importlib.import_module(_PKG + ".reader.cfb")
+        reader_scene = importlib.import_module(_PKG + ".reader.scene")
+        assets = importlib.import_module(_PKG + ".reader.assets")
+        materials = importlib.import_module(_PKG + ".convert.materials")
+
+        class _Found:
+            def find(self, path, resolved):
+                return ("found", path)
+
+        with cfb.CompoundFile(DOME_FIXTURE) as cf:
+            sc = reader_scene.Scene.from_file(cf)
+            graph = reader_materials.MaterialGraph(sc)
+            tex = texmaps.TexmapConverter(graph, assets.AssetTable.from_file(cf), textures=_Found(),
+                                          swatches=colors.of_scene(sc))
+            dd = self.desc.dome
+            dt, issues = L.dome_texture(tex.convert(materials.MapRef(dd.texmap), texmaps.COLOR, dd.color), graph)
+        self.assertEqual((dt.image.name, issues), ("fixture_dome.png", []))
+        self.assertAlmostEqual(dt.turn, math.radians(30.0), delta=1e-6)
+        self.assertEqual(dt.amount, 1.0)
 
 
 if __name__ == "__main__":

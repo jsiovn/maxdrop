@@ -570,6 +570,7 @@ class TestFixtures(unittest.TestCase):
                  "FixtureSpot.Target": 0x4800, "FixtureCamChild.Target": 0x4800, "FixtureAim": 0x4800,
                  "FixtureTargeted.Target": 0x4800,  # vray_lights: a targeted VRayLight's target
                  "FixturePlaneInst": 0, "FixtureDiscScaled": 0,  # vray_lights: instances
+                 "FixtureSphereWideInst": 0,  # vray_dome: an instance
                  # lights_standard, lights_photometric: an instance each, the targets of target lights
                  "StdOmniInst": 0, "PhPointInst": 0, "StdTargetSpot.Target": 0x4800,
                  "StdTargetDirect.Target": 0x4800, "StdSun.Target": 0x4800, "PhWeb.Target": 0x4800,
