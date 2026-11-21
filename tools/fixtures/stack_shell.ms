@@ -3,14 +3,21 @@
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
 -- Shells whose surfaces lie on one side of the original or turn it inside out, as Solidify (convert/modifiers.py),
--- and the rim's shading. Every node is an Editable Poly box 20 x 20 x 20 without its top face, so the shell has a
--- rim: the facing of its triangles (the oracle's eval_mesh) tells an inside-out shell from another.
+-- and the rim's shading. Every node but the plane is an Editable Poly box 20 x 20 x 20 without its top face, so the
+-- shell has a rim: the facing of its triangles (the oracle's eval_mesh) tells an inside-out shell from another.
 -- FixtureShellOut: inner amount -1, outer amount 2 (both surfaces outside the original).
 -- FixtureShellIn: inner amount 3, outer amount -1 (both inside).
 -- FixtureShellCrossed: inner amount -2, outer amount 1 (inner + outer < 0: 3ds Max's shell is inside out).
 -- FixtureShellNegative: inner amount -1, outer amount -2 (inside out too).
 -- FixtureShellRim: inner amount 0, outer amount 1, the defaults (auto smooth on, 45 degrees): the rim in groups of its
 -- own, hard against both surfaces.
+-- FixtureShellPlane: a plane (1 x 1 segments), inner 0, outer 1, auto smooth on: its rim's corners (90 degrees,
+-- sharper than 45) split the rim into four groups.
+-- FixtureShellOverride: the open box with auto smooth off and the override smoothing group 4, the group of one side:
+-- the rim merges into that side.
+-- FixtureShellTurbo: the open box with a TurboSmooth (1 iteration, Smooth Result) below the Shell (inner 0, outer 1):
+-- the rim still hard against both smoothed surfaces.
+-- FixtureShellSmoothed: the open box with a TurboSmooth (1 iteration) above the Shell: everything smooth.
 -- One Standard material on every node.
 -- Authored for MaxDrop's tests (see CONTRIBUTING.md, "Test files"): it resets the scene, so run it in a 3ds Max
 -- session with nothing to keep, then sanitize and check the saved file before it goes into tests/fixtures/.
@@ -32,6 +39,25 @@
 	open_box "FixtureShellCrossed" [80, 0, 0] -2.0 1.0
 	open_box "FixtureShellNegative" [120, 0, 0] -1.0 -2.0
 	open_box "FixtureShellRim" [160, 0, 0] 0.0 1.0
+
+	local flat = Plane name:"FixtureShellPlane" length:20 width:20 lengthsegs:1 widthsegs:1 mapcoords:true \
+		pos:[200, 0, 0]
+	convertToPoly flat
+	addModifier flat (Shell innerAmount:0.0 outerAmount:1.0)
+
+	local over = open_box "FixtureShellOverride" [240, 0, 0] 0.0 1.0
+	over.modifiers[1].autoSmooth = false
+	over.modifiers[1].overrideSmoothingGroup = true
+	over.modifiers[1].smoothGroup = 4  -- a group number: the side of normal -Y has group 4
+
+	local turbo = Box name:"FixtureShellTurbo" length:20 width:20 height:20 mapcoords:true pos:[0, 40, 0]
+	convertToPoly turbo
+	polyop.deleteFaces turbo #{2}
+	addModifier turbo (TurboSmooth iterations:1)
+	addModifier turbo (Shell innerAmount:0.0 outerAmount:1.0)
+
+	local smoothed = open_box "FixtureShellSmoothed" [40, 40, 0] 0.0 1.0
+	addModifier smoothed (TurboSmooth iterations:1)
 
 	local mat = StandardMaterial name:"FixtureGrey" diffuse:(color 128 128 128)
 	for o in objects do o.material = mat

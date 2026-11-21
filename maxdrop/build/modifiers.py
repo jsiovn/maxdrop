@@ -13,7 +13,8 @@ object), placed at the description's frame (a shear kept in its parent inverse, 
 in the object's collection, hidden and frozen with the object, not rendered. It is no node and no root: not in
 built.objects or built.helpers. A mesh whose description asks for creases (a converted smoother separates by
 smoothing groups) gets crease_edge 1.0 on its sharp edges, the generic attribute Blender 4.0 and later read for edge
-creases.
+creases; not on its open edges (one face): those are sharp only for a Shell's rim (convert.scene), and a crease on a
+boundary would change how Subdivision Surface rounds it.
 """
 import bpy
 from mathutils import Matrix
@@ -32,6 +33,10 @@ def _crease(mesh):
     flags = numpy.zeros(len(mesh.edges), dtype=bool)
     if sharp is not None and len(flags):
         sharp.data.foreach_get("value", flags)
+        if flags.any():
+            edge_of_loop = numpy.empty(len(mesh.loops), dtype=numpy.int32)
+            mesh.loops.foreach_get("edge_index", edge_of_loop)
+            flags &= numpy.bincount(edge_of_loop, minlength=len(flags)) != 1
     crease = mesh.attributes.get(CREASE_ATTRIBUTE)
     if crease is None:
         crease = mesh.attributes.new(CREASE_ATTRIBUTE, 'FLOAT', 'EDGE')

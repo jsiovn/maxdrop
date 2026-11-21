@@ -655,8 +655,15 @@ What 3ds Max 2020 makes, against Blender's evaluated meshes (`tests/blender/run.
   also splits it where two rim faces meet at a sharper angle, and with auto smooth off the rim is one group, the
   override's (ids 4, 5) when set, which merges into a surface face of that group (an open box: 11 regions and 24
   hard edges; a plane with auto smooth 6 and 12, without 3 and 8). Solidify smooths the rim into both surfaces (the
-  open box: 3 regions, 16 hard edges); marking the open edges sharp before it gives 3ds Max's open box on Blender
-  4.2 and 5.2 (not done yet: maxdrop-em3.101).
+  open box: 3 regions, 16 hard edges); MaxDrop marks the mesh's open edges sharp before it, which gives 3ds Max's
+  open box on Blender 4.2, 4.5 and 5.2, also below a TurboSmooth with Smooth Result (3 regions, 16 hard edges: the
+  Subdivision Surface keeps the sharp open edges). Not with a smoother with Smooth Result above the Shell (3ds Max
+  smooths the rim too: 1 region) or a Symmetry below it (its weld would make sharp open edges on the plane a seam;
+  not measured). What stays different is a line in the report, only for a mesh with open edges: auto smooth on and
+  rim corners sharper than its angle (the rim face of open edge a -> b has the normal (pb - pa) x (na + nb), n the
+  sum of the unit face normals at a vertex; FixtureShellPlane: 4 corners), or the override group with auto smooth
+  off (the group is a number, 1 .. 32: group 4 is the side of mask 8; FixtureShellOverride). A crease on an open
+  edge (a smoother that separates by smoothing groups) is left out.
 - **Symmetry**: the mirror plane is in the gizmo's space, q = p * context * inverse(gizmo), as UVW Map's; without
   flip the side where q along the axis is positive stays, sliced at the plane; without slice the whole object is
   mirrored and both copies stay (FixtureSymmetryNoSlice: 16 vertices). Weld seam: 3ds Max slices beside a vertex

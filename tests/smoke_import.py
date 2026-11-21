@@ -36,10 +36,10 @@ only things listed are on the material side: wrappers and maps approximated, map
 (vray_texmaps' Noise), texture files not found (the fixtures carry no images), material issues or, on
 Blender 4, Principled inputs that Blender lacks; and the modifiers not applied, as many as the oracle lists, in a
 fixture whose oracle lists some (modifier_pivot; the ones converted to Blender modifiers are not counted), the
-issues a fixture is made to raise (uvwmap, stack_convert, vray_lights) and the placeholders of classes not built
-yet (lookat's Point helper). lookat, saved with a Perspective viewport active, names its first camera as the scene
-camera in the report's render line, not as an issue. Two scenes in one run: the text holds both reports; a file
-that was not imported is named after them.
+issues a fixture is made to raise (uvwmap, stack_convert, stack_shell, vray_lights) and the placeholders of classes
+not built yet (lookat's Point helper). lookat, saved with a Perspective viewport active, names its first camera as
+the scene camera in the report's render line, not as an issue. Two scenes in one run: the text holds both reports;
+a file that was not imported is named after them.
 Prints `IMPORT PASSED` (exit 0) or `IMPORT FAILED` (exit 1).
 """
 import glob
@@ -73,7 +73,8 @@ FIXTURE = {"modifiers": 0, "issues": 0, "placeholders": 0, "lights_only": False}
 # fixture is made to raise (ISSUES in tests/unit/test_convert_scene.py)
 NOT_EVALUATED = {"FixtureUVWShrink"}
 FIXTURE_ISSUES = {"uvwmap.max": 2, "stack_convert.max": 1, "vray_lights.max": 3, "vray_dome.max": 2, "lookat.max": 1,
-                  "lights_standard.max": 17, "lights_photometric.max": 11, "cameras.max": 6}
+                  "lights_standard.max": 17, "lights_photometric.max": 11, "cameras.max": 6,
+                  "stack_shell.max": 2}  # stack_shell: two Shell rims Blender cannot match
 # issues a fixture adds when imported from a pack without its maps (two_scenes): vray_dome's dome texture not found
 MAPLESS_ISSUES = {"vray_dome.max": 1}
 # placeholders of classes MaxDrop does not build yet: lookat's Point

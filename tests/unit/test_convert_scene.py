@@ -106,7 +106,12 @@ UV_LAYERS = {
 SHARP_EDGES_POLY_BOX = 12  # one smoothing group per side: every edge of the box
 SHARP_EDGES_EDITABLE_MESH = 8  # group 1 on top and bottom, 2 on the sides: the rims of top and bottom
 SHARP_EDGES_TALL_BOX = 24  # modifier_pivot's four height segments: 4 x 4 vertical side edges and both rims
-SHARP_EDGES_OPEN_BOX = 8  # stack_shell's boxes without their top: the 4 vertical and the 4 bottom edges
+# stack_shell's boxes without their top: the 4 vertical and the 4 bottom edges, and the 4 open edges a hardened Shell
+# rim makes sharp
+SHARP_EDGES_OPEN_BOX = 12
+# stack_shell's other meshes: the plane's open edges; a TurboSmooth below the Shell clears the box's groups but its open
+# edges stay sharp; above the Shell it smooths the rim too (no sharp edge)
+SHARP_EDGES_SHELL = {"FixtureShellPlane": 4, "FixtureShellTurbo": 4, "FixtureShellSmoothed": 0}
 # extrude: the vertical edges at corner knots (one per level) and both rims of every capped outline
 SHARP_EDGES_EXTRUDE = {"FixtureExtRect": 4 * 2 + 8, "FixtureExtL": 6 + 12, "FixtureExtHole": 4 + 8 + 56,
                        "FixtureExtIsland": 12 + 24, "FixtureExtOpen": 0, "FixtureExtMirror": 8 + 64,
@@ -156,6 +161,11 @@ NO_DECAY = "light: no decay: Blender's light falls off with the square of the di
 ISSUES = {"uvwmap": ["uvw map: a UVW Map above Bend is not evaluated",
                      "uvw map: shrink-wrap mapping is not evaluated: the stored channel stays"],
           "stack_convert": ["modifiers: TurboSmooth above Bend is not converted"],
+          # the plane's rim corners (auto smooth), the open box's override group (auto smooth off)
+          "stack_shell": ["modifiers: Shell: auto smooth: 4 corners of the rim sharper than 45 degrees shade smooth "
+                          "(3ds Max splits the rim there)",
+                          "modifiers: Shell: smoothing group override (group 4) not converted: 3ds Max merges the rim "
+                          "into the faces along it of that group"],
           "lookat": [NO_DECAY],  # its target spot (its Perspective viewport is a note of the report, no issue)
           "cameras": ["camera: depth of field is not imported"] * 2 + [
               "camera: its exposure is not imported: Blender renders as if the camera had none"] * 3 + [
@@ -975,6 +985,8 @@ class Fixtures(unittest.TestCase):
                     want = SHARP_EDGES_PRIMITIVES[md.name]
                 want_here = SHARP_EDGES_SMOOTHED.get(md.name, SHARP_EDGES_EXTRUDE.get(
                     md.name, SHARP_EDGES_UVWMAP.get(md.name, want)))
+                if name == "stack_shell":
+                    want_here = SHARP_EDGES_SHELL.get(md.name, want_here)
                 self.assertEqual(len(md.sharp_edges), want_here, "%s %s" % (name, md.name))
                 # an unsmoothed GeoSphere has no smoothing group: every face flat
                 self.assertEqual(bool(md.sharp_faces.any()), md.name in FLAT_MESHES, "%s %s" % (name, md.name))

@@ -27,12 +27,13 @@ a hidden bevel object in the import's collection, its corners where 3ds Max's re
 Standard material and FixtureCurveMulti's Multi/Sub-Object entry for ID 1 in one slot on their curves, no slot on the
 other curves.
 Converted modifiers (TurboSmooth, MeshSmooth, Shell, Symmetry): each object's Blender modifiers in 3ds Max's order with
-the description's settings and mirror empties, creases where a smoother separates by smoothing groups, and the
-evaluated mesh with 3ds Max's vertex and triangle counts, world box and shading (flat faces, smooth regions and hard
-edges, the oracle's eval_mesh.smoothing; SMOOTHING_DIFFERS pins Blender's where it differs: a Shell's rim, a weld);
-under a Solidify its triangles facing up, down and sideways in object space as 3ds Max's (stack_shell: Shells on
-one side of the original and inside out) (stack_convert, stack_shell, stack_basic, modifier_pivot; not FixtureOrder,
-whose seam 3ds Max leaves unwelded: EVAL_COUNT_DIFFERS); stack_convert imported with Modifiers: Ignore gets none.
+the description's settings and mirror empties, creases where a smoother separates by smoothing groups (none on open
+edges), and the evaluated mesh with 3ds Max's vertex and triangle counts, world box and shading (flat faces, smooth
+regions and hard edges, the oracle's eval_mesh.smoothing; SMOOTHING_DIFFERS pins Blender's where it differs: two
+Shell rims, a weld); under a Solidify its triangles facing up, down and sideways in object space as 3ds Max's
+(stack_shell: Shells on one side of the original and inside out, their rims) (stack_convert, stack_shell,
+stack_basic, modifier_pivot; not FixtureOrder, whose seam 3ds Max leaves unwelded: EVAL_COUNT_DIFFERS); stack_convert
+imported with Modifiers: Ignore gets none.
 primitives (convert/primitives.py): each node a mesh with 3ds Max's vertex and triangle counts (eval_verts, eval_faces)
 and world box, its UV layer (none without Generate Mapping Coords), sharp edges, the unsmoothed GeoSphere flat, normals
 outward but for the Planes (up, or down for the one of negative width) and the Box of negative width (in, as 3ds Max
@@ -175,7 +176,10 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1; kept literal: tes
 SHARP_EDGES = {"editable_mesh": 8, "modifier_pivot": {"FixtureSmooth": 0, None: 24},
                "stack_basic": {"FixtureTurbo": 0, None: 12},
                "stack_convert": {"FixtureTurboOne": 0, "FixtureMeshSmooth": 0, "FixtureOrder": 0, None: 12},
-               "stack_shell": 8,  # boxes without their top: the 4 vertical and the 4 bottom edges
+               # boxes without their top: the 4 vertical and the 4 bottom edges, and the 4 open edges a hardened Shell
+               # rim makes sharp; the plane's open edges; a TurboSmooth below the Shell clears the groups, not the
+               # open edges; one above it smooths the rim too
+               "stack_shell": {"FixtureShellPlane": 4, "FixtureShellTurbo": 4, "FixtureShellSmoothed": 0, None: 12},
                # boxes of 3 x 2 x 2 segments: 28; the cylinder's rims 2 x 16; the sphere is smooth
                "uvwmap": {"FixtureUVWCyl": 32, "FixtureUVWSphere": 0, "FixtureUVWSharedB": 12, None: 28},
                # smooth spheres, the rims of a 10-sided cylinder
@@ -200,7 +204,8 @@ CLASS_NAMES = {"Targetobject": "Target", "Targetcamera": "Target"}
 FLAT_SHADED = {"FixtureGeoOcta"}  # a GeoSphere not smoothed: no smoothing group, every face flat
 # primitives whose normals are not "away from the box center": a Plane's point up or down (by its sizes' signs), and
 # a Box of width -12 keeps 3ds Max's faces, which point in
-PLANE_NORMALS = {"FixturePlane": 1.0, "FixturePlaneDown": -1.0, "FixturePlaneReal": 1.0}
+PLANE_NORMALS = {"FixturePlane": 1.0, "FixturePlaneDown": -1.0, "FixturePlaneReal": 1.0,
+                 "FixtureShellPlane": 1.0}  # stack_shell's base plane (its Shell is a Solidify)
 INSIDE_OUT = {"FixtureBoxInside"}
 # vray_lights (tools/fixtures/vray_lights.ms): watts of the rules source's ocbaby_exsVrayLightWatts, run in 3ds Max
 # on each light; the factor MaxDrop changes them by (the disc in lm/m2/sr, measured against V-Ray; the double-sided
@@ -999,14 +1004,15 @@ def check_extruded(label, ob, node, o, meters, plan):
 # Blender's Mirror welds it (84): the same surface, so only the box is compared there
 EVAL_COUNT_DIFFERS = {"FixtureOrder"}
 # Blender's evaluated (flat, regions, hard edges) where it is not 3ds Max's, pinned so that a change shows. 3ds Max
-# gives a Shell's rim smoothing groups of its own, hard against both surfaces (every stack_shell box: 11 regions, 24
-# hard edges); Blender's Solidify smooths the rim into both surfaces, until the rim is converted (maxdrop-em3.101).
+# gives a Shell's rim smoothing groups of its own, hard against both surfaces, which the open edges marked sharp give
+# Blender too, but for two cases the report names: auto smooth also splits the rim where its faces turn by more than
+# 45 degrees (FixtureShellPlane: 3ds Max 6 regions and 12 hard edges), and the override group with auto smooth off
+# merges the rim into the side of that group (FixtureShellOverride: 3ds Max 9 and 22).
 # FixtureSymmetryTurned: Blender's Mirror welds the corner 0.062 off the plane onto it, where 3ds Max slices beside
 # it: 3ds Max keeps a sliver of the side beyond the box's sharp vertical corner edge, smooth with its mirror copy;
 # in Blender that corner edge lands on the plane as the seam between the other side and its copy, a hard edge that
 # splits one more region (the vertex and triangle counts agree).
-SMOOTHING_DIFFERS = {"FixtureShellOut": (0, 3, 16), "FixtureShellIn": (0, 3, 16), "FixtureShellCrossed": (0, 3, 16),
-                     "FixtureShellNegative": (0, 3, 16), "FixtureShellRim": (0, 3, 16),
+SMOOTHING_DIFFERS = {"FixtureShellPlane": (0, 3, 8), "FixtureShellOverride": (0, 11, 24),
                      "FixtureSymmetryTurned": (0, 7, 17)}
 FACING_TOLERANCE = 1e-4  # the oracle's: a winding normal's z within it faces sideways
 
@@ -1075,12 +1081,14 @@ def _setting_ok(got, want):
 def check_converted(label, ob, node, o, meters, desc):
     """The Blender modifiers of a node (node.converted, convert.modifiers): types, order, names, settings and mirror
     objects; when MaxDrop evaluates the rest of the stack, the evaluated mesh has 3ds Max's vertex and triangle
-    counts (eval_verts, eval_faces) and world box. Creases on the sharp edges of a mesh that asks for them."""
+    counts (eval_verts, eval_faces) and world box. Creases on the sharp edges of a mesh that asks for them, but its
+    open edges (a hardened Shell rim's)."""
     md = desc.meshes[node.mesh]
     crease = ob.data.attributes.get("crease_edge")
     sharp = ob.data.attributes.get("sharp_edge")
     if md.creases:
-        flags = [d.value for d in sharp.data] if sharp else []
+        faces = collections.Counter(lp.edge_index for lp in ob.data.loops)
+        flags = [d.value and faces[k] != 1 for k, d in enumerate(sharp.data)] if sharp else []
         check(label + ": sharp edges creased", crease is not None and len(flags) == len(crease.data)
               and all((c.value == 1.0) == f for c, f in zip(crease.data, flags)) and any(flags))
     else:
@@ -3899,6 +3907,24 @@ def _bench():
     return module
 
 
+def check_crease_open_edges():
+    """build.modifiers: a mesh that asks for creases gets none on its open edges (sharp for a Shell's rim), its other
+    sharp edges creased."""
+    from maxdrop.build import modifiers as build_modifiers
+    mesh = bpy.data.meshes.new("maxdrop crease test")
+    try:
+        mesh.from_pydata([(0, 0, 0), (1, 0, 0), (2, 0, 0), (0, 1, 0), (1, 1, 0), (2, 1, 0)], [],
+                         [(0, 1, 4, 3), (1, 2, 5, 4)])
+        sharp = mesh.attributes.get("sharp_edge") or mesh.attributes.new("sharp_edge", 'BOOLEAN', 'EDGE')
+        sharp.data.foreach_set("value", [True] * len(mesh.edges))
+        build_modifiers._crease(mesh)
+        crease = [d.value for d in mesh.attributes["crease_edge"].data]
+        want = [1.0 if tuple(sorted(e.vertices)) == (1, 4) else 0.0 for e in mesh.edges]
+        check("crease: the sharp edge between two faces creased, the open ones not", crease == want, str(crease))
+    finally:
+        bpy.data.meshes.remove(mesh)
+
+
 def main():
     print("Blender " + bpy.app.version_string)
     sys.path.insert(0, ROOT)
@@ -3941,6 +3967,7 @@ def main():
                                  ("builder debt", check_builder_debt), ("builder mirror", check_builder_mirror),
                                  ("builder blend", check_builder_blend), ("builder mono", check_builder_mono),
                                  ("curve step", check_curve_step),
+                                 ("crease open edges", check_crease_open_edges),
                                  ("linear fallback", check_linear_fallback),
                                  ("image reuse", check_image_reuse), ("double import", check_double_import),
                                  ("worker errors", check_worker_errors),

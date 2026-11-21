@@ -10,14 +10,16 @@ Solidify, Symmetry as Mirror.
     md.kind, md.settings                # Blender's modifier type, ((attribute, value), ...) to set on it
     md.mirror                           # Mirror: the mirror object's matrix in the object's space, or None
     md.shading                          # a smoother: SMOOTH, CREASE or None (what it does to the mesh's shading)
+    md.rim                              # a Shell: a RimRule (auto smooth, its angle, the override group)
 
 Each keeps one ParamBlock2 in reference slot 0 (docs/FORMAT.md, "Modifiers converted to Blender modifiers"):
 TurboSmooth 0 iterations, 1 use render iterations, 2 render iterations, 4 smooth result, 5 separate by materials, 6
 separate by smoothing groups; MeshSmooth 9 method (0 classic, 1 quad output, 2 NURMS), 4 iterations, 2 smoothness,
 13 use render iterations, 14 render iterations, 5 smooth result, 6 separate by materials, 7 separate by smoothing
 groups; Shell 0 inner amount, 1 outer amount, 2 / 8 / 17 override material ID (edges, inner, outer), 4 override
-smoothing group, 12 segments, 14 auto smooth, 19 bevel edges; Symmetry 0 axis, 1 slice along mirror, 2 weld seam, 3
-threshold, 4 flip, its mirror gizmo the PRS controller in reference slot 1.
+smoothing group, 5 its group (a number, 1 .. 32), 12 segments, 14 auto smooth, 15 its angle, 19 bevel edges;
+Symmetry 0 axis, 1 slice along mirror, 2 weld seam, 3 threshold, 4 flip, its mirror gizmo the PRS controller in
+reference slot 1.
 
 What 3ds Max 2020 makes (tests/blender/run.py against the stack_convert fixture's oracle): a smoother refines the
 control points as Catmull-Clark does (not the limit surface); Shell moves the new surfaces along the vertex normals
@@ -64,12 +66,20 @@ class ModifierError(ChunkError):
 
 
 class ModifierDescription(collections.namedtuple("ModifierDescription",
-                                                 "index kind name class_name show_viewport settings mirror shading")):
+                                                 "index kind name class_name show_viewport settings mirror shading "
+                                                 "rim", defaults=(None,))):
     """One Blender modifier: index the 3ds Max modifier's object index, kind SUBSURF / SOLIDIFY / MIRROR, name the
     modifier's name in 3ds Max, class_name its class directory's name, show_viewport whether it is on in the
     viewport, settings ((attribute, value), ...) in the order to set them, mirror a 4x4 Blender
     matrix (columns, translation in meters) of the mirror object in the object's space or None, shading SMOOTH,
-    CREASE or None."""
+    CREASE or None, rim a Shell's RimRule (None for the others)."""
+    __slots__ = ()
+
+
+class RimRule(collections.namedtuple("RimRule", "auto_smooth angle override")):
+    """How 3ds Max shades a Shell's rim: auto_smooth on splits it where two rim faces meet at more than angle
+    (degrees); with auto smooth off the rim is one smoothing group, override (a group number) when that is set, else
+    None. convert.scene hardens the rim and names what Blender cannot do."""
     __slots__ = ()
 
 
@@ -142,12 +152,12 @@ def _offset_scale(offset, issues):
 
 
 def _shell(modifier, meters, offset):
-    """(settings, issues) of a Shell: the surfaces at -inner and +outer along the vertex normals as Solidify's
+    """(settings, RimRule, issues) of a Shell: the surfaces at -inner and +outer along the vertex normals as Solidify's
     thickness and offset, also when both lie on one side of the original (an offset past -1 .. 1, which Solidify
     takes as it is). 3ds Max keeps the outer surface facing out and the inner one facing in wherever they lie, so
     inner + outer < 0 (the outer surface below the inner one) turns its shell inside out: Solidify flips its
     normals. The override smoothing group gives the rim that group only with auto smooth off (auto smooth, the
-    default, ignores it)."""
+    default, ignores it); whether that shows depends on the mesh (convert.scene names it)."""
     b, issues = _block(modifier), []
     inner, outer = float(_value(b, 0, 0.0)), float(_value(b, 1, 1.0))
     lo, hi = min(-inner, outer), max(-inner, outer)  # the two surfaces along the normal
@@ -159,12 +169,12 @@ def _shell(modifier, meters, offset):
         issues.append("bevel edges not converted")
     if _value(b, 2, 0) or _value(b, 8, 0) or _value(b, 17, 0):
         issues.append("material ID overrides not converted")
-    if _value(b, 4, 0) and not _value(b, 14, 1):
-        issues.append("smoothing group override not converted")
+    auto = bool(_value(b, 14, 1))
+    rim = RimRule(auto, float(_value(b, 15, 45.0)), int(_value(b, 5, 0)) if _value(b, 4, 0) and not auto else None)
     scale = meters * _offset_scale(offset, issues)
     settings = (("solidify_mode", "EXTRUDE"), ("thickness", (hi - lo) * scale), ("offset", (hi + lo) / (hi - lo)),
                 ("use_even_offset", False), ("use_rim", True), ("use_flip_normals", inner + outer < 0))
-    return settings, issues
+    return settings, rim, issues
 
 
 def _blender(m, meters):
@@ -225,17 +235,17 @@ def convert(scene, modifier, meters=1.0, offset=None):
     kind = _KINDS.get(modifier.class_id) if is_convertible(modifier) else None
     if kind is None:
         raise ModifierError("not a modifier converted here")
-    mirror = shading = None
+    mirror = shading = rim = None
     if kind == SUBSURF:
         settings, shading, issues = _smoother(modifier)
     elif kind == SOLIDIFY:
-        settings, issues = _shell(modifier, meters, offset)
+        settings, rim, issues = _shell(modifier, meters, offset)
     else:
         settings, mirror, issues = _symmetry(scene, modifier, meters, offset)
     entry = scene.entry(modifier.index)
     class_name = entry.name if entry is not None else ""
     return ModifierDescription(modifier.index, kind, modifier.name or class_name, class_name,
-                               modifier.enabled_in_views, settings, mirror, shading), issues
+                               modifier.enabled_in_views, settings, mirror, shading, rim), issues
 
 
 def budget(converted, corners):

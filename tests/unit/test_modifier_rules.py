@@ -6,8 +6,9 @@
 Symmetry as Blender modifiers, no Blender. The stack_convert fixture: each node's converted modifiers in order with
 the settings its script set (tools/fixtures/stack_convert.ms), the mirror frames, the mesh shading a smoother sets,
 a TurboSmooth above a Bend not converted, nothing converted with the option off, the report's counts; stack_basic's
-TurboSmooth above its applied UVW Map; stack_shell's one-sided and inside-out Shells. Hand-made blocks: defaults,
-clamps, refusals and the Solidify arithmetic.
+TurboSmooth above its applied UVW Map; stack_shell's one-sided and inside-out Shells and their rims (the open edges
+sharp, the mesh key, the report). Hand-made blocks: defaults, clamps, refusals, the Solidify arithmetic and the
+Shell's rim rule.
 tests/blender/run.py checks the built modifiers against 3ds Max's evaluated meshes.
 
     python -I -m unittest discover tests
@@ -79,6 +80,14 @@ CONVERTED = {
 # From tools/fixtures/stack_shell.ms: (inner, outer) of each open box's Shell
 SHELLS = {"FixtureShellOut": (-1.0, 2.0), "FixtureShellIn": (3.0, -1.0), "FixtureShellCrossed": (-2.0, 1.0),
           "FixtureShellNegative": (-1.0, -2.0), "FixtureShellRim": (0.0, 1.0)}
+# stack_shell's rim nodes: the converted kinds, bottom first, and whether the rim is hardened (the mesh key)
+SHELL_RIMS = {"FixtureShellPlane": ([SOLIDIFY], True), "FixtureShellOverride": ([SOLIDIFY], True),
+              "FixtureShellTurbo": ([SUBSURF, SOLIDIFY], True), "FixtureShellSmoothed": ([SOLIDIFY, SUBSURF], False)}
+# the report lines stack_shell is made to raise: the plane's four rim corners of 90 degrees, the override group 4
+SHELL_ISSUES = [("FixtureShellPlane", "modifiers: Shell: auto smooth: 4 corners of the rim sharper than 45 degrees "
+                 "shade smooth (3ds Max splits the rim there)"),
+                ("FixtureShellOverride", "modifiers: Shell: smoothing group override (group 4) not converted: 3ds "
+                 "Max merges the rim into the faces along it of that group")]
 SHADING = {"FixtureTurboOne": rules.SMOOTH, "FixtureTurboRender": rules.CREASE, "FixtureMeshSmooth": rules.SMOOTH,
            "FixtureOrder": rules.SMOOTH}
 SHARP_EDGES_BOX = 12  # a poly box: a smoothing group per side
@@ -178,18 +187,35 @@ class Fixture(unittest.TestCase):
 
     def test_stack_shell_one_sided_and_inside_out(self):
         desc = conv.read(STACK_SHELL)
-        self.assertEqual(sorted(n.name for n in desc.nodes), sorted(SHELLS))
-        self.assertEqual(desc.issues, [])  # auto smooth on: the override (off here) would not be named either
-        for node in desc.nodes:
+        self.assertEqual(sorted(n.name for n in desc.nodes), sorted(list(SHELLS) + list(SHELL_RIMS)))
+        for node in (n for n in desc.nodes if n.name in SHELLS):
             want = dict(_solidify(*SHELLS[node.name])[1])
             self.assertEqual([m.kind for m in node.converted], [SOLIDIFY], node.name)
             got = dict(node.converted[0].settings)
             self.assertEqual(sorted(got), sorted(want), node.name)
             self.assertTrue(all(_close(got[a], want[a]) for a in want), "%s: %r" % (node.name, got))
             self.assertEqual(node.modifiers, (), node.name)
-        flips = {n.name: dict(n.converted[0].settings)["use_flip_normals"] for n in desc.nodes}
+        flips = {n.name: dict(n.converted[0].settings)["use_flip_normals"] for n in desc.nodes if n.name in SHELLS}
         self.assertEqual(flips, {"FixtureShellOut": False, "FixtureShellIn": False, "FixtureShellCrossed": True,
                                  "FixtureShellNegative": True, "FixtureShellRim": False})
+
+    def test_stack_shell_rims(self):
+        desc = conv.read(STACK_SHELL)
+        names = {n.index: n.name for n in desc.nodes}
+        # the open boxes' rims match 3ds Max's (coplanar, auto smooth on): no line for them
+        self.assertEqual(sorted((names[i], x) for i, x in desc.issues), sorted(SHELL_ISSUES))
+        for node in desc.nodes:
+            kinds, hardened = SHELL_RIMS.get(node.name, ([SOLIDIFY], True))
+            self.assertEqual([m.kind for m in node.converted], kinds, node.name)
+            self.assertEqual(node.mesh[-1] == ("rim", True), hardened, node.name)
+            md = desc.meshes[node.mesh]
+            boundary = conv.open_edges(md.loop_vertices, md.loop_starts, md.loop_totals)
+            self.assertEqual(len(boundary), 4, node.name)  # every base mesh: the top's (the plane's) 4 edges
+            sharp = {tuple(e) for e in md.sharp_edges.tolist()}
+            self.assertEqual({tuple(e) for e in boundary.tolist()} <= sharp, hardened, node.name)
+            self.assertEqual([tuple(e) for e in md.sharp_edges.tolist()], sorted(sharp), node.name)  # sorted, no repeats
+        shell = next(n for n in desc.nodes if n.name == "FixtureShellOverride").converted[0]
+        self.assertEqual(shell.rim, rules.RimRule(False, 45.0, 4))
 
     def test_stack_basic_turbosmooth_above_its_uvw_map(self):
         desc = conv.read(STACK_BASIC)
@@ -268,15 +294,26 @@ class Rules(unittest.TestCase):
         cases = ((classids.MESHSMOOTH, {9: rules.CLASSIC}), (classids.MESHSMOOTH, {9: 5}),
                  (classids.MESHSMOOTH, {2: 0.5}), (classids.MESHSMOOTH, {6: 1}), (classids.TURBOSMOOTH, {5: 1}),
                  (classids.SHELL, {12: 3}), (classids.SHELL, {19: 1}), (classids.SHELL, {2: 1}),
-                 (classids.SHELL, {8: 1}), (classids.SHELL, {17: 1}), (classids.SHELL, {4: 1, 14: 0}))
+                 (classids.SHELL, {8: 1}), (classids.SHELL, {17: 1}))
         for cid, values in cases:
             _md, issues = _convert(cid, values)
             self.assertEqual(len(issues), 1, repr(values))
-        # MeshSmooth quad output is Catmull-Clark; with auto smooth on (the default) 3ds Max ignores the override
+        # MeshSmooth quad output is Catmull-Clark; with auto smooth on (the default) 3ds Max ignores the override;
+        # with it off the override depends on the mesh: convert.scene names it (test_rim_rule)
         for cid, values in ((classids.MESHSMOOTH, {9: rules.QUAD_OUTPUT}), (classids.SHELL, {4: 1}),
-                            (classids.SHELL, {4: 1, 14: 1}), (classids.SHELL, {14: 0})):
+                            (classids.SHELL, {4: 1, 14: 1}), (classids.SHELL, {14: 0}),
+                            (classids.SHELL, {4: 1, 14: 0})):
             _md, issues = _convert(cid, values)
             self.assertEqual(issues, [], repr(values))
+
+    def test_rim_rule(self):
+        for values, want in (({}, (True, 45.0, None)), ({14: 0}, (False, 45.0, None)), ({15: 30.0}, (True, 30.0, None)),
+                             ({4: 1, 5: 4}, (True, 45.0, None)), ({4: 1, 5: 4, 14: 0}, (False, 45.0, 4)),
+                             ({5: 4, 14: 0}, (False, 45.0, None))):
+            md, _issues = _convert(classids.SHELL, values)
+            self.assertEqual(md.rim, rules.RimRule(*want), repr(values))
+        md, _issues = _convert(classids.TURBOSMOOTH, {})
+        self.assertIsNone(md.rim)
 
     def test_shell_surfaces(self):
         # (inner, outer) -> thickness (0.5 m per unit, _convert), offset, flip. Both surfaces outside (-1, 2) or inside
@@ -361,6 +398,85 @@ class Rules(unittest.TestCase):
         for gizmo, context in ((zero, IDENTITY), (IDENTITY, zero)):
             with self.assertRaises(rules.ModifierError):
                 rules.mirror_frame(gizmo, context, None)
+
+
+def _md(kind, shading=None, index=0):
+    return rules.ModifierDescription(index, kind, kind, kind, True, (), None, shading,
+                                     rules.RimRule(True, 45.0, None) if kind == SOLIDIFY else None)
+
+
+# a unit quad (the plane), a cube without its top (counter-clockwise from outside), a closed cube
+QUAD = ([(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)], [0, 1, 2, 3], [0], [4])
+_CUBE = [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0), (0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1)]
+_SIDES = [[0, 3, 2, 1], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]]
+
+
+def _faces(positions, faces):
+    lv = [v for f in faces for v in f]
+    return (positions, lv, [4 * k for k in range(len(faces))], [4] * len(faces))
+
+
+OPEN_CUBE = _faces(_CUBE, _SIDES)
+CUBE = _faces(_CUBE, _SIDES + [[4, 5, 6, 7]])
+
+
+def _description(mesh):
+    positions, lv, starts, totals = mesh
+    n = len(starts)
+    return conv.MeshDescription("k", "m", numpy.asarray(positions, dtype=numpy.float32),
+                                numpy.asarray(lv, dtype=numpy.int32), numpy.asarray(starts, dtype=numpy.int32),
+                                numpy.asarray(totals, dtype=numpy.int32), numpy.zeros(n, dtype=numpy.int32),
+                                numpy.zeros(n, dtype=bool), numpy.zeros((0, 2), dtype=numpy.int32), [])
+
+
+@unittest.skipIf(numpy is None, "numpy missing")
+class Rim(unittest.TestCase):
+    def test_open_edges(self):
+        self.assertEqual(conv.open_edges(*QUAD[1:]).tolist(), [[0, 1], [0, 3], [1, 2], [2, 3]])
+        self.assertEqual(conv.open_edges(*OPEN_CUBE[1:]).tolist(), [[4, 5], [4, 7], [5, 6], [6, 7]])
+        self.assertEqual(conv.open_edges(*CUBE[1:]).shape, (0, 2))
+        self.assertEqual(conv.open_edges([], [], []).shape, (0, 2))
+        # two quads sharing the edge 1-2: the other six
+        self.assertEqual(len(conv.open_edges([0, 1, 2, 3, 1, 4, 5, 2], [0, 4], [4, 4])), 6)
+
+    def test_merged_edges_sorted_without_repeats(self):
+        got = conv._merged_edges(numpy.array([[0, 1], [2, 3]]), numpy.array([[0, 3], [2, 3], [1, 5]]))
+        self.assertEqual(got.tolist(), [[0, 1], [0, 3], [1, 5], [2, 3]])
+        self.assertEqual(got.dtype, numpy.int32)
+        self.assertEqual(conv._merged_edges(numpy.zeros((0, 2)), numpy.zeros((0, 2))).shape, (0, 2))
+
+    def test_rim_corners(self):
+        # the plane's rim turns 90 degrees at each corner; the open cube's lies flat (no corner)
+        self.assertEqual(conv.rim_corners(*QUAD, 45.0), 4)
+        self.assertEqual(conv.rim_corners(*QUAD, 100.0), 0)
+        self.assertEqual(conv.rim_corners(*OPEN_CUBE, 45.0), 0)
+        self.assertEqual(conv.rim_corners(*CUBE, 45.0), 0)
+        reversed_quad = (QUAD[0], [0, 3, 2, 1], [0], [4])  # the other winding: the same corners
+        self.assertEqual(conv.rim_corners(*reversed_quad, 45.0), 4)
+
+    def test_which_shell_makes_the_rim(self):
+        shell, smooth, crease = _md(SOLIDIFY, index=1), _md(SUBSURF, rules.SMOOTH), _md(SUBSURF, rules.CREASE)
+        plain, mirror = _md(SUBSURF), _md(MIRROR)
+        for run, want in (((shell,), shell), ((smooth, shell), shell), ((shell, smooth), None),
+                          ((crease, shell), shell), ((shell, crease), shell), ((shell, plain), shell),
+                          ((mirror, shell), None), ((shell, mirror), shell), ((shell, smooth, _md(SOLIDIFY)), None),
+                          ((smooth,), None), ((), None)):
+            self.assertIs(conv._rim(run), want, repr([m.kind for m in run]))
+
+    def test_rim_issues(self):
+        plane, box, cube = _description(QUAD), _description(OPEN_CUBE), _description(CUBE)
+        auto, off, over = rules.RimRule(True, 45.0, None), rules.RimRule(False, 45.0, None), rules.RimRule(False, 45.0, 4)
+        self.assertEqual(conv.rim_issues(plane, auto), [
+            "auto smooth: 4 corners of the rim sharper than 45 degrees shade smooth (3ds Max splits the rim there)"])
+        self.assertEqual(conv.rim_issues(plane, rules.RimRule(True, 95.0, None)), [])
+        self.assertEqual(conv.rim_issues(box, auto), [])
+        self.assertEqual(conv.rim_issues(plane, off), [])
+        want = ["smoothing group override (group 4) not converted: 3ds Max merges the rim into the faces along it of "
+                "that group"]
+        self.assertEqual(conv.rim_issues(box, over), want)
+        self.assertEqual(conv.rim_issues(cube, over), [])  # no open edge: no rim
+        self.assertEqual(conv.rim_issues(cube, auto), [])
+        self.assertEqual(conv.rim_issues(plane, None), [])
 
 
 if __name__ == "__main__":
