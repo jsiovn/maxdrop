@@ -80,7 +80,8 @@ image in its color space, one datablock per file and color space, the report cou
 texmap_wrappers draws each wrapper with its nodes: Layer Weight, Fresnel, blend types, Separate / Combine Color);
 hand-made IRs check shared images, a missing file, the materials counted by class, Thin Wall (set on 5.x, counted on
 4.x), a name clash, BLENDED / DITHERED and every node kind, the wrappers' links and values (Facing, blend modes and
-masks, rewiring, Adjust, Tint); a crop repeating per axis (wrap, ping-pong, clip), map channel 0 drawn on
+masks, rewiring, Adjust, Tint); a crop repeating per axis (wrap, ping-pong, clip), a mirrored axis drawn as
+3ds Max renders it (two copies per tile, the nodes evaluated at its sample points), map channel 0 drawn on
 channel 1 and reported, a texture file without image data reported, a material whose build raises removed and
 reported; a material conversion that raises leaves the scene imported without materials, the report says why.
 Images already in the file (an earlier import's) are reused by file and color space, unless modified, packed,
@@ -2367,11 +2368,15 @@ def check_builder_debt():
         tex, comb = _crop_case(builder, cm, tx, found, "CropMirrorU",
                                tx.Mapping(tile=(True, True), mirror=(True, False)), crop)
         chain = [_from(comb.inputs[a]) for a in ("X", "Y")]
-        check("builder debt: a crop mirrored in U, tiled in V: ping-pong on X, wrap 0..1 on Y, image EXTEND",
+        double = _from(_from(chain[0].inputs[0]).inputs["Vector"])
+        check("builder debt: a crop mirrored in U, tiled in V: U doubled, ping-pong on X, wrap 0..1 on Y, image "
+              "EXTEND",
               tex.extension == 'EXTEND' and chain[0].operation == 'PINGPONG'
               and chain[0].inputs[1].default_value == 1.0 and chain[1].operation == 'WRAP'
-              and chain[1].inputs[1].default_value == 1.0 and chain[1].inputs[2].default_value == 0.0,
-              "%s %s" % (tex.extension, [n.operation for n in chain]))
+              and chain[1].inputs[1].default_value == 1.0 and chain[1].inputs[2].default_value == 0.0
+              and double.bl_idname == "ShaderNodeVectorMath" and double.operation == 'MULTIPLY'
+              and close(list(_input(double, "Vector_001").default_value), [2.0, 1.0, 1.0], 1e-6),
+              "%s %s %s" % (tex.extension, [n.operation for n in chain], double.bl_idname))
 
         tex, comb = _crop_case(builder, cm, tx, found, "CropMirrorNoTile",
                                tx.Mapping(tile=(False, False), mirror=(True, True)), crop)
@@ -2460,6 +2465,190 @@ def check_builder_debt():
               got is None and len(bpy.data.materials) == materials and "Broken" not in bpy.data.materials
               and new == ("material Broken", "material not built (RuntimeError: maxdrop test: tree fails)")
               and builder.classes["test"] == 8, "%s %s %s" % (got, new, dict(builder.classes)))
+    finally:
+        empty_scene()
+        for img in list(bpy.data.images):
+            bpy.data.images.remove(img)
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+# 3ds Max 2020 renderMap (scanline, filter off, Bitmap filtering none) of a 64 x 64 ramp, red 4 x its column, green
+# 4 x its row from the top (bead maxdrop-em3.60): (label, Mapping keywords, crop (u, v, w, h, place) or None, render
+# size, 'row' at y or 'col' at x, that index, the channel, its values; '-' black: outside a placed image)
+_MIRROR_ROWS = (
+    ("mirror U, tiling 1", dict(mirror=(True, False)), None, (32, 8), "row", 4, "R",
+     "8 24 40 55 72 88 104 119 136 152 168 184 200 216 231 248 248 231 216 200 184 168 152 136 119 104 88 72 55 40 24 8"),
+    ("mirror U, tile off", dict(tile=(False, True), mirror=(True, False)), None, (32, 8), "row", 4, "R",
+     "8 24 40 55 72 88 104 119 136 152 168 184 200 216 231 248 248 231 216 200 184 168 152 136 119 104 88 72 55 40 24 8"),
+    ("mirror U, tiling 0.5", dict(tiling=(0.5, 1.0), mirror=(True, False)), None, (32, 8), "row", 4, "R",
+     "131 139 147 156 164 171 180 187 195 204 212 220 228 235 244 252 252 244 235 228 220 212 204 195 187 180 171 164 "
+     "156 147 139 131"),
+    ("mirror U, tiling 2", dict(tiling=(2.0, 1.0), mirror=(True, False)), None, (32, 8), "row", 4, "R",
+     "239 208 176 144 112 80 48 16 16 48 80 112 144 176 208 239 239 208 176 144 112 80 48 16 16 48 80 112 144 176 208 "
+     "239"),
+    ("mirror U, offset 0.1", dict(offset=(0.1, 0.0), mirror=(True, False)), None, (32, 32), "row", 16, "R",
+     "40 24 8 4 19 36 52 68 84 100 116 131 147 164 180 195 212 228 244 248 231 216 200 184 168 152 136 119 104 88 72 "
+     "55"),
+    ("mirror U, crop", dict(mirror=(True, False)), (0.25, 0.0, 0.5, 1.0, False), (32, 32), "row", 16, "R",
+     "68 75 84 91 100 108 116 124 131 139 147 156 164 171 180 187 187 180 171 164 156 147 139 131 124 116 108 100 91 "
+     "84 75 68"),
+    ("mirror U, placed", dict(mirror=(True, False)), (0.25, 0.0, 0.5, 1.0, True), (32, 8), "row", 4, "R",
+     "- - - - 16 48 80 112 144 176 208 239 - - - - - - - - 239 208 176 144 112 80 48 16 - - - -"),
+    ("mirror both, along U", dict(mirror=(True, True)), None, (32, 32), "row", 16, "R",
+     "8 24 40 55 72 88 104 119 136 152 168 184 200 216 231 248 248 231 216 200 184 168 152 136 119 104 88 72 55 40 24 8"),
+    ("mirror both, along V", dict(mirror=(True, True)), None, (32, 32), "col", 3, "G",
+     "248 231 216 200 184 168 152 136 119 104 88 72 55 40 24 8 8 24 40 55 72 88 104 119 136 152 168 184 200 216 231 "
+     "248"),
+    ("mirror U, W 90, along V", dict(angle=(0.0, 0.0, math.pi / 2), mirror=(True, False)), None, (16, 16), "col", 8,
+     "R", "16 48 80 112 144 176 208 239 239 208 176 144 112 80 48 16"),
+    ("mirror U, W 90, along U", dict(angle=(0.0, 0.0, math.pi / 2), mirror=(True, False)), None, (16, 16), "row", 8,
+     "G", "248 231 216 200 184 168 152 136 119 104 88 72 55 40 24 8"),
+)
+
+
+def _pingpong(a, b):
+    """Blender's Math PINGPONG (pingpongf)."""
+    if not b:
+        return 0.0
+    t = (a - b) / (b * 2)
+    return abs((t - math.floor(t)) * b * 2 - b)
+
+
+def _sample_vector(socket, uv):
+    """The vector a node tree gives an input at the UV uv, as Blender evaluates the node kinds the texture placement
+    uses (Texture Coordinate / UV Map, Mapping, Vector Math, Separate / Combine XYZ, Math)."""
+    from mathutils import Euler
+    if not socket.is_linked:
+        return None
+    link = socket.links[0]
+    n, out = link.from_node, link.from_socket.identifier
+    if n.bl_idname in ("ShaderNodeTexCoord", "ShaderNodeUVMap"):
+        return Vector((uv[0], uv[1], 0.0))
+    if n.bl_idname == "ShaderNodeSeparateXYZ":
+        return _sample_vector(n.inputs["Vector"], uv)["XYZ".index(out)]
+    if n.bl_idname == "ShaderNodeCombineXYZ":
+        return Vector([_sample_value(n.inputs[a], uv) for a in "XYZ"])
+    if n.bl_idname == "ShaderNodeMath":
+        a = _sample_value(n.inputs[0], uv)
+        b, c = n.inputs[1].default_value, n.inputs[2].default_value
+        return {'PINGPONG': lambda: _pingpong(a, b), 'FLOOR': lambda: math.floor(a),
+                'WRAP': lambda: a - (b - c) * math.floor((a - c) / (b - c)), 'MULTIPLY_ADD': lambda: a * b + c,
+                }[n.operation]()
+    v = _sample_vector(n.inputs["Vector"], uv)
+    if n.bl_idname == "ShaderNodeVectorMath":
+        if n.operation == 'MULTIPLY':
+            return Vector([x * f for x, f in zip(v, _input(n, "Vector_001").default_value)])
+        if n.operation == 'FRACTION':
+            return Vector([x - math.floor(x) for x in v])
+    if n.bl_idname == "ShaderNodeMapping":
+        loc, scale = Vector(n.inputs["Location"].default_value), Vector(n.inputs["Scale"].default_value)
+        rot = Euler(n.inputs["Rotation"].default_value, 'XYZ').to_matrix()
+        if n.vector_type == 'POINT':
+            return loc + rot @ Vector([x * s for x, s in zip(v, scale)])
+        if n.vector_type == 'TEXTURE':
+            return Vector([x / s for x, s in zip(rot.transposed() @ (v - loc), scale)])
+    raise AssertionError("not evaluated: %s %s" % (n.bl_idname, getattr(n, "operation", "")))
+
+
+def _sample_value(socket, uv):
+    return _sample_vector(socket, uv) if socket.is_linked else socket.default_value
+
+
+def _sample_image(tex, uv):
+    """The image coordinate (x, y) an Image Texture node reads at uv, its extension applied; None outside a CLIP
+    image."""
+    v = _sample_vector(tex.inputs["Vector"], uv)
+    v = Vector((uv[0], uv[1], 0.0)) if v is None else v
+    xy = []
+    for x in v[:2]:
+        if tex.extension == 'REPEAT':
+            x -= math.floor(x)
+        elif tex.extension == 'MIRROR':
+            x = _pingpong(x, 1.0)
+        elif tex.extension == 'EXTEND':
+            x = min(max(x, 0.0), 1.0)
+        elif not 0.0 <= x <= 1.0:
+            return None
+        xy.append(x)
+    return xy
+
+
+def check_builder_mirror():
+    """MaterialBuilder on hand-made IRs (bead maxdrop-em3.60): a mirrored axis shows two copies per tile, the second
+    mirrored (ping-pong of twice the placed coordinate), mirror winning over tile, with and without a crop; the
+    nodes evaluated at 3ds Max's sample points give the image coordinates 3ds Max rendered; one extension where both
+    axes agree, per-axis nodes where they differ."""
+    from maxdrop.build import materials as build_materials
+    from maxdrop.convert import materials as cm
+    from maxdrop.convert import texmaps as tx
+    from maxdrop.convert import textures as ct
+    empty_scene()
+    for img in list(bpy.data.images):
+        bpy.data.images.remove(img)
+    scratch = tempfile.mkdtemp(prefix="maxdrop-builder-mirror-")
+    try:
+        png = os.path.join(scratch, "shared.png")
+        _write_png(png)
+        found = ct.Found(png, ct.SCENE)
+        builder = build_materials.MaterialBuilder()
+
+        def tex_of(name, mapping, crop=None):
+            ir = cm.MaterialIR(30, name, "test", base_color=cm.Input((0.5, 0.5, 0.5), cm.MapRef(1)))
+            img = tx.Image(1, "shared.png", "shared.png", "", found, mapping=mapping, crop=crop)
+            ir.textures = {"base_color": tx.TextureGraphIR(img, tx.COLOR)}
+            return _from(_principled(builder.make(ir)).inputs["Base Color"])
+
+        for label, kw, crop, (w, h), sweep, fixed, channel, values in _MIRROR_ROWS:
+            tex = tex_of("Mirror " + label, tx.Mapping(**kw), tx.Crop(*crop) if crop else None)
+            bad = []
+            for i, value in enumerate(values.split()):
+                x, y = (i, fixed) if sweep == "row" else (fixed, i)
+                got = _sample_image(tex, ((x + 0.5) / w, 1.0 - (y + 0.5) / h))
+                if value == "-":
+                    if got is not None:
+                        bad.append((i, value, got))
+                    continue
+                want = (int(value) / 4 + 0.5) / 64
+                want = want if channel == "R" else 1.0 - want
+                if got is None or abs(got[0 if channel == "R" else 1] - want) > 1.0 / 64:
+                    bad.append((i, value, got))
+            check("builder mirror: %s: the nodes read the image where 3ds Max rendered it" % label, not bad,
+                  "%s %s" % (tex.extension, bad[:4]))
+
+        def double(node, factor):
+            return (node is not None and node.bl_idname == "ShaderNodeVectorMath" and node.operation == 'MULTIPLY'
+                    and close(list(_input(node, "Vector_001").default_value), factor, 1e-6))
+
+        tex = tex_of("MirrorTileBoth", tx.Mapping(tile=(True, True), mirror=(True, True)))
+        mul = _from(tex.inputs["Vector"])
+        check("builder mirror: mirror and tile on both axes, no placement: UV -> times (2, 2, 1) -> image MIRROR",
+              tex.extension == 'MIRROR' and double(mul, [2.0, 2.0, 1.0])
+              and _from(mul.inputs["Vector"]).bl_idname == "ShaderNodeTexCoord",
+              "%s %s" % (tex.extension, mul and mul.bl_idname))
+
+        tex = tex_of("MirrorUTileV", tx.Mapping(tile=(True, True), mirror=(True, False)))
+        comb = _from(tex.inputs["Vector"])
+        x, y = (_from(comb.inputs[a]) for a in ("X", "Y")) if comb is not None else (None, None)
+        sep = x and _from(x.inputs[0])
+        check("builder mirror: mirror U, tile V: times (2, 1, 1) -> ping-pong X, wrap Y -> image EXTEND",
+              tex.extension == 'EXTEND' and comb.bl_idname == "ShaderNodeCombineXYZ" and x.operation == 'PINGPONG'
+              and y.operation == 'WRAP' and sep.bl_idname == "ShaderNodeSeparateXYZ"
+              and double(_from(sep.inputs["Vector"]), [2.0, 1.0, 1.0]),
+              "%s %s" % (tex.extension, comb and comb.bl_idname))
+
+        tex = tex_of("TileUOnly", tx.Mapping(tile=(True, False)))
+        comb = _from(tex.inputs["Vector"])
+        x, y = (_from(comb.inputs[a]) for a in ("X", "Y")) if comb is not None else (None, None)
+        check("builder mirror: tile U only: wrap X, Y straight through -> image CLIP",
+              tex.extension == 'CLIP' and x is not None and x.operation == 'WRAP'
+              and y.bl_idname == "ShaderNodeSeparateXYZ", "%s %s" % (tex.extension, comb and comb.bl_idname))
+
+        tex = tex_of("TileBoth", tx.Mapping())
+        check("builder mirror: tile both, no placement: no vector, image REPEAT",
+              tex.extension == 'REPEAT' and not tex.inputs["Vector"].is_linked, tex.extension)
+        tex = tex_of("TileNone", tx.Mapping(tile=(False, False)))
+        check("builder mirror: tile off both, no placement: no vector, image CLIP",
+              tex.extension == 'CLIP' and not tex.inputs["Vector"].is_linked, tex.extension)
     finally:
         empty_scene()
         for img in list(bpy.data.images):
@@ -2652,7 +2841,8 @@ def check_builder_wiring(ma, mb, builder, cm, tx, srgb, data, lost, gamma):
     comb = _from(crop.inputs["Vector"])
     pings = [_from(comb.inputs[axis]) for axis in ("X", "Y")]
     sep = _from(pings[0].inputs[0])
-    place = _from(sep.inputs["Vector"])
+    double = _from(sep.inputs["Vector"])
+    place = _from(double.inputs["Vector"])
     uv = _from(place.inputs["Vector"])
     from maxdrop.build import materials as build_materials
     want = build_materials.uv_transform(tx.Mapping(tiling=(2.0, 1.0), angle=(0.0, 0.0, 0.5)))
@@ -2662,14 +2852,16 @@ def check_builder_wiring(ma, mb, builder, cm, tx, srgb, data, lost, gamma):
                                                           1e-6)
           and close(list(_input(level, "Vector_002").default_value), [-0.1] * 3, 1e-6)
           and out_inv.bl_idname == "ShaderNodeInvert")
-    check("wiring: a placed crop mirrored both ways: UVChannel_2 -> placement -> ping-pong per axis -> Mapping "
-          "TEXTURE at (0.1, 0.3) x 0.5",
+    check("wiring: a placed crop mirrored both ways: UVChannel_2 -> placement -> times (2, 2, 1) -> ping-pong per "
+          "axis -> Mapping TEXTURE at (0.1, 0.3) x 0.5",
           crop.bl_idname == "ShaderNodeMapping" and crop.vector_type == 'TEXTURE'
           and close(list(crop.inputs["Location"].default_value), [0.1, 0.3, 0.0], 1e-6)
           and close(list(crop.inputs["Scale"].default_value), [0.5, 0.5, 1.0], 1e-6)
           and comb.bl_idname == "ShaderNodeCombineXYZ" and sep.bl_idname == "ShaderNodeSeparateXYZ"
           and all(n.operation == 'PINGPONG' and n.inputs[1].default_value == 1.0 for n in pings)
           and _from(pings[1].inputs[0]) == sep
+          and double.bl_idname == "ShaderNodeVectorMath" and double.operation == 'MULTIPLY'
+          and close(list(_input(double, "Vector_001").default_value), [2.0, 2.0, 1.0], 1e-6)
           and place.bl_idname == "ShaderNodeMapping" and place.vector_type == 'POINT'
           and close(list(place.inputs["Location"].default_value), list(want[0]), 1e-6)
           and close(list(place.inputs["Rotation"].default_value), [0.0, 0.0, 0.5], 1e-6)
@@ -3166,7 +3358,8 @@ def main():
             check("modifiers ignored: no exception", False)
         for label, run_check in (("material slots", lambda: check_material_slots(modules)),
                                  ("found textures", check_found_textures), ("builder", check_builder),
-                                 ("builder debt", check_builder_debt), ("linear fallback", check_linear_fallback),
+                                 ("builder debt", check_builder_debt), ("builder mirror", check_builder_mirror),
+                                 ("linear fallback", check_linear_fallback),
                                  ("image reuse", check_image_reuse), ("double import", check_double_import),
                                  ("worker errors", check_worker_errors),
                                  ("read cancel", lambda: check_read_cancel(

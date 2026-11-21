@@ -36,10 +36,14 @@ input left without a map keeps the IR's value. An empty image node renders black
 in a normal or alpha input it would wreck the shading or hide the object.
 
 Placement, the 3ds Max convention (StdUVGen: scaled and turned about the map's center, offset in UV fractions):
-sample = R(u, v, w angles) S(tiling) (uv - 0.5 - offset) + 0.5, one Mapping node (POINT): uv_transform(). Crop:
-that brought into the 0..1 cell per axis as the map repeats there (crop_repeat: wrapped for tile, ping-ponged for
-mirror, outside the image for neither), then a Mapping POINT into the cropped rectangle (TEXTURE, out of it, for a
-placed image). Without a crop Blender's one extension for both axes stands for tile and mirror (extension()).
+sample = R(u, v, w angles) S(tiling) (uv - 0.5 - offset) + 0.5, one Mapping node (POINT): uv_transform(). Per axis
+the map mirrors (mirror on, which tiles too: it wins over tile), tiles or clips (repeat_axes()). A mirrored axis
+shows two copies per tile, the second one mirrored: the sample, on the image's axis after the turn, is doubled (a
+Vector Math MULTIPLY: mirror_scale()) and ping-ponged with period 2 (3ds Max 2020, measured: Bitmap and CoronaBitmap,
+with and without a crop). Crop: that brought into the 0..1 cell per axis as the map repeats there (repeat_cell:
+wrapped for tile, ping-ponged for mirror, outside the image for neither), then a Mapping POINT into the cropped
+rectangle (TEXTURE, out of it, for a placed image). Without a crop Blender's one extension serves when both axes
+repeat alike; otherwise the same per-axis nodes over the whole image (extension()).
 Map channel 0 (the vertex color as UVW) has no UV layer: such a map is drawn on channel 1 and reported.
 A texture file that holds no image (empty, or not starting as its format does: image_has_data) is reported and
 left out as one that does not load. A material whose build raises is removed again and reported: its slot stays
@@ -90,25 +94,34 @@ def uv_transform(mapping):
     return tuple(location), angle, (tiling[0], tiling[1], 1.0)
 
 
-def crop_axes(mapping):
-    """Per axis (U, V), how a cropped or placed image repeats: 'MIRROR' (mirror on, which tiles too, as in 3ds
-    Max), 'REPEAT' (tile) or 'CLIP'."""
+def repeat_axes(mapping):
+    """Per axis (U, V), how an image repeats: 'MIRROR' (mirror on, which tiles too, as in 3ds Max), 'REPEAT'
+    (tile) or 'CLIP'."""
     return tuple('MIRROR' if m else 'REPEAT' if t else 'CLIP' for t, m in zip(mapping.tile, mapping.mirror))
 
 
+def mirror_scale(mapping):
+    """The Vector Math MULTIPLY factor after the placement: 2 on a mirrored axis (two copies per tile), 1 on the
+    other; None when no axis mirrors."""
+    if not any(mapping.mirror):
+        return None
+    return tuple(2.0 if m else 1.0 for m in mapping.mirror) + (1.0,)
+
+
+def per_axis(mapping, crop):
+    """Whether the nodes repeat the image per axis (repeat_cell): always with a crop, else when the axes differ."""
+    axes = repeat_axes(mapping)
+    return crop is not None or axes[0] != axes[1]
+
+
 def extension(mapping, crop=None):
-    """The Image Texture extension of a placement: Blender has one for both axes. With a crop the nodes repeat
-    per axis and keep the coordinates inside the crop rectangle (EXTEND: no bleed from its opposite edge), unless
-    the image is placed or an axis clips (CLIP)."""
-    if crop is not None:
-        return 'CLIP' if crop.place or 'CLIP' in crop_axes(mapping) else 'EXTEND'
-    if all(mapping.tile):
-        return 'REPEAT'
-    if any(mapping.mirror):
-        return 'MIRROR'
-    if any(mapping.tile):
-        return 'REPEAT'
-    return 'CLIP'
+    """The Image Texture extension of a placement: Blender has one for both axes. Both axes alike without a crop:
+    theirs. Otherwise the nodes repeat per axis and keep the coordinates inside the image or its crop rectangle
+    (EXTEND: no bleed from its opposite edge), unless the image is placed or an axis clips (CLIP)."""
+    axes = repeat_axes(mapping)
+    if not per_axis(mapping, crop):
+        return axes[0]
+    return 'CLIP' if (crop is not None and crop.place) or 'CLIP' in axes else 'EXTEND'
 
 
 # the first bytes of every image format Blender reads that has a signature (TGA has none: _targa; WebP apart)
@@ -572,21 +585,30 @@ class _Tree:
         tex.label = img.name
         tex.extension = extension(img.mapping, img.crop)
         placed = uv_transform(img.mapping)
+        double = mirror_scale(img.mapping)
+        cell = per_axis(img.mapping, img.crop)
         channel = self.channel(img.mapping.channel, img)
         vector = None
-        if placed is not None or img.crop is not None or channel != 1:
-            vector = self.uv(channel, depth + 5)
+        if placed is not None or double is not None or cell or channel != 1:
+            vector = self.uv(channel, depth + 6)
         if placed is not None:
-            m = self.node("ShaderNodeMapping", depth + 4)
+            m = self.node("ShaderNodeMapping", depth + 5)
             m.vector_type = 'POINT'
             _in(m, "Location").default_value = placed[0]
             _in(m, "Rotation").default_value = placed[1]
             _in(m, "Scale").default_value = placed[2]
             self.links.new(vector, _in(m, "Vector"))
             vector = _out(m, "Vector")
+        if double is not None:
+            n = self.node("ShaderNodeVectorMath", depth + 4)
+            n.operation = 'MULTIPLY'
+            self.links.new(vector, _in(n, "Vector"))
+            _in(n, "Vector_001").default_value = double
+            vector = _out(n, "Vector")
+        if cell:
+            vector = self.repeat_cell(vector, img.mapping, img.crop, depth + 1)
         if img.crop is not None:
             c = img.crop
-            vector = self.crop_repeat(vector, img.mapping, c, depth + 1)
             m = self.node("ShaderNodeMapping", depth + 1)
             m.vector_type = 'TEXTURE' if c.place else 'POINT'
             _in(m, "Location").default_value = (c.u, 1.0 - c.v - c.h, 0.0)
@@ -597,25 +619,27 @@ class _Tree:
             self.links.new(vector, _in(tex, "Vector"))
         return tex
 
-    def crop_repeat(self, vector, mapping, crop, depth):
-        """The UV of a crop's 0..1 cell, per axis: wrapped (tile), ping-ponged (mirror) or left as it is (clip).
-        A cropped image's clipped axis goes c + K floor(c), K = 1 / size + 1: 0 <= c < 1 stays, any other c lands
-        outside the image once the crop mapping scales it into the crop rectangle. A placed image needs nothing
-        there: its TEXTURE mapping already sends a c outside 0..1 out of the image."""
-        axes = crop_axes(mapping)
+    def repeat_cell(self, vector, mapping, crop, depth):
+        """The UV of the 0..1 cell (the image's, or a crop's), per axis: wrapped (tile), ping-ponged (mirror, after
+        mirror_scale doubled it) or left as it is (clip). A cropped image's clipped axis goes c + K floor(c),
+        K = 1 / size + 1: 0 <= c < 1 stays, any other c lands outside the image once the crop mapping scales it into
+        the crop rectangle. An image without a crop or a placed one needs nothing there: the CLIP extension, or the
+        TEXTURE mapping, already sends a c outside 0..1 out of the image."""
+        axes = repeat_axes(mapping)
+        clip_out = crop is None or crop.place
         if axes == ('REPEAT', 'REPEAT'):
             frac = self.node("ShaderNodeVectorMath", depth + 1)
             frac.operation = 'FRACTION'
             self.links.new(vector, _in(frac, "Vector"))
             return _out(frac, "Vector")
-        if crop.place and axes == ('CLIP', 'CLIP'):
+        if clip_out and axes == ('CLIP', 'CLIP'):
             return vector
         sep = self.node("ShaderNodeSeparateXYZ", depth + 2)
         comb = self.node("ShaderNodeCombineXYZ", depth)
         self.links.new(vector, _in(sep, "Vector"))
-        for axis, how, size in (("X", axes[0], crop.w), ("Y", axes[1], crop.h)):
+        for axis, how, size in (("X", axes[0], crop and crop.w), ("Y", axes[1], crop and crop.h)):
             v = _out(sep, axis)
-            if how == 'CLIP' and not crop.place:
+            if how == 'CLIP' and not clip_out:
                 fl = self.node("ShaderNodeMath", depth + 1)
                 fl.operation = 'FLOOR'
                 self.links.new(v, fl.inputs[0])
