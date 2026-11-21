@@ -108,7 +108,8 @@ that follow 3ds Max: with the gamma on, a Bitmap with automatic gamma (and a VRa
 From 3ds Max) is read with the scene's file input gamma (1.0: linear; the report names an input gamma other than
 2.2); with the gamma off, a Bitmap's gamma override does nothing (sRGB). A CoronaColor or VRayColor temperature is a
 color like a swatch: decoded from sRGB with the gamma off. Not converted: with the gamma off, V-Ray shows a
-CoronaBitmap, a VRayBitmap in Auto or sRGB and an EXR darker than MaxDrop does. A Corona render was not measured.
+CoronaBitmap, a VRayBitmap in Auto or sRGB and an EXR darker than MaxDrop does, and a VRayBitmap in None (or
+Inverse gamma) as stored, where MaxDrop keeps it linear. A Corona render was not measured.
 Turn materials off with **Object Filter**.
 
 | Material | This version |

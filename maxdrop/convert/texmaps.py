@@ -17,9 +17,9 @@ space of every image below: sRGB for COLOR, Non-Color for the others (a Mix mask
 3ds Max reads a Bitmap with in this scene is kept on its Image (None: automatic, sRGB; 1.0 for an EXR or HDR file):
 with the gamma on its override, else the scene's file input gamma (colors.Swatches.file_in); with the gamma off none,
 whatever its override, as 3ds Max reads the image as stored then (maxdrop-em3.38, V-Ray 5.2 renders). On a color
-input a gamma of 2.2 is sRGB, any other is Linear Rec.709 (sRGB primaries: Blender converts them into the scene's working
-space; the builder falls back to Non-Color where the color space is missing) and the builder applies the override as
-a gamma (1.0: none); on the other inputs an image is data and the override is not applied. Constants are linear, a
+input a gamma of 2.2 is sRGB, any other is Linear Rec.709 (sRGB primaries: Blender converts them into the scene's
+working space; the builder falls back to Non-Color where the color space is missing) and the builder applies the
+gamma (1.0: none); on the other inputs an image is data and the override is not applied. Constants are linear, a
 swatch made so by the scene's swatch rule (convert/colors.py: linear with the gamma on, the sRGB curve with it off):
 in a COLOR graph always linear RGB (also when the input itself is a float, as specular and transmission are: the
 builder takes the mean of the graph's color there, the measure materials.py uses), elsewhere a float: the scene's rule
@@ -46,23 +46,22 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
   (mono output Alpha) or as its color (RGB output Alpha). A Bitmap without a file is no image (an issue).
 - CoronaBitmap -> Image the same way, from its own parameters: UVW scale and offset, W angle, tiling (none, repeat,
   mirror) per axis, map channel, blur, clipping (crop or place), gamma (-1 automatic: 2.2 whatever the scene's
-  gamma and input gamma, its override applied also with the gamma off, both measured), mono / RGB output alpha, real-world scale (an issue); its Output part as a Bitmap's.
+  gamma and input gamma, its override applied also with the gamma off, both measured), mono / RGB output alpha,
+  real-world scale (an issue); its Output part as a Bitmap's.
 - VRayBitmap (VRayHDRI before V-Ray 5: the same class) -> Image the same way: its Placement and Output parts as a
   Bitmap's, its own crop / place and mono / RGB output alpha; its transfer function as the gamma (none: 1.0, inverse
   gamma g: 1 / g, sRGB and auto: automatic, from 3ds Max: a Bitmap's automatic gamma, linear for an EXR or HDR
-  file), its overall
-  times render multiplier times the Output's amount (the order against the Output's invert and offset is assumed,
-  not measured). An environment mapping type (angular, cubic, spherical, mirrored ball), a map source, ACEScg
-  primaries, RGB output intensity, an unusable transfer function or multiplier are issues.
+  file), its overall times render multiplier times the Output's amount (the order against the Output's invert and
+  offset is assumed, not measured). An environment mapping type (angular, cubic, spherical, mirrored ball), a map
+  source, ACEScg primaries, RGB output intensity, an unusable transfer function or multiplier are issues.
 - CoronaColor -> Constant (color and hex as swatches, the HDR color linear, the temperature Corona's own linear
-  color from CORONA_KELVIN, times the multiplier, decoded as a swatch with the gamma off). VRayColor -> Constant: its swatch times its RGB multiplier, then
-  to the power of its color gamma (that order measured), made linear as a swatch; in temperature mode its color
-  holds V-Ray's temperature color. Its
-  alpha below 1, RGB primaries other than sRGB and unusable values are issues. CoronaMix: operation mix ->
-  Mix(bottom, top, amount, mask), multiply -> Multiply, add, subtract, divide, min, max and difference -> Blend (in
-  gamma 2.2 with mix in sRGB on, as Corona does: CM_BLENDS), the last two under a Mix for an amount below 1 or a
-  mask; any other operation peeled to its first bitmap (an issue); each layer times its multiplier plus its offset
-  (CM_OFFSET_SCALE), measured.
+  color from CORONA_KELVIN, times the multiplier, decoded as a swatch with the gamma off). VRayColor -> Constant:
+  its swatch times its RGB multiplier, then to the power of its color gamma (that order measured), made linear as a
+  swatch; in temperature mode its color holds V-Ray's temperature color. Its alpha below 1, RGB primaries other
+  than sRGB and unusable values are issues. CoronaMix: operation mix -> Mix(bottom, top, amount, mask), multiply ->
+  Multiply, add, subtract, divide, min, max and difference -> Blend (in gamma 2.2 with mix in sRGB on, as Corona
+  does: CM_BLENDS), the last two under a Mix for an amount below 1 or a mask; any other operation peeled to its
+  first bitmap (an issue); each layer times its multiplier plus its offset (CM_OFFSET_SCALE), measured.
 - Kept as nodes (the allow-list): Mix (color 1 / 2 where a map is off or missing, the mask, the mix amount; its
   curve is not converted: an issue), RGB Multiply, Color Correction (its rewiring first: monochrome, invert or custom
   channels, an alpha source drawn as one or zero, an issue; hue shift in turns, saturation as a factor; lightness
@@ -278,8 +277,8 @@ class Image:
     """An image map (Bitmap, CoronaBitmap, VRayBitmap). path / resolved: as the scene stores them (resolved:
     FileAssetMetaData3's); found: the textures.Found of the lookup, None without a lookup or when the file was not
     found; gamma: the gamma 3ds Max reads it with in this scene (linear = pixel ^ gamma: its override, or the file
-input gamma), None for automatic (sRGB; 1.0 for an EXR or HDR file); alpha: the
-    image's alpha is used, not its color."""
+    input gamma), None for automatic (sRGB; 1.0 for an EXR or HDR file); alpha: the image's alpha is used, not its
+    color."""
     index: int
     name: str
     path: str = ""
@@ -861,12 +860,13 @@ class TexmapConverter:
         """The gamma an automatic image is read with: the scene's file input gamma with the gamma on, None for 2.2
         (sRGB) or with the gamma off."""
         g = self.swatches.file_in
-        return g if self.swatches.linear and abs(g - SRGB_GAMMA) > GAMMA_TOLERANCE else None
+        return g if self.swatches.linear and g != colors.SRGB_FILE_GAMMA else None
 
     def _vray_gamma(self, m, walk, name):
         """A VRayBitmap's transfer function as a Bitmap gamma, None for automatic. Auto and From 3ds Max read a float
         file (EXR, HDR) as linear, as V-Ray and 3ds Max do; From 3ds Max reads an 8-bit file as a Bitmap with
-        automatic gamma does (the file input gamma with the gamma on, as stored with it off)."""
+        automatic gamma does (the file input gamma with the gamma on, as stored with it off). None and Inverse
+        gamma are kept with the gamma off, where V-Ray shows None as stored (maxdrop-em3.123)."""
         space = m.param(VB_COLOR_SPACE, 0)
         if space == VB_LINEAR:
             return 1.0

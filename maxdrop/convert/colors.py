@@ -4,7 +4,8 @@
 
 """Swatch colors: how a 3ds Max color swatch becomes linear RGB, by the gamma setting the scene was saved with.
 
-    sw = of_scene(scene)                # GAMMA_ON, GAMMA_OFF or UNKNOWN (a reader Scene or an open CompoundFile)
+    sw = of_scene(scene)                # GAMMA_ON, GAMMA_OFF, UNKNOWN or a gamma-on rule with another file_in
+                                        # (a reader Scene or an open CompoundFile)
     sw.color((0.5, 0.5, 0.5))           # linear RGB, each channel clamped to 0..1 first
     sw.channel(0.5)                     # one channel
     sw.line(), sw.note                  # the report's line; the issue when the file does not say
@@ -29,11 +30,10 @@ import dataclasses
 from ..reader import gamma as _gamma
 from ..reader import scene as _scene
 
-FILE_IN_RANGE = (0.1, 10.0)  # a file input gamma outside it is taken as 2.2, as a Bitmap's override outside it
 GAMMA_NOTE = "the scene's gamma setting was not found in the file: color swatches taken as linear (gamma on)"
-
-
 SRGB_FILE_GAMMA = 2.2  # 3ds Max's default file input gamma: an automatic image stays sRGB
+FILE_IN_TOLERANCE = 0.05  # an input gamma this close to 2.2 is 2.2 (texmaps' tolerance for a Bitmap's override)
+FILE_IN_RANGE = (0.1, 10.0)  # an input gamma outside it is taken as 2.2, as a Bitmap's override outside it
 
 
 def srgb_to_linear(c):
@@ -79,7 +79,7 @@ def for_gamma(g):
     if not g.enabled:
         return GAMMA_OFF
     lo, hi = FILE_IN_RANGE
-    if g.file_in is None or not lo <= g.file_in <= hi or abs(g.file_in - SRGB_FILE_GAMMA) < 1e-6:
+    if g.file_in is None or not lo <= g.file_in <= hi or abs(g.file_in - SRGB_FILE_GAMMA) <= FILE_IN_TOLERANCE:
         return GAMMA_ON
     return Swatches(True, file_in=g.file_in)
 

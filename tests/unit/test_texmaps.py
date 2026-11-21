@@ -1743,8 +1743,8 @@ class SwatchRule(Checks):
                    colors.GAMMA_OFF.color(tuple(2 * c for c in k)), "clamped, then decoded")
         self.close(self._root(colors.GAMMA_OFF, _ccolor(1, p50=2, p51=3000.0), kind=tx.DATA).value,
                    colors.GAMMA_OFF.channel(sum(k) / 3.0), "a data input: the rule of the mean")
-        self.close(self._root(colors.GAMMA_OFF, _ccolor(1, p50=2, p51=3000.0)).value, (1.0, _lin(121.607), _lin(39.1868)),
-                   "3ds Max's byte 255 121.6 39.2 seen through Blender's sRGB display")
+        self.close(self._root(colors.GAMMA_OFF, _ccolor(1, p50=2, p51=3000.0)).value,
+                   (1.0, _lin(121.607), _lin(39.1868)), "3ds Max's 255 121.6 39.2 through Blender's sRGB display")
 
 
 class SceneGammaImages(Checks):
@@ -1789,7 +1789,7 @@ class SceneGammaImages(Checks):
             self.check(self._bitmap(colors.GAMMA_OFF, info=info), None, tx.SRGB, "gamma off: read as stored")
 
     def test_float_files_and_data_inputs(self):
-        table = assets.AssetTable([assets.AssetEntry(G1, "Bitmap", "maps\sky.exr", "")])
+        table = assets.AssetTable([assets.AssetEntry(G1, "Bitmap", "maps\\sky.exr", "")])
         for rule in (colors.GAMMA_ON, self.ON_10, colors.GAMMA_OFF, colors.UNKNOWN):
             with self.subTest(rule):
                 self.check(self._bitmap(rule, table=table), 1.0, tx.LINEAR, "an EXR: linear")
@@ -1798,7 +1798,7 @@ class SceneGammaImages(Checks):
         self.check(self._bitmap(colors.GAMMA_ON, info=_info(1.8, 5), table=table), 1.8, tx.LINEAR,
                    "gamma on: an EXR's override is kept")
         self.check(self._bitmap(colors.GAMMA_OFF, info=_info(1.8, 5), table=table), 1.0, tx.LINEAR,
-                   "gamma off: an EXR's override does nothing")
+                   "gamma off: an EXR's override does nothing (the rule's; only an automatic EXR was measured)")
 
     def test_vray_bitmap(self):
         for rule, gamma, space in ((colors.GAMMA_ON, None, tx.SRGB), (self.ON_10, 1.0, tx.LINEAR),
@@ -1808,7 +1808,7 @@ class SceneGammaImages(Checks):
                 self.check(self._map(rule, _vbitmap(1, p25=3)), gamma, space, "From 3ds Max: the input gamma")
                 for cs in (2, 4):
                     self.check(self._map(rule, _vbitmap(1, p25=cs)), None, tx.SRGB, "sRGB, Auto: V-Ray's own")
-                self.check(self._map(rule, _vbitmap(1, p25=0)), 1.0, tx.LINEAR, "None")
+                self.check(self._map(rule, _vbitmap(1, p25=0)), 1.0, tx.LINEAR, "None (gamma off: maxdrop-em3.123)")
                 self.assertEqual(self._map(rule, _vbitmap(1, p25=3), kind=tx.DATA).colorspace, tx.NON_COLOR)
 
     def test_corona_bitmap_keeps_its_own(self):

@@ -65,7 +65,9 @@ class Rule(unittest.TestCase):
         self.assertEqual((one.linear, one.note, one.file_in), (True, "", 1.0))
         self.assertIn("input gamma 1.0", one.line())
         self.assertNotIn("input gamma", colors.GAMMA_ON.line())
-        self.assertIs(colors.for_gamma(gamma.SceneGamma(True, 2.2000000477, 2.2)), colors.GAMMA_ON)
+        for near in (2.2000000477, 2.16, 2.24):  # within texmaps' tolerance: sRGB, and the report says nothing
+            self.assertIs(colors.for_gamma(gamma.SceneGamma(True, near, 2.2)), colors.GAMMA_ON, near)
+        self.assertEqual(colors.for_gamma(gamma.SceneGamma(True, 2.3, 2.2)).file_in, 2.3)
         for odd in (None, 50.0, 0.01):
             self.assertIs(colors.for_gamma(gamma.SceneGamma(True, odd, 2.2)), colors.GAMMA_ON, odd)
         self.assertIs(colors.for_gamma(gamma.SceneGamma(False, 1.0, 2.2)), colors.GAMMA_OFF)

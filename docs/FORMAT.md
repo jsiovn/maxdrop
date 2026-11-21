@@ -1035,8 +1035,8 @@ picker and Material Editor switches off).
   So with the gamma on an automatic Bitmap (and VRayBitmap From 3ds Max) takes the file input gamma; with it off a
   Bitmap is read as stored whatever its override, and a temperature color is decoded as a swatch is. CoronaBitmap
   and VRayBitmap Auto / sRGB apply their own curve in every case, so with the gamma off V-Ray shows them darker
-  than an sRGB image (and an EXR shows its value as stored): not converted. Reopening the saved scenes from disk
-  renders the same.
+  than an sRGB image (and an EXR shows its value as stored), and VRayBitmap None shows as stored: not converted
+  (maxdrop-em3.123). Reopening the saved scenes from disk renders the same.
 - LUT mode belongs to the session: a scene saved in it (Scene `1`, Config `0`) opens as `#gamma` from a `#none` or
   `#gamma` session and renders as gamma on (swatch 186, the PNG 128); a `#lut` session stays in LUT mode for a file
   whose chunk says `1` (and renders as gamma off there: 128, 128). MaxDrop reads the file's `1` as gamma on.
