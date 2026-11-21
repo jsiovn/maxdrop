@@ -242,6 +242,26 @@ class VRayMtlRules(unittest.TestCase, Close):
         self.assertEqual(ir.base_color.map, mat.MapRef(1, 0.5, False))
         self.assertEqual(ir.specular.map, mat.MapRef(1, 0.5, False))
 
+    def test_fresnel_off_reflection_map_at_full_amount_keeps_diffuse(self):
+        """A reflection map at full amount hides the swatch in V-Ray: no metal however bright the swatch; the
+        specular follows the map, the base color is the diffuse."""
+        b1 = {1: (1.0, 0.0, 0.0), 2: (1.0, 1.0, 1.0), 8: 0, 91: 0.2}
+        for amount in (100.0, 150.0):
+            conv, ir = _convert(_vray(0, b1=b1, b4={101: Ref(1), 201: amount}), _map(1))
+            self.close(ir.metallic.value, 0.2, str(amount))
+            self.close(ir.base_color.value, (1.0, 0.0, 0.0), str(amount))
+            self.assertIsNone(ir.base_color.map)
+            self.assertEqual(ir.specular.map, mat.MapRef(1, amount / 100.0, False))
+
+    def test_fresnel_off_swatch_shows_in_proportion_below_full_amount(self):
+        b1 = {1: (1.0, 0.0, 0.0), 2: (0.8, 0.8, 0.8), 8: 0, 91: 0.2}
+        conv, ir = _convert(_vray(0, b1=b1, b4={101: Ref(1), 201: 75.0}), _map(1))  # 0.8 x 0.25 = 0.2 shown
+        self.close(ir.metallic.value, 0.2)
+        self.close(ir.base_color.value, (1.0, 0.0, 0.0))
+        conv, ir = _convert(_vray(0, b1=b1, b4={101: Ref(1), 151: 0, 201: 100.0}), _map(1))  # map switched off
+        self.close(ir.metallic.value, 1.0)
+        self.close(ir.base_color.value, (0.8,) * 3)
+
     def test_fresnel_on_or_dark_reflection_keeps_diffuse(self):
         for b1 in ({1: (1.0, 0.0, 0.0), 2: (0.8, 0.8, 0.8), 8: 1, 91: 0.2},
                    {1: (1.0, 0.0, 0.0), 2: (0.2, 0.2, 0.2), 8: 0, 91: 0.2}):  # 0.2 < METAL_REFLECTION

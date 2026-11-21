@@ -13,6 +13,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Materials: a CoronaPhysicalMtl, a Standard material with the Strauss shader and the grey material of an
   unsupported class reflect their IOR's full Fresnel (Specular IOR Level 0.5, Blender's default) instead of half of
   it (0.25), which made every non-metal CoronaPhysicalMtl reflect too little.
+- Materials: a VRayMtl with reflection Fresnel off and a reflection map at full amount (the usual black to white
+  Falloff) keeps its diffuse instead of becoming a dark metal colored by the map: the bright reflection swatch the
+  map hides no longer makes it a metal; below full amount the swatch counts in proportion.
 
 ## [1.0.1] - 2026-11-22
 

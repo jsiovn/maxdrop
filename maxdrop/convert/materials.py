@@ -35,7 +35,8 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   amount; a normal map (VRayNormalMap, Normal Bump, CoronaNormal) in a bump slot is the normal input, any other
   map the bump input. Added here: a refracting material takes its base color from the refraction color (mixed by
   the transmission), and with Fresnel off a bright reflection (mean >= METAL_REFLECTION) makes the material a metal
-  in the reflection color.
+  in the reflection color; beside a reflection map only the swatch's share counts (its mean times 1 - the map
+  amount): a map at full amount hides the swatch, so it never makes a metal (the map itself is not judged).
   The Fresnel IOR is the refraction IOR when the material refracts or locks the IOR, else the reflection IOR.
 - VRayLightMtl -> emission only; VRayFastSSS2 -> base + subsurface; VRayCarPaintMtl / VRayCarPaintMtl2 -> a metal
   base + coat (VRayCarPaintMtl's coat_strength is the coat's reflectance at normal incidence: a full coat whose
@@ -638,7 +639,10 @@ def vray_mtl(conv, m, ir):
     ir.metallic = Input(_clamp01(_num(m, 91, 1, 0.0)),  # reflection_metalness
                         conv.map_ref(m, 119, 169, 219, 4, ir=ir))
     ir.specular = Input(_clamp01(mean(reflection)), reflection_map)
-    if not _flag(m, 8, 1, True) and mean(reflection) >= METAL_REFLECTION:  # reflection_fresnel off
+    # the swatch's share of the slot: a map at full amount hides it (a Falloff there is a dielectric's ramp)
+    hidden = min(1.0, reflection_map.amount) if reflection_map is not None else 0.0
+    shown = mean(reflection) * (1.0 - hidden)
+    if not _flag(m, 8, 1, True) and shown >= METAL_REFLECTION:  # reflection_fresnel off
         ir.metallic = Input(1.0)
         ir.base_color = Input(reflection, reflection_map)
 
