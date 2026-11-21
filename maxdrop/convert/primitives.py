@@ -1080,7 +1080,6 @@ def _faces(p):
 def build(p):
     """(MeshData of Params p, issues); PrimitiveError for what is not built."""
     issues = []
-    c = p.class_id
     faces = _faces(p)
     if faces * 4 > MAX_CORNERS:  # four corners per face at most
         raise PrimitiveError("%s of %d faces refused (more than %d)" % (p.name, faces, MAX_CORNERS // 4))
