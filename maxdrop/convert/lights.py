@@ -240,7 +240,8 @@ NOT_SKYLIGHT = "a Skylight is not imported yet (Skylight -> World is later work)
 DOME_OFF = "dome light off: not imported"
 SECOND_DOME = "a second dome light: not imported (Blender has one World, %s's)"
 DOME_MIRRORED = "the dome node is mirrored: its rotation without the mirror is used"
-DOME_FLAT = "the dome node's scale is 0: its rotation is not known, none is used"
+DOME_FLAT = ("the dome node's scale is 0: its rotation is not known, none is used (a locked texture and a hemisphere "
+             "take the world's axes)")
 DOME_NO_TEXTURE = "its texture converts to nothing: the World has its color"
 DOME_ROOT = "its texture is not an image map (%s): the World has its color"
 DOME_NOT_FOUND = "its texture %s is not found: the World has its color"
