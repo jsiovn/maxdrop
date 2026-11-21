@@ -1633,24 +1633,45 @@ class LostMaps(Checks):
         self.assertEqual(g.root, tx.Tint(tx.Constant((1.0, 1.0, 1.0)), (0.5, 0.0, 0.0), (0.0, 0.25, 0.0),
                                          (0.0, 0.0, 0.125)))
         self.assertEqual(tex.stats.issues, [])
+        g = tex.convert(mat.MapRef(1), tx.DATA)  # the builder takes the mean of the Tint's color
+        self.assertEqual(g.root, tx.Tint(tx.Constant(1.0), (0.5, 0.0, 0.0), (0.0, 0.25, 0.0), (0.0, 0.0, 0.125)))
 
     def test_empty_wrapper_in_a_normal_input(self):
-        """White tilts the normal in V-Ray (as a white map does), a constant normal is drawn flat: an issue. The
-        VRayColor2Bump's color is a flat normal's: none."""
+        """In a normal map's normal slot V-Ray tilts the normal by the white, and a constant there is a float: no
+        graph and an issue, also below another wrapper (which loses its map)."""
         for class_id, cls, pid, _on, _rgb in self.EMPTY_WRAPPERS:
             with self.subTest(cls=cls):
                 tex = _tex(FakeMap(1, class_id, {pid: Ref(None)}, cls=cls, name="w"))
-                g = tex.convert(mat.MapRef(1), tx.NORMAL)
-                self.assertIsInstance(g.root, tx.NormalMap)
-                self.assertIsInstance(g.root.input, tx.Constant)
-                issues = [r for _i, r in tex.stats.issues]
-                if class_id == tx.VRAY_COLOR2BUMP:
-                    self.assertEqual(issues, [])
-                else:
-                    self.assertEqual(issues, ["%s 'w': no map (or its map off): white, a tilted normal in 3ds Max, "
-                                              "drawn flat" % cls])
+                self.assertIsNone(tex.convert(mat.MapRef(1), tx.NORMAL))
+                self.assertEqual([r for _i, r in tex.stats.issues],
+                                 ["%s 'w': %s in a normal input, not drawn" % (
+                                     cls, "no map" if class_id == tx.VRAY_COLOR2BUMP else "no map (or its map off)")])
                 tex.convert(mat.MapRef(1), tx.COLOR)
-                self.assertEqual(len(tex.stats.issues), len(issues), "in a color input: none")
+                self.assertEqual(len(tex.stats.issues), 1, "in a color input: none")
+        out = FakeMap(1, tx.OUTPUT, {0: Ref(2)}, [2], cls="Output", name="out")
+        part = FakeMap(5, (0x100, 0), superclass=classids.SC_TEXOUTPUT)
+        part.legacy = {0: {0: 0.8, 1: 0.1, 2: 0.5}}
+        out.parts = {2: part}
+        tex = _tex(out, FakeMap(2, tx.VRAY_COLOR2BUMP, {0: Ref(None)}, cls="VRayColor2Bump", name="c2b"))
+        self.assertIsNone(tex.convert(mat.MapRef(1), tx.NORMAL))
+        issues = [r for _i, r in tex.stats.issues]
+        self.assertIn("VRayColor2Bump 'c2b': no map in a normal input, not drawn", issues)
+        self.assertIn("Output 'out': its map VRayColor2Bump 'c2b' converts to nothing", issues)
+
+    def test_empty_wrapper_in_a_normal_map_class(self):
+        empty = FakeMap(2, tx.OUTPUT, {0: Ref(None)}, cls="Output", name="out")
+        nm = FakeMap(1, classids.VRAY_NORMAL_MAP, {0: Ref(2), 2: 1, 3: 1.0, 4: Ref(3), 5: 1, 6: 1.0}, [2, 3],
+                     cls="VRayNormalMap")
+        g = _tex(nm, empty, _bitmap(3)).convert(mat.MapRef(1), tx.COLOR)
+        self.assertEqual(g.root.name, "a.png", "in a color input: the bump image, not the empty normal slot")
+        g = _tex(nm, empty, _bitmap(3)).convert(mat.MapRef(1), tx.NORMAL)
+        self.assertIsInstance(g.root, tx.Bump, "the normal slot not drawn: the bump map alone")
+        nm = FakeMap(1, classids.VRAY_NORMAL_MAP, {0: Ref(None), 4: Ref(2), 5: 1, 6: 1.0}, [2], cls="VRayNormalMap")
+        tex = _tex(nm, empty)
+        self.assertIsNone(tex.convert(mat.MapRef(1), tx.COLOR), "an empty Output in its bump slot is no image")
+        self.assertEqual(tex.stats.unsupported, collections.Counter({"VRayNormalMap": 1}))
+        g = _tex(nm, empty).convert(mat.MapRef(1), tx.BUMP)
+        self.assertEqual(g.root, tx.Bump(tx.Constant(1.0)), "a constant height: flat")
 
     def test_empty_wrapper_below_a_mix(self):
         empty = FakeMap(2, tx.OUTPUT, {0: Ref(None)}, cls="Output", name="out")

@@ -76,10 +76,10 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
   else the unoccluded color), VRayColor2Bump (its map). An Output or RGB Tint without a map (or with it off) is
   drawn as over a white map, its own Output or tint applied; a VRayColor2Bump without a map (it has no switch) is
   the constant (0.5, 0.5, 1); neither is counted (3ds Max 2020 renderMap and V-Ray 5.2 renders with the gamma off,
-  maxdrop-em3.76; with it on assumed the same swatch, Corona not measured). In a normal input that white tilts the
-  normal in V-Ray and a constant normal is drawn flat: an issue. Any other map class with maps below gives the first
-  image below it (depth first, in reference order), counted the same way; one without is unsupported (counted, no
-  graph).
+  maxdrop-em3.76; with it on assumed the same swatch, Corona not measured). In a normal map's normal slot none of
+  them gives a graph (an issue): V-Ray tilts the normal by that white. Any other map class with maps below gives the
+  first image below it (depth first, in reference order), counted the same way; one without is unsupported
+  (counted, no graph).
 - Normal maps (VRayNormalMap, Normal Bump, CoronaNormal) in a normal or bump input -> NormalMap: the normal image
   with the class's multiplier as its strength, flip red / green and swap, and the additional bump map as a Bump with
   its multiplier; a normal map class with only its bump map is that Bump. In any other input it is peeled to its
@@ -954,7 +954,9 @@ class TexmapConverter:
         normal = self._sub(m, ids.normal, ids.normal_on, NORMAL, walk, depth, chain)
         bump = self._sub(m, ids.bump, ids.bump_on, BUMP, walk, depth, chain)
         if kind not in (NORMAL, BUMP):  # a normal map in a color or data input: its image only
-            image = _peeled_image(normal) or _peeled_image(bump)
+            # a constant (an empty Output in its bump slot) is no image to stand for the normal map's color
+            image = next((n for n in (_peeled_image(normal), _peeled_image(bump))
+                          if n is not None and not isinstance(n, Constant)), None)
             if image is None:
                 self._count(self.stats.unsupported, m)
                 return None
@@ -1064,12 +1066,13 @@ def _wrapped(conv, m, map_pid, on_pid, kind, walk, depth, chain, empty=WHITE):
     """The map of a wrapper that has no color of its own (Output, RGB Tint, VRayColor2Bump); without a used map the
     swatch empty: an Output or RGB Tint renders as over a white map, a VRayColor2Bump the color C2B_EMPTY (3ds Max
     2020 renderMap and V-Ray 5.2 renders with the gamma off, maxdrop-em3.76; with it on assumed, Corona not
-    measured). In a normal input a color other than a flat normal's tilts the normal in V-Ray, and a constant normal
-    is drawn flat: an issue."""
+    measured). In a normal input (a normal map's normal slot) no graph and an issue: V-Ray tilts the normal by that
+    white, and a constant there is a float (the mean), so no color would stand for it."""
     if conv._on(m, map_pid, on_pid) is None:
-        if kind == NORMAL and empty != C2B_EMPTY:
-            conv._issue(walk, m.index, "%s %r: %s: white, a tilted normal in 3ds Max, drawn flat" % (
+        if kind == NORMAL:
+            conv._issue(walk, m.index, "%s %r: %s in a normal input, not drawn" % (
                 conv._class_name(m), m.name, "no map" if on_pid is None else "no map (or its map off)"))
+            return None
         return conv._swatch(empty, kind)
     return conv._sub(m, map_pid, on_pid, kind, walk, depth, chain)
 
