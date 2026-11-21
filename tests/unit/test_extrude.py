@@ -91,19 +91,52 @@ def _face_area(md, f):
     return 0.5 * float(numpy.linalg.norm(numpy.cross(p, numpy.roll(p, -1, axis=0)).sum(axis=0)))
 
 
+def _check_eval_mesh(test, data, md, want, name):
+    """data (the reader MeshData: object space, before the object offset, as the oracle takes it back to) and md
+    (its MeshDescription) against the oracle's eval_mesh of the node."""
+    hist = {}
+    for f in range(len(data.loop_starts)):
+        z = _face_area_z(data, f)  # the winding normal's z, times the polygon's area
+        if abs(z) <= 1e-4 * _face_area(data, f):
+            side = 3
+        else:
+            side = 1 if z > 0 else 2
+        row = hist.setdefault(int(_mats(data)[f]) + 1, [0, 0, 0])
+        row[side - 1] += int(data.loop_totals[f]) - 2  # 3ds Max counts triangles
+    test.assertEqual([[i] + hist[i] for i in sorted(hist)], want["material_ids"], name)
+    channel = data.maps.get(1)
+    test.assertEqual(channel is None, want["map_channel_1"] is None, name)
+    if channel is None:
+        return
+    uvw = numpy.asarray(channel.uvw, dtype=numpy.float64)
+    used = uvw[numpy.unique(channel.indices)]
+    test.assertEqual(len(uvw), want["map_channel_1"]["count"], name)
+    for got, key in ((used.min(axis=0), "min"), (used.max(axis=0), "max")):  # 6 significant digits
+        numpy.testing.assert_allclose(got, want["map_channel_1"][key], rtol=1e-5, atol=1e-6, err_msg=name)
+    uv = dict(md.uv_layers)["UVMap"]  # what Blender gets: u and v of the same vertices
+    for got, key in ((uv.min(axis=0), "min"), (uv.max(axis=0), "max")):
+        numpy.testing.assert_allclose(got, want["map_channel_1"][key][:2], rtol=1e-5, atol=1e-6, err_msg=name)
+
+
+def _read_meshes(path):
+    """(scene description, {node name: reader MeshData}) of a fixture: the MeshData keeps its map vertices."""
+    data = {}
+    real = conv.mesh_description
+
+    def describing(key, name, d, *args, **kw):
+        data[name] = d
+        return real(key, name, d, *args, **kw)
+
+    with mock.patch.object(conv, "mesh_description", describing):
+        desc = conv.read(path)
+    return desc, data
+
+
 @unittest.skipIf(numpy is None, "numpy missing")
 class Fixture(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.data = {}  # the reader MeshData of each mesh, by name: its map channels keep their map vertices
-        real = conv.mesh_description
-
-        def describing(key, name, data, *args, **kw):
-            cls.data[name] = data
-            return real(key, name, data, *args, **kw)
-
-        with mock.patch.object(conv, "mesh_description", describing):
-            cls.desc = conv.read(FIXTURE)
+        cls.desc, cls.data = _read_meshes(FIXTURE)  # the reader MeshData of each mesh, by name
         with open(FIXTURE[:-4] + ".oracle.json", encoding="utf-8") as f:
             cls.oracle = {n["name"]: n for n in json.load(f)["nodes"]}
         cls.nodes = {n.name: n for n in cls.desc.nodes}
@@ -174,31 +207,7 @@ class Fixture(unittest.TestCase):
         """Per material ID the triangles facing +Z, -Z and sideways in object space, and map channel 1's vertex
         count and range, as 3ds Max's evaluated mesh has them (docs/ORACLE.md, eval_mesh)."""
         for name in CAPPED + ("FixtureExtOpen",):
-            _node, md = self.mesh(name)
-            data = self.data[name]  # object space, before the object offset, as the oracle takes it back to
-            want = self.oracle[name]["eval_mesh"]
-            hist = {}
-            for f in range(len(data.loop_starts)):
-                z = _face_area_z(data, f)  # the winding normal's z, times the polygon's area
-                if abs(z) <= 1e-4 * _face_area(data, f):
-                    side = 3
-                else:
-                    side = 1 if z > 0 else 2
-                row = hist.setdefault(int(_mats(data)[f]) + 1, [0, 0, 0])
-                row[side - 1] += int(data.loop_totals[f]) - 2  # 3ds Max counts triangles
-            self.assertEqual([[i] + hist[i] for i in sorted(hist)], want["material_ids"], name)
-            channel = data.maps.get(1)
-            self.assertEqual(channel is None, want["map_channel_1"] is None, name)
-            if channel is None:
-                continue
-            uvw = numpy.asarray(channel.uvw, dtype=numpy.float64)
-            used = uvw[numpy.unique(channel.indices)]
-            self.assertEqual(len(uvw), want["map_channel_1"]["count"], name)
-            for got, key in ((used.min(axis=0), "min"), (used.max(axis=0), "max")):  # 6 significant digits
-                numpy.testing.assert_allclose(got, want["map_channel_1"][key], rtol=1e-5, atol=1e-6, err_msg=name)
-            uv = dict(md.uv_layers)["UVMap"]  # what Blender gets: u and v of the same vertices
-            for got, key in ((uv.min(axis=0), "min"), (uv.max(axis=0), "max")):
-                numpy.testing.assert_allclose(got, want["map_channel_1"][key][:2], rtol=1e-5, atol=1e-6, err_msg=name)
+            _check_eval_mesh(self, self.data[name], self.mesh(name)[1], self.oracle[name]["eval_mesh"], name)
 
     def test_mapping_coordinates(self):
         _node, md = self.mesh("FixtureExtRect")
@@ -309,6 +318,77 @@ class Fixture(unittest.TestCase):
         self.assertEqual(len(named), 1)
         kinds = {n.index: n.kind for n in desc.nodes}
         self.assertEqual(kinds[named[0]], conv.MESH)
+
+
+PIES = os.path.join(ROOT, "tests", "fixtures", "arc_pie_reverse.max")
+
+
+def _corners(faces):
+    """[(position, unit face normal, uvw, material ID)] of every corner of [(positions, uvws, material ID)]."""
+    out = []
+    for p, uvw, mat in faces:
+        p = numpy.asarray(p, dtype=numpy.float64)
+        normal = numpy.cross(p, numpy.roll(p, -1, axis=0)).sum(axis=0)  # Newell: a triangle or a flat polygon
+        normal /= numpy.linalg.norm(normal)
+        out.extend((q, normal, numpy.asarray(w, dtype=numpy.float64), mat) for q, w in zip(p, uvw))
+    return out
+
+
+def _unmatched(a, b):
+    """The corners of a with none of b at the same position, facing the same way, with the same map vertex and
+    material ID: independent of the face order and of how a polygon is cut into triangles."""
+    return [c for c in a if not any(numpy.abs(c[0] - d[0]).max() < 1e-4 and c[1].dot(d[1]) > 0.9999
+                                    and numpy.abs(c[2] - d[2]).max() < 1e-4 and c[3] == d[3] for d in b)]
+
+
+@unittest.skipIf(numpy is None, "numpy missing")
+@unittest.skipUnless(os.path.exists(PIES), "no arc_pie_reverse fixture")
+class ReversedPies(unittest.TestCase):
+    """arc_pie_reverse: reversed pie Arcs (their outline runs clockwise), a pie, a reversed open arc, a clockwise
+    Line and a Circle hole under an Extrude with mapping coordinates, against 3ds Max's evaluated meshes
+    (arc_pie_reverse.maps.jsonl, written by tools/fixtures/arc_pie_reverse.ms) and the oracle's eval_mesh."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.desc, cls.data = _read_meshes(PIES)
+        with open(PIES[:-4] + ".oracle.json", encoding="ascii") as f:
+            cls.oracle = {n["name"]: n for n in json.load(f)["nodes"]}
+        with open(PIES[:-4] + ".maps.jsonl", encoding="ascii") as f:
+            cls.dump = {d["name"]: d for d in (json.loads(line) for line in f if line.strip())}
+
+    def test_the_dump_names_every_extruded_node(self):
+        self.assertEqual(sorted(self.dump), sorted(n for n in self.data if n.endswith("Ext")))
+        self.assertEqual(len(self.dump), 6)
+
+    def test_eval_mesh_equals_the_oracle(self):
+        nodes = {n.name: n for n in self.desc.nodes}
+        for name, data in self.data.items():
+            md = self.desc.meshes[nodes[name].mesh]
+            _check_eval_mesh(self, data, md, self.oracle[name]["eval_mesh"], name)
+
+    def test_hard_edges_equal_the_oracle(self):
+        """The smoothing groups' hard edges, as the oracle's eval_mesh.smoothing counts them; a pie's side is one
+        smooth group here, 3ds Max also breaks it at from, the center and to (6 edges, maxdrop-em3.111)."""
+        nodes = {n.name: n for n in self.desc.nodes}
+        for name in self.data:
+            md = self.desc.meshes[nodes[name].mesh]
+            want = self.oracle[name]["eval_mesh"]["smoothing"]["hard_edges"]
+            self.assertEqual(len(md.sharp_edges), want - 6 if name.startswith("FixturePie") else want, name)
+
+    def test_every_corner_equals_3ds_max(self):
+        """Position, face normal, map vertex and material ID of every corner, both ways: the side U starts where
+        3ds Max starts it (a reversed pie at the arc point after from, a turned outline at its last point)."""
+        for name, want in self.dump.items():
+            data = self.data[name]
+            starts = data.loop_starts.tolist() + [len(data.loop_vertices)]
+            ch = data.maps[1]
+            faces = [(data.positions[data.loop_vertices[s:e]], [ch.uvw[i] for i in ch.indices[s:e]],
+                      int(data.material_ids[f]) + 1) for f, (s, e) in enumerate(zip(starts, starts[1:]))]
+            got = _corners(faces)
+            theirs = _corners([(f["p"], f["uv"], f["mat"]) for f in want["faces"]])
+            self.assertEqual(len(theirs), 3 * len(want["faces"]), name)
+            self.assertEqual(_unmatched(theirs, got), [], name)
+            self.assertEqual(_unmatched(got, theirs), [], name)
 
 
 def _knots(points, kind=shapes.CORNER):

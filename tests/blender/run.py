@@ -108,6 +108,7 @@ argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 MATRIX_TOLERANCE = 1e-4
 BBOX_TOLERANCE = 1e-3
 UV_LAYERS = {  # mapcoords:true in the script gives channel 1; kept literal: test_convert_scene reads it with ast
+    "arc_pie_reverse": ["UVMap"],  # every Extrude with Generate Mapping Coords; the two plain arcs are curves
     "box_poly_standard": ["UVMap"],
     "corona_layered": ["UVMap"],
     "corona_legacy": ["UVMap"],
@@ -273,13 +274,19 @@ HOLLOW = {"FixtureTube", "FixtureTubeSwap", "FixtureTubeDown", "FixtureTorus", "
 # extrude (Generate Mapping Coords on two nodes); sharp edges: the vertical edges at corner knots, one per level, and
 # both rims of every capped outline; V - E + F: a solid 2, one with a round tunnel 0, a ring and its island 0 + 2
 EXTRUDE_UV_LAYERS = {"FixtureExtRect": ["UVMap"], "FixtureExtAdaptive": ["UVMap"],
-                     "FixtureUVWExtrude": ["UVMap"]}  # uvwmap: no mapping from the Extrude, the UVW Map's
+                     "FixtureUVWExtrude": ["UVMap"],  # uvwmap: no mapping from the Extrude, the UVW Map's
+                     "FixturePieRevExt": ["UVMap"], "FixturePieRevWrapExt": ["UVMap"], "FixturePieExt": ["UVMap"],
+                     "FixtureArcRevExt": ["UVMap"], "FixtureClockwiseExt": ["UVMap"], "FixtureHoleExt": ["UVMap"]}
 EXTRUDE_SHARP_EDGES = {"FixtureExtRect": 16, "FixtureExtL": 18, "FixtureExtHole": 68, "FixtureExtIsland": 36,
                        "FixtureExtOpen": 0, "FixtureExtMirror": 72, "FixtureExtAdaptive": 256,
-                       "FixtureExtShapeIDs": 41, "FixtureExtShapeIDsRect": 12, "FixtureUVWExtrude": 12}
+                       "FixtureExtShapeIDs": 41, "FixtureExtShapeIDsRect": 12, "FixtureUVWExtrude": 12,
+                       "FixturePieRevExt": 46, "FixturePieRevWrapExt": 46, "FixturePieExt": 46,
+                       "FixtureArcRevExt": 0, "FixtureClockwiseExt": 16, "FixtureHoleExt": 72}
 EXTRUDE_EULER = {"FixtureExtRect": 2, "FixtureExtL": 2, "FixtureExtHole": 0, "FixtureExtIsland": 2,
                  "FixtureExtOpen": None, "FixtureExtMirror": 2, "FixtureExtAdaptive": 2, "FixtureExtShapeIDs": 0,
-                 "FixtureExtShapeIDsRect": 2, "FixtureUVWExtrude": 2}
+                 "FixtureExtShapeIDsRect": 2, "FixtureUVWExtrude": 2, "FixturePieRevExt": 2,
+                 "FixturePieRevWrapExt": 2, "FixturePieExt": 2, "FixtureArcRevExt": None, "FixtureClockwiseExt": 2,
+                 "FixtureHoleExt": 0}
 VALUE_TOLERANCE = 1e-4
 SPECULAR_LEVEL = 0.5  # the IR's specular is a reflection weight: 1 is Blender's Specular IOR Level 0.5
 DEG = math.pi / 180.0

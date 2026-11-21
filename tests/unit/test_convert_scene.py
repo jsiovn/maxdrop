@@ -47,6 +47,7 @@ shapes = importlib.import_module(_PKG + ".reader.shapes")
 # From the fixture scripts (tools/fixtures/*.ms: mapcoords:true gives channel 1); the oracle has no map channels or
 # smoothing groups.
 UV_LAYERS = {
+    "arc_pie_reverse": ["UVMap"],  # every Extrude with Generate Mapping Coords; the two plain arcs are curves
     "box_poly_standard": ["UVMap"],
     "corona_layered": ["UVMap"],
     "corona_legacy": ["UVMap"],
@@ -106,7 +107,12 @@ SHARP_EDGES_OPEN_BOX = 8  # stack_shell's boxes without their top: the 4 vertica
 SHARP_EDGES_EXTRUDE = {"FixtureExtRect": 4 * 2 + 8, "FixtureExtL": 6 + 12, "FixtureExtHole": 4 + 8 + 56,
                        "FixtureExtIsland": 12 + 24, "FixtureExtOpen": 0, "FixtureExtMirror": 8 + 64,
                        "FixtureExtAdaptive": 256, "FixtureExtShapeIDs": 11 + 30, "FixtureExtShapeIDsRect": 4 + 8,
-                       "FixtureUVWExtrude": 4 + 8}
+                       "FixtureUVWExtrude": 4 + 8,
+                       # arc_pie_reverse: both rims of a pie's 23 columns (3ds Max also breaks the side at from,
+                       # the center and to: 6 more, maxdrop-em3.111); the open arc none; the clockwise Line and
+                       # the holed cap as above
+                       "FixturePieRevExt": 46, "FixturePieRevWrapExt": 46, "FixturePieExt": 46,
+                       "FixtureArcRevExt": 0, "FixtureClockwiseExt": 4 * 2 + 8, "FixtureHoleExt": 4 * 2 + 8 + 56}
 # uvwmap: boxes of 3 x 2 x 2 segments, a group per side: 28 edges; the cylinder's two rims; the sphere is smooth
 SHARP_EDGES_UVWMAP = {"FixtureUVWCyl": 32, "FixtureUVWSphere": 0, "FixtureUVWSharedB": SHARP_EDGES_POLY_BOX,
                       # uvwmap_oblique: smooth spheres, the rims of a 10-sided cylinder
