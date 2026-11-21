@@ -8,6 +8,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ## [Unreleased]
 
+### Fixed
+
+- Materials: a CoronaPhysicalMtl, a Standard material with the Strauss shader and the grey material of an
+  unsupported class reflect their IOR's full Fresnel (Specular IOR Level 0.5, Blender's default) instead of half of
+  it (0.25), which made every CoronaPhysicalMtl look duller than in Corona.
+
 ## [1.0.1] - 2026-11-22
 
 ### Added

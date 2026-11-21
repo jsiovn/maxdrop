@@ -41,11 +41,11 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   base + coat (VRayCarPaintMtl's coat_strength is the coat's reflectance at normal incidence: a full coat whose
   IOR gives that reflectance; VRayCarPaintMtl2's coat_amount is the coat weight).
 - Standard: the colors come from its shader (ids per shader class in SHADERS; Metal is a metal, Strauss has a
-  metalness); base = diffuse; roughness = 1 - glossiness; specular = specular level times the mean of the linear
-  specular color; alpha = opacity; self-illumination: its color at strength 1, or the diffuse at the amount;
-  two-sided flag; map slots with their amounts where switched on (a glossiness map inverted; the specular level
-  map drives the specular, else the specular color map); a map in the
-  reflection slot makes the specular at least that slot's amount (the map is an environment: not used).
+  metalness and no specular level: specular 1, the IOR's own Fresnel); base = diffuse; roughness = 1 - glossiness;
+  specular = specular level times the mean of the linear specular color; alpha = opacity; self-illumination: its
+  color at strength 1, or the diffuse at the amount; two-sided flag; map slots with their amounts where switched
+  on (a glossiness map inverted; the specular level map drives the specular, else the specular color map); a map
+  in the reflection slot makes the specular at least that slot's amount (the map is an environment: not used).
 - Physical Material: base = base color times base weight; roughness (1 - it with roughness_inv); metalness;
   specular = reflectivity times the mean of the linear reflection color; transparency is the transmission and
   mixes the transparency color into the base, as for VRayMtl; IOR, thin-walled; emission color at emission
@@ -57,9 +57,9 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   opacity color times its level; emission color at its level; clearcoat amount, IOR, roughness and absorption color;
   sheen amount, color and roughness; SSS amount, radius (world units, in meters) and scatter color (the per-channel
   radius); a metal with a complex IOR takes the F0 of its n and k as its base color; maps where on, their amounts
-  fractions. Specular stays 0.5 (Corona derives it from the IOR). Translucency, volumetric absorption and
-  scattering, a metal edge color other than the default, the IOR mode and maps in the sheen and SSS slots are
-  named issues.
+  fractions. Specular 1, the IOR's own Fresnel (the material has no reflection level). Translucency, volumetric
+  absorption and scattering, a metal edge color other than the default, the IOR mode and maps in the sheen and SSS
+  slots are named issues.
 - CoronaLegacyMtl (CoronaMtl): diffuse, reflection, refraction, opacity and self-illumination colors times their
   levels; specular = the mean reflection; roughness = 1 - glossiness (PBR mode or not); transmission and the glass
   base color as for VRayMtl, the IOR as well (refraction IOR when it refracts, else the Fresnel IOR); a Fresnel IOR
@@ -83,7 +83,7 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   it black). A Multi/Sub-Object inside a wrapper or inside another Multi/Sub-Object (which looks up the face's own
   ID and wraps it by its own list) resolves the same way, at most MAX_PEEL deep. convert() of one (a caller
   without face IDs) gives the material of its first entry that is on and set.
-- Any other class -> a grey material that keeps its name, counted by class name.
+- Any other class -> a grey material that keeps its name (specular 1, the IOR's own Fresnel), counted by class name.
 
 The slots of a mesh (assign): its distinct face IDs, each keyed by the materials its users (the nodes sharing the
 mesh) get for that ID; one slot per key, in ID order, faces remapped to their slot. A material that is not a
@@ -212,7 +212,7 @@ class MaterialIR:
     base_color: Input = Input((0.8, 0.8, 0.8))
     metallic: Input = Input(0.0)
     roughness: Input = Input(0.5)
-    specular: Input = Input(0.5)
+    specular: Input = Input(1.0)  # a reflection weight: 1 is the IOR's own Fresnel (Blender's 0.5)
     ior: float = 1.5
     transmission: Input = Input(0.0)
     thin_walled: bool = False
@@ -750,7 +750,7 @@ def standard_mtl(conv, m, ir):
     if sid == classids.STRAUSS_SHADER:
         diffuse, gloss = conv.rgb(s, 0, 0, STD_DIFFUSE_DEFAULT), _num(s, 1, 0, 0.1)
         ir.metallic = Input(_clamp01(_num(s, 2, 0, 0.0)))
-        specular = 0.5
+        specular = 1.0  # no specular level: the IOR's own Fresnel
     elif sid in SHADERS:
         ids = SHADERS[sid]
         diffuse, gloss = conv.rgb(s, ids.diffuse, 0, STD_DIFFUSE_DEFAULT), _num(s, ids.glossiness, 0, 0.1)
@@ -870,6 +870,7 @@ def corona_physical_mtl(conv, m, ir):
     ir.metallic = Input(1.0 if m.param(111, 0) == 1 else 0.0, conv.map_ref(m, 411, 412, None, 0, ir=ir))
     ir.transmission = Input(t, _corona_amount_map(conv, m, 192, ir))
     ir.ior = _ior(_num(m, 171, 0, 1.5))
+    ir.specular = Input(1.0)  # no reflection level in the pblock: the IOR's own Fresnel
     if m.param(461, 0) not in (None, 0):  # iorMode: only the default (baseIor is the IOR) has been measured
         conv.issue(m.index, "CoronaPhysicalMtl %r: IOR mode %r read as an IOR" % (m.name, m.param(461, 0)), ir)
     ir.thin_walled = thin

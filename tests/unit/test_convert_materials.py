@@ -363,6 +363,7 @@ class OtherRules(unittest.TestCase, Close):
         self.assertTrue(ir.unknown)
         self.assertEqual(ir.name, "Odd")
         self.close(ir.base_color.value, GREY)
+        self.close(ir.specular.value, 1.0, "the IOR's own Fresnel, Blender's default 0.5")
         self.assertEqual(dict(conv.stats.unknown), {"ClassID(0x00001234, 0x00005678)": 2})
         self.assertIs(conv.convert(0), ir)
 
@@ -860,7 +861,7 @@ class StandardShaders(unittest.TestCase, Close):
     def test_strauss(self):
         ir = self.irs["FixtureStrauss"]
         self.close(ir.base_color.value, _lins(120, 130, 210))
-        self.close((ir.roughness.value, ir.metallic.value, ir.specular.value), (1.0 - 0.37, 0.48, 0.5))
+        self.close((ir.roughness.value, ir.metallic.value, ir.specular.value), (1.0 - 0.37, 0.48, 1.0))
         self.close(ir.emission_strength, 0.0)
 
     def test_ids_name_the_parameters(self):
@@ -1100,7 +1101,7 @@ class Corona(unittest.TestCase, Close):
         self.close(rough.emission_color.value, _lins(255, 128, 0))
         self.close(rough.emission_strength, 2.5)
         self.close(rough.alpha.value, _lin(200) * 0.8, "mean opacity color x level")
-        self.close(rough.specular.value, 0.5, "from the IOR")
+        self.close(rough.specular.value, 1.0, "the IOR's own Fresnel: no level parameter")
         self.close(gloss.base_color.value, _lins(220, 180, 90))
         self.close(gloss.metallic.value, 1.0, "metalness mode metal")
         self.close(gloss.roughness.value, 0.3, "glossiness 0.7")
@@ -1341,6 +1342,7 @@ class CoronaSynthetic(unittest.TestCase, Close):
         self.close(ir.ior, 1.5)
         self.close(ir.alpha.value, 1.0)
         self.close(ir.emission_strength, 0.0)
+        self.close(ir.specular.value, 1.0, "the IOR's own Fresnel")
         self.assertIsNone(ir.base_color.map)
 
     def test_physical_maps_and_switches(self):

@@ -1602,6 +1602,7 @@ def check_fixture_materials(name, plan, desc, obs):
     the slot plan of _irs)."""
     by_index = {node.index: ob for node, ob in zip(desc.nodes, obs)}
     checked = set()
+    corona = []
     for slots in list(plan.values()) + list(plan.curves.values()):
         for s, irs in enumerate(slots.slots):
             for node, ir in zip(slots.users, irs):
@@ -1617,6 +1618,14 @@ def check_fixture_materials(name, plan, desc, obs):
                 check("%s/%s: material named after the 3ds Max material" % (name, material.name),
                       material.name.split(".")[0] == (ir.name or "Material").split(".")[0], ir.name)
                 check_principled("%s/%s" % (name, material.name), material, ir)
+                if ir.source == "CoronaPhysicalMtl":
+                    corona.append(material)
+    if name == "corona_physical":  # absolute: check_principled follows the IR, which drew 0.25 (maxdrop-em3.121)
+        levels = [(m.name, n.inputs["Specular IOR Level"].is_linked, round(n.inputs["Specular IOR Level"].default_value,
+                                                                           6))
+                  for m in corona for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeBsdfPrincipled"]
+        check("corona_physical: every CoronaPhysicalMtl reflects the IOR's own Fresnel (Specular IOR Level 0.5)",
+              len(levels) >= 3 and all(not linked and v == 0.5 for _n, linked, v in levels), str(levels))
     if name == "falloff_curve":
         check_falloff_curve(textured=False)
     if name == "vray_maps":
