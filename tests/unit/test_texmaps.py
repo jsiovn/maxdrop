@@ -417,9 +417,9 @@ def _bitmap(index, guid=G1):
     return FakeMap(index, classids.BITMAP_TEX, {13: pblock.Asset(guid)}, cls="Bitmap")
 
 
-def _falloff(index, map1=None, color1=(0.5, 0.5, 0.5), ftype=1):
+def _falloff(index, map1=None, color1=(0.5, 0.5, 0.5), ftype=1, name="map"):
     return FakeMap(index, tx.FALLOFF, {0: color1, 2: Ref(map1), 3: 1, 8: ftype}, [map1] if map1 is not None else [],
-                   cls="Falloff")
+                   cls="Falloff", name=name)
 
 
 def _table():
@@ -1101,11 +1101,48 @@ class Guards(Checks):
         self.assertTrue(any("pivot and lift" in r for r in g.issues))
         self.assertTrue(any("tint not converted" in r for r in g.issues))
 
-    def test_mix_curve_is_an_issue(self):
-        mix = FakeMap(1, tx.MIX, {3: 1, 6: Ref(2)}, [2])
+    def test_mix_curve(self):
+        """Use Curve folds the mix amount through mix_factor, or puts a Smoothstep over the mask; no issue."""
+        mix = FakeMap(1, tx.MIX, {0: 0.4, 1: 0.3, 2: 0.7, 3: 1, 6: Ref(2)}, [2])
         g = _tex(mix, _bitmap(2)).convert(mat.MapRef(1), tx.COLOR)
+        self.close(g.root.factor, 0.15625)  # u = 0.25: 3u^2 - 2u^3
+        self.assertFalse(g.approximated)
+        self.assertEqual(g.issues, ())
+        mix = FakeMap(1, tx.MIX, {0: 0.4, 1: 0.2, 2: 0.9, 3: 1, 6: Ref(2), 8: Ref(3)}, [2, 3])
+        g = _tex(mix, _bitmap(2), _bitmap(3)).convert(mat.MapRef(1), tx.COLOR)
+        self.assertIsInstance(g.root.mask, tx.Smoothstep)
+        self.assertIsInstance(g.root.mask.input, tx.Image)
+        self.assertEqual((g.root.mask.lower, g.root.mask.upper), (0.2, 0.9))
+        self.assertEqual(g.issues, ())
+        mix = FakeMap(1, tx.MIX, {0: 0.4, 6: Ref(2), 8: Ref(3)}, [2, 3])  # without Use Curve: the mask itself
+        self.assertIsInstance(_tex(mix, _bitmap(2), _bitmap(3)).convert(mat.MapRef(1), tx.COLOR).root.mask, tx.Image)
+
+    def test_mix_factor(self):
+        """The measured rule (renderMap, 3ds Max 2020): lower 0.3, upper 0.7 and lower 0.2, upper 0.9."""
+        measured = {(0.3, 0.7): [0.0] * 7 + [0.0429541, 0.156237, 0.316396, 0.499992, 0.683589, 0.843748, 0.957031]
+                    + [1.0] * 7,
+                    (0.2, 0.9): [0.0] * 5 + [0.0145724, 0.0553902, 0.118074, 0.198245, 0.291539, 0.393576, 0.499992,
+                                             0.606409, 0.708446, 0.80174, 0.88191, 0.944595, 0.985412, 1.0, 1.0, 1.0]}
+        for (lower, upper), ys in measured.items():
+            for k, y in enumerate(ys):
+                self.assertAlmostEqual(tx.mix_factor(k / 20.0, lower, upper), y, delta=1e-4, msg=(lower, upper, k))
+        self.assertEqual([tx.mix_factor(x, 0.5, 0.5) for x in (0.4999, 0.5, 0.6)], [0.0, 1.0, 1.0])  # a step
+        self.assertEqual([tx.mix_factor(x, 0.7, 0.3) for x in (0.5, 0.69, 0.7)], [0.0, 0.0, 1.0])  # a step at lower
+
+    def test_unreadable_mix_curve_is_drawn_linear(self):
+        def broken(_scene, _m):
+            raise chunks.ChunkError("the curve control at object 9: no point count")
+        old = reader_materials.mix_curve
+        reader_materials.mix_curve = broken
+        try:
+            fo = _falloff(1, name="fo")
+            g = _tex(fo).convert(mat.MapRef(1), tx.COLOR)
+        finally:
+            reader_materials.mix_curve = old
+        self.assertEqual(g.root.mask, tx.Facing(tx.PERPENDICULAR, 1.6))
         self.assertTrue(g.approximated)
-        self.assertTrue(any("mix curve" in r for r in g.issues))
+        self.assertTrue(any(r.startswith("Falloff 'fo': its mix curve could not be read") and "drawn linear" in r
+                            for r in g.issues), g.issues)
 
     def test_normal_bump_method_and_channel(self):
         nb = FakeMap(1, tx.NORMAL_BUMP, {2: Ref(2), 6: 2}, [2])
@@ -1472,9 +1509,18 @@ class LostMaps(Checks):
         self.close(g.root.b.value, (1.0, 0.0, 0.0))
         self.assertFalse(g.approximated)
         self.lost_issue(tex, "Mix 'mx'")
-        tex = _tex(FakeMap(1, tx.MIX, {0: 1.0, 3: 1, 6: Ref(2), 7: Ref(3)}, [2, 3], cls="Mix"), _noise(2),
+        # Use Curve weighs by the amount through the curve (lower 0.3, upper 0.7 by default): 0.5 stays 0.5
+        tex = _tex(FakeMap(1, tx.MIX, {0: 0.5, 3: 1, 6: Ref(2), 7: Ref(3)}, [2, 3], cls="Mix"), _noise(2),
                    _bitmap(3))
-        self.assertEqual(tex.convert(mat.MapRef(1), tx.COLOR).root.name, "a.png", "a curve: weights unknown")
+        self.assertEqual(tex.convert(mat.MapRef(1), tx.COLOR).root.name, "a.png", "a curve at 0.5: map 1 shows")
+        tex = _tex(FakeMap(1, tx.MIX, {0: 0.75, 3: 1, 5: (1.0, 0.0, 0.0), 6: Ref(2)}, [2], cls="Mix"), _noise(2))
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertIsInstance(g.root, tx.Mix, "a curve at 0.75 gives 1: map 1 does not show")
+        self.close(g.root.factor, 1.0)
+        self.assertFalse(g.approximated)
+        tex = _tex(FakeMap(1, tx.MIX, {0: 1.0, 3: 1, 6: Ref(2), 7: Ref(3), 8: Ref(4)}, [2, 3, 4], cls="Mix"),
+                   _noise(2), _bitmap(3), _bitmap(4))
+        self.assertEqual(tex.convert(mat.MapRef(1), tx.COLOR).root.name, "a.png", "a curve on a mask: unknown")
 
     def test_lost_map_below_a_lost_wrapper(self):
         cc = FakeMap(2, tx.COLOR_CORRECTION, {1: Ref(3)}, [3], cls="Color Correction", name="cc")
@@ -2044,6 +2090,90 @@ class TruncatedClassDirectory(unittest.TestCase):
                 counts.append(got)
             self.assertEqual(counts[0], 0)
             self.assertGreater(counts[-1], counts[0])
+
+
+def _polyline_at(points, x):
+    """A Remap's polyline at x: straight between the points, flat past the ends (as the Float Curve draws it)."""
+    if x <= points[0][0]:
+        return points[0][1]
+    for (x0, y0), (x1, y1) in zip(points, points[1:]):
+        if x <= x1:
+            return y1 if x1 <= x0 else y0 + (y1 - y0) * (x - x0) / (x1 - x0)
+    return points[-1][1]
+
+
+class FalloffCurve(Checks):
+    """falloff_curve: each Falloff's MixCurve and each Mix's Use Curve against 3ds Max 2020's own values
+    (tests/fixtures/falloff_curve.curves.jsonl, written by tools/fixtures/falloff_curve.ms from the saved file: 65
+    values at x = k / 64)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.f = Fixture("falloff_curve")
+        with open(os.path.join(FIXTURE_DIR, "falloff_curve.curves.jsonl"), encoding="ascii") as f:
+            cls.rows = {r["name"]: r["y"] for r in map(json.loads, f)}
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.f.close()
+
+    def root(self, name):
+        ir = self.f.irs[name]
+        self.assertEqual(list(ir.issues), [], name)
+        return ir.textures["base_color"].root
+
+    def test_every_map_has_a_row(self):
+        self.assertEqual(set(self.rows), set(self.f.irs))
+        self.assertTrue(all(len(y) == 65 for y in self.rows.values()))
+
+    def test_falloff_curves_match_3ds_max(self):
+        modes = {"FixtureCurveBezier": tx.PERPENDICULAR, "FixtureCurveCorner": tx.TOWARDS,
+                 "FixtureCurveOvershoot": tx.FRESNEL, "FixtureCurveClamped": tx.PERPENDICULAR}
+        for name, mode in modes.items():
+            with self.subTest(name):
+                root = self.root(name)
+                self.assertIsInstance(root, tx.Mix)
+                self.assertIsInstance(root.mask, tx.Remap)
+                self.assertEqual(root.mask.input.mode, mode)
+                points = root.mask.points
+                self.assertEqual(list(points), sorted(points))
+                for k, y in enumerate(self.rows[name]):
+                    self.assertAlmostEqual(_polyline_at(points, k / 64.0), y, delta=1e-3, msg=(name, k))
+        self.assertEqual(len(self.root("FixtureCurveCorner").mask.points), 4, "corner points: straight segments")
+        self.assertGreater(max(self.rows["FixtureCurveOvershoot"]), 1.19, "3ds Max does not clamp the curve")
+        self.assertGreater(max(y for _x, y in self.root("FixtureCurveOvershoot").mask.points), 1.19)
+
+    def test_linear_curve_makes_no_node(self):
+        self.assertEqual(self.root("FixtureCurveLinear").mask, tx.Facing(tx.PERPENDICULAR, 1.6))
+        self.assertTrue(all(abs(y - k / 64.0) < 1e-5 for k, y in enumerate(self.rows["FixtureCurveLinear"])))
+
+    def test_mix_curves_match_3ds_max(self):
+        for name in ("FixtureMixCurve", "FixtureMixCurveStep"):
+            with self.subTest(name):
+                mask = self.root(name).mask
+                self.assertIsInstance(mask, tx.Smoothstep)
+                self.assertIsInstance(mask.input, tx.Image)
+                for k, y in enumerate(self.rows[name]):
+                    self.assertAlmostEqual(tx.mix_factor(k / 64.0, mask.lower, mask.upper), y, delta=1e-4,
+                                           msg=(name, k))
+        root = self.root("FixtureMixCurveAmount")
+        self.assertIsNone(root.mask)
+        self.assertAlmostEqual(root.factor, self.rows["FixtureMixCurveAmount"][0], delta=1e-4)
+
+    def test_curve_samples(self):
+        P = reader_materials.CurvePoint
+        self.assertIsNone(tx.curve_samples((P((0, 0), (0, 0), (0, 0), 0x102), P((1, 1), (1, 1), (1, 1), 0x100))))
+        line = tx.curve_samples((P((0, 0), (0, 0), (0, 0), 0), P((0.5, 0.8), (0.5, 0.8), (0.5, 0.8), 4),
+                                 P((1, 1), (1, 1), (1, 1), 0)))
+        self.assertEqual(line, ((0, 0), (0.5, 0.8), (1, 1)))
+        # a point above 1 is taken at 1, its handles moved with it
+        high = tx.curve_samples((P((0, 0), (0, 0), (0, 0), 0), P((0.5, 1.3), (0.3, 1.3), (0.7, 1.3), 2),
+                                 P((1, 1), (1, 1), (1, 1), 0)))
+        self.assertEqual(max(y for _x, y in high), 1.0)
+        self.assertEqual(high[-1], (1, 1))
+        jump = tx.curve_samples((P((0, 0), (0, 0), (0, 0), 0), P((0.5, 0.2), (0.5, 0.2), (0.5, 0.2), 0),
+                                 P((0.5, 0.9), (0.5, 0.9), (0.5, 0.9), 0), P((1, 1), (1, 1), (1, 1), 0)))
+        self.assertEqual(jump, ((0, 0), (0.5, 0.2), (0.5, 0.9), (1, 1)))
 
 
 if __name__ == "__main__":
