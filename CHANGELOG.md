@@ -8,7 +8,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ## [Unreleased]
 
+### Added
+
+- Extrude: grid caps (Cap Type Grid) are made as 3ds Max makes them, with the grid of points 3ds Max puts inside
+  each cap, so an extruded shape gets 3ds Max's vertex and triangle counts, instead of morph caps and a line in the
+  report.
+
 ### Fixed
+
+- Extrude: a shape extruded downwards (a negative amount) with only one of its caps on gets that cap facing the way
+  3ds Max faces it (into the solid, as for an upward extrusion) and its material ID, instead of turned out.
 
 - Modifiers: the rim a Shell builds on an open mesh (a panel, a wall, a box without its top) shades hard against both
   surfaces, as in 3ds Max, instead of smooth into them: the mesh's open edges are marked sharp before the Solidify.

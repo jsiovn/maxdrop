@@ -117,6 +117,8 @@ SHARP_EDGES_EXTRUDE = {"FixtureExtRect": 4 * 2 + 8, "FixtureExtL": 6 + 12, "Fixt
                        "FixtureExtIsland": 12 + 24, "FixtureExtOpen": 0, "FixtureExtMirror": 8 + 64,
                        "FixtureExtAdaptive": 256, "FixtureExtShapeIDs": 11 + 30, "FixtureExtShapeIDsRect": 4 + 8,
                        "FixtureUVWExtrude": 4 + 8,
+                       # grid caps: as above (the circle smooth, one rim: Cap End off)
+                       "FixtureExtGrid": 10 + 8 + 18, "FixtureExtGridCircle": 16,
                        # arc_pie_reverse: both rims of a pie's 23 columns (3ds Max also breaks the side at from,
                        # the center and to: 6 more, maxdrop-em3.111); the open arc none; the clockwise Line and
                        # the holed cap as above

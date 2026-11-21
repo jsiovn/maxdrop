@@ -312,11 +312,13 @@ EXTRUDE_UV_LAYERS = {"FixtureExtRect": ["UVMap"], "FixtureExtAdaptive": ["UVMap"
 EXTRUDE_SHARP_EDGES = {"FixtureExtRect": 16, "FixtureExtL": 18, "FixtureExtHole": 68, "FixtureExtIsland": 36,
                        "FixtureExtOpen": 0, "FixtureExtMirror": 72, "FixtureExtAdaptive": 256,
                        "FixtureExtShapeIDs": 41, "FixtureExtShapeIDsRect": 12, "FixtureUVWExtrude": 12,
+                       "FixtureExtGrid": 36, "FixtureExtGridCircle": 16,
                        "FixturePieRevExt": 46, "FixturePieRevWrapExt": 46, "FixturePieExt": 46,
                        "FixtureArcRevExt": 0, "FixtureClockwiseExt": 16, "FixtureHoleExt": 72}
 EXTRUDE_EULER = {"FixtureExtRect": 2, "FixtureExtL": 2, "FixtureExtHole": 0, "FixtureExtIsland": 2,
                  "FixtureExtOpen": None, "FixtureExtMirror": 2, "FixtureExtAdaptive": 2, "FixtureExtShapeIDs": 0,
                  "FixtureExtShapeIDsRect": 2, "FixtureUVWExtrude": 2, "FixturePieRevExt": 2,
+                 "FixtureExtGrid": 0, "FixtureExtGridCircle": None,  # grid caps: a holed solid; one cap
                  "FixturePieRevWrapExt": 2, "FixturePieExt": 2, "FixtureArcRevExt": None, "FixtureClockwiseExt": 2,
                  "FixtureHoleExt": 0}
 VALUE_TOLERANCE = 1e-4
@@ -554,8 +556,8 @@ def run_fixture(path, modules):
         check_modifier_pivot(obs, meters)
     if name == "extrude":
         kinds = [ob.type for ob in obs]
-        check("extrude: nine meshes, the switched-off Extrude a curve",
-              kinds == ['MESH'] * 7 + ['CURVE'] + ['MESH'] * 2, str(kinds))
+        check("extrude: eleven meshes, the switched-off Extrude a curve",
+              kinds == ['MESH'] * 7 + ['CURVE'] + ['MESH'] * 4, str(kinds))
     if name == "shapes":
         curves = sorted(c.name for c in bpy.data.curves)
         shaped = sum(1 for o in nodes if o["shape"] is not None)

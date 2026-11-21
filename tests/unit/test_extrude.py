@@ -44,11 +44,12 @@ reader_modifiers = importlib.import_module(_PKG + ".reader.modifiers")
 rules = importlib.import_module(_PKG + ".convert.modifiers")
 
 CAPPED = ("FixtureExtRect", "FixtureExtL", "FixtureExtHole", "FixtureExtIsland", "FixtureExtMirror",
-          "FixtureExtAdaptive", "FixtureExtShapeIDs", "FixtureExtShapeIDsRect")
+          "FixtureExtAdaptive", "FixtureExtShapeIDs", "FixtureExtShapeIDsRect", "FixtureExtGrid")
+UNCAPPED = ("FixtureExtOpen", "FixtureExtGridCircle")  # no cap; Cap End off (a grid cap at the start)
 # V - E + F of each mesh: a box-like solid 2, a solid with a tunnel (the round hole) 0, the island's ring and its
 # core 0 + 2
 EULER = {"FixtureExtRect": 2, "FixtureExtL": 2, "FixtureExtHole": 0, "FixtureExtIsland": 2, "FixtureExtMirror": 2,
-         "FixtureExtAdaptive": 2, "FixtureExtShapeIDs": 0, "FixtureExtShapeIDsRect": 2}
+         "FixtureExtAdaptive": 2, "FixtureExtShapeIDs": 0, "FixtureExtShapeIDsRect": 2, "FixtureExtGrid": 0}
 
 
 def _edges(md):
@@ -147,7 +148,7 @@ class Fixture(unittest.TestCase):
         return node, self.desc.meshes[node.mesh]
 
     def test_counts_and_world_box_equal_the_oracle(self):
-        for name in CAPPED + ("FixtureExtOpen",):
+        for name in CAPPED + UNCAPPED:
             node, md = self.mesh(name)
             o = self.oracle[name]
             self.assertEqual(len(md.positions), o["eval_verts"], name)
@@ -206,7 +207,7 @@ class Fixture(unittest.TestCase):
     def test_material_ids_and_map_channel_1_equal_the_oracle(self):
         """Per material ID the triangles facing +Z, -Z and sideways in object space, and map channel 1's vertex
         count and range, as 3ds Max's evaluated mesh has them (docs/ORACLE.md, eval_mesh)."""
-        for name in CAPPED + ("FixtureExtOpen",):
+        for name in CAPPED + UNCAPPED:
             _check_eval_mesh(self, self.data[name], self.mesh(name)[1], self.oracle[name]["eval_mesh"], name)
 
     def test_every_mapped_corner_equals_the_oracle(self):
@@ -231,12 +232,12 @@ class Fixture(unittest.TestCase):
         self.assertNotIn("UVMap", dict(self.mesh("FixtureExtL")[1].uv_layers))
 
     def test_the_report_counts_extrude_as_applied(self):
-        for name in CAPPED + ("FixtureExtOpen",):
+        for name in CAPPED + UNCAPPED:
             self.assertEqual((self.nodes[name].applied, self.nodes[name].modifiers), (("Extrude",), ()), name)
         off = self.nodes["FixtureExtOff"]  # switched off: the curve, the modifier not applied
         self.assertEqual((off.kind, off.applied, off.modifiers), (conv.CURVE, (), ("Extrude",)))
         rep = importlib.import_module(_PKG + ".convert.report").gather(self.desc)
-        self.assertEqual(dict(rep.modifiers_applied), {"Extrude": 9})
+        self.assertEqual(dict(rep.modifiers_applied), {"Extrude": 11})
         self.assertEqual(dict(rep.modifiers), {"Extrude": 1})
 
     def test_a_modifier_below_the_extrude_keeps_the_curve(self):
@@ -251,14 +252,14 @@ class Fixture(unittest.TestCase):
 
         with mock.patch.object(reader_modifiers.Modifiers, "object_stack", below):
             desc = conv.read(FIXTURE)
-        self.assertEqual([n.kind for n in desc.nodes], [conv.CURVE] * 10)
-        self.assertEqual(len([r for _i, r in desc.issues if r.startswith("extrude: an Extrude above ")]), 9)
+        self.assertEqual([n.kind for n in desc.nodes], [conv.CURVE] * 12)
+        self.assertEqual(len([r for _i, r in desc.issues if r.startswith("extrude: an Extrude above ")]), 11)
 
     def test_an_extrude_that_cannot_be_read_keeps_the_curve(self):
         with mock.patch.object(extrude, "read_params", side_effect=extrude.ExtrudeError("refused")):
             desc = conv.read(FIXTURE)
-        self.assertEqual([n.kind for n in desc.nodes], [conv.CURVE] * 10)
-        self.assertEqual([r for _i, r in desc.issues], ["extrude: refused"] * 9)
+        self.assertEqual([n.kind for n in desc.nodes], [conv.CURVE] * 12)
+        self.assertEqual([r for _i, r in desc.issues], ["extrude: refused"] * 11)
         self.assertEqual(desc.meshes, {})
 
     def test_extruded_data_is_released_after_its_last_node(self):
@@ -278,15 +279,15 @@ class Fixture(unittest.TestCase):
         with mock.patch.object(extrude, "extrude", extruding), mock.patch.object(conv, "mesh_description",
                                                                                  describing):
             conv.read(FIXTURE)
-        self.assertEqual(len(made), 9)
-        self.assertEqual(alive, [1] * 9)  # only the extrusion being described
+        self.assertEqual(len(made), 11)
+        self.assertEqual(alive, [1] * 11)  # only the extrusion being described
 
     def test_a_scene_wide_budget_keeps_the_rest_curves(self):
         with mock.patch.object(conv, "MAX_BUILT_CORNERS", 1):
             desc = conv.read(FIXTURE)
-        self.assertEqual(sorted(n.kind for n in desc.nodes), [conv.CURVE] * 9 + [conv.MESH])
+        self.assertEqual(sorted(n.kind for n in desc.nodes), [conv.CURVE] * 11 + [conv.MESH])
         spent = [r for _i, r in desc.issues if r.startswith("extrude: not made: the primitives and extrusions ")]
-        self.assertEqual(len(spent), 8)
+        self.assertEqual(len(spent), 10)
 
     def test_conversion_issues_wait_for_a_made_extrude(self):
         """A converted modifier's issues are named on the first node whose Extrude is made: one whose Extrude
@@ -700,6 +701,24 @@ class Synthetic(unittest.TestCase):
         self.assertEqual(len(data.positions), 16)
         self.assertAlmostEqual(_volume(data.positions, data), 80.0, places=4)
         self.assertAlmostEqual(float(data.positions[:, 2].min()), -5.0)
+
+    def test_a_lone_cap_of_a_downward_extrusion_faces_as_upwards(self):
+        """3ds Max 2020 (a Circle extruded -4): Cap Start alone faces -Z (ID 2), Cap End alone +Z (ID 1), into the
+        solid; with both on they face out (ID 1 at the shape); the sides face out in every case."""
+        for start, end, want in ((True, False, [(extrude.BOTTOM_ID, False)]), (False, True, [(extrude.TOP_ID, True)]),
+                                 (True, True, [(extrude.TOP_ID, True), (extrude.BOTTOM_ID, False)])):
+            data, _issues = extrude.extrude(_shape([self.square(4)]), self.params(amount=-4.0, cap_start=start,
+                                                                                  cap_end=end))
+            caps = sorted({(int(_mats(data)[f]), _face_area_z(data, f) > 0) for f in range(len(data.loop_starts))
+                           if int(_mats(data)[f]) != extrude.SIDE_ID})
+            self.assertEqual(caps, sorted(want), (start, end))
+            sides = [f for f in range(len(data.loop_starts)) if int(_mats(data)[f]) == extrude.SIDE_ID]
+            p = data.positions.astype(numpy.float64)
+            for f in sides:  # outward: the face normal points away from the square's center
+                s, t = int(data.loop_starts[f]), int(data.loop_totals[f])
+                q = p[data.loop_vertices[s:s + t]]
+                n = numpy.cross(q[1] - q[0], q[2] - q[0])
+                self.assertGreater(float(numpy.dot(n[:2], q.mean(axis=0)[:2] - (2.0, 2.0))), 0, (start, end))
 
     def test_no_caps_and_flat_sides(self):
         data, _issues = extrude.extrude(_shape([self.square(4)]), self.params(cap_start=False, cap_end=False,

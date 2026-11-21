@@ -32,13 +32,14 @@ per axis, more for a small hole (floor(0.95 x size / half the hole's extent), at
 the box plus a thousandth of a division; the cells that lie wholly inside the solid are quads and the band between
 them and the outline is ear-clipped like a cap with holes (a cap of n outline points, k grid points and h holes:
 n + 2k + 2h - 2 triangles, as 3ds Max). The grid points lie at z 0 and the levels' heights whatever the shape's z,
-as 3ds Max puts them; a solid without a whole cell gets the morph cap. The cap facing +Z gets material ID 1, the one
-facing -Z ID 2, the sides ID 3 (zero-based here: 0, 1, 2) when Generate Material IDs is on, else every face ID 1;
-with Use Shape IDs too each side face takes the material ID of the spline segment it comes from (the caps keep 1 and
-2). Smooth gives the sides smoothing groups that change only at a corner or Bezier corner knot, the caps group 16;
-without it the sides have none. Mapping: the sides' U runs along each polyline from its first point (0 to 1, or its
-length with Real-World Map Size), V up the levels (0 to 1, or the height); the caps map the shape's XY box (0 to 1,
-or its size).
+as 3ds Max puts them; a solid without a whole cell gets the morph cap. Downwards the caps are turned out only when
+both are on: a lone cap faces as upwards, into the solid, as 3ds Max makes it. The cap facing +Z gets material ID 1,
+the one facing -Z ID 2, the sides ID 3 (zero-based here: 0, 1, 2) when Generate Material IDs is on, else every face
+ID 1; with Use Shape IDs too each side face takes the material ID of the spline segment it comes from (the caps keep
+1 and 2). Smooth gives the sides smoothing groups that change only at a corner or Bezier corner knot, the caps group
+16; without it the sides have none. Mapping: the sides' U runs along each polyline from its first point (0 to 1, or
+its length with Real-World Map Size), V up the levels (0 to 1, or the height); the caps map the shape's XY box (0 to
+1, or its size).
 
 The file comes from anywhere: a parameter that is animated or no number raises ExtrudeError; segments are clamped
 to 1 .. MAX_SEGMENTS; a mesh past MAX_VERTICES raises ExtrudeError; a holed cap past MAX_CAP_POINTS or one that
@@ -838,7 +839,8 @@ def extrude(shape, params):
         x0, y0 = min(xs), min(ys)
         w, h = max(xs) - x0, max(ys) - y0
     for slot, level in enumerate(caps):
-        up = (level == segs) == (params.amount >= 0)  # this cap faces +Z
+        # this cap faces +Z; downwards 3ds Max turns the caps out only when both are on: a lone cap faces as upwards
+        up = (level == segs) == (params.amount >= 0 or not (params.cap_start and params.cap_end))
         mat = (TOP_ID if up else BOTTOM_ID) if params.material_ids else 0
         index = {}
         first = start + slot * len(grid)

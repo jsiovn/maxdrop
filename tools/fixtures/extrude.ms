@@ -16,6 +16,10 @@
 -- drawn clockwise (three lines ID 5, a curved segment ID 7 in 4 steps, a line ID 4), a hexagonal hole drawn
 -- counter-clockwise (two segments ID 11, four ID 12): side triangles per ID 2, 6, 10, 4, 8, all different.
 -- FixtureExtShapeIDsRect: a Rectangle under Use Shape IDs (its segments are ID 1).
+-- FixtureExtGrid: a five-sided Line of corner knots, 40 x 30, with a 3 x 12 rectangular hole, extruded 6 in 2
+-- segments with Cap Type Grid: 25 x 20 grid divisions (the hole refines the grid across), cells dropped along
+-- the slanted edge and round the hole.
+-- FixtureExtGridCircle: a Circle (radius 8, steps 3) extruded -4 with Cap Type Grid and Cap End off.
 -- One Standard material on every node.
 -- Authored for MaxDrop's tests (see CONTRIBUTING.md, "Test files"): it resets the scene, so run it in a 3ds Max
 -- session with nothing to keep, then sanitize and check the saved file before it goes into tests/fixtures/.
@@ -111,6 +115,21 @@
 	local sidr = Rectangle name:"FixtureExtShapeIDsRect" length:10 width:14 cornerRadius:0
 	addModifier sidr (Extrude amount:3 matIDs:true useShapeIDs:true)
 	sidr.pos = [60,120,0]
+
+	local grid = line name:"FixtureExtGrid"
+	addNewSpline grid
+	for p in #([0,0,0], [40,0,0], [40,18,0], [22,30,0], [0,30,0]) do addKnot grid 1 #corner #line p
+	close grid 1
+	addNewSpline grid
+	for p in #([10,9,0], [13,9,0], [13,21,0], [10,21,0]) do addKnot grid 2 #corner #line p
+	close grid 2
+	updateShape grid
+	addModifier grid (Extrude amount:6 segs:2 capType:1)
+	grid.pos = [120,120,0]
+
+	local gc = Circle name:"FixtureExtGridCircle" radius:8 steps:3
+	addModifier gc (Extrude amount:-4 capType:1 capEnd:false)
+	gc.pos = [180,120,0]
 
 	local mat = StandardMaterial name:"FixtureGrey" diffuse:(color 128 128 128)
 	for o in objects do o.material = mat

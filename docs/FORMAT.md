@@ -512,8 +512,8 @@ against the extrude fixture's oracle) keeps its parameters in an old ParamBlock 
 |---|---|---|
 | 0 | amount (`f32`) | FixtureExtRect 10, FixtureExtL -15 |
 | 1 | segments | FixtureExtRect 2, the others 1 |
-| 2, 3 | cap start, cap end | 1 everywhere |
-| 4 | cap type: 0 morph, 1 grid | 0 |
+| 2, 3 | cap start, cap end | 1 everywhere but FixtureExtGridCircle's cap end 0 |
+| 4 | cap type: 0 morph, 1 grid | FixtureExtGrid and FixtureExtGridCircle 1, the others 0 |
 | 5 | output: 0 patch, 1 mesh, 2 NURBS | 1 |
 | 6 | generate mapping coordinates | FixtureExtRect and FixtureExtAdaptive 1 |
 | 7 | generate material IDs | FixtureExtAdaptive 0, the others 1 |
@@ -539,15 +539,33 @@ What 3ds Max 2020 makes of it (`snapshotAsMesh`, probed on scratch scenes and ch
 - **Faces**: the sides two triangles per segment and level; a cap of n points with h holes n + 2h - 2 triangles,
   without extra vertices (FixtureExtHole: 32 + 2 - 2 = 32 per cap). Nested closed splines alternate solid / hole
   (FixtureExtIsland: a square, a hole, an island in it). An open spline gets no cap (FixtureExtOpen).
-- **Normals**: outward whatever the splines' direction and the sign of the amount; the side faces of an open spline
-  look to the right of it.
+- **Normals**: outward whatever the splines' direction and the sign of the amount (but a lone cap of a downward
+  extrusion, below); the side faces of an open spline look to the right of it.
 - **Material IDs**: the cap facing +Z gets ID 1, the one facing -Z ID 2, the sides ID 3 (FixtureExtRect: the cap at
   the shape faces down and is ID 2; FixtureExtL, amount -15: the cap at the shape faces up and is ID 1); without
   Generate Material IDs every face is ID 1. Use Shape IDs (with Generate Material IDs; without it every face is still
   ID 1): each side face takes the material ID of the spline segment it comes from, its interpolated steps too, on a
   clockwise outline and a hole alike; the caps keep 1 and 2 (FixtureExtShapeIDs: side triangles 2, 6, 10, 4, 8 on IDs
-  4, 5, 7, 11, 12). A parametric shape's segments are ID 1 (FixtureExtShapeIDsRect). Grid caps (cap type 1) are made
-  as morph caps: no local scene has one (443 scenes, 95 Extrudes, the corpus included, 2026-11-21).
+  4, 5, 7, 11, 12). A parametric shape's segments are ID 1 (FixtureExtShapeIDsRect). Downwards (a negative amount)
+  the caps are turned out only when both are on: a lone cap faces as upwards, into the solid (Cap Start -Z and ID 2,
+  Cap End +Z and ID 1; FixtureExtGridCircle, amount -4, Cap End off: its cap faces -Z, ID 2); the sides face out
+  in every case.
+- **Grid caps** (cap type 1; probed on about 60 shapes, `tests/unit/test_extrude.py` GRID_PROBES holds their counts;
+  FixtureExtGrid, FixtureExtGridCircle): each solid (an outline with its holes; an island and an overlapping outline
+  are solids of their own) gets a grid over the box of its outline's interpolated points, W x H. Divisions per axis:
+  20, raised by each hole of the solid to floor(0.95 x W / (s / 2)), s the hole's extent on that axis, at most 50
+  (a 3-wide hole in a 40-wide square: 25; a hole 10 x 0.7: 20 across, 50 up; 60 x 20 with a 3 x 3 hole: 38 x 20);
+  on the points' float32 values, so an exact ratio falls by its float noise (2.3f .. 4.3f in 40: 37; 18.8f .. 21.8f
+  in 60: 38). The grid points: x0 + 0.025 W + (0.95 W / N)(i + 0.001), i = 0 .. N, the same for y, whatever the
+  size. A cell is filled when it lies wholly inside the solid (its corners inside, no outline or hole edge across
+  it, no hole within it); the cap's interior vertices are exactly the corners of the filled cells (a grid point in
+  no filled cell is dropped), each filled cell two triangles (top-left to bottom-right; MaxDrop: a quad), and the
+  band to the outline is triangulated without more points: n + 2k + 2h - 2 triangles per cap of n outline and hole
+  points, k grid points and h holes (Rect 30 x 20: 890 vertices, 1776 faces). A solid without a filled cell gets the
+  morph cap. Only the caps that are on get grid points. The grid points lie at z 0 and the levels' heights whatever
+  the shape's z (a rectangle at z 3: its outline at 3 and 5, its grid at 0 and 2); their map is the cap's box
+  mapping. Every interior edge is hidden: 3ds Max shows the cap as one polygon. No local scene has grid caps (443
+  scenes, 95 Extrudes, the corpus included, 2026-11-21).
 - **Smoothing**: caps group 16; the sides change group only at a corner or Bezier-corner knot (FixtureExtMirror's
   rounded Rectangle: sharp at its 8 Bezier-corner knots), the groups alternating 1, 2 (4 where three runs meet,
   1, 3, 2 ... along a spline with no corner). 3ds Max also breaks the side at a pie Arc's three corners, Bezier
