@@ -261,6 +261,10 @@ class VRayMtlRules(unittest.TestCase, Close):
         conv, ir = _convert(_vray(0, b1=b1, b4={101: Ref(1), 151: 0, 201: 100.0}), _map(1))  # map switched off
         self.close(ir.metallic.value, 1.0)
         self.close(ir.base_color.value, (0.8,) * 3)
+        self.assertIsNone(ir.base_color.map)
+        white = {**b1, 2: (1.0, 1.0, 1.0)}
+        conv, ir = _convert(_vray(0, b1=white, b4={101: Ref(1), 201: 75.0}), _map(1))  # 1 x 0.25: the threshold
+        self.close(ir.metallic.value, 1.0)
 
     def test_fresnel_on_or_dark_reflection_keeps_diffuse(self):
         for b1 in ({1: (1.0, 0.0, 0.0), 2: (0.8, 0.8, 0.8), 8: 1, 91: 0.2},
