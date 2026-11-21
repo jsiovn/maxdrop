@@ -566,3 +566,92 @@ class MapParts(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+CURVE_MAP, CURVE_CONTROL, CURVE, CURVE_OTHER = 0, 1, 2, 3
+CURVE_CLASSES = classdir.ClassDirectory([
+    classdir.ClassEntry(CURVE_MAP, classids.FALLOFF, classids.SC_TEXMAP, "Falloff", -1, None),
+    classdir.ClassEntry(CURVE_CONTROL, classids.CURVE_CONTROL, classids.SC_REF_MAKER, "Curve Control", -1, None),
+    classdir.ClassEntry(CURVE, classids.CURVE, classids.SC_REF_MAKER, "", -1, None),
+    classdir.ClassEntry(CURVE_OTHER, classdir.ClassId(0x30, 0), classids.SC_REF_MAKER, "o", -1, None)])
+
+
+def curve_point(x, y, ix=None, iy=None, ox=None, oy=None, flags=0, size=28):
+    data = struct.pack("<6fI", x, y, x if ix is None else ix, y if iy is None else iy, x if ox is None else ox,
+                       y if oy is None else oy, flags)
+    return container(0x1030, leaf(0x1000, data[:size] if size <= 28 else data + bytes(size - 28)))
+
+
+def curve_scene(*points, count=None, curve_class=CURVE):
+    """A Falloff (object 0) referencing its curve control (1), whose reference 0 is the curve (2)."""
+    body = (u32(0x1000, len(points) if count is None else count),) + points
+    return scene.Scene(container(0x2025, container(CURVE_MAP, refs(-1, 1)), container(CURVE_CONTROL, refs(2)),
+                                 container(curve_class, *body)), CURVE_CLASSES)
+
+
+class MixCurve(unittest.TestCase):
+    """mix_curve: the points of a Falloff's Custom Curve Control (falloff_curve, and damaged synthetic ones)."""
+
+    def test_falloff_curve_points(self):
+        with cfb.CompoundFile(os.path.join(FIXTURE_DIR, "falloff_curve.max")) as cf:
+            s = scene.Scene.from_file(cf)
+            g = materials.MaterialGraph(s)
+            maps = {}
+            for i in range(len(s)):
+                e = s.entry(i)
+                if e is not None and e.superclass == classids.SC_TEXMAP and e.class_id in (classids.FALLOFF,
+                                                                                           classids.MIX):
+                    maps[g.get(i).name] = g.get(i)
+            pts = materials.mix_curve(s, maps["FixtureCurveBezier"])
+            want = (((0, 0), (0, 0), (0, 0), 0x102), ((0.4, 0.8), (0.3, 0.75), (0.6, 0.9), 2),
+                    ((1, 1), (1, 1), (1, 1), 0x100))  # the in / out handles as positions: point + offset
+            self.assertEqual(len(pts), 3)
+            for p, (xy, h_in, h_out, flags) in zip(pts, want):
+                for got, exp in ((p.point, xy), (p.in_handle, h_in), (p.out_handle, h_out)):
+                    self.assertTrue(all(math.isclose(a, b, abs_tol=1e-6) for a, b in zip(got, exp)), (got, exp))
+                self.assertEqual(p.flags, flags)
+            counts = {name: len(materials.mix_curve(s, m)) for name, m in maps.items() if m.class_id == classids.FALLOFF}
+            self.assertEqual(counts, {"FixtureCurveBezier": 3, "FixtureCurveCorner": 4, "FixtureCurveOvershoot": 3,
+                                      "FixtureCurveClamped": 4, "FixtureCurveLinear": 2})
+            for name in ("FixtureMixCurve", "FixtureMixCurveAmount", "FixtureMixCurveStep"):
+                self.assertIsNone(materials.mix_curve(s, maps[name]), name)  # a Mix has no curve control
+            # the head of the curve's 0x2035 is its point count (docs/FORMAT.md, References)
+            for i in range(len(s)):
+                e = s.entry(i)
+                if e is not None and e.superclass == classids.SC_REF_MAKER and e.class_id == classids.CURVE:
+                    chunk = s.chunk(i)
+                    self.assertEqual(chunk.first(0x2035).unpack("<I")[0], chunk.first(0x1000).unpack("<I")[0])
+            del chunk, s, g, maps
+
+    def test_synthetic_curve(self):
+        s = curve_scene(curve_point(0, 0, flags=0x102), curve_point(0.5, 0.2, 0.4, 0.1, 0.6, 0.3, 2),
+                        curve_point(1, 1, flags=0x100))
+        pts = materials.mix_curve(s, materials.MaterialGraph(s).get(0))
+        self.assertEqual([p.flags for p in pts], [0x102, 2, 0x100])
+        self.assertAlmostEqual(pts[1].in_handle[0], 0.4, places=6)
+        self.assertAlmostEqual(pts[1].out_handle[1], 0.3, places=6)
+
+    def test_no_curve_control(self):
+        s = scene.Scene(container(0x2025, container(CURVE_MAP, refs(-1, 1)), container(CURVE_OTHER)), CURVE_CLASSES)
+        self.assertIsNone(materials.mix_curve(s, materials.MaterialGraph(s).get(0)))
+
+    def test_damaged_curves_raise(self):
+        two = (curve_point(0, 0), curve_point(1, 1))
+        cases = {
+            "one point": curve_scene(curve_point(0, 0)),
+            "past the cap": curve_scene(*two, count=materials.MAX_CURVE_POINTS + 1),
+            "count against points": curve_scene(*two, count=3),
+            "27-byte point": curve_scene(curve_point(0, 0, size=27), curve_point(1, 1)),
+            "32-byte point": curve_scene(curve_point(0, 0, size=32), curve_point(1, 1)),
+            "NaN": curve_scene(curve_point(0, float("nan")), curve_point(1, 1)),
+            "infinite handle": curve_scene(curve_point(0, 0, ox=float("inf")), curve_point(1, 1)),
+            "out of order": curve_scene(curve_point(1, 1), curve_point(0, 0)),
+            "not a curve": curve_scene(*two, curve_class=CURVE_OTHER),
+        }
+        for what, s in cases.items():
+            with self.subTest(what):
+                with self.assertRaises(materials.ChunkError):
+                    materials.mix_curve(s, materials.MaterialGraph(s).get(0))
+        s = scene.Scene(container(0x2025, container(CURVE_MAP, refs(-1, 1)), container(CURVE_CONTROL)), CURVE_CLASSES)
+        with self.assertRaises(materials.ChunkError):  # a curve control without its curve
+            materials.mix_curve(s, materials.MaterialGraph(s).get(0))

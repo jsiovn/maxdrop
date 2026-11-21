@@ -149,6 +149,8 @@ OUTPUT_MAP = ClassId(0x000002B0, 0)  # the Output map (superclass Texmap), not a
 COLOR_CORRECTION = ClassId(0x000002D0, 0)
 FALLOFF = ClassId(0x6EC3730C, 0)
 NORMAL_BUMP = ClassId(0x243E22C6, 0x63F6A014)
+CURVE_CONTROL = ClassId(0x14585773, 0x483A7DCF)  # Custom Curve Control: a Falloff's mix curve
+CURVE = ClassId(0x5F2D3A0A, 0x4BE75269)  # a Curve Control's curve, nameless in the class directory
 CORONA_PHYSICAL_MTL = ClassId(0x6912AB89, 0x87151720)
 CORONA_LEGACY_MTL = ClassId(0x70BE6506, 0x448931DD)  # MAXScript's CoronaMtl is the same class
 CORONA_LAYERED_MTL = ClassId(0x65486584, 0x8425554E)
@@ -289,6 +291,8 @@ CLASSES = {
     (SC_TEXMAP, COLOR_CORRECTION): "Color Correction",
     (SC_TEXMAP, FALLOFF): "Falloff",
     (SC_TEXMAP, NORMAL_BUMP): "Normal Bump",
+    (SC_REF_MAKER, CURVE_CONTROL): "Curve Control",
+    (SC_REF_MAKER, CURVE): "",
     (SC_MATERIAL, CORONA_PHYSICAL_MTL): "\rCoronaPhysicalMtl",  # the leading CR is in the class directory
     (SC_MATERIAL, CORONA_LEGACY_MTL): "CoronaLegacyMtl",
     (SC_MATERIAL, CORONA_LAYERED_MTL): "CoronaLayeredMtl",
