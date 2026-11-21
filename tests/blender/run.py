@@ -2658,10 +2658,10 @@ def check_builder_mirror():
         comb = _from(tex.inputs["Vector"])
         x, y = (_from(comb.inputs[a]) for a in ("X", "Y")) if comb is not None else (None, None)
         sep = x and _from(x.inputs[0])
-        check("builder mirror: mirror U, tile V: times (2, 1, 1) -> ping-pong X, Y straight through -> image REPEAT "
-              "(no wrap node: its jump would draw a seam in EEVEE)",
-              tex.extension == 'REPEAT' and comb.bl_idname == "ShaderNodeCombineXYZ" and x.operation == 'PINGPONG'
-              and y == sep and sep.bl_idname == "ShaderNodeSeparateXYZ"
+        check("builder mirror: mirror U, tile V: times (2, 1, 1) -> ping-pong X, wrap Y -> image EXTEND (REPEAT "
+              "would bleed the opposite edge into the mirror line)",
+              tex.extension == 'EXTEND' and comb.bl_idname == "ShaderNodeCombineXYZ" and x.operation == 'PINGPONG'
+              and y.operation == 'WRAP' and _from(y.inputs[0]) == sep and sep.bl_idname == "ShaderNodeSeparateXYZ"
               and double(_from(sep.inputs["Vector"]), [2.0, 1.0, 1.0]),
               "%s %s" % (tex.extension, comb and comb.bl_idname))
 
