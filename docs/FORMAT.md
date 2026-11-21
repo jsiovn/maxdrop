@@ -276,7 +276,8 @@ block's reference slots where animated. Each entry weighs as the oracle shows:
 lookat (`tools/fixtures/lookat.ms`): target cameras (one rolled 30°, one straight above its target, one under a
 Dummy turned 40° and scaled 1.5), a target spot, boxes with a Look At controller (X axis flipped with the target as
 up node and a scale of its own; Y axis rolled 15°) and boxes with a LookAt Constraint (two weighted targets and the
-Y axis flipped with a scale of its own; an up node looked at; an up node's X axis aligned with, under the Dummy).
+Y axis flipped with a scale of its own; an up node looked at; an up node's X axis aligned with, under the Dummy;
+Keep Initial Offset under the Dummy, Set Orientation, both, Set Orientation turned off after the box was turned).
 Every node's world and object transform equals the oracle within 1e-4 (`test_controllers.py`). The frames were
 found on scratch files saved by 3ds Max 2020 (one setting changed per file, compared with `tools/maxdiff.py`, and
 `node.transform` read in MAXScript); `look_frame` and `constraint_frame` are tested against those numbers.
@@ -328,8 +329,25 @@ reference is a ParamBlock2:
 | 13 | `upnode_ctrl`: 0 look at, 1 axis alignment | int |
 
 The ids were matched by the values of the three constraints and by saves that set `relative` or `set_orientation`
-alone. The constraint's own chunks `0x1001`-`0x1004` (4 x `f32`) and `0x1005` (`u32`) are not decoded (the offsets of
-`relative` and `set_orientation`, presumably: an issue when either is on). The target point is the weighted average
+alone. The constraint's own chunks hold its offsets, each a quaternion (4 x `f32`, read as a keyframe rotation's):
+
+| Chunk | Content |
+|---|---|
+| `0x1001` | the node's world rotation when the constraint was assigned (not read) |
+| `0x1002` | the node's local rotation (relative to its parent) when the constraint was assigned |
+| `0x1003` | the aimed frame when the constraint was first evaluated (a target moved before that is already in it) |
+| `0x1004` | the Set Orientation rotation: identity until the node is turned with `set_orientation` on |
+| `0x1005` | `u32`, the number of targets in every probe (not read) |
+
+They are stored values: a save after the target moved or the parent turned writes the same ones. With `L` the aimed
+frame (below) and `Qn` the matrix of chunk `0x100n`: `relative` on gives the frame `Q2 * Q3^-1 * L` (the Set
+Orientation rotation is not applied, also when it is set and `set_orientation` on), `relative` off gives
+`L * Q4`, whether `set_orientation` is on or not (a rotation set with it on stays after it is turned off). Found on
+24 boxes of scratch files (turned before the constraint or after with Set Orientation, top level and under parents
+turned and scaled, uniformly or not, the target moved and the parents turned after), each within `1e-5` of
+`node.transform`; in lookat FixtureKeepOffset (under the Dummy), FixtureSetOrientation, FixtureBothOffsets and
+FixtureOrientationOff, the target moved after all four were set. A chunk the offset needs that is missing or
+shorter than 16 bytes: the plain frame and an issue. The target point is the weighted average
 of the targets' world positions. Row `target_axis` = `n` (`-n` flipped). The up vector: axis alignment = row
 `upnode_axis` of the up node's world matrix (the world's: that unit axis); look at = from `P` to the up node's world
 position (the world's: the origin). Row `StoUP_axis` = the up vector without its part along `n`, normalized

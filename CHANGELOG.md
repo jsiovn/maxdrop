@@ -21,6 +21,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Primitives: Slice on a Sphere, Cylinder, Cone, Tube or Torus and the hemisphere of a Sphere (chopped or squashed)
   or a GeoSphere are imported as the mesh 3ds Max builds, cut planes and bases with their material IDs, smoothing
   groups and UVs, instead of a placeholder with a line in the report.
+- LookAt Constraint: Keep Initial Offset and Set Orientation are applied, so a constrained object keeps the turn
+  it was given in 3ds Max instead of facing its target straight; neither is a line in the report any more.
 
 ### Changed
 
