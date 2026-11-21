@@ -16,8 +16,8 @@ TurboSmooth 0 iterations, 1 use render iterations, 2 render iterations, 4 smooth
 separate by smoothing groups; MeshSmooth 9 method (0 classic, 1 quad output, 2 NURMS), 4 iterations, 2 smoothness,
 13 use render iterations, 14 render iterations, 5 smooth result, 6 separate by materials, 7 separate by smoothing
 groups; Shell 0 inner amount, 1 outer amount, 2 / 8 / 17 override material ID (edges, inner, outer), 4 override
-smoothing group, 12 segments, 14 auto smooth, 19 bevel edges; Symmetry 0 axis, 1 slice along mirror, 2 weld seam, 3 threshold, 4
-flip, its mirror gizmo the PRS controller in reference slot 1.
+smoothing group, 12 segments, 14 auto smooth, 19 bevel edges; Symmetry 0 axis, 1 slice along mirror, 2 weld seam, 3
+threshold, 4 flip, its mirror gizmo the PRS controller in reference slot 1.
 
 What 3ds Max 2020 makes (tests/blender/run.py against the stack_convert fixture's oracle): a smoother refines the
 control points as Catmull-Clark does (not the limit surface); Shell moves the new surfaces along the vertex normals

@@ -6,7 +6,8 @@
 Symmetry as Blender modifiers, no Blender. The stack_convert fixture: each node's converted modifiers in order with
 the settings its script set (tools/fixtures/stack_convert.ms), the mirror frames, the mesh shading a smoother sets,
 a TurboSmooth above a Bend not converted, nothing converted with the option off, the report's counts; stack_basic's
-TurboSmooth above its applied UVW Map; stack_shell's one-sided and inside-out Shells. Hand-made blocks: defaults, clamps, refusals and the Solidify arithmetic.
+TurboSmooth above its applied UVW Map; stack_shell's one-sided and inside-out Shells. Hand-made blocks: defaults,
+clamps, refusals and the Solidify arithmetic.
 tests/blender/run.py checks the built modifiers against 3ds Max's evaluated meshes.
 
     python -I -m unittest discover tests
@@ -278,16 +279,14 @@ class Rules(unittest.TestCase):
             self.assertEqual(issues, [], repr(values))
 
     def test_shell_surfaces(self):
-        # (inner, outer) -> thickness (MM = 0.5 m per unit), offset, flip. Both surfaces outside (-1, 2) or inside
+        # (inner, outer) -> thickness (0.5 m per unit, _convert), offset, flip. Both surfaces outside (-1, 2) or inside
         # (3, -1): an offset past -1 .. 1, which Solidify takes as it is (no hard range; 3ds Max's boxes and
         # volumes, the stack_shell fixture). Inner + outer < 0 turns 3ds Max's shell inside out: Solidify flips.
         for (inner, outer), want in (((1.0, 2.0), (1.5, 1.0 / 3.0, False)), ((0.0, 1.0), (0.5, 1.0, False)),
                                      ((1.0, 0.0), (0.5, -1.0, False)), ((1.0, 1.0), (1.0, 0.0, False)),
                                      ((-1.0, 2.0), (0.5, 3.0, False)), ((3.0, -1.0), (1.0, -2.0, False)),
-                                     ((-1.0, 1.0), (0.0, 0.0, False)), ((-2.0, 1.0), (0.5, 3.0, True)),
+                                     ((-2.0, 1.0), (0.5, 3.0, True)),
                                      ((1.0, -2.0), (0.5, -3.0, True)), ((-1.0, -2.0), (1.5, -1.0 / 3.0, True))):
-            if want[0] == 0.0:
-                continue  # no thickness: refused (test_refused)
             md, issues = _convert(classids.SHELL, {0: inner, 1: outer})
             s = dict(md.settings)
             self.assertAlmostEqual(s["thickness"], want[0], msg=repr((inner, outer)))

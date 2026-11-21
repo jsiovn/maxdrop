@@ -28,8 +28,8 @@ the description's settings and mirror empties, creases where a smoother separate
 evaluated mesh with 3ds Max's vertex and triangle counts, world box and shading (flat faces, smooth regions and hard
 edges, the oracle's eval_mesh.smoothing; SMOOTHING_DIFFERS pins Blender's where it differs: a Shell's rim, a weld);
 under a Solidify its triangles facing up, down and sideways in object space as 3ds Max's (stack_shell: Shells on
-one side of the original and inside out) (stack_convert, stack_shell, stack_basic, modifier_pivot); stack_convert
-imported with Modifiers: Ignore gets none.
+one side of the original and inside out) (stack_convert, stack_shell, stack_basic, modifier_pivot; not FixtureOrder,
+whose seam 3ds Max leaves unwelded: EVAL_COUNT_DIFFERS); stack_convert imported with Modifiers: Ignore gets none.
 primitives (convert/primitives.py): each node a mesh with 3ds Max's vertex and triangle counts (eval_verts, eval_faces)
 and world box, its UV layer (none without Generate Mapping Coords), sharp edges, the unsmoothed GeoSphere flat, normals
 outward but for the Planes (up, or down for the one of negative width) and the Box of negative width (in, as 3ds Max
@@ -883,7 +883,8 @@ def check_converted(label, ob, node, o, meters, desc):
         triangles = sum(len(p.vertices) - 2 for p in mesh.polygons)
         counts = (len(mesh.vertices), triangles)
         smoothing = _smoothing(mesh)
-        facing = _facing(mesh, mw, meters, o["object_transform"])
+        facing = _facing(mesh, mw, meters, o["object_transform"]) if any(
+            c.kind == 'SOLIDIFY' for c in node.converted) else None
     finally:
         ev.to_mesh_clear()
     lo = [min(p[k] for p in world) / meters for k in range(3)]
@@ -908,7 +909,7 @@ def check_converted(label, ob, node, o, meters, desc):
         else:
             check(label + ": evaluated shading (flat, regions, hard edges) = 3ds Max's", smoothing == want,
                   "%s vs %s" % (smoothing, want))
-        if any(c.kind == 'SOLIDIFY' for c in node.converted):  # a Shell's side and facing (inside out or not)
+        if facing is not None:  # a Shell's side and facing (inside out or not)
             want = [sum(h[k] for h in o["eval_mesh"]["material_ids"]) for k in (1, 2, 3)]
             check(label + ": evaluated triangles facing up, down, sideways = 3ds Max's", facing == want,
                   "%s vs %s" % (facing, want))

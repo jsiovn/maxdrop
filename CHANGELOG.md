@@ -15,8 +15,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ### Fixed
 
-- Modifiers: a Shell whose inner and outer surfaces both lie on one side of the original (a negative inner or outer
-  amount) arrives as a Solidify there instead of being left out, and one whose amounts add up to less than zero is
+- Modifiers: a Shell whose inner and outer surfaces both lie on one side of the original (inner -1 and outer 2, for
+  one) arrives as a Solidify there instead of being left out, and one whose amounts add up to less than zero is
   turned inside out as 3ds Max makes it (both amounts negative used to face the wrong way). The report no longer
   names a Shell's smoothing-group override while auto smooth is on, which ignores it.
 - Materials: a material or map with an animated parameter beside maps of its own (a VRayBlendMtl with an animated
