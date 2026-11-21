@@ -3,12 +3,14 @@
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
 -- Arcs with pie and reverse both on, for the knot order of reader/shapes.py and the Extrude built on it
--- (convert/extrude.py: the side U starts at the first knot, the caps wind from it):
+-- (convert/extrude.py: the side U starts at the first point, or at the last of an outline it turns):
 -- FixturePieRev: an Arc of radius 12 from 20 to 130 degrees, pie and reverse.
 -- FixturePieRevWrap: an Arc of radius 10 from 300 to 60 degrees (across 0), pie and reverse.
 -- FixturePieRevExt, FixturePieRevWrapExt: the same two under an Extrude of 10 in 2 segments, with mapping
 -- coordinates and material IDs.
 -- FixturePieExt: FixturePieRevExt without reverse; FixtureArcRevExt: without pie (an open arc).
+-- FixtureClockwiseExt: a closed Line of four corner knots drawn clockwise, under the same Extrude.
+-- FixtureHoleExt: a Rectangle 30 x 30 with a Circle hole (radius 6) in one Editable Spline, under the same Extrude.
 -- One Standard material on every node.
 -- It also writes C:\maxdrop_fixtures\arc_pie_reverse.maps.jsonl: per extruded node, its evaluated mesh in object
 -- space, per triangle in face order the positions of its three vertices, channel 1's three map vertices, its

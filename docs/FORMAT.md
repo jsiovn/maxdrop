@@ -395,7 +395,7 @@ the oracle's `shape`: what 3ds Max's own conversion to an Editable Spline gives 
 positions and vectors within 1e-4, closed flags, interpolation and rendering settings). shapes has one node per
 case below; shapes_more the settings shapes leaves out (NGon corner radius, Ellipse outline, Arc angles out of
 range, a Rectangle's corner radius past half a side, rectangular sections); arc_pie_reverse reversed pie Arcs, plain
-and extruded. The classes, superclass `0x40` (shape):
+and extruded, beside an extruded pie, reversed arc, clockwise Line and holed Rectangle. The classes, superclass `0x40` (shape):
 
 | Class (ClassID) | Kept as |
 |---|---|
@@ -527,7 +527,7 @@ What 3ds Max 2020 makes of it (`snapshotAsMesh`, probed on scratch scenes and ch
 - **Smoothing**: caps group 16; the sides change group only at a corner or Bezier-corner knot (FixtureExtMirror's
   rounded Rectangle: sharp at its 8 Bezier-corner knots), the groups alternating 1, 2 (4 where three runs meet,
   1, 3, 2 ... along a spline with no corner). 3ds Max also breaks the side at a pie Arc's three corners, Bezier
-  knots with zero-length vectors (arc_pie_reverse's extruded pies: 52 hard edges, MaxDrop 46): not known why, not
+  knots with a zero-length vector (arc_pie_reverse's extruded pies: 52 hard edges, MaxDrop 46): not known why, not
   done (maxdrop-em3.111).
 - **Mapping**: the sides U along each spline by length (0 to 1, the seam at its first point), V up the levels; the
   caps the shape's XY box, 0 to 1. Real-World Map Size: the lengths and sizes in file units instead. A closed spline

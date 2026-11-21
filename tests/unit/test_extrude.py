@@ -351,7 +351,7 @@ class ReversedPies(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.desc, cls.data = _read_meshes(PIES)
-        with open(PIES[:-4] + ".oracle.json", encoding="ascii") as f:
+        with open(PIES[:-4] + ".oracle.json", encoding="utf-8") as f:
             cls.oracle = {n["name"]: n for n in json.load(f)["nodes"]}
         with open(PIES[:-4] + ".maps.jsonl", encoding="ascii") as f:
             cls.dump = {d["name"]: d for d in (json.loads(line) for line in f if line.strip())}
@@ -610,7 +610,8 @@ class Synthetic(unittest.TestCase):
                 continue
             for v, i in zip(data.loop_vertices[s:s + t].tolist(), ch.indices[s:s + t].tolist()):
                 if data.positions[v][2] == 0:
-                    us.setdefault(tuple(float(c) for c in data.positions[v][:2]), set()).add(round(float(ch.uvw[i][0]), 6))
+                    at = tuple(float(c) for c in data.positions[v][:2])
+                    us.setdefault(at, set()).add(round(float(ch.uvw[i][0]), 6))
         self.assertEqual(us, {(0.0, 0.0): {0.0, 1.0}, (4.0, 0.0): {0.25}, (4.0, 4.0): {0.5}, (0.0, 4.0): {0.75}})
 
     def test_negative_amount_and_segments(self):
