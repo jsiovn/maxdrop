@@ -394,7 +394,8 @@ A field whose value is zero is left out: the top of every box has mask `0x30`, t
 the oracle's `shape`: what 3ds Max's own conversion to an Editable Spline gives (knot types, segment types,
 positions and vectors within 1e-4, closed flags, interpolation and rendering settings). shapes has one node per
 case below; shapes_more the settings shapes leaves out (NGon corner radius, Ellipse outline, Arc angles out of
-range, a Rectangle's corner radius past half a side, rectangular sections). The classes, superclass `0x40` (shape):
+range, a Rectangle's corner radius past half a side, rectangular sections); arc_pie_reverse reversed pie Arcs, plain
+and extruded. The classes, superclass `0x40` (shape):
 
 | Class (ClassID) | Kept as |
 |---|---|
@@ -463,7 +464,10 @@ The parametric shapes are made by the reader the way 3ds Max makes them, fitted 
   FixtureRectOver, 10 x 30 with 8; a probe with 10 x 12 and 20);
 - Arc: always 4 Bezier knots, 3 equal segments (FixtureArc 170 degrees, FixturePie 90, FixtureArcWide 350), the
   first in vector and the last out vector at their knot; pie adds the center and closes the spline; reverse runs
-  from `to` back to `from`. `from` and `to` are clamped to [0, 360] first, then a `to` below `from` adds 360:
+  from `to` back to `from`, every knot's vectors swapped; pie and reverse together reverse the closed pie but keep
+  its first knot first: `from` (its out vector now at the knot), the center, `to`, then back along the arc
+  (arc_pie_reverse's FixturePieRev 20 -> 130 and FixturePieRevWrap 300 -> 60; probes 30 -> 150, from = to, 0 -> 360
+  and 10 -> 350 alike). `from` and `to` are clamped to [0, 360] first, then a `to` below `from` adds 360:
   from = to is a zero-length arc, its knots at `from` (FixtureArcSame; also 400 -> 500 at 360, 0 -> -90 at 0),
   10 -> 370 ends at 360 (FixtureArcOver), -30 -> 60 starts at 0 (FixtureArcUnder), 100 -> 50 runs 310 degrees
   (FixtureArcWrap), 0 -> 360 and 0 -> 720 are a full turn;
@@ -522,9 +526,15 @@ What 3ds Max 2020 makes of it (`snapshotAsMesh`, probed on scratch scenes and ch
   as morph caps: no local scene has one (443 scenes, 95 Extrudes, the corpus included, 2026-11-21).
 - **Smoothing**: caps group 16; the sides change group only at a corner or Bezier-corner knot (FixtureExtMirror's
   rounded Rectangle: sharp at its 8 Bezier-corner knots), the groups alternating 1, 2 (4 where three runs meet,
-  1, 3, 2 ... along a spline with no corner).
+  1, 3, 2 ... along a spline with no corner). 3ds Max also breaks the side at a pie Arc's three corners, Bezier
+  knots with zero-length vectors (arc_pie_reverse's extruded pies: 52 hard edges, MaxDrop 46): not known why, not
+  done (maxdrop-em3.111).
 - **Mapping**: the sides U along each spline by length (0 to 1, the seam at its first point), V up the levels; the
-  caps the shape's XY box, 0 to 1. Real-World Map Size: the lengths and sizes in file units instead.
+  caps the shape's XY box, 0 to 1. Real-World Map Size: the lengths and sizes in file units instead. A closed spline
+  that runs the other way than its role (a clockwise solid, a counter-clockwise hole) is turned whole: its U starts
+  at its last interpolated point and runs back (arc_pie_reverse: FixtureClockwiseExt, FixtureHoleExt's Circle, the
+  reversed pies; `tests/unit/test_extrude.py` compares every corner with `arc_pie_reverse.maps.jsonl`, the
+  evaluated meshes 3ds Max gave, which the fixture's script writes).
 
 Scene A: 20 shapes with an Extrude (the census), all evaluated: vertex and triangle counts equal 3ds Max's on all
 20, the world box within 1e-3 plus the oracle's 6 significant digits on 16; the other 4 have an Edit Mesh or an FFD
@@ -1304,7 +1314,7 @@ Not shown by any fixture yet, so not stated above:
   8-bit text, the code page the summary records (the machine's ANSI code page is assumed), the layer name in the
   same code page. Their FileAssetMetaData strings are still read as UTF-16, and an older `ClassDirectory` stream
   as `ClassDirectory3`.
-- Of shapes ([Shapes](#shapes)): the order of a reversed pie's knots (the center last), a rectangular section on a
+- Of shapes ([Shapes](#shapes)): a rectangular section on a
   curve that is not flat in XY (Blender's twist and 3ds Max's may differ: an issue), the section angle's sign on
   other directions than +X, a rectangular section of width or length 0 (not drawn, an issue), the angle of a round
   section (not drawn); the `f32` and the last `u32` of a knot, `0x2904`, `0x1070` of the

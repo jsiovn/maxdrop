@@ -29,6 +29,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ### Fixed
 
+- Shapes: an Arc with both Pie Slice and Reverse on starts where 3ds Max starts it (at its From angle, then the
+  center), so its first vertex and an Extrude's side UVs on it are 3ds Max's.
+- Extrude: the side UVs of a closed spline drawn the other way round (a clockwise outline, a counter-clockwise hole)
+  start where 3ds Max starts them, instead of one step along.
 - UVW Map: a corner on the axis of a cylindrical or spherical map (the pole of a sphere, the center of a cap) gets
   the U 3ds Max gives it: a turned gizmo no longer gives it an arbitrary angle (a texture smeared at the pole), and
   on a cylindrical map it takes U 0.5 as in 3ds Max instead of the mean of its face.
