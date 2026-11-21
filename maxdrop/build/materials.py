@@ -18,7 +18,9 @@ between versions.
 Inputs: Base Color, Metallic, Roughness, IOR, Alpha, Specular IOR Level (SPECULAR_LEVEL times the IR's specular:
 a reflection weight, 1 being the full Fresnel reflection at the IOR, Blender's 0.5), Transmission Weight, Emission
 Color and Strength, Coat Weight, Roughness, IOR and Tint, Subsurface Weight, Radius (the IR's subsurface color, per
-channel) and Scale (its radius in meters), Thin Wall, Normal. A color graph on a float input (specular,
+channel) and Scale (its radius in meters), Sheen Weight, Tint and Roughness, Thin Wall, Normal. A material with layers
+(a CoronaLayeredMtl) has a Principled BSDF per layer, each mixed over the ones below by a Mix Shader (factor: the
+layer's amount times its mask); the render method follows every one of them. A color graph on a float input (specular,
 transmission) goes through the mean of its channels, the measure convert/materials.py uses.
 
 Texture graphs (convert/texmaps.py) become nodes, a node of the IR shared by several inputs once per material: Image
@@ -71,6 +73,7 @@ from ..convert import scene as convert_scene
 from ..convert import texmaps as tx
 
 SPECULAR_LEVEL = 0.5
+MAX_LAYER_DEPTH = 8  # layers within layers drawn (convert/materials.py already stops a deeper or cyclic chain)
 X_STEP, Y_STEP = 300, 280
 COLOR, FLOAT = "color", "float"
 # Blend op -> the Mix node's blend type drawn at factor 1
@@ -416,8 +419,57 @@ class _Tree:
         return True
 
     def build(self):
-        """Fill the material from its IR."""
-        ir, tex = self.ir, self.ir.textures
+        """Fill the material from its IR: its Principled BSDF, then each layer (MaterialIR.layers, bottom first,
+        their own layers within) as a Principled BSDF of its own over what is below, by a Mix Shader whose factor is
+        the layer's amount, times its mask graph."""
+        ir = self.ir
+        alphas = []
+        top = self.layered(self.bsdf, ir, alphas, 0)
+        if top is not None:
+            out = next(n for n in self.nodes if n.bl_idname == "ShaderNodeOutputMaterial")
+            self.links.new(top, _in(out, "Surface"))
+        m = self.material
+        if any(linked for linked, _v in alphas):
+            m.surface_render_method = 'DITHERED'
+        elif any(v is not None and v < 1.0 for _l, v in alphas):
+            m.surface_render_method = 'BLENDED'
+        m.diffuse_color = _as(ir.base_color.value, COLOR) + (1.0,)
+        m.metallic = min(1.0, max(0.0, _mean(ir.metallic.value)))
+        m.roughness = min(1.0, max(0.0, _mean(ir.roughness.value)))
+
+    def layered(self, bsdf, ir, alphas, level):
+        """Fill bsdf from ir and mix ir's layers over it: the shader output on top (None for a lone BSDF, already
+        linked). alphas gets (alpha linked, alpha value or None) of every BSDF filled."""
+        alphas.append(self.fill(bsdf, ir))
+        if not ir.layers or level >= MAX_LAYER_DEPTH:
+            return None
+        below = _out(bsdf, "BSDF")
+        for layer in ir.layers:
+            self.start_row()
+            node = self.nodes.new("ShaderNodeBsdfPrincipled")
+            node.location = (0.0, self.row - Y_STEP)
+            self.columns[-1] = self.row - 2 * Y_STEP
+            sub = self.layered(node, layer.ir, alphas, level + 1)
+            mix = self.nodes.new("ShaderNodeMixShader")
+            mix.location = (X_STEP * 0.5, node.location[1])
+            factor = MISSING
+            if layer.graph is not None:
+                self.start_row()
+                factor = self.graph(layer.graph.root, FLOAT, 1)
+            if isinstance(factor, bpy.types.NodeSocket):
+                factor = self.times(factor, layer.amount, 0) if layer.amount != 1.0 else factor
+                self.links.new(factor, mix.inputs[0])
+            else:
+                weight = layer.amount * (1.0 if factor is MISSING else _mean(factor))
+                mix.inputs[0].default_value = min(1.0, max(0.0, weight))
+            self.links.new(below, mix.inputs[1])
+            self.links.new(sub if sub is not None else _out(node, "BSDF"), mix.inputs[2])
+            below = mix.outputs[0]
+        return below
+
+    def fill(self, bsdf, ir):
+        """Set a Principled BSDF's inputs from a MaterialIR: (alpha linked, the constant alpha or None)."""
+        self.bsdf, tex = bsdf, ir.textures
         self.color_input("Base Color", ir.base_color, tex.get("base_color"))
         self.float_input("Metallic", ir.metallic, tex.get("metallic"))
         self.float_input("Roughness", ir.roughness, tex.get("roughness"))
@@ -443,17 +495,14 @@ class _Tree:
         if ir.subsurface_weight > 0:
             self.value("Subsurface Radius", ir.subsurface_color)
             self.value("Subsurface Scale", ir.subsurface_radius)
+        if ir.sheen_weight > 0:
+            self.value("Sheen Weight", ir.sheen_weight)
+            self.value("Sheen Tint", ir.sheen_color)
+            self.value("Sheen Roughness", ir.sheen_roughness)
         if ir.thin_walled:
             self.value("Thin Wall", True)
-        m = self.material
         alpha = self.bsdf_input("Alpha", needed=False)
-        if alpha_map:
-            m.surface_render_method = 'DITHERED'
-        elif alpha is not None and alpha.default_value < 1.0:
-            m.surface_render_method = 'BLENDED'
-        m.diffuse_color = _as(ir.base_color.value, COLOR) + (1.0,)
-        m.metallic = min(1.0, max(0.0, _mean(ir.metallic.value)))
-        m.roughness = min(1.0, max(0.0, _mean(ir.roughness.value)))
+        return alpha_map, (None if alpha is None or alpha_map else alpha.default_value)
 
     def graph(self, node, space, depth):
         """The output (a node socket) or constant of an IR node in a space."""

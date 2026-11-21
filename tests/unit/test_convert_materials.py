@@ -1111,23 +1111,35 @@ class Corona(unittest.TestCase, Close):
         self.close(metal.metallic.value, 1.0, "Fresnel IOR 999 and a bright reflection")
         self.close(metal.base_color.value, _lins(250, 200, 120), "the reflection color")
         self.close(metal.roughness.value, 0.1)
-        self.assertEqual(conv.stats.issues, [])
+        self.assertEqual([r for _i, r in conv.stats.issues],
+                         ["CoronaLegacyMtl 'FixtureCoronaLegacyGloss': glossiness of PBR mode off read as in PBR mode"])
 
-    def test_layered_peels_to_its_base_or_first_layer(self):
+    def test_layered_mixes_its_layer_or_peels_without_a_base(self):
         cf, graph, by_name = _fixture("corona_layered")
         with cf:
             conv = mat.MaterialConverter(graph)
             layered = conv.convert(by_name["FixtureCoronaLayered"])
             base = conv.convert(by_name["FixtureCoronaLayerBase"])
+            coat = conv.convert(by_name["FixtureCoronaLayerCoat"])
             nobase = conv.convert(by_name["FixtureCoronaLayeredNoBase"])
             only = by_name["FixtureCoronaLayerOnly"]
+            self.assertEqual(conv.peel(by_name["FixtureCoronaLayered"]), (by_name["FixtureCoronaLayered"], None))
             self.assertEqual(conv.peel(by_name["FixtureCoronaLayeredNoBase"]), (only, None))
-        self.assertIs(layered, base)
-        self.close(base.base_color.value, _lins(90, 160, 70))
-        self.close(base.roughness.value, 0.45)
+        self.assertIsNot(layered, base)
+        self.assertEqual((layered.name, layered.source), ("FixtureCoronaLayered", "CoronaLayeredMtl"))
+        self.close(layered.base_color.value, _lins(90, 160, 70), "the base's inputs")
+        self.close(layered.roughness.value, 0.45)
+        self.assertEqual(len(layered.layers), 1)
+        layer = layered.layers[0]
+        self.assertIs(layer.ir, coat)
+        self.close(layer.amount, 0.5)
+        self.assertEqual(layer.mask.index, by_name["FixtureCLayerMask"])
+        self.close(layer.mask.amount, 1.0, "mask amount")
+        self.assertIsNone(layer.graph, "no TexmapConverter")
+        self.assertEqual(base.layers, [], "the base itself is untouched")
         self.assertEqual(nobase.name, "FixtureCoronaLayerOnly")
         self.close(nobase.base_color.value, _lins(70, 80, 200))
-        self.assertEqual(conv.stats.peeled, {"CoronaLayeredMtl": 2})
+        self.assertEqual(conv.stats.peeled, {"CoronaLayeredMtl": 1}, "only the one without a base")
 
     def test_light(self):
         cf, graph, by_name = _fixture("corona_light")
@@ -1167,6 +1179,129 @@ class Corona(unittest.TestCase, Close):
         self.assertEqual(legacy.alpha.map, mat.MapRef(by_name["FixtureCHdr"]))
         self.assertIsNone(legacy.emission_color.map, "slot switched off")
         self.assertEqual(conv.stats.issues, [])
+
+
+class CoronaMore(unittest.TestCase, Close):
+    """tools/fixtures/corona_more.ms, by hand (millimeters, gamma off)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.cf, cls.graph, cls.by_name = _fixture("corona_more")
+        cls.conv = mat.MaterialConverter(cls.graph)
+        cls.irs = {n: cls.conv.convert(i) for n, i in cls.by_name.items()}
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.cf.close()
+
+    def ir(self, name):
+        return self.irs["FixtureCorona" + name]
+
+    def test_meters_from_the_file(self):
+        self.close(self.conv.meters, 0.001)
+
+    def test_physical_sss(self):
+        ir = self.ir("PhysSss")
+        self.close(ir.subsurface_weight, 0.6)
+        self.close(ir.subsurface_radius, 0.0025, "2.5 mm")
+        self.close(ir.subsurface_color, _lins(220, 80, 50))
+        self.close(ir.base_color.value, _lins(230, 190, 170))
+        self.assertEqual(ir.issues, [])
+
+    def test_physical_sheen(self):
+        ir = self.ir("PhysSheen")
+        self.close(ir.sheen_weight, 0.7)
+        self.close(ir.sheen_color, _lins(250, 200, 230))
+        self.close(ir.sheen_roughness, 0.4)
+        self.assertEqual(ir.issues, ["CoronaPhysicalMtl 'FixtureCoronaPhysSheen': sheen amount map not converted"])
+
+    def test_physical_named_issues(self):
+        self.assertEqual(self.ir("PhysTransl").issues,
+                         ["CoronaPhysicalMtl 'FixtureCoronaPhysTransl': translucency not converted"])
+        absorb = self.ir("PhysAbsorb")
+        self.close(absorb.transmission.value, 1.0)
+        self.assertEqual(absorb.issues, ["CoronaPhysicalMtl 'FixtureCoronaPhysAbsorb': volumetric absorption and "
+                                         "scattering not converted"])
+        self.assertEqual(self.ir("PhysEdge").issues,
+                         ["CoronaPhysicalMtl 'FixtureCoronaPhysEdge': metal edge color not converted"])
+        self.assertEqual(self.ir("PhysIorMode").issues,
+                         ["CoronaPhysicalMtl 'FixtureCoronaPhysIorMode': IOR mode 1 read as an IOR"])
+
+    def test_physical_complex_ior(self):
+        ir = self.ir("PhysComplex")
+        want = tuple(mat.f0_from_complex_ior(n, k) for n, k in ((0.2, 3.9), (0.9, 2.4), (1.1, 2.2)))
+        self.close(ir.base_color.value, want)
+        self.close(ir.metallic.value, 1.0)
+        self.close(ir.roughness.value, 0.3)
+        self.assertEqual(ir.issues, [], "no edge color issue: the complex IOR stands for it")
+
+    def test_legacy_sss(self):
+        ir = self.ir("LegacySss")
+        self.close(ir.subsurface_weight, 0.8)
+        self.close(ir.subsurface_radius, 0.0015)
+        self.close(ir.subsurface_color, _lins(200, 60, 40))
+        self.assertEqual(ir.issues, [])
+
+    def test_legacy_without_pbr(self):
+        ir = self.ir("LegacyNoPbr")
+        self.close(ir.roughness.value, 0.4)
+        self.close(ir.transmission.value, 0.5)
+        self.assertEqual(ir.issues, [
+            "CoronaLegacyMtl 'FixtureCoronaLegacyNoPbr': glossiness of PBR mode off read as in PBR mode",
+            "CoronaLegacyMtl 'FixtureCoronaLegacyNoPbr': translucency not converted",
+            "CoronaLegacyMtl 'FixtureCoronaLegacyNoPbr': absorption not converted"])
+
+    def test_layered(self):
+        ir = self.ir("Layers")
+        self.assertEqual(ir.source, "CoronaLayeredMtl")
+        self.close(ir.base_color.value, _lins(90, 160, 70), "the base")
+        self.assertEqual([la.ir.name for la in ir.layers], ["FixtureCoronaLayersOne", "FixtureCoronaLayersTwo"],
+                         "the switched-off third layer left out")
+        one, two = ir.layers
+        self.close((one.amount, two.amount), (0.3, 0.6))
+        self.assertIsNone(one.mask)
+        self.assertEqual(two.mask, mat.MapRef(self.by_name["FixtureCLayersMask"], 0.5))
+        self.assertIs(two.ir, self.ir("LayersTwo"))
+        self.close(two.ir.base_color.value, _lins(200, 60, 40))
+        self.assertEqual(ir.issues, [])
+        self.assertNotIn("CoronaLayeredMtl", self.conv.stats.peeled)
+
+    def test_layered_mask_graph(self):
+        cf, graph, by_name = _fixture("corona_more")
+        with cf:
+            tex = texmaps.TexmapConverter(graph)
+            conv = mat.MaterialConverter(graph, texmaps=tex)
+            two = conv.convert(by_name["FixtureCoronaLayers"]).layers[1]
+        root = two.graph.root
+        self.assertIsInstance(root, texmaps.Mix, "lerp(1, mask, mask amount)")
+        self.close(root.a.value, 1.0)
+        self.close(root.b.value, _lin(64))
+        self.close(root.factor, 0.5)
+
+    def test_skin(self):
+        ir = self.ir("Skin")
+        self.close(ir.base_color.value, tuple(c * 0.9 for c in _lins(200, 150, 120)))
+        self.close(ir.subsurface_weight, 0.8)
+        colors_ = [(0.521569, 0.635294, 0.666667), (0.439216, 0.156863, 0.0784314), (0.439216, 0.0784314, 0.0196078)]
+        lin = [tuple(_lin(round(c * 255)) for c in col) for col in colors_]
+        self.close(ir.subsurface_color, tuple(sum(c[i] for c in lin) / 3 for i in range(3)), "equal weights")
+        self.close(ir.subsurface_radius, 2.0 * (0.75 + 1.5 + 4.0) / 3 * 0.001)
+        self.close(ir.specular.value, 0.6)
+        self.close(ir.roughness.value, 0.3)
+        self.close(ir.ior, 1.45)
+        self.close(ir.alpha.value, 0.9)
+        self.assertEqual(ir.issues, [])
+
+    def test_hair_stays_grey(self):
+        ir = self.ir("Hair")
+        self.assertTrue(ir.unknown)
+        self.assertEqual(self.conv.stats.unknown["CoronaHairMtl"], 1)
+
+    def test_ray_switch_and_select_peel(self):
+        self.assertIs(self.ir("RaySwitch"), self.ir("RaySwitchDirect"), "what the camera sees")
+        self.assertIs(self.ir("Select"), self.ir("SelectB"), "selected 1, zero-based")
+        self.assertEqual(self.conv.stats.peeled["CoronaRaySwitchMtl"], 1)
+        self.assertEqual(self.conv.stats.peeled["CoronaSelectMtl"], 1)
 
 
 def _corona(index, class_id, **params):
@@ -1228,6 +1363,56 @@ class CoronaSynthetic(unittest.TestCase, Close):
         conv, ir = _convert(_corona(0, classids.CORONA_PHYSICAL_MTL, p461=1, p171=2.0))
         self.close(ir.ior, 2.0)
         self.assertIn("IOR mode 1", ir.issues[0])
+
+    def test_layered_cycle_and_a_layer_that_is_not_a_material(self):
+        a = _corona(0, classids.CORONA_LAYERED_MTL, p1000=Ref(1), p1001=[Ref(2), Ref(3)])
+        b = _corona(1, classids.CORONA_PHYSICAL_MTL)
+        c = _corona(2, classids.CORONA_LAYERED_MTL, p1000=Ref(1), p1001=[Ref(0)])  # back to a
+        conv, ir = _convert(a, b, c, _map(3))
+        self.assertEqual([la.ir.index for la in ir.layers], [2])
+        inner = ir.layers[0].ir
+        self.assertEqual(len(inner.layers), 1)
+        self.assertTrue(inner.layers[0].ir.unknown, "the cycle back to a: grey")
+        self.assertTrue(any("material cycle" in r for _i, r in conv.stats.issues))
+        self.assertTrue(any("is not a material" in r for _i, r in conv.stats.issues), "the map in layer 2")
+
+    def test_layered_caps_its_layers(self):
+        n = mat.MAX_LAYERS + 2
+        layered = _corona(0, classids.CORONA_LAYERED_MTL, p1000=Ref(1), p1001=[Ref(1)] * n, p1002=[0.5] * n)
+        conv, ir = _convert(layered, _corona(1, classids.CORONA_PHYSICAL_MTL))
+        self.assertEqual(len(ir.layers), mat.MAX_LAYERS)
+        self.assertTrue(any("only the first" in r for r in ir.issues))
+
+    def test_layered_mask_switched_off_and_amounts(self):
+        layered = _corona(0, classids.CORONA_LAYERED_MTL, p1000=Ref(1), p1001=[Ref(1), Ref(1)], p1002=[0.25, 2.0],
+                          p1003=[Ref(2), Ref(2)], p1005=[0, 1], p1006=[1.0, 0.4])
+        conv, ir = _convert(layered, _corona(1, classids.CORONA_PHYSICAL_MTL), _map(2))
+        self.assertEqual([(la.amount, la.mask) for la in ir.layers],
+                         [(0.25, None), (2.0, mat.MapRef(2, 0.4))])
+
+    def test_ray_switch_and_select(self):
+        rs = _corona(0, classids.CORONA_RAY_SWITCH_MTL, p1600=Ref(1), p1603=Ref(2), p1613=0)
+        conv, ir = _convert(rs, _corona(1, classids.CORONA_PHYSICAL_MTL), _corona(2, classids.CORONA_LEGACY_MTL))
+        self.assertEqual(conv.peel(0), (1, None), "direct switched off: the GI material")
+        sel = _corona(0, classids.CORONA_SELECT_MTL, p312=[Ref(1), Ref(None)], p313=1)
+        conv, ir = _convert(sel, _corona(1, classids.CORONA_PHYSICAL_MTL))
+        self.assertTrue(ir.unknown)
+        self.assertIn("selected 1 is empty", ir.issues[0])
+        conv, ir = _convert(_corona(0, classids.CORONA_SELECT_MTL, p312=[Ref(1)], p313=5),
+                            _corona(1, classids.CORONA_PHYSICAL_MTL))
+        self.assertIn("selected 5 has no material", ir.issues[0])
+
+    def test_complex_ior_f0(self):
+        self.close(mat.f0_from_complex_ior(1.5, 0.0), 0.04)
+        self.close(mat.f0_from_complex_ior(0.2, 3.9), ((0.8 ** 2) + 3.9 ** 2) / (1.2 ** 2 + 3.9 ** 2))
+
+    def test_meters_default_and_given(self):
+        conv = mat.MaterialConverter(FakeGraph(_corona(0, classids.CORONA_PHYSICAL_MTL, p291=0.5, p301=2.0)))
+        self.close(conv.meters, mat.DEFAULT_METERS, "a graph without a scene")
+        self.close(conv.convert(0).subsurface_radius, 2.0 * 0.0254)
+        conv = mat.MaterialConverter(FakeGraph(_corona(0, classids.CORONA_PHYSICAL_MTL, p291=0.5, p301=2.0)),
+                                     meters=0.01)
+        self.close(conv.convert(0).subsurface_radius, 0.02)
 
     def test_layered_with_nothing_set_is_grey(self):
         conv, ir = _convert(_corona(0, classids.CORONA_LAYERED_MTL, p1000=Ref(None), p1001=[Ref(None)] * 3))

@@ -92,7 +92,8 @@ import collections
 import dataclasses
 import math
 
-from ..reader import chunks, classids, pblock
+from ..reader import chunks, classids, pblock, units
+from ..reader import scene as reader_scene
 from ..reader.classdir import ClassId
 from ..reader.errors import MaxFileError
 from . import colors
@@ -103,6 +104,7 @@ ChunkError = chunks.ChunkError
 
 MAX_PEEL = 8
 METAL_REFLECTION = 0.25  # mean linear reflection (about sRGB 137 grey) above which Fresnel off means metal
+CORONA_EDGE_DEFAULT = 0.75  # CoronaPhysicalMtl's edgeColor as created (grey): not reported
 CORONA_METAL_IOR = 10.0  # a CoronaLegacyMtl Fresnel IOR from which a bright reflection is a metal (made with 999)
 GREY_SRGB = 128 / 255  # the grey of a material without a rule: MaxDrop's own, not a swatch
 
@@ -114,10 +116,19 @@ WRAPPERS = {
     classids.VRAY_MTL_WRAPPER: (0,),  # baseMtl
     classids.DOUBLE_SIDED_MTL: (0, 1),  # material1 (facing), material2 (back)
     classids.SHELLAC_MTL: (0, 1),  # shellacMtl1 (base), shellacMtl2
-    classids.CORONA_LAYERED_MTL: (1000, 1001),  # baseMtl, layers (table)
+    classids.CORONA_LAYERED_MTL: (1000, 1001),  # baseMtl, layers (table): a wrapper only without a layer on
+    classids.CORONA_RAY_SWITCH_MTL: (1603, 1600, 1601, 1602),  # directMtl, giMtl, reflectMtl, refractMtl
+    classids.CORONA_SELECT_MTL: (312,),  # materials (table): the one at selected (313, zero-based)
 }
+WRAPPER_SWITCHES = {classids.CORONA_RAY_SWITCH_MTL: {1603: 1613, 1600: 1610, 1601: 1611, 1602: 1612}}
+CORONA_SELECT_LIST, CORONA_SELECT_INDEX = 312, 313
 SHELL_RENDER_INDEX, SHELL_SUBS = 1, (2, 3)  # renderMtlIndex; originalMaterial, bakedMaterial
-CORONA_LAYERS, CORONA_LAYERS_ON = 1001, 1004  # CoronaLayeredMtl: a layer switched off is not a sub-material
+# CoronaLayeredMtl, block 0: 1000 baseMtl, 1001 layers, 1002 amounts, 1003 mixmaps (masks), 1004 layersOn, 1005 masksOn,
+# 1006 maskAmounts (each a table, one element per layer)
+CORONA_BASE, CORONA_LAYERS, CORONA_AMOUNTS, CORONA_MASKS, CORONA_LAYERS_ON, CORONA_MASKS_ON, CORONA_MASK_AMOUNTS = (
+    1000, 1001, 1002, 1003, 1004, 1005, 1006)
+MAX_LAYERS = 16  # layers mixed over a CoronaLayeredMtl's base (Corona offers 10)
+DEFAULT_METERS = 0.0254  # meters per system unit of a scene that does not say: 3ds Max's default, inches
 
 LUMENS_PER_WATT = 683.0  # luminous efficacy at 555 nm: cd/m2 -> W/(m2 sr)
 
@@ -201,10 +212,25 @@ class MaterialIR:
     coat_color: tuple = (1.0, 1.0, 1.0)
     coat_roughness: float = 0.0
     coat_ior: float = 1.5
+    sheen_weight: float = 0.0
+    sheen_color: tuple = (1.0, 1.0, 1.0)
+    sheen_roughness: float = 0.5
     two_sided: bool = False  # Standard's twoSided: 3ds Max renders the back faces too
     unknown: bool = False
     textures: dict = dataclasses.field(default_factory=dict)  # {input name: texmaps.TextureGraphIR}
     issues: list = dataclasses.field(default_factory=list)
+    layers: list = dataclasses.field(default_factory=list)  # [Layer] mixed over this one, bottom first
+
+
+@dataclasses.dataclass
+class Layer:
+    """A material mixed over the ones below it (CoronaLayeredMtl): its MaterialIR, its amount, its mask (a MapRef
+    whose amount is the mask amount, or None) and the mask's TextureGraphIR (DATA) when a TexmapConverter made one.
+    Its weight is amount x the mask graph, the graph being lerp(1, mask, mask amount)."""
+    ir: MaterialIR
+    amount: float = 1.0
+    mask: object = None
+    graph: object = None
 
 
 class ConvertStats:
@@ -250,17 +276,32 @@ def _roughness(gloss, use_roughness):
     return _clamp01(gloss if use_roughness else 1.0 - gloss)
 
 
+def _scene_meters(graph):
+    """Meters per system unit of a MaterialGraph's scene: what the file says, else DEFAULT_METERS."""
+    s = getattr(graph, "scene", None)
+    unit = units.system_unit(s) if isinstance(s, reader_scene.Scene) else None
+    return unit.meters if unit is not None else DEFAULT_METERS
+
+
+def f0_from_complex_ior(n, k):
+    """The Fresnel reflectance at normal incidence of a conductor of complex IOR n + ik:
+    ((n - 1)^2 + k^2) / ((n + 1)^2 + k^2)."""
+    return ((n - 1.0) ** 2 + k * k) / ((n + 1.0) ** 2 + k * k)
+
+
 class MaterialConverter:
     """Converts the materials of one MaterialGraph, each object once."""
 
-    def __init__(self, graph, texmaps=None, swatches=None):
+    def __init__(self, graph, texmaps=None, swatches=None, meters=None):
         self.graph, self.texmaps = graph, texmaps
         if swatches is None:
             swatches = texmaps.swatches if texmaps is not None else colors.of_graph(graph)
         self.swatches = swatches
+        self.meters = meters if meters is not None else _scene_meters(graph)
         self.stats = ConvertStats()
         self._done, self._peels, self._counted = {}, {}, set()
         self._multis, self._for, self._reported = {}, {}, set()
+        self._active = []  # the materials whose rule is running: a layer that comes back to one is a cycle
 
     def rgb(self, m, pid, block, default):
         """A swatch parameter as linear RGB by the scene's rule; default is the swatch value (0..1) used when the
@@ -323,10 +364,15 @@ class MaterialConverter:
             if k not in (0.0, 1.0):
                 return None, "Shell Material: render index %r" % (k,)
             pids = (SHELL_SUBS[int(k)],)
+        elif key == classids.CORONA_SELECT_MTL:
+            return self._selected(m)
         else:
             pids = WRAPPERS[key]
         block = m.block(0)
+        switches = WRAPPER_SWITCHES.get(key, {})
         for pid in pids:
+            if pid in switches and not _flag(m, switches[pid], 0, True):
+                continue
             values = block.value(pid) if block is not None else None
             for k, v in enumerate(values if isinstance(values, list) else [values]):
                 if key == classids.CORONA_LAYERED_MTL and pid == CORONA_LAYERS:
@@ -338,6 +384,38 @@ class MaterialConverter:
                         return None, "%s: sub-material %d is not a material" % (m.name or "wrapper", v.index)
                     return v.index, None
         return None, "%s: no sub-material" % (m.name or "wrapper")
+
+    def _selected(self, m):
+        """CoronaSelectMtl: the material at selected (zero-based: its default is 0) in materials."""
+        k = m.param(CORONA_SELECT_INDEX, 0)
+        values = m.block(0).value(CORONA_SELECT_LIST) if m.block(0) is not None else None
+        name = m.name or "CoronaSelectMtl"
+        if not isinstance(k, int) or isinstance(k, bool) or not isinstance(values, list) or not 0 <= k < len(values):
+            return None, "%s: selected %r has no material" % (name, k)
+        v = values[k]
+        if not isinstance(v, pblock.Reference) or v.index is None:
+            return None, "%s: selected %d is empty" % (name, k)
+        if self.graph.superclass(v.index) != classids.SC_MATERIAL:
+            return None, "%s: sub-material %d is not a material" % (name, v.index)
+        return v.index, None
+
+    def corona_layers(self, m):
+        """The layers of a CoronaLayeredMtl that are on and set: [(table position, object index)]."""
+        block = m.block(0)
+        values = block.value(CORONA_LAYERS) if block is not None else None
+        out = []
+        for k, v in enumerate(values if isinstance(values, list) else []):
+            on = m.param(CORONA_LAYERS_ON, 0, tab=k)
+            if (_finite(on) and not on) or not isinstance(v, pblock.Reference) or v.index is None:
+                continue
+            out.append((k, v.index))
+        return out
+
+    def _mixes_layers(self, m):
+        """A CoronaLayeredMtl with a base and a layer on is a material of its own (corona_layered_mtl); without either
+        it is a wrapper of the one it has."""
+        base = m.param(CORONA_BASE, 0)
+        return isinstance(base, pblock.Reference) and base.index is not None and bool(self.corona_layers(m))
 
     def peel(self, index):
         """(object index of the material a wrapper stands for, None), the index itself for an object that is no
@@ -354,7 +432,8 @@ class MaterialConverter:
                 out = (None, "object %d: %s" % (i, e))
                 break
             key = ClassId(*m.class_id)
-            if m.superclass != classids.SC_MATERIAL or not (key in WRAPPERS or key == classids.SHELL_MTL):
+            if m.superclass != classids.SC_MATERIAL or not (key in WRAPPERS or key == classids.SHELL_MTL) or (
+                    key == classids.CORONA_LAYERED_MTL and self._mixes_layers(m)):
                 out = (i, None)
                 break
             if len(chain) == MAX_PEEL:
@@ -389,8 +468,16 @@ class MaterialConverter:
             ir = self.convert(base)
         elif self.is_class(index, classids.SC_MATERIAL, classids.MULTI_SUB_MTL):
             ir = self._multi_default(index)
+        elif index in self._active or len(self._active) >= MAX_PEEL:
+            reason = ("material cycle through object %d" % index if index in self._active else
+                      "more than %d layered materials below object %d" % (MAX_PEEL, self._active[0]))
+            return self._grey(index, reason)  # not kept: from elsewhere the same object converts
         else:
-            ir = self._rule(index)
+            self._active.append(index)
+            try:
+                ir = self._rule(index)
+            finally:
+                self._active.pop()
         self._done[index] = ir
         return ir
 
@@ -497,7 +584,9 @@ class MaterialConverter:
             self.stats.unknown[source] += 1
             return self._grey(index, "")
         ir = MaterialIR(index, m.name, source)
-        rule(self, m, ir)
+        made = rule(self, m, ir)
+        if made is not None:  # a rule that builds its IR from others' (corona_layered_mtl): textures done
+            return made
         if self.texmaps is not None:
             ir.textures = _texmaps.texture_graphs(ir, self.texmaps)
             for g in ir.textures.values():
@@ -716,13 +805,30 @@ def _corona_amount_map(conv, m, map_pid, ir, invert=False):
     return conv.map_ref(m, map_pid, map_pid + 1, map_pid + 2, 0, invert=invert, ir=ir, percent=False)
 
 
+def _unread_map(conv, m, map_pid, ir, what):
+    """A Corona map slot (map, switch at + 1) whose input the IR has no map for: an issue when a map is on there."""
+    if conv.map_ref(m, map_pid, map_pid + 1, None, 0, ir=ir) is not None:
+        conv.issue(m.index, "%s %r: %s map not converted" % (class_name(m.superclass, m.class_id), m.name, what), ir)
+
+
+def _subsurface(conv, m, ir, weight_pid, radius_pid, color_pid):
+    """Corona SSS: the amount as the subsurface weight, the radius (world units) in meters, the scatter color as the
+    per-channel radius."""
+    ir.subsurface_weight = _clamp01(_num(m, weight_pid, 0, 0.0))
+    ir.subsurface_radius = max(0.0, _num(m, radius_pid, 0, 1.0)) * conv.meters
+    ir.subsurface_color = conv.rgb(m, color_pid, 0, (1.0, 0.35, 0.2))
+
+
 def corona_physical_mtl(conv, m, ir):
     """CoronaPhysicalMtl, block 0 (map, its switch and amount at id, id + 1, id + 2): 101 baseColor, 102 baseLevel,
     103 base map, 111 metalnessMode, 121 opacityColor, 122 opacityLevel, 123 opacity map, 131 baseRoughness,
     132 its map, 171 baseIor, 191 refractionAmount, 192 its map, 203 useThinMode, 211 clearcoatAmount,
     221 clearcoatIor, 231 clearcoatRoughness, 331 selfIllumColor, 332 selfIllumLevel, 333 its map, 351 baseBump map,
     381 thinAbsorptionColor, 391 clearcoatAbsorptionColor, 411 / 412 metalness map (on), 421 roughnessMode (1:
-    every roughness is a glossiness)."""
+    every roughness is a glossiness, the sheen's too); 241 sheenAmount, 245 sheenColor, 251 sheenRoughness; 291
+    sssAmount, 301 sssRadius (world units), 311 sssScatterColor; 451 useComplexIor, 452-454 n and 455-457 k per
+    channel (a metal's base color is then the F0 they give). Translucency (371, 375), volumetric absorption and
+    scattering (261, 271, 281), the edge color (161) and maps in the sheen and SSS slots are named issues."""
     gloss = m.param(421, 0) == 1
     level = max(0.0, _num(m, 102, 0, 1.0))
     base = tuple(min(1.0, c * level) for c in conv.rgb(m, 101, 0, (0.5, 0.5, 0.5)))
@@ -749,6 +855,27 @@ def corona_physical_mtl(conv, m, ir):
     ir.coat_roughness = 1.0 - c if gloss else c
     ir.coat_color = conv.rgb(m, 391, 0, (1.0, 1.0, 1.0))
     conv.bump_slot(ir, _corona_amount_map(conv, m, 351, ir))
+    sheen_r = _clamp01(_num(m, 251, 0, 0.3))
+    ir.sheen_weight = _clamp01(_num(m, 241, 0, 0.0))
+    ir.sheen_color = conv.rgb(m, 245, 0, (1.0, 1.0, 1.0))
+    ir.sheen_roughness = 1.0 - sheen_r if gloss else sheen_r
+    _subsurface(conv, m, ir, 291, 301, 311)
+    for pid, what in ((242, "sheen amount"), (246, "sheen color"), (252, "sheen roughness"), (292, "SSS amount"),
+                      (302, "SSS radius"), (312, "SSS scatter color")):
+        _unread_map(conv, m, pid, ir, what)
+    if _flag(m, 451, 0, False) and ir.metallic.value == 1.0:
+        n = [_num(m, pid, 0, 1.0) for pid in (452, 453, 454)]
+        k = [_num(m, pid, 0, 0.0) for pid in (455, 456, 457)]
+        ir.base_color = Input(tuple(_clamp01(f0_from_complex_ior(a, b)) for a, b in zip(n, k)))
+    elif ir.metallic.value == 1.0 or ir.metallic.map is not None:
+        edge = m.param(161, 0)
+        if isinstance(edge, tuple) and any(_finite(c) and abs(c - CORONA_EDGE_DEFAULT) > 1e-4 for c in edge[:3]):
+            conv.issue(m.index, "CoronaPhysicalMtl %r: metal edge color not converted" % (m.name,), ir)
+    if _num(m, 371, 0, 0.0) > 0 or conv.map_ref(m, 372, 373, None, 0, ir=ir) is not None:
+        conv.issue(m.index, "CoronaPhysicalMtl %r: translucency not converted" % (m.name,), ir)
+    if t > 0 and _num(m, 281, 0, 0.0) > 0:
+        conv.issue(m.index, "CoronaPhysicalMtl %r: volumetric absorption and scattering not converted" % (m.name,),
+                   ir)
 
 
 def corona_legacy_mtl(conv, m, ir):
@@ -756,7 +883,9 @@ def corona_legacy_mtl(conv, m, ir):
     selfIllum; their levels 121, 122, 123, 127, 128; maps 141 diffuse, 142 reflect, 143 reflectGlossiness,
     144 refract, 146 opacity, 147 bump, 158 selfIllum, each switched on by id + 20, with amounts (fractions) 290,
     291, 292, 293, 295, 296, 303; 180 reflectGlossiness, 182 fresnelIor,
-    183 ior, 210 thin. 402 pbrMode only changes how Corona curves the glossiness: 1 - glossiness either way."""
+    183 ior, 210 thin; 410 levelSss, 411 sssRadius (world units), 412 sssScatterColor. 402 pbrMode only changes how
+    Corona curves the glossiness: 1 - glossiness either way, a named issue when it is off. Translucency (106, 126,
+    map 148), absorption (188, 190) and the SSS amount map (414) are named issues."""
     def slot(map_pid, on_pid, amount_pid, invert=False):
         return conv.map_ref(m, map_pid, on_pid, amount_pid, 0, invert=invert, ir=ir, percent=False)
     diffuse = tuple(min(1.0, c * max(0.0, _num(m, 121, 0, 1.0))) for c in conv.rgb(m, 101, 0, (0.5, 0.5, 0.5)))
@@ -780,6 +909,15 @@ def corona_legacy_mtl(conv, m, ir):
     ir.emission_color = Input(conv.rgb(m, 107, 0, (1.0, 1.0, 1.0)), slot(158, 178, 303))
     ir.emission_strength = max(0.0, _num(m, 128, 0, 0.0))
     conv.bump_slot(ir, slot(147, 167, 296))
+    _subsurface(conv, m, ir, 410, 411, 412)
+    if slot(414, 417, None) is not None:
+        conv.issue(m.index, "CoronaLegacyMtl %r: SSS amount map not converted" % (m.name,), ir)
+    if not _flag(m, 402, 0, True) and (mean(reflection) > 0 or reflection_map is not None):
+        conv.issue(m.index, "CoronaLegacyMtl %r: glossiness of PBR mode off read as in PBR mode" % (m.name,), ir)
+    if _num(m, 126, 0, 0.0) > 0 or slot(148, 168, None) is not None:
+        conv.issue(m.index, "CoronaLegacyMtl %r: translucency not converted" % (m.name,), ir)
+    if t > 0 and _num(m, 188, 0, 0.0) > 0:
+        conv.issue(m.index, "CoronaLegacyMtl %r: absorption not converted" % (m.name,), ir)
 
 
 def corona_light_mtl(conv, m, ir):
@@ -790,7 +928,87 @@ def corona_light_mtl(conv, m, ir):
     ir.alpha = Input(1.0, conv.map_ref(m, 150, 151, None, 0, ir=ir))
 
 
-# (superclass, ClassId) -> rule(converter, MtlBase, MaterialIR): fills the IR in place
+def corona_layered_mtl(conv, m, ir):
+    """CoronaLayeredMtl with a base and a layer on (block 0, CORONA_*): the base's IR, named after the layered
+    material, with every layer that is on and set as a Layer (its amount, its mask where masksOn, the mask amount);
+    at most MAX_LAYERS. A base or layer that is a Multi/Sub-Object gives its first entry (an issue). Returns the IR:
+    the textures are the base's, the masks' graphs made here."""
+    base_index = m.param(CORONA_BASE, 0).index
+    base = conv.convert(base_index)
+    if base is None:  # not a material (the peel checks only that it is set)
+        return conv._grey(m.index, "%s: base is not a material" % (m.name or "CoronaLayeredMtl",))
+    out = dataclasses.replace(base, index=ir.index, name=ir.name, source=ir.source, unknown=False,
+                              textures=dict(base.textures), issues=list(base.issues), layers=list(base.layers))
+    layers = conv.corona_layers(m)
+    for sub in [base_index] + [i for _k, i in layers]:
+        if conv.is_class(conv.peel(sub)[0], classids.SC_MATERIAL, classids.MULTI_SUB_MTL):
+            conv.issue(m.index, "%s: Multi/Sub-Object %d mixed as its first entry" % (out.name, sub), out)
+    if len(layers) > MAX_LAYERS:
+        conv.issue(m.index, "%s: %d layers, only the first %d mixed" % (out.name, len(layers), MAX_LAYERS), out)
+    for k, index in layers[:MAX_LAYERS]:
+        layer = conv.convert(index)
+        if layer is None:
+            conv.issue(m.index, "%s: layer %d is not a material" % (out.name, index), out)
+            continue
+        amount = max(0.0, _num_tab(m, CORONA_AMOUNTS, k, 1.0))
+        mask = None
+        if _flag_tab(m, CORONA_MASKS_ON, k, True):
+            mask_amount = max(0.0, _num_tab(m, CORONA_MASK_AMOUNTS, k, 1.0))
+            mask = conv.to_map(m, m.param(CORONA_MASKS, 0, tab=k), "layer mask %d" % k, mask_amount, ir=out)
+        graph = None
+        if mask is not None and conv.texmaps is not None:
+            graph = conv.texmaps.convert(mask, _texmaps.DATA, 1.0)
+            if graph is not None:
+                out.issues.extend(r for r in graph.issues if r not in out.issues)
+        out.layers.append(Layer(layer, amount, mask, graph))
+    return out
+
+
+def _num_tab(m, pid, k, default):
+    v = m.param(pid, 0, tab=k)
+    return float(v) if _finite(v) and not isinstance(v, bool) else default
+
+
+def _flag_tab(m, pid, k, default):
+    v = m.param(pid, 0, tab=k)
+    return bool(v) if _finite(v) else default
+
+
+def corona_skin_mtl(conv, m, ir):
+    """CoronaSkinMtl, block 0, approximated as one Principled layer: base = skinColor x skinLevel (map 124, switch
+    145, amount 166); subsurface weight = sssAmount (103); the three SSS layers (color, radius in world units,
+    weight: 105-107, 108-110, 111-113) as one: radius = sssRadiusScale (104) x their weighted mean radius, per-channel
+    color their weighted mean color; specular = reflection1Level (115) x the mean of reflection1Color (114),
+    roughness = 1 - reflection1Glossiness (116, map 137 / 158 / 179 inverted), ior = reflection1Ior (117);
+    alpha = mean(opacityColor 122) x opacityLevel (123), map 143 / 164 / 185; bump 144 / 165 / 186. The second
+    reflection and the SSS maps are named issues."""
+    def slot(map_pid, invert=False):
+        return conv.map_ref(m, map_pid, map_pid + 21, map_pid + 42, 0, invert=invert, ir=ir, percent=False)
+    level = max(0.0, _num(m, 102, 0, 1.0))
+    skin = conv.rgb(m, 101, 0, (143 / 255, 70 / 255, 41 / 255))
+    ir.base_color = Input(tuple(min(1.0, c * level) for c in skin), slot(124))
+    layers = [(conv.rgb(m, c, 0, (1.0, 1.0, 1.0)), max(0.0, _num(m, r, 0, 1.0)), max(0.0, _num(m, w, 0, 1.0)))
+              for c, r, w in ((105, 106, 107), (108, 109, 110), (111, 112, 113))]
+    total = sum(w for _c, _r, w in layers)
+    ir.subsurface_weight = _clamp01(_num(m, 103, 0, 1.0)) if total > 0 else 0.0
+    if total > 0:
+        ir.subsurface_color = tuple(sum(c[i] * w for c, _r, w in layers) / total for i in range(3))
+        radius = sum(r * w for _c, r, w in layers) / total
+        ir.subsurface_radius = max(0.0, _num(m, 104, 0, 1.0)) * radius * conv.meters
+    reflection = mean(conv.rgb(m, 114, 0, (1.0, 1.0, 1.0)))
+    ir.specular = Input(_clamp01(max(0.0, _num(m, 115, 0, 1.0)) * reflection), slot(135))
+    ir.roughness = Input(_roughness(_num(m, 116, 0, 0.5), False), slot(137, invert=True))
+    ir.ior = _ior(_num(m, 117, 0, 1.4))
+    opacity = _clamp01(mean(conv.rgb(m, 122, 0, (1.0, 1.0, 1.0))) * max(0.0, _num(m, 123, 0, 1.0)))
+    ir.alpha = Input(opacity, slot(143))
+    conv.bump_slot(ir, slot(144))
+    if _num(m, 119, 0, 0.0) > 0:
+        conv.issue(m.index, "CoronaSkinMtl %r: second reflection not converted" % (m.name,), ir)
+    if any(slot(pid) is not None for pid in range(125, 135)):
+        conv.issue(m.index, "CoronaSkinMtl %r: SSS maps not converted" % (m.name,), ir)
+
+
+# (superclass, ClassId) -> rule(converter, MtlBase, MaterialIR): fills the IR in place, or returns the IR it made
 RULES = {
     (classids.SC_MATERIAL, classids.STANDARD_MTL): standard_mtl,
     (classids.SC_MATERIAL, classids.PHYSICAL_MTL): physical_mtl,
@@ -802,6 +1020,8 @@ RULES = {
     (classids.SC_MATERIAL, classids.CORONA_PHYSICAL_MTL): corona_physical_mtl,
     (classids.SC_MATERIAL, classids.CORONA_LEGACY_MTL): corona_legacy_mtl,
     (classids.SC_MATERIAL, classids.CORONA_LIGHT_MTL): corona_light_mtl,
+    (classids.SC_MATERIAL, classids.CORONA_LAYERED_MTL): corona_layered_mtl,  # a wrapper without a layer on
+    (classids.SC_MATERIAL, classids.CORONA_SKIN_MTL): corona_skin_mtl,
 }
 
 

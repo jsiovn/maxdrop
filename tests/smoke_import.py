@@ -194,14 +194,15 @@ def _block_heads(lines, title):
 
 def only_known_gaps(body):
     """True when the report's only gaps are on the material side, which the fixtures have on purpose: wrappers and
-    maps approximated, map classes without a map below (vray_texmaps has Noise), texture files not found (the
-    fixtures carry no images), material issues and, on Blender 4, the Principled inputs it lacks
+    maps approximated, map classes without a map below (vray_texmaps has Noise), material classes without a rule
+    (corona_more has CoronaHairMtl), texture files not found (the fixtures carry no images), material issues and, on Blender 4, the Principled inputs it lacks
     (vray_basic is thin-walled: Thin Wall exists from Blender 5); modifiers only in a fixture whose oracle lists
     them (modifier_pivot), and the issues and placeholders a fixture is made to have (FIXTURE_ISSUES,
     FIXTURE_PLACEHOLDERS). Other placeholders, geometry errors and other issues are no known gap."""
     lines = body.split("\n")
     approximated, left_out = _block_heads(lines, "Approximated:"), _block_heads(lines, "Not converted:")
-    known = ("  Map classes without a map below ", "  Textures not found: ", "  Material issues: ")
+    known = ("  Map classes without a map below ", "  Material classes without a rule ", "  Textures not found: ",
+             "  Material issues: ")
     if bpy.app.version < (5, 0, 0):
         known += ("  Principled inputs not on Blender ",)
     if FIXTURE["modifiers"]:

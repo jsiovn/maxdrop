@@ -72,6 +72,7 @@
 # Modified for MaxDrop, 2026-11-21 (jsiovn). A TypeError or KeyError of the reading (a reader defect) reports the
 # file as not imported, with its traceback in the console, instead of ending the operator.
 # Modified for MaxDrop, 2026-11-21 (jsiovn). The material slots also hold those of shapes built as curves.
+# Modified for MaxDrop, 2026-11-21 (jsiovn). The material converter gets the import's meters per unit (SSS radii).
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -470,12 +471,13 @@ def _preflight_of(path):
         return None
 
 
-def _material_slots(sc, desc, table, max_path, dirs, image_search):
+def _material_slots(sc, desc, table, max_path, dirs, image_search, meters=None):
     """(the material slots of desc's meshes and curves (convert.materials.Slots), (the material converter's, the
     texture-map converter's and the texture lookup's counters, the scene's swatch rule) for the import report): every
     material converted, its texture files looked up. sc: the reader Scene, which the converters read; table: the
     file's reader.assets.AssetTable (the one the scene description got); dirs: the texture search folders
-    (prefs.texture_dirs); the counters hold no reference to either. Touches no Blender data."""
+    (prefs.texture_dirs); meters: per file unit, as the geometry is scaled (lengths such as an SSS radius; None:
+    the file's own unit); the counters hold no reference to either. Touches no Blender data."""
     from .convert import colors as convert_colors
     from .convert import materials as convert_materials
     from .convert import texmaps as convert_texmaps
@@ -485,7 +487,7 @@ def _material_slots(sc, desc, table, max_path, dirs, image_search):
     index = convert_textures.TextureIndex(max_path, dirs, scene_subfolders=image_search)
     swatches = convert_colors.of_scene(sc)
     tex = convert_texmaps.TexmapConverter(graph, table, textures=index, swatches=swatches)
-    conv = convert_materials.MaterialConverter(graph, texmaps=tex, swatches=swatches)
+    conv = convert_materials.MaterialConverter(graph, texmaps=tex, swatches=swatches, meters=meters)
     slots = convert_materials.assign(desc, convert_materials.node_materials(sc, desc), conv)
     return slots, (conv.stats, tex.stats, index.report, swatches)
 
@@ -625,7 +627,8 @@ def _read_file(max_path, opts, dirs, cancel):
             if cancel is not None and cancel():
                 raise convert_scene.Cancelled()
             try:
-                read.slots, read.counts = _material_slots(sc, desc, table, max_path, dirs, opts.use_image_search)
+                read.slots, read.counts = _material_slots(sc, desc, table, max_path, dirs, opts.use_image_search,
+                                                          meters)
             except Exception as e:  # a material rule's bug costs the materials, never the scene
                 print("MaxDrop: materials of %s not converted:\n%s" % (name, traceback.format_exc()), end="")
                 read.failed.append(("materials", "not converted (%s: %s): the scene is imported without materials"
