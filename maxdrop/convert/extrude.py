@@ -45,9 +45,10 @@ The file comes from anywhere: a parameter that is animated or no number raises E
 to 1 .. MAX_SEGMENTS; a mesh past MAX_VERTICES raises ExtrudeError; a holed cap past MAX_CAP_POINTS or one that
 cannot be bridged is left open, and outlines that take more than MAX_NEST_TESTS to nest get no caps (an issue
 each); the holed cap that passes the mesh's MAX_CLIP_STEPS and those after it are left open (an issue, and one
-more that counts the rest); a grid cap past MAX_CAP_POINTS, the mesh's MAX_GRID_TESTS or MAX_VERTICES, or whose
-band cannot be triangulated is made as a morph cap (an issue per reason). docs/FORMAT.md says which fixture shows
-what.
+more that counts the rest); a grid cap past MAX_CAP_POINTS, the mesh's MAX_GRID_TESTS, its grid bands'
+MAX_GRID_CLIP_STEPS or MAX_VERTICES, or whose band does not triangulate into its area is made as a morph cap (an issue
+per reason; a holed one the morph cap's own limits leave open is named as open). docs/FORMAT.md says which fixture
+shows what.
 No bpy; numpy is imported when a mesh is made.
 """
 import collections
@@ -74,6 +75,7 @@ MAX_CLIP_STEPS = 1 << 25  # the holed caps of one mesh: a 5000-point cap takes u
 MAX_LOOPS = 4000  # closed polylines nested against each other: quadratic
 MAX_NEST_TESTS = 1 << 24  # point-edge tests telling which outline lies in which: about 2 s in Python
 MAX_GRID_TESTS = 1 << 25  # point-edge and cell-edge tests of the grid caps of one mesh (numpy): about a second
+MAX_GRID_CLIP_STEPS = 1 << 23  # the grid bands of one mesh, beside MAX_CLIP_STEPS: a few seconds
 GRID_DIVISIONS, GRID_MAX_DIVISIONS = 20, 50
 GRID_MARGIN, GRID_SPAN, GRID_SHIFT = 0.025, 0.95, 0.001  # of the box; of a division
 GRID = -1  # the polyline of a grid point's key (GRID, i): point i of the mesh's grid points
@@ -659,7 +661,7 @@ def _cell_loops(filled, index):
             if not ok:
                 out.setdefault(a, []).append(b)
     loops = []
-    # start where one edge leaves (never at a corner two cells share): the walk then closes where it began
+    # start where one edge leaves where there is one: the walk then closes where it began
     for start in sorted(out, key=lambda c: (len(out[c]) != 1, c)):
         while out[start]:
             loop, prev, at = [], None, start
@@ -676,14 +678,38 @@ def _cell_loops(filled, index):
     return loops
 
 
-def _grid_cap(numpy, closed, s, hs, first, tests, budget):
+def _splice(rings):
+    """The rings (point index lists) with every two that share a point joined there into one: holes whose cells
+    touch only at a corner, which a bridge cannot take one by one."""
+    out = []
+    for ring in rings:
+        ring = list(ring)
+        joined = True
+        while joined:
+            joined = False
+            for k, other in enumerate(out):
+                shared = set(ring) & set(other)
+                if shared:
+                    v = min(shared)
+                    a, b = other.index(v), ring.index(v)
+                    ring = other[a:] + other[:a] + ring[b:] + ring[:b]
+                    del out[k]
+                    joined = True
+                    break
+        out.append(ring)
+    return out
+
+
+def _grid_cap(numpy, closed, s, hs, first, room, tests, budget):
     """(polygons, points) of solid s's grid cap: polygons of keys, (polyline, point) or (GRID, first + i), counter-
-    clockwise; points the grid points it adds. None when no cell is whole (a morph cap); CapError when the grid or
-    its band cannot be made."""
+    clockwise; points the grid points it adds, at most room. None when no cell is whole (a morph cap); CapError when
+    the grid or its band cannot be made, or the band's triangles do not tile it."""
     g = _grid(numpy, closed[s], [closed[x] for x in hs], tests)
     if g is None:
         return None
     points, quads, cell_loops = g
+    if len(points) > room:
+        raise CapError("past %d vertices" % MAX_VERTICES)
     keys = [(s, k) for k in range(len(closed[s]))]
     rings = [list(range(len(keys)))]
     for x in hs:
@@ -698,66 +724,88 @@ def _grid_cap(numpy, closed, s, hs, first, tests, budget):
     regions = _nest({r: [xy[i] for i in ring] for r, ring in enumerate(rings)}, nest_issues)
     if regions is None or nest_issues:
         raise CapError("its band does not nest")
+    lo, hi = numpy.min(xy, axis=0), numpy.max(xy, axis=0)
+    tolerance = 1e-9 * float((hi[0] - lo[0]) * (hi[1] - lo[1]))
     polys = [[keys[offset + i] for i in quad] for quad in quads]
     for r, inner in regions.items():
         outer = rings[r] if _area([xy[i] for i in rings[r]]) > 0 else rings[r][::-1]
-        holes = [rings[x] if _area([xy[i] for i in rings[x]]) < 0 else rings[x][::-1] for x in inner]
-        polys.extend([keys[i] for i in t] for t in triangulate(xy, outer, holes, budget))
+        holes = _splice([rings[x] if _area([xy[i] for i in rings[x]]) < 0 else rings[x][::-1] for x in inner])
+        try:
+            tris = triangulate(xy, outer, holes, budget)
+        except CapError:
+            if budget[0] < 0:
+                raise CapError("more than %d steps to triangulate the grid bands" % MAX_GRID_CLIP_STEPS) from None
+            raise
+        areas = [_area([xy[i] for i in t]) for t in tris]
+        want = _area([xy[i] for i in outer]) + sum(_area([xy[i] for i in h]) for h in holes)
+        if (areas and min(areas) < -tolerance) or abs(sum(abs(a) for a in areas) - want) > 100 * tolerance + 1e-9 * want:
+            raise CapError("its band does not triangulate")
+        polys.extend([keys[i] for i in t] for t in tris)
     return polys, points
+
+
+def _morph_cap(closed, s, hs, budget, issues):
+    """(polygons, spent) of solid s's morph cap: polygons None when it is left open (an issue, or spent: the
+    mesh's clip budget is gone, counted by the caller)."""
+    if not hs:
+        return [[(s, k) for k in range(len(closed[s]))]], False
+    if budget[0] < 0:
+        return None, True
+    count = len(closed[s]) + sum(len(closed[x]) for x in hs)
+    if count > MAX_CAP_POINTS:
+        issues.append("a cap of %d points with holes, more than %d: left open" % (count, MAX_CAP_POINTS))
+        return None, False
+    ids = [(j, k) for j in [s] + hs for k in range(len(closed[j]))]
+    index = {key: i for i, key in enumerate(ids)}
+    pts = [closed[j][k] for j, k in ids]
+    try:
+        tris = triangulate(pts, [index[(s, k)] for k in range(len(closed[s]))],
+                           [[index[(x, k)] for k in range(len(closed[x]))] for x in hs], budget)
+    except CapError as exc:
+        issues.append("a cap with holes is left open: %s" % exc)
+        return None, False
+    return [[ids[i] for i in t] for t in tris], False
 
 
 def _caps(closed, solids, issues, grid=False, numpy=None, room=0):
     """({solid: [[(polyline, point) or (GRID, i), ...]]}, grid points): each cap polygon counter-clockwise; a holed
     cap that cannot be triangulated is left out (an issue; those after the budget is spent, one issue for all). With
     grid, each solid gets its grid cap while the grid points stay within room (each a vertex per cap); a grid cap
-    that cannot be made is a morph cap (an issue per reason)."""
+    that cannot be made is a morph cap (an issue per reason; a holed one the morph cap leaves open is named only as
+    open). The grid bands have a clip budget of their own, so a refused grid never starves the morph caps."""
     out = {}
     budget = [MAX_CLIP_STEPS]  # shared: many holed caps must not each take the whole budget
+    grid_budget = [MAX_GRID_CLIP_STEPS]
     tests = [MAX_GRID_TESTS]
     points, morph = [], collections.Counter()
     spent = 0
     for s, hs in solids.items():
+        reason = None
         if grid:
-            count = len(closed[s]) + sum(len(closed[x]) for x in hs)
-            made = None
-            if count > MAX_CAP_POINTS:
-                morph["more than %d outline points" % MAX_CAP_POINTS] += 1
+            if len(closed[s]) + sum(len(closed[x]) for x in hs) > MAX_CAP_POINTS:
+                reason = "more than %d outline points" % MAX_CAP_POINTS
             elif tests[0] < 0:  # spent by an earlier solid: the same reason
-                morph["more than %d tests to lay out the grids" % MAX_GRID_TESTS] += 1
-            elif budget[0] < 0:
-                morph["more than %d steps to triangulate the caps" % MAX_CLIP_STEPS] += 1
+                reason = "more than %d tests to lay out the grids" % MAX_GRID_TESTS
+            elif grid_budget[0] < 0:
+                reason = "more than %d steps to triangulate the grid bands" % MAX_GRID_CLIP_STEPS
+            elif len(points) >= room:
+                reason = "past %d vertices" % MAX_VERTICES
             else:
+                made = None
                 try:
-                    made = _grid_cap(numpy, closed, s, hs, len(points), tests, budget)
+                    made = _grid_cap(numpy, closed, s, hs, len(points), room - len(points), tests, grid_budget)
                 except CapError as exc:
-                    morph[str(exc)] += 1
-                if made is not None and len(points) + len(made[1]) > room:
-                    morph["past %d vertices" % MAX_VERTICES] += 1
-                    made = None
-            if made is not None:
-                out[s] = made[0]
-                points.extend(made[1])
-                continue
-        if not hs:
-            out[s] = [[(s, k) for k in range(len(closed[s]))]]
-            continue
-        if budget[0] < 0:
-            spent += 1
-            continue
-        count = len(closed[s]) + sum(len(closed[x]) for x in hs)
-        if count > MAX_CAP_POINTS:
-            issues.append("a cap of %d points with holes, more than %d: left open" % (count, MAX_CAP_POINTS))
-            continue
-        ids = [(j, k) for j in [s] + hs for k in range(len(closed[j]))]
-        index = {key: i for i, key in enumerate(ids)}
-        pts = [closed[j][k] for j, k in ids]
-        try:
-            tris = triangulate(pts, [index[(s, k)] for k in range(len(closed[s]))],
-                               [[index[(x, k)] for k in range(len(closed[x]))] for x in hs], budget)
-        except CapError as exc:
-            issues.append("a cap with holes is left open: %s" % exc)
-            continue
-        out[s] = [[ids[i] for i in t] for t in tris]
+                    reason = str(exc)
+                if made is not None:
+                    out[s] = made[0]
+                    points.extend(made[1])
+                    continue
+        polys, ran_out = _morph_cap(closed, s, hs, budget, issues)
+        spent += ran_out
+        if polys is not None:
+            out[s] = polys
+            if reason:
+                morph[reason] += 1
     for reason, n in sorted(morph.items()):
         issues.append("%d grid cap%s made as morph cap%s: %s" % (n, "" if n == 1 else "s", "" if n == 1 else "s",
                                                                   reason))

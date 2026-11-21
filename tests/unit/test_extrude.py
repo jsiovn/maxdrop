@@ -1071,6 +1071,8 @@ GRID_PROBES = {
     "Wide60x20Hole1x5": (lambda: [_box(0, 0, 60, 20), _hole(20.3, 7.3, 0.5, 2.5)], 6, {}, 2158, 4316),
     "Straddle": (lambda: _square40(_hole(3.05, 3.45, 0.15, 0.15)), 6, {}, 5218, 10436),
     "ThinDiagonal": (lambda: [_poly([(0, 0, 0), (1, 0, 0), (41, 40, 0), (40, 40, 0)])], 6, {}, 8, 12),
+    # groups of filled cells that touch only at corners (band holes sharing a grid point)
+    "Corners": (lambda: [_poly([(22, 30, 0), (20, 15, 0), (23, 12, 0), (26, 2, 0)])], 6, {}, 254, 504),
 }
 for _s, _v, _f in ((20.0, 698, 1396), (12.0, 826, 1652), (8.0, 866, 1732), (5.0, 880, 1760), (4.0, 890, 1780),
                    (3.0, 1360, 2720), (2.5, 1930, 3860), (2.375, 2056, 4112), (2.0, 2896, 5792), (1.9, 3208, 6416),
@@ -1160,11 +1162,64 @@ class GridCaps(unittest.TestCase):
             self.assertEqual(len(data.positions), 8, cap_type)
 
     def test_cells_touching_only_at_a_corner(self):
-        """Two cells that share one corner: two band loops through it, each round its own cell."""
+        """Two cells that share one corner: two band loops through it, each round its own cell, which the band
+        takes as one hole joined there."""
         filled = numpy.array([[True, False], [False, True]])
         index = numpy.arange(9).reshape(3, 3)
         loops = extrude._cell_loops(filled, index)
         self.assertEqual(sorted(sorted(lp) for lp in loops), [[0, 1, 3, 4], [4, 5, 7, 8]])
+        joined = extrude._splice(loops)
+        self.assertEqual(len(joined), 1)
+        self.assertEqual(sorted(joined[0]), [0, 1, 3, 4, 4, 5, 7, 8])
+        self.assertEqual(extrude._splice([[1, 2, 3], [7, 8, 9]]), [[1, 2, 3], [7, 8, 9]])
+
+    def faces_face_their_ids(self, data, name):
+        """Every cap face faces the way its material ID says, but for slivers (Triangle's grid points that float32
+        puts in a row: 1.4e-6 the wrong way; Pinch's own 0.0001 gap)."""
+        for f in range(len(data.loop_starts)):
+            mat = int(_mats(data)[f])
+            if mat == extrude.SIDE_ID:
+                continue
+            z = _face_area_z(data, f) * (1 if mat == extrude.TOP_ID else -1)
+            self.assertGreater(z, -1e-5, "%s face %d: %g" % (name, f, z))
+
+    def test_every_cap_face_faces_its_way(self):
+        for name in GRID_PROBES:
+            data, _issues = self.make(name)
+            self.faces_face_their_ids(data, name)
+
+    def test_groups_of_cells_touching_at_a_corner_give_a_clean_cap(self):
+        """A four-point outline whose filled cells fall into groups that touch only at corners: their band
+        loops share grid points; the cap still tiles its area, no face turned or doubled."""
+        shape = _shape([_poly([(22, 30, 0), (20, 15, 0), (23, 12, 0), (26, 2, 0)])])
+        params = extrude.DEFAULT._replace(amount=2.0, cap_type=extrude.CAP_GRID)
+        data, issues = extrude.extrude(shape, params)
+        self.assertEqual(issues, [])
+        self.assertGreater(len(data.positions), 8)
+        self.faces_face_their_ids(data, "corners")
+        edges = _edges(data)
+        self.assertTrue(all(c == 1 for c in edges.values()))
+        self.assertTrue(all((b, a) in edges for a, b in edges))
+        morph, _issues = extrude.extrude(shape, params._replace(cap_type=extrude.CAP_MORPH))
+        self.assertAlmostEqual(_volume(data.positions, data), _volume(morph.positions, morph), places=4)
+
+    def test_a_band_that_does_not_tile_its_area_is_a_morph_cap(self):
+        real = extrude.triangulate
+
+        def folded(xy, outer, holes=(), budget=None):
+            tris = real(xy, outer, holes, budget)
+            return tris[:-1] + [tris[-1][::-1]]
+
+        with mock.patch.object(extrude, "triangulate", folded):
+            data, issues = self.make("Rect30x20")
+        self.assertEqual(len(data.positions), 8)
+        self.assertEqual(issues, ["1 grid cap made as morph cap: its band does not triangulate"])
+
+    def test_a_refused_grid_on_a_holed_cap_left_open_is_named_once(self):
+        with mock.patch.object(extrude, "MAX_CAP_POINTS", 5):
+            _data, issues = self.make("HoleRect")
+        self.assertEqual(len(issues), 1, issues)
+        self.assertIn("left open", issues[0])
 
 
 if __name__ == "__main__":

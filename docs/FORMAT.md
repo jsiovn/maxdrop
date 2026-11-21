@@ -562,7 +562,9 @@ What 3ds Max 2020 makes of it (`snapshotAsMesh`, probed on scratch scenes and ch
   no filled cell is dropped), each filled cell two triangles (top-left to bottom-right; MaxDrop: a quad), and the
   band to the outline is triangulated without more points: n + 2k + 2h - 2 triangles per cap of n outline and hole
   points, k grid points and h holes (Rect 30 x 20: 890 vertices, 1776 faces). A solid without a filled cell gets the
-  morph cap. Only the caps that are on get grid points. The grid points lie at z 0 and the levels' heights whatever
+  morph cap. MaxDrop joins band holes whose cells touch only at a corner into one at that point (a four-point Line
+  whose cells touch so: 254 vertices, 504 faces, as 3ds Max) and makes a band whose triangles do not tile its area, or a grid past a guard, a morph cap with a line in
+  the report. Only the caps that are on get grid points. The grid points lie at z 0 and the levels' heights whatever
   the shape's z (a rectangle at z 3: its outline at 3 and 5, its grid at 0 and 2); their map is the cap's box
   mapping. Every interior edge is hidden: 3ds Max shows the cap as one polygon. No local scene has grid caps (443
   scenes, 95 Extrudes, the corpus included, 2026-11-21).
