@@ -16,12 +16,13 @@ TurboSmooth 0 iterations, 1 use render iterations, 2 render iterations, 4 smooth
 separate by smoothing groups; MeshSmooth 9 method (0 classic, 1 quad output, 2 NURMS), 4 iterations, 2 smoothness,
 13 use render iterations, 14 render iterations, 5 smooth result, 6 separate by materials, 7 separate by smoothing
 groups; Shell 0 inner amount, 1 outer amount, 2 / 8 / 17 override material ID (edges, inner, outer), 4 override
-smoothing group, 12 segments, 19 bevel edges; Symmetry 0 axis, 1 slice along mirror, 2 weld seam, 3 threshold, 4
+smoothing group, 12 segments, 14 auto smooth, 19 bevel edges; Symmetry 0 axis, 1 slice along mirror, 2 weld seam, 3 threshold, 4
 flip, its mirror gizmo the PRS controller in reference slot 1.
 
 What 3ds Max 2020 makes (tests/blender/run.py against the stack_convert fixture's oracle): a smoother refines the
 control points as Catmull-Clark does (not the limit surface); Shell moves the new surfaces along the vertex normals
-by the inner and outer amounts (not an even thickness); Symmetry mirrors in its gizmo's space, q = p * context *
+by the inner and outer amounts (not an even thickness), also both to one side, and turns inside out when inner +
+outer < 0 (the stack_shell fixture: boxes and facing); Symmetry mirrors in its gizmo's space, q = p * context *
 inverse(gizmo) for a point p of the object, keeps the side where q along the axis is positive (flip: negative) and
 slices there, or mirrors all of the object without slice. In Blender's object space (the object offset baked, x = p *
 offset) the gizmo's frame is gizmo * inverse(context) * offset: build/ puts an empty there as the mirror object when
@@ -141,24 +142,28 @@ def _offset_scale(offset, issues):
 
 
 def _shell(modifier, meters, offset):
+    """(settings, issues) of a Shell: the surfaces at -inner and +outer along the vertex normals as Solidify's
+    thickness and offset, also when both lie on one side of the original (an offset past -1 .. 1, which Solidify
+    takes as it is). 3ds Max keeps the outer surface facing out and the inner one facing in wherever they lie, so
+    inner + outer < 0 (the outer surface below the inner one) turns its shell inside out: Solidify flips its
+    normals. The override smoothing group gives the rim that group only with auto smooth off (auto smooth, the
+    default, ignores it)."""
     b, issues = _block(modifier), []
     inner, outer = float(_value(b, 0, 0.0)), float(_value(b, 1, 1.0))
     lo, hi = min(-inner, outer), max(-inner, outer)  # the two surfaces along the normal
     if hi - lo <= 0:
         raise ModifierError("a shell of no thickness (inner %g, outer %g)" % (inner, outer))
-    if lo > 0 or hi < 0:  # not seen in a file; Solidify's offset past -1 .. 1 is not checked against 3ds Max
-        raise ModifierError("both surfaces on one side (inner %g, outer %g)" % (inner, outer))
     if int(_value(b, 12, 1)) > 1:
         issues.append("%d segments made as one" % int(_value(b, 12, 1)))
     if _value(b, 19, 0):
         issues.append("bevel edges not converted")
     if _value(b, 2, 0) or _value(b, 8, 0) or _value(b, 17, 0):
         issues.append("material ID overrides not converted")
-    if _value(b, 4, 0):
+    if _value(b, 4, 0) and not _value(b, 14, 1):
         issues.append("smoothing group override not converted")
     scale = meters * _offset_scale(offset, issues)
     settings = (("solidify_mode", "EXTRUDE"), ("thickness", (hi - lo) * scale), ("offset", (hi + lo) / (hi - lo)),
-                ("use_even_offset", False), ("use_rim", True))
+                ("use_even_offset", False), ("use_rim", True), ("use_flip_normals", inner + outer < 0))
     return settings, issues
 
 

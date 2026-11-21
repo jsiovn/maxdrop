@@ -51,8 +51,9 @@ def _subsurf(levels, render):
 
 
 def _solidify(inner, outer):
-    return (SOLIDIFY, {"solidify_mode": "EXTRUDE", "thickness": (inner + outer) * MM,
-                       "offset": (outer - inner) / (outer + inner), "use_even_offset": False, "use_rim": True})
+    lo, hi = min(-inner, outer), max(-inner, outer)  # the surfaces along the normal
+    return (SOLIDIFY, {"solidify_mode": "EXTRUDE", "thickness": (hi - lo) * MM, "offset": (hi + lo) / (hi - lo),
+                       "use_even_offset": False, "use_rim": True, "use_flip_normals": inner + outer < 0})
 
 
 def _mirror(axis, flip, slice_, weld, threshold):
@@ -247,27 +248,40 @@ class Rules(unittest.TestCase):
         cases = ((classids.MESHSMOOTH, {9: rules.CLASSIC}), (classids.MESHSMOOTH, {9: 5}),
                  (classids.MESHSMOOTH, {2: 0.5}), (classids.MESHSMOOTH, {6: 1}), (classids.TURBOSMOOTH, {5: 1}),
                  (classids.SHELL, {12: 3}), (classids.SHELL, {19: 1}), (classids.SHELL, {2: 1}),
-                 (classids.SHELL, {8: 1}), (classids.SHELL, {17: 1}), (classids.SHELL, {4: 1}))
+                 (classids.SHELL, {8: 1}), (classids.SHELL, {17: 1}), (classids.SHELL, {4: 1, 14: 0}))
         for cid, values in cases:
             _md, issues = _convert(cid, values)
             self.assertEqual(len(issues), 1, repr(values))
-        _md, issues = _convert(classids.MESHSMOOTH, {9: rules.QUAD_OUTPUT})
-        self.assertEqual(issues, [])
+        # MeshSmooth quad output is Catmull-Clark; with auto smooth on (the default) 3ds Max ignores the override
+        for cid, values in ((classids.MESHSMOOTH, {9: rules.QUAD_OUTPUT}), (classids.SHELL, {4: 1}),
+                            (classids.SHELL, {4: 1, 14: 1}), (classids.SHELL, {14: 0})):
+            _md, issues = _convert(cid, values)
+            self.assertEqual(issues, [], repr(values))
 
     def test_shell_surfaces(self):
-        for (inner, outer), (thickness, offset) in (((1.0, 2.0), (1.5, 1.0 / 3.0)), ((0.0, 1.0), (0.5, 1.0)),
-                                                    ((1.0, 0.0), (0.5, -1.0)), ((1.0, 1.0), (1.0, 0.0))):
-            md, _i = _convert(classids.SHELL, {0: inner, 1: outer})
+        # (inner, outer) -> thickness (MM = 0.5 m per unit), offset, flip. Both surfaces outside (-1, 2) or inside
+        # (3, -1): an offset past -1 .. 1, which Solidify takes as it is (no hard range; 3ds Max's boxes and
+        # volumes, the stack_shell fixture). Inner + outer < 0 turns 3ds Max's shell inside out: Solidify flips.
+        for (inner, outer), want in (((1.0, 2.0), (1.5, 1.0 / 3.0, False)), ((0.0, 1.0), (0.5, 1.0, False)),
+                                     ((1.0, 0.0), (0.5, -1.0, False)), ((1.0, 1.0), (1.0, 0.0, False)),
+                                     ((-1.0, 2.0), (0.5, 3.0, False)), ((3.0, -1.0), (1.0, -2.0, False)),
+                                     ((-1.0, 1.0), (0.0, 0.0, False)), ((-2.0, 1.0), (0.5, 3.0, True)),
+                                     ((1.0, -2.0), (0.5, -3.0, True)), ((-1.0, -2.0), (1.5, -1.0 / 3.0, True))):
+            if want[0] == 0.0:
+                continue  # no thickness: refused (test_refused)
+            md, issues = _convert(classids.SHELL, {0: inner, 1: outer})
             s = dict(md.settings)
-            self.assertAlmostEqual(s["thickness"], thickness, msg=repr((inner, outer)))
-            self.assertAlmostEqual(s["offset"], offset, msg=repr((inner, outer)))
+            self.assertAlmostEqual(s["thickness"], want[0], msg=repr((inner, outer)))
+            self.assertAlmostEqual(s["offset"], want[1], msg=repr((inner, outer)))
+            self.assertIs(s["use_flip_normals"], want[2], repr((inner, outer)))
+            self.assertEqual(issues, [], repr((inner, outer)))
 
     @unittest.skipIf(numpy is None, "numpy missing")  # a Symmetry's frame
     def test_refused(self):
         cases = ((classids.TURBOSMOOTH, None), (classids.TURBOSMOOTH, {0: pblock.Animated(3)}),
                  (classids.TURBOSMOOTH, {0: "two"}), (classids.TURBOSMOOTH, {0: float("nan")}),
                  (classids.TURBOSMOOTH, {0: True}), (classids.SHELL, {0: 0.0, 1: 0.0}),
-                 (classids.SHELL, {0: -1.0, 1: 1.0}), (classids.SHELL, {0: 2.0, 1: -1.0}),
+                 (classids.SHELL, {0: -1.0, 1: 1.0}), (classids.SHELL, {0: 2.0, 1: -2.0}),
                  (classids.SHELL, {1: float("inf")}), (classids.SYMMETRY, {0: 3}), (classids.SYMMETRY, {3: (1, 2)}))
         for cid, values in cases:
             with self.assertRaises(rules.ModifierError, msg=repr(values)):
