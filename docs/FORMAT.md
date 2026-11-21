@@ -790,9 +790,12 @@ units:
 | 9, 10 | double-sided; invisible |
 | 18, 19 | texmap (a map reference), texmap on |
 | 25, 26, 30 | affect diffuse, affect specular, affect reflections |
+| 27 | dome spherical (`dome_spherical`; V-Ray 5.2's default on; off: the half above the dome's local XY plane) |
+| 34 | mesh source (`mesh_source`, a node reference) |
 | 36 | directional (`lightDistribution`) |
 | 38, 39 | color temperature (K); color mode: 0 color, 1 temperature |
 | 43 | targeted (the node has a Look At controller and a Target, [Look At](#look-at)) |
+| 49 | texture locked to the dome (`texmap_locktodome`; default 0) |
 | 53, 54 | diffuse contribution, specular contribution |
 
 In temperature mode V-Ray also stores its own color of that temperature in 7 (3500 K: 1.0, 0.584, 0.256); MaxDrop
@@ -808,10 +811,49 @@ default units it does not. Blender's area light shines on one side: a double-sid
 
 **A scaled node.** V-Ray grows the emitting area with the node's scale; in the units that follow the area (default,
 lm/m²/sr, W/m²/sr) the flux grows with it, in lm and W it does not. Measured on lights scaled 2, 1.5, 1 (the scratch
-scene below): plane and disc 3 × the unscaled flux (X × Y scale), sphere 4 × (its largest scale squared; X and the
-largest are the same there). Blender scales an area light's size with its object and keeps its power, so the power
-takes that factor (`area_scale`), and instances of one light with different scales get a light each. The
-vray_lights fixture's FixtureDiscScaled is such an instance.
+scene below): plane and disc 3 × the unscaled flux (X × Y scale). A sphere takes its X scale alone and stays round
+(a W/m²/sr sphere above a white floor: 4 × at (2, 2, 2) and (2, 1.5, 1), 1 × at (1, 2, 1), (1, 1, 2) and
+(1, 2, 3); seen by the camera, twice as wide at (2, 1, 1), half at (0.5, 1, 1), unchanged at (1, 3, 1)): radius
+size0 × X scale, area × X². Blender scales an area light's size with its object and keeps its power, so the power
+takes that factor (`area_scale`), and instances of one light with different scales get a light each. Blender's
+point light keeps its radius whatever its object's scale (Blender 4.2.23, 4.5.16 and 5.2: a camera-visible light in
+Cycles 0.48 m across at every scale, EEVEE's penumbra unchanged), so a sphere's radius takes the X scale, in every
+units mode (its key holds X² there too). The vray_lights fixture's FixtureDiscScaled and the vray_dome fixture's
+FixtureSphereWide (2, 1, 1, in W: radius twice, flux the same) and FixtureSphereTall (1, 1, 2.5: as unscaled) are
+such nodes.
+
+**Mesh light.** Not imported: an empty and a line in the report, naming the node parameter 34 refers to when it is
+one of the scene. `mesh_source` set by a script is a plain node reference: V-Ray 5.2 does not emit from that node
+(its render shows the light's own mesh). V-Ray's Pick mesh copies the mesh into the light (Extract mesh gets it
+back) and, with Replace mesh on (the default), deletes the picked node: the emitting geometry is V-Ray's own data,
+which is not read.
+
+**Dome light → World.** The first dome node that is on becomes the scene's World (a new World, assigned to the
+scene; the one before is kept, the report says so); another dome node, an instance of it too, or one that is off is
+a line in the report; dome nodes stay empties (not placeholders). Measured in V-Ray 5.2 (scratch scenes): a white
+floor under a white dome of multiplier 1 renders 1.00018 in the default units, 0.00213024 in lm and lm/m²/sr, 1.43109
+in W and W/m²/sr (a dome has no area: the flux and the radiance units agree); Cycles renders a white floor under a
+white World of strength S at S (1.00002 for 1). So the World's strength is the multiplier × 1500 / (683 π), ×
+1 / 671.8 (0.00213024 / 1.43109) or × 1 in the three pairs, times Light Strength: in the default units 0.9997 of
+V-Ray's at 1.43. A texture replaces the color (a dome color 255, 64, 64 leaves a white texel white) and takes the
+same multiplier and units. With spherical off only the half above the dome's local XY plane shines (a downward-facing
+white plane gets 0; the camera sees 0 below; turned 180° about X the lower half shines; the position does not
+matter): a Math node masks the strength by the local Z of the direction. Invisible: World camera rays off (Cycles'
+`cycles_visibility`); affect diffuse / specular / reflections as a light's.
+
+The texture: a VRayBitmap in spherical mapping (`mapType` 2; block 0: 3 horizontal rotation, 4 vertical rotation, in
+radians) gives u = 0.5 + φ / 2π + h / 360 (φ = atan2(y, x) of the direction in the texture's frame, h the horizontal
+rotation in degrees) and v up the image; a Bitmap in spherical environment mapping (UVGen `0x9005` 1, `0x9009` 1, see
+[Materials and maps](#materials-and-maps)) u = 0.75 + φ / 2π, as a VRayBitmap of h = 90. Lock to dome 0: the world's frame; 1: the dome
+node's rotation (turned 90° about Z, the texture turns with it). Measured with a self-authored image of eight
+colored blocks seen through cameras at ±X, ±Y and ±20° elevation. Blender's Environment Texture runs the other way
+round (u = 0.5 − φ / 2π): the direction (Texture Coordinate Generated) goes through a Mapping node of scale
+(1, −1, 1) and rotation Rz(−h) F T F (F the mirror in Y, T the axis conversion and lock turn into the texture's
+frame). The vray_dome fixture (h 30, locked, its node turned 90° about Z, a hemisphere) and a tilted copy imported
+with Y up give the same texels as V-Ray's renders. Other projections are drawn as spherical, the vertical rotation,
+an Output other than its amount, a gamma other than automatic or 1, crop or placement and a Bitmap's offset, tiling
+or angle are left out (a line each); a root other than an image map or a file not found leaves the World its color
+(a line).
 
 **Calibration of Light Strength (1.43).** A scratch scene (not committed): a white Lambert floor (VRayMtl diffuse
 255, no reflection; in Blender a Diffuse BSDF of 1.0), an invisible VRayLight 1 m above it, plane, disc and sphere
@@ -1189,7 +1231,9 @@ reader's children.
   (texmap_rules and probe scenes saved by 3ds Max 2020, one setting changed per Bitmap): `0x9002` flags (bit 0 U
   tile, 1 V tile, 2 U mirror, 3 V mirror, 27 real-world scale; bit 30 set in every file), `0x9003` axis (0 UV, 1 VW,
   2 WU), `0x9005` mapping type (0 texture, 1 environment), `0x9006` coordinate source (0 explicit map channel, 1
-  planar from object XYZ, 2 vertex color channel, 3 planar from world XYZ), `0x900B` the map channel. Its old
+  planar from object XYZ, 2 vertex color channel, 3 planar from world XYZ), `0x900B` the map channel, `0x9009` the
+  environment projection (1 spherical, 2 cylindrical, 3 shrink-wrap, 4 screen; kept in texture mode too, 4 there by
+  default: a probe scene with one Bitmap per projection). Its old
   ParamBlock adds 4 U angle and 5 V angle (radians). A mirrored axis has its tile bit clear.
 - The Output part (superclass TexOutput, class `(0x100, 0)`): an old ParamBlock, 0 RGB level, 1 RGB offset, 2 output
   amount, 3 bump amount, and a leaf `0x0002` `u32` flags, bit 1 (`2`) invert.

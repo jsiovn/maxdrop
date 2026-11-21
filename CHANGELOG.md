@@ -32,6 +32,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   CoronaRaySwitchMtl or CoronaSelectMtl gives the material the camera sees or the one selected, instead of grey.
   Translucency, volumetric absorption, a metal edge color and CoronaMtl's glossiness with PBR mode off are named in
   the report.
+- Lights: a VRayLight dome becomes the scene's World instead of an empty: its color or temperature, or its
+  spherical texture (VRayBitmap or Bitmap) turned and locked as V-Ray shows it, its strength as bright as V-Ray 5.2
+  times Light Strength, a hemisphere when spherical is off, invisible and the affect switches. The World before is
+  kept and the report names both; a second dome is a line in the report. A mesh light's report line names the
+  picked mesh.
 - CoronaMix: the Add, Subtract, Divide, Minimum, Maximum and Difference operations are imported as nodes, in gamma
   2.2 when "mix in sRGB" is on as Corona does it, and the layer multipliers and offsets are applied, instead of the
   first bitmap below and a line in the report.
@@ -46,6 +51,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ### Fixed
 
+- Lights: a scaled V-Ray sphere light takes its X scale alone, as V-Ray does: its radius grows with it (Blender's
+  point light keeps its radius whatever its object's scale), its power in the area units with its square; a
+  larger Y or Z scale no longer makes it brighter.
 - Colored data maps: a colored map on roughness, metallic or opacity, a Mix or layer mask or a bump height
   gives the mean of its channels, where Blender's own conversion weighed them by luminance (red 0.21, green 0.72,
   blue 0.07), so such a map rendered too rough or too smooth, too opaque or too clear. Measured in V-Ray 5.2 on a
