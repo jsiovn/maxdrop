@@ -28,11 +28,9 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
 - VRayMtl: base color = diffuse; roughness = reflection glossiness g, or 1 - g unless brdf_useRoughness (a
   glossiness map is then inverted); metallic = reflection_metalness; specular = the mean of the linear reflection
   color (as in every rule, a reflection weight: 1 is the full Fresnel reflection at the IOR, which
-  build/materials.py draws as Specular IOR Level 0.5; measured against V-Ray 5.2 with Fresnel on, IOR 1.6, black
-  diffuse under a white environment: a white reflection reflects 0.053 facing the camera and 0.17 near the rim in
-  V-Ray and Cycles alike, EEVEE 0.053 and 0.15; a grey one matches facing the camera but grows to the full Fresnel
-  toward the rim in Blender, where V-Ray scales the whole curve: swatch 128 reflects 0.079 there in V-Ray, 0.12 in
-  Cycles); emission = self-illumination color times its multiplier; transmission = the mean of the refraction color,
+  build/materials.py draws as Specular IOR Level 0.5; with Fresnel on a white one matches V-Ray 5.2 at every angle,
+  a grey one only head-on: Blender's curve still rises to 1 at grazing where V-Ray scales it all, measured in the
+  maxdrop-em3.34 plan); emission = self-illumination color times its multiplier; transmission = the mean of the refraction color,
   ior and thin-walled from the refraction parameters; maps where their slot is on, with their multiplier as the
   amount; a normal map (VRayNormalMap, Normal Bump, CoronaNormal) in a bump slot is the normal input, any other
   map the bump input. Added here: a refracting material takes its base color from the refraction color (mixed by
