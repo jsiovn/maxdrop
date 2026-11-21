@@ -2,7 +2,7 @@
 --
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
--- Ten Editable Poly boxes with a VRayMtl each, for V-Ray's own maps: VRayBitmap (VRayHDRI before V-Ray 5: the
+-- Twelve Editable Poly boxes with a VRayMtl each, for V-Ray's own maps: VRayBitmap (VRayHDRI before V-Ray 5: the
 -- same class) and VRayColor, and the wrappers above them.
 -- FixtureVBDiffuse: a VRayBitmap in diffuse with its defaults (transfer function Auto), one with spherical mapping
 -- in reflection. FixtureVBPlace: a VRayBitmap in diffuse with an overall multiplier of 1.5, a render multiplier of
@@ -14,6 +14,9 @@
 -- VRayColor. FixtureCCColor: a Color Correction (saturation 20) over a VRayColor. FixtureCCComposite: a Color
 -- Correction (brightness 10) over a Composite of two VRayBitmaps, the top one at 50 %. FixtureMixMask: a Mix of a
 -- VRayBitmap and blue whose mask is a VRayColor. FixtureCCNoise: a Color Correction over a Noise (no bitmap below).
+-- FixtureVReflPerp: reflection Fresnel off, the black default swatch, its reflection a default Falloff
+-- (perpendicular / parallel, black to white, no maps). FixtureVReflFresnel: its reflection a Falloff of type
+-- Fresnel (IOR override on, IOR 1.5) at a reflection map amount of 50.
 -- The maps name files that do not exist, by a bare file name: a drive path would make the file fail the privacy
 -- check. Needs V-Ray (5.x, the one this was authored with).
 -- Authored for MaxDrop's tests (see CONTRIBUTING.md, "Test files"): it resets the scene, so run it in a 3ds Max
@@ -125,6 +128,20 @@
 	cc3.map = Noise name:"FixtureNoise"
 	m10.texmap_diffuse = cc3
 	fixtureBox "FixtureCCNoiseBox" m10 270
+
+	local m11 = VRayMtl name:"FixtureVReflPerp"
+	m11.reflection_fresnel = false
+	m11.texmap_reflection = Falloff name:"FixtureVReflPerpMap"
+	fixtureBox "FixtureVReflPerpBox" m11 300
+
+	local m12 = VRayMtl name:"FixtureVReflFresnel"
+	local fr = Falloff name:"FixtureVReflFresnelMap"
+	fr.type = 2
+	fr.mtlIOROverride = true
+	fr.ior = 1.5
+	m12.texmap_reflection = fr
+	m12.texmap_reflection_multiplier = 50.0
+	fixtureBox "FixtureVReflFresnelBox" m12 330
 
 	makeDir @"C:\maxdrop_fixtures" all:true
 	saveMaxFile @"C:\maxdrop_fixtures\vray_texmaps.max" quiet:true

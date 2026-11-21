@@ -2074,6 +2074,8 @@ def check_found_textures():
                       {"ShaderNodeMix", "ShaderNodeHueSaturation", "ShaderNodeGamma"} <= kinds, str(sorted(kinds)))
             if name == "texmap_wrappers":
                 check_wrapper_nodes()
+            if name == "vray_texmaps":
+                check_reflection_falloff()
         check("found textures: a linear color image (VRayBitmap transfer function None) imported in Linear Rec.709",
               "vtx_linear.png" in linear, str(linear))
     finally:
@@ -3068,6 +3070,30 @@ def _node_kinds(material):
             if hasattr(n, attr):
                 out.add("%s:%s" % (n.bl_idname, getattr(n, attr)))
     return out
+
+
+def _upstream(socket):
+    """The bl_idnames of every node that feeds socket, directly or further up."""
+    out, todo, seen = set(), [socket], set()
+    while todo:
+        for link in todo.pop().links:
+            n = link.from_node
+            if n.name not in seen:
+                seen.add(n.name)
+                out.add(n.bl_idname)
+                todo.extend(n.inputs)
+    return out
+
+
+def check_reflection_falloff():
+    """vray_texmaps imported: a Falloff in a VRayMtl's reflection drives Specular IOR Level by the angle (Layer
+    Weight for perpendicular / parallel, the Fresnel node for Fresnel), not its color 1."""
+    for name, kind in (("FixtureVReflPerp", "ShaderNodeLayerWeight"), ("FixtureVReflFresnel", "ShaderNodeFresnel")):
+        m = bpy.data.materials.get(name)
+        socket = _principled(m).inputs["Specular IOR Level"] if m is not None else None
+        kinds = _upstream(socket) if socket is not None else set()
+        check("vray_texmaps/%s: the reflection Falloff into Specular IOR Level by %s" % (name, kind),
+              socket is not None and socket.is_linked and {kind, "ShaderNodeMix"} <= kinds, str(sorted(kinds)))
 
 
 def check_wrapper_nodes():

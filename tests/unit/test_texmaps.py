@@ -578,6 +578,20 @@ class Synthetic(Checks):
         fo = FakeMap(1, tx.FALLOFF, {8: 2, 12: float("nan")}, cls="Falloff")
         self.assertEqual(_tex(fo).convert(mat.MapRef(1), tx.COLOR).root.mask, tx.Facing(tx.FRESNEL, 1.6))
 
+    def test_falloff_in_a_reflection_slot(self):
+        # the usual Fresnel-like reflection: a default Falloff, black to white, no maps, converted as texture_graphs
+        # converts a specular input (a color graph, the input's own value a float)
+        tex = _tex(FakeMap(1, tx.FALLOFF, {}, cls="Falloff"))
+        g = tex.convert(mat.MapRef(1), tx.COLOR, 0.0)
+        black, white = tx.Constant((0.0, 0.0, 0.0)), tx.Constant((1.0, 1.0, 1.0))
+        self.assertEqual(g.root, tx.Mix(black, white, 0.0, tx.Facing(tx.PERPENDICULAR)))
+        self.assertEqual((g.approximated, g.issues), (False, ()))
+        self.assertEqual((tex.stats.peeled, tex.stats.unsupported), (collections.Counter(), collections.Counter()))
+        tex = _tex(FakeMap(1, tx.FALLOFF, {8: 2, 11: 1, 12: 1.5}, cls="Falloff"))
+        g = tex.convert(mat.MapRef(1, amount=0.5), tx.COLOR, 0.0)
+        self.assertEqual(g.root, tx.Mix(black, tx.Mix(black, white, 0.0, tx.Facing(tx.FRESNEL, 1.5)), 0.5))
+        self.assertEqual((g.approximated, g.issues, tex.stats.peeled), (False, (), collections.Counter()))
+
     def test_falloff_other_types_and_directions_are_peeled(self):
         for params in ({8: 3}, {8: 4}, {8: 1, 9: 1}, {8: 7}):
             fo = FakeMap(1, tx.FALLOFF, {**params, 0: (1.0, 0.0, 0.0), 2: Ref(2), 3: 1}, [2], cls="Falloff")
@@ -1214,6 +1228,19 @@ class VRayTexmaps(Checks):
         mix = self.f.irs["FixtureMixMask"].textures["base_color"].root
         self.assertIsInstance(mix.mask, tx.Constant)
         self.close(mix.mask.value, _lin(64))  # a mask is data: a float
+
+    def test_falloff_in_reflection(self):
+        black, white = tx.Constant((0.0, 0.0, 0.0)), tx.Constant((1.0, 1.0, 1.0))
+        ir = self.f.irs["FixtureVReflPerp"]
+        g = ir.textures["specular"]  # the default Falloff: black facing the viewer, white at grazing
+        self.assertEqual(g.root, tx.Mix(black, white, 0.0, tx.Facing(tx.PERPENDICULAR)))
+        self.assertEqual((g.approximated, g.issues), (False, ()))
+        self.assertEqual((ir.metallic.value, ir.metallic.map), (0.0, None), "Fresnel off, a dark swatch: no metal")
+        self.assertNotIn("base_color", ir.textures)
+        g = self.f.irs["FixtureVReflFresnel"].textures["specular"]  # map amount 50: half the swatch (black)
+        self.assertEqual(g.root, tx.Mix(black, tx.Mix(black, white, 0.0, tx.Facing(tx.FRESNEL, 1.5)), 0.5))
+        self.assertEqual((g.approximated, g.issues), (False, ()))
+        self.assertNotIn("Falloff", self.f.tex.stats.peeled)
 
     def test_color_correction_over_an_unsupported_map(self):
         ir = self.f.irs["FixtureCCNoise"]
