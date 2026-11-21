@@ -52,16 +52,27 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   of the material, a map then inverted); metallic from the metalness mode; transmission = refraction amount, the base
   mixed toward white (thin mode: the thin absorption color) by it; IOR, thin mode; alpha = the mean of the linear
   opacity color times its level; emission color at its level; clearcoat amount, IOR, roughness and absorption color;
-  maps where on, their amounts fractions. Specular stays 0.5 (Corona derives it from the IOR).
+  sheen amount, color and roughness; SSS amount, radius (world units, in meters) and scatter color (the per-channel
+  radius); a metal with a complex IOR takes the F0 of its n and k as its base color; maps where on, their amounts
+  fractions. Specular stays 0.5 (Corona derives it from the IOR). Translucency, volumetric absorption and
+  scattering, a metal edge color other than the default, the IOR mode and maps in the sheen and SSS slots are
+  named issues.
 - CoronaLegacyMtl (CoronaMtl): diffuse, reflection, refraction, opacity and self-illumination colors times their
   levels; specular = the mean reflection; roughness = 1 - glossiness (PBR mode or not); transmission and the glass
   base color as for VRayMtl, the IOR as well (refraction IOR when it refracts, else the Fresnel IOR); a Fresnel IOR
-  of CORONA_METAL_IOR or more with a bright reflection (as METAL_REFLECTION) is a metal in the reflection color.
+  of CORONA_METAL_IOR or more with a bright reflection (as METAL_REFLECTION) is a metal in the reflection color;
+  SSS as the physical material's. PBR mode off, translucency and absorption are named issues.
 - CoronaLightMtl -> emission (color, intensity, map) and its opacity map.
-- Wrappers (VRay2SidedMtl, VRayBlendMtl, VRayOverrideMtl, VRayMtlWrapper, Double Sided, Shellac, CoronaLayeredMtl:
-  base, then its layers that are on) -> the first set sub-material in 3ds Max's getSubMtl order; Shell Material -> its render
-  sub-material. Peeling stops at any other
-  class (a Multi/Sub-Object included), at most MAX_PEEL wrappers deep; each wrapper object peeled counts once.
+- CoronaSkinMtl -> one Principled layer: skin color times level, its three SSS layers as one (weighted mean radius
+  times the radius scale, weighted mean color), the first reflection as specular, roughness and IOR, opacity, bump.
+- CoronaLayeredMtl with a base and a layer that is on -> the base's IR with its layers (Layer: IR, amount, mask
+  with its mask amount; at most MAX_LAYERS), which build/materials.py mixes over it; the weight is the amount times
+  lerp(1, mask, mask amount), Corona's map-amount convention (not measured: no Corona render here).
+- Wrappers (VRay2SidedMtl, VRayBlendMtl, VRayOverrideMtl, VRayMtlWrapper, Double Sided, Shellac, CoronaLayeredMtl
+  without a base or without a layer on: base, then its layers that are on; CoronaRaySwitchMtl: direct, GI, reflect,
+  refract, each where switched on) -> the first set sub-material in 3ds Max's getSubMtl order; CoronaSelectMtl -> its
+  selected material (zero-based: the default is 0); Shell Material -> its render sub-material. Peeling stops at any
+  other class (a Multi/Sub-Object included), at most MAX_PEEL wrappers deep; each wrapper object peeled counts once.
 - Multi/Sub-Object: entry k has the material ID materialIDList[k] (zero-based, as the faces store it), the
   material materialList[k] and the switch mapEnabled[k]; the first entry with an ID wins. A face ID without an
   entry wraps as 3ds Max renders it: to ID modulo (the highest ID of the list + 1), every entry counted. A face ID

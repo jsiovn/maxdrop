@@ -1244,8 +1244,8 @@ The maps of texmap_rules (block 0 each; `convert/texmaps.py`):
 | Normal Bump `(0x243E22C6, 0x63F6A014)` | 0 mult_spin, 1 bump_spin, 2 normal_map, 3 bump_map, 4 / 5 their switches, 6 method (0 tangent), 7 flipred, 8 flipgreen, 9 swap_rg |
 | CoronaNormal `(0x2870CEAA, 0xCC18437C)` | 500 normalMap, 501 multiplier, 502 addGamma, 503 flipRed, 504 flipGreen, 505 swapRedGreen, 507 additionalBump, 508 additionalBumpStrength, 509 additionalBumpOn |
 
-The Corona classes of corona_physical, corona_legacy, corona_maps, corona_layered and corona_light (3ds Max 2020 +
-Corona 12, DLL `coronamaxutils2020.dlt`; block 0 each). CoronaPhysicalMtl's class-directory name starts with a
+The Corona classes of corona_physical, corona_legacy, corona_maps, corona_layered, corona_light, corona_more and
+corona_mix_ops (3ds Max 2020 + Corona 12, DLL `coronamaxutils2020.dlt`; block 0 each). CoronaPhysicalMtl's class-directory name starts with a
 carriage return (`"\rCoronaPhysicalMtl"`); MAXScript's `CoronaMtl` is CoronaLegacyMtl. Corona names its obsolete
 parameters `removedParam`: they are not saved. A Corona map amount is a fraction (CoronaPhysicalMtl's base and
 roughness amounts and CoronaLayeredMtl's amounts are percent in MAXScript: 75.0 there is 0.75 here). One older scene
@@ -1254,9 +1254,13 @@ CoronaLegacyMtl, CoronaBitmap and CoronaNormal.
 
 | Class (ClassID) | Parameters |
 |---|---|
-| CoronaPhysicalMtl `(0x6912AB89, 0x87151720)` | 101 baseColor, 102 baseLevel, 103 / 104 / 105 baseTexmap (on, amount), 111 metalnessMode (1 metal), 121 opacityColor, 122 opacityLevel, 123 / 124 / 125 opacity map, 131 baseRoughness, 132 / 133 / 134 its map, 171 baseIor, 191 refractionAmount, 192 / 193 / 194 its map, 203 useThinMode, 211 clearcoatAmount, 221 clearcoatIor, 231 clearcoatRoughness, 331 selfIllumColor, 332 selfIllumLevel, 333 / 334 / 335 its map, 351 / 352 / 353 baseBumpTexmap, 381 thinAbsorptionColor, 391 clearcoatAbsorptionColor, 411 / 412 metalnessTexmap (on; no amount), 421 roughnessMode (0 roughness, 1 glossiness), 461 iorMode |
-| CoronaLegacyMtl `(0x70BE6506, 0x448931DD)` | colors 101 diffuse, 102 reflect, 103 refract, 105 opacity, 107 selfIllum; levels 121, 122, 123, 127, 128; maps 141 diffuse, 142 reflect, 143 reflectGlossiness, 144 refract, 146 opacity, 147 bump, 158 selfIllum, each switched on by its id + 20, amounts 290, 291, 292, 293, 295, 296, 303; 180 reflectGlossiness, 182 fresnelIor, 183 ior, 210 thin, 402 pbrMode |
-| CoronaLayeredMtl `(0x65486584, 0x8425554E)` | 1000 baseMtl, 1001 layers (table of 10), 1002 amounts, 1003 mixmaps, 1004 layersOn; getSubMtl answers the base, then the layers |
+| CoronaPhysicalMtl `(0x6912AB89, 0x87151720)` | 101 baseColor, 102 baseLevel, 103 / 104 / 105 baseTexmap (on, amount), 111 metalnessMode (1 metal), 121 opacityColor, 122 opacityLevel, 123 / 124 / 125 opacity map, 131 baseRoughness, 132 / 133 / 134 its map, 171 baseIor, 191 refractionAmount, 192 / 193 / 194 its map, 203 useThinMode, 211 clearcoatAmount, 221 clearcoatIor, 231 clearcoatRoughness, 331 selfIllumColor, 332 selfIllumLevel, 333 / 334 / 335 its map, 351 / 352 / 353 baseBumpTexmap, 381 thinAbsorptionColor, 391 clearcoatAbsorptionColor, 411 / 412 metalnessTexmap (on; no amount), 421 roughnessMode (0 roughness, 1 glossiness), 461 iorMode; 161 edgeColor (default 0.75 grey), 241 sheenAmount, 245 sheenColor, 251 sheenRoughness (each with its map, switch and amount at + 1, + 2, + 3), 261 volumetricAbsorptionColor, 271 volumetricScatteringColor, 281 attenuationDistance (world units; 0 off), 291 sssAmount, 301 sssRadius (world units), 311 sssScatterColor (maps at + 1 .. + 3), 371 translucencyFraction, 375 translucencyColor, 451 useComplexIor, 452-454 complexIorN R, G, B, 455-457 complexIorK R, G, B |
+| CoronaLegacyMtl `(0x70BE6506, 0x448931DD)` | colors 101 diffuse, 102 reflect, 103 refract, 105 opacity, 107 selfIllum; levels 121, 122, 123, 127, 128; maps 141 diffuse, 142 reflect, 143 reflectGlossiness, 144 refract, 146 opacity, 147 bump, 158 selfIllum, each switched on by its id + 20, amounts 290, 291, 292, 293, 295, 296, 303; 180 reflectGlossiness, 182 fresnelIor, 183 ior, 210 thin, 402 pbrMode; 106 colorTranslucency, 126 levelTranslucency (map 148, switch 168, amount 297), 188 absorptionDistance (world units), 190 absorptionColor, 410 levelSss, 411 sssRadius (world units), 412 sssScatterColor, 414 / 417 / 421 SSS amount map |
+| CoronaLayeredMtl `(0x65486584, 0x8425554E)` | 1000 baseMtl, 1001 layers (table of 10), 1002 amounts, 1003 mixmaps (masks), 1004 layersOn, 1005 masksOn, 1006 maskAmounts (percent in MAXScript); getSubMtl answers the base, then the layers |
+| CoronaSkinMtl `(0xBEC41C73, 0x44CFDE95)` | 101 skinColor, 102 skinLevel, 103 sssAmount, 104 sssRadiusScale, 105 / 106 / 107 sss1 color, radius (world units), weight, 108-110 sss2, 111-113 sss3, 114 reflection1Color, 115 reflection1Level, 116 reflection1Glossiness, 117 reflection1Ior, 118-121 the second reflection, 122 opacityColor, 123 opacityLevel; maps 124-144 (skin color 124 ... bump 144), each switched on by its id + 21, amounts at its id + 42 |
+| CoronaHairMtl `(0x22C05DD6, 0xCA41F546)` | 101 colorTint, 102 colorDiffuse, 103 colorOpacity, 107 ior, 108 glossiness, 141 melanin, 142 pheomelanin (no rule) |
+| CoronaRaySwitchMtl `(0x6816116A, 0xABE651DE)` | 1600 giMtl, 1601 reflectMtl, 1602 refractMtl, 1603 directMtl, 1610-1613 their switches |
+| CoronaSelectMtl `(0xC74E9F94, 0xC319F213)` | 311 mtlCount, 312 materials (table), 313 selected (zero-based: its default is 0) |
 | CoronaLightMtl `(0x53B7717A, 0x500D5093)` | 110 intensity, 111 texmap, 112 texmapOn, 113 color, 150 opacityTexmap, 151 opacityTexmapOn, 168 twosidedEmission |
 | CoronaBitmap `(0xABBA5784, 0x65484244)` | 101 filename (asset), 103 uvwChannel, 105 uvwScale, 106 uvwOffset (point3), 107 filteringBlur, 108 / 109 tilingU / V (0 none, 1 repeat, 2 mirror), 114 realWorldScale, 117 monoChannelOutput, 118 rgbChannelOutput (1 alpha as gray), 119 clippingOn, 120 clippingMode (0 crop, 1 place), 121-124 clipping u, v, width, height, 125 gamma (-1 automatic), 129 wAngle (radians), 130 uAngle (the U offset times 2 pi, kept in step by Corona); its Output part at slot 1 |
 | CoronaColor `(0x68426DCA, 0x372362D4)` | 50 method (0 color, 1 HDR color, 2 temperature, 3 hex), 51 temperature (K), 52 color, 56 alpha, 57 multiplier, 58 colorHdr, 59 hexColor |
@@ -1264,7 +1268,18 @@ CoronaLegacyMtl, CoronaBitmap and CoronaNormal.
 
 What the Corona maps do was measured with `renderMap` in 3ds Max 2020: a CoronaBitmap's UVW scale, offset and W
 angle place the image exactly as a Bitmap's tiling, offset and W angle; CoronaMix gives mix(bottom, operation(bottom,
-top), amount), the mix map replacing the amount when it is on (the operation numbers above come from that).
+top), amount), the mix map replacing the amount when it is on (the operation numbers above come from that), the mix
+always linear. Subtract is bottom - top floored at 0, divide bottom / top, difference |bottom - top|. With mixInSRgb
+on (the default) the operation runs on each layer raised to 1 / 2.2 and its result is raised to 2.2 (top 50, bottom
+40 of 255: add 206.1, off 90.0; the sRGB curve would give 207.2); multiply, divide, min and max come out the same
+either way; results are not clamped (an add's 2.14 shows through a 0.25 mask). Each layer is its map or color times
+its multiplier, plus its offset times -0.1 (offset 1.0 lowers it by 25.5 of 255, -1.0 raises it; the multiplier
+first). Operations 7 and 9-20 are not identified. CoronaColor's temperature is Corona's own linear color, the
+brightest channel 1 (`texmaps.CORONA_KELVIN`, 24 points from 1000 K to 40000 K; 3000 K = (255, 121.6, 39.2));
+colorSpace (61) changed nothing for a color, a hex value or a temperature. A Corona render (`render`) does not run
+here, under `3dsmaxbatch` or in an own `3dsmax.exe -silent` instance ("Unable to open renderer, possible
+recursion"): CoronaLegacyMtl's glossiness with PBR mode off, CoronaPhysicalMtl's iorMode and edge color, and how a
+CoronaLayeredMtl mask weighs its amount are not measured.
 
 VRayBitmap `(0x6769144B, 0x02C1017D)` (vray_texmaps, 3ds Max 2020 + V-Ray 5.2; the V-Ray SDK's
 `pb2vrayhdri.h`). MAXScript's `VRayHDRI`, its name before V-Ray 5, is the same class. References: 0 block 0, 1
