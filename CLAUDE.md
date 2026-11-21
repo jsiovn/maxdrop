@@ -127,8 +127,8 @@ The repository is public and `main` feeds users: a version bump on `main` ships 
 
 - **`main` changes only through a pull request** that passes `test.yml`. No direct push, no force-push, no
   history rewrite: a fix is a new commit. (`main` was rewritten once, on 2026-11-15, to split the fork commit;
-  branch `backup/c49ee9a`, which kept the original, was deleted the same day, and tag `v0.0.1` now points at
-  `fbdfbe2`.)
+  branch `backup/c49ee9a`, which kept the original, was deleted the same day (a one-off: the `backup/*` rule
+  below stands), and tag `v0.0.1` now points at `fbdfbe2`.)
 - **Branches:** `feat/<bead-id>-<slug>` (one bead, PR into `main`), `epic/<epic-bead-id>` (one epic, its beads
   PR into it, one PR into `main`), `fix/<slug>` or `chore/<slug>` for work without a bead. Never delete
   `backup/*`.
