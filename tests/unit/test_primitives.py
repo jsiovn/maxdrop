@@ -366,8 +366,7 @@ class HandMadeTest(unittest.TestCase):
             self.assertLess(best, 2.0, p.name)
 
     def test_options_not_built(self):
-        cases = ((classids.GEOSPHERE, {0: 1.0, 3: 1}, "hemisphere"), (classids.CYLINDER, {0: 1.0, 6: 1}, "Slice"),
-                 (classids.CONE, {0: 1.0, 7: 1}, "Slice"), (classids.TUBE, {0: 1.0, 7: 1}, "Slice"),
+        cases = ((classids.GEOSPHERE, {0: 1.0, 3: 1}, "hemisphere"), (classids.TUBE, {0: 1.0, 7: 1}, "Slice"),
                  (classids.TORUS, {0: 1.0, 7: 1}, "Slice"))
         for class_id, values, word in cases:
             p, _ = prim.params_of(class_id, Block(values))
