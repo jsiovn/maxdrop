@@ -733,17 +733,15 @@ class TexmapConverter:
     def _constant(self, m, pid, kind, default):
         """A color parameter as a Constant of the input's kind."""
         v = m.param(pid, 0)
-        return self._swatch(v if isinstance(v, tuple) and len(v) >= 3 and all(_finite(c) for c in v[:3]) else default,
-                            kind)
+        rgb = v if isinstance(v, tuple) and len(v) >= 3 and all(_finite(c) for c in v[:3]) else default
+        return self._swatch(rgb, kind)
 
     def _swatch(self, rgb, kind):
         """A swatch (0..1 per channel) as a Constant of the input's kind: on a color input the linear color, on any
-        other the scene's rule applied to the mean of the swatch, each channel clamped to 0..1 first. V-Ray 5.2
-        takes a constant mask as the mean of the swatch, before any gamma: a Mix black -> white by a red (255 0 0)
-        VRayColor renders 0.333 linear with the gamma on and byte 85 with it off, which the decoded mean (0.0908)
-        shows in Blender and the mean of the decoded color (0.333) does not (docs/plans/2026-11-21-maxdrop-em3.36-
-        data-constants.md). Measured on a mask only: with the gamma off a decoded number is exact for a mask
-        between black and white, not for one between two colors, nor for a roughness or opacity constant."""
+        other the scene's rule applied to the mean of the swatch, each channel clamped to 0..1 first, as V-Ray 5.2
+        renders a constant mask (maxdrop-em3.36). Measured on a mask only: with the gamma off a decoded number is
+        exact for a mask between black and white, not for one between two colors, nor checked for a roughness or
+        opacity constant (maxdrop-em3.122)."""
         if kind == COLOR:
             return Constant(self.swatches.color(rgb))
         return Constant(self.swatches.channel(sum(min(1.0, max(0.0, c)) for c in rgb[:3]) / 3.0))

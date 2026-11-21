@@ -1701,8 +1701,8 @@ class SwatchRule(Checks):
                 self.close(self._root(rule, vc, kind=tx.DATA).value, want, "a data input: the mean")
 
     def test_data_constants_are_the_rule_of_the_mean_swatch(self):
-        # V-Ray 5.2 render of a Mix black -> white by a VRayColor mask (docs/plans/2026-11-21-maxdrop-em3.36-data-
-        # constants.md): red 255 0 0 renders 0.333 linear with the gamma on and byte 85 with it off, which a linear
+        # V-Ray 5.2 render of a Mix black -> white by a VRayColor mask (maxdrop-em3.36, plan in docs/plans/): red
+        # 255 0 0 renders 0.333 linear with the gamma on and byte 85 with it off, which a linear
         # srgb_to_linear(1 / 3) = 0.0908 shows; grey 64 renders 0.251 linear on, byte 64 off.
         red, grey = (1.0, 0.0, 0.0), (64 / 255,) * 3
         cases = ((colors.GAMMA_ON, red, 1 / 3), (colors.UNKNOWN, red, 1 / 3), (colors.GAMMA_OFF, red, 0.0908417),
@@ -1714,10 +1714,11 @@ class SwatchRule(Checks):
                     _ccolor(1, p50=3, p59="#%02X%02X%02X" % tuple(round(c * 255) for c in rgb)))
             for m in maps:
                 with self.subTest(rule=rule, rgb=rgb, cls=m.cls, method=m.param(50, 0)):
-                    root = self._root(rule, m, kind=tx.DATA)
-                    self.close(root.a.value if m.cls == "Mix" else root.value, want)
-                    self.close(self._root(rule, m, kind=tx.COLOR).value if m.cls != "Mix" else
-                               self._root(rule, m).a.value, rule.color(rgb), "a color input: the linear color")
+                    data, color = self._root(rule, m, kind=tx.DATA), self._root(rule, m, kind=tx.COLOR)
+                    if m.cls == "Mix":
+                        data, color = data.a, color.a
+                    self.close(data.value, want)
+                    self.close(color.value, rule.color(rgb), "a color input: the linear color")
 
     def test_linear_corona_colors_on_a_data_input_are_the_mean(self):
         # the HDR color and the temperature are linear already: no rule, the mean of the linear color
