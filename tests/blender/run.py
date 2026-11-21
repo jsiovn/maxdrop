@@ -125,6 +125,7 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1; kept literal: tes
     "corona_maps": ["UVMap"],
     "corona_physical": ["UVMap"],
     "editable_mesh": ["UVMap"],
+    "falloff_curve": ["UVMap"],
     "extrude": [],  # per mesh: EXTRUDE_UV_LAYERS
     "gamma_swatches": ["UVMap"],
     "hierarchy": [],

@@ -58,6 +58,7 @@ UV_LAYERS = {
     "corona_physical": ["UVMap"],
     "editable_mesh": ["UVMap"],
     # per mesh (named after its first node): Extrude makes channel 1 only with Generate Mapping Coords.
+    "falloff_curve": ["UVMap"],
     "extrude": {"FixtureExtRect": ["UVMap"], "FixtureExtAdaptive": ["UVMap"]},
     "gamma_swatches": ["UVMap"],
     "hierarchy": [],

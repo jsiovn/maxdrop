@@ -582,9 +582,10 @@ class TestFixtures(unittest.TestCase):
         heads = {"Node": 16, "RootNode": 16, "Texmaps": 48, "Bezier Float": 2, "Bezier Scale": 2, "Bezier Color": 2,
                  "Bezier Position": 2, "Smooth Rotation": 2, "Linear Float": 2, "Linear Position": 2,
                  "Linear Rotation": 2, "Linear Scale": 2, "TCB Float": 2, "TCB Position": 2, "TCB Rotation": 2,
-                 "TCB Scale": 2, "Boolean Controller": 2, "Grid Reference": 2, "VRayMtl": 34, "MtlBaseLib": 2,
-                 "": 2}  # Custom Curve Control's point class, nameless in the class directory (texmap_rules' Falloffs)
-        varies = {"ParamBlock2"}  # the number of reference slots of its descriptor: 25 and 37 in the fixtures
+                 "TCB Scale": 2, "Boolean Controller": 2, "Grid Reference": 2, "VRayMtl": 34, "MtlBaseLib": 2}
+        # ParamBlock2: the number of reference slots of its descriptor, 25 and 37 in the fixtures; the curve of a
+        # Custom Curve Control (nameless in the class directory): its point count, 2 by default (falloff_curve: 3, 4)
+        varies = {"ParamBlock2", ""}
         for path in FIXTURES:
             with self.subTest(fixture=os.path.basename(path)), cfb.CompoundFile(path) as cf:
                 s = _scene(cf)

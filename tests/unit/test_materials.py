@@ -32,7 +32,7 @@ FLOORS = {"vray_lights": 0, "vray_dome": 0, "lights_standard": 0, "lights_photom
           "arc_pie_reverse": 120, "controllers": 120,
           "corona_layered": 630, "corona_legacy": 370, "corona_light": 180, "corona_mix_ops": 2450,
           "corona_more": 3270,
-          "corona_maps": 950, "corona_physical": 500, "editable_mesh": 380, "extrude": 120, "gamma_swatches": 540,
+          "corona_maps": 950, "corona_physical": 500, "editable_mesh": 380, "extrude": 120, "falloff_curve": 1240, "gamma_swatches": 540,
           "hierarchy": 120, "instances": 120, "layers_flags": 120,
           "layers_more": 120, "lookat": 120, "modifier_pivot": 120,
           "multi_uv": 120, "pblock_animated": 920, "primitives": 120, "saved_as_2017": 120,
