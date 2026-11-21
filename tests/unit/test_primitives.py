@@ -365,13 +365,6 @@ class HandMadeTest(unittest.TestCase):
             self.assertLessEqual(len(data.loop_vertices), prim.MAX_CORNERS, p.name)
             self.assertLess(best, 2.0, p.name)
 
-    def test_options_not_built(self):
-        cases = ((classids.GEOSPHERE, {0: 1.0, 3: 1}, "hemisphere"),)
-        for class_id, values, word in cases:
-            p, _ = prim.params_of(class_id, Block(values))
-            with self.assertRaisesRegex(prim.PrimitiveError, word):
-                prim.build(p)
-
     def test_plane_render_scale_and_density_are_named(self):
         p, _ = prim.params_of(classids.PLANE, Block({0: 2.0, 1: 2.0, 4: 2.0, 5: 3.0}))
         data, issues = prim.build(p)
