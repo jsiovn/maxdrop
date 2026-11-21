@@ -11,6 +11,7 @@ Multi/Sub-Object by material ID and the slot plan of its box.
 
     python -I -m unittest discover tests
 """
+import ast
 import importlib
 import json
 import math
@@ -115,6 +116,17 @@ def _convert(*objects, index=0):
     return conv, conv.convert(index)
 
 
+def _build_constant(name):
+    """A module-level constant of maxdrop/build/materials.py, which imports bpy: read from its source."""
+    path = os.path.join(ROOT, "maxdrop", "build", "materials.py")
+    with open(path, encoding="utf-8") as f:
+        tree = ast.parse(f.read(), path)
+    for stmt in tree.body:
+        if isinstance(stmt, ast.Assign) and any(isinstance(t, ast.Name) and t.id == name for t in stmt.targets):
+            return ast.literal_eval(stmt.value)
+    raise AssertionError("no %s in maxdrop/build/materials.py" % name)
+
+
 class Close:
     def close(self, ours, theirs, what=""):
         if isinstance(theirs, tuple):
@@ -179,6 +191,17 @@ class VRayMtlRules(unittest.TestCase, Close):
         self.assertIsNone(ir.base_color.map)
         self.assertFalse(ir.unknown)
         self.assertEqual(ir.source, "VRayMtl")
+
+    def test_reflection_color_is_the_specular_weight(self):
+        """A white reflection is 1, the full Fresnel reflection at the IOR, which build/materials.py halves into
+        Blender's Specular IOR Level 0.5 (the IOR unchanged): V-Ray 5.2 and Cycles both reflect 0.053 facing the
+        camera at IOR 1.6 (maxdrop-em3.34). A grey reflection is its linear mean."""
+        for refl, want in (((1.0, 1.0, 1.0), 1.0), ((0.502, 0.502, 0.502), 0.502), ((0.2, 0.4, 0.9), 0.5),
+                           ((0.0, 0.0, 0.0), 0.0)):
+            conv, ir = _convert(_vray(0, b1={2: refl}))
+            self.close(ir.specular.value, want, str(refl))
+            self.close(ir.metallic.value, 0.0)  # Fresnel on: never the metal rule
+        self.assertEqual(_build_constant("SPECULAR_LEVEL"), 0.5)
 
     def test_glossiness_flip_and_inverted_map(self):
         objs = (_map(1),)

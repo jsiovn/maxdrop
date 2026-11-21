@@ -108,7 +108,7 @@ sRGB either way, EXR and HDR files linear (or what their own gamma says). Turn m
 
 | Material | This version |
 |---|---|
-| VRayMtl | **Imported**: diffuse, reflection (glossiness or roughness, metalness, Fresnel IOR), refraction (transmission, IOR, thin-walled), self-illumination, coat, bump, opacity. Fresnel off with a bright reflection becomes a metal; a refracting material takes its color from the refraction color |
+| VRayMtl | **Imported**: diffuse, reflection (glossiness or roughness, metalness, Fresnel IOR), refraction (transmission, IOR, thin-walled), self-illumination, coat, bump, opacity. Fresnel off with a bright reflection becomes a metal; a refracting material takes its color from the refraction color. The reflection is as strong as V-Ray renders it facing the camera (checked against V-Ray 5.2) and, for a white reflection, at every angle; a grey or colored reflection comes out brighter than V-Ray's toward the silhouette (Blender's specular level scales only the head-on reflection) |
 | VRayLightMtl, VRayFastSSS2, VRayCarPaintMtl, VRayCarPaintMtl2 | **Imported**: emission; subsurface; a metal base with a coat |
 | Standard (Blinn, Phong, Metal, Anisotropic, Oren-Nayar-Blinn, Multi-Layer, Translucent, Strauss) | **Imported**: diffuse, specular level and color, glossiness, self-illumination, opacity, IOR, bump. Known issue: the maps of an Anisotropic, Oren-Nayar-Blinn, Multi-Layer, Translucent or Strauss material are read from Blinn's map slots, so one can land in another input (a Strauss glossiness map as the diffuse map) |
 | Physical Material | **Imported**: base, reflectivity, roughness, metalness, transparency, IOR, thin-walled, emission (luminance in cd/m²), coating, bump, cutout |
