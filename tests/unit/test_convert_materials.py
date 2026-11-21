@@ -353,6 +353,9 @@ class OtherRules(unittest.TestCase, Close):
         conv, ir = _convert(FakeMtl(0, classids.VRAY_CAR_PAINT_MTL2, "Default2", {0: {}}))
         self.close((ir.coat_weight, ir.coat_ior, ir.roughness.value), (1.0, 1.5, 0.6))
 
+    def test_ir_default_specular_is_the_iors_own_fresnel(self):
+        self.close(mat.MaterialIR(0, "x").specular.value, 1.0, "a reflection weight, drawn as Blender's 0.5")
+
     def test_unknown_class_is_grey_and_counted(self):
         odd = FakeMtl(0, (0x1234, 0x5678), "Odd")
         odd2 = FakeMtl(1, (0x1234, 0x5678), "Odd2")
