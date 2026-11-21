@@ -1200,11 +1200,33 @@ class TestConstraint(MatrixCase):
         was at assignment and moved after."""
         for name, (pos, settings, offsets, states) in MAX_OFFSETS.items():
             for target, expected in states:
+                with self.subTest(name, target=target):
+                    b = LookAtBuild()
+                    n = b.constrained([b.target(target)], [50.0], settings, pos=pos, offsets=offsets)
+                    t = b.transforms()
+                    self.assertMatrix(t.world(n), expected[:3] + (tuple(pos) + (1,),), places=5)
+                    self.assertEqual(t.issues, [])
+
+    def test_keep_initial_offset_under_a_parent(self):
+        """3ds Max 2020: a box under a Dummy turned (10, 0, 40) and scaled 1.5, turned (20, 30, 40) in its parent's
+        space before the constraint; then the target moved and the Dummy turned 30 more about Z. The local rotation
+        at assignment (0x1002), not the world one (0x1001), is kept relative to the frame."""
+        offsets = {0x1001: (-0.0841859, -0.2499998, 0.0669874, 0.9622502),
+                   0x1002: (-0.0704393, -0.2968827, -0.2831139, 0.9092554),
+                   0x1003: (-9e-05, 7.27e-05, -0.7777493, 0.6285746), 0x1004: (0, 0, 0, 1)}
+        for z, target, expected in (
+                (40, (20, 30, 10), ((0.6634143, 0.5566702, -0.4999997), (-0.4730213, 0.8297696, 0.2961979),
+                                    (0.5797691, 0.04000861, 0.8137979), (28.36047, -8.965195, 9.99078))),
+                (70, (-10, 50, 30), ((0.3718089, 0.8391132, -0.3970479), (-0.6857191, 0.5365602, 0.4918255),
+                                     (0.6257374, 0.08939828, 0.7748938), (37.08196, -23.58385, 9.99078)))):
+            with self.subTest(target=target):
                 b = LookAtBuild()
-                n = b.constrained([b.target(target)], [50.0], settings, pos=pos, offsets=offsets)
+                rig = b.node(b.simple_prs((60, 0, 0), (math.radians(10), 0, math.radians(z)), (1.5, 1.5, 1.5)))
+                n = b.constrained([b.target(target)], [50.0], {2: 1}, pos=(-20, 10, 5), scale=(1 / 1.5,) * 3,
+                                  parent=rig, offsets=offsets)
                 t = b.transforms()
-                self.assertMatrix(t.world(n), expected[:3] + (tuple(pos) + (1,),), places=5)
-                self.assertEqual(t.issues, [], name)
+                self.assertMatrix(t.world(n), m3(*expected[:3])[:3] + (expected[3] + (1,),), places=4)
+                self.assertEqual(t.issues, [])
 
     def test_offset_not_stored(self):
         plain = MAX_CONSTRAINT[(0, False, 2, False, 2, 1)][:3] + ((-50, 50, 0, 1),)
@@ -1212,17 +1234,19 @@ class TestConstraint(MatrixCase):
         for settings, offsets in (({2: 1}, {}), ({2: 1}, {0x1002: quat}),
                                   ({2: 1}, {0x1002: quat, 0x1003: bytes(8)}), ({4: 1}, {}),
                                   ({4: 1}, {0x1004: bytes(12)})):
-            b = LookAtBuild()
-            n = b.constrained([b.target((0, 0, 20))], [50.0], settings, offsets=offsets)
-            t = b.transforms()
-            self.assertMatrix(t.world(n), plain, places=5)
-            self.assertEqual([i.reason for i in t.issues], [ct.CONSTRAINT_OFFSET], (settings, offsets))
+            with self.subTest(settings=settings, offsets=offsets):
+                b = LookAtBuild()
+                n = b.constrained([b.target((0, 0, 20))], [50.0], settings, offsets=offsets)
+                t = b.transforms()
+                self.assertMatrix(t.world(n), plain, places=5)
+                self.assertEqual([i.reason for i in t.issues], [ct.CONSTRAINT_OFFSET])
         for offsets in ({}, {0x1004: (0, 0, 0, 0)}, {0x1004: (0, 0, 0, 1)}):  # nothing set: no offset, no issue
-            b = LookAtBuild()
-            n = b.constrained([b.target((0, 0, 20))], [50.0], offsets=offsets)
-            t = b.transforms()
-            self.assertMatrix(t.world(n), plain, places=5)
-            self.assertEqual(t.issues, [])
+            with self.subTest(offsets=offsets):
+                b = LookAtBuild()
+                n = b.constrained([b.target((0, 0, 20))], [50.0], offsets=offsets)
+                t = b.transforms()
+                self.assertMatrix(t.world(n), plain, places=5)
+                self.assertEqual(t.issues, [])
         b = LookAtBuild()  # a quaternion that is not finite
         n = b.constrained([b.target((0, 0, 20))], [50.0], {2: 1},
                           offsets={0x1002: (float("nan"), 0, 0, 1), 0x1003: (0, 0, 0, 1)})
