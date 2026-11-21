@@ -23,6 +23,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   groups and UVs, instead of a placeholder with a line in the report.
 - LookAt Constraint: Keep Initial Offset and Set Orientation are applied, so a constrained object keeps the turn
   it was given in 3ds Max instead of facing its target straight; neither is a line in the report any more.
+- Lights: a standard, photometric or VRayIES light whose shadows are off in 3ds Max casts no shadow in Blender;
+  a VRayIES with an overridden light shape gets a spot radius from it (soft shadows), a shape other than a sphere
+  drawn as a sphere of its largest size, a line in the report.
 
 ### Changed
 

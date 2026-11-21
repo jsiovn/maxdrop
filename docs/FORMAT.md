@@ -836,11 +836,12 @@ back by the reader. All superclass `0x30`; every one shines along its local -Z.
 multiplier, 2 contrast, 3 soften diffuse edge, 4 to 7 near and far attenuation start and end, 8 decay start; Spot
 and Direct 0 color, 1 multiplier, 2, 3 the same, 4 hotspot, 5 falloff (a Spot's in degrees, a Direct's a radius in
 world units), 6 aspect, 7 to 10 attenuation, 11 decay start. Reference 3 is the shadow generator, 4 an old
-ParamBlock of shadow settings. The light object's own chunks:
+ParamBlock of shadow settings (color, density, ...; not the switch). The light object's own chunks:
 
 | Chunk | Meaning |
 |---|---|
 | `0x2580` u16 | on |
+| `0x2570` u16 | shadows on (1) or off (0); written in both states (absent: on, as MaxDrop read every light before) |
 | `0x25D0` u16 | decay: 0 none, 1 inverse, 2 inverse square (absent: none) |
 | `0x2573` u16 | cone shape (Spot, Direct): 1 circle, 0 rectangle |
 | `0x2575` (empty) | overshoot |
@@ -864,15 +865,26 @@ generator):
 | 4 | 4 affect diffuse, 5 affect specular, 6 ambient only, 11 length (a line and a rectangle along local Y, a cylinder), 12 width (a rectangle, along local X), 13 radius (disc, sphere, cylinder) |
 
 The lamp color without Kelvin is a preset MAXScript does not reach and the fixtures do not store: white is taken.
+MAXScript's `light.castShadows` is the **node's** Cast Shadows render flag (the node's `0x099C`, bit `0x200`), not the
+light's switch, which is `light.baseObject.castShadows` (saves of one change each, maxdiff); a standard or photometric
+light MAXScript makes has its shadows off, the two scenes of the corpus have them on.
 3ds Max 2020 refuses a spotlight distribution on a cylinder.
 
 **VRaySun** `(0x732C0383, 0x7D993776)`, block 0: 0 enabled, 1 turbidity, 2 intensity multiplier, 3 size multiplier,
 5 ozone, 9 invisible, 12 sky model, 14 / 19 affect diffuse / its contribution, 15 / 20 affect specular / its
-contribution, 17 filter color, 18 color mode (0 filter, 1 direct, 2 override). A targeted VRaySun is a Look At
-node. **VRayIES** `(0x2EAF2F07, 0x7EC44F31)`, block 0: 0 enabled, 1 IES file (an asset of type `Photometric`), 7
+contribution, 17 filter color, 18 color mode (0 filter, 1 direct, 2 override); no shadow switch in V-Ray 5.2 (16
+`cast_atmospheric_shadows` only). A targeted VRaySun is a Look At node. **VRayIES** `(0x2EAF2F07, 0x7EC44F31)`, block 0: 0 enabled, 1 IES file (an asset of type `Photometric`), 7
 color temperature, 8 color, 9 color mode (1 temperature), 10 power, 11 targeted, 14 / 30 affect diffuse /
 contribution, 15 / 31 affect specular / contribution, 32 intensity type (0 lm, 1 cd), 34 override intensity. With
-the intensity overridden, 10 holds the override's value in its unit; 33 (`intensity_value`) is stored stale (0).
+the intensity overridden, 10 holds the override's value in its unit; 33 (`intensity_value`) is stored stale (0). 4
+cast shadows; 5 use light shape (0 no, 1 for shadows only, 2 for illumination and shadows), 21 override shape (off:
+the IES file's shape), 22 shape, 23 height, 24 width, 25 length, 26 diameter (world units), 35 `shape_actual` (-1
+without a file). The shapes, in the order of the panel's list (the stored value), with the sizes the panel enables
+(H W L D): 0 point; 1 rectangle H W L; 2 circle D; 3 sphere D; 4 vertical cylinder H D; 5 / 6 horizontal cylinder
+along the length / width L D / W D; 7 / 8 ellipse, 9 / 10 ellipsoid (length / width), 11 elliptic cylinder, 12 / 13
+horizontal elliptic cylinder (length / width) H W L; 14 vertical circle W; 15 vertical ellipse H W; 16 cuboid H W L.
+MaxDrop gives the spot the radius of half the largest of those sizes when the shape is used and overridden (a
+sphere's exactly, another shape a line in the report).
 Reference 1 is a Target Light object of its own (no node). **Skylight** `(0x7BF61478, 0x522E4705)`: not built.
 **VRaySky** `(0x48480B4E, 0x62FF5A90)` (superclass Texmap): the environment map is RenderEnvironment's reference 5
 (the lights_standard fixture).
