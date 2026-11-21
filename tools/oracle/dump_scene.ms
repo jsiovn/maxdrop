@@ -17,7 +17,7 @@ global MaxDropOracle
 
 struct MaxDropOracleStruct
 (
-	version = 9,
+	version = 10,
 
 	fn num v =
 	(
@@ -267,10 +267,75 @@ struct MaxDropOracleStruct
 		block items 6
 	),
 
+	-- the root of face f in the union-find array par (path halving)
+	fn ufRoot par f =
+	(
+		while par[f] != f do
+		(
+			par[f] = par[par[f]]
+			f = par[f]
+		)
+		f
+	),
+
+	-- how a TriMesh is shaded by its smoothing groups: flat, its triangles of group 0; hard_edges, the edges with
+	-- exactly two triangles, both smoothed, without a common group; regions, the smoothed triangles joined through
+	-- the edges of two triangles with a common group, counted. An edge is a pair of vertex indices (an unwelded
+	-- seam is no edge), found in a list per lower vertex: no meshop call per edge, which took minutes on 100,000
+	-- triangles.
+	fn smoothJson s =
+	(
+		local nf = s.numfaces
+		local g = for f = 1 to nf collect getFaceSmoothGroup s f
+		local par = for f = 1 to nf collect f
+		local edges = for v = 1 to s.numverts collect #()  -- per lower vertex: higher vertex, face, ...
+		for f = 1 to nf do
+		(
+			local fc = getFace s f
+			local vs = #(fc.x as integer, fc.y as integer, fc.z as integer)
+			for k = 1 to 3 do
+			(
+				local a = vs[k]
+				local b = vs[(mod k 3) as integer + 1]
+				if a > b do swap a b
+				append edges[a] b
+				append edges[a] f
+			)
+		)
+		local hard = 0
+		for l in edges where l.count > 2 do
+		(
+			local done = #{}
+			for i = 1 to l.count by 2 where not done[i] do
+			(
+				local fs = #(l[i + 1])
+				for j = i + 2 to l.count by 2 where l[j] == l[i] do
+				(
+					append fs l[j + 1]
+					done[j] = true
+				)
+				if fs.count == 2 and g[fs[1]] != 0 and g[fs[2]] != 0 do
+				(
+					if (bit.and g[fs[1]] g[fs[2]]) != 0 then
+					(
+						local a = ufRoot par fs[1]
+						local b = ufRoot par fs[2]
+						if a != b do par[a] = b
+					)
+					else hard += 1
+				)
+			)
+		)
+		local flat = 0
+		local roots = #{}
+		for f = 1 to nf do if g[f] == 0 then flat += 1 else roots[ufRoot par f] = true
+		inline #(#("flat", flat as string), #("hard_edges", hard as string), #("regions", roots.numberSet as string))
+	),
+
 	-- what an evaluated mesh carries per face: the triangles of each material ID (1-based, as 3ds Max shows it) by
 	-- the way they face in object space (the vertices of snapshotAsMesh taken back by the inverse object transform,
-	-- the winding normal's z: up, down, side; a degenerate face is side), and map channel 1's vertex count and
-	-- range over the map vertices its faces use; null unless a modifier made the mesh
+	-- the winding normal's z: up, down, side; a degenerate face is side), map channel 1's vertex count and range over
+	-- the map vertices its faces use, and its shading by smoothing groups; null unless a modifier made the mesh
 	fn evalMeshJson n =
 	(
 		if n.modifiers.count == 0 or superClassOf n != GeometryClass do return "null"
@@ -313,8 +378,9 @@ struct MaxDropOracleStruct
 			)
 			map1 = inline #(#("count", (meshop.getNumMapVerts s 1) as string), #("max", vec hi), #("min", vec lo))
 		)
+		local smoothing = smoothJson s
 		free s
-		obj #(#("map_channel_1", map1), #("material_ids", list ids)) 6
+		obj #(#("map_channel_1", map1), #("material_ids", list ids), #("smoothing", smoothing)) 6
 	),
 
 	-- a camera's state as 3ds Max (and V-Ray) render it: CameraObject::EvalCameraState at frame 0, the horizontal FOV in

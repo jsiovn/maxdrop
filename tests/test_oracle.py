@@ -121,7 +121,7 @@ class OracleFiles(unittest.TestCase):
             with self.subTest(name):
                 o = _oracle(name)
                 self.assertEqual(list(o), TOP_KEYS)
-                self.assertEqual(o["oracle_version"], 9)
+                self.assertEqual(o["oracle_version"], 10)
                 self.assertEqual(list(o["render"]), RENDER_KEYS)
                 self.assertTrue(o["render"]["width"] > 0 and o["render"]["height"] > 0)
                 self.assertEqual(o["file"], name + ".max")
@@ -196,8 +196,16 @@ class OracleFiles(unittest.TestCase):
             self.assertTrue(all(len(c) == 9 and all(isinstance(v, (int, float)) for v in c) for c in m["corners"]))
 
     def _check_eval_mesh(self, mesh, faces):
-        """Per material ID, ascending, the triangles facing up, down and sideways; map channel 1's count and range."""
-        self.assertEqual(list(mesh), ["map_channel_1", "material_ids"])
+        """Per material ID, ascending, the triangles facing up, down and sideways; map channel 1's count and range;
+        the shading by smoothing groups."""
+        self.assertEqual(list(mesh), ["map_channel_1", "material_ids", "smoothing"])
+        sm = mesh["smoothing"]  # flat triangles, hard edges, smooth regions of the smoothed triangles
+        self.assertEqual(list(sm), ["flat", "hard_edges", "regions"])
+        self.assertTrue(all(isinstance(v, int) and v >= 0 for v in sm.values()), sm)
+        self.assertLessEqual(sm["flat"], faces)
+        self.assertLessEqual(sm["regions"], faces - sm["flat"])
+        self.assertEqual(sm["regions"] == 0, sm["flat"] == faces, sm)
+        self.assertLessEqual(sm["hard_edges"], 3 * faces // 2)
         hist = mesh["material_ids"]
         ids = [h[0] for h in hist]
         self.assertEqual(ids, sorted(set(ids)))

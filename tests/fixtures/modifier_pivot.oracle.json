@@ -301,7 +301,8 @@
       ],
       "eval_mesh": {
         "map_channel_1": {"count": 20, "max": [1, 1, 1], "min": [0, 0, 0]},
-        "material_ids": [[1, 2, 0, 0], [2, 0, 2, 0], [3, 8, 0, 0], [4, 0, 8, 0], [5, 0, 0, 8], [6, 0, 0, 8]]
+        "material_ids": [[1, 2, 0, 0], [2, 0, 2, 0], [3, 8, 0, 0], [4, 0, 8, 0], [5, 0, 0, 8], [6, 0, 0, 8]],
+        "smoothing": {"flat": 0, "hard_edges": 24, "regions": 6}
       },
       "eval_verts": 20,
       "frozen": false,
@@ -335,7 +336,8 @@
       "eval_maps": null,
       "eval_mesh": {
         "map_channel_1": {"count": 126, "max": [1, 1, 0], "min": [0, 0, 0]},
-        "material_ids": [[1, 8, 0, 0], [2, 0, 8, 0], [3, 4, 4, 24], [4, 4, 4, 24], [5, 4, 4, 24], [6, 4, 4, 24]]
+        "material_ids": [[1, 8, 0, 0], [2, 0, 8, 0], [3, 4, 4, 24], [4, 4, 4, 24], [5, 4, 4, 24], [6, 4, 4, 24]],
+        "smoothing": {"flat": 0, "hard_edges": 0, "regions": 1}
       },
       "eval_verts": 74,
       "frozen": false,
@@ -357,7 +359,7 @@
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 60, 0, 0]
     }
   ],
-  "oracle_version": 9,
+  "oracle_version": 10,
   "render": {"camera": null, "height": 480, "pixel_aspect": 1, "width": 640},
   "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
   "time": 0,

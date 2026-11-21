@@ -156,7 +156,8 @@
       "eval_maps": null,
       "eval_mesh": {
         "map_channel_1": {"count": 54, "max": [1, 1, 0], "min": [0, 0, 0]},
-        "material_ids": [[1, 8, 0, 0], [2, 0, 8, 0], [3, 4, 4, 0], [4, 4, 4, 0], [5, 4, 4, 0], [6, 4, 4, 0]]
+        "material_ids": [[1, 8, 0, 0], [2, 0, 8, 0], [3, 4, 4, 0], [4, 4, 4, 0], [5, 4, 4, 0], [6, 4, 4, 0]],
+        "smoothing": {"flat": 0, "hard_edges": 0, "regions": 1}
       },
       "eval_verts": 26,
       "frozen": false,
@@ -190,7 +191,8 @@
       "eval_maps": null,
       "eval_mesh": {
         "map_channel_1": {"count": 54, "max": [1, 1, 0], "min": [0, 0, 0]},
-        "material_ids": [[1, 8, 0, 0], [2, 0, 8, 0], [3, 0, 0, 8], [4, 0, 0, 8], [5, 0, 0, 8], [6, 0, 0, 8]]
+        "material_ids": [[1, 8, 0, 0], [2, 0, 8, 0], [3, 0, 0, 8], [4, 0, 0, 8], [5, 0, 0, 8], [6, 0, 0, 8]],
+        "smoothing": {"flat": 0, "hard_edges": 24, "regions": 6}
       },
       "eval_verts": 26,
       "frozen": false,
@@ -224,7 +226,8 @@
       "eval_maps": null,
       "eval_mesh": {
         "map_channel_1": {"count": 150, "max": [1, 1, 0], "min": [0, 0, 0]},
-        "material_ids": [[1, 32, 0, 0], [2, 0, 32, 0], [3, 16, 16, 0], [4, 16, 16, 0], [5, 16, 16, 0], [6, 16, 16, 0]]
+        "material_ids": [[1, 32, 0, 0], [2, 0, 32, 0], [3, 16, 16, 0], [4, 16, 16, 0], [5, 16, 16, 0], [6, 16, 16, 0]],
+        "smoothing": {"flat": 0, "hard_edges": 0, "regions": 1}
       },
       "eval_verts": 98,
       "frozen": false,
@@ -258,7 +261,8 @@
       "eval_maps": null,
       "eval_mesh": {
         "map_channel_1": {"count": 24, "max": [1, 1, 0], "min": [0, 0, 0]},
-        "material_ids": [[1, 2, 2, 0], [2, 2, 2, 0], [3, 0, 0, 4], [4, 0, 0, 4], [5, 0, 0, 4], [6, 0, 0, 4]]
+        "material_ids": [[1, 2, 2, 0], [2, 2, 2, 0], [3, 0, 0, 4], [4, 0, 0, 4], [5, 0, 0, 4], [6, 0, 0, 4]],
+        "smoothing": {"flat": 0, "hard_edges": 24, "regions": 12}
       },
       "eval_verts": 16,
       "frozen": false,
@@ -292,7 +296,8 @@
       "eval_maps": null,
       "eval_mesh": {
         "map_channel_1": {"count": 40, "max": [1, 1, 0], "min": [0, 0, 0]},
-        "material_ids": [[1, 4, 0, 0], [2, 0, 4, 0], [4, 0, 0, 4], [5, 0, 0, 4], [6, 0, 0, 4]]
+        "material_ids": [[1, 4, 0, 0], [2, 0, 4, 0], [4, 0, 0, 4], [5, 0, 0, 4], [6, 0, 0, 4]],
+        "smoothing": {"flat": 0, "hard_edges": 16, "regions": 6}
       },
       "eval_verts": 12,
       "frozen": false,
@@ -326,7 +331,8 @@
       "eval_maps": null,
       "eval_mesh": {
         "map_channel_1": {"count": 40, "max": [1, 1, 0], "min": [0, 0, 0]},
-        "material_ids": [[1, 4, 0, 0], [2, 0, 4, 0], [3, 0, 0, 4], [4, 0, 0, 4], [5, 0, 0, 4]]
+        "material_ids": [[1, 4, 0, 0], [2, 0, 4, 0], [3, 0, 0, 4], [4, 0, 0, 4], [5, 0, 0, 4]],
+        "smoothing": {"flat": 0, "hard_edges": 16, "regions": 6}
       },
       "eval_verts": 12,
       "frozen": false,
@@ -360,7 +366,8 @@
       "eval_maps": null,
       "eval_mesh": {
         "map_channel_1": {"count": 48, "max": [1, 1, 0], "min": [0, 0, 0]},
-        "material_ids": [[1, 2, 2, 0], [2, 2, 2, 0], [3, 0, 0, 4], [4, 0, 0, 4], [5, 0, 0, 4], [6, 0, 0, 4]]
+        "material_ids": [[1, 2, 2, 0], [2, 2, 2, 0], [3, 0, 0, 4], [4, 0, 0, 4], [5, 0, 0, 4], [6, 0, 0, 4]],
+        "smoothing": {"flat": 0, "hard_edges": 24, "regions": 12}
       },
       "eval_verts": 16,
       "frozen": false,
@@ -394,7 +401,8 @@
       "eval_maps": null,
       "eval_mesh": {
         "map_channel_1": {"count": 212, "max": [1, 1, 0], "min": [0, 0, 0]},
-        "material_ids": [[1, 20, 19, 1], [2, 20, 19, 1], [4, 16, 16, 0], [5, 16, 16, 8], [6, 16, 16, 8]]
+        "material_ids": [[1, 20, 19, 1], [2, 20, 19, 1], [4, 16, 16, 0], [5, 16, 16, 8], [6, 16, 16, 8]],
+        "smoothing": {"flat": 0, "hard_edges": 0, "regions": 2}
       },
       "eval_verts": 100,
       "frozen": false,
@@ -428,7 +436,8 @@
       "eval_maps": null,
       "eval_mesh": {
         "map_channel_1": {"count": 54, "max": [1, 1, 0], "min": [0, 0, 0]},
-        "material_ids": [[1, 8, 0, 0], [2, 0, 8, 0], [3, 4, 4, 0], [4, 4, 4, 0], [5, 4, 4, 0], [6, 4, 4, 0]]
+        "material_ids": [[1, 8, 0, 0], [2, 0, 8, 0], [3, 4, 4, 0], [4, 4, 4, 0], [5, 4, 4, 0], [6, 4, 4, 0]],
+        "smoothing": {"flat": 0, "hard_edges": 0, "regions": 1}
       },
       "eval_verts": 26,
       "frozen": false,
@@ -450,7 +459,7 @@
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 40, 120, 0]
     }
   ],
-  "oracle_version": 9,
+  "oracle_version": 10,
   "render": {"camera": null, "height": 480, "pixel_aspect": 1, "width": 640},
   "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
   "time": 0,

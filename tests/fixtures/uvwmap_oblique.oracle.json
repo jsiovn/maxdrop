@@ -402,7 +402,8 @@
       ],
       "eval_mesh": {
         "map_channel_1": {"count": 97, "max": [1.10725, 1.0924, 1.50402], "min": [-0.313519, -0.564539, -0.976156]},
-        "material_ids": [[2, 30, 30, 20]]
+        "material_ids": [[2, 30, 30, 20]],
+        "smoothing": {"flat": 0, "hard_edges": 0, "regions": 1}
       },
       "eval_verts": 42,
       "frozen": false,
@@ -682,7 +683,8 @@
       ],
       "eval_mesh": {
         "map_channel_1": {"count": 98, "max": [0.966061, 1.17929, 1.31818], "min": [0.0706602, 0.00253305, -0.136364]},
-        "material_ids": [[2, 30, 30, 20]]
+        "material_ids": [[2, 30, 30, 20]],
+        "smoothing": {"flat": 0, "hard_edges": 0, "regions": 1}
       },
       "eval_verts": 42,
       "frozen": false,
@@ -830,7 +832,8 @@
       ],
       "eval_mesh": {
         "map_channel_1": {"count": 42, "max": [1.9949, 1.20848, 1.86196], "min": [-0.854803, -0.208485, 0.559956]},
-        "material_ids": [[1, 8, 0, 0], [2, 0, 8, 0], [3, 0, 0, 20]]
+        "material_ids": [[1, 8, 0, 0], [2, 0, 8, 0], [3, 0, 0, 20]],
+        "smoothing": {"flat": 0, "hard_edges": 20, "regions": 3}
       },
       "eval_verts": 20,
       "frozen": false,
@@ -1110,7 +1113,8 @@
       ],
       "eval_mesh": {
         "map_channel_1": {"count": 101, "max": [0.959707, 1.07242, 1.13367], "min": [0.15407, -0.0724173, -0.133665]},
-        "material_ids": [[2, 30, 30, 20]]
+        "material_ids": [[2, 30, 30, 20]],
+        "smoothing": {"flat": 0, "hard_edges": 0, "regions": 1}
       },
       "eval_verts": 42,
       "frozen": false,
@@ -1390,7 +1394,8 @@
       ],
       "eval_mesh": {
         "map_channel_1": {"count": 42, "max": [0.91993, 0.997911, 1.13367], "min": [0.0800696, 0.00208896, -0.133665]},
-        "material_ids": [[2, 30, 30, 20]]
+        "material_ids": [[2, 30, 30, 20]],
+        "smoothing": {"flat": 0, "hard_edges": 0, "regions": 1}
       },
       "eval_verts": 42,
       "frozen": false,
@@ -1412,7 +1417,7 @@
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 40, 40, 0]
     }
   ],
-  "oracle_version": 9,
+  "oracle_version": 10,
   "render": {"camera": null, "height": 480, "pixel_aspect": 1, "width": 640},
   "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
   "time": 0,

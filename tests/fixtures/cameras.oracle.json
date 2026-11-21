@@ -671,7 +671,7 @@
       "transform": [0.683941, -0.729537, 0, 0.429966, 0.403093, 0.807865, -0.589368, -0.552532, 0.589368, -1500, -1500, 1600]
     }
   ],
-  "oracle_version": 9,
+  "oracle_version": 10,
   "render": {"camera": 6, "height": 450, "pixel_aspect": 1, "width": 800},
   "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
   "time": 0,
