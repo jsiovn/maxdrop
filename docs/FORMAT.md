@@ -534,7 +534,7 @@ What 3ds Max 2020 makes, against Blender's evaluated meshes (`tests/blender/run.
   override's (ids 4, 5) when set, which merges into a surface face of that group (an open box: 11 regions and 24
   hard edges; a plane with auto smooth 6 and 12, without 3 and 8). Solidify smooths the rim into both surfaces (the
   open box: 3 regions, 16 hard edges); marking the open edges sharp before it gives 3ds Max's open box on Blender
-  4.2 and 5.2 (not done yet).
+  4.2 and 5.2 (not done yet: maxdrop-em3.101).
 - **Symmetry**: the mirror plane is in the gizmo's space, q = p * context * inverse(gizmo), as UVW Map's; without
   flip the side where q along the axis is positive stays, sliced at the plane; without slice the whole object is
   mirrored and both copies stay (FixtureSymmetryNoSlice: 16 vertices). Weld seam: 3ds Max slices beside a vertex

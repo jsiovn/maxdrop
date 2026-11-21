@@ -772,9 +772,9 @@ def check_extruded(label, ob, node, o, meters, plan):
 EVAL_COUNT_DIFFERS = {"FixtureOrder"}
 # Blender's evaluated (flat, regions, hard edges) where it is not 3ds Max's, pinned so that a change shows. 3ds Max
 # gives a Shell's rim smoothing groups of its own, hard against both surfaces (every stack_shell box: 11 regions, 24
-# hard edges); Blender's Solidify smooths the rim into both surfaces, until the rim is converted (a tech-debt bead
-# under maxdrop-em3). FixtureSymmetryTurned: Blender's Mirror welds the corner 0.062 off the plane onto it, where 3ds
-# Max slices beside it (the vertex and triangle counts agree; one more region and hard edge).
+# hard edges); Blender's Solidify smooths the rim into both surfaces, until the rim is converted (maxdrop-em3.101).
+# FixtureSymmetryTurned: Blender's Mirror welds the corner 0.062 off the plane onto it, where 3ds Max slices beside
+# it (the vertex and triangle counts agree; one more region and hard edge).
 SMOOTHING_DIFFERS = {"FixtureShellOut": (0, 3, 16), "FixtureShellIn": (0, 3, 16), "FixtureShellCrossed": (0, 3, 16),
                      "FixtureShellNegative": (0, 3, 16), "FixtureShellRim": (0, 3, 16),
                      "FixtureSymmetryTurned": (0, 7, 17)}
