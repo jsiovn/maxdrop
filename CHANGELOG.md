@@ -21,6 +21,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   V-Ray does, through a Mix Shader over a copy of the Principled BSDF without reflection (a grey 128 sphere at IOR
   1.6 was about 50 % too bright near its rim in Cycles; it now matches V-Ray 5.2; the other renderers' materials
   follow the same rule, not checked against them).
+- Materials: the maps of a VRayFastSSS2, VRayCarPaintMtl and VRayCarPaintMtl2 take their slot's multiplier as their
+  amount, as VRayMtl's do (a bump at 30 % no longer arrives at full strength), and a VRayFastSSS2's specular amount
+  scales its specular.
+- Materials: a VRayOverrideMtl or Double Sided sub-material whose checkbox is off is no longer used: the peel skips
+  it like an empty slot and takes the next sub-material that is on (what V-Ray or 3ds Max renders without it is not
+  checked).
 
 ## [1.0.1] - 2026-11-22
 

@@ -341,8 +341,17 @@ class OtherRules(unittest.TestCase, Close):
         self.close(ir.subsurface_weight, 0.75)
         self.close(ir.subsurface_color, (1.0, 0.5, 0.5))
         self.close(ir.subsurface_radius, 0.08)  # 4 cm x scale 2, in meters
-        self.assertEqual(ir.bump, mat.MapRef(2, 1.0, False))
+        self.assertEqual(ir.bump, mat.MapRef(2, 0.3, False))  # no texmap_bump_multiplier: its default, 30
         self.assertEqual(ir.alpha.map, mat.MapRef(3, 1.0, False))
+        sss2 = FakeMtl(0, classids.VRAY_FAST_SSS2, "Dim", {0: {
+            27: Ref(1), 28: 1, 29: 25.0, 40: (0.5, 0.5, 0.5), 44: 1.5, 3: Ref(2), 4: 1, 5: 150.0, 85: Ref(3), 86: 1,
+            87: 60.0}})
+        conv, ir = _convert(sss2, _map(1), _map(2), _map(3))
+        self.assertEqual((ir.base_color.map, ir.bump, ir.alpha.map),
+                         (mat.MapRef(1, 0.25, False), mat.MapRef(2, 1.5, False), mat.MapRef(3, 0.6, False)))
+        self.close(ir.specular.value, 0.75, "specular_amount 1.5 x mean 0.5")
+        sss2 = FakeMtl(0, classids.VRAY_FAST_SSS2, "Bright", {0: {40: (1.0, 1.0, 1.0), 44: 3.0}})
+        self.close(_convert(sss2)[1].specular.value, 1.0, "a reflection weight: at most 1")
         conv, ir = _convert(FakeMtl(0, classids.VRAY_FAST_SSS2, "Default", {0: {}}))
         self.close(ir.subsurface_color, (0.5,) * 3)  # sub_surface_color's default: 127.5 grey
         self.close((ir.subsurface_radius, ir.subsurface_weight, ir.ior), (0.01, 1.0, 1.3))
@@ -360,7 +369,10 @@ class OtherRules(unittest.TestCase, Close):
         self.close(ir.coat_ior, 1.576014)  # (1 + sqrt 0.05) / (1 - sqrt 0.05)
         self.close(ir.coat_roughness, 0.05)
         self.close(ir.coat_color, (1.0, 1.0, 1.0))
-        self.assertEqual(ir.bump, mat.MapRef(2, 1.0, False))
+        self.assertEqual(ir.bump, mat.MapRef(2, 1.0, False))  # no multipliers: full amount
+        conv, ir = _convert(FakeMtl(0, classids.VRAY_CAR_PAINT_MTL, "Dim", {0: {**paint, 3: 40.0, 57: 20.0}}),
+                            _map(1), _map(2))
+        self.assertEqual((ir.base_color.map, ir.bump), (mat.MapRef(1, 0.4, False), mat.MapRef(2, 0.2, False)))
         conv, ir = _convert(FakeMtl(0, classids.VRAY_CAR_PAINT_MTL, "Bare", {0: {**common, 31: 0.0}}), _map(1))
         self.close(ir.coat_weight, 0.0)
         conv, ir = _convert(FakeMtl(0, classids.VRAY_CAR_PAINT_MTL, "Mirror", {0: {**common, 31: 1.0}}), _map(1))
@@ -374,6 +386,9 @@ class OtherRules(unittest.TestCase, Close):
         self.close(ir.roughness.value, 0.1)
         self.assertEqual(ir.bump, mat.MapRef(2, 1.0, False))
         self.assertEqual(ir.source, "VRayCarPaintMtl2")
+        conv, ir = _convert(FakeMtl(0, classids.VRAY_CAR_PAINT_MTL2, "Dim2",
+                                    {0: {**common, 3: 30.0, 54: Ref(2), 55: 1, 56: 70.0}}), _map(1), _map(2))
+        self.assertEqual((ir.base_color.map, ir.bump), (mat.MapRef(1, 0.3, False), mat.MapRef(2, 0.7, False)))
         conv, ir = _convert(FakeMtl(0, classids.VRAY_CAR_PAINT_MTL2, "Default2", {0: {}}))
         self.close((ir.coat_weight, ir.coat_ior, ir.roughness.value), (1.0, 1.5, 0.6))
 
@@ -419,6 +434,33 @@ class Wrappers(unittest.TestCase):
                 self.assertIs(ir, conv.convert(want))
                 self.assertEqual(ir.name, "AB"[want - 1])
                 self.assertEqual(sum(conv.stats.peeled.values()), 1)
+
+    def test_a_sub_material_switched_off_is_an_empty_slot(self):
+        OV, DS = classids.VRAY_OVERRIDE_MTL, classids.DOUBLE_SIDED_MTL
+        override = {0: Ref(1), 2: Ref(2), 4: Ref(3), 6: Ref(4), 8: Ref(5)}
+        cases = [
+            (OV, override, 1),  # no switches stored: on
+            (OV, {**override, 1: 1, 3: 1}, 1),
+            (OV, {**override, 1: 0}, 2),  # baseMtl_on off: the GI material
+            (OV, {**override, 1: 0, 3: 0}, 3),  # and giMtl_on: the reflect material
+            (OV, {**override, 1: 0, 3: 0, 5: 0, 7: 0}, 5),
+            (OV, {**override, 1: 0, 3: 0, 5: 0, 7: 0, 9: 0}, None),
+            (DS, {0: Ref(1), 1: Ref(2)}, 1),
+            (DS, {0: Ref(1), 1: Ref(2), 2: 0}, 2),  # map1Enabled off: the back material
+            (DS, {0: Ref(1), 1: Ref(2), 2: 1, 3: 0}, 1),
+            (DS, {0: Ref(1), 1: Ref(2), 2: 0, 3: 0}, None),
+        ]
+        for class_id, params, want in cases:
+            with self.subTest((class_id, params)):
+                subs = [_vray(i, "V%d" % i) for i in range(1, 6)]
+                conv = mat.MaterialConverter(FakeGraph(_wrapper(0, class_id, params, "Wrap"), *subs))
+                base, reason = conv.peel(0)
+                self.assertEqual(base, want)
+                if want is None:
+                    self.assertEqual(reason, "Wrap: no sub-material")
+                    self.assertTrue(conv.convert(0).unknown)
+                else:
+                    self.assertIsNone(reason)
 
     def test_nested_wrappers_count_each_once(self):
         objs = (_wrapper(0, classids.VRAY_MTL_WRAPPER, {0: Ref(1)}), _wrapper(1, classids.VRAY_2SIDED_MTL, {0: Ref(2)}),
@@ -573,8 +615,8 @@ class VRayWrappers(unittest.TestCase, Close):
 
 
 class VRayMore(unittest.TestCase, Close):
-    """tools/fixtures/vray_more.ms, by hand (gamma off: sRGB s/255 -> linear). Every map at amount 1.0: the rules
-    do not read the multipliers yet (maxdrop-em3.103)."""
+    """tools/fixtures/vray_more.ms, by hand (gamma off: sRGB s/255 -> linear). Each map's amount is its slot's
+    multiplier / 100."""
 
     @classmethod
     def setUpClass(cls):
@@ -585,9 +627,14 @@ class VRayMore(unittest.TestCase, Close):
                 "FixtureLightMtl", "FixtureFastSSS2", "FixtureCarPaint", "FixtureCarPaint2", "FixtureOverride",
                 "FixtureMtlWrapper", "FixtureDoubleSided", "FixtureShellac")}
             cls.peels = {n: cls.conv.peel(cls.by_name[n]) for n in cls.irs}
+            # parameters behind a switch that is off, or a default switch: the ids the rules read
+            cls.raw = {(n, pid): graph.get(cls.by_name[n]).param(pid, 0) for n, pid in (
+                ("FixtureFastSSS2", 87), ("FixtureCarPaint2", 3), ("FixtureFastSSS2", 44),
+                *(("FixtureOverride", pid) for pid in (1, 3, 5, 7, 9)),
+                *(("FixtureDoubleSided", pid) for pid in (2, 3)))}
 
-    def map(self, name):
-        return mat.MapRef(self.by_name[name], 1.0, False)
+    def map(self, name, amount=1.0):
+        return mat.MapRef(self.by_name[name], amount, False)
 
     def test_light_mtl(self):
         ir = self.irs["FixtureLightMtl"]
@@ -602,28 +649,34 @@ class VRayMore(unittest.TestCase, Close):
         ir = self.irs["FixtureFastSSS2"]
         self.assertEqual(ir.source, "VRayFastSSS2")
         self.close(ir.base_color.value, _lins(180, 120, 90))
-        self.assertEqual(ir.base_color.map, self.map("FixtureSSSDiffuseMap"))
+        self.assertEqual(ir.base_color.map.index, self.by_name["FixtureSSSDiffuseMap"])
+        self.close(ir.base_color.map.amount, 0.71, "texmap_diffuse_color_multiplier 71")
         self.close(ir.roughness.value, 1.0 - 0.72)
-        self.close(ir.specular.value, sum(_lins(200, 210, 220)) / 3)
+        self.close(ir.specular.value, 0.8 * sum(_lins(200, 210, 220)) / 3, "specular_amount 0.8 x the color")
         self.close(ir.ior, 1.45)
         self.close(ir.subsurface_weight, 1.0 - 0.35)
         self.close(ir.subsurface_color, _lins(220, 90, 70))
         self.close(ir.subsurface_radius, 3.0 * 0.7 / 100, "scatter_radius 3 cm times scale 0.7, in meters")
-        self.assertEqual(ir.bump, self.map("FixtureSSSBumpMap"))
+        self.assertEqual(ir.bump.index, self.by_name["FixtureSSSBumpMap"])
+        self.close(ir.bump.amount, 0.47, "texmap_bump_multiplier 47")
         self.assertIsNone(ir.normal)
         self.assertIsNone(ir.alpha.map)  # texmap_opacity_on off
+        self.close(self.raw[("FixtureFastSSS2", 87)], 83.0, "texmap_opacity_multiplier, behind its switch")
+        self.close(self.raw[("FixtureFastSSS2", 44)], 0.8, "specular_amount")
 
     def test_car_paint(self):
         ir = self.irs["FixtureCarPaint"]
         self.assertEqual(ir.source, "VRayCarPaintMtl")
         self.close(ir.base_color.value, _lins(150, 20, 30))
-        self.assertEqual(ir.base_color.map, self.map("FixtureCarPaintColorMap"))
+        self.assertEqual(ir.base_color.map.index, self.by_name["FixtureCarPaintColorMap"])
+        self.close(ir.base_color.map.amount, 0.66, "texmap_base_color_multiplier 66")
         self.close((ir.roughness.value, ir.metallic.value, ir.specular.value), (1.0 - 0.77, 1.0, 0.45))
         self.close(ir.coat_color, _lins(240, 230, 220))
         self.close(ir.coat_roughness, 1.0 - 0.93)
         self.close(ir.coat_weight, 1.0)
         self.close(ir.coat_ior, 1.3 / 0.7, "coat_strength 0.09: (1 + 0.3) / (1 - 0.3)")
-        self.assertEqual(ir.bump, self.map("FixtureCarPaintBumpMap"))
+        self.assertEqual(ir.bump.index, self.by_name["FixtureCarPaintBumpMap"])
+        self.close(ir.bump.amount, 0.44, "texmap_base_bump_multiplier 44")
 
     def test_car_paint2(self):
         ir = self.irs["FixtureCarPaint2"]
@@ -634,7 +687,9 @@ class VRayMore(unittest.TestCase, Close):
         self.close(ir.coat_color, _lins(230, 240, 250))
         self.close(ir.coat_roughness, 1.0 - 0.88)
         self.close((ir.coat_weight, ir.coat_ior), (0.82, 1.62))
-        self.assertEqual(ir.bump, self.map("FixtureCarPaint2BumpMap"))
+        self.assertEqual(ir.bump.index, self.by_name["FixtureCarPaint2BumpMap"])
+        self.close(ir.bump.amount, 0.39, "texmap_base_bump_multiplier 39")
+        self.close(self.raw[("FixtureCarPaint2", 3)], 58.0, "texmap_base_color_multiplier, behind its switch")
 
     def test_wrappers_peel_to_their_base(self):
         expect = {"FixtureOverride": ("FixtureOverrideBase", (200, 40, 40), 0.51),
@@ -650,6 +705,13 @@ class VRayMore(unittest.TestCase, Close):
                 self.close(ir.roughness.value, 1.0 - gloss)
         self.assertEqual(dict(self.conv.stats.peeled),
                          {"VRayOverrideMtl": 1, "VRayMtlWrapper": 1, "Double Sided": 1, "Shellac": 1})
+
+    def test_wrapper_switches_are_stored_on(self):
+        # the peel reads a missing switch as on: the fixture must hold each one, on (its default)
+        for (name, pid), v in self.raw.items():
+            if name in ("FixtureOverride", "FixtureDoubleSided"):
+                with self.subTest((name, pid)):
+                    self.assertTrue(isinstance(v, int) and not isinstance(v, bool) and v == 1, v)
 
     def test_no_issues(self):
         self.assertEqual((self.conv.stats.issues, dict(self.conv.stats.unknown)), ([], {}))

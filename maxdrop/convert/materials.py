@@ -41,7 +41,9 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   The Fresnel IOR is the refraction IOR when the material refracts or locks the IOR, else the reflection IOR.
 - VRayLightMtl -> emission only; VRayFastSSS2 -> base + subsurface; VRayCarPaintMtl / VRayCarPaintMtl2 -> a metal
   base + coat (VRayCarPaintMtl's coat_strength is the coat's reflectance at normal incidence: a full coat whose
-  IOR gives that reflectance; VRayCarPaintMtl2's coat_amount is the coat weight).
+  IOR gives that reflectance; VRayCarPaintMtl2's coat_amount is the coat weight). Their maps where their slot is on,
+  with their multiplier as the amount, as VRayMtl's; VRayFastSSS2's specular is specular_amount times the mean of the
+  linear specular color.
 - Standard: the colors come from its shader (ids per shader class in SHADERS; Metal is a metal, Strauss has a
   metalness and no specular level: specular 1, the IOR's own Fresnel); base = diffuse; roughness = 1 - glossiness;
   specular = specular level times the mean of the linear specular color; alpha = opacity; self-illumination: its
@@ -75,9 +77,12 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   lerp(1, mask, mask amount), Corona's map-amount convention (not measured: no Corona render here).
 - Wrappers (VRay2SidedMtl, VRayBlendMtl, VRayOverrideMtl, VRayMtlWrapper, Double Sided, Shellac, CoronaLayeredMtl
   without a base or without a layer on: base, then its layers that are on; CoronaRaySwitchMtl: direct, GI, reflect,
-  refract, each where switched on) -> the first set sub-material in 3ds Max's getSubMtl order; CoronaSelectMtl -> its
-  selected material (zero-based: the default is 0); Shell Material -> its render sub-material. Peeling stops at any
-  other class (a Multi/Sub-Object included), at most MAX_PEEL wrappers deep; each wrapper object peeled counts once.
+  refract, each where switched on) -> the first set sub-material in 3ds Max's getSubMtl order (VRayOverrideMtl's and
+  Double Sided's: those switched on; a slot switched off is read as empty, MaxDrop's choice: V-Ray's and 3ds Max's
+  documentation say only that the switch turns the material on or off, not what renders without it);
+  CoronaSelectMtl -> its selected material (zero-based: the default is 0); Shell Material -> its render sub-material.
+  Peeling stops at any other class (a Multi/Sub-Object included), at most MAX_PEEL wrappers deep; each wrapper object
+  peeled counts once.
 - Multi/Sub-Object: entry k has the material ID materialIDList[k] (zero-based, as the faces store it), the
   material materialList[k] and the switch mapEnabled[k]; the first entry with an ID wins. A face ID without an
   entry wraps as 3ds Max renders it: to ID modulo (the highest ID of the list + 1), every entry counted. A face ID
@@ -136,7 +141,12 @@ WRAPPERS = {
     classids.CORONA_RAY_SWITCH_MTL: (1603, 1600, 1601, 1602),  # directMtl, giMtl, reflectMtl, refractMtl
     classids.CORONA_SELECT_MTL: (312,),  # materials (table): the one at selected (313, zero-based)
 }
-WRAPPER_SWITCHES = {classids.CORONA_RAY_SWITCH_MTL: {1603: 1613, 1600: 1610, 1601: 1611, 1602: 1612}}
+# wrapper ClassId -> {sub-material parameter: its on switch}; a slot switched off is read as empty
+WRAPPER_SWITCHES = {
+    classids.CORONA_RAY_SWITCH_MTL: {1603: 1613, 1600: 1610, 1601: 1611, 1602: 1612},
+    classids.VRAY_OVERRIDE_MTL: {0: 1, 2: 3, 4: 5, 6: 7, 8: 9},  # baseMtl_on ... shadowMtl_on
+    classids.DOUBLE_SIDED_MTL: {0: 2, 1: 3},  # map1Enabled, map2Enabled
+}
 CORONA_SELECT_LIST, CORONA_SELECT_INDEX = 312, 313
 SHELL_RENDER_INDEX, SHELL_SUBS = 1, (2, 3)  # renderMtlIndex; originalMaterial, bakedMaterial
 # CoronaLayeredMtl, block 0: 1000 baseMtl, 1001 layers, 1002 amounts, 1003 mixmaps (masks), 1004 layersOn, 1005 masksOn,
@@ -353,13 +363,15 @@ class MaterialConverter:
             return None
         return MapRef(ref.index, amount, invert)
 
-    def map_ref(self, m, map_pid, on_pid, amount_pid, block, invert=False, ir=None, percent=True):
+    def map_ref(self, m, map_pid, on_pid, amount_pid, block, invert=False, ir=None, percent=True, default=None):
         """The MapRef of a map slot: None when it holds no map, is switched off or holds something else. The amount
-        parameter is in percent, or a plain factor when not percent."""
+        parameter is in percent, or a plain factor when not percent; default is the class's value of a missing
+        one, in the same unit (None: full)."""
         if on_pid is not None and not _flag(m, on_pid, block, True):
             return None
         scale = 100.0 if percent else 1.0
-        amount = 1.0 if amount_pid is None else max(0.0, _num(m, amount_pid, block, scale) / scale)
+        full = scale if default is None else default
+        amount = 1.0 if amount_pid is None else max(0.0, _num(m, amount_pid, block, full) / scale)
         return self.to_map(m, m.param(map_pid, block), "parameter %d" % map_pid, amount, invert, ir)
 
     def is_class(self, index, superclass, class_id):
@@ -676,34 +688,38 @@ def vray_light_mtl(conv, m, ir):
 
 
 def vray_fast_sss2(conv, m, ir):
-    """VRayFastSSS2, block 0: 26 diffuse_color, 27 / 28 its map (on), 36 diffuse_amount, 2 sub_surface_color,
-    0 scatter_radius (cm, a plain float: not in system units), 22 scale, 31 IOR, 40 specular_color, 51 specular_glossiness, 3 / 4 texmap_bump (on),
-    85 / 86 texmap_opacity (on)."""
-    ir.base_color = Input(conv.rgb(m, 26, 0, (0.5, 0.5, 0.5)), conv.map_ref(m, 27, 28, None, 0, ir=ir))
+    """VRayFastSSS2, block 0: 26 diffuse_color, 27 / 28 / 29 its map (on, multiplier in %), 36 diffuse_amount,
+    2 sub_surface_color, 0 scatter_radius (cm, a plain float: not in system units), 22 scale, 31 IOR,
+    40 specular_color, 44 specular_amount, 51 specular_glossiness, 3 / 4 / 5 texmap_bump (on, multiplier: default
+    30), 85 / 86 / 87 texmap_opacity (on, multiplier)."""
+    ir.base_color = Input(conv.rgb(m, 26, 0, (0.5, 0.5, 0.5)), conv.map_ref(m, 27, 28, 29, 0, ir=ir))
     ir.roughness = Input(_roughness(_num(m, 51, 0, 0.6), False))
-    ir.specular = Input(_clamp01(mean(conv.rgb(m, 40, 0, (1.0, 1.0, 1.0)))))
+    amount = max(0.0, _num(m, 44, 0, 1.0))
+    ir.specular = Input(_clamp01(amount * mean(conv.rgb(m, 40, 0, (1.0, 1.0, 1.0)))))
     ir.ior = _ior(_num(m, 31, 0, 1.3))
     ir.subsurface_weight = _clamp01(1.0 - _num(m, 36, 0, 0.0))
     ir.subsurface_color = conv.rgb(m, 2, 0, (0.5, 0.5, 0.5))
     ir.subsurface_radius = max(0.0, _num(m, 0, 0, 1.0) * _num(m, 22, 0, 1.0)) * 0.01
-    conv.bump_slot(ir, conv.map_ref(m, 3, 4, None, 0, ir=ir))
-    ir.alpha = Input(1.0, conv.map_ref(m, 85, 86, None, 0, ir=ir))
+    conv.bump_slot(ir, conv.map_ref(m, 3, 4, 5, 0, ir=ir, default=30.0))
+    ir.alpha = Input(1.0, conv.map_ref(m, 85, 86, 87, 0, ir=ir))
 
 
 def _car_paint(conv, m, ir, base_gloss, bump_pid):
-    """Both car paints, block 0: 0 base_color, 1 / 2 its map (on), 4 base_reflection, 8 base_glossiness,
-    27 coat_color, 39 coat_glossiness, then the base bump map and its on switch at bump_pid, bump_pid + 1."""
-    ir.base_color = Input(conv.rgb(m, 0, 0, (0.3, 0.4, 0.5)), conv.map_ref(m, 1, 2, None, 0, ir=ir))
+    """Both car paints, block 0: 0 base_color, 1 / 2 / 3 its map (on, multiplier in %), 4 base_reflection,
+    8 base_glossiness, 27 coat_color, 39 coat_glossiness, then the base bump map, its on switch and its multiplier
+    at bump_pid, bump_pid + 1, bump_pid + 2."""
+    ir.base_color = Input(conv.rgb(m, 0, 0, (0.3, 0.4, 0.5)), conv.map_ref(m, 1, 2, 3, 0, ir=ir))
     ir.roughness = Input(_roughness(_num(m, 8, 0, base_gloss), False))
     ir.metallic = Input(1.0)
     ir.specular = Input(_clamp01(_num(m, 4, 0, 0.5)))
     ir.coat_color = conv.rgb(m, 27, 0, (1.0, 1.0, 1.0))
     ir.coat_roughness = _roughness(_num(m, 39, 0, 1.0), False)
-    conv.bump_slot(ir, conv.map_ref(m, bump_pid, bump_pid + 1, None, 0, ir=ir))
+    conv.bump_slot(ir, conv.map_ref(m, bump_pid, bump_pid + 1, bump_pid + 2, 0, ir=ir))
 
 
 def vray_car_paint_mtl(conv, m, ir):
-    """31 coat_strength: the coat's reflectance at normal incidence (default 0.05), not a weight; 55 / 56 bump."""
+    """31 coat_strength: the coat's reflectance at normal incidence (default 0.05), not a weight; 55 / 56 / 57
+    bump."""
     _car_paint(conv, m, ir, 0.6, 55)
     f0 = _clamp01(_num(m, 31, 0, 0.05))
     ir.coat_weight = 1.0 if f0 > 0 else 0.0
@@ -711,7 +727,7 @@ def vray_car_paint_mtl(conv, m, ir):
 
 
 def vray_car_paint_mtl2(conv, m, ir):
-    """31 coat_amount (weight), 81 coat_ior; 54 / 55 bump."""
+    """31 coat_amount (weight), 81 coat_ior; 54 / 55 / 56 bump."""
     _car_paint(conv, m, ir, 0.4, 54)
     ir.coat_weight = _clamp01(_num(m, 31, 0, 1.0))
     ir.coat_ior = _ior(_num(m, 81, 0, 1.5))
