@@ -25,6 +25,15 @@
 -- Real-World Map Size on the rest: FixturePlaneReal, FixturePyramidDown (height -10), FixtureSphereOdd (13
 -- segments, Base To Pivot), FixtureGeoReal (tetrahedron, 4 segments), FixtureCylinderReal (2 cap segments),
 -- FixtureTubeDown (height -8).
+-- Slice and hemispheres (appended, so the nodes above keep their handles): FixtureSphereHemi (radius 8, 12 segments,
+-- hemisphere 0.5 chopped: a ring doubled at the cut), FixtureSphereSquash (radius 6, 13 segments, hemisphere 0.3
+-- squashed, Base To Pivot, Real-World Map Size), FixtureSphereSlice (9 segments, Slice From 30 To 250),
+-- FixtureSphereSliceHemi (12 segments, hemisphere 0.4 squashed, Slice From 200 To 30, Real-World Map Size),
+-- FixtureGeoHemi (icosahedron, 3 segments, hemisphere), FixtureGeoHemiTetra (tetrahedron, 2 segments, hemisphere,
+-- Base To Pivot, Real-World Map Size), FixtureCylinderSlice (2 height and 2 cap segments, 7 sides, From 20 To 250),
+-- FixtureCylinderSliceDown (height -8, 6 sides, From 300 To 45, Real-World Map Size), FixtureConeSlice (radius 6
+-- and 2, 8 sides, From 40 To 160, Real-World Map Size), FixtureTubeSlice (7 sides, From 20 To 250),
+-- FixtureTorusSlice (9 segments, 6 sides, twist 45, smooth 3, From 20 To 250, Real-World Map Size).
 -- One Standard material on every node.
 -- It also writes C:\maxdrop_fixtures\primitives.mesh.jsonl: per primitive node, its base object's TriMesh (object
 -- space): vertices, and per triangle its vertices, edge visibility, material ID, smoothing groups and channel 1's
@@ -111,6 +120,26 @@
 		realWorldMapSize:true pos:[120, 210, 0]
 	Tube name:"FixtureTubeDown" radius1:5 radius2:3 height:-8 heightsegs:1 capsegs:1 sides:7 mapcoords:true \
 		realWorldMapSize:true pos:[150, 210, 0]
+	Sphere name:"FixtureSphereHemi" radius:8 segs:12 hemisphere:0.5 chop:0 mapcoords:true pos:[0, 260, 0]
+	Sphere name:"FixtureSphereSquash" radius:6 segs:13 hemisphere:0.3 chop:1 recenter:true mapcoords:true \
+		realWorldMapSize:true pos:[30, 260, 0]
+	Sphere name:"FixtureSphereSlice" radius:6 segs:9 slice:true sliceFrom:30 sliceTo:250 mapcoords:true \
+		pos:[60, 260, 0]
+	Sphere name:"FixtureSphereSliceHemi" radius:6 segs:12 hemisphere:0.4 chop:1 slice:true sliceFrom:200 \
+		sliceTo:30 mapcoords:true realWorldMapSize:true pos:[90, 260, 0]
+	GeoSphere name:"FixtureGeoHemi" radius:8 segs:3 baseType:2 hemisphere:true mapcoords:true pos:[120, 260, 0]
+	GeoSphere name:"FixtureGeoHemiTetra" radius:6 segs:2 baseType:0 hemisphere:true baseToPivot:true mapcoords:true \
+		realWorldMapSize:true pos:[150, 260, 0]
+	Cylinder name:"FixtureCylinderSlice" radius:5 height:10 heightsegs:2 capsegs:2 sides:7 slice:true sliceFrom:20 \
+		sliceTo:250 mapcoords:true pos:[0, 310, 0]
+	Cylinder name:"FixtureCylinderSliceDown" radius:5 height:-8 heightsegs:1 capsegs:1 sides:6 slice:true \
+		sliceFrom:300 sliceTo:45 mapcoords:true realWorldMapSize:true pos:[30, 310, 0]
+	Cone name:"FixtureConeSlice" radius1:6 radius2:2 height:10 heightsegs:2 capsegs:1 sides:8 slice:true \
+		sliceFrom:40 sliceTo:160 mapcoords:true realWorldMapSize:true pos:[60, 310, 0]
+	Tube name:"FixtureTubeSlice" radius1:6 radius2:4 height:8 heightsegs:1 capsegs:1 sides:7 slice:true \
+		sliceFrom:20 sliceTo:250 mapcoords:true pos:[90, 310, 0]
+	Torus name:"FixtureTorusSlice" radius1:8 radius2:2 segs:9 sides:6 tubeTwist:45 smooth:3 slice:true sliceFrom:20 \
+		sliceTo:250 mapcoords:true realWorldMapSize:true pos:[120, 310, 0]
 
 	local mat = StandardMaterial name:"FixtureGrey" diffuse:(color 128 128 128)
 	for o in objects do o.material = mat

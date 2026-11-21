@@ -7,9 +7,10 @@
 The primitives fixture (tools/fixtures/primitives.ms): each node's parameters as the script set them; each mesh equal
 to the TriMesh 3ds Max built for it (tests/fixtures/primitives.mesh.jsonl, written by the same script): the same
 points (order aside), its triangles merged across hidden edges into the same polygons with the same winding, material
-IDs, smoothing groups and channel 1 UVs; through convert.scene, the vertex and triangle counts and the world box of
-the oracle (tests/fixtures/primitives.oracle.json). Hand-made blocks: defaults, a minimum, an animated parameter, a
-parameter that is no number, too many faces, the options not built (Slice, hemispheres), the Plane's render scale.
+IDs, smoothing groups and channel 1 UVs, Slice and the hemispheres included; through convert.scene, the vertex and
+triangle counts and the world box of the oracle (tests/fixtures/primitives.oracle.json). Hand-made blocks: defaults,
+a minimum, an animated parameter, a parameter that is no number, too many faces, the Plane's render scale, Slice and
+the hemispheres closed and with hostile values.
 
     python -I -m unittest discover tests
 """
@@ -77,6 +78,24 @@ EXPECTED = {
     "FixtureSphereOdd": ("Sphere", dict(radius=6.0, segs=13, base_to_pivot=True), True),
     "FixtureGeoReal": ("GeoSphere", dict(radius=6.0, segs=4, base_type=0), True),
     "FixtureTubeDown": ("Tube", dict(radius1=5.0, radius2=3.0, height=-8.0, sides=7), True),
+    # Slice and the hemispheres: From and To apart, so a swapped id shows (Torus keeps To in 8, From in 9)
+    "FixtureSphereHemi": ("Sphere", dict(radius=8.0, segs=12, hemisphere=0.5, squash=False, slice=False), False),
+    "FixtureSphereSquash": ("Sphere", dict(radius=6.0, segs=13, hemisphere=0.3, squash=True, base_to_pivot=True),
+                            True),
+    "FixtureSphereSlice": ("Sphere", dict(segs=9, slice=True, slice_from=30 * DEG, slice_to=250 * DEG), False),
+    "FixtureSphereSliceHemi": ("Sphere", dict(segs=12, hemisphere=0.4, squash=True, slice=True,
+                                              slice_from=200 * DEG, slice_to=30 * DEG), True),
+    "FixtureGeoHemi": ("GeoSphere", dict(radius=8.0, segs=3, base_type=2, hemisphere=True), False),
+    "FixtureGeoHemiTetra": ("GeoSphere", dict(segs=2, base_type=0, hemisphere=True, base_to_pivot=True), True),
+    "FixtureCylinderSlice": ("Cylinder", dict(height_segs=2, cap_segs=2, sides=7, slice=True, slice_from=20 * DEG,
+                                              slice_to=250 * DEG), False),
+    "FixtureCylinderSliceDown": ("Cylinder", dict(height=-8.0, sides=6, slice=True, slice_from=300 * DEG,
+                                                  slice_to=45 * DEG), True),
+    "FixtureConeSlice": ("Cone", dict(radius1=6.0, radius2=2.0, sides=8, slice=True, slice_from=40 * DEG,
+                                      slice_to=160 * DEG), True),
+    "FixtureTubeSlice": ("Tube", dict(sides=7, slice=True, slice_from=20 * DEG, slice_to=250 * DEG), False),
+    "FixtureTorusSlice": ("Torus", dict(segs=9, sides=6, twist=45 * DEG, smooth=3, slice=True, slice_from=20 * DEG,
+                                        slice_to=250 * DEG), True),
 }
 
 
@@ -207,7 +226,7 @@ class FixtureTest(unittest.TestCase):
         cls.cf.close()
 
     def test_every_node_is_a_primitive(self):
-        self.assertEqual(len(self.bases), 26)
+        self.assertEqual(len(self.bases), 37)
         for name, base in self.bases.items():
             self.assertTrue(prim.is_primitive(self.scene, base), name)
 
@@ -237,7 +256,7 @@ class FixtureTest(unittest.TestCase):
     def test_counts_and_world_boxes_equal_the_oracle(self):
         desc = conv.read(FIXTURE, meters=1.0)
         self.assertEqual((dict(desc.placeholders), desc.issues), ({}, []))
-        self.assertEqual(len(desc.meshes), 25)  # FixtureBoxCopy shares FixtureBox's
+        self.assertEqual(len(desc.meshes), 36)  # FixtureBoxCopy shares FixtureBox's
         for node in desc.nodes:
             o = self.oracle[node.name]
             md = desc.meshes[node.mesh]
@@ -264,7 +283,7 @@ class FixtureTest(unittest.TestCase):
         built = {n.mesh[0] for n in desc.nodes if n.kind == conv.MESH}
         self.assertEqual(len(built), 1)  # the first primitive, with its instance if it has one
         spent = [r for _i, r in desc.issues if r.startswith("primitive: not built: the primitives and extrusions ")]
-        self.assertEqual(len(spent), 24)  # 25 primitive objects
+        self.assertEqual(len(spent), 35)  # 36 primitive objects
         self.assertEqual(sum(desc.placeholders.values()), sum(n.kind == conv.EMPTY for n in desc.nodes))
 
 

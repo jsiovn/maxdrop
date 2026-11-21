@@ -172,7 +172,11 @@ SHARP_EDGES = {"editable_mesh": 8, "modifier_pivot": {"FixtureSmooth": 0, None: 
                               "FixtureCylinder": 20, "FixtureCone": 18, "FixtureTube": 32, "FixtureTorus": 96,
                               "FixtureBoxInside": 16, "FixtureCylinderDown": 14, "FixtureConeTip": 14,
                               "FixtureTubeSwap": 28, "FixtureTorusOdd": 35, "FixturePyramidDown": 14,
-                              "FixtureCylinderReal": 14, "FixtureTubeDown": 28, None: 0}}
+                              "FixtureCylinderReal": 14, "FixtureTubeDown": 28,
+                              "FixtureSphereHemi": 12, "FixtureSphereSquash": 13, "FixtureSphereSlice": 12,
+                              "FixtureSphereSliceHemi": 29, "FixtureGeoHemi": 30, "FixtureGeoHemiTetra": 6,
+                              "FixtureCylinderSlice": 30, "FixtureCylinderSliceDown": 19, "FixtureConeSlice": 26,
+                              "FixtureTubeSlice": 36, "FixtureTorusSlice": 60, None: 0}}
 SHARP_EDGES_DEFAULT = 12
 # the class directory's name of a placeholder (maxdrop_class) where it is not MAXScript's (the oracle's)
 CLASS_NAMES = {"Targetobject": "Target", "Targetcamera": "Target"}
@@ -256,7 +260,12 @@ STOCK_FLAGS = {"StdOmniNoDiffuse": (True, False, True, 0.0, 1.0), "StdSpotRect":
 PRIMITIVE_CLASSES = {("0x00000010", "0x00000000"), ("0x00000011", "0x00000000"), ("0x00000012", "0x00000000"),
                      ("0x00000020", "0x00000000"), ("0xa86c23dd", "0x00000000"), ("0x00007b21", "0x00000000"),
                      ("0x00000000", "0x00007f9e"), ("0x081f1dfc", "0x77566f65"), ("0x76bf318a", "0x4bf37b10")}
-HOLLOW = {"FixtureTube", "FixtureTubeSwap", "FixtureTubeDown", "FixtureTorus", "FixtureTorusOdd"}
+# closed meshes checked by their volume: tubes and tori have no inside point, a Slice's cut planes run through the
+# axis (beside the box center), a chopped hemisphere has a ring of flat faces
+HOLLOW = {"FixtureTube", "FixtureTubeSwap", "FixtureTubeDown", "FixtureTorus", "FixtureTorusOdd", "FixtureSphereHemi",
+          "FixtureSphereSquash", "FixtureSphereSlice", "FixtureSphereSliceHemi", "FixtureGeoHemi",
+          "FixtureGeoHemiTetra", "FixtureCylinderSlice", "FixtureCylinderSliceDown", "FixtureConeSlice",
+          "FixtureTubeSlice", "FixtureTorusSlice"}
 # extrude (Generate Mapping Coords on two nodes); sharp edges: the vertical edges at corner knots, one per level, and
 # both rims of every capped outline; V - E + F: a solid 2, one with a round tunnel 0, a ring and its island 0 + 2
 EXTRUDE_UV_LAYERS = {"FixtureExtRect": ["UVMap"], "FixtureExtAdaptive": ["UVMap"],

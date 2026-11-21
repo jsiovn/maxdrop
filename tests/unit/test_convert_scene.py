@@ -114,7 +114,9 @@ SHARP_EDGES_UVWMAP = {"FixtureUVWCyl": 32, "FixtureUVWSphere": 0, "FixtureUVWSha
 # primitives: a group per side of a box (FixtureBox's edges in segments: 4 x 3 + 4 x 2 + 4 x 4), the rims of
 # cylinders, cones and tubes, the pyramid's four ridges of 2 segments and its base outline of 10, the torus's
 # alternating groups (every edge between two sides; on the odd one every edge between two segments), every edge of
-# the unsmoothed GeoSphere; spheres, smooth GeoSpheres and planes have none
+# the unsmoothed GeoSphere; spheres, smooth GeoSpheres and planes have none. Slice and the hemispheres: the base's rim,
+# the rims of the cut planes (their profile and the edges to the fans) and the axis between the two, and the
+# torus's rows of a smoothing group each by segment
 SHARP_EDGES_PRIMITIVES = {"FixtureBox": 36, "FixtureBoxDown": 12, "FixtureBoxNoMap": 12, "FixtureBoxSmooth": 0,
                           "FixturePlane": 0, "FixturePyramid": 4 * 2 + 10, "FixtureSphere": 0, "FixtureGeoSphere": 0,
                           "FixtureGeoOcta": 48, "FixtureCylinder": 20, "FixtureCone": 18, "FixtureTube": 32,
@@ -122,7 +124,10 @@ SHARP_EDGES_PRIMITIVES = {"FixtureBox": 36, "FixtureBoxDown": 12, "FixtureBoxNoM
                           "FixtureCylinderDown": 14, "FixtureConeTip": 14, "FixtureTubeSwap": 28,
                           "FixtureTorusOdd": 35, "FixturePlaneReal": 0, "FixturePyramidDown": 4 * 2 + 6,
                           "FixtureSphereOdd": 0, "FixtureGeoReal": 0, "FixtureCylinderReal": 14,
-                          "FixtureTubeDown": 28}
+                          "FixtureTubeDown": 28, "FixtureSphereHemi": 12, "FixtureSphereSquash": 13, "FixtureSphereSlice": 12,
+                          "FixtureSphereSliceHemi": 29, "FixtureGeoHemi": 30, "FixtureGeoHemiTetra": 6,
+                          "FixtureCylinderSlice": 30, "FixtureCylinderSliceDown": 19, "FixtureConeSlice": 26,
+                          "FixtureTubeSlice": 36, "FixtureTorusSlice": 60}
 FLAT_MESHES = {"FixtureGeoOcta"}
 # the oracle's base_class_id of the primitives MaxDrop builds (convert/primitives.py)
 PRIMITIVE_CLASSES = {("0x00000010", "0x00000000"), ("0x00000011", "0x00000000"), ("0x00000012", "0x00000000"),

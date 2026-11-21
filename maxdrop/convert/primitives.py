@@ -543,11 +543,12 @@ def _sphere(b, p):
 
 def _seam(np, a, step):
     """(u at the face's start, at its end) of faces that start at a and span step, shifted down by whole turns
-    until they end below 1: 3ds Max's cylinder seam."""
+    until they lie below 1: 3ds Max's cylinder seam (a negative step, a sliced Cylinder of negative height, runs
+    back from its start)."""
     a = np.array(a, dtype=np.float64)
     b = a + step
     while True:
-        past = b > 1.0 - _SEAM
+        past = np.maximum(a, b) > 1.0 - _SEAM
         if not past.any():
             return a, b
         a, b = np.where(past, a - 1.0, a), np.where(past, b - 1.0, b)
