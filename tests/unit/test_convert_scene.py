@@ -534,6 +534,20 @@ class Curves(unittest.TestCase):
         self.assertEqual(sp.right[2], (5, 5.5, 1.5))  # open: no segment after the last knot
         self.assertEqual((cd.resolution, cd.bevel_depth), (7, 0.0))
 
+    def test_segment_material_ids(self):
+        """A spline's material IDs are its segments': the last knot of an open spline starts none, a closed one's
+        does; distinct, in segment order, the first one the spline's; a spline without a segment its knot's."""
+        def knots(*ids):
+            return [shapes.Knot(shapes.CORNER, shapes.LINE, (float(i), 0, 0), (float(i), 0, 0), (float(i), 0, 0), m)
+                    for i, m in enumerate(ids)]
+        self.assertEqual(conv.segment_ids(knots(1, 1, 5), False), (1,))
+        self.assertEqual(conv.segment_ids(knots(1, 1, 5), True), (1, 5))
+        self.assertEqual(conv.segment_ids(knots(2, 0, 0, 2, 3), False), (2, 0))
+        self.assertEqual(conv.segment_ids(knots(4), False), (4,))
+        self.assertEqual(conv.segment_ids(knots(4), True), (4,))
+        cd, _issues = conv.curve_description("k", "n", self._shape(knots(3, 1, 3, 9)), None, 1.0)
+        self.assertEqual((cd.splines[0].material, cd.splines[0].material_ids), (3, (3, 1)))
+
     def test_closing_straight_segment_and_bevel(self):
         k = shapes.Knot
         knots = [k(shapes.CORNER, shapes.CURVE, (0, 0, 0), (0, 0, 0), (0, 0, 0)),
@@ -1117,6 +1131,16 @@ class Fixtures(unittest.TestCase):
         numpy.testing.assert_allclose(loop, numpy.array([(1.5, 0.75), (-1.5, 0.75), (-1.5, -0.75), (1.5, -0.75)]) * m,
                                       atol=1e-12)
         self.assertEqual(sum(1 for cd in desc.curves.values() if cd.section is not None), 2)
+
+    def test_fixture_spline_material_ids(self):
+        """shapes_more: FixtureCurveIds' splines at IDs 2 and 1, FixtureCurveMixed's at 2, 1, 1 (zero-based 1 and 0);
+        every other curve at ID 1."""
+        desc = dict((n, d) for n, d, _o in self.cases)["shapes_more"]
+        got = {n.name: [(sd.material, sd.material_ids) for sd in desc.curves[n.curve].splines]
+               for n in desc.nodes if n.kind == conv.CURVE}
+        self.assertEqual(got.pop("FixtureCurveIds"), [(1, (1,)), (0, (0,))])
+        self.assertEqual(got.pop("FixtureCurveMixed"), [(1, (1, 0))])
+        self.assertEqual({sp for v in got.values() for sp in v}, {(0, (0,))})
 
     def test_material_indices_from_the_reader(self):
         desc = dict((n, d) for n, d, _o in self.cases)["box_poly_standard"]

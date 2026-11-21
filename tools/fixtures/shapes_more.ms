@@ -17,6 +17,9 @@
 -- FixtureCurveStd: a renderable Circle with a Standard material (FixtureCurveRed). FixtureCurveMulti: a renderable
 -- Line with a Multi/Sub-Object (ID 1 FixtureCurveSubOne, ID 2 FixtureCurveSubTwo), its segments at ID 1. They come
 -- after FixtureBox, so the nodes above keep their handles.
+-- FixtureCurveIds: a renderable Line under the same Multi/Sub-Object, two open splines, the first one's segments at
+-- ID 2, the second one's at ID 1 (each spline its own sub-material). FixtureCurveMixed: one open spline whose
+-- segments are at IDs 2, 1, 1 (a curve has one material per spline: the first segment's). They come last.
 -- FixtureBox, a box with a Standard material, is there for the import smoke test, which expects a mesh and a
 -- material from every fixture; the other shapes have no material.
 -- Authored for MaxDrop's tests (see CONTRIBUTING.md, "Test files"): it resets the scene, so run it in a 3ds Max
@@ -80,6 +83,39 @@
 	multi.materialList[1] = StandardMaterial name:"FixtureCurveSubOne" diffuse:(color 20 30 200)
 	multi.materialList[2] = StandardMaterial name:"FixtureCurveSubTwo" diffuse:(color 20 200 30)
 	wire.material = multi
+
+	local ids = line name:"FixtureCurveIds"
+	addNewSpline ids
+	addKnot ids 1 #corner #line [0,0,0]
+	addKnot ids 1 #corner #line [10,0,0]
+	addKnot ids 1 #corner #line [10,10,0]
+	addNewSpline ids
+	addKnot ids 2 #corner #line [0,4,0]
+	addKnot ids 2 #corner #line [6,4,0]
+	addKnot ids 2 #corner #line [6,10,0]
+	updateShape ids
+	for seg = 1 to 2 do (setMaterialID ids 1 seg 2; setMaterialID ids 2 seg 1)
+	updateShape ids
+	ids.render_renderable = true
+	ids.render_thickness = 1.0
+	ids.pos = [160,-140,0]
+	ids.material = multi
+
+	local mixed = line name:"FixtureCurveMixed"
+	addNewSpline mixed
+	addKnot mixed 1 #corner #line [0,0,0]
+	addKnot mixed 1 #corner #line [10,0,0]
+	addKnot mixed 1 #corner #line [10,10,0]
+	addKnot mixed 1 #corner #line [0,10,0]
+	updateShape mixed
+	setMaterialID mixed 1 1 2
+	setMaterialID mixed 1 2 1
+	setMaterialID mixed 1 3 1
+	updateShape mixed
+	mixed.render_renderable = true
+	mixed.render_thickness = 1.0
+	mixed.pos = [200,-140,0]
+	mixed.material = multi
 
 	makeDir @"C:\maxdrop_fixtures" all:true
 	saveMaxFile @"C:\maxdrop_fixtures\shapes_more.max" quiet:true

@@ -14,6 +14,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   surfaces, as in 3ds Max, instead of smooth into them: the mesh's open edges are marked sharp before the Solidify.
   Where Blender still differs, the report says so: auto smooth splitting the rim's sharper corners (a plane's), or
   the smoothing-group override with auto smooth off.
+- Shapes: a Multi/Sub-Object on a shape built as a curve gives each spline the entry for its segments' material ID,
+  instead of ID 1's on every spline. A spline whose segments have different IDs takes its first segment's (a curve
+  has one material per spline); the report says so when that changes its material.
 
 ## [1.0.1] - 2026-11-22
 

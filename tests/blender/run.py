@@ -24,8 +24,9 @@ its points where 3ds Max has its knots, each segment's middle (mathutils.geometr
 interpolates it (the straight segment included), the resolution from the steps, a bevel and faces only on the
 renderable FixtureLine. shapes_more: the same for its NGon corners, Ellipse outlines and Arcs; a rectangular section
 a hidden bevel object in the import's collection, its corners where 3ds Max's render mesh has them; FixtureCurveStd's
-Standard material and FixtureCurveMulti's Multi/Sub-Object entry for ID 1 in one slot on their curves, no slot on the
-other curves.
+Standard material and FixtureCurveMulti's Multi/Sub-Object entry for ID 1 in one slot on their curves,
+FixtureCurveIds' two splines (IDs 2 and 1) each on the slot of its entry, FixtureCurveMixed (IDs 2, 1, 1) on ID 2's,
+no slot on the other curves; on every fixture each spline's material index is its slot.
 Converted modifiers (TurboSmooth, MeshSmooth, Shell, Symmetry): each object's Blender modifiers in 3ds Max's order with
 the description's settings and mirror empties, creases where a smoother separates by smoothing groups (none on open
 edges), and the evaluated mesh with 3ds Max's vertex and triangle counts, world box and shading (flat faces, smooth
@@ -1284,9 +1285,16 @@ def check_shapes_more(obs, meters):
     slots = {ob.name: [(s.link, s.material and s.material.name) for s in ob.material_slots]
              for ob in obs if ob.type == 'CURVE'}
     want = dict.fromkeys(slots, [])
-    want.update(FixtureCurveStd=[('DATA', "FixtureCurveRed")], FixtureCurveMulti=[('DATA', "FixtureCurveSubOne")])
-    check("shapes_more: a curve's 3ds Max material in one slot on the curve (a Multi/Sub-Object's ID 1), none on "
-          "the others", slots == want and len(slots) == 15, str(slots))
+    want.update(FixtureCurveStd=[('DATA', "FixtureCurveRed")], FixtureCurveMulti=[('DATA', "FixtureCurveSubOne")],
+                FixtureCurveIds=[('DATA', "FixtureCurveSubOne"), ('DATA', "FixtureCurveSubTwo")],
+                FixtureCurveMixed=[('DATA', "FixtureCurveSubTwo")])
+    check("shapes_more: a curve's 3ds Max materials in slots on the curve (a Multi/Sub-Object's entries for its "
+          "splines' IDs), none on the others", slots == want and len(slots) == 17, str(slots))
+    indices = {name: [sp.material_index for sp in by_name[name].data.splines]
+               for name in ("FixtureCurveIds", "FixtureCurveMixed", "FixtureCurveMulti")}
+    check("shapes_more: each spline on the slot of its segments' material ID (FixtureCurveIds: ID 2 then ID 1; "
+          "FixtureCurveMixed: its first segment's)",
+          indices == {"FixtureCurveIds": [1, 0], "FixtureCurveMixed": [0], "FixtureCurveMulti": [0]}, str(indices))
 
 
 def check_modifier_pivot(obs, meters):
@@ -1625,6 +1633,13 @@ def check_fixture_materials(name, plan, desc, obs):
                 check("%s/%s: material named after the 3ds Max material" % (name, material.name),
                       material.name.split(".")[0] == (ir.name or "Material").split(".")[0], ir.name)
                 check_principled("%s/%s" % (name, material.name), material, ir)
+    for key, cd in desc.curves.items():  # each spline on its slot; without a plan, 0
+        ob = next((by_index[u] for u in cd.users if u in by_index), None)
+        if ob is None:
+            continue
+        got = [sp.material_index for sp in ob.data.splines]
+        want = plan.curves[key].indices.tolist() if key in plan.curves else [0] * len(cd.splines)
+        check("%s/%s: each spline on its material's slot" % (name, ob.name), got == want, "%s vs %s" % (got, want))
     if name == "falloff_curve":
         check_falloff_curve(textured=False)
     if name == "vray_maps":
@@ -3860,8 +3875,8 @@ def check_curve_slots(modules, make):
             break
     total = build_objects.steps_of(desc, slots)
     check("curve slots: build_steps ends at steps_of, which counts the curve plans",
-          counts[-1] == (total, total) and len(slots.curves) == 1
-          and total == build_objects.steps_of(desc, dict(slots)) + 1, "%s %d" % (counts[-1:], total))
+          counts[-1] == (total, total) and len(slots.curves) == 3
+          and total == build_objects.steps_of(desc, dict(slots)) + 3, "%s %d" % (counts[-1:], total))
     obs = {n.name: built.objects[n.index] for n in desc.nodes}
     std, multi, box = obs["FixtureCurveStd"], obs["FixtureCurveMulti"], obs["FixtureBox"]
     got = [(s.link, s.material and s.material.name) for ob in (std, multi) for s in ob.material_slots]
@@ -3873,7 +3888,8 @@ def check_curve_slots(modules, make):
           reds == ["FixtureCurveRed"] and box.data.materials[0] is std.material_slots[0].material, str(reds))
     with_slots = sorted(ob.name for ob in obs.values() if ob.type == 'CURVE' and len(ob.data.materials))
     check("curve slots: curves without a material get no slot",
-          with_slots == ["FixtureCurveMulti", "FixtureCurveStd"], str(with_slots))
+          with_slots == ["FixtureCurveIds", "FixtureCurveMixed", "FixtureCurveMulti", "FixtureCurveStd"],
+          str(with_slots))
 
     def curves_only(desc):
         share(desc)
@@ -3894,7 +3910,7 @@ def check_curve_slots(modules, make):
     total = build_objects.steps_of(desc, slots)
     std = built.objects[nodes_of["FixtureCurveStd"].index]
     check("curve slots: a scene without meshes (a Slots that is empty as a dict) still gets its curve slots",
-          not slots and len(slots.curves) == 1 and counts[-1] == (total, total)
+          not slots and len(slots.curves) == 3 and counts[-1] == (total, total)
           and [s.material and s.material.name for s in std.material_slots] == ["FixtureCurveRed"],
           "%s %s" % (counts[-1:], [s.material for s in std.material_slots]))
 

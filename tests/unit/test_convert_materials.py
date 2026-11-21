@@ -1058,12 +1058,23 @@ class MultiSub(unittest.TestCase):
         self.assertEqual(conv.material_for(1, 0).name, "Deep")
 
 
+def _spline(ids):
+    """A SplineDescription stand-in: ids, one segment material ID or the distinct ones in segment order."""
+    ids = (ids,) if isinstance(ids, int) else tuple(ids)
+    return types.SimpleNamespace(material=ids[0], material_ids=ids)
+
+
 def _desc(curves=None, **meshes):
-    """A SceneDescription stand-in: meshes {key: (users, face material IDs)}, curves {key: users}."""
+    """A SceneDescription stand-in: meshes {key: (users, face material IDs)}, curves {key: users, or (users, the
+    material IDs of each spline: an int, or a tuple for a spline that mixes them)} (a list of users alone: one spline
+    at ID 0)."""
+    def curve(v):
+        users, splines = (v, [0]) if isinstance(v, list) else v
+        return types.SimpleNamespace(users=users, splines=[_spline(x) for x in splines])
     return types.SimpleNamespace(meshes={k: types.SimpleNamespace(users=u, material_indices=numpy.array(f,
                                                                                                       dtype=numpy.int32))
                                          for k, (u, f) in meshes.items()},
-                                 curves={k: types.SimpleNamespace(users=u) for k, u in (curves or {}).items()})
+                                 curves={k: curve(v) for k, v in (curves or {}).items()}, issues=[])
 
 
 def _lin(s):
@@ -1519,22 +1530,58 @@ class Assign(unittest.TestCase):
                           conv)
         self.assertIsInstance(plan, mat.Slots)
         got = {k: (p.users, self.names(p.slots), p.indices.tolist()) for k, p in plan.curves.items()}
-        self.assertEqual(got, {"one": ([1, 2], [["Plain", "Plain"]], []), "two": ([3, 4], [["Plain", "Other"]], []),
-                               "multi": ([5], [["Other"]], []), "k": ([8], [["Other"]], [])})
+        self.assertEqual(got, {"one": ([1, 2], [["Plain", "Plain"]], [0]), "two": ([3, 4], [["Plain", "Other"]], [0]),
+                               "multi": ([5], [["Other"]], [0]), "k": ([8], [["Other"]], [0])})
         self.assertEqual(plan.curves["k"].indices.dtype.name, "int32")
         self.assertEqual(self.names(plan["k"].slots), [["Plain"]])
 
+    def test_curve_splines(self):
+        """Each spline on the slot of its material ID: slots in ID order, indices per spline; IDs a plain material
+        gives alike share one slot; an ID whose entry is off is an empty slot beside the others."""
+        objs = (_vray(4, "Plain"), _vray(5, "Other"), _multi(6, [(0, Ref(4), 1), (1, Ref(5), 1)]),
+                _multi(7, [(0, Ref(4), 1), (1, Ref(5), 0)]))
+        conv = mat.MaterialConverter(FakeGraph(*objs))
+        desc = _desc(curves={"multi": ([1], [1, 0, 1]), "plain": ([2], [1, 0]), "gap": ([3], [0, 1]),
+                             "both": ([1, 2], [1, 0])})
+        plan = mat.assign(desc, {1: 6, 2: 4, 3: 7}, conv)
+        got = {k: (self.names(p.slots), p.indices.tolist()) for k, p in plan.curves.items()}
+        self.assertEqual(got, {"multi": ([["Plain"], ["Other"]], [1, 0, 1]), "plain": ([["Plain"]], [0, 0]),
+                               "gap": ([["Plain"], [None]], [0, 1]),
+                               "both": ([["Plain", "Plain"], ["Other", "Plain"]], [1, 0])})
+        self.assertEqual(plan.curves["multi"].indices.dtype.name, "int32")
+        self.assertEqual(desc.issues, [])
+
+    def test_curve_mixed_ids(self):
+        """A spline mixing IDs is drawn with its first segment's: an issue (once, on the curve's first user) only
+        when a user gets another material for one of its other IDs."""
+        objs = (_vray(4, "Plain"), _vray(5, "Other"), _multi(6, [(0, Ref(4), 1), (1, Ref(5), 1)]))
+        conv = mat.MaterialConverter(FakeGraph(*objs))
+        desc = _desc(curves={"multi": ([1, 2], [0, (1, 0), (1, 0, 2)]), "plain": ([3], [(1, 0)])})
+        plan = mat.assign(desc, {1: 4, 2: 6, 3: 4}, conv)
+        got = {k: (self.names(p.slots), p.indices.tolist()) for k, p in plan.curves.items()}
+        self.assertEqual(got, {"multi": ([["Plain", "Plain"], ["Plain", "Other"]], [0, 1, 1]),
+                               "plain": ([["Plain"]], [0])})
+        self.assertEqual(desc.issues, [(1, "shape: spline 2 mixes material IDs 2, 1: drawn with ID 2's material "
+                                           "(its first segment's)")])
+
     def test_fixture_curves(self):
         """shapes_more: FixtureCurveStd has a Standard material, FixtureCurveMulti a Multi/Sub-Object (ID 1:
-        FixtureCurveSubOne); the other shapes none."""
+        FixtureCurveSubOne); FixtureCurveIds the same Multi/Sub-Object on splines at IDs 2 and 1, FixtureCurveMixed
+        on one spline at IDs 2, 1, 1; the other shapes none."""
         cf, graph, _by_name = _fixture("shapes_more")
         with cf:
             s = reader_scene.Scene.from_file(cf)
             desc = importlib.import_module(_PKG + ".convert.scene").describe(s, 0.001, None)
             plan = mat.assign(desc, mat.node_materials(s, desc), mat.MaterialConverter(graph))
         names = {n.index: n.name for n in desc.nodes}
-        got = {names[p.users[0]]: self.names(p.slots) for p in plan.curves.values()}
-        self.assertEqual(got, {"FixtureCurveStd": [["FixtureCurveRed"]], "FixtureCurveMulti": [["FixtureCurveSubOne"]]})
+        got = {names[p.users[0]]: (self.names(p.slots), p.indices.tolist()) for p in plan.curves.values()}
+        self.assertEqual(got, {"FixtureCurveStd": ([["FixtureCurveRed"]], [0]),
+                               "FixtureCurveMulti": ([["FixtureCurveSubOne"]], [0]),
+                               "FixtureCurveIds": ([["FixtureCurveSubOne"], ["FixtureCurveSubTwo"]], [1, 0]),
+                               "FixtureCurveMixed": ([["FixtureCurveSubTwo"]], [0])})
+        mixed = [r for i, r in desc.issues if names.get(i) == "FixtureCurveMixed"]
+        self.assertEqual(mixed, ["shape: spline 1 mixes material IDs 2, 1: drawn with ID 2's material (its first "
+                                 "segment's)"])
 
 
 if __name__ == "__main__":

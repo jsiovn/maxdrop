@@ -562,7 +562,7 @@
     {"class_id": ["0x00000200", "0x00000000"], "class_name": "Multimaterial", "index": 2, "name": "FixtureCurveMulti", "sub_count": 2}
   ],
   "max_version": [22000, 2020],
-  "node_count": 16,
+  "node_count": 18,
   "nodes": [
     {
       "base_class_id": ["0x00001050", "0x00000000"],
@@ -1438,6 +1438,121 @@
         "width": 2
       },
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 120, -140, 0]
+    },
+    {
+      "base_class_id": ["0x00001040", "0x00000000"],
+      "base_class_name": "line",
+      "base_faces": null,
+      "base_superclass": 64,
+      "base_verts": null,
+      "bbox_max": [170, -130, 0],
+      "bbox_min": [160, -140, 0],
+      "camera": null,
+      "eval_faces": null,
+      "eval_maps": null,
+      "eval_mesh": null,
+      "eval_verts": null,
+      "frozen": false,
+      "handle": 17,
+      "hidden": false,
+      "index": 16,
+      "instances": [17],
+      "layer": "0",
+      "material": 2,
+      "modifiers": [],
+      "name": "FixtureCurveIds",
+      "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 160, -140, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "renderable": true,
+      "shape": {
+        "adaptive": false,
+        "angle": 0,
+        "display_render_mesh": false,
+        "length": 6,
+        "optimize": true,
+        "rectangular": false,
+        "renderable": true,
+        "sides": 12,
+        "splines": [
+          {
+            "closed": false,
+            "knots": [
+              {"in": [0, 0, 0], "material": 2, "mid": [5, 0, 0], "out": [3.33333, 0, 0], "pos": [0, 0, 0], "segment": "line", "type": "corner"},
+              {"in": [6.66667, 0, 0], "material": 2, "mid": [10, 5, 0], "out": [10, 3.33333, 0], "pos": [10, 0, 0], "segment": "line", "type": "corner"},
+              {"in": [10, 6.66667, 0], "material": null, "mid": null, "out": [10, 10, 0], "pos": [10, 10, 0], "segment": null, "type": "corner"}
+            ]
+          },
+          {
+            "closed": false,
+            "knots": [
+              {"in": [0, 4, 0], "material": 1, "mid": [3, 4, 0], "out": [2, 4, 0], "pos": [0, 4, 0], "segment": "line", "type": "corner"},
+              {"in": [4, 4, 0], "material": 1, "mid": [6, 7, 0], "out": [6, 6, 0], "pos": [6, 4, 0], "segment": "line", "type": "corner"},
+              {"in": [6, 8, 0], "material": null, "mid": null, "out": [6, 10, 0], "pos": [6, 10, 0], "segment": null, "type": "corner"}
+            ]
+          }
+        ],
+        "steps": 6,
+        "thickness": 1,
+        "width": 2
+      },
+      "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 160, -140, 0]
+    },
+    {
+      "base_class_id": ["0x00001040", "0x00000000"],
+      "base_class_name": "line",
+      "base_faces": null,
+      "base_superclass": 64,
+      "base_verts": null,
+      "bbox_max": [210, -130, 0],
+      "bbox_min": [200, -140, 0],
+      "camera": null,
+      "eval_faces": null,
+      "eval_maps": null,
+      "eval_mesh": null,
+      "eval_verts": null,
+      "frozen": false,
+      "handle": 18,
+      "hidden": false,
+      "index": 17,
+      "instances": [18],
+      "layer": "0",
+      "material": 2,
+      "modifiers": [],
+      "name": "FixtureCurveMixed",
+      "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 200, -140, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "renderable": true,
+      "shape": {
+        "adaptive": false,
+        "angle": 0,
+        "display_render_mesh": false,
+        "length": 6,
+        "optimize": true,
+        "rectangular": false,
+        "renderable": true,
+        "sides": 12,
+        "splines": [
+          {
+            "closed": false,
+            "knots": [
+              {"in": [0, 0, 0], "material": 2, "mid": [5, 0, 0], "out": [3.33333, 0, 0], "pos": [0, 0, 0], "segment": "line", "type": "corner"},
+              {"in": [6.66667, 0, 0], "material": 1, "mid": [10, 5, 0], "out": [10, 3.33333, 0], "pos": [10, 0, 0], "segment": "line", "type": "corner"},
+              {"in": [10, 6.66667, 0], "material": 1, "mid": [5, 10, 0], "out": [6.66667, 10, 0], "pos": [10, 10, 0], "segment": "line", "type": "corner"},
+              {"in": [3.33333, 10, 0], "material": null, "mid": null, "out": [0, 10, 0], "pos": [0, 10, 0], "segment": null, "type": "corner"}
+            ]
+          }
+        ],
+        "steps": 6,
+        "thickness": 1,
+        "width": 2
+      },
+      "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 200, -140, 0]
     }
   ],
   "oracle_version": 12,

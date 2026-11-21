@@ -41,7 +41,8 @@ vertex used twice, the vertex set of an earlier face) are left out and reported.
 
 A shape (reader.shapes: Line, Editable Spline, Rectangle, Circle, Ellipse, Arc, NGon) becomes a CURVE, keyed and
 shared like a mesh, its offset baked into the knots: one Bezier spline per spline, Max's in and out vectors as the
-left and right handles. A segment 3ds Max draws straight (segment type line) gets handles a third of the way along
+left and right handles, each spline with its segments' material IDs (SplineDescription.material_ids: the first
+one is the spline's, convert.materials gives it its slot). A segment 3ds Max draws straight (segment type line) gets handles a third of the way along
 its chord, whatever the stored vectors. Resolution: 3ds Max's steps + 1 segments per Bezier segment, ADAPTIVE for
 an adaptive shape. A shape that renders (Enable In Renderer) gets a round bevel of its thickness (Max's thickness
 is the diameter) with about as many sides, or with a rectangular section a section: the rectangle width x length
@@ -249,11 +250,15 @@ class MeshDescription:
 
 class SplineDescription:
     """One Bezier spline in meters: points, left and right handles, each [(x, y, z)] (Blender's handle_left is Max's
-    in vector, handle_right its out vector), cyclic for a closed spline."""
-    __slots__ = ("points", "left", "right", "cyclic")
+    in vector, handle_right its out vector), cyclic for a closed spline; material_ids the distinct zero-based
+    material IDs of its segments in segment order (segment_ids), material the first of them, the one the spline
+    is drawn with (Blender has one material per spline)."""
+    __slots__ = ("points", "left", "right", "cyclic", "material", "material_ids")
 
-    def __init__(self, points, left, right, cyclic):
+    def __init__(self, points, left, right, cyclic, material_ids=(0,)):
         self.points, self.left, self.right, self.cyclic = points, left, right, cyclic
+        self.material_ids = tuple(material_ids) or (0,)
+        self.material = self.material_ids[0]
 
     def __repr__(self):
         return "SplineDescription(%d points%s)" % (len(self.points), ", cyclic" if self.cyclic else "")
@@ -574,6 +579,15 @@ def _straight(knots, closed):
     return left, right
 
 
+def segment_ids(knots, closed):
+    """The distinct material IDs of a spline's segments (reader knots) in segment order: the segment from a knot to
+    the next carries the knot's; the last knot of an open spline starts none (its ID is left out), a spline without
+    a segment has its first knot's."""
+    count = len(knots) if closed else len(knots) - 1
+    ids = [k.material for k in knots[:max(count, 1)]]
+    return tuple(dict.fromkeys(ids))
+
+
 def curve_description(key, name, shape, offset, meters):
     """(a CurveDescription of a reader Shape, issues): straight segments as straight handles, the offset (a reader
     matrix) applied, then meters; issues name what this drawing changes (the reader's own are the Shape's)."""
@@ -591,7 +605,7 @@ def curve_description(key, name, shape, offset, meters):
             continue
         left, right = _straight(sp.knots, sp.closed)
         splines.append(SplineDescription([place(k.point) for k in sp.knots], [place(p) for p in left],
-                                         [place(p) for p in right], sp.closed))
+                                         [place(p) for p in right], sp.closed, segment_ids(sp.knots, sp.closed)))
     resolution = ADAPTIVE if shape.adaptive else shape.steps + 1
     depth, profile, section = 0.0, 0, None
     r = shape.render

@@ -466,6 +466,11 @@ Corpus scene A (format 14000): the same layout on all 255 splines of its 18 Edit
 segments of type line; every shape node of the scene (29, with Rectangles) equals its oracle within 1e-5 of the
 knot's magnitude.
 
+The segments' material IDs equal the oracle's (`getMaterialID`, oracle layout 12) on every shape node of the
+fixtures: the parametric shapes give every segment ID 1 (zero-based 0, as the reader makes them), the extrude
+fixture's FixtureExtShapeIDs and shapes_more's FixtureCurveIds and FixtureCurveMixed the IDs their scripts set. A
+Blender curve has one material per spline: the importer draws a spline with its first segment's ID.
+
 The parametric shapes are made by the reader the way 3ds Max makes them, fitted to the oracle:
 
 - a circular arc of angle *a* gets vectors of radius times `veccalc(a)` along its tangents, where `veccalc` is the

@@ -24,7 +24,8 @@ through its own layer, not the active one; Blender keeps at most MAX_UV_LAYERS, 
 in dropped_uv_layers. Without slots, the faces keep 3ds Max's material IDs and get no material slot. With slots
 (convert.materials.assign: {mesh key: MeshSlots}), each face goes to its slot; a slot holds the same material for
 every object sharing the mesh, or each object's own (the slot linked to the object); an empty slot holds none. A
-curve in slots.curves gets its one slot the same way.
+curve in slots.curves gets its slots the same way, each spline on its slot (build.curves; without slots every
+spline is at 0: Blender keeps a spline's index within the curve's materials).
 
 Objects are made in walk order, so a parent exists before its children. The parent is set by node index with an
 identity matrix_parent_inverse and matrix_basis = the node's local matrix, so Blender's world matrix is 3ds Max's
@@ -235,6 +236,8 @@ def _slots(built, slots, make):
             data = found.get(key)
             if data is not None:
                 _data_slots(built, data, plan, make)
+                if found is built.curves:
+                    build_curves.set_material_indices(data, plan.indices)
             yield
 
 

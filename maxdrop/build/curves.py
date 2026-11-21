@@ -5,13 +5,16 @@
 """Blender curves from the shapes of a convert.scene.SceneDescription.
 
     curve = make_curve(cd, collection)  # a Curve datablock of a CurveDescription, its section in collection
+    set_material_indices(curve, indices)  # each spline on its material slot, once the slots exist
 
 One Bezier spline per SplineDescription, its points and handles set with foreach_set, the handles FREE at Max's
 in and out vectors (convert.scene has already put a straight segment's handles on its chord), so each segment is
 the cubic 3ds Max draws. The curve is 3D and
 FULL (Blender's default for 3D) so a bevel is a closed tube; resolution_u is the description's resolution;
 bevel_depth and bevel_resolution give a renderable shape its thickness, a shape that does not render in 3ds Max
-has none (a curve without a bevel does not render in Blender either).
+has none (a curve without a bevel does not render in Blender either). Each spline's material_index is set from the
+material plan (convert.materials.MeshSlots.indices, one per spline) after the curve has its slots: Blender clamps a
+spline's index to the curve's materials, so a curve without slots keeps every spline at 0.
 
 A rectangular section (cd.section) is a bevel object: a closed 2D poly curve "<name> section" through the four
 corners, no fill, its object hidden in the viewport and the render, not selectable, marked maxdrop_helper =
@@ -48,6 +51,12 @@ def make_curve(cd, collection):
         curve.bevel_object = _section(cd, collection)
         curve.use_fill_caps = True
     return curve
+
+
+def set_material_indices(curve, indices):
+    """Each spline of curve on its slot: indices, one per spline in order (a curve's slots must exist first)."""
+    for spline, index in zip(curve.splines, indices):
+        spline.material_index = int(index)
 
 
 def _section(cd, collection):
