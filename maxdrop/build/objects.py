@@ -36,9 +36,8 @@ made only when needed and listed in built.helpers. It is not baked into the mesh
 are empties (placeholders) and the object's own world matrix would stay off.
 An EMPTY node becomes a plain-axes empty with the custom property maxdrop_class; a CURVE node an object of its
 Curve, with the slot of slots.curves (a rectangular section's hidden bevel object goes into collection, without a
-material: build.curves); a
-LIGHT node an object of its Light (build.lights, power times light_strength), with the light's object flags; a
-CAMERA node an object of its Camera (build.cameras).
+material: build.curves); a LIGHT node an object of its Light (build.lights, power times light_strength), with the
+light's object flags; a CAMERA node an object of its Camera (build.cameras).
 
 With collections (build.collections.make), each object goes into its layer's collection, else into collection.
 A node hidden in 3ds Max gets hide_viewport and is hidden in view_layer (hide_set), one that does not render
@@ -258,9 +257,8 @@ def build(desc, collection, collections=None, view_layer=None, slots=None, mater
     """Every node of desc as an Object linked to collection, or to its layer's collection of collections; the
     Built result. view_layer: where a hidden node is hidden (hide_set), the context's when None. slots: {mesh key:
     convert.materials.MeshSlots}, each face's slot and each slot's materials (convert.materials.Slots: its curves
-    too); material: make(MaterialIR) -> a
-    Material, called once per Max material (no material in the slots without it); light_strength: the factor on
-    every light's power."""
+    too); material: make(MaterialIR) -> a Material, called once per Max material (no material in the slots without
+    it); light_strength: the factor on every light's power."""
     return _drain(build_steps(desc, collection, collections, view_layer, slots, material, light_strength))
 
 

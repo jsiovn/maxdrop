@@ -3069,9 +3069,32 @@ def check_curve_slots(modules, make):
     reds = [m.name for m in bpy.data.materials if m.name.startswith("FixtureCurveRed")]
     check("curve slots: a mesh and a curve with the same 3ds Max material share one Blender material",
           reds == ["FixtureCurveRed"] and box.data.materials[0] is std.material_slots[0].material, str(reds))
-    plain = sorted(ob.name for ob in obs.values() if ob.type == 'CURVE' and len(ob.data.materials))
-    check("curve slots: curves without a material get no slot", plain == ["FixtureCurveMulti", "FixtureCurveStd"],
-          str(plain))
+    with_slots = sorted(ob.name for ob in obs.values() if ob.type == 'CURVE' and len(ob.data.materials))
+    check("curve slots: curves without a material get no slot",
+          with_slots == ["FixtureCurveMulti", "FixtureCurveStd"], str(with_slots))
+
+    def curves_only(desc):
+        share(desc)
+        box = nodes_of["FixtureBox"]
+        desc.meshes.clear()
+        desc.nodes = [n for n in desc.nodes if n is not box]  # no node is FixtureBox's child
+
+    empty_scene()
+    desc, slots = _plan(os.path.join(ROOT, "tests", "fixtures", "shapes_more.max"), curves_only)
+    steps = build_objects.build_steps(desc, bpy.context.scene.collection, slots=slots, material=make)
+    counts = []
+    while True:
+        try:
+            counts.append(next(steps))
+        except StopIteration as end:
+            built = end.value
+            break
+    total = build_objects.steps_of(desc, slots)
+    std = built.objects[nodes_of["FixtureCurveStd"].index]
+    check("curve slots: a scene without meshes (a Slots that is empty as a dict) still gets its curve slots",
+          not slots and len(slots.curves) == 1 and counts[-1] == (total, total)
+          and [s.material and s.material.name for s in std.material_slots] == ["FixtureCurveRed"],
+          "%s %s" % (counts[-1:], [s.material for s in std.material_slots]))
 
 
 def _bench():

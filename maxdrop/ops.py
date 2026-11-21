@@ -71,6 +71,7 @@
 # Modified for MaxDrop, 2026-11-21 (jsiovn). The read's cancel check is also asked inside a large mesh (comments).
 # Modified for MaxDrop, 2026-11-21 (jsiovn). A TypeError or KeyError of the reading (a reader defect) reports the
 # file as not imported, with its traceback in the console, instead of ending the operator.
+# Modified for MaxDrop, 2026-11-21 (jsiovn). The material slots also hold those of shapes built as curves.
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -470,10 +471,10 @@ def _preflight_of(path):
 
 
 def _material_slots(sc, desc, table, max_path, dirs, image_search):
-    """(the material slots of desc's meshes {mesh key: MeshSlots}, (the material converter's, the texture-map
-    converter's and the texture lookup's counters, the scene's swatch rule) for the import report): every material
-    converted, its texture files looked up. sc: the reader Scene, which the converters read; table: the file's
-    reader.assets.AssetTable (the one the scene description got); dirs: the texture search folders
+    """(the material slots of desc's meshes and curves (convert.materials.Slots), (the material converter's, the
+    texture-map converter's and the texture lookup's counters, the scene's swatch rule) for the import report): every
+    material converted, its texture files looked up. sc: the reader Scene, which the converters read; table: the
+    file's reader.assets.AssetTable (the one the scene description got); dirs: the texture search folders
     (prefs.texture_dirs); the counters hold no reference to either. Touches no Blender data."""
     from .convert import colors as convert_colors
     from .convert import materials as convert_materials
