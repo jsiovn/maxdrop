@@ -244,7 +244,8 @@ class TexmapRules(Checks):
         g = self.f.irs["FixtureTexKeep"].textures["roughness"].root
         self.assertIsInstance(g, tx.Invert)
         self.image(g.input, "keep_gloss.png", tx.NON_COLOR)
-        self.close(g.input.gamma, 1.0)
+        self.close(reader_materials.bitmap_gamma(self.f.scene, self.f.graph.get(g.input.index)), 1.0)
+        self.assertIsNone(g.input.gamma, "saved with the gamma off: read as stored whatever the override")
 
     def test_normal_bump_is_the_normal_input(self):
         ir = self.f.irs["FixtureTexKeep"]
@@ -274,7 +275,8 @@ class TexmapRules(Checks):
         self.assertEqual(i.mapping.source, tx.EXPLICIT)
         self.close((i.crop.u, i.crop.v, i.crop.w, i.crop.h), (0.1, 0.2, 0.5, 0.6))
         self.assertFalse(i.crop.place)
-        self.close(i.gamma, 2.2)
+        self.close(reader_materials.bitmap_gamma(self.f.scene, self.f.graph.get(i.index)), 2.2)
+        self.assertIsNone(i.gamma, "saved with the gamma off: read as stored whatever the override")
 
     def test_placement_on_the_vertex_color_channel(self):
         i = self.f.irs["FixtureTexPlace"].textures["alpha"].root
@@ -863,7 +865,7 @@ class CoronaMixOps(Checks):
     def test_temperatures(self):
         for k in (2000, 3000, 9000):
             g = self.f.irs["FixtureCoronaKelvin%d" % k].textures["base_color"]
-            self.close(g.root.value, tx.corona_kelvin(k), str(k))
+            self.close(g.root.value, colors.GAMMA_OFF.color(tx.corona_kelvin(k)), "saved with the gamma off: %d" % k)
         self.close(tx.corona_kelvin(3000), (1.0, 121.607 / 255, 39.1868 / 255))
 
     def test_nothing_peeled(self):
@@ -1720,19 +1722,100 @@ class SwatchRule(Checks):
                     self.close(data.value, want)
                     self.close(color.value, rule.color(rgb), "a color input: the linear color")
 
-    def test_linear_corona_colors_on_a_data_input_are_the_mean(self):
-        # the HDR color and the temperature are linear already: no rule, the mean of the linear color
-        for rule in (colors.GAMMA_ON, colors.GAMMA_OFF):
-            self.close(self._root(rule, _ccolor(1, p50=1, p58=(1.5, 0.0, 0.0)), kind=tx.DATA).value, 0.5)
-            self.close(self._root(rule, _ccolor(1, p50=2, p51=3000.0), kind=tx.DATA).value,
-                       sum(tx.corona_kelvin(3000.0)) / 3.0)
-
-    def test_kelvin_and_hdr_whatever_the_rule(self):
-        kelvin, hdr = _ccolor(1, p50=2, p51=3000.0), _ccolor(1, p50=1, p58=(0.25, 0.5, 2.0))
+    def test_hdr_color_whatever_the_rule(self):
+        # the HDR color is linear already: no rule (not measured with the gamma off), the mean on a data input
+        hdr = _ccolor(1, p50=1, p58=(0.25, 0.5, 2.0))
         for rule in (colors.GAMMA_ON, colors.GAMMA_OFF):
             with self.subTest(rule):
-                self.close(self._root(rule, kelvin).value, tx.corona_kelvin(3000.0))
                 self.close(self._root(rule, hdr).value, (0.25, 0.5, 2.0))
+                self.close(self._root(rule, _ccolor(1, p50=1, p58=(1.5, 0.0, 0.0)), kind=tx.DATA).value, 0.5)
+
+    def test_kelvin_by_the_rule(self):
+        # maxdrop-em3.38: VRayColor and CoronaColor at 3000 K render the same values with the gamma on and off
+        # (V-Ray 5.2, renderMap): with it off the scene is display-referred, so both are decoded from sRGB; with it
+        # on Corona's linear color times the multiplier, not clamped
+        k = tx.corona_kelvin(3000.0)
+        self.close(self._root(colors.GAMMA_ON, _ccolor(1, p50=2, p51=3000.0)).value, k)
+        self.close(self._root(colors.UNKNOWN, _ccolor(1, p50=2, p51=3000.0, p57=2.0)).value, tuple(2 * c for c in k))
+        self.close(self._root(colors.GAMMA_ON, _ccolor(1, p50=2, p51=3000.0), kind=tx.DATA).value, sum(k) / 3.0)
+        self.close(self._root(colors.GAMMA_OFF, _ccolor(1, p50=2, p51=3000.0)).value, colors.GAMMA_OFF.color(k))
+        self.close(self._root(colors.GAMMA_OFF, _ccolor(1, p50=2, p51=3000.0, p57=2.0)).value,
+                   colors.GAMMA_OFF.color(tuple(2 * c for c in k)), "clamped, then decoded")
+        self.close(self._root(colors.GAMMA_OFF, _ccolor(1, p50=2, p51=3000.0), kind=tx.DATA).value,
+                   colors.GAMMA_OFF.channel(sum(k) / 3.0), "a data input: the rule of the mean")
+        self.close(self._root(colors.GAMMA_OFF, _ccolor(1, p50=2, p51=3000.0)).value, (1.0, _lin(121.607), _lin(39.1868)),
+                   "3ds Max's byte 255 121.6 39.2 seen through Blender's sRGB display")
+
+
+class SceneGammaImages(Checks):
+    """maxdrop-em3.38: an image on a color input as 3ds Max 2020 + V-Ray 5.2 read a 128 grey PNG (docs/FORMAT.md,
+    Scene gamma): with the gamma on a Bitmap with automatic gamma (and a VRayBitmap From 3ds Max) takes the file
+    input gamma; with it off a Bitmap is read as stored whatever its gamma; CoronaBitmap and VRayBitmap Auto / sRGB
+    keep their own."""
+
+    ON_10 = colors.Swatches(True, file_in=1.0)
+    ON_18 = colors.Swatches(True, file_in=1.8)
+
+    def _bitmap(self, rule, info=None, kind=tx.COLOR, table=None):
+        b, chunk_map = _placed(info=info)
+        tex = tx.TexmapConverter(FakeGraph(b, chunk_map=chunk_map), _table() if table is None else table,
+                                 swatches=rule)
+        return tex.convert(mat.MapRef(1), kind).root
+
+    def _map(self, rule, m, kind=tx.COLOR):
+        return tx.TexmapConverter(FakeGraph(m), _table(), swatches=rule).convert(mat.MapRef(1), kind).root
+
+    def check(self, image, gamma, space, msg=None):
+        self.assertEqual(image.colorspace, space, msg)
+        if gamma is None:
+            self.assertIsNone(image.gamma, msg)
+        else:
+            self.close(image.gamma, gamma, msg)
+
+    def test_bitmap_automatic(self):
+        for rule, gamma, space in ((colors.GAMMA_ON, None, tx.SRGB), (colors.UNKNOWN, None, tx.SRGB),
+                                   (self.ON_10, 1.0, tx.LINEAR), (self.ON_18, 1.8, tx.LINEAR),
+                                   (colors.GAMMA_OFF, None, tx.SRGB)):
+            with self.subTest(rule):
+                self.check(self._bitmap(rule), gamma, space)
+                self.check(self._bitmap(rule, info=_info(1.0, 20)), gamma, space, "no override flag: automatic")
+
+    def test_bitmap_override(self):
+        for rule in (colors.GAMMA_ON, self.ON_10, colors.UNKNOWN):
+            with self.subTest(rule):
+                self.check(self._bitmap(rule, info=_info(1.0, 5)), 1.0, tx.LINEAR, "the override wins")
+                self.check(self._bitmap(rule, info=_info(2.2, 5)), 2.2, tx.SRGB)
+        for info in (_info(1.0, 5), _info(1.8, 5), _info(2.2, 5)):
+            self.check(self._bitmap(colors.GAMMA_OFF, info=info), None, tx.SRGB, "gamma off: read as stored")
+
+    def test_float_files_and_data_inputs(self):
+        table = assets.AssetTable([assets.AssetEntry(G1, "Bitmap", "maps\sky.exr", "")])
+        for rule in (colors.GAMMA_ON, self.ON_10, colors.GAMMA_OFF, colors.UNKNOWN):
+            with self.subTest(rule):
+                self.check(self._bitmap(rule, table=table), 1.0, tx.LINEAR, "an EXR: linear")
+                self.assertEqual(self._bitmap(rule, info=_info(1.0, 5), kind=tx.DATA).colorspace, tx.NON_COLOR)
+                self.assertEqual(self._bitmap(rule, kind=tx.DATA).colorspace, tx.NON_COLOR)
+        self.check(self._bitmap(colors.GAMMA_ON, info=_info(1.8, 5), table=table), 1.8, tx.LINEAR,
+                   "gamma on: an EXR's override is kept")
+        self.check(self._bitmap(colors.GAMMA_OFF, info=_info(1.8, 5), table=table), 1.0, tx.LINEAR,
+                   "gamma off: an EXR's override does nothing")
+
+    def test_vray_bitmap(self):
+        for rule, gamma, space in ((colors.GAMMA_ON, None, tx.SRGB), (self.ON_10, 1.0, tx.LINEAR),
+                                   (self.ON_18, 1.8, tx.LINEAR), (colors.GAMMA_OFF, None, tx.SRGB),
+                                   (colors.UNKNOWN, None, tx.SRGB)):
+            with self.subTest(rule):
+                self.check(self._map(rule, _vbitmap(1, p25=3)), gamma, space, "From 3ds Max: the input gamma")
+                for cs in (2, 4):
+                    self.check(self._map(rule, _vbitmap(1, p25=cs)), None, tx.SRGB, "sRGB, Auto: V-Ray's own")
+                self.check(self._map(rule, _vbitmap(1, p25=0)), 1.0, tx.LINEAR, "None")
+                self.assertEqual(self._map(rule, _vbitmap(1, p25=3), kind=tx.DATA).colorspace, tx.NON_COLOR)
+
+    def test_corona_bitmap_keeps_its_own(self):
+        for rule in (colors.GAMMA_ON, self.ON_10, colors.GAMMA_OFF):
+            with self.subTest(rule):
+                self.check(self._map(rule, _cbitmap(1)), None, tx.SRGB, "automatic: 2.2 whatever the scene")
+                self.check(self._map(rule, _cbitmap(1, p125=1.0)), 1.0, tx.LINEAR)
 
 
 class TexmapWrappers(Checks):

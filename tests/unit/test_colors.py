@@ -57,6 +57,20 @@ class Rule(unittest.TestCase):
         self.assertIs(colors.for_gamma(gamma.SceneGamma(True, None, None)), colors.GAMMA_ON)
         self.assertIs(colors.for_gamma(None), colors.UNKNOWN)
 
+    def test_file_input_gamma(self):
+        # maxdrop-em3.38: with the gamma on, a Bitmap with automatic gamma is read with the file input gamma; with
+        # it off the input gamma does nothing (V-Ray 5.2 renders, docs/FORMAT.md, Scene gamma)
+        self.assertEqual((colors.GAMMA_ON.file_in, colors.GAMMA_OFF.file_in, colors.UNKNOWN.file_in), (2.2,) * 3)
+        one = colors.for_gamma(gamma.SceneGamma(True, 1.0, 2.2))
+        self.assertEqual((one.linear, one.note, one.file_in), (True, "", 1.0))
+        self.assertIn("input gamma 1.0", one.line())
+        self.assertNotIn("input gamma", colors.GAMMA_ON.line())
+        self.assertIs(colors.for_gamma(gamma.SceneGamma(True, 2.2000000477, 2.2)), colors.GAMMA_ON)
+        for odd in (None, 50.0, 0.01):
+            self.assertIs(colors.for_gamma(gamma.SceneGamma(True, odd, 2.2)), colors.GAMMA_ON, odd)
+        self.assertIs(colors.for_gamma(gamma.SceneGamma(False, 1.0, 2.2)), colors.GAMMA_OFF)
+        self.close(one.color((128 / 255,) * 3), (0.501961,) * 3)  # swatches: linear, whatever the input gamma
+
     def test_note_and_lines(self):
         self.assertEqual((colors.GAMMA_ON.note, colors.GAMMA_OFF.note), ("", ""))
         self.assertEqual(colors.UNKNOWN.note, colors.GAMMA_NOTE)
