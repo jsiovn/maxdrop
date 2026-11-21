@@ -5,9 +5,10 @@
 """Tests of maxdrop/convert/uvwmap.py, the UVW Map modifier: no Blender. Every node of every fixture whose oracle
 dumps an evaluated map channel (eval_maps) and whose whole stack MaxDrop evaluates: per triangle corner of 3ds Max's
 mesh, matched to the face corner of the built mesh by world position and face normal, U and V within 1e-4 (planar,
-box) or 1e-3 (cylindrical, spherical: U up to a whole turn per face, the poles left out), and W the same way through
-the modifier alone; the parameters as the fixture script set them; what is not evaluated (shrink-wrap, a UVW Map
-above a Bend, a switched-off one) keeps the stored channel; damaged and hostile parameters.
+box) or 1e-3 (cylindrical, spherical: U up to a whole turn per face, the poles left out; on uvwmap_pole every corner,
+the poles included), and W the same way through the modifier alone; the parameters as the fixture script set them;
+what is not evaluated (shrink-wrap, a UVW Map above a Bend, a switched-off one) keeps the stored channel; damaged and
+hostile parameters.
 
     python -I -m unittest discover tests
 """
@@ -31,6 +32,8 @@ FIXTURE = os.path.join(FIXTURES, "uvwmap.max")
 TOLERANCE = {"planar": 1e-4, "box": 1e-4, "cylindrical": 1e-3, "spherical": 1e-3}
 POSITION_TOLERANCE = 1e-3  # the oracle keeps 6 significant digits
 POLE = 1e-3  # a spherical corner this close to v = 0 or 1 (before tiling) has no angle to compare
+# uvwmap_pole's nodes whose axis vertices are pushed past the bound: no pole, the angle
+PUSHED_OFF = ("FixtureUVWPoleOff", "FixtureUVWPoleDiagonal", "FixtureUVWPoleSphereOff")
 
 _PKG = "maxdrop_convert_test"  # the same package as test_convert_scene: the add-on's __init__ never runs
 if _PKG not in sys.modules:
@@ -145,10 +148,12 @@ class Fixtures(unittest.TestCase):
     def test_the_fixtures_with_a_uvw_map(self):
         self.assertEqual(sorted(os.path.basename(p) for p, _o, _d in self.cases),
                          ["modifier_pivot.max", "stack_basic.max", "stack_wsm.max", "uvwmap.max",
-                          "uvwmap_oblique.max"])
+                          "uvwmap_oblique.max", "uvwmap_pole.max"])
 
-    def test_uv_of_every_corner_equals_the_oracle(self):
-        compared = 0
+    def triangles(self):
+        """(path, node name, kind, (u tile, v tile), label, tri, ours, face_u) per triangle of 3ds Max's evaluated
+        mesh of every node whose whole stack MaxDrop evaluates: tri its (3, 9) oracle corners, ours the (3, 2) UV of
+        the built mesh there, face_u the U of every corner of the built face they lie on."""
         for path, oracle, desc in self.cases:
             kinds = self.kinds(path)
             for node, o in zip(desc.nodes, oracle["nodes"]):
@@ -174,14 +179,54 @@ class Fixtures(unittest.TestCase):
                         loops = _match(tri[:, :3], tri[0, 3:6], corners, normals, faces)
                         label = "%s %s channel %d triangle %d" % (os.path.basename(path), o["name"], ch, t // 3)
                         self.assertIsNotNone(loops, label)
-                        poles = numpy.abs(tri[:, 7] / tile[1] - 0.5) > 0.5 - POLE if kind == "spherical" else \
-                            numpy.zeros(3, dtype=bool)
                         f = faces[loops[0]]
                         face_u = uv[md.loop_starts[f]:md.loop_starts[f] + md.loop_totals[f], 0]
-                        _compare(self, label, kind, tile[0], uv[loops].astype(numpy.float64), tri[:, 6:8], poles,
-                                 face_u)
-                        compared += 1
-        self.assertEqual(compared, 1168)  # the triangles of the 17 nodes whose stack is evaluated
+                        ours = uv[loops].astype(numpy.float64)
+                        yield path, o["name"], kind, tile, label, tri, ours, face_u
+
+    def test_uv_of_every_corner_equals_the_oracle(self):
+        compared = 0
+        for _path, _name, kind, tile, label, tri, ours, face_u in self.triangles():
+            poles = numpy.abs(tri[:, 7] / tile[1] - 0.5) > 0.5 - POLE if kind == "spherical" else \
+                numpy.zeros(3, dtype=bool)
+            _compare(self, label, kind, tile[0], ours, tri[:, 6:8], poles, face_u)
+            compared += 1
+        self.assertEqual(compared, 1648)  # the triangles of the 25 nodes whose stack is evaluated
+
+    def test_the_corners_on_the_axis_equal_the_oracle(self):
+        """uvwmap_pole: every corner, the poles included, under turned gizmos (the axis vertices a float residue off
+        the axis) and pushed just inside and outside the bound: U 0.5 on a cylindrical map, the face mean on a
+        spherical one, or the angle. A face may differ by a whole turn as a whole, so a pole must also be on the
+        right side of the seam; a face that goes around the axis (a pushed vertex inside it) has no single U and is
+        compared per corner."""
+        oracle = dict((os.path.basename(p), o) for p, o, _d in self.cases)["uvwmap_pole.max"]
+        centers = {}
+        for o in oracle["nodes"]:
+            # a vertex on the axis is the center of a fan of 10 triangles; no other vertex has more than 6
+            c = numpy.round(numpy.asarray(o["eval_maps"][0]["corners"], dtype=numpy.float64)[:, :3], 4)
+            points, count = numpy.unique(c, axis=0, return_counts=True)
+            centers[o["name"]] = points[count == 10]
+        self.assertEqual(sum(len(c) for c in centers.values()), 8 * 2)
+        poles = whole = around = 0
+        for path, name, kind, tile, label, tri, ours, _face_u in self.triangles():
+            if os.path.basename(path) != "uvwmap_pole.max":
+                continue
+            theirs = tri[:, 6:8]
+            pole = (numpy.round(tri[:, None, :3], 4) == centers[name][None]).all(axis=2).any(axis=1)
+            if name in PUSHED_OFF:
+                pole[:] = False
+            d = ours - theirs
+            if _around_the_axis(theirs[~pole, 0], tile[0]):
+                d[:, 0] -= numpy.round(d[:, 0] / tile[0]) * tile[0]
+                around += 1
+            else:
+                d[:, 0] -= round(float(d[~pole, 0].mean()) / tile[0]) * tile[0]
+                whole += 1
+                poles += int(pole.sum())
+            self.assertLessEqual(float(numpy.abs(d).max()), TOLERANCE[kind], "%s: %s vs %s" % (
+                label, ours.tolist(), theirs.tolist()))
+        # 4 cylinders of 40 triangles, 4 spheres of 80; a face around the axis at each pushed-off vertex
+        self.assertEqual((whole, around, poles), (474, 6, 5 * 2 * 10))
 
     def kinds(self, path):
         """{(node name, channel): (type name, (u tile, v tile))} of the UVW Maps evaluated in path."""

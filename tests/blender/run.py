@@ -154,6 +154,7 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1; kept literal: tes
     "vray_wrappers": ["UVMap"],
     "uvwmap": {"FixtureUVWGizmo": ["UVMap", "UVChannel_2"], "FixtureUVWTwo": ["UVMap", "UVChannel_3"]},  # else UVMap
     "uvwmap_oblique": ["UVMap"],
+    "uvwmap_pole": ["UVMap"],
 }
 # editable_mesh: group 1 on top and bottom, 2 on the sides; a box with a group per side: 12; modifier_pivot's box of
 # four height segments: 4 x 4 vertical side edges and both rims
@@ -166,6 +167,9 @@ SHARP_EDGES = {"editable_mesh": 8, "modifier_pivot": {"FixtureSmooth": 0, None: 
                "uvwmap": {"FixtureUVWCyl": 32, "FixtureUVWSphere": 0, "FixtureUVWSharedB": 12, None: 28},
                # smooth spheres, the rims of a 10-sided cylinder
                "uvwmap_oblique": {"FixtureUVWObliqueCap": 20, None: 0},
+               # the rims of 10-sided cylinders, smooth spheres
+               "uvwmap_pole": {"FixtureUVWPoleCylinder": 20, "FixtureUVWPoleNear": 20, "FixtureUVWPoleOff": 20,
+                               "FixtureUVWPoleDiagonal": 20, None: 0},
                # primitives (tests/unit/test_convert_scene.py, SHARP_EDGES_PRIMITIVES); the TurboSmooth smooths
                "primitives": {"FixtureBox": 36, "FixtureBoxCopy": 36, "FixtureBoxDown": 12, "FixtureBoxNoMap": 12,
                               "FixtureBoxSmooth": 0, "FixturePyramid": 18, "FixtureGeoOcta": 48,

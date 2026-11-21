@@ -96,6 +96,7 @@ UV_LAYERS = {
     "uvwmap": collections.defaultdict(lambda: ["UVMap"], {"FixtureUVWGizmo": ["UVMap", "UVChannel_2"],
                                                           "FixtureUVWTwo": ["UVMap", "UVChannel_3"]}),
     "uvwmap_oblique": ["UVMap"],
+    "uvwmap_pole": ["UVMap"],
 }
 SHARP_EDGES_POLY_BOX = 12  # one smoothing group per side: every edge of the box
 SHARP_EDGES_EDITABLE_MESH = 8  # group 1 on top and bottom, 2 on the sides: the rims of top and bottom
@@ -110,7 +111,11 @@ SHARP_EDGES_EXTRUDE = {"FixtureExtRect": 4 * 2 + 8, "FixtureExtL": 6 + 12, "Fixt
 SHARP_EDGES_UVWMAP = {"FixtureUVWCyl": 32, "FixtureUVWSphere": 0, "FixtureUVWSharedB": SHARP_EDGES_POLY_BOX,
                       # uvwmap_oblique: smooth spheres, the rims of a 10-sided cylinder
                       "FixtureUVWObliqueBox": 0, "FixtureUVWObliqueMirror": 0, "FixtureUVWObliqueCap": 20,
-                      "FixtureUVWObliqueBoxX": 0, "FixtureUVWObliquePlanarX": 0}
+                      "FixtureUVWObliqueBoxX": 0, "FixtureUVWObliquePlanarX": 0,
+                      # uvwmap_pole: the rims of 10-sided cylinders, smooth spheres
+                      "FixtureUVWPoleCylinder": 20, "FixtureUVWPoleNear": 20, "FixtureUVWPoleOff": 20,
+                      "FixtureUVWPoleDiagonal": 20, "FixtureUVWPoleSphere": 0, "FixtureUVWPoleSphereCyl": 0,
+                      "FixtureUVWPoleSphereNear": 0, "FixtureUVWPoleSphereOff": 0}
 # primitives: a group per side of a box (FixtureBox's edges in segments: 4 x 3 + 4 x 2 + 4 x 4), the rims of
 # cylinders, cones and tubes, the pyramid's four ridges of 2 segments and its base outline of 10, the torus's
 # alternating groups (every edge between two sides; on the odd one every edge between two segments), every edge of
