@@ -553,21 +553,21 @@ What 3ds Max 2020 makes of it (`snapshotAsMesh`, probed on scratch scenes and ch
 - **Grid caps** (cap type 1; probed on about 60 shapes, `tests/unit/test_extrude.py` GRID_PROBES holds their counts;
   FixtureExtGrid, FixtureExtGridCircle): each solid (an outline with its holes; an island and an overlapping outline
   are solids of their own) gets a grid over the box of its outline's interpolated points, W x H. Divisions per axis:
-  20, raised by each hole of the solid to floor(0.95 x W / (s / 2)), s the hole's extent on that axis, at most 50
-  (a 3-wide hole in a 40-wide square: 25; a hole 10 x 0.7: 20 across, 50 up; 60 x 20 with a 3 x 3 hole: 38 x 20);
-  on the points' float32 values, so an exact ratio falls by its float noise (2.3f .. 4.3f in 40: 37; 18.8f .. 21.8f
-  in 60: 38). The grid points: x0 + 0.025 W + (0.95 W / N)(i + 0.001), i = 0 .. N, the same for y, whatever the
-  size. A cell is filled when it lies wholly inside the solid (its corners inside, no outline or hole edge across
-  it, no hole within it); the cap's interior vertices are exactly the corners of the filled cells (a grid point in
-  no filled cell is dropped), each filled cell two triangles (top-left to bottom-right; MaxDrop: a quad), and the
-  band to the outline is triangulated without more points: n + 2k + 2h - 2 triangles per cap of n outline and hole
+  20, raised by each hole of the solid to floor(0.95 x W / (s / 2)), s the hole's extent on that axis, at most 50 (a
+  3-wide hole in a 40-wide square: 25; a hole 10 x 0.7: 20 across, 50 up; 60 x 20 with a 3 x 3 hole: 38 x 20); on
+  the points' float32 values, so an exact ratio falls by its float noise (2.3f .. 4.3f in 40: 37; 18.8f .. 21.8f in
+  60: 38). The grid points: x0 + 0.025 W + (0.95 W / N)(i + 0.001), i = 0 .. N, the same for y, whatever the size. A
+  cell is filled when it lies wholly inside the solid (its corners inside, no outline or hole edge across it, no
+  hole within it); the cap's interior vertices are exactly the corners of the filled cells (a grid point in no
+  filled cell is dropped), each filled cell two triangles (top-left to bottom-right; MaxDrop: a quad), and the band
+  to the outline is triangulated without more points: n + 2k + 2h - 2 triangles per cap of n outline and hole
   points, k grid points and h holes (Rect 30 x 20: 890 vertices, 1776 faces). A solid without a filled cell gets the
   morph cap. MaxDrop joins band holes whose cells touch only at a corner into one at that point (a four-point Line
-  whose cells touch so: 254 vertices, 504 faces, as 3ds Max) and makes a band whose triangles do not tile its area, or a grid past a guard, a morph cap with a line in
-  the report. Only the caps that are on get grid points. The grid points lie at z 0 and the levels' heights whatever
-  the shape's z (a rectangle at z 3: its outline at 3 and 5, its grid at 0 and 2); their map is the cap's box
-  mapping. Every interior edge is hidden: 3ds Max shows the cap as one polygon. No local scene has grid caps (443
-  scenes, 95 Extrudes, the corpus included, 2026-11-21).
+  whose cells touch so: 254 vertices, 504 faces, as 3ds Max) and makes a band whose triangles do not tile its area,
+  or a grid past a guard, a morph cap with a line in the report. Only the caps that are on get grid points. The grid
+  points lie at z 0 and the levels' heights whatever the shape's z (a rectangle at z 3: its outline at 3 and 5, its
+  grid at 0 and 2); their map is the cap's box mapping. Every interior edge is hidden: 3ds Max shows the cap as one
+  polygon. No local scene has grid caps (443 scenes, 95 Extrudes, the corpus included, 2026-11-21).
 - **Smoothing**: caps group 16; the sides change group only at a corner or Bezier-corner knot (FixtureExtMirror's
   rounded Rectangle: sharp at its 8 Bezier-corner knots), the groups alternating 1, 2 (4 where three runs meet,
   1, 3, 2 ... along a spline with no corner). 3ds Max also breaks the side at a pie Arc's three corners, Bezier
