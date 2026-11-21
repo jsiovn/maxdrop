@@ -279,7 +279,7 @@
       "eval_faces": 48,
       "eval_maps": null,
       "eval_mesh": {
-        "map_channel_1": {"count": 54, "max": [1, 1, 0], "min": [0, 0, 0]},
+        "map_channel_1": {"corners": null, "count": 54, "max": [1, 1, 0], "min": [0, 0, 0]},
         "material_ids": [[1, 8, 0, 0], [2, 0, 8, 0], [3, 4, 4, 0], [4, 4, 4, 0], [5, 4, 4, 0], [6, 4, 4, 0]],
         "smoothing": {"flat": 0, "hard_edges": 0, "regions": 1}
       },
@@ -1295,7 +1295,7 @@
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 120, 310, 0]
     }
   ],
-  "oracle_version": 10,
+  "oracle_version": 11,
   "render": {"camera": null, "height": 480, "pixel_aspect": 1, "width": 640},
   "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
   "time": 0,

@@ -155,7 +155,7 @@
       "eval_faces": 28,
       "eval_maps": null,
       "eval_mesh": {
-        "map_channel_1": {"count": 20, "max": [1, 1, 0], "min": [0, 0, 0]},
+        "map_channel_1": {"corners": null, "count": 20, "max": [1, 1, 0], "min": [0, 0, 0]},
         "material_ids": [[2, 2, 2, 0], [3, 4, 2, 0], [4, 4, 2, 0], [5, 4, 2, 0], [6, 4, 2, 0]],
         "smoothing": {"flat": 0, "hard_edges": 24, "regions": 11}
       },
@@ -190,7 +190,7 @@
       "eval_faces": 28,
       "eval_maps": null,
       "eval_mesh": {
-        "map_channel_1": {"count": 20, "max": [1, 1, 0], "min": [0, 0, 0]},
+        "map_channel_1": {"corners": null, "count": 20, "max": [1, 1, 0], "min": [0, 0, 0]},
         "material_ids": [[2, 2, 2, 0], [3, 4, 2, 0], [4, 4, 2, 0], [5, 4, 2, 0], [6, 4, 2, 0]],
         "smoothing": {"flat": 0, "hard_edges": 24, "regions": 11}
       },
@@ -225,7 +225,7 @@
       "eval_faces": 28,
       "eval_maps": null,
       "eval_mesh": {
-        "map_channel_1": {"count": 20, "max": [1, 1, 0], "min": [0, 0, 0]},
+        "map_channel_1": {"corners": null, "count": 20, "max": [1, 1, 0], "min": [0, 0, 0]},
         "material_ids": [[2, 2, 2, 0], [3, 2, 4, 0], [4, 2, 4, 0], [5, 2, 4, 0], [6, 2, 4, 0]],
         "smoothing": {"flat": 0, "hard_edges": 24, "regions": 11}
       },
@@ -260,7 +260,7 @@
       "eval_faces": 28,
       "eval_maps": null,
       "eval_mesh": {
-        "map_channel_1": {"count": 20, "max": [1, 1, 0], "min": [0, 0, 0]},
+        "map_channel_1": {"corners": null, "count": 20, "max": [1, 1, 0], "min": [0, 0, 0]},
         "material_ids": [[2, 2, 2, 0], [3, 4, 2, 0], [4, 4, 2, 0], [5, 4, 2, 0], [6, 4, 2, 0]],
         "smoothing": {"flat": 0, "hard_edges": 24, "regions": 11}
       },
@@ -295,7 +295,7 @@
       "eval_faces": 28,
       "eval_maps": null,
       "eval_mesh": {
-        "map_channel_1": {"count": 20, "max": [1, 1, 0], "min": [0, 0, 0]},
+        "map_channel_1": {"corners": null, "count": 20, "max": [1, 1, 0], "min": [0, 0, 0]},
         "material_ids": [[2, 2, 2, 0], [3, 2, 2, 2], [4, 2, 2, 2], [5, 2, 2, 2], [6, 2, 2, 2]],
         "smoothing": {"flat": 0, "hard_edges": 24, "regions": 11}
       },
@@ -319,7 +319,7 @@
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 160, 0, 0]
     }
   ],
-  "oracle_version": 10,
+  "oracle_version": 11,
   "render": {"camera": null, "height": 480, "pixel_aspect": 1, "width": 640},
   "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
   "time": 0,

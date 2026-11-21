@@ -888,7 +888,7 @@
       "transform": [0.759257, 0.650791, 0, -0.259025, 0.302195, 0.917379, 0.597022, -0.696526, 0.398015, 60, -60, 40]
     }
   ],
-  "oracle_version": 10,
+  "oracle_version": 11,
   "render": {"camera": null, "height": 480, "pixel_aspect": 1, "width": 640},
   "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
   "time": 0,

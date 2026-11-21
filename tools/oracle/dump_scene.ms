@@ -17,7 +17,7 @@ global MaxDropOracle
 
 struct MaxDropOracleStruct
 (
-	version = 10,
+	version = 11,
 
 	fn num v =
 	(
@@ -335,20 +335,35 @@ struct MaxDropOracleStruct
 	-- what an evaluated mesh carries per face: the triangles of each material ID (1-based, as 3ds Max shows it) by
 	-- the way they face in object space (the vertices of snapshotAsMesh taken back by the inverse object transform,
 	-- the winding normal's z: up, down, side; a degenerate face is side), map channel 1's vertex count and range over
-	-- the map vertices its faces use, and its shading by smoothing groups; null unless a modifier made the mesh
+	-- the map vertices its faces use (and, under an Extrude, every corner: object-space position, winding normal and
+	-- map vertex), and its shading by smoothing groups; null unless a modifier made the mesh
 	fn evalMeshJson n =
 	(
 		if n.modifiers.count == 0 or superClassOf n != GeometryClass do return "null"
 		local s = try (snapshotAsMesh n) catch undefined
 		if s == undefined do return "null"
 		local inv = inverse n.objectTransform
+		local extruded = false
+		for m in n.modifiers where classOf m == Extrude do extruded = true
+		local corners = if extruded and (meshop.getMapSupport s 1) then #() else undefined
 		local hist = #()
 		for f = 1 to s.numfaces do
 		(
 			local fc = getFace s f
 			local a = (getVert s fc[1]) * inv
 			local nrm = cross (((getVert s fc[2]) * inv) - a) (((getVert s fc[3]) * inv) - a)
-			local z = if (length nrm) < 1e-12 then 0.0 else (normalize nrm).z
+			local unit = if (length nrm) < 1e-12 then [0, 0, 0] else normalize nrm
+			local z = unit.z
+			if corners != undefined do
+			(
+				local mf = meshop.getMapFace s 1 f
+				for c = 1 to 3 do
+				(
+					local p = (getVert s fc[c]) * inv
+					local t = meshop.getMapVert s 1 mf[c]
+					append corners (list #(num p.x, num p.y, num p.z, num unit.x, num unit.y, num unit.z, num t.x, num t.y, num t.z))
+				)
+			)
 			local k = if z > 1e-4 then 2 else (if z < -1e-4 then 3 else 4)
 			local id = getFaceMatID s f
 			while hist.count < id do append hist #(hist.count + 1, 0, 0, 0)
@@ -376,7 +391,13 @@ struct MaxDropOracleStruct
 					hi = [amax hi.x t.x, amax hi.y t.y, amax hi.z t.z]
 				)
 			)
-			map1 = inline #(#("count", (meshop.getNumMapVerts s 1) as string), #("max", vec hi), #("min", vec lo))
+			local pairs = #(#("corners", "null"), #("count", (meshop.getNumMapVerts s 1) as string), #("max", vec hi), #("min", vec lo))
+			if corners == undefined then map1 = inline pairs
+			else
+			(
+				pairs[1][2] = block corners 10
+				map1 = obj pairs 8
+			)
 		)
 		local smoothing = smoothJson s
 		free s

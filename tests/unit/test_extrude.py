@@ -5,8 +5,8 @@
 """Tests of maxdrop/convert/extrude.py, the Extrude modifier on a shape: no Blender. Every extruded node of the
 extrude fixture against its 3ds Max oracle (world bounding box within 1e-3, vertex count, triangle count), closed
 manifolds with outward normals for the capped ones, the hole of the holed cap, the open one without caps; material
-IDs by the way a face looks and map channel 1's vertex count and range against the oracle's eval_mesh; mapping
-coordinates; 3ds Max's interpolation counts (found with its own Extrude: steps, optimize, adaptive); the ear
+IDs by the way a face looks and map channel 1's vertex count, range and every corner against the oracle's eval_mesh;
+mapping coordinates; 3ds Max's interpolation counts (found with its own Extrude: steps, optimize, adaptive); the ear
 clipping of outlines with holes; damaged and hostile parameters.
 
     python -I -m unittest discover tests
@@ -209,6 +209,22 @@ class Fixture(unittest.TestCase):
         for name in CAPPED + ("FixtureExtOpen",):
             _check_eval_mesh(self, self.data[name], self.mesh(name)[1], self.oracle[name]["eval_mesh"], name)
 
+    def test_every_mapped_corner_equals_the_oracle(self):
+        """Position, face normal and map vertex of every corner of map channel 1, both ways, against the oracle's
+        eval_mesh corners (object space): the side U runs along each spline the way 3ds Max runs it."""
+        mapped = sorted(name for name, o in self.oracle.items()
+                        if o["eval_mesh"] and o["eval_mesh"]["map_channel_1"]
+                        and o["eval_mesh"]["map_channel_1"]["corners"] is not None)
+        self.assertEqual(mapped, ["FixtureExtAdaptive", "FixtureExtRect"])  # the two with mapping coordinates
+        for name in mapped:
+            want = self.oracle[name]["eval_mesh"]["map_channel_1"]["corners"]
+            theirs = [(numpy.asarray(c[0:3], dtype=numpy.float64), numpy.asarray(c[3:6], dtype=numpy.float64),
+                       numpy.asarray(c[6:9], dtype=numpy.float64), None) for c in want]
+            self.assertTrue(all(abs(numpy.linalg.norm(c[1]) - 1.0) < 1e-4 for c in theirs), name)
+            got = _corners(_reader_faces(self.data[name], ids=False))
+            self.assertEqual(_unmatched(theirs, got), [], name)
+            self.assertEqual(_unmatched(got, theirs), [], name)
+
     def test_mapping_coordinates(self):
         _node, md = self.mesh("FixtureExtRect")
         uv = dict(md.uv_layers)["UVMap"]
@@ -334,11 +350,34 @@ def _corners(faces):
     return out
 
 
+def _reader_faces(data, ids=True):
+    """[(positions, uvws, material ID)] of every polygon of a reader MeshData with map channel 1 (ID None without
+    ids)."""
+    starts = data.loop_starts.tolist() + [len(data.loop_vertices)]
+    ch = data.maps[1]
+    return [(data.positions[data.loop_vertices[s:e]], [ch.uvw[i] for i in ch.indices[s:e]],
+             int(data.material_ids[f]) + 1 if ids else None) for f, (s, e) in enumerate(zip(starts, starts[1:]))]
+
+
+def _tolerance(v):
+    """1e-4, relative above 1: the values have 6 significant digits (a real-world U reaches tens of units)."""
+    return 1e-4 * max(1.0, float(numpy.abs(v).max()))
+
+
 def _unmatched(a, b):
     """The corners of a with none of b at the same position, facing the same way, with the same map vertex and
     material ID: independent of the face order and of how a polygon is cut into triangles."""
-    return [c for c in a if not any(numpy.abs(c[0] - d[0]).max() < 1e-4 and c[1].dot(d[1]) > 0.9999
-                                    and numpy.abs(c[2] - d[2]).max() < 1e-4 and c[3] == d[3] for d in b)]
+    if not b:
+        return list(a)
+    pos, nrm, uvw = (numpy.asarray([d[k] for d in b], dtype=numpy.float64) for k in range(3))
+    mats = [d[3] for d in b]
+    out = []
+    for c in a:
+        ok = ((numpy.abs(pos - c[0]).max(axis=1) < _tolerance(c[0])) & (nrm @ c[1] > 0.9999)
+              & (numpy.abs(uvw - c[2]).max(axis=1) < _tolerance(c[2])))
+        if not any(ok[k] and mats[k] == c[3] for k in numpy.flatnonzero(ok)):
+            out.append(c)
+    return out
 
 
 @unittest.skipIf(numpy is None, "numpy missing")
@@ -379,12 +418,7 @@ class ReversedPies(unittest.TestCase):
         """Position, face normal, map vertex and material ID of every corner, both ways: the side U starts where
         3ds Max starts it (a reversed pie at the arc point after from, a turned outline at its last point)."""
         for name, want in self.dump.items():
-            data = self.data[name]
-            starts = data.loop_starts.tolist() + [len(data.loop_vertices)]
-            ch = data.maps[1]
-            faces = [(data.positions[data.loop_vertices[s:e]], [ch.uvw[i] for i in ch.indices[s:e]],
-                      int(data.material_ids[f]) + 1) for f, (s, e) in enumerate(zip(starts, starts[1:]))]
-            got = _corners(faces)
+            got = _corners(_reader_faces(self.data[name]))
             theirs = _corners([(f["p"], f["uv"], f["mat"]) for f in want["faces"]])
             self.assertEqual(len(theirs), 3 * len(want["faces"]), name)
             self.assertEqual(_unmatched(theirs, got), [], name)

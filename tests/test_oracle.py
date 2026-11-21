@@ -121,7 +121,7 @@ class OracleFiles(unittest.TestCase):
             with self.subTest(name):
                 o = _oracle(name)
                 self.assertEqual(list(o), TOP_KEYS)
-                self.assertEqual(o["oracle_version"], 10)
+                self.assertEqual(o["oracle_version"], 11)
                 self.assertEqual(list(o["render"]), RENDER_KEYS)
                 self.assertTrue(o["render"]["width"] > 0 and o["render"]["height"] > 0)
                 self.assertEqual(o["file"], name + ".max")
@@ -158,7 +158,8 @@ class OracleFiles(unittest.TestCase):
                     made = bool(n["modifiers"]) and n["eval_faces"] is not None
                     self.assertEqual(n["eval_mesh"] is not None, made, n["name"])
                     if n["eval_mesh"] is not None:
-                        self._check_eval_mesh(n["eval_mesh"], n["eval_faces"])
+                        extruded = any(m["class_name"] == "Extrude" for m in n["modifiers"])
+                        self._check_eval_mesh(n["eval_mesh"], n["eval_faces"], extruded)
                     self.assertEqual(n["index"], i)
                     self.assertEqual(len(n["transform"]), 12)
                     self.assertEqual(len(n["object_transform"]), 12)
@@ -199,9 +200,9 @@ class OracleFiles(unittest.TestCase):
             self.assertEqual(len(m["corners"]), 3 * faces)
             self.assertTrue(all(len(c) == 9 and all(isinstance(v, (int, float)) for v in c) for c in m["corners"]))
 
-    def _check_eval_mesh(self, mesh, faces):
-        """Per material ID, ascending, the triangles facing up, down and sideways; map channel 1's count and range;
-        the shading by smoothing groups."""
+    def _check_eval_mesh(self, mesh, faces, extruded):
+        """Per material ID, ascending, the triangles facing up, down and sideways; map channel 1's count and range,
+        and under an Extrude its corners; the shading by smoothing groups."""
         self.assertEqual(list(mesh), ["map_channel_1", "material_ids", "smoothing"])
         sm = mesh["smoothing"]  # flat triangles, hard edges, smooth regions of the smoothed triangles
         self.assertEqual(list(sm), ["flat", "hard_edges", "regions"])
@@ -220,8 +221,13 @@ class OracleFiles(unittest.TestCase):
         self.assertEqual(sum(sum(h[1:]) for h in hist), faces)
         m = mesh["map_channel_1"]
         if m is not None:
-            self.assertEqual(list(m), ["count", "max", "min"])
+            self.assertEqual(list(m), ["corners", "count", "max", "min"])
             self.assertGreaterEqual(m["count"], 0)
+            self.assertEqual(m["corners"] is not None, extruded)
+            if m["corners"] is not None:  # per triangle corner: object-space position, face normal, map vertex
+                self.assertEqual(len(m["corners"]), 3 * faces)
+                self.assertTrue(all(len(c) == 9 and all(isinstance(v, (int, float)) for v in c)
+                                    for c in m["corners"]))
             if m["min"] is None:  # no face uses a map vertex: no range
                 self.assertIsNone(m["max"])
             else:
