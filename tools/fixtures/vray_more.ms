@@ -6,7 +6,8 @@
 -- VRayCarPaintMtl, VRayCarPaintMtl2, VRayOverrideMtl, VRayMtlWrapper, DoubleSided and Shellac. Every parameter a
 -- rule reads has its own value, away from the class default (a scatter radius times scale unlike both factors),
 -- as do the unread look-alikes beside them (scatter, overall and flake colors); Checker and Noise maps sit in the
--- map slots, one slot switched off per class that has the switch, the map multipliers away from their defaults.
+-- map slots, one switched off in the light, FastSSS2 and CarPaint2 materials, the map multipliers away from their
+-- defaults.
 -- Each wrapper slot holds its own VRayMtl (diffuse and glossiness).
 -- Needs V-Ray (5.x, the one this was authored with).
 -- Authored for MaxDrop's tests (see CONTRIBUTING.md, "Test files"): it resets the scene, so run it in a 3ds Max

@@ -57,7 +57,7 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   base color as for VRayMtl, the IOR as well (refraction IOR when it refracts, else the Fresnel IOR); a Fresnel IOR
   of CORONA_METAL_IOR or more with a bright reflection (as METAL_REFLECTION) is a metal in the reflection color.
 - CoronaLightMtl -> emission (color, intensity, map) and its opacity map.
-- Wrappers (VRay2SidedMtl, VRayBlendMtl, VRayOverrideMtl, VRayMtlWrapper, DoubleSided, Shellac, CoronaLayeredMtl:
+- Wrappers (VRay2SidedMtl, VRayBlendMtl, VRayOverrideMtl, VRayMtlWrapper, Double Sided, Shellac, CoronaLayeredMtl:
   base, then its layers that are on) -> the first set sub-material in 3ds Max's getSubMtl order; Shell Material -> its render
   sub-material. Peeling stops at any other
   class (a Multi/Sub-Object included), at most MAX_PEEL wrappers deep; each wrapper object peeled counts once.
