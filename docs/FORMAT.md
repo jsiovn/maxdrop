@@ -436,7 +436,7 @@ and beside it `0x1060`, an `i32`: the steps. A spline:
 |---|---|
 | `0x2900` | `u32` knot count |
 | `0x2904` | `u32`, `0` in every file; not decoded |
-| `0x290A` | the knots, 52 bytes each: `i32` knot type (0 smooth, 1 corner, 2 Bezier, 3 Bezier corner), `i32` type of the segment that starts at the knot (0 curve, 1 line), an `f32` (not decoded), then the point, the in vector and the out vector as 3 x `f32` each, in object space, and a `u32` (not decoded) |
+| `0x290A` | the knots, 52 bytes each: `i32` knot type (0 smooth, 1 corner, 2 Bezier, 3 Bezier corner), `i32` type of the segment that starts at the knot (0 curve, 1 line), an `f32` (not decoded), then the point, the in vector and the out vector as 3 x `f32` each, in object space, and a `u32` whose high 16 bits are the zero-based material ID of the segment that starts at the knot (a Line probed with IDs 1, 4, 7, 2: `0x0`, `0x30000`, `0x60000`, `0x10000`; the low 16 bits `0`, the last knot of an open spline `0`; the extrude fixture's FixtureExtShapeIDs) |
 | `0x290D` | `u32` closed |
 
 The vectors are positions, not offsets, and the file holds them for every knot type: what 3ds Max computed for a
@@ -489,7 +489,7 @@ against the extrude fixture's oracle) keeps its parameters in an old ParamBlock 
 | 5 | output: 0 patch, 1 mesh, 2 NURBS | 1 |
 | 6 | generate mapping coordinates | FixtureExtRect and FixtureExtAdaptive 1 |
 | 7 | generate material IDs | FixtureExtAdaptive 0, the others 1 |
-| 8 | use shape IDs | 0 |
+| 8 | use shape IDs | FixtureExtShapeIDs and FixtureExtShapeIDsRect 1, the others 0 |
 | 9 | smooth | 1 |
 
 Real-World Map Size is not in the block: the modifier's own chunk holds `0x2150 {0x0100 u32 1, 0x0110 {0x0120: 20
@@ -515,7 +515,11 @@ What 3ds Max 2020 makes of it (`snapshotAsMesh`, probed on scratch scenes and ch
   look to the right of it.
 - **Material IDs**: the cap facing +Z gets ID 1, the one facing -Z ID 2, the sides ID 3 (FixtureExtRect: the cap at
   the shape faces down and is ID 2; FixtureExtL, amount -15: the cap at the shape faces up and is ID 1); without
-  Generate Material IDs every face is ID 1.
+  Generate Material IDs every face is ID 1. Use Shape IDs (with Generate Material IDs; without it every face is still
+  ID 1): each side face takes the material ID of the spline segment it comes from, its interpolated steps too, on a
+  clockwise outline and a hole alike; the caps keep 1 and 2 (FixtureExtShapeIDs: side triangles 2, 6, 10, 4, 8 on IDs
+  4, 5, 7, 11, 12). A parametric shape's segments are ID 1 (FixtureExtShapeIDsRect). Grid caps (cap type 1) are made
+  as morph caps: no local scene has one (443 scenes, 95 Extrudes, the corpus included, 2026-11-21).
 - **Smoothing**: caps group 16; the sides change group only at a corner or Bezier-corner knot (FixtureExtMirror's
   rounded Rectangle: sharp at its 8 Bezier-corner knots), the groups alternating 1, 2 (4 where three runs meet,
   1, 3, 2 ... along a spline with no corner).

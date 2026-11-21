@@ -12,6 +12,10 @@
 -- FixtureExtMirror: an extruded Rectangle on a node scaled -1 in X (a mirrored transform).
 -- FixtureExtAdaptive: an adaptive Circle with real-world mapping coordinates and no material IDs.
 -- FixtureExtOff: an extruded Rectangle whose Extrude is switched off (a curve, as 3ds Max shows it).
+-- FixtureExtShapeIDs: a Line of two splines with segment material IDs under an Extrude with Use Shape IDs: its outline
+-- drawn clockwise (three lines ID 5, a curved segment ID 7 in 4 steps, a line ID 4), a hexagonal hole drawn
+-- counter-clockwise (two segments ID 11, four ID 12): side triangles per ID 2, 6, 10, 4, 8, all different.
+-- FixtureExtShapeIDsRect: a Rectangle under Use Shape IDs (its segments are ID 1).
 -- One Standard material on every node.
 -- Authored for MaxDrop's tests (see CONTRIBUTING.md, "Test files"): it resets the scene, so run it in a 3ds Max
 -- session with nothing to keep, then sanitize and check the saved file before it goes into tests/fixtures/.
@@ -82,6 +86,31 @@
 	addModifier offr ex
 	ex.enabled = false
 	offr.pos = [260,0,0]
+
+	local sid = line name:"FixtureExtShapeIDs"
+	addNewSpline sid
+	addKnot sid 1 #corner #line [0,0,0]
+	addKnot sid 1 #corner #line [0,30,0]
+	addKnot sid 1 #bezierCorner #curve [30,30,0] [30,30,0] [40,25,0]
+	addKnot sid 1 #bezierCorner #line [30,0,0] [40,5,0] [30,0,0]
+	addKnot sid 1 #corner #line [15,-6,0]
+	close sid 1
+	addNewSpline sid
+	for k = 0 to 5 do addKnot sid 2 #corner #line [15 + 6 * cos (60 * k), 15 + 6 * sin (60 * k), 0]
+	close sid 2
+	updateShape sid
+	sid.steps = 4
+	local outerIDs = #(5, 5, 7, 5, 4)
+	for k = 1 to 5 do setMaterialID sid 1 k outerIDs[k]
+	local holeIDs = #(11, 11, 12, 12, 12, 12)
+	for k = 1 to 6 do setMaterialID sid 2 k holeIDs[k]
+	updateShape sid
+	addModifier sid (Extrude amount:5 matIDs:true useShapeIDs:true)
+	sid.pos = [0,120,0]
+
+	local sidr = Rectangle name:"FixtureExtShapeIDsRect" length:10 width:14 cornerRadius:0
+	addModifier sidr (Extrude amount:3 matIDs:true useShapeIDs:true)
+	sidr.pos = [60,120,0]
 
 	local mat = StandardMaterial name:"FixtureGrey" diffuse:(color 128 128 128)
 	for o in objects do o.material = mat

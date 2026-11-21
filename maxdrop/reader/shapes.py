@@ -6,28 +6,31 @@
 
     sh = read_shape(scene, i)           # Shape, or None when object i is no shape class read here
     sp = sh.splines[0]                  # Spline(knots, closed)
-    k = sp.knots[0]                     # Knot(kind, segment, point, in_vec, out_vec): absolute positions
+    k = sp.knots[0]                     # Knot(kind, segment, point, in_vec, out_vec, material): absolute positions
     k.kind                              # SMOOTH, CORNER, BEZIER or BEZIER_CORNER (KNOT_NAMES: 3ds Max's names)
     k.segment                           # CURVE or LINE: the segment from this knot to the next
+    k.material                          # that segment's material ID, zero-based (3ds Max shows 1 more)
     sh.steps, sh.optimize, sh.adaptive  # the interpolation, kept for meshing
     sh.render                           # Render: Enable In Renderer / In Viewport, thickness, sides, ...
     sh.issues                           # what was left out or drawn otherwise, as text
 
 An Editable Spline (SplineShape) and a Line store their knots; a Line wraps the same chunks in a 0x2000 container.
 0x1010 is the BezierShape: one 0x1010 per spline {0x2900 u32 knot count, 0x290A knots of 52 bytes (i32 knot
-type, i32 segment type, f32, the point, the in vector and the out vector as 3 x f32 each, u32), 0x290D u32 closed},
-then 0x1050 i32 steps (-1: adaptive) and 0x1060 optimize; the object's own 0x1060 is the steps. Vectors are stored
-as positions, not offsets, for every knot type: what 3ds Max computed for a corner or smooth knot is in the file.
-A segment of type LINE is straight whatever its vectors.
+type, i32 segment type, f32, the point, the in vector and the out vector as 3 x f32 each, u32 whose high 16 bits are
+the zero-based material ID of the segment that starts at the knot), 0x290D u32 closed}, then 0x1050 i32 steps (-1:
+adaptive) and 0x1060 optimize; the object's own 0x1060 is the steps. Vectors are stored as positions, not offsets,
+for every knot type: what 3ds Max computed for a corner or smooth knot is in the file. A segment of type LINE is
+straight whatever its vectors.
 
 The parametric shapes keep parameters only (reference slot 1: an old ParamBlock, the Ellipse a ParamBlock2) and
 their interpolation in slot 2 (old ParamBlock: 0 steps, 1 optimize, 2 adaptive). Their splines are made here the
-way 3ds Max makes them, checked against 3ds Max's own conversion to an Editable Spline (the oracle): a circular
-arc of angle a has vectors of radius * veccalc(a), the SDK's float32 bisection for the vector length (0.5517862
-for 90 degrees, not the textbook 0.5523); an Arc always has 3 segments, its angles clamped to [0, 360]; an NGon's
-corner radius makes two knots per corner, an Ellipse's outline a second spline. Every shape keeps its rendering
-block in slot 0 (old ParamBlock: 0 thickness, 1 sides, 2 angle in degrees, 6 Enable In Renderer, 8 Enable In
-Viewport, 11 rectangular, 12 width, 13 length, 14 the rectangular section's angle in degrees).
+way 3ds Max makes them (every segment material ID 1, zero-based 0), checked against 3ds Max's own conversion to an
+Editable Spline (the oracle): a circular arc of angle a has vectors of radius * veccalc(a), the SDK's float32
+bisection for the vector length (0.5517862 for 90 degrees, not the textbook 0.5523); an Arc always has 3 segments,
+its angles clamped to [0, 360]; an NGon's corner radius makes two knots per corner, an Ellipse's outline a second
+spline. Every shape keeps its rendering block in slot 0 (old ParamBlock: 0 thickness, 1 sides, 2 angle in
+degrees, 6 Enable In Renderer, 8 Enable In Viewport, 11 rectangular, 12 width, 13 length, 14 the rectangular
+section's angle in degrees).
 
 The file comes from anywhere: a spline whose record cannot be read is left out (an issue), a shape whose
 parameters cannot be read raises ShapeError (a ChunkError) naming the object; counts are bounded by the payload,
@@ -65,8 +68,9 @@ class ShapeError(ChunkError):
     """A shape object that cannot be read; the message names the object."""
 
 
-class Knot(collections.namedtuple("Knot", "kind segment point in_vec out_vec")):
-    """One knot: its type, the type of the segment that starts at it, and three (x, y, z) positions."""
+class Knot(collections.namedtuple("Knot", "kind segment point in_vec out_vec material", defaults=(0,))):
+    """One knot: its type, the type of the segment that starts at it, three (x, y, z) positions and that segment's
+    zero-based material ID."""
     __slots__ = ()
 
 
@@ -321,13 +325,13 @@ def _spline(c):
     knots = []
     for k in range(count):
         v = _KNOT.unpack_from(raw, k * _KNOT.size)
-        kind, segment, xyz = v[0], v[1], v[3:12]
+        kind, segment, xyz, material = v[0], v[1], v[3:12], v[12] >> 16
         if kind not in KNOT_NAMES or segment not in SEGMENT_NAMES:
             raise ChunkError("knot %d: type %d, segment type %d" % (k, kind, segment))
         if not all(math.isfinite(x) for x in xyz):
             raise ChunkError("knot %d is not finite" % k)
         xyz = tuple(float(x) for x in xyz)
-        knots.append(Knot(kind, segment, xyz[0:3], xyz[3:6], xyz[6:9]))
+        knots.append(Knot(kind, segment, xyz[0:3], xyz[3:6], xyz[6:9], material))
     closed = _int(c.first(_CLOSED), _U32)
     return Spline(tuple(knots), bool(closed))
 

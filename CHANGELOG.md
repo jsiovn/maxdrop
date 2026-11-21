@@ -16,6 +16,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   otherwise than in 3ds Max.
 - Shapes: a shape imported as a curve gets its material (a renderable railing, cable or frame no longer renders with
   Blender's default material); with a Multi/Sub-Object, the entry for material ID 1.
+- Extrude: Use Shape IDs is read: each side face gets the material ID of the shape segment it comes from, as in
+  3ds Max, so a Multi/Sub-Object puts its sub-materials on the right sides; it is no longer a line in the report.
 
 ### Changed
 

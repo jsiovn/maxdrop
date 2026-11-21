@@ -44,11 +44,11 @@ reader_modifiers = importlib.import_module(_PKG + ".reader.modifiers")
 rules = importlib.import_module(_PKG + ".convert.modifiers")
 
 CAPPED = ("FixtureExtRect", "FixtureExtL", "FixtureExtHole", "FixtureExtIsland", "FixtureExtMirror",
-          "FixtureExtAdaptive")
+          "FixtureExtAdaptive", "FixtureExtShapeIDs", "FixtureExtShapeIDsRect")
 # V - E + F of each mesh: a box-like solid 2, a solid with a tunnel (the round hole) 0, the island's ring and its
 # core 0 + 2
 EULER = {"FixtureExtRect": 2, "FixtureExtL": 2, "FixtureExtHole": 0, "FixtureExtIsland": 2, "FixtureExtMirror": 2,
-         "FixtureExtAdaptive": 2}
+         "FixtureExtAdaptive": 2, "FixtureExtShapeIDs": 0, "FixtureExtShapeIDsRect": 2}
 
 
 def _edges(md):
@@ -217,7 +217,7 @@ class Fixture(unittest.TestCase):
         off = self.nodes["FixtureExtOff"]  # switched off: the curve, the modifier not applied
         self.assertEqual((off.kind, off.applied, off.modifiers), (conv.CURVE, (), ("Extrude",)))
         rep = importlib.import_module(_PKG + ".convert.report").gather(self.desc)
-        self.assertEqual(dict(rep.modifiers_applied), {"Extrude": 7})
+        self.assertEqual(dict(rep.modifiers_applied), {"Extrude": 9})
         self.assertEqual(dict(rep.modifiers), {"Extrude": 1})
 
     def test_a_modifier_below_the_extrude_keeps_the_curve(self):
@@ -232,14 +232,14 @@ class Fixture(unittest.TestCase):
 
         with mock.patch.object(reader_modifiers.Modifiers, "object_stack", below):
             desc = conv.read(FIXTURE)
-        self.assertEqual([n.kind for n in desc.nodes], [conv.CURVE] * 8)
-        self.assertEqual(len([r for _i, r in desc.issues if r.startswith("extrude: an Extrude above ")]), 7)
+        self.assertEqual([n.kind for n in desc.nodes], [conv.CURVE] * 10)
+        self.assertEqual(len([r for _i, r in desc.issues if r.startswith("extrude: an Extrude above ")]), 9)
 
     def test_an_extrude_that_cannot_be_read_keeps_the_curve(self):
         with mock.patch.object(extrude, "read_params", side_effect=extrude.ExtrudeError("refused")):
             desc = conv.read(FIXTURE)
-        self.assertEqual([n.kind for n in desc.nodes], [conv.CURVE] * 8)
-        self.assertEqual([r for _i, r in desc.issues], ["extrude: refused"] * 7)
+        self.assertEqual([n.kind for n in desc.nodes], [conv.CURVE] * 10)
+        self.assertEqual([r for _i, r in desc.issues], ["extrude: refused"] * 9)
         self.assertEqual(desc.meshes, {})
 
     def test_extruded_data_is_released_after_its_last_node(self):
@@ -259,15 +259,15 @@ class Fixture(unittest.TestCase):
         with mock.patch.object(extrude, "extrude", extruding), mock.patch.object(conv, "mesh_description",
                                                                                  describing):
             conv.read(FIXTURE)
-        self.assertEqual(len(made), 7)
-        self.assertEqual(alive, [1] * 7)  # only the extrusion being described
+        self.assertEqual(len(made), 9)
+        self.assertEqual(alive, [1] * 9)  # only the extrusion being described
 
     def test_a_scene_wide_budget_keeps_the_rest_curves(self):
         with mock.patch.object(conv, "MAX_BUILT_CORNERS", 1):
             desc = conv.read(FIXTURE)
-        self.assertEqual(sorted(n.kind for n in desc.nodes), [conv.CURVE] * 7 + [conv.MESH])
+        self.assertEqual(sorted(n.kind for n in desc.nodes), [conv.CURVE] * 9 + [conv.MESH])
         spent = [r for _i, r in desc.issues if r.startswith("extrude: not made: the primitives and extrusions ")]
-        self.assertEqual(len(spent), 6)
+        self.assertEqual(len(spent), 8)
 
     def test_conversion_issues_wait_for_a_made_extrude(self):
         """A converted modifier's issues are named on the first node whose Extrude is made: one whose Extrude
@@ -480,7 +480,8 @@ class Parameters(unittest.TestCase):
     def test_clamped_and_approximated(self):
         p, issues = extrude.read_params(FakeScene(), _modifier({1: 0, 4: 1, 5: 0, 7: 1, 8: 1}))
         self.assertEqual(p.segments, 1)
-        self.assertEqual(len(issues), 4)  # segments, grid caps, patch output, shape IDs
+        self.assertEqual(len(issues), 3)  # segments, grid caps, patch output (shape IDs are read)
+        self.assertTrue(p.shape_ids)
         p, _issues = extrude.read_params(FakeScene(), _modifier({1: 10 ** 9}))
         self.assertEqual(p.segments, extrude.MAX_SEGMENTS)
 
@@ -529,6 +530,78 @@ class Synthetic(unittest.TestCase):
         self.assertEqual(set(data.smoothing_groups.tolist()), {0})
         data, _issues = extrude.extrude(_shape([self.square(4)]), self.params(cap_start=False))
         self.assertEqual(sorted(set(_mats(data).tolist())), [extrude.TOP_ID, extrude.SIDE_ID])
+
+    def side_ids(self, data):
+        """{(axis, coordinate): {material IDs}} of the side faces of an axis-aligned square mesh, by the vertical
+        plane each lies in (x = c or y = c)."""
+        out = {}
+        for f in range(len(data.loop_starts)):
+            s, t = int(data.loop_starts[f]), int(data.loop_totals[f])
+            p = data.positions[data.loop_vertices[s:s + t]].astype(numpy.float64)
+            for axis in (0, 1):
+                if numpy.ptp(p[:, axis]) < 1e-6 and numpy.ptp(p[:, 2]) > 0:
+                    out.setdefault((axis, round(float(p[0, axis]), 4)), set()).add(int(_mats(data)[f]))
+        return out
+
+    def id_square(self, pts, ids, kind=shapes.CORNER):
+        return shapes.Spline(tuple(shapes.Knot(kind, shapes.LINE, p, p, p, i) for p, i in zip(pts, ids)), True)
+
+    def test_use_shape_ids(self):
+        """3ds Max 2020 (probe): with Generate Material IDs and Use Shape IDs each side face takes its segment's ID
+        (3ds Max IDs 1 4 7 2 on a counter-clockwise square: y=0 1, x=10 4, y=10 7, x=0 2); the caps keep 1 and 2."""
+        sq = self.id_square([(0, 0, 0), (10, 0, 0), (10, 10, 0), (0, 10, 0)], (0, 3, 6, 1))
+        data, issues = extrude.extrude(_shape([sq]), self.params(shape_ids=True))
+        self.assertEqual(issues, [])
+        self.assertEqual(self.side_ids(data), {(1, 0.0): {0}, (0, 10.0): {3}, (1, 10.0): {6}, (0, 0.0): {1}})
+        for f in range(len(data.loop_starts)):
+            z = _face_area_z(data, f)
+            if abs(z) > 1e-6:
+                self.assertEqual(int(_mats(data)[f]), extrude.TOP_ID if z > 0 else extrude.BOTTOM_ID)
+        data, _issues = extrude.extrude(_shape([sq]), self.params(amount=-5.0, shape_ids=True))  # probe E
+        self.assertEqual(self.side_ids(data), {(1, 0.0): {0}, (0, 10.0): {3}, (1, 10.0): {6}, (0, 0.0): {1}})
+        self.assertAlmostEqual(_volume(data.positions, data), 500.0, places=3)
+
+    def test_use_shape_ids_on_a_turned_outline(self):
+        """A clockwise outline is turned before the sides are made: each face keeps the ID of the segment it lies
+        on (probe C: IDs 3 5 6 9 from (0,0) up to (0,10), across, down: x=0 3, y=10 5, x=10 6, y=0 9)."""
+        sq = self.id_square([(0, 0, 0), (0, 10, 0), (10, 10, 0), (10, 0, 0)], (2, 4, 5, 8))
+        data, _issues = extrude.extrude(_shape([sq]), self.params(shape_ids=True, segments=2))
+        self.assertEqual(self.side_ids(data), {(0, 0.0): {2}, (1, 10.0): {4}, (0, 10.0): {5}, (1, 0.0): {8}})
+        self.assertAlmostEqual(_volume(data.positions, data), 500.0, places=3)
+
+    def test_use_shape_ids_on_a_hole(self):
+        """A hole drawn counter-clockwise is turned clockwise: its faces keep their segments' IDs."""
+        outer = self.id_square([(0, 0, 0), (20, 0, 0), (20, 20, 0), (0, 20, 0)], (1, 1, 1, 1))
+        hole = self.id_square([(5, 5, 0), (15, 5, 0), (15, 15, 0), (5, 15, 0)], (10, 11, 12, 13))
+        data, _issues = extrude.extrude(_shape([outer, hole]), self.params(shape_ids=True))
+        got = self.side_ids(data)
+        self.assertEqual({k: got[k] for k in ((1, 5.0), (0, 15.0), (1, 15.0), (0, 5.0))},
+                         {(1, 5.0): {10}, (0, 15.0): {11}, (1, 15.0): {12}, (0, 5.0): {13}})
+        self.assertAlmostEqual(_volume(data.positions, data), (400 - 100) * 5.0, places=3)
+
+    def test_use_shape_ids_on_interpolated_and_open_splines(self):
+        """Probe D: an open line of two curved segments (IDs 2, 3), steps 2: every face of a segment takes its ID;
+        a zero-length segment leaves its column to the next segment's ID."""
+        k = shapes.Knot
+        line = shapes.Spline((k(shapes.CORNER, shapes.CURVE, (0, 0, 0), (0, 0, 0), (3, 4, 0), 1),
+                              k(shapes.SMOOTH, shapes.CURVE, (10, 5, 0), (6, 5, 0), (14, 5, 0), 2),
+                              k(shapes.CORNER, shapes.CURVE, (20, 0, 0), (17, 4, 0), (20, 0, 0), 0)), False)
+        data, _issues = extrude.extrude(_shape([line], steps=2), self.params(shape_ids=True))
+        mats = _mats(data).tolist()
+        self.assertEqual(mats, [1, 1, 1, 2, 2, 2])
+        pts = [(0, 0, 0), (4, 0, 0), (4, 0, 0), (4, 4, 0)]
+        sq = shapes.Spline(tuple(k(shapes.CORNER, shapes.LINE, p, p, p, i) for p, i in zip(pts, (5, 6, 7, 8))), True)
+        lines = extrude.polylines(_shape([sq]))
+        self.assertEqual((lines[0].points, lines[0].ids), ([(0, 0, 0), (4, 0, 0), (4, 4, 0)], [5, 7, 8]))
+
+    def test_shape_ids_need_generated_material_ids(self):
+        """Probe B: Use Shape IDs without Generate Material IDs gives every face ID 1; Generate Material IDs alone
+        gives the sides ID 3."""
+        sq = self.id_square([(0, 0, 0), (10, 0, 0), (10, 10, 0), (0, 10, 0)], (0, 3, 6, 1))
+        data, _issues = extrude.extrude(_shape([sq]), self.params(shape_ids=True, material_ids=False))
+        self.assertEqual(set(_mats(data).tolist()), {0})
+        data, _issues = extrude.extrude(_shape([sq]), self.params())
+        self.assertEqual({i for ids in self.side_ids(data).values() for i in ids}, {extrude.SIDE_ID})
 
     def test_smoothing_changes_only_at_corners(self):
         k = shapes.Knot

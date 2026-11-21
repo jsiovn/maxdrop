@@ -141,7 +141,7 @@
     {"class_id": ["0x00000002", "0x00000000"], "class_name": "Standardmaterial", "index": 0, "name": "FixtureGrey", "sub_count": 0}
   ],
   "max_version": [22000, 2020],
-  "node_count": 8,
+  "node_count": 10,
   "nodes": [
     {
       "base_class_id": ["0x00001065", "0x00000000"],
@@ -634,6 +634,134 @@
         "width": 2
       },
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 260, 0, 0]
+    },
+    {
+      "base_class_id": ["0x00001040", "0x00000000"],
+      "base_class_name": "line",
+      "base_faces": null,
+      "base_superclass": 64,
+      "base_verts": null,
+      "bbox_max": [37.2, 150, 5],
+      "bbox_min": [0, 114, 0],
+      "camera": null,
+      "eval_faces": 60,
+      "eval_maps": null,
+      "eval_mesh": {
+        "map_channel_1": null,
+        "material_ids": [[1, 15, 0, 0], [2, 0, 15, 0], [4, 0, 0, 2], [5, 0, 0, 6], [7, 0, 0, 10], [11, 0, 0, 4], [12, 0, 0, 8]],
+        "smoothing": {"flat": 0, "hard_edges": 41, "regions": 13}
+      },
+      "eval_verts": 30,
+      "frozen": false,
+      "handle": 12,
+      "hidden": false,
+      "index": 8,
+      "instances": [12],
+      "layer": "0",
+      "material": 0,
+      "modifiers": [{"class_id": ["0x000000a0", "0x00000000"], "class_name": "Extrude", "context_bbox_max": [40, 30, 0], "context_bbox_min": [0, -6, 0], "context_tm": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0], "enabled": true, "enabled_in_renders": true, "enabled_in_views": true, "name": "Extrude"}],
+      "name": "FixtureExtShapeIDs",
+      "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 120, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "renderable": true,
+      "shape": {
+        "adaptive": false,
+        "angle": 0,
+        "display_render_mesh": false,
+        "length": 6,
+        "optimize": true,
+        "rectangular": false,
+        "renderable": false,
+        "sides": 12,
+        "splines": [
+          {
+            "closed": true,
+            "knots": [
+              {"in": [5, -2, 0], "mid": [0, 15, 0], "out": [0, 10, 0], "pos": [0, 0, 0], "segment": "line", "type": "corner"},
+              {"in": [0, 20, 0], "mid": [15, 30, 0], "out": [15, 30, 0], "pos": [0, 30, 0], "segment": "line", "type": "corner"},
+              {"in": [30, 30, 0], "mid": [37.5, 15, 0], "out": [40, 25, 0], "pos": [30, 30, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [40, 5, 0], "mid": [22.5, -3, 0], "out": [30, 0, 0], "pos": [30, 0, 0], "segment": "line", "type": "bezierCorner"},
+              {"in": [22.5, -3, 0], "mid": [7.5, -3, 0], "out": [10, -4, 0], "pos": [15, -6, 0], "segment": "line", "type": "corner"}
+            ]
+          },
+          {
+            "closed": true,
+            "knots": [
+              {"in": [20, 13.2679, 0], "mid": [19.5, 17.5981, 0], "out": [20, 16.7321, 0], "pos": [21, 15, 0], "segment": "line", "type": "corner"},
+              {"in": [19, 18.4641, 0], "mid": [15, 20.1962, 0], "out": [16, 20.1962, 0], "pos": [18, 20.1962, 0], "segment": "line", "type": "corner"},
+              {"in": [14, 20.1962, 0], "mid": [10.5, 17.5981, 0], "out": [11, 18.4641, 0], "pos": [12, 20.1962, 0], "segment": "line", "type": "corner"},
+              {"in": [10, 16.7321, 0], "mid": [10.5, 12.4019, 0], "out": [10, 13.2679, 0], "pos": [9, 15, 0], "segment": "line", "type": "corner"},
+              {"in": [11, 11.5359, 0], "mid": [15, 9.80385, 0], "out": [14, 9.80385, 0], "pos": [12, 9.80385, 0], "segment": "line", "type": "corner"},
+              {"in": [16, 9.80385, 0], "mid": [19.5, 12.4019, 0], "out": [19, 11.5359, 0], "pos": [18, 9.80385, 0], "segment": "line", "type": "corner"}
+            ]
+          }
+        ],
+        "steps": 4,
+        "thickness": 1,
+        "width": 2
+      },
+      "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 120, 0]
+    },
+    {
+      "base_class_id": ["0x00001065", "0x00000000"],
+      "base_class_name": "Rectangle",
+      "base_faces": null,
+      "base_superclass": 64,
+      "base_verts": null,
+      "bbox_max": [67, 125, 3],
+      "bbox_min": [53, 115, 0],
+      "camera": null,
+      "eval_faces": 12,
+      "eval_maps": null,
+      "eval_mesh": {
+        "map_channel_1": null,
+        "material_ids": [[1, 2, 0, 8], [2, 0, 2, 0]],
+        "smoothing": {"flat": 0, "hard_edges": 12, "regions": 6}
+      },
+      "eval_verts": 8,
+      "frozen": false,
+      "handle": 13,
+      "hidden": false,
+      "index": 9,
+      "instances": [13],
+      "layer": "0",
+      "material": 0,
+      "modifiers": [{"class_id": ["0x000000a0", "0x00000000"], "class_name": "Extrude", "context_bbox_max": [7, 5, 0], "context_bbox_min": [-7, -5, 0], "context_tm": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0], "enabled": true, "enabled_in_renders": true, "enabled_in_views": true, "name": "Extrude"}],
+      "name": "FixtureExtShapeIDsRect",
+      "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 60, 120, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "renderable": true,
+      "shape": {
+        "adaptive": false,
+        "angle": 0,
+        "display_render_mesh": false,
+        "length": 6,
+        "optimize": true,
+        "rectangular": false,
+        "renderable": false,
+        "sides": 12,
+        "splines": [
+          {
+            "closed": true,
+            "knots": [
+              {"in": [7, 1.66666, 0], "mid": [0, 5, 0], "out": [2.33333, 5, 0], "pos": [7, 5, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [-2.33333, 5, 0], "mid": [-7, 0, 0], "out": [-7, 1.66666, 0], "pos": [-7, 5, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [-7, -1.66666, 0], "mid": [0, -5, 0], "out": [-2.33333, -5, 0], "pos": [-7, -5, 0], "segment": "curve", "type": "bezierCorner"},
+              {"in": [2.33333, -5, 0], "mid": [7, 0, 0], "out": [7, -1.66666, 0], "pos": [7, -5, 0], "segment": "curve", "type": "bezierCorner"}
+            ]
+          }
+        ],
+        "steps": 6,
+        "thickness": 1,
+        "width": 2
+      },
+      "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 60, 120, 0]
     }
   ],
   "oracle_version": 10,

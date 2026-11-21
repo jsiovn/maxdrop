@@ -162,8 +162,8 @@ def _old_block(*values):
     return node(0, leaf(0x0001, struct.pack("<I", len(values))), leaf(0x0005, b"\x02\x00"), *entries)
 
 
-def _knot(kind, segment, point, in_vec, out_vec):
-    return struct.pack("<iif9fI", kind, segment, 0.5, *point, *in_vec, *out_vec, 0)
+def _knot(kind, segment, point, in_vec, out_vec, flags=0):
+    return struct.pack("<iif9fI", kind, segment, 0.5, *point, *in_vec, *out_vec, flags)
 
 
 def _spline(knots, closed=True, count=None):
@@ -207,6 +207,16 @@ class TestSynthetic(unittest.TestCase):
         s = _scene(node(2, _refs(0, -1), leaf(0x204B, b"\x2e"), node(0x2000, *_children(body))))
         sh = shapes.read_shape(s, 1)
         self.assertEqual((sh.steps, sh.optimize, sh.adaptive, len(sh.splines)), (9, False, True, 1))
+
+    def test_segment_material_ids(self):
+        """The knot record's last u32 holds the zero-based material ID of the segment from that knot in its high 16
+        bits (3ds Max 2020: IDs 1, 4, 7, 2 -> 0x0, 0x30000, 0x60000, 0x10000); parametric knots are ID 1."""
+        ids = (0, 3, 6, 1, 0xFFFF)
+        s = _scene(_spline_shape(1, [_spline([_knot(1, 0, (k, 0, 0), (k, 0, 0), (k, 0, 0), i << 16 | 0x5)
+                                              for k, i in enumerate(ids)])]))
+        sh = shapes.read_shape(s, 1)
+        self.assertEqual([k.material for k in sh.splines[0].knots], list(ids))
+        self.assertEqual({k.material for sp in shapes._rectangle(shapes._Params(None), []) for k in sp.knots}, {0})
 
     def test_damaged_spline_poisons_itself(self):
         bad_type = _knot(7, 0, (0, 0, 0), (0, 0, 0), (0, 0, 0))
