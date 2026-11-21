@@ -71,7 +71,8 @@ stay placed), not a placeholder: the first dome node that is on (in walk order) 
 (lights.describe_dome), the World build/ makes; any other dome node, an instance of it too, and one that is off are
 an issue each (Blender has one World). A VRaySky as the environment map is an issue labelled ENVIRONMENT.
 describe(..., assets) takes the scene's reader.assets.AssetTable for the names of the web and IES files (read()
-reads it).
+reads it); describe(..., files), a convert.textures.TextureIndex, finds the IES file of a VRayIES whose power depends
+on it, read once per file (convert.ies.Lookup); without it the power is taken as the flux (an issue).
 
 A camera (Free, Target, Physical, VRayPhysicalCamera) becomes a CAMERA (convert.cameras): the lens, sensor, shift,
 clipping and orthographic width that frame what 3ds Max renders. It is keyed by its base object index and, when its
@@ -129,7 +130,7 @@ import math
 from ..reader import assets as reader_assets
 from ..reader import cfb, chunks, classids, controllers, geometry, modifiers as reader_modifiers, shapes, units
 from ..reader import scene as reader_scene
-from . import cameras, colors, extrude, lights, modifiers as rules, primitives, uvwmap
+from . import cameras, colors, extrude, ies, lights, modifiers as rules, primitives, uvwmap
 
 MESH, CURVE, EMPTY, LIGHT, CAMERA = "MESH", "CURVE", "EMPTY", "LIGHT", "CAMERA"
 ADAPTIVE = 12  # Blender's default curve resolution, for a shape 3ds Max interpolates adaptively
@@ -531,13 +532,14 @@ def sheared(m):
     return False
 
 
-def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, views=None, cancel=None):
+def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, views=None, cancel=None,
+             files=None):
     """The SceneDescription of a reader.scene.Scene; meters is the length of one file unit; convert_modifiers False
     leaves the modifiers Blender has an equivalent for in node.modifiers, unconverted and unreported; assets, the
     scene's reader.assets.AssetTable, names the files of web and IES lights (None: not named); views, the file's
     convert.cameras.SavedViews, picks the scene camera (None: the first camera); cancel, a callable asked before each
     node of both walks and inside the read and description of a large mesh, ends it with Cancelled once it returns
-    true."""
+    true; files, a convert.textures.TextureIndex, finds the IES files of VRayIES lights (None: not looked up)."""
     if not (math.isfinite(meters) and meters > 0):
         raise ValueError("meters per unit must be a positive number, not %r" % (meters,))
     check = _raising(cancel)
@@ -567,6 +569,7 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
     layers = {}  # layer object index -> reader Layer, or None when its record cannot be read
     unlit = {}  # light base object index -> why it is not built
     light_params = {}  # light base object index -> its values (convert.lights.read_params)
+    ies_files = ies.Lookup(files) if files is not None else None
     swatches = None  # the scene's swatch rule, read for the first light
     unseen = {}  # camera base object index -> why it is not built
     camera_params = {}  # camera base object index -> its values (convert.cameras.read_params)
@@ -611,7 +614,8 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
                 class_name = _class_name(scene, base)
                 if swatches is None:
                     swatches = colors.of_scene(scene)
-                light = _light(scene, desc, unlit, light_params, base, i, name, meters, swatches, world, assets)
+                light = _light(scene, desc, unlit, light_params, base, i, name, meters, swatches, world, assets,
+                               ies_files)
                 kind = LIGHT if light is not None else EMPTY
             elif base is not None and cameras.camera_class(scene, base) is not None:
                 class_name = _class_name(scene, base)
@@ -697,13 +701,13 @@ def _dome(desc, values, node, name, swatches, world):
         desc.issues.extend((node, "light: %s" % x) for x in issues)
 
 
-def _light(scene, desc, unlit, params, base, node, name, meters, swatches, world, assets=None):
+def _light(scene, desc, unlit, params, base, node, name, meters, swatches, world, assets=None, ies_files=None):
     """The key in desc.lights of light base on node (world: its reader world matrix), made on first use; None when it
     is not built (unlit caches the reason, an issue on every node) and for a dome (_dome). params caches the light's
     values, whose issues are named on the first node; a description's on the first node of its key."""
     if base not in params and base not in unlit:
         try:
-            values, issues = lights.read_params(scene, base, assets)
+            values, issues = lights.read_params(scene, base, assets, ies_files)
             reason = lights.not_built(values, lambda i: _node_name(scene, i))
         except ChunkError as exc:
             values, issues, reason = None, [], "parameters cannot be read: %s" % exc
@@ -1039,13 +1043,13 @@ def _class_name(scene, i):
     return entry.name if entry is not None else ""
 
 
-def read(path, meters=None, convert_modifiers=True):
+def read(path, meters=None, convert_modifiers=True, files=None):
     """The SceneDescription of a .max file. meters None: the file's system unit, 1.0 when it does not say;
-    convert_modifiers as describe's."""
+    convert_modifiers and files as describe's."""
     with cfb.CompoundFile(path) as cf:
         sc = reader_scene.Scene.from_file(cf)
         unit = units.system_unit(sc)
         if meters is None:
             meters = unit.meters if unit is not None else 1.0
         return describe(sc, meters, unit, convert_modifiers, reader_assets.AssetTable.from_file(cf),
-                        cameras.saved_views(cf))
+                        cameras.saved_views(cf), files=files)
