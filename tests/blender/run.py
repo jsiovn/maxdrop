@@ -52,7 +52,8 @@ the double-sided plane's half), its color, the off light hidden in viewport and 
 the camera and glossy rays; the instance shares the plane's light, the disc's instance scaled 2, 1.5, 1 has its
 own, three times as strong; imported again with Light Strength 2, twice the
 power. lights_standard, lights_photometric (and lookat's target spot): each light of the type, spot cone, power and
-color of the rules (STOCK_LIGHTS), its -Z axis along the oracle's, its flags; the Skylight an empty.
+color of the rules (STOCK_LIGHTS), its -Z axis along the oracle's, its flags, its shadow switch (STOCK_SHADOWS);
+the Skylight an empty.
 Cameras (cameras, lookat): each camera node a camera object of the description's type, sensor fit HORIZONTAL, sensor,
 lens, shift, clipping and orthographic width, Blender's horizontal field of view (angle_x) within 0.05 degrees of 3ds
 Max's (the oracle's EvalCameraState), depth of field off, its -Z axis and +Y up along the oracle's; cameras' shifts and
@@ -261,6 +262,10 @@ STOCK_GREY = ("StdOmniSquare", "StdOmniInverse", "StdOmniNegative", "StdOmniNoDi
               "StdSpotRect", "StdTargetSpot", "StdTargetDirect", "FixtureSpot")  # a standard light's default 180
 STOCK_FLAGS = {"StdOmniNoDiffuse": (True, False, True, 0.0, 1.0), "StdSpotRect": (True, True, False, 1.0, 0.0),
                "PhCylinder": (True, True, False, 1.0, 0.0), "IesOverride": (True, True, False, 1.0, 0.0)}
+# the stock lights that cast shadows (Light.use_shadow): a light MAXScript makes has them off, the scripts switch these
+# on; a VRayIES has them on but IesOverride; a VRaySun has no switch
+STOCK_SHADOWS = {"StdOmni", "StdOmniInst", "StdSpot", "StdTargetDirect", "StdSun", "PhPoint", "PhPointInst",
+                 "PhSpot", "IesPower"}
 # hollow: a tube's inner side and a torus's inner half face the box center; closed, they enclose a positive volume
 # the oracle's base_class_id of the primitives MaxDrop builds (convert/primitives.py)
 PRIMITIVE_CLASSES = {("0x00000010", "0x00000000"), ("0x00000011", "0x00000000"), ("0x00000012", "0x00000000"),
@@ -727,8 +732,8 @@ def check_light(label, ob, ld, o):
 
 def check_stock_light(label, ob, ld, o):
     """lights_standard, lights_photometric, lookat's target spot: the light's type, spot cone, size or radius as the
-    description says, energy the watts of STOCK_LIGHTS times the default Light Strength, color, flags; its -Z axis
-    (where a spot, an area light and a sun shine in both programs) along the oracle's."""
+    description says, energy the watts of STOCK_LIGHTS times the default Light Strength, color, flags, shadows
+    (STOCK_SHADOWS); its -Z axis (where a spot, an area light and a sun shine in both programs) along the oracle's."""
     from maxdrop import ops
     light = ob.data
     kind, cone, blend, watts = STOCK_LIGHTS[o["name"]]
@@ -758,6 +763,8 @@ def check_stock_light(label, ob, ld, o):
              round(light.specular_factor, 6))
     want = STOCK_FLAGS.get(o["name"], (True, True, True, 1.0, 1.0))
     check(label + ": camera, diffuse and glossy visibility, diffuse and specular factors", flags == want, str(flags))
+    check(label + ": shadows as in 3ds Max", light.use_shadow == ld.shadow == (o["name"] in STOCK_SHADOWS),
+          "%s, %s" % (light.use_shadow, ld.shadow))
 
 
 def check_light_strength(path):

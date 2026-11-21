@@ -73,7 +73,7 @@ FIXTURE = {"modifiers": 0, "issues": 0, "placeholders": 0, "lights_only": False}
 # fixture is made to raise (ISSUES in tests/unit/test_convert_scene.py)
 NOT_EVALUATED = {"FixtureUVWShrink"}
 FIXTURE_ISSUES = {"uvwmap.max": 2, "stack_convert.max": 1, "vray_lights.max": 4, "lookat.max": 1,
-                  "lights_standard.max": 17, "lights_photometric.max": 9, "cameras.max": 6}
+                  "lights_standard.max": 17, "lights_photometric.max": 10, "cameras.max": 6}
 # placeholders of classes MaxDrop does not build yet: lookat's Point
 FIXTURE_PLACEHOLDERS = {"lookat.max": 1}
 # fixtures without a mesh: a light must arrive instead of a mesh with a material

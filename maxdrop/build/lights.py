@@ -11,7 +11,8 @@ One Light per LightDescription: the nodes of one light object share it. Its ener
 watts (a sun's strength in W/m^2) times strength, the import's Light Strength (the calibration against V-Ray is in
 docs/FORMAT.md, "VRayLight" and "Standard and photometric lights"). A spot gets its cone and radius, a sun its
 angle.
-Light.diffuse_factor and specular_factor take the affect diffuse / specular contributions (EEVEE only). Per object:
+Light.diffuse_factor and specular_factor take the affect diffuse / specular contributions (EEVEE only), use_shadow
+the description's shadow switch (Cycles and EEVEE, the same on 4.2 and 5.2). Per object:
 a light that is off is hidden in the viewport and in renders; the camera sees the light unless it is invisible
 (Blender makes a light object unseen by the camera, V-Ray the other way round); diffuse and glossy rays see it as
 the description says (Object.visible_camera / visible_diffuse / visible_glossy, the same on 4.2 and 5.2).
@@ -38,6 +39,7 @@ def make_light(ld, strength=1.0):
     light.color = ld.color
     light.diffuse_factor = ld.diffuse
     light.specular_factor = ld.specular
+    light.use_shadow = ld.shadow
     return light
 
 

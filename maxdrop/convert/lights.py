@@ -73,13 +73,16 @@ watts at 683 lm/W: 4 pi I / 683 for a point or spot light of on-axis intensity I
   dimming and color are not imported (issues).
 - VRayIES: its power in lm (with the intensity overridden in cd, the power is that intensity: x 4 pi) -> SPOT of
   WEB_CONE, power lm / 683, its color or temperature, the IES file named in an issue; a power of 0 (V-Ray then takes
-  the file's own) is 0 W, an issue.
+  the file's own) is 0 W, an issue. With its light shape used and overridden, the spot's radius is half the largest
+  size the shape uses (IES_SHAPES: a sphere's diameter exactly, any other shape an issue); without the override
+  V-Ray takes the file's shape, which is not read: radius 0.
 - Skylight: not built (the reason; World is later work). environment_sky finds a VRaySky as the environment map
   (RenderEnvironment reference ENVIRONMENT_MAP_SLOT) for convert.scene's report line.
 
 Every light shines along its local -Z, as Blender's spot, area and sun lights do: the node transform stays. Off ->
 hidden; affect diffuse / specular and V-Ray's contributions as for the VRayLight; ambient only, far attenuation:
-issues. A negative multiplier or intensity is 0 W (an issue). Their instances share one description (area_scale is 1
+issues. Shadows off (a standard light's chunk 0x2570, a photometric light's castShadows, a VRayIES's
+cast_shadows; a VRaySun has no switch) -> shadow False; when the switch is not stored, on. A negative multiplier or intensity is 0 W (an issue). Their instances share one description (area_scale is 1
 but for VRayLights).
 
 The file comes from anywhere: a parameter that is animated, missing or no finite number takes its default (the
@@ -140,8 +143,8 @@ MIN_CONE = math.radians(1.0)  # Blender's smallest spot size
 ENVIRONMENT_MAP_SLOT = 5  # RenderEnvironment's reference to the environment map
 
 # standard lights: chunks of the light object, old ParamBlock indices
-_ON, _DECAY, _CONE, _OVERSHOOT, _NO_DIFFUSE, _NO_SPECULAR, _AMBIENT = \
-    0x2580, 0x25D0, 0x2573, 0x2575, 0x25B0, 0x25B1, 0x2600
+_ON, _DECAY, _CONE, _OVERSHOOT, _NO_DIFFUSE, _NO_SPECULAR, _AMBIENT, _SHADOW = \
+    0x2580, 0x25D0, 0x2573, 0x2575, 0x25B0, 0x25B1, 0x2600, 0x2570
 DECAY_NONE, DECAY_INVERSE, DECAY_SQUARE = 0, 1, 2
 _OLD_COLOR, _OLD_MULTIPLIER, _OLD_HOTSPOT, _OLD_FALLOFF = 0, 1, 4, 5
 _OLD_START = {OMNI: 8, SPOTLIGHT: 11, DIRECT: 11}  # decay start
@@ -151,10 +154,10 @@ _OLD_DEFAULTS = {_OLD_COLOR: (1.0, 1.0, 1.0), _OLD_MULTIPLIER: 1.0, _OLD_HOTSPOT
                  8: 40.0, 11: 40.0}
 
 ISOTROPIC, SPOT_DISTRIBUTION, DIFFUSE_DISTRIBUTION, WEB = 0, 1, 2, 3
-# name: (block id, parameter id, default of 3ds Max 2020's new light)
+# name: (block id, parameter id, default of 3ds Max 2020's new light; shadow on, as before it was read)
 _PHOTOMETRIC_PARAMS = {"distribution": (0, 1, ISOTROPIC), "on": (0, 2, 1), "filter": (0, 5, (1.0, 1.0, 1.0)),
                        "intensity": (0, 6, 1500.0), "kelvin": (0, 8, 3600.0), "use_kelvin": (0, 10, 0),
-                       "use_dimmer": (0, 18, 0), "dimmer": (0, 19, 100.0), "far": (0, 21, 0),
+                       "use_dimmer": (0, 18, 0), "dimmer": (0, 19, 100.0), "far": (0, 21, 0), "shadow": (0, 3, 1),
                        "hotspot": (2, 0, 30.0), "falloff": (2, 1, 60.0), "diffuse": (4, 4, 1), "specular": (4, 5, 1),
                        "ambient": (4, 6, 0), "length": (4, 11, 1220.0), "width": (4, 12, 610.0),
                        "radius": (4, 13, 130.0)}
@@ -165,8 +168,21 @@ _SUN_PARAMS = {"on": (0, 0, 1), "multiplier": (0, 2, 1.0), "size": (0, 3, 1.0), 
 _IES_PARAMS = {"on": (0, 0, 1), "temperature": (0, 7, 6500.0), "color": (0, 8, (1.0, 1.0, 1.0)),
                "color_mode": (0, 9, 0), "power": (0, 10, 1500.0), "diffuse": (0, 14, 1),
                "diffuse_contribution": (0, 30, 1.0), "specular": (0, 15, 1), "specular_contribution": (0, 31, 1.0),
-               "intensity_type": (0, 32, 0), "override": (0, 34, 0)}
+               "intensity_type": (0, 32, 0), "override": (0, 34, 0), "shadow": (0, 4, 1), "use_shape": (0, 5, 1),
+               "override_shape": (0, 21, 0), "shape_type": (0, 22, 0), "height": (0, 23, 0.0), "width": (0, 24, 0.0),
+               "length": (0, 25, 0.0), "diameter": (0, 26, 0.0)}
 _IES_FILE = (0, 1)
+# a VRayIES shape: (name, the sizes V-Ray's panel enables for it); a sphere is what Blender's radius draws
+IES_SPHERE = 3
+IES_SHAPES = {0: ("point", ()), 1: ("rectangle", ("height", "width", "length")), 2: ("circle", ("diameter",)),
+              IES_SPHERE: ("sphere", ("diameter",)), 4: ("vertical cylinder", ("height", "diameter")),
+              5: ("horizontal cylinder", ("length", "diameter")), 6: ("horizontal cylinder", ("width", "diameter")),
+              7: ("ellipse", ("height", "width", "length")), 8: ("ellipse", ("height", "width", "length")),
+              9: ("ellipsoid", ("height", "width", "length")), 10: ("ellipsoid", ("height", "width", "length")),
+              11: ("elliptic cylinder", ("height", "width", "length")),
+              12: ("elliptic cylinder", ("height", "width", "length")),
+              13: ("elliptic cylinder", ("height", "width", "length")), 14: ("vertical circle", ("width",)),
+              15: ("vertical ellipse", ("height", "width")), 16: ("cuboid", ("height", "width", "length"))}
 
 P_ON, P_TYPE, P_SIZE0, P_SIZE1, P_COLOR, P_MULTIPLIER = 0, 1, 2, 3, 7, 8
 P_DOUBLE_SIDED, P_INVISIBLE, P_UNITS, P_TEXMAP, P_TEXMAP_ON = 9, 10, 12, 18, 19
@@ -202,6 +218,7 @@ SHAPE = "its %s shape is %s"
 WEB_FILE = "its photometric web %s is approximated by a spot of 170 degrees"
 IES_FILE = "its IES file %s is approximated by a spot of 170 degrees"
 IES_ZERO = "power 0: V-Ray takes the IES file's own intensity, which is not read: 0 W"
+IES_SHAPE = "its %s light shape is a sphere %g m across"
 NO_FILE = "(no file)"
 SUN_ZENITH = "its strength is the sun's at the zenith: the sky model's dimming toward the horizon is not imported"
 SUN_COLOR = "its color is its filter color: the sky model's sun color is not imported"
@@ -223,20 +240,21 @@ class LightDescription:
     angle (radians) a SUN's; watts the total flux of the rules (a SUN's irradiance in W/m^2), power what Blender's
     light gets before the Light Strength (half of watts for a double-sided area); color linear RGB; on, invisible (to
     the camera); diffuse_rays and glossy_rays whether diffuse and glossy rays see it (Cycles); diffuse and specular
-    Blender's factors (EEVEE); users the object indices of the nodes that share it, in walk order."""
+    Blender's factors (EEVEE); shadow whether it casts shadows; users the object indices of the nodes that share
+    it, in walk order."""
     __slots__ = ("key", "name", "kind", "shape", "size", "size_y", "radius", "spot_size", "spot_blend", "angle",
                  "watts", "power", "color", "on", "invisible", "diffuse_rays", "glossy_rays", "diffuse", "specular",
-                 "users")
+                 "shadow", "users")
 
     def __init__(self, key, name, kind, shape=None, size=0.0, size_y=0.0, radius=0.0, watts=0.0, power=0.0,
                  color=(1.0, 1.0, 1.0), on=True, invisible=False, diffuse_rays=True, glossy_rays=True, diffuse=1.0,
-                 specular=1.0, spot_size=0.0, spot_blend=0.0, angle=0.0):
+                 specular=1.0, spot_size=0.0, spot_blend=0.0, angle=0.0, shadow=True):
         self.key, self.name, self.kind, self.shape = key, name, kind, shape
         self.size, self.size_y, self.radius = size, size_y, radius
         self.spot_size, self.spot_blend, self.angle = spot_size, spot_blend, angle
         self.watts, self.power, self.color = watts, power, color
         self.on, self.invisible, self.diffuse_rays, self.glossy_rays = on, invisible, diffuse_rays, glossy_rays
-        self.diffuse, self.specular = diffuse, specular
+        self.diffuse, self.specular, self.shadow = diffuse, specular, shadow
         self.users = []
 
     def __repr__(self):
@@ -453,7 +471,7 @@ def _read_standard(scene, i):
               "color": old(_OLD_COLOR), "multiplier": old(_OLD_MULTIPLIER), "start": 0.0,
               "rectangle": kind != OMNI and _u16(chunk, _CONE, 1) == 0, "overshoot": present(_OVERSHOOT),
               "diffuse": not present(_NO_DIFFUSE), "specular": not present(_NO_SPECULAR),
-              "ambient": present(_AMBIENT)}
+              "ambient": present(_AMBIENT), "shadow": _u16(chunk, _SHADOW, 1)}
     if kind != DIRECT and values["decay"] != DECAY_NONE:  # unused otherwise: no issue when it is missing
         values["start"] = old(_OLD_START[kind])
     if kind != OMNI:
@@ -572,7 +590,7 @@ def _describe_standard(key, name, v, meters, swatches, issues):
     kind = v["shape"]
     m = _nonnegative("multiplier", v["multiplier"], issues)
     ld = LightDescription(key, name, POINT, color=swatches.color(v["color"]), on=bool(v["on"]),
-                          diffuse_rays=v["diffuse"], glossy_rays=v["specular"])
+                          diffuse_rays=v["diffuse"], glossy_rays=v["specular"], shadow=bool(v["shadow"]))
     ld.diffuse, ld.specular = float(v["diffuse"]), float(v["specular"])
     if v["ambient"]:
         issues.append(AMBIENT)
@@ -608,7 +626,7 @@ def _describe_photometric(key, name, v, meters, swatches, issues):
     white = colors.GAMMA_OFF.color(texmaps.kelvin_rgb(v["kelvin"])) if v["use_kelvin"] else (1.0, 1.0, 1.0)
     color = tuple(a * b for a, b in zip(white, swatches.color(v["filter"])))
     ld = LightDescription(key, name, POINT, color=color, on=bool(v["on"]), diffuse_rays=bool(v["diffuse"]),
-                          glossy_rays=bool(v["specular"]))
+                          glossy_rays=bool(v["specular"]), shadow=bool(v["shadow"]))
     ld.diffuse, ld.specular = float(bool(v["diffuse"])), float(bool(v["specular"]))
     shape, dist = v["shape"], v["distribution"]
     length, width, radius = (abs(v[k]) * meters for k in ("length", "width", "radius"))
@@ -668,10 +686,26 @@ def _describe_ies(key, name, v, meters, swatches, issues):
     color = colors.GAMMA_OFF.color(texmaps.kelvin_rgb(v["temperature"])) if v["color_mode"] == 1 else \
         swatches.color(v["color"])
     ld = LightDescription(key, name, SPOT, watts=lm / LUMENS_PER_WATT, power=lm / LUMENS_PER_WATT, color=color,
-                          on=bool(v["on"]), spot_size=WEB_CONE, spot_blend=WEB_BLEND)
+                          on=bool(v["on"]), spot_size=WEB_CONE, spot_blend=WEB_BLEND, shadow=bool(v["shadow"]))
     _rays(ld, bool(v["diffuse"]), bool(v["specular"]), v["diffuse_contribution"], v["specular_contribution"], issues)
     issues.append(IES_FILE % (v["file"] or NO_FILE))
+    ld.radius = _ies_radius(v, meters, issues)
     return ld
+
+
+def _ies_radius(v, meters, issues):
+    """A VRayIES's radius in meters: with its light shape used and overridden, half the largest size the shape uses
+    (a sphere's diameter exact, another shape an issue); else 0 (without the override V-Ray takes the IES file's
+    shape, which is not read)."""
+    if not v["use_shape"] or not v["override_shape"]:
+        return 0.0
+    name, sizes = IES_SHAPES.get(v["shape_type"], ("", ()))
+    across = max((abs(v[k]) for k in sizes), default=0.0) * meters
+    if not across <= MAX_POWER:  # past what a Blender light holds
+        across = 0.0
+    if across > 0 and v["shape_type"] != IES_SPHERE:
+        issues.append(IES_SHAPE % (name, across))
+    return across / 2.0
 
 
 _DESCRIBE = {STANDARD: _describe_standard, PHOTOMETRIC: _describe_photometric, SUN: _describe_sun,

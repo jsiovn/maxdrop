@@ -55,7 +55,7 @@ def decoded(rgb):
 def standard(**changes):
     v = {L.CLASS: L.STANDARD, "shape": L.OMNI, "on": 1, "decay": L.DECAY_NONE, "color": (1.0, 1.0, 1.0),
          "multiplier": 1.0, "start": 40.0, "rectangle": False, "overshoot": False, "diffuse": True, "specular": True,
-         "ambient": False, "hotspot": 43.0, "falloff": 45.0}
+         "ambient": False, "hotspot": 43.0, "falloff": 45.0, "shadow": 1}
     v.update(changes)
     return v
 
@@ -146,6 +146,35 @@ class Standard(unittest.TestCase):
                          (0.0, False, True, False, 1.0, 0.0))
         self.assertEqual(issues, [L.NEGATIVE % ("multiplier", -1.0), L.AMBIENT, L.RECTANGLE_CONE, L.OVERSHOOT])
 
+    def test_shadow_switch(self):
+        for shape in (L.OMNI, L.SPOTLIGHT, L.DIRECT):
+            self.assertTrue(describe(standard(shape=shape))[0].shadow, shape)
+            ld, issues = describe(standard(shape=shape, shadow=0, overshoot=True))
+            self.assertFalse(ld.shadow, shape)
+            self.assertNotIn("shadow", " ".join(issues), shape)
+
+    def test_shadow_chunk(self):
+        class Leaf:
+            container, payload_size = False, 2
+
+            def __init__(self, value):
+                self.value = value
+
+            def unpack(self, fmt):
+                return (self.value,)
+
+        class Holder:
+            container = True
+
+            def __init__(self, value):
+                self.value = value
+
+            def first(self, cid):
+                return Leaf(self.value) if cid == L._SHADOW else None
+
+        self.assertEqual((L._u16(Holder(0), L._SHADOW, 1), L._u16(Holder(1), L._SHADOW, 1)), (0, 1))
+        self.assertEqual(L._u16(_Chunk(), L._SHADOW, 1), 1)  # not stored: on, as before it was read
+
 
 class Photometric(unittest.TestCase):
     def test_distributions(self):
@@ -204,6 +233,12 @@ class Photometric(unittest.TestCase):
                          (False, False, False, 0.0, 0.0))
         self.assertEqual(issues, [L.FAR, L.AMBIENT])
 
+    def test_shadow_switch(self):
+        self.assertEqual(L._PHOTOMETRIC_PARAMS["shadow"], (0, 3, 1))
+        for dist in (L.ISOTROPIC, L.SPOT_DISTRIBUTION, L.DIFFUSE_DISTRIBUTION, L.WEB):
+            self.assertTrue(describe(photometric(distribution=dist))[0].shadow, dist)
+            self.assertFalse(describe(photometric(distribution=dist, shadow=0))[0].shadow, dist)
+
     def test_a_power_out_of_range_is_zero(self):
         ld, issues = describe(photometric(intensity=1e308, use_dimmer=1, dimmer=1e10))
         self.assertEqual((ld.watts, ld.power, issues), (0.0, 0.0, [L.OUT_OF_RANGE]))
@@ -229,6 +264,36 @@ class SunAndIes(unittest.TestCase):
         self.assertAlmostEqual(ld.watts, 300.0 / 683.0, delta=1e-12)
         ld, issues = describe(ies(power=0.0))
         self.assertEqual((ld.watts, issues), (0.0, [L.IES_ZERO, L.IES_FILE % "a.ies"]))
+
+    def test_ies_shadow_switch(self):
+        self.assertEqual(L._IES_PARAMS["shadow"], (0, 4, 1))
+        self.assertEqual((describe(ies())[0].shadow, describe(ies(shadow=0))[0].shadow), (True, False))
+        self.assertTrue(describe(sun())[0].shadow)  # V-Ray 5.2's VRaySun has no switch
+
+    def test_ies_light_shape(self):
+        sizes = {"height": 300.0, "width": 200.0, "length": 400.0, "diameter": 100.0}
+        ld, issues = describe(ies(**sizes))  # no override: the IES file's shape, not read
+        self.assertEqual((ld.radius, issues), (0.0, [L.IES_FILE % "a.ies"]))
+        ld, issues = describe(ies(override_shape=1, shape_type=L.IES_SPHERE, use_shape=0, **sizes))
+        self.assertEqual((ld.radius, issues), (0.0, [L.IES_FILE % "a.ies"]))
+        for use in (1, 2):  # for shadows only, for illumination and shadows
+            ld, issues = describe(ies(override_shape=1, shape_type=L.IES_SPHERE, use_shape=use, **sizes))
+            self.assertEqual((ld.radius, issues), (0.05, [L.IES_FILE % "a.ies"]), use)
+        for shape, across, name in ((0, 0.0, None), (1, 0.4, "rectangle"), (2, 0.1, "circle"),
+                                    (4, 0.3, "vertical cylinder"), (5, 0.4, "horizontal cylinder"),
+                                    (6, 0.2, "horizontal cylinder"), (14, 0.2, "vertical circle"),
+                                    (15, 0.3, "vertical ellipse"), (16, 0.4, "cuboid"), (99, 0.0, None)):
+            ld, issues = describe(ies(override_shape=1, shape_type=shape, **sizes))
+            self.assertAlmostEqual(ld.radius, across / 2.0, delta=1e-12, msg=shape)
+            want = [L.IES_SHAPE % (name, across)] if name else []
+            self.assertEqual(issues, [L.IES_FILE % "a.ies"] + want, shape)
+        ld, _ = describe(ies(override_shape=1, shape_type=L.IES_SPHERE, diameter=-100.0))
+        self.assertAlmostEqual(ld.radius, 0.05, delta=1e-12)
+        ld, issues = describe(ies(override_shape=1, shape_type=1))  # every size 0
+        self.assertEqual((ld.radius, issues), (0.0, [L.IES_FILE % "a.ies"]))
+        ld, issues = describe(ies(override_shape=1, shape_type=1, width=math.inf))
+        self.assertEqual((ld.radius, issues), (0.0, [L.IES_FILE % "a.ies"]))
+        self.assertEqual(set(L.IES_SHAPES), set(range(17)))
 
     def test_ies_color(self):
         ld, _ = describe(ies(color_mode=1, temperature=4000.0))
@@ -423,8 +488,8 @@ class Fixtures(unittest.TestCase):
             "PhCylinder": point + (0.03, 0.0, 0.0, 700.0 * CD, True, (True, False)),
             "PhWeb": ("SPOT", None, 0.0, 0.0, 0.08) + web + (400.0 * CD, True, both),
             "PhOff": point + (0.0, 0.0, 0.0, 1000.0 * CD, False, both),
-            "IesPower": ("SPOT", None, 0.0, 0.0, 0.0) + web + (1500.0 / 683.0, True, both),
-            "IesOverride": ("SPOT", None, 0.0, 0.0, 0.0) + web + (300.0 * CD, True, (True, False)),
+            "IesPower": ("SPOT", None, 0.0, 0.0, 0.2) + web + (1500.0 / 683.0, True, both),
+            "IesOverride": ("SPOT", None, 0.0, 0.0, 0.05) + web + (300.0 * CD, True, (True, False)),
             "PhTPoint": point + (0.0, 0.0, 0.0, 100.0 * CD, True, both),
             "PhTSphere": point + (0.13, 0.0, 0.0, 100.0 * CD, True, both)})
 
@@ -433,6 +498,16 @@ class Fixtures(unittest.TestCase):
                            ("PhOff", decoded((255, 128, 0))), ("PhRect", (1.0, 1.0, 1.0))):
             for got, w in zip(self.light("lights_photometric", name).color, want):
                 self.assertAlmostEqual(got, w, delta=1e-5, msg=name)
+
+    def test_shadow_switches(self):
+        """MAXScript makes a standard or photometric light without shadows; the scripts switch some on, a VRayIES
+        has them on but IesOverride; a VRaySun has no switch."""
+        on = {"StdOmni", "StdOmniInst", "StdSpot", "StdTargetDirect", "StdSun", "PhPoint", "PhPointInst", "PhSpot",
+              "IesPower"}
+        for fixture, desc in self.descs.items():
+            for node in desc.nodes:
+                if node.kind == conv.LIGHT:
+                    self.assertEqual(desc.lights[node.light].shadow, node.name in on, node.name)
 
     def test_instances_share_a_light_and_the_skylight_is_an_empty(self):
         desc = self.descs["lights_standard"]
