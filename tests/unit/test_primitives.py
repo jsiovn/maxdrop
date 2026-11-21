@@ -338,18 +338,23 @@ class HandMadeTest(unittest.TestCase):
             self.assertEqual(h.hexdigest()[:16], want, "%s %s" % (name, values))
 
     def test_every_class_at_the_corner_cap_builds_fast(self):
-        """A file may set segments to thousands: each class just under MAX_CORNERS face corners builds in about 0.1
-        to 0.3 s (built per corner in Python it took 1.3 to 3.4 s). Bound at 2 s, the best of two runs, so a busy
-        CI runner does not fail it."""
+        """A file may set segments to thousands: each class, and each option, just under MAX_CORNERS face corners
+        builds in about 0.1 to 0.4 s (built per corner in Python it took 1.3 to 3.4 s; a Cylinder's Slice built
+        pair of rings by pair 7.6 s). Bound at 2 s, the best of two runs, so a busy CI runner does not fail it."""
         import time
-        cap = {classids.BOX: {3: 295, 4: 295, 5: 295}, classids.PLANE: {2: 724, 3: 724},
-               classids.PYRAMID: {3: 250, 4: 250, 5: 523}, classids.SPHERE: {1: 1024},
-               classids.GEOSPHERE: {1: 161}, classids.CYLINDER: {2: 500, 3: 10, 4: 1000},
-               classids.CONE: {3: 500, 4: 10, 5: 1000}, classids.TUBE: {3: 1000, 4: 10, 5: 250},
-               classids.TORUS: {4: 724, 5: 724}}
+        cap = [(classids.BOX, {3: 295, 4: 295, 5: 295}), (classids.PLANE, {2: 724, 3: 724}),
+               (classids.PYRAMID, {3: 250, 4: 250, 5: 523}), (classids.SPHERE, {1: 1024}),
+               (classids.GEOSPHERE, {1: 161}), (classids.CYLINDER, {2: 500, 3: 10, 4: 1000}),
+               (classids.CONE, {3: 500, 4: 10, 5: 1000}), (classids.TUBE, {3: 1000, 4: 10, 5: 250}),
+               (classids.TORUS, {4: 724, 5: 724}),
+               # the options: a Slice of many rows, a Cylinder Slice of many thin rings, a GeoSphere's hemisphere
+               (classids.SPHERE, {1: 1023, 7: 1, 8: 0.3, 9: 2.0}),
+               (classids.CYLINDER, {2: 74000, 3: 1, 4: 3, 6: 1, 7: 0.3, 8: 2.0}),
+               (classids.GEOSPHERE, {1: 114, 3: 1}), (classids.TUBE, {3: 1000, 4: 10, 5: 250, 7: 1}),
+               (classids.TORUS, {4: 722, 5: 724, 7: 1})]
         sizes = {classids.SPHERE: {0: 1.0}, classids.GEOSPHERE: {0: 1.0}, classids.CONE: {0: 1.0, 1: 0.5, 2: 1.0},
                  classids.TUBE: {0: 1.0, 1: 0.5, 2: 1.0}, classids.TORUS: {0: 1.0, 1: 0.25}}
-        for class_id, segments in cap.items():
+        for class_id, segments in cap:
             values = dict(sizes.get(class_id, {0: 1.0, 1: 1.0, 2: 1.0}))
             values.update(segments)
             p, _ = prim.params_of(class_id, Block(values), real_world=True)
@@ -496,6 +501,69 @@ class HandMadeTest(unittest.TestCase):
                 self.assertEqual(len(open_edges), 16, p.name)
             else:
                 self.assertEqual(open_edges, [], p.name)
+
+    @staticmethod
+    def _edges(data):
+        lv = data.loop_vertices.tolist()
+        starts = data.loop_starts.tolist() + [len(lv)]
+        edges = collections.Counter()
+        for f in range(len(starts) - 1):
+            loop = lv[starts[f]:starts[f + 1]]
+            for a, b in zip(loop, loop[1:] + loop[:1]):
+                edges[(a, b)] += 1
+        return edges
+
+    def test_slices_and_hemispheres_build_closed(self):
+        """Slice and the hemispheres (odd and even segments, a negative height, a cone's tip, a reversed and a
+        whole-turn slice, every GeoSphere base): every edge has two faces wound against each other, and the
+        polygons are as many as _faces counts (its MAX_CORNERS check)."""
+        deg = math.pi / 180.0
+        cut = {8: 20 * deg, 9: 250 * deg}  # Sphere, Cone, Tube: From 20, To 250; Cylinder 7 / 8; Torus To 8, From 9
+        cases = [(classids.SPHERE, {0: 1.0, 1: 9, 7: 1, **cut}), (classids.SPHERE, {0: 1.0, 1: 12, 3: 0.5}),
+                 (classids.SPHERE, {0: 1.0, 1: 13, 3: 0.3, 4: 1, 5: 1}),
+                 (classids.SPHERE, {0: 1.0, 1: 12, 3: 0.4, 7: 1, 8: 200 * deg, 9: 30 * deg}),
+                 (classids.CYLINDER, {0: 1.0, 1: 2.0, 2: 2, 3: 2, 4: 7, 6: 1, 7: 20 * deg, 8: 250 * deg}),
+                 (classids.CYLINDER, {0: 1.0, 1: -2.0, 4: 5, 6: 1, 7: 0.0, 8: 360 * deg}),
+                 (classids.CONE, {0: 1.0, 1: 0.0, 2: 2.0, 3: 2, 4: 2, 5: 6, 7: 1, **cut}),
+                 (classids.CONE, {0: 1.0, 1: 0.5, 2: -2.0, 5: 6, 7: 1, **cut}),
+                 (classids.TUBE, {0: 1.0, 1: 0.5, 2: 2.0, 3: 6, 4: 2, 5: 2, 7: 1, **cut}),
+                 (classids.TUBE, {0: 0.5, 1: 1.0, 2: -2.0, 3: 6, 7: 1, **cut}),
+                 (classids.TORUS, {0: 1.0, 1: 0.25, 3: 1.0, 4: 9, 5: 6, 6: 3, 7: 1, 8: 250 * deg, 9: 20 * deg})]
+        cases += [(classids.GEOSPHERE, {0: 1.0, 1: segs, 2: base, 3: 1}) for base in (0, 1, 2) for segs in (1, 3)]
+        for class_id, values in cases:
+            with self.subTest(cls=class_id, values=values):
+                p, _ = prim.params_of(class_id, Block(values))
+                data, _ = prim.build(p)
+                edges = self._edges(data)
+                self.assertTrue(all(n == 1 for n in edges.values()))
+                self.assertEqual([e for e in edges if (e[1], e[0]) not in edges], [])
+                self.assertEqual(len(data.loop_starts), prim._faces(p))
+
+    def test_hostile_slices_and_hemispheres(self):
+        """Slice angles near the float range or many turns, a hemisphere below 0 or past 1, the fewest segments: a
+        MeshData with finite points and UVs, or a PrimitiveError."""
+        slices = {classids.SPHERE: (7, 8, 9), classids.CYLINDER: (6, 7, 8), classids.CONE: (7, 8, 9),
+                  classids.TUBE: (7, 8, 9), classids.TORUS: (7, 8, 9)}
+        sizes = {classids.SPHERE: {0: 1.0, 1: 4}, classids.CYLINDER: {0: 1.0, 1: 1.0, 4: 3},
+                 classids.CONE: {0: 1.0, 1: 0.5, 2: 1.0, 5: 3}, classids.TUBE: {0: 1.0, 1: 0.5, 2: 1.0, 3: 3},
+                 classids.TORUS: {0: 1.0, 1: 0.25, 4: 3, 5: 3}}
+        cases = []
+        for class_id, (on, a, b) in slices.items():
+            for x, y in ((1e30, -3e38), (3e38, 3e38), (0.0, 1e-30), (-7.0 * math.pi, 41.0), (1e-7, 0.0)):
+                cases.append((class_id, {**sizes[class_id], on: 1, a: x, b: y}))
+        for h in (-5.0, 5.0, 0.9999, 1e30, 1e-30):
+            for squash in (0, 1):
+                cases.append((classids.SPHERE, {0: 1.0, 1: 5, 3: h, 4: squash, 5: 1, 7: 1, 8: 1.0, 9: 2.0}))
+        for class_id, values in cases:
+            with self.subTest(cls=class_id, values=values):
+                p, _ = prim.params_of(class_id, Block(values))
+                try:
+                    data, _ = prim.build(p)
+                except prim.PrimitiveError:
+                    continue
+                self.assertTrue(numpy.isfinite(data.positions).all())
+                self.assertTrue(numpy.isfinite(data.maps[1].uvw).all())
+                self.assertEqual(len(data.loop_starts), prim._faces(p))
 
 
 if __name__ == "__main__":

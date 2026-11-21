@@ -688,72 +688,72 @@ def _cylinder_pie(b, p, r1, r2):
             a = e = np.full(ns, 0.5)
         return (a * around, e * around) if rw else (a, e)
 
-    def flat(k):
-        """The real-world UVs (u, v arrays over the ring's points) of ring k on its cap: over the extent of that
-        cap's rim, the arc kept."""
-        bottom = k < nc
-        rim = nc - 1 if bottom else count - nc
-        rx, ry = radii[rim] * cos, radii[rim] * sin
-        x, y = radii[k] * cos, radii[k] * sin
-        if bottom:
-            return x - rx.min(), ry.max() - y
-        return x - rx.min(), y - ry.min()
-
-    def flat_center(top):
-        rim = count - nc if top else nc - 1
-        rx, ry = radii[rim] * cos, radii[rim] * sin
-        return (-rx.min(), -ry.min() if top else ry.max())
+    # real-world: each ring's points flat over the extent of its cap's rim (the arc kept), (rings, sides + 1)
+    bx0, by1 = (radii[nc - 1] * cos).min(), (radii[nc - 1] * sin).max()
+    tx0, ty0 = (radii[count - nc] * cos).min(), (radii[count - nc] * sin).min()
+    bottom_cap = (np.arange(count) < nc)[:, None]
+    fx, fy = radii[:, None] * cos, radii[:, None] * sin
+    fu, fv = np.where(bottom_cap, fx - bx0, fx - tx0), np.where(bottom_cap, by1 - fy, fy - ty0)
 
     first_side, last_side = nc - 1, nc - 1 + nh
     # the bottom fan
     if rw:
-        fu, fv = flat(0)
-        bottom_uv = _corners(np, flat_center(False), (fu[j1], fv[j1]), (fu[jj], fv[jj]))
+        bottom_uv = _corners(np, (-bx0, by1), (fu[0][j1], fv[0][j1]), (fu[0][jj], fv[0][jj]))
     else:
         a, e = us(radii[0])
         bottom_uv = _corners(np, (0.5, vs[0]), (e, vs[0]), (a, vs[0]))
     b.faces(_stack(np, axis[0], rings[0][j1], rings[0][jj]), 1, 1, bottom_uv)
     last_dir = (math.cos(first + (ns - 1) * step), math.sin(first + (ns - 1) * step))
-    rim_end = [(radii[k] * cos[ns], radii[k] * sin[ns]) for k in range(count)]
-    reach = max(x * last_dir[0] + y * last_dir[1] for x, y in rim_end)
+    along_last = radii * cos[ns] * last_dir[0] + radii * sin[ns] * last_dir[1]
+    reach = along_last.max()
 
-    def ends(k, seam):
-        """(U of ring k's first point, of its last) on the side's map."""
-        a, e = us(radii[k], seam)
-        return a[0], e[-1]
+    # per pair of rings k, k + 1 (one column each): the start's plane, the quads, the end's plane
+    k = np.arange(count - 1, dtype=np.int64)
+    on_side = (first_side <= k) & (k < last_side)
+    mats = np.where(on_side, 2, np.where(k < first_side, 0, 1))
+    groups = np.where(on_side, smooth, 1)
+    seamed = _seam(np, u0, step / _TAU)
+    plain = (u0 % 1.0, (u0 + step / _TAU) % 1.0)  # a face that closes on a point at its top: no seam's shift
+    seam = (radii[k + 1] != 0.0)[:, None]
 
-    for k in range(count - 1):
-        on_side = first_side <= k < last_side
-        mat = 2 if on_side else (0 if k < first_side else 1)
-        group = smooth if on_side else 1
-        seam = radii[k + 1] != 0.0
-        a0, e0 = us(radii[k], seam)
-        a1, e1 = us(radii[k + 1], seam)
-        if rw:  # the cut planes' V up from their lowest point
-            low = min(0.0, h)
-            s_uv = [(radii[q], zs[q] - low) for q in (k, k + 1)]
-            e_uv = [(reach - (rim_end[q][0] * last_dir[0] + rim_end[q][1] * last_dir[1]), zs[q] - low)
-                    for q in (k, k + 1)]
-            s_axis = [(0.0, va[k] - low), (0.0, va[k + 1] - low)]
-            e_axis = [(reach, va[k] - low), (reach, va[k + 1] - low)]
-        else:
-            s_uv = [(a0[0], vs[k]), (a1[0], vs[k + 1])]
-            e_uv = [(e0[-1], vs[k]), (e1[-1], vs[k + 1])]
-            s_axis = e_axis = [(0.5, va[k]), (0.5, va[k + 1])]
-        b.faces(np.array([[axis[k], rings[k + 1][0], axis[k + 1]], [axis[k], rings[k][0], rings[k + 1][0]]]),
-                3, 2, np.array([[s_axis[0], s_uv[1], s_axis[1]], [s_axis[0], s_uv[0], s_uv[1]]], dtype=np.float64))
-        if rw and not on_side:
-            (fu0, fv0), (fu1, fv1) = flat(k), flat(k + 1)
-            quad_uv = _corners(np, (fu0[jj], fv0[jj]), (fu0[j1], fv0[j1]), (fu1[j1], fv1[j1]), (fu1[jj], fv1[jj]))
-        else:
-            quad_uv = _corners(np, (a0, vs[k]), (e0, vs[k]), (e1, vs[k + 1]), (a1, vs[k + 1]))
-        b.faces(_stack(np, rings[k][jj], rings[k][j1], rings[k + 1][j1], rings[k + 1][jj]), mat, group, quad_uv)
-        b.faces(np.array([[rings[k][ns], axis[k + 1], rings[k + 1][ns]], [rings[k][ns], axis[k], axis[k + 1]]]),
-                4, 4, np.array([[e_uv[0], e_axis[1], e_uv[1]], [e_uv[0], e_axis[0], e_axis[1]]], dtype=np.float64))
+    def ring_us(q):
+        """(U at the start, at the end) of the faces of each pair's ring q (k or k + 1), (pairs, sides)."""
+        a, e = (np.where(seam, sv, pv) for sv, pv in zip(seamed, plain))
+        point = (radii[q] == 0.0)[:, None]
+        a, e = np.where(point, 0.5, a), np.where(point, 0.5, e)
+        return (a * around, e * around) if rw else (a, e)
+
+    (a0, e0), (a1, e1) = ring_us(k), ring_us(k + 1)
+    v0, v1 = vs[k], vs[k + 1]
+    if rw:  # the cut planes' V up from their lowest point
+        low = min(0.0, h)
+        ends_uv = reach - along_last
+        s0, s1 = (radii[k], zs[k] - low), (radii[k + 1], zs[k + 1] - low)
+        t0, t1 = (ends_uv[k], zs[k] - low), (ends_uv[k + 1], zs[k + 1] - low)
+        sa0, sa1 = (0.0, va[k] - low), (0.0, va[k + 1] - low)
+        ea0, ea1 = (reach, va[k] - low), (reach, va[k + 1] - low)
+    else:
+        s0, s1 = (a0[:, 0], v0), (a1[:, 0], v1)
+        t0, t1 = (e0[:, -1], v0), (e1[:, -1], v1)
+        sa0 = ea0 = (0.5, va[k])
+        sa1 = ea1 = (0.5, va[k + 1])
+    pair = (slice(None), None)
+    start_v = np.stack((_stack(np, axis[k], rings[k + 1, 0], axis[k + 1]), _stack(np, axis[k], rings[k, 0],
+                                                                                  rings[k + 1, 0])), axis=1)
+    start_uv = np.stack((_corners(np, sa0, s1, sa1), _corners(np, sa0, s0, s1)), axis=1)
+    end_v = np.stack((_stack(np, rings[k, ns], axis[k + 1], rings[k + 1, ns]), _stack(np, rings[k, ns], axis[k],
+                                                                                      axis[k + 1])), axis=1)
+    end_uv = np.stack((_corners(np, t0, ea1, t1), _corners(np, t0, ea0, ea1)), axis=1)
+    quad_v = _stack(np, rings[k][:, jj], rings[k][:, j1], rings[k + 1][:, j1], rings[k + 1][:, jj])
+    quad_uv = _corners(np, (a0, v0[pair]), (e0, v0[pair]), (e1, v1[pair]), (a1, v1[pair]))
+    if rw:  # the caps flat over their rims' extent
+        caps = _corners(np, (fu[k][:, jj], fv[k][:, jj]), (fu[k][:, j1], fv[k][:, j1]),
+                        (fu[k + 1][:, j1], fv[k + 1][:, j1]), (fu[k + 1][:, jj], fv[k + 1][:, jj]))
+        quad_uv = np.where(on_side[:, None, None, None], quad_uv, caps)
+    b.columns((start_v, 3, 2, start_uv), (quad_v, mats[:, None], groups[:, None], quad_uv), (end_v, 4, 4, end_uv))
     # the top fan
     if rw:
-        fu, fv = flat(count - 1)
-        top_uv = _corners(np, flat_center(True), (fu[jj], fv[jj]), (fu[j1], fv[j1]))
+        top_uv = _corners(np, (-tx0, -ty0), (fu[-1][jj], fv[-1][jj]), (fu[-1][j1], fv[-1][j1]))
     else:
         a, e = us(radii[-1])
         top_uv = _corners(np, (0.5, vs[-1]), (a, vs[-1]), (e, vs[-1]))
