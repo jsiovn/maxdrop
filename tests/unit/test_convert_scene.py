@@ -184,7 +184,8 @@ ISSUES = {"uvwmap": ["uvw map: a UVW Map above Bend is not evaluated",
               "light: its line shape is not imported: a point",
               "light: its photometric web fixture_web.ies is approximated by a spot of 170 degrees",
               "light: its power is taken as its flux: V-Ray scales the IES file's candelas by the power over "
-              "the file's rated lumens, which are not read",
+              "the file's rated lumens, which are not read (the file is not found: beside the scene, in its maps "
+              "or textures folder or a texture search folder it would be)",
               "light: its rectangle light shape is a sphere 0.4 m across",
               "light: its rectangle shape is not imported: a point"],
           "vray_lights": ["light: diffuse contribution 0.5: Blender's diffuse factor, which only EEVEE uses",

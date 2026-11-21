@@ -973,7 +973,8 @@ photometric type (1 C, 2 B, 3 A), units type, width, length, height; ballast fac
 factor, input watts; the vertical angles, the horizontal angles, then one run of vertical candelas per horizontal
 angle, separated by white space or commas. The flux of a type C file: per horizontal plane the sum over the zones
 between two vertical angles of their mean intensity times (cos a − cos b), the trapezoid over the planes in radians,
-times 360 / their span (one plane 2π; the spans 90, 180 and 360 of LM-63's symmetries, 90 to 270 included); an
+times 360 / their span (one plane 2π; the spans 90, 180 and 360 of LM-63's symmetries from 0 or 90, 90 to 270
+included; planes from 0 to past 180 but short of 360 closed with the first plane at 360); an
 isotropic file of I cd gives 4π I exactly. Not measured in V-Ray, so chosen from LM-63: the candela multiplier
 applies; the ballast factors do not (as Blender's own IES reader does); the rated lumens are taken per file, the
 number of lamps left out (a file of more lamps is a line in the report); rated lumens of 0 or below count as -1.

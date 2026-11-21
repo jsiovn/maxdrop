@@ -17,12 +17,13 @@ A VRayIES with its intensity override off scales the file's candelas by its powe
 number of lamps, lumens per lamp, candela multiplier, the numbers of vertical and horizontal angles, photometric type,
 units type, width, length, height; ballast factor, ballast-lamp photometric factor, input watts; the vertical angles,
 the horizontal angles, and the candelas, one run of vertical values per horizontal angle. Numbers are separated by
-white space or commas.
+white space or commas; a line ends at CR LF, LF or a lone CR.
 
 The flux is integrated for photometric type C (vertical angles from the nadir, 0 to 180 degrees; horizontal ones
 about the vertical axis): per horizontal plane the sum over the zones between two vertical angles of their mean
 intensity times (cos a - cos b), then the trapezoid over the planes in radians, times 360 / their span (one plane:
-2 pi; the span 90, 180 or 360 degrees of LM-63's symmetries, 90 to 270 included). An isotropic file of I cd gives
+2 pi; the span 90, 180 or 360 degrees of LM-63's symmetries from 0 or 90, 90 to 270 included; a file from 0 to past
+180 but short of 360 is closed with its first plane at 360). An isotropic file of I cd gives
 4 pi I exactly. Candelas are multiplied by the candela multiplier; the ballast factors are left out (as Blender's
 own IES reader does); the rated lumens are per lamp, the number of lamps not applied (V-Ray's use of either is not
 measured). Type A and B files are not read.
@@ -41,6 +42,7 @@ MAX_VALUES = 1 << 20
 TYPE_C = 1
 _NUMBER = re.compile(rb"[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?\Z")
 _SEPARATORS = re.compile(rb"[\s,]+")
+_LINES = re.compile(rb"[^\r\n]*")  # CR LF, LF or a lone CR (old Mac files) ends a line
 _SPANS = (0.0, 90.0, 180.0, 360.0)
 
 
@@ -83,11 +85,11 @@ class _Numbers:
             raise IesError("the file ends before its %s" % what)
         token = self.tokens[self.at]
         self.at += 1
-        if not _NUMBER.match(token):
-            raise IesError("its %s %r is not a number" % (what, token.decode("latin-1")[:20]))
+        if not _NUMBER.match(token):  # the token itself stays out of the report: the file may be any local file
+            raise IesError("its %s: not a number" % what)
         v = float(token)
         if not math.isfinite(v):
-            raise IesError("its %s is out of range" % what)
+            raise IesError("its %s: a number out of range" % what)
         return v
 
     def count(self, what, low, high):
@@ -104,14 +106,10 @@ class _Numbers:
 
 def _tokens_after_tilt(data):
     """(the TILT value, the tokens after its line)."""
-    pos = 0
-    while pos < len(data):
-        end = data.find(b"\n", pos)
-        end = len(data) if end < 0 else end
-        line = data[pos:end].strip()
+    for m in _LINES.finditer(data):
+        line = m.group().strip()
         if line[:5].upper() == b"TILT=":
-            return line[5:].strip().upper(), [t for t in _SEPARATORS.split(data[end:]) if t]
-        pos = end + 1
+            return line[5:].strip().upper(), [t for t in _SEPARATORS.split(data[m.end():]) if t]
     raise IesError("no TILT line")
 
 
@@ -144,12 +142,16 @@ def parse(data):
         raise IesError("its vertical angles are not in order from 0 to 180 degrees")
     if any(b < a for a, b in zip(horizontal, horizontal[1:])) or horizontal[0] < 0 or horizontal[-1] > 360:
         raise IesError("its horizontal angles are not in order from 0 to 360 degrees")
-    span = horizontal[-1] - horizontal[0]
-    if span not in _SPANS or (nh > 1) != (span > 0):
-        raise IesError("its horizontal angles span %g degrees, not 0, 90, 180 or 360" % span)
     candelas = n.numbers(nv * nh, "candelas")
     if any(c < 0 for c in candelas):
         raise IesError("a candela value is negative")
+    if horizontal[0] == 0 and 180 < horizontal[-1] < 360:  # no symmetry, the last plane short of 360: close it
+        horizontal.append(360.0)
+        candelas += candelas[:nv]
+    span = horizontal[-1] - horizontal[0]
+    if horizontal[0] not in (0, 90) or span not in _SPANS or (len(horizontal) > 1) != (span > 0):
+        raise IesError("its horizontal angles run from %g to %g degrees: not one of LM-63's symmetries"
+                       % (horizontal[0], horizontal[-1]))
     flux = _flux(vertical, horizontal, candelas) * multiplier
     if not math.isfinite(flux):
         raise IesError("its flux is out of range")

@@ -79,6 +79,14 @@ class Parse(unittest.TestCase):
         data = ies_file(header="").replace(b" ", b",").replace(b"\n", b"\r\n")
         self.assertAlmostEqual(ies.parse(data).flux, ISOTROPIC, delta=1e-9)
 
+    def test_lone_cr_line_ends(self):
+        self.assertAlmostEqual(ies.parse(ies_file().replace(b"\n", b"\r")).flux, ISOTROPIC, delta=1e-9)
+
+    def test_no_symmetry_short_of_360_is_closed(self):
+        # planes 0, 120, 240 of 100, 200, 300 cd; closed with plane 0 at 360: the mean over the circle, 200 cd
+        p = ies.parse(ies_file(horizontal=(0, 120, 240), candelas=[100] * 3 + [200] * 3 + [300] * 3))
+        self.assertAlmostEqual(p.flux, 4.0 * math.pi * 200.0, delta=1e-9)
+
     def test_lamps_are_read(self):
         self.assertEqual(ies.parse(ies_file(lamps=2)).lamps, 2)
 
@@ -109,8 +117,8 @@ class Refused(unittest.TestCase):
 
     def test_not_numbers(self):
         for bad in (b"nan", b"inf", b"1_0", b"0x10", b"--1"):
-            self.refused(ies_file().replace(b" 500 ", b" " + bad + b" ", 1), "its lumens per lamp")
-        self.refused(ies_file().replace(b" 500 ", b" 1e999 ", 1), "its lumens per lamp is out of range")
+            self.refused(ies_file().replace(b" 500 ", b" " + bad + b" ", 1), "its lumens per lamp: not a number")
+        self.refused(ies_file().replace(b" 500 ", b" 1e999 ", 1), "its lumens per lamp: a number out of range")
 
     def test_counts(self):
         self.refused(ies_file(lamps=0), "its number of lamps 0")
@@ -127,8 +135,10 @@ class Refused(unittest.TestCase):
         self.refused(ies_file(vertical=(0, 90, 190)), "its vertical angles are not in order")
         self.refused(ies_file(vertical=(-10, 90)), "its vertical angles are not in order")
         self.refused(ies_file(horizontal=(0, 90, 45)), "its horizontal angles are not in order")
-        self.refused(ies_file(horizontal=(0, 120)), "its horizontal angles span 120")
-        self.refused(ies_file(horizontal=(0, 0)), "its horizontal angles span 0")
+        self.refused(ies_file(horizontal=(0, 120)), "its horizontal angles run from 0 to 120 degrees")
+        self.refused(ies_file(horizontal=(0, 0)), "its horizontal angles run from 0 to 0 degrees")
+        self.refused(ies_file(horizontal=(45, 135)), "its horizontal angles run from 45 to 135 degrees")
+        self.refused(ies_file(horizontal=(90, 200)), "its horizontal angles run from 90 to 200 degrees")
 
     def test_negative_values(self):
         self.refused(ies_file(multiplier=-1), "its candela multiplier -1 is negative")

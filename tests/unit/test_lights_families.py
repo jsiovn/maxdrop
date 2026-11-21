@@ -297,6 +297,8 @@ class SunAndIes(unittest.TestCase):
         ld, issues = describe(with_file(ies(power=1000.0), ies_bytes(lamps=2)))
         self.assertAlmostEqual(ld.watts, 4.0 * math.pi * 200.0 / 683.0, delta=1e-9)
         self.assertEqual(issues, [L.IES_LAMPS % ("a.ies", 2), L.IES_FILE % "a.ies"])
+        ld, issues = describe(with_file(ies(power=1000.0), ies_bytes(rated=-1, lamps=2)))  # lumens per lamp unused
+        self.assertEqual(issues, [L.IES_FILE % "a.ies"])
         ld, issues = describe(with_file(ies(power=1000.0), ies_bytes(candela=0)))
         self.assertEqual((ld.watts, issues), (0.0, [L.IES_DARK % "a.ies", L.IES_FILE % "a.ies"]))
         ld, issues = describe(with_file(ies(power=1000.0), ies_bytes(rated="1e-300")))

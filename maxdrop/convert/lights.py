@@ -270,7 +270,8 @@ WEB_FILE = "its photometric web %s is approximated by a spot of 170 degrees"
 IES_FILE = "its IES file %s is approximated by a spot of 170 degrees"
 IES_ZERO = "power 0: it gives no light, in V-Ray too: 0 W"
 IES_RATED = ("its power is taken as its flux: V-Ray scales the IES file's candelas by the power over the file's "
-             "rated lumens, which are not read")
+             "rated lumens, which are not read (the file is not found: beside the scene, in its maps or textures "
+             "folder or a texture search folder it would be)")
 IES_UNREAD = ("its power is taken as its flux: V-Ray scales the IES file's candelas by the power over the file's "
               "rated lumens, and %s cannot be read (%s)")
 IES_LAMPS = ("its IES file %s has %d lamps: V-Ray's power is taken as scaling it by its lumens per lamp "
@@ -922,7 +923,7 @@ def _describe_ies(key, name, v, meters, swatches, issues):
         photometry = v.get("photometry")
         if photometry is not None:
             lm *= photometry.scale  # past the float range: describe() makes it 0 W, OUT_OF_RANGE
-            if photometry.lamps != 1:
+            if photometry.lamps != 1 and photometry.rated > 0:
                 issues.append(IES_LAMPS % (file, photometry.lamps))
             if lm == 0:
                 issues.append(IES_DARK % file)
