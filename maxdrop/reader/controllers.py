@@ -37,7 +37,9 @@ A Look At controller (a Matrix3 controller: target cameras and lights) and a Loo
 controller in a PRS) give the node's world matrix from the world positions of other nodes (the target, the
 constraint's targets and up node): scale * aim frame * translation(P), P the position controller's value times the
 parent's world matrix; the parent's rotation and scale do not reach the frame. The node's local matrix is that
-world matrix times the parent's inverse, and its children follow the world matrix. look_frame() and
+world matrix times the parent's inverse, and its children follow the world matrix. The constraint's offsets are
+quaternions of its own: with Keep Initial Offset the aim frame becomes (local rotation at assignment) * (aim frame at
+assignment)^-1 * frame, without it frame * (the Set Orientation rotation). look_frame() and
 constraint_frame() say how a frame is aimed, look_at(i) describes a node's Look At controller. Every node of a
 look-at cycle (one aimed at itself included) is damaged, whichever node is asked for first; a look-at that waits on
 more than MAX_LOOK_AT_DEPTH others is damaged.
@@ -80,7 +82,7 @@ LOOK_AT_AXIS = "Look At axis out of range, Z used"
 LOOK_AT_NODE = "look-at target or up node that is no node, none used"
 LOOK_AT_PARENT = "look-at under a parent that cannot be inverted"
 CONSTRAINT_EMPTY = "LookAt Constraint without a target of any weight, no rotation"
-CONSTRAINT_OFFSET = "LookAt Constraint offset (Keep Initial Offset, Set Orientation) not applied"
+CONSTRAINT_OFFSET = "LookAt Constraint offset (Keep Initial Offset, Set Orientation) not stored, not applied"
 CONSTRAINT_DEGENERATE = "LookAt Constraint that cannot be aimed (on its target, up along the view), no rotation"
 CONSTRAINT_SETTING = "animated or damaged LookAt Constraint setting, its default used"
 CONSTRAINT_BLOCK = "damaged LookAt Constraint parameters, the defaults used where unread"
@@ -130,6 +132,9 @@ _LOOK_AXIS, _LOOK_FLIP, _LOOK_TARGET_UP = 0x0100, 0x0110, 0x0201
 # the LookAt Constraint's ParamBlock2 (3 viewline length, 12 viewline length absolute: display only)
 (_LC_WEIGHTS, _LC_TARGETS, _LC_RELATIVE, _LC_SET_ORIENTATION, _LC_AXIS, _LC_AXIS_FLIP, _LC_UP_AXIS, _LC_UP_WORLD,
  _LC_UP_NODE, _LC_SOURCE_UP, _LC_SOURCE_UP_FLIP, _LC_UP_CONTROL) = 0, 1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 13
+# the constraint's own chunks, Max quaternions: the node's local rotation and the aimed frame when the constraint was
+# assigned, the Set Orientation rotation (0x1001: the world rotation then, 0x1005: a u32, not read)
+_LC_INITIAL_LOCAL, _LC_INITIAL_FRAME, _LC_USER = 0x1002, 0x1003, 0x1004
 _TINY = 1e-12
 
 
@@ -196,6 +201,10 @@ def euler_matrix(angles, order=0):
 
 def _transpose3(m):
     return _mat3(((m[0][0], m[1][0], m[2][0]), (m[0][1], m[1][1], m[2][1]), (m[0][2], m[1][2], m[2][2])))
+
+
+def _rows3(m):
+    return tuple(row[:3] for row in m[:3])
 
 
 def scale_matrix(scale, axis=(0.0, 0.0, 0.0, 1.0)):
@@ -732,8 +741,8 @@ class _Eval:
                                            len(self.scene), self.kind(c))
         if pb.issues:  # a damaged entry reads as missing: its default is used
             self.issue(c, "%s: %s" % (CONSTRAINT_BLOCK, pb.issues[0]))
-        if self._setting(c, pb, _LC_RELATIVE, 0) or self._setting(c, pb, _LC_SET_ORIENTATION, 0):
-            self.issue(c, CONSTRAINT_OFFSET)
+        relative = self._setting(c, pb, _LC_RELATIVE, 0)
+        set_orientation = self._setting(c, pb, _LC_SET_ORIENTATION, 0)
         weights = pb.value(_LC_WEIGHTS, [])
         weights = weights if isinstance(weights, list) else [weights]
         targets = pb.value(_LC_TARGETS, [])
@@ -776,7 +785,28 @@ class _Eval:
                                  bool(self._setting(c, pb, _LC_SOURCE_UP_FLIP, 0)))
         if frame is None:
             self.issue(c, CONSTRAINT_DEGENERATE)
-        return frame
+            return None
+        if relative:  # the rotation at assignment, kept relative to the frame then; Set Orientation's is ignored
+            local, initial = self._quat(c, _LC_INITIAL_LOCAL), self._quat(c, _LC_INITIAL_FRAME)
+            if local is None or initial is None:
+                self.issue(c, CONSTRAINT_OFFSET)
+                return frame
+            return _rows3(multiply(multiply(local, _transpose3(initial)), _mat3(frame)))
+        # Set Orientation's rotation, also after it is turned off; identity until the node is turned with it on
+        user = self._quat(c, _LC_USER)
+        if user is None:
+            if set_orientation:
+                self.issue(c, CONSTRAINT_OFFSET)
+            return frame
+        return _rows3(multiply(_mat3(frame), user))
+
+    def _quat(self, c, cid):
+        """The matrix of constraint c's quaternion chunk cid, None when it is missing or short."""
+        chunk = self.scene.chunk(c)
+        value = chunk.first(cid) if chunk.container else None
+        if value is None or value.payload_size < 16:
+            return None
+        return quat_matrix(value.unpack("<4f"))
 
 
 class Transforms:

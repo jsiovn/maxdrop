@@ -5,7 +5,8 @@
 -- Look At controllers and Look At constraints. Target cameras and a target spot (each with its target node), one
 -- straight above its target, one with a roll, one under a rotated and scaled Dummy; boxes with a Look At
 -- controller of another axis, flipped, rolled, scaled, with the target as up node; boxes with a Look At
--- constraint: two weighted targets, the axis options, an up node it looks at or aligns with, one under the Dummy.
+-- constraint: two weighted targets, the axis options, an up node it looks at or aligns with, one under the Dummy;
+-- the constraint's offsets: Keep Initial Offset under the Dummy, Set Orientation, both, Set Orientation turned off.
 -- Positions 3ds Max computes (the children of the Dummy) stay below 100: the oracle keeps 6 significant digits.
 -- Authored for MaxDrop's tests (see CONTRIBUTING.md, "Test files"): it resets the scene, so run it in a 3ds Max
 -- session with nothing to keep, then sanitize and check the saved file before it goes into tests/fixtures/.
@@ -72,8 +73,41 @@
 	lc.pickUpNode = aim
 	lc.upnode_ctrl = 1
 	lc.upnode_axis = 0
+	-- the constraint's offsets, each box turned before or after its constraint, the target moved after all of them
+	local offsetAim = Dummy name:"FixtureOffsetAim" pos:[20,30,10]
+	local keep = Box name:"FixtureKeepOffset" length:10 width:10 height:10
+	keep.parent = rig
+	in coordsys parent keep.pos = [10,-20,-5]
+	in coordsys local rotate keep (eulerAngles 20 30 40)
+	lc = LookAt_Constraint()
+	keep.rotation.controller = lc
+	lc.appendTarget offsetAim 50
+	lc.relative = true
+	keep.transform  -- 3ds Max takes the aimed frame the offset is kept from at the constraint's first evaluation
+	local orient = Box name:"FixtureSetOrientation" length:10 width:10 height:10 pos:[-60,-60,10]
+	lc = LookAt_Constraint()
+	orient.rotation.controller = lc
+	lc.appendTarget offsetAim 50
+	lc.set_orientation = true
+	in coordsys local rotate orient (eulerAngles 15 0 25)
+	local offsets = Box name:"FixtureBothOffsets" length:10 width:10 height:10 pos:[70,30,-10]
+	rotate offsets (eulerAngles -10 25 60)
+	lc = LookAt_Constraint()
+	offsets.rotation.controller = lc
+	lc.appendTarget offsetAim 50
+	lc.relative = true
+	lc.set_orientation = true
+	in coordsys local rotate offsets (eulerAngles 0 20 -15)
+	local orientOff = Box name:"FixtureOrientationOff" length:10 width:10 height:10 pos:[-20,-70,0]
+	lc = LookAt_Constraint()
+	orientOff.rotation.controller = lc
+	lc.appendTarget offsetAim 50
+	lc.set_orientation = true
+	in coordsys local rotate orientOff (eulerAngles 25 10 0)
+	lc.set_orientation = false
+	offsetAim.pos = [-10,50,30]
 	local grey = StandardMaterial name:"FixtureGrey" diffuse:(color 128 128 128)
-	for b in #(looker, lookerY, both, upLook, upAxis) do b.material = grey
+	for b in #(looker, lookerY, both, upLook, upAxis, keep, orient, offsets, orientOff) do b.material = grey
 	makeDir @"C:\maxdrop_fixtures" all:true
 	saveMaxFile @"C:\maxdrop_fixtures\lookat.max" quiet:true
 	"lookat: " + (objects.count as string) + " objects"

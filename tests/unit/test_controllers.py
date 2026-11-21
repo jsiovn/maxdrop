@@ -923,6 +923,43 @@ MAX_CONSTRAINT = {
     (1, False, 0, False, 0, 0): m3((0.19245, -0.19245, -0.96225), (0.680414, -0.680414, 0.272165),
                                    (-0.707107, -0.707107, 0)),
 }
+# 3ds Max 2020 probes of the offsets: name -> (box position, settings (2 relative, 4 set orientation), the
+# constraint's chunks as saved, [(target position, node.transform rows)]): the box turned before the constraint was
+# assigned (Keep Initial Offset) or with Set Orientation on after. 0x1001 (the world rotation at assignment) is
+# replaced by identity: the local one, 0x1002, is what counts.
+_INITIAL_FRAME = (-0.0173361, 0.090019, -0.1883112, 0.9778215)  # aimed from the origin at [50, 20, 10]
+MAX_OFFSETS = {
+    "keep initial offset": (
+        (0, 0, 0), {2: 1},
+        {0x1001: (0, 0, 0, 1), 0x1002: (-0.0704393, -0.2968829, -0.2831141, 0.9092553), 0x1003: _INITIAL_FRAME,
+         0x1004: (0, 0, 0, 1)},
+        [((50, 20, 10), m3((0.663414, 0.5566704, -0.4999999), (-0.4730215, 0.8297694, 0.2961981),
+                           (0.5797694, 0.04000875, 0.8137977))),
+         ((-30, 40, 25), m3((-0.7736892, 0.5808025, -0.2531276), (-0.6322067, -0.7338866, 0.2484454),
+                            (-0.0414692, 0.3522485, 0.9349873)))]),
+    "set orientation": (
+        (0, 0, 0), {4: 1}, {0x1003: _INITIAL_FRAME, 0x1004: (-0.0694609, -0.0582117, -0.234247, 0.9679437)},
+        [((50, 20, 10), m3((0.6703855, 0.7233281, 0.1654684), (-0.7416493, 0.646203, 0.1799388),
+                           (0.02322861, -0.2433479, 0.9696609))),
+         ((-30, 40, 25), m3((-0.7278689, 0.3344707, 0.5986118), (-0.4395502, -0.8976144, -0.03292488),
+                            (0.5263101, -0.2870849, 0.8003623)))]),
+    # Set Orientation on, the box turned, Set Orientation off again: the rotation stays
+    "set orientation turned off": (
+        (-30, 0, 0), {}, {0x1004: (-0.0620619, -0.0701832, -0.2330402, 0.9679437)},
+        [((20, 30, 10), m3((0.5485346, 0.8219741, 0.153194), (-0.8329241, 0.5211591, 0.1860934),
+                           (0.07312555, -0.2296776, 0.9705158))),
+         ((-10, 50, 30), m3((0.007349193, 0.8234046, 0.5674073), (-0.9827967, -0.0987699, 0.1560614),
+                            (0.1845444, -0.5587929, 0.8085133)))]),
+    # both on, the box turned with Set Orientation after the offset was kept: Keep Initial Offset alone counts
+    "both": (
+        (-40, 20, 0), {2: 1, 4: 1},
+        {0x1002: (0.1814979, -0.144184, -0.5026271, 0.8328478), 0x1003: (-0.0067123, 0.0811034, -0.0822069, 0.9932871),
+         0x1004: (0.1502972, -0.0341292, 0.1514035, 0.9763826)},
+        [((20, 30, 10), m3((0.4531538, 0.7848856, -0.4226183), (-0.889562, 0.4288489, -0.1573787),
+                           (0.05771513, 0.4472619, 0.8925389))),
+         ((-10, 50, 30), m3((0.002207398, 0.9917443, -0.1282119), (-0.8670341, -0.06198299, -0.4943783),
+                            (-0.4982438, 0.1122554, 0.8597394)))]),
+}
 
 
 def constraint_block(owner, weights, targets=0, settings=None, slots=()):
@@ -956,16 +993,19 @@ class LookAtBuild(Build):
         parts.append(leaf(0x0201, struct.pack("<B", 1 if target_up else 0)))
         return self.node(self.add(node(C_LOOKAT, *parts)), parent=parent)
 
-    def constrained(self, targets, weights, settings=None, pos=(-50, 50, 0), scale=(1, 1, 1), parent=0, up=None):
+    def constrained(self, targets, weights, settings=None, pos=(-50, 50, 0), scale=(1, 1, 1), parent=0, up=None,
+                    offsets=None):
         """A node whose PRS rotation is a LookAt Constraint; its block is the object right before the
-        constraint."""
+        constraint. offsets: {chunk id: quaternion (4 floats) or raw bytes} of the constraint's own chunks."""
         block = len(self.objects)
         slots = list(targets) + ([up] if up is not None else [])
         settings = dict(settings or {})
         if up is not None:
             settings[9] = 1
         self.add(constraint_block(block + 1, weights, len(targets), settings, slots))
-        lc = self.add(node(C_LOOKAT_CONSTRAINT, refs34(block)))
+        own = [leaf(cid, v if isinstance(v, bytes) else struct.pack("<4f", *v))
+               for cid, v in sorted((offsets or {}).items())]
+        lc = self.add(node(C_LOOKAT_CONSTRAINT, refs34(block), *own))
         prs = self.prs(self.xyz(C_POSXYZ, pos), lc, self.bscale(scale))
         return self.node(prs, parent=parent)
 
@@ -1155,17 +1195,47 @@ class TestConstraint(MatrixCase):
         self.assertMatrix(t.world(n), want[:3] + ((173.693, 0.237043, 18.2451, 1),), places=3)
         self.assertMatrix(ct.multiply(t.local(n), t.world(rig)), t.world(n))
 
-    def test_without_weight_or_with_an_offset(self):
+    def test_offsets_equal_max(self):
+        """3ds Max 2020 probes: node.transform of a box with its constraint's chunks as saved, the target where it
+        was at assignment and moved after."""
+        for name, (pos, settings, offsets, states) in MAX_OFFSETS.items():
+            for target, expected in states:
+                b = LookAtBuild()
+                n = b.constrained([b.target(target)], [50.0], settings, pos=pos, offsets=offsets)
+                t = b.transforms()
+                self.assertMatrix(t.world(n), expected[:3] + (tuple(pos) + (1,),), places=5)
+                self.assertEqual(t.issues, [], name)
+
+    def test_offset_not_stored(self):
+        plain = MAX_CONSTRAINT[(0, False, 2, False, 2, 1)][:3] + ((-50, 50, 0, 1),)
+        quat = (0.1814979, -0.144184, -0.5026271, 0.8328478)
+        for settings, offsets in (({2: 1}, {}), ({2: 1}, {0x1002: quat}),
+                                  ({2: 1}, {0x1002: quat, 0x1003: bytes(8)}), ({4: 1}, {}),
+                                  ({4: 1}, {0x1004: bytes(12)})):
+            b = LookAtBuild()
+            n = b.constrained([b.target((0, 0, 20))], [50.0], settings, offsets=offsets)
+            t = b.transforms()
+            self.assertMatrix(t.world(n), plain, places=5)
+            self.assertEqual([i.reason for i in t.issues], [ct.CONSTRAINT_OFFSET], (settings, offsets))
+        for offsets in ({}, {0x1004: (0, 0, 0, 0)}, {0x1004: (0, 0, 0, 1)}):  # nothing set: no offset, no issue
+            b = LookAtBuild()
+            n = b.constrained([b.target((0, 0, 20))], [50.0], offsets=offsets)
+            t = b.transforms()
+            self.assertMatrix(t.world(n), plain, places=5)
+            self.assertEqual(t.issues, [])
+        b = LookAtBuild()  # a quaternion that is not finite
+        n = b.constrained([b.target((0, 0, 20))], [50.0], {2: 1},
+                          offsets={0x1002: (float("nan"), 0, 0, 1), 0x1003: (0, 0, 0, 1)})
+        t = b.transforms()
+        self.assertTrue(all(math.isfinite(v) for row in t.world(n) for v in row))
+        self.assertEqual([i.reason for i in t.issues], [ct.NON_FINITE])
+
+    def test_without_weight(self):
         b = LookAtBuild()
         n = b.constrained([b.target((0, 0, 20))], [0.0])
         t = b.transforms()
         self.assertMatrix(t.world(n), ct.translation((-50, 50, 0)))
         self.assertEqual([i.reason for i in t.issues], [ct.CONSTRAINT_EMPTY])
-        b = LookAtBuild()
-        n = b.constrained([b.target((0, 0, 20))], [50.0], {2: 1})
-        t = b.transforms()
-        self.assertMatrix(t.world(n), MAX_CONSTRAINT[(0, False, 2, False, 2, 1)][:3] + ((-50, 50, 0, 1),), places=5)
-        self.assertEqual([i.reason for i in t.issues], [ct.CONSTRAINT_OFFSET])
         b = LookAtBuild()  # target on the node: no rotation
         n = b.constrained([b.target((-50, 50, 0))], [50.0])
         t = b.transforms()
