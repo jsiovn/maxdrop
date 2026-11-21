@@ -1327,6 +1327,16 @@ The maps of texmap_rules (block 0 each; `convert/texmaps.py`):
 | Normal Bump `(0x243E22C6, 0x63F6A014)` | 0 mult_spin, 1 bump_spin, 2 normal_map, 3 bump_map, 4 / 5 their switches, 6 method (0 tangent), 7 flipred, 8 flipgreen, 9 swap_rg |
 | CoronaNormal `(0x2870CEAA, 0xCC18437C)` | 500 normalMap, 501 multiplier, 502 addGamma, 503 flipRed, 504 flipGreen, 505 swapRedGreen, 507 additionalBump, 508 additionalBumpStrength, 509 additionalBumpOn |
 
+Empty wrappers, measured (maxdrop-em3.76; 3ds Max 2020, gamma off, renderMap and V-Ray 5.2 renders with linear
+color mapping, a plane under an orthographic camera). An Output or RGB Tint with map1 unset or map1Enabled off renders
+exactly as the same map over an opaque white map: white through its Output part (level 0.8, offset 0.1, amount 0.5
+gave the same pixel as over white) or its tint ((128, 0, 0), (0, 64, 0), (0, 0, 32) gave 0.502, 0.251, 0.125). A
+VRayColor2Bump without a map renders (0.5, 0.5, 1), opaque, in a color slot (over a white map: white); it has no map
+switch. On an opacity input V-Ray takes the mean (1, 0.293, 0.667). In a VRayMtl bump slot each one is flat; inside
+a VRayNormalMap's normal slot the white of an empty Output or RGB Tint tilts the normal as a white map does, the
+VRayColor2Bump's color is flat. Corona renders do not run on the machine of the measurement: not measured. MAXScript
+`copy` of an Output map loses map1Enabled (the copy renders its map).
+
 The Corona classes of corona_physical, corona_legacy, corona_maps, corona_layered, corona_light, corona_more and
 corona_mix_ops (3ds Max 2020 + Corona 12, DLL `coronamaxutils2020.dlt`; block 0 each). CoronaPhysicalMtl's class-directory name starts with a
 carriage return (`"\rCoronaPhysicalMtl"`); MAXScript's `CoronaMtl` is CoronaLegacyMtl. Corona names its obsolete

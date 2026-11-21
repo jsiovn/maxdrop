@@ -73,17 +73,19 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
   as an Adjust) and RGB Tint (a Tint unless the identity). Measured in 3ds Max 2020 (renderMap, a rendered sphere for
   the Falloff): see the constants below.
 - Peeled to the first usable map below, an approximation counted by class: VRayDirt (the unoccluded map when on,
-  else the unoccluded color), VRayColor2Bump (its map). An Output, RGB Tint or VRayColor2Bump without a map (or an
-  Output or RGB Tint with it off; VRayColor2Bump has no switch) gives no graph and is an issue on it, counted
-  nowhere: what 3ds Max draws there is not measured, so nothing stands in for it (at the top the input keeps its own
-  value). Any other map class with maps below gives the first image below it (depth first, in reference order),
-  counted the same way; one without is unsupported (counted, no graph).
+  else the unoccluded color), VRayColor2Bump (its map). An Output or RGB Tint without a map (or with it off) is
+  drawn as over a white map, its own Output or tint applied; a VRayColor2Bump without a map (it has no switch) is
+  the constant (0.5, 0.5, 1); neither is counted (3ds Max 2020 renderMap and V-Ray 5.2 renders with the gamma off,
+  maxdrop-em3.76; with it on assumed the same swatch, Corona not measured). In a normal input that white tilts the
+  normal in V-Ray and a constant normal is drawn flat: an issue. Any other map class with maps below gives the first
+  image below it (depth first, in reference order), counted the same way; one without is unsupported (counted, no
+  graph).
 - Normal maps (VRayNormalMap, Normal Bump, CoronaNormal) in a normal or bump input -> NormalMap: the normal image
   with the class's multiplier as its strength, flip red / green and swap, and the additional bump map as a Bump with
   its multiplier; a normal map class with only its bump map is that Bump. In any other input it is peeled to its
   normal image (or its bump image).
 - A map that is set (and switched on) but converts to nothing (an unsupported class with no bitmap below, a
-  Bitmap without a file, an empty Output, RGB Tint or VRayColor2Bump, a cut branch) is an issue on its wrapper
+  Bitmap without a file, a cut branch) is an issue on its wrapper
   naming its class, and never stands in as the wrapper's own color for it (3ds Max uses that color only without a
   map or with the map off): a Color Correction, VRayDirt, Output, RGB Tint or VRayColor2Bump over it gives
   no graph and is not counted (the lost map is reported), so the input keeps its own value.
@@ -1054,13 +1056,21 @@ def _vray_dirt(conv, m, kind, walk, depth, chain):
     return conv._constant(m, 13, kind, (1.0, 1.0, 1.0))
 
 
-def _wrapped(conv, m, map_pid, on_pid, kind, walk, depth, chain):
-    """The map of a wrapper that has no color of its own (Output, RGB Tint, VRayColor2Bump). Without a used map it
-    gives no graph and is an issue: what 3ds Max draws there was not measured, so nothing stands in for it."""
+WHITE = (1.0, 1.0, 1.0)
+C2B_EMPTY = (0.5, 0.5, 1.0)  # what a VRayColor2Bump without a map renders: a flat normal's color
+
+
+def _wrapped(conv, m, map_pid, on_pid, kind, walk, depth, chain, empty=WHITE):
+    """The map of a wrapper that has no color of its own (Output, RGB Tint, VRayColor2Bump); without a used map the
+    swatch empty: an Output or RGB Tint renders as over a white map, a VRayColor2Bump the color C2B_EMPTY (3ds Max
+    2020 renderMap and V-Ray 5.2 renders with the gamma off, maxdrop-em3.76; with it on assumed, Corona not
+    measured). In a normal input a color other than a flat normal's tilts the normal in V-Ray, and a constant normal
+    is drawn flat: an issue."""
     if conv._on(m, map_pid, on_pid) is None:
-        conv._issue(walk, m.index, "%s %r: %s, not drawn" % (
-            conv._class_name(m), m.name, "no map" if on_pid is None else "no map (or its map off)"))
-        return None
+        if kind == NORMAL and empty != C2B_EMPTY:
+            conv._issue(walk, m.index, "%s %r: %s: white, a tilted normal in 3ds Max, drawn flat" % (
+                conv._class_name(m), m.name, "no map" if on_pid is None else "no map (or its map off)"))
+        return conv._swatch(empty, kind)
     return conv._sub(m, map_pid, on_pid, kind, walk, depth, chain)
 
 
@@ -1083,8 +1093,14 @@ def _rgb_tint(conv, m, kind, walk, depth, chain):
 
 
 def _color2bump(conv, m, kind, walk, depth, chain):
-    """0 map (no switch)."""
-    return _wrapped(conv, m, 0, None, kind, walk, depth, chain)
+    """0 map (no switch): peeled to it, counted; without one the constant C2B_EMPTY, exact (not counted)."""
+    if conv._on(m, 0, None) is None:
+        return _wrapped(conv, m, 0, None, kind, walk, depth, chain, C2B_EMPTY)
+    node = conv._sub(m, 0, None, kind, walk, depth, chain)
+    if node is not None:
+        walk.approximated = True
+        conv._count(conv.stats.peeled, m)
+    return node
 
 
 def _sides(conv, m, ids, kind, walk, depth, chain):
@@ -1389,8 +1405,8 @@ def _corona_mix(conv, m, kind, walk, depth, chain):
 
 _KEEP = {MIX: _mix, RGB_MULTIPLY: _rgb_multiply, COLOR_CORRECTION: _color_correction, COMPOSITE: _composite,
          classids.CORONA_COLOR: _corona_color, classids.CORONA_MIX: _corona_mix, classids.VRAY_COLOR: _vray_color,
-         FALLOFF: _falloff, OUTPUT: _output_map, RGB_TINT: _rgb_tint}
-_PEEL = {VRAY_DIRT: _vray_dirt, VRAY_COLOR2BUMP: _color2bump}
+         FALLOFF: _falloff, OUTPUT: _output_map, RGB_TINT: _rgb_tint, VRAY_COLOR2BUMP: _color2bump}
+_PEEL = {VRAY_DIRT: _vray_dirt}
 
 # MaterialIR input -> its kind (normal and bump: MapRefs of their own)
 SLOT_KINDS = (("base_color", COLOR), ("metallic", DATA), ("roughness", DATA), ("specular", COLOR),

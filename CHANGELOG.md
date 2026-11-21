@@ -46,6 +46,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 - CoronaColor: a temperature takes Corona's own color (measured) instead of an approximate curve that was up to
   0.04 off.
+- Materials: an Output or RGB Tint map without a map of its own (or with it switched off) is drawn as 3ds Max and
+  V-Ray 5.2 render it, white through its own output levels or tint, and a VRayColor2Bump without a map as the
+  color (0.5, 0.5, 1) it renders (flat in a bump slot), instead of being left out with a line in the report.
+  Measured in 3ds Max 2020 and V-Ray 5.2; Corona not measured. Inside a normal map's normal slot, the white of an
+  empty Output or RGB Tint is still a line in the report: 3ds Max tilts the normal by it, MaxDrop draws it flat.
 
 - Import: Esc while a windowed import reads a very large mesh stops the reading inside that mesh, so the next
   import can start at once (one mesh of 5.6 million face corners kept it busy for about a second more).

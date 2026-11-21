@@ -1587,70 +1587,112 @@ class LostMaps(Checks):
         self.close(tex.convert(mat.MapRef(1), tx.COLOR).root.value, (1.0, 0.0, 0.0), "map off: its color")
         self.assertEqual(tex.stats.peeled, collections.Counter({"VRayDirt": 1}))
 
-    # (class, class name, map pid, switch pid or None): the wrappers that have no color of their own
-    EMPTY_WRAPPERS = ((tx.OUTPUT, "Output", 0, 1), (tx.RGB_TINT, "RGB Tint", 3, 4),
-                      (tx.VRAY_COLOR2BUMP, "VRayColor2Bump", 0, None))
+    # (class, class name, map pid, switch pid or None, what it draws without a used map, as a swatch): measured in
+    # 3ds Max 2020 (renderMap) and V-Ray 5.2 with the gamma off (maxdrop-em3.76)
+    EMPTY_WRAPPERS = ((tx.OUTPUT, "Output", 0, 1, (1.0, 1.0, 1.0)), (tx.RGB_TINT, "RGB Tint", 3, 4, (1.0, 1.0, 1.0)),
+                      (tx.VRAY_COLOR2BUMP, "VRayColor2Bump", 0, None, (0.5, 0.5, 1.0)))
 
-    def empty_issue(self, tex, wrapper):
-        issues = [r for _i, r in tex.stats.issues if "no map" in r]
-        self.assertEqual(len(issues), 1, tex.stats.issues)
-        self.assertTrue(issues[0].startswith(wrapper), issues[0])
-
-    def test_empty_wrappers_are_named(self):
-        for class_id, cls, pid, on in self.EMPTY_WRAPPERS:
-            cases = [("map unset", _tex(FakeMap(1, class_id, {pid: Ref(None)}, cls=cls, name="w")))]
-            if on is not None:  # map off: the bitmap below is not used
-                cases.append(("map off", _tex(FakeMap(1, class_id, {pid: Ref(2), on: 0}, [2], cls=cls, name="w"),
+    def test_empty_wrappers_draw_a_constant(self):
+        for class_id, cls, pid, on, rgb in self.EMPTY_WRAPPERS:
+            for swatches in (colors.GAMMA_OFF, colors.GAMMA_ON):
+                cases = [("map unset", (FakeMap(1, class_id, {pid: Ref(None)}, cls=cls, name="w"),))]
+                if on is not None:  # map off: the bitmap below is not used
+                    cases.append(("map off", (FakeMap(1, class_id, {pid: Ref(2), on: 0}, [2], cls=cls, name="w"),
                                               _bitmap(2))))
-            for case, tex in cases:
-                with self.subTest(cls=cls, case=case):
-                    self.assertIsNone(tex.convert(mat.MapRef(1), tx.COLOR))
-                    self.assertEqual(len(tex.stats.issues), 1, tex.stats.issues)
-                    self.empty_issue(tex, "%s 'w'" % cls)
-                    self.assertEqual(tex.stats.peeled, collections.Counter())
-                    self.assertEqual(tex.stats.unsupported, collections.Counter())
-                    self.assertIsNone(tex.convert(mat.MapRef(1), tx.DATA))
-                    self.assertEqual(len(tex.stats.issues), 1, "named once: %s" % tex.stats.issues)
+                for case, objects in cases:
+                    with self.subTest(cls=cls, case=case, linear=swatches.linear):
+                        tex = tx.TexmapConverter(FakeGraph(*objects), _table(), swatches=swatches)
+                        g = tex.convert(mat.MapRef(1), tx.COLOR)
+                        self.assertEqual(g.root, tx.Constant(swatches.color(rgb)))
+                        self.assertFalse(g.approximated)
+                        g = tex.convert(mat.MapRef(1), tx.DATA)
+                        self.assertEqual(g.root, tx.Constant(swatches.channel(sum(rgb) / 3.0)), "the mean")
+                        self.assertFalse(g.approximated)
+                        self.assertEqual(tex.stats.issues, [])
+                        self.assertEqual(tex.stats.peeled, collections.Counter())
+                        self.assertEqual(tex.stats.unsupported, collections.Counter())
+        tex = tx.TexmapConverter(FakeGraph(FakeMap(1, tx.VRAY_COLOR2BUMP, {0: Ref(None)}, cls="VRayColor2Bump")),
+                                 _table(), swatches=colors.GAMMA_ON)
+        self.close(tex.convert(mat.MapRef(1), tx.COLOR).root.value, (0.5, 0.5, 1.0))
+        self.close(tex.convert(mat.MapRef(1), tx.DATA).root.value, 2.0 / 3.0)
+
+    def test_empty_wrapper_keeps_its_own_output_and_tint(self):
+        out = FakeMap(1, tx.OUTPUT, {0: Ref(None)}, cls="Output")
+        part = FakeMap(5, (0x100, 0), superclass=classids.SC_TEXOUTPUT)
+        part.legacy = {0: {0: 0.8, 1: 0.1, 2: 0.5}}
+        out.parts = {2: part}
+        tex = _tex(out)
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertEqual(g.root, tx.Adjust(tx.Constant((1.0, 1.0, 1.0)), tx.TexOutput(False, 0.5, 0.8, 0.1)),
+                         "as over a white map")
+        self.assertEqual(tex.stats.issues, [])
+        tint = FakeMap(1, tx.RGB_TINT, {0: (0.5, 0.0, 0.0), 1: (0.0, 0.25, 0.0), 2: (0.0, 0.0, 0.125),
+                                        3: Ref(None)}, cls="RGB Tint")
+        tex = tx.TexmapConverter(FakeGraph(tint), _table(), swatches=colors.GAMMA_ON)
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertEqual(g.root, tx.Tint(tx.Constant((1.0, 1.0, 1.0)), (0.5, 0.0, 0.0), (0.0, 0.25, 0.0),
+                                         (0.0, 0.0, 0.125)))
+        self.assertEqual(tex.stats.issues, [])
+
+    def test_empty_wrapper_in_a_normal_input(self):
+        """White tilts the normal in V-Ray (as a white map does), a constant normal is drawn flat: an issue. The
+        VRayColor2Bump's color is a flat normal's: none."""
+        for class_id, cls, pid, _on, _rgb in self.EMPTY_WRAPPERS:
+            with self.subTest(cls=cls):
+                tex = _tex(FakeMap(1, class_id, {pid: Ref(None)}, cls=cls, name="w"))
+                g = tex.convert(mat.MapRef(1), tx.NORMAL)
+                self.assertIsInstance(g.root, tx.NormalMap)
+                self.assertIsInstance(g.root.input, tx.Constant)
+                issues = [r for _i, r in tex.stats.issues]
+                if class_id == tx.VRAY_COLOR2BUMP:
+                    self.assertEqual(issues, [])
+                else:
+                    self.assertEqual(issues, ["%s 'w': no map (or its map off): white, a tilted normal in 3ds Max, "
+                                              "drawn flat" % cls])
+                tex.convert(mat.MapRef(1), tx.COLOR)
+                self.assertEqual(len(tex.stats.issues), len(issues), "in a color input: none")
 
     def test_empty_wrapper_below_a_mix(self):
         empty = FakeMap(2, tx.OUTPUT, {0: Ref(None)}, cls="Output", name="out")
         tex = _tex(FakeMap(1, tx.MIX, {0: 0.5, 6: Ref(2), 7: Ref(3)}, [2, 3], cls="Mix", name="mx"), empty,
                    _bitmap(3))
         g = tex.convert(mat.MapRef(1), tx.COLOR)
-        self.assertEqual(g.root.name, "a.png")
-        self.assertTrue(g.approximated)
-        self.empty_issue(tex, "Output 'out'")
-        self.lost_issue_of(tex, "Mix 'mx'", "Output 'out'")
-        tex = _tex(FakeMap(1, tx.MIX, {0: 1.0, 6: Ref(2), 7: Ref(3)}, [2, 3], cls="Mix", name="mx"), empty,
-                   _bitmap(3))
-        g = tex.convert(mat.MapRef(1), tx.COLOR)
-        self.assertIsInstance(g.root, tx.Mix, "amount 1: map 1 does not show")
+        self.assertIsInstance(g.root, tx.Mix)
+        self.assertEqual(g.root.a, tx.Constant((1.0, 1.0, 1.0)), "the empty side: white")
+        self.assertEqual(g.root.b.name, "a.png")
         self.assertFalse(g.approximated)
-        self.empty_issue(tex, "Output 'out'")
+        self.assertEqual(tex.stats.issues, [])
 
     def test_empty_wrapper_elsewhere(self):
         tint = FakeMap(2, tx.RGB_TINT, {3: Ref(None)}, cls="RGB Tint", name="t")
         tex = _tex(FakeMap(1, tx.COMPOSITE, {9: [Ref(3), Ref(2)]}, [3, 2], cls="Composite", name="cp"), tint,
                    _bitmap(3))
         g = tex.convert(mat.MapRef(1), tx.COLOR)
-        self.assertEqual(g.root.name, "a.png", "the empty layer is left out")
-        self.empty_issue(tex, "RGB Tint 't'")
-        self.lost_issue_of(tex, "Composite 'cp'", "RGB Tint 't'")
+        self.assertIsInstance(g.root, tx.Composite, "the empty layer is white")
+        self.assertIn(tx.Constant((1.0, 1.0, 1.0)), [layer.node for layer in g.root.layers])
+        self.assertEqual(tex.stats.issues, [])
         c2b = FakeMap(1, tx.VRAY_COLOR2BUMP, {0: Ref(None)}, cls="VRayColor2Bump", name="c2b")
         tex = _tex(c2b)
-        self.assertIsNone(tex.convert(mat.MapRef(1), tx.BUMP))
-        self.assertEqual([r for _i, r in tex.stats.issues], ["VRayColor2Bump 'c2b': no map, not drawn"])
+        g = tex.convert(mat.MapRef(1), tx.BUMP)
+        self.assertIsInstance(g.root, tx.Bump)
+        self.assertIsInstance(g.root.input, tx.Constant, "a constant height: flat, as V-Ray renders it")
+        self.assertEqual((tex.stats.issues, tex.stats.peeled), ([], collections.Counter()))
         tex = _tex(FakeMap(1, tx.OUTPUT, {0: Ref(2)}, [2], cls="Output", name="out"), tint)
-        self.assertIsNone(tex.convert(mat.MapRef(1), tx.COLOR))
-        self.empty_issue(tex, "RGB Tint 't'")
-        self.lost_issue_of(tex, "Output 'out'", "RGB Tint 't'")
+        self.assertEqual(tex.convert(mat.MapRef(1), tx.COLOR).root, tx.Constant((1.0, 1.0, 1.0)))
+        self.assertEqual(tex.stats.issues, [])
         self.assertEqual(tex.stats.peeled, collections.Counter())
 
-    def lost_issue_of(self, tex, wrapper, lost):
-        issues = [r for _i, r in tex.stats.issues if "converts to nothing" in r]
-        self.assertEqual(len(issues), 1, tex.stats.issues)
-        self.assertTrue(issues[0].startswith(wrapper), issues[0])
-        self.assertIn(lost, issues[0])
+    def test_color2bump_with_a_map_is_still_peeled(self):
+        tex = _tex(FakeMap(1, tx.VRAY_COLOR2BUMP, {0: Ref(2)}, [2], cls="VRayColor2Bump"), _bitmap(2))
+        g = tex.convert(mat.MapRef(1), tx.BUMP)
+        self.assertEqual(g.root.input.name, "a.png")
+        self.assertTrue(g.approximated)
+        self.assertEqual(tex.stats.peeled, collections.Counter({"VRayColor2Bump": 1}))
+        tex = _tex(FakeMap(1, tx.VRAY_COLOR2BUMP, {0: Ref(2)}, [2], cls="VRayColor2Bump", name="c2b"), _noise(2))
+        self.assertIsNone(tex.convert(mat.MapRef(1), tx.BUMP), "a lost map: no graph")
+        self.assertEqual([r for _i, r in tex.stats.issues if "converts to nothing" in r],
+                         ["VRayColor2Bump 'c2b': its map Noise 'n' converts to nothing"])
+        self.assertEqual(tex.stats.peeled, collections.Counter())
 
     def test_hidden_peeled_wrapper_is_exact(self):
         # mix amount 1: map 1 (a Falloff over a lost map) does not show and is drawn as color 1
