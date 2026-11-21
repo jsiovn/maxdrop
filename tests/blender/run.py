@@ -774,7 +774,9 @@ EVAL_COUNT_DIFFERS = {"FixtureOrder"}
 # gives a Shell's rim smoothing groups of its own, hard against both surfaces (every stack_shell box: 11 regions, 24
 # hard edges); Blender's Solidify smooths the rim into both surfaces, until the rim is converted (maxdrop-em3.101).
 # FixtureSymmetryTurned: Blender's Mirror welds the corner 0.062 off the plane onto it, where 3ds Max slices beside
-# it (the vertex and triangle counts agree; one more region and hard edge).
+# it: 3ds Max keeps a sliver of the side beyond the box's sharp vertical corner edge, smooth with its mirror copy;
+# in Blender that corner edge lands on the plane as the seam between the other side and its copy, a hard edge that
+# splits one more region (the vertex and triangle counts agree).
 SMOOTHING_DIFFERS = {"FixtureShellOut": (0, 3, 16), "FixtureShellIn": (0, 3, 16), "FixtureShellCrossed": (0, 3, 16),
                      "FixtureShellNegative": (0, 3, 16), "FixtureShellRim": (0, 3, 16),
                      "FixtureSymmetryTurned": (0, 7, 17)}
