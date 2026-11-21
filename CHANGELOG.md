@@ -27,6 +27,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Materials: a VRayOverrideMtl or Double Sided sub-material whose checkbox is off is no longer used: the peel skips
   it like an empty slot and takes the next sub-material that is on (what V-Ray or 3ds Max renders without it is not
   checked).
+- Maps: a Bitmap that tiles or mirrors in one direction and not in the other, or a placed image that tiles, no
+  longer shows a thin dark line at each tile and mirror line (EEVEE and Cycles): what it clips is now cut by a mask
+  instead of Blender's Clip extension, which faded the image's border toward black.
 
 ## [1.0.1] - 2026-11-22
 

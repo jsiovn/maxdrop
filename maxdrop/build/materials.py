@@ -72,7 +72,9 @@ Vector Math MULTIPLY: mirror_scale()) and ping-ponged with period 2 (3ds Max 202
 with and without a crop). Crop: that brought into the 0..1 cell per axis as the map repeats there (repeat_cell:
 wrapped for tile, ping-ponged for mirror, outside the image for neither), then a Mapping POINT into the cropped
 rectangle (TEXTURE, out of it, for a placed image). Without a crop Blender's one extension serves when both axes
-repeat alike; otherwise the same per-axis nodes over the whole image (extension()).
+repeat alike; otherwise the same per-axis nodes over the whole image (extension()). Where an axis repeats, what
+clips (a clipped axis, a placed image's rectangle) is a mask on the image's Color and Alpha under EXTEND, not the
+CLIP extension, which fades the border half-texel toward black at every tile and mirror line (clip_axes()).
 Map channel 0 (the vertex color as UVW) has no UV layer: such a map is drawn on channel 1 and reported.
 A texture file that holds no image (empty, or not starting as its format does: image_has_data) is reported and
 left out as one that does not load. A material whose build raises is removed again and reported: its slot stays
@@ -101,6 +103,7 @@ from ..convert import texmaps as tx
 
 SPECULAR_LEVEL = 0.5
 TWIN_LABEL, WEIGHT_LABEL = "Without reflection", "Reflection weight"  # reflection_weight()'s nodes
+CLIP_LABEL = "Clip"  # the node that masks an image's output (clip_axes)
 MAX_LAYER_DEPTH = 8  # layers within layers drawn (convert/materials.py already stops a deeper or cyclic chain)
 X_STEP, Y_STEP = 300, 280
 COLOR, FLOAT = "color", "float"
@@ -148,15 +151,28 @@ def per_axis(mapping, crop):
     return crop is not None or axes[0] != axes[1]
 
 
+def clip_axes(mapping, crop=None):
+    """The axes (0 U, 1 V) a mask clips (texture_node): where an axis repeats, the CLIP extension would fade the
+    image's border half-texel toward transparent black at every tile and mirror line (rendered: EEVEE and Cycles),
+    so the image is drawn EXTEND and the mask cuts what clips: a placed image's rectangle on both axes, else each
+    clipped axis. Empty when nothing repeats: the CLIP extension does it."""
+    axes = repeat_axes(mapping)
+    if axes == ('CLIP', 'CLIP'):
+        return ()
+    if crop is not None and crop.place:
+        return (0, 1)
+    return tuple(i for i, how in enumerate(axes) if how == 'CLIP')
+
+
 def extension(mapping, crop=None):
     """The Image Texture extension of a placement: Blender has one for both axes. Both axes alike without a crop:
-    theirs. Otherwise the nodes repeat per axis and keep the coordinates inside the image or its crop rectangle
-    (EXTEND: no bleed from its opposite edge, which REPEAT draws along a mirror line in EEVEE and Cycles; the wrap
-    node's jump drew no seam in either, rendered), unless the image is placed or an axis clips (CLIP)."""
+    theirs. Nothing repeats: CLIP. Otherwise the nodes repeat per axis and keep the coordinates inside the image or
+    its crop rectangle, EXTEND (no bleed from its opposite edge, which REPEAT draws along a mirror line in EEVEE and
+    Cycles; the wrap node's jump drew no seam in either, rendered), and clip_axes() masks what clips."""
     axes = repeat_axes(mapping)
     if not per_axis(mapping, crop):
         return axes[0]
-    return 'CLIP' if (crop is not None and crop.place) or 'CLIP' in axes else 'EXTEND'
+    return 'CLIP' if axes == ('CLIP', 'CLIP') else 'EXTEND'
 
 
 # the first bytes of every image format Blender reads that has a signature (TGA has none: _targa; WebP apart)
@@ -357,6 +373,7 @@ class _Tree:
         self.nodes, self.links = tree.nodes, tree.links
         self.nodes.clear()
         self.memo, self.uvs, self.texture_nodes = {}, {}, {}
+        self.clip_masks, self.clipped = {}, {}  # id(img) -> mask socket; (id(img), output) -> masked output
         self.columns, self.row = {}, 0.0
         self.bsdf = self.nodes.new("ShaderNodeBsdfPrincipled")
         self.bsdf.location = (0.0, 0.0)
@@ -709,7 +726,7 @@ class _Tree:
             tex = self.texture_nodes[id(img)] = self.texture_node(img, depth)
         if tex.image is None:
             return MISSING
-        out = tex.outputs["Alpha" if img.alpha else "Color"]
+        out = self.masked(img, tex, "Alpha" if img.alpha else "Color", depth)
         # texmaps made a color input's image Linear Rec.709 (Non-Color where Blender lacks it) for its gamma override:
         # decode it with that gamma. A mask is built in FLOAT, so it never gets it, nor does a data input. The power
         # comes after Blender's primaries conversion: exact in the default working space (Linear Rec.709) and on greys.
@@ -756,14 +773,55 @@ class _Tree:
             vector = _out(m, "Vector")
         if vector is not None:
             self.links.new(vector, _in(tex, "Vector"))
+        clip = clip_axes(img.mapping, img.crop)
+        if clip:
+            self.clip_masks[id(img)] = self.clip_mask(vector, clip, depth + 1)
         return tex
+
+    def clip_mask(self, vector, axes, depth):
+        """1 where the image coordinate lies in 0..1 on each of the axes, else 0 (Math COMPARE, |x - 0.5| <= 0.5)."""
+        sep = self.node("ShaderNodeSeparateXYZ", depth + 1)
+        self.links.new(vector, _in(sep, "Vector"))
+        mask = None
+        for axis in axes:
+            n = self.node("ShaderNodeMath", depth)
+            n.operation = 'COMPARE'
+            self.links.new(_out(sep, "XYZ"[axis]), n.inputs[0])
+            n.inputs[1].default_value = n.inputs[2].default_value = 0.5
+            mask = n.outputs[0] if mask is None else self.times(mask, n.outputs[0], depth)
+        return mask
+
+    def masked(self, img, tex, name, depth):
+        """The Image Texture's output name ("Color" or "Alpha"), times the image's clip mask where it has one
+        (one Clip node per image and output): 0 where the CLIP extension would give transparent black."""
+        out = tex.outputs[name]
+        mask = self.clip_masks.get(id(img))
+        if mask is None:
+            return out
+        key = (id(img), name)
+        if key not in self.clipped:
+            if name == "Color":
+                n = self.node("ShaderNodeVectorMath", depth)
+                n.operation = 'SCALE'
+                self.links.new(out, _in(n, "Vector"))
+                self.links.new(mask, _in(n, "Scale"))
+                self.clipped[key] = _out(n, "Vector")
+            else:
+                n = self.node("ShaderNodeMath", depth)
+                n.operation = 'MULTIPLY'
+                self.links.new(out, n.inputs[0])
+                self.links.new(mask, n.inputs[1])
+                self.clipped[key] = n.outputs[0]
+            n.label = CLIP_LABEL
+        return self.clipped[key]
 
     def repeat_cell(self, vector, mapping, crop, depth):
         """The UV of the 0..1 cell (the image's, or a crop's), per axis: wrapped (tile), ping-ponged (mirror, after
         mirror_scale doubled it) or left as it is (clip). A cropped image's clipped axis goes c + K floor(c),
         K = 1 / size + 1: 0 <= c < 1 stays, any other c lands outside the image once the crop mapping scales it into
         the crop rectangle. An image without a crop or a placed one needs nothing there: the CLIP extension, or the
-        TEXTURE mapping, already sends a c outside 0..1 out of the image."""
+        TEXTURE mapping, already sends a c outside 0..1 out of the image; where the other axis repeats the clip mask
+        (clip_axes) cuts it, the image coordinate outside 0..1 either way."""
         axes = repeat_axes(mapping)
         clip_out = crop is None or crop.place
         if axes == ('REPEAT', 'REPEAT'):
@@ -1132,7 +1190,7 @@ class _Tree:
             img = layer.node
             tex = self.texture_nodes.get(id(img)) if isinstance(img, tx.Image) and not img.alpha else None
             if tex is not None and result is not MISSING:
-                factor = self.times(_out(tex, "Alpha"), factor, depth + 1)
+                factor = self.times(self.masked(img, tex, "Alpha", depth + 1), factor, depth + 1)
             self.feed(_in(node, "Factor_Float"), factor)
             result = out
         if work == COLOR and space != COLOR and not isinstance(result, bpy.types.NodeSocket) and result is not MISSING:

@@ -2452,7 +2452,8 @@ def check_found_textures():
                 ops = [getattr(_from(comb.inputs[a]), "operation", None) for a in ("X", "Y")] if comb else []
                 double = _from(_from(_from(comb.inputs["X"]).inputs[0]).inputs["Vector"]) if comb else None
                 check("texmap_rules: place_crop.png on map channel 3, cropped, mirrored (U doubled) in U and clipped "
-                      "in V", cropped.extension == 'CLIP' and any(n.uv_map == "UVChannel_3" for n in uv)
+                      "in V (a mask under EXTEND)", cropped.extension == 'EXTEND' and _clip_axes_of(cropped) == ["Y"]
+                      and any(n.uv_map == "UVChannel_3" for n in uv)
                       and ops == ['PINGPONG', 'MULTIPLY_ADD'] and getattr(double, "operation", None) == 'MULTIPLY'
                       and close(list(_input(double, "Vector_001").default_value), [2.0, 1.0, 1.0], 1e-6),
                       "%s %s %s" % (cropped.extension, [n.uv_map for n in uv], ops))
@@ -2560,7 +2561,9 @@ def check_builder():
         check("builder: every node kind of the graphs", need <= kinds, str(sorted(need - kinds)))
         place = next(n for n in mb.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage" and n.label == "shared.png"
                      and n.inputs["Vector"].is_linked)
-        check("builder: a placed crop clips", place.extension == 'CLIP', place.extension)
+        check("builder: a placed crop that mirrors clips by a mask on both axes under EXTEND",
+              place.extension == 'EXTEND' and _clip_axes_of(place) == ["X", "Y"],
+              "%s %s" % (place.extension, _clip_axes_of(place)))
         uv = [n.uv_map for n in mb.node_tree.nodes if n.bl_idname == "ShaderNodeUVMap"]
         nm = next(n for n in mb.node_tree.nodes if n.bl_idname == "ShaderNodeNormalMap")
         check("builder: map channel 2 is UVChannel_2, for the image and the normal map's tangents",
@@ -2999,7 +3002,7 @@ def _crop_case(builder, cm, tx, found, name, mapping, crop):
     img = tx.Image(1, "shared.png", "shared.png", "", found, mapping=mapping, crop=crop)
     ir.textures = {"base_color": tx.TextureGraphIR(img, tx.COLOR)}
     m = builder.make(ir)
-    tex = _from(_principled(m).inputs["Base Color"])
+    tex = _image_of(_principled(m).inputs["Base Color"])[0]
     return tex, _from(_from(tex.inputs["Vector"]).inputs["Vector"])
 
 
@@ -3027,8 +3030,9 @@ def check_builder_debt():
         chain = [_from(comb.inputs[a]) for a in ("X", "Y")]
         floors = [_from(n.inputs[0]) for n in chain]
         ks = [n.inputs[1].default_value for n in chain]
-        check("builder debt: a crop with tile off: c + K floor(c) per axis, K = 1/w + 1 and 1/h + 1, image CLIP",
-              tex.extension == 'CLIP' and all(n.operation == 'MULTIPLY_ADD' for n in chain)
+        check("builder debt: a crop with tile off: c + K floor(c) per axis, K = 1/w + 1 and 1/h + 1, image CLIP, "
+              "no mask",
+              tex.extension == 'CLIP' and all(n.operation == 'MULTIPLY_ADD' for n in chain) and not _clip_axes_of(tex)
               and all(f.operation == 'FLOOR' for f in floors) and close(ks, [3.0, 5.0], 1e-6)
               and all(_from(n.inputs[2]) == _from(f.inputs[0]) for n, f in zip(chain, floors))
               and _from(chain[0].inputs[2]).bl_idname == "ShaderNodeSeparateXYZ",
@@ -3070,10 +3074,12 @@ def check_builder_debt():
         tex, comb = _crop_case(builder, cm, tx, found, "PlaceMixed", tx.Mapping(tile=(True, False)),
                                tx.Crop(0.25, 0.0, 0.5, 0.25, place=True))
         x, y = _from(comb.inputs["X"]), _from(comb.inputs["Y"])
-        check("builder debt: a placed image tiled in U, clipped in V: wrap on X, V straight through, image CLIP",
-              tex.extension == 'CLIP' and x.operation == 'WRAP' and y.bl_idname == "ShaderNodeSeparateXYZ"
-              and comb.outputs["Vector"].links[0].to_node.vector_type == 'TEXTURE',
-              "%s %s %s" % (tex.extension, x.operation, y.bl_idname))
+        check("builder debt: a placed image tiled in U, clipped in V: wrap on X, V straight through, image EXTEND, "
+              "the placed rectangle masked on both axes",
+              tex.extension == 'EXTEND' and x.operation == 'WRAP' and y.bl_idname == "ShaderNodeSeparateXYZ"
+              and comb.outputs["Vector"].links[0].to_node.vector_type == 'TEXTURE'
+              and _clip_axes_of(tex) == ["X", "Y"], "%s %s %s %s" % (tex.extension, x.operation, y.bl_idname,
+                                                                      _clip_axes_of(tex)))
 
         tex, frac = _crop_case(builder, cm, tx, found, "CropTile", tx.Mapping(), crop)
         check("builder debt: a crop tiled both ways: one Fraction, image EXTEND",
@@ -3237,6 +3243,7 @@ def _sample_vector(socket, uv):
         a, b, c = (_sample_value(n.inputs[i], uv) for i in range(3))
         return {'PINGPONG': lambda: _pingpong(a, b), 'FLOOR': lambda: math.floor(a),
                 'WRAP': lambda: a - (b - c) * math.floor((a - c) / (b - c)), 'MULTIPLY_ADD': lambda: a * b + c,
+                'COMPARE': lambda: float(abs(a - b) <= max(c, 1e-5)), 'MULTIPLY': lambda: a * b,
                 }[n.operation]()
     v = _sample_vector(n.inputs["Vector"], uv)
     if n.bl_idname == "ShaderNodeVectorMath":
@@ -3258,9 +3265,11 @@ def _sample_value(socket, uv):
     return _sample_vector(socket, uv) if socket.is_linked else socket.default_value
 
 
-def _sample_image(tex, uv):
+def _sample_image(tex, uv, mask=None):
     """The image coordinate (x, y) an Image Texture node reads at uv, its extension applied; None outside a CLIP
-    image."""
+    image or where its clip mask (the socket mask, _image_of) is 0."""
+    if mask is not None and _sample_value(mask, uv) < 0.5:
+        return None
     v = _sample_vector(tex.inputs["Vector"], uv)
     v = Vector((uv[0], uv[1], 0.0)) if v is None else v
     xy = []
@@ -3275,6 +3284,43 @@ def _sample_image(tex, uv):
             return None
         xy.append(x)
     return xy
+
+
+def _image_of(socket):
+    """(the Image Texture feeding an input, the input of its Clip node that carries the clip mask, or None without
+    one)."""
+    n = _from(socket)
+    if n is not None and n.label == "Clip":
+        mask = n.inputs[1] if n.bl_idname == "ShaderNodeMath" else _input(n, "Scale")
+        return _from(n.inputs[0]), mask
+    return n, None
+
+
+def _clip_axes_of(tex):
+    """The axes ("X", "Y") an Image Texture's clip mask tests (Math COMPARE, |x - 0.5| <= 0.5, of the vector the
+    node reads), [] without a mask; None for a mask of another form or Clip nodes that disagree."""
+    clips = [n for n in tex.id_data.nodes if n.label == "Clip" and _from(n.inputs[0]) == tex]
+    if not clips:
+        return []
+    found = set()
+    for clip in clips:
+        mask = clip.inputs[1] if clip.bl_idname == "ShaderNodeMath" else _input(clip, "Scale")
+        todo, axes = [_from(mask)], []
+        while todo:
+            n = todo.pop()
+            if n is None or n.bl_idname != "ShaderNodeMath":
+                return None
+            if n.operation == 'MULTIPLY':
+                todo += [_from(i) for i in n.inputs[:2]]
+                continue
+            sep = _from(n.inputs[0])
+            if n.operation != 'COMPARE' or n.inputs[1].default_value != 0.5 or n.inputs[2].default_value != 0.5 \
+                    or sep is None or sep.bl_idname != "ShaderNodeSeparateXYZ" or not tex.inputs["Vector"].is_linked \
+                    or sep.inputs["Vector"].links[0].from_socket != tex.inputs["Vector"].links[0].from_socket:
+                return None
+            axes.append(n.inputs[0].links[0].from_socket.identifier)
+        found.add(tuple(sorted(axes)))
+    return list(found.pop()) if len(found) == 1 else None
 
 
 def check_builder_mirror():
@@ -3296,18 +3342,21 @@ def check_builder_mirror():
         found = ct.Found(png, ct.SCENE)
         builder = build_materials.MaterialBuilder()
 
-        def tex_of(name, mapping, crop=None):
+        def tex_mask(name, mapping, crop=None):
             ir = cm.MaterialIR(30, name, "test", base_color=cm.Input((0.5, 0.5, 0.5), cm.MapRef(1)))
             img = tx.Image(1, "shared.png", "shared.png", "", found, mapping=mapping, crop=crop)
             ir.textures = {"base_color": tx.TextureGraphIR(img, tx.COLOR)}
-            return _from(_principled(builder.make(ir)).inputs["Base Color"])
+            return _image_of(_principled(builder.make(ir)).inputs["Base Color"])
+
+        def tex_of(name, mapping, crop=None):
+            return tex_mask(name, mapping, crop)[0]
 
         for label, kw, crop, (w, h), sweep, fixed, channel, values in _MIRROR_ROWS:
-            tex = tex_of("Mirror " + label, tx.Mapping(**kw), tx.Crop(*crop) if crop else None)
+            tex, mask = tex_mask("Mirror " + label, tx.Mapping(**kw), tx.Crop(*crop) if crop else None)
             bad = []
             for i, value in enumerate(values.split()):
                 x, y = (i, fixed) if sweep == "row" else (fixed, i)
-                got = _sample_image(tex, ((x + 0.5) / w, 1.0 - (y + 0.5) / h))
+                got = _sample_image(tex, ((x + 0.5) / w, 1.0 - (y + 0.5) / h), mask)
                 if value == "-":
                     if got is not None:
                         bad.append((i, value, got))
@@ -3344,16 +3393,84 @@ def check_builder_mirror():
         tex = tex_of("TileUOnly", tx.Mapping(tile=(True, False)))
         comb = _from(tex.inputs["Vector"])
         x, y = (_from(comb.inputs[a]) for a in ("X", "Y")) if comb is not None else (None, None)
-        check("builder mirror: tile U only: wrap X, Y straight through -> image CLIP",
-              tex.extension == 'CLIP' and x is not None and x.operation == 'WRAP'
-              and y.bl_idname == "ShaderNodeSeparateXYZ", "%s %s" % (tex.extension, comb and comb.bl_idname))
+        check("builder mirror: tile U only: wrap X, Y straight through -> image EXTEND, Y clipped by a mask (CLIP "
+              "would fade the border half-texel at every tile line)",
+              tex.extension == 'EXTEND' and x is not None and x.operation == 'WRAP'
+              and y.bl_idname == "ShaderNodeSeparateXYZ" and _clip_axes_of(tex) == ["Y"],
+              "%s %s %s" % (tex.extension, comb and comb.bl_idname, _clip_axes_of(tex)))
+        tex = tex_of("MirrorVClipU", tx.Mapping(tile=(False, True), mirror=(False, True)))
+        check("builder mirror: mirror V, U clipped: image EXTEND, X clipped by a mask",
+              tex.extension == 'EXTEND' and _clip_axes_of(tex) == ["X"], "%s %s" % (tex.extension,
+                                                                                    _clip_axes_of(tex)))
 
         tex = tex_of("TileBoth", tx.Mapping())
         check("builder mirror: tile both, no placement: no vector, image REPEAT",
               tex.extension == 'REPEAT' and not tex.inputs["Vector"].is_linked, tex.extension)
-        tex = tex_of("TileNone", tx.Mapping(tile=(False, False)))
-        check("builder mirror: tile off both, no placement: no vector, image CLIP",
-              tex.extension == 'CLIP' and not tex.inputs["Vector"].is_linked, tex.extension)
+        tex, mask = tex_mask("TileNone", tx.Mapping(tile=(False, False)))
+        check("builder mirror: tile off both, no placement: no vector, image CLIP, no mask",
+              tex.extension == 'CLIP' and not tex.inputs["Vector"].is_linked and mask is None, tex.extension)
+    finally:
+        empty_scene()
+        for img in list(bpy.data.images):
+            bpy.data.images.remove(img)
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def check_builder_clip_mask():
+    """MaterialBuilder on hand-made IRs (bead maxdrop-em3.112): an image that repeats on one axis and clips on the
+    other is drawn EXTEND with a clip mask, which every output of its Image Texture goes through (Color and Alpha:
+    an alpha image, a Composite layer's alpha), one Clip node per output however many inputs read it."""
+    from maxdrop.build import materials as build_materials
+    from maxdrop.convert import materials as cm
+    from maxdrop.convert import texmaps as tx
+    from maxdrop.convert import textures as ct
+    empty_scene()
+    for img in list(bpy.data.images):
+        bpy.data.images.remove(img)
+    scratch = tempfile.mkdtemp(prefix="maxdrop-builder-clip-")
+    try:
+        png = os.path.join(scratch, "shared.png")
+        _write_png(png)
+        found = ct.Found(png, ct.SCENE)
+        builder = build_materials.MaterialBuilder()
+        mixed = tx.Mapping(tiling=(2.0, 2.0), tile=(True, False))
+
+        def clips_of(tex):
+            """{output name: [the nodes its links go to]} of the linked outputs."""
+            return {o.name: [link.to_node for link in o.links] for o in tex.outputs if o.is_linked}
+
+        alpha = tx.Image(1, "shared.png", "shared.png", "", found, colorspace=tx.NON_COLOR, alpha=True, mapping=mixed)
+        ir = cm.MaterialIR(50, "ClipAlpha", "test", alpha=cm.Input(1.0, cm.MapRef(1)))
+        ir.textures = {"alpha": tx.TextureGraphIR(alpha, tx.DATA)}
+        m = builder.make(ir)
+        tex = next(n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage")
+        outs = clips_of(tex)
+        check("builder clip mask: an alpha image tiled in U, clipped in V: EXTEND, its Alpha only through a Clip node "
+              "masking V", tex.extension == 'EXTEND' and list(outs) == ["Alpha"]
+              and all(n.label == "Clip" for n in outs["Alpha"]) and _clip_axes_of(tex) == ["Y"], str(outs))
+
+        top = tx.Image(2, "shared.png", "shared.png", "", found, mapping=mixed)
+        bottom = tx.Image(3, "shared.png", "shared.png", "", found)
+        layered = tx.Composite((tx.CompositeLayer(bottom), tx.CompositeLayer(top, 0.5)))
+        ir = cm.MaterialIR(51, "ClipLayer", "test", base_color=cm.Input((0.5, 0.5, 0.5), cm.MapRef(1)),
+                           emission_color=cm.Input((0.0, 0.0, 0.0), cm.MapRef(2)))
+        ir.textures = {"base_color": tx.TextureGraphIR(layered, tx.COLOR),
+                       "emission_color": tx.TextureGraphIR(top, tx.COLOR)}
+        m = builder.make(ir)
+        texes = [n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage" and n.inputs["Vector"].is_linked]
+        tex = texes[0] if len(texes) == 1 else None
+        outs = clips_of(tex) if tex is not None else {}
+        clip_nodes = [n for n in m.node_tree.nodes if n.label == "Clip"]
+        check("builder clip mask: a Composite layer and the emission read one mixed-axis image: its Color and its "
+              "Alpha (the layer's factor) each through one Clip node, the same mask",
+              tex is not None and sorted(outs) == ["Alpha", "Color"]
+              and all(n.label == "Clip" and n in clip_nodes for ns in outs.values() for n in ns)
+              and len(clip_nodes) == 2 and len({_from(n.inputs[1] if n.bl_idname == "ShaderNodeMath"
+                                                      else _input(n, "Scale")) for n in clip_nodes}) == 1
+              and _clip_axes_of(tex) == ["Y"],
+              "%d textures, %s, %d Clip nodes" % (len(texes), sorted(outs), len(clip_nodes)))
+        for name in ("Base Color", "Emission Color"):
+            check("builder clip mask: %s linked" % name, _principled(m).inputs[name].is_linked)
     finally:
         empty_scene()
         for img in list(bpy.data.images):
@@ -3543,7 +3660,7 @@ def check_builder_wiring(ma, mb, builder, cm, tx, srgb, data, lost, gamma):
     amount = _from(_input(comp, "A_Color"))
     level = _from(amount.inputs[0])
     out_inv = _from(level.inputs[0])
-    tex = _from(out_inv.inputs["Color"])
+    tex, clip = _image_of(out_inv.inputs["Color"])
     crop = _from(tex.inputs["Vector"])
     comb = _from(crop.inputs["Vector"])
     pings = [_from(comb.inputs[axis]) for axis in ("X", "Y")]
@@ -3573,6 +3690,8 @@ def check_builder_wiring(ma, mb, builder, cm, tx, srgb, data, lost, gamma):
           and close(list(place.inputs["Location"].default_value), list(want[0]), 1e-6)
           and close(list(place.inputs["Rotation"].default_value), [0.0, 0.0, 0.5], 1e-6)
           and uv.bl_idname == "ShaderNodeUVMap" and uv.uv_map == "UVChannel_2")
+    check("wiring: the placed image's Color masked (Clip) before its Output's invert, as CLIP's black was",
+          clip is not None and _from(clip).bl_idname == "ShaderNodeMath" and out_inv.bl_idname == "ShaderNodeInvert")
     bump = _from(pb.inputs["Normal"])
     nm = _from(bump.inputs["Normal"])
     comb = _from(nm.inputs["Color"])
@@ -4095,6 +4214,7 @@ def main():
                                  ("builder debt", check_builder_debt), ("builder mirror", check_builder_mirror),
                                  ("builder blend", check_builder_blend), ("builder mono", check_builder_mono),
                                  ("builder weight", check_builder_weight),
+                                 ("builder clip mask", check_builder_clip_mask),
                                  ("curve step", check_curve_step),
                                  ("linear fallback", check_linear_fallback),
                                  ("image reuse", check_image_reuse), ("double import", check_double_import),
