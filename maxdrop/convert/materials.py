@@ -77,10 +77,12 @@ Multi/Sub-Object gives one slot; an empty key (no material) is a slot only besid
 Colors are 3ds Max swatches, clamped to 0..1 and made linear by the scene's swatch rule (convert/colors.py): the
 value itself when the scene was saved with the gamma on (or does not say), the sRGB curve when it was off.
 A missing, animated or non-finite parameter takes the class's default; an IOR is clamped to 1..100. The SSS radius is
-in meters (VRayFastSSS2 stores it in centimeters whatever the system unit).
-Parameter ids: docs/FORMAT.md for the classes of the fixtures (the Corona ones: Corona 12); the others (named beside
-each rule) were read from 3ds Max 2020 + V-Ray 5.2 through the SDK or from probe scenes it saved, not from a
-fixture. No bpy, no mathutils.
+in meters: VRayFastSSS2's scatter_radius is in centimeters whatever the system unit, multiplied by its scale (V-Ray's
+documentation says both). VRayCarPaintMtl's coat_strength is, in V-Ray's documentation, the strength of the coat
+reflections seen from the front; that Fresnel gives the other angles is this rule's reading.
+Parameter ids: docs/FORMAT.md for the classes of the fixtures (the Corona ones: Corona 12; the V-Ray ones: V-Ray 5.2);
+the Standard shaders but Blinn (beside SHADERS) were read from probe scenes 3ds Max 2020 saved, not from a fixture.
+No bpy, no mathutils.
 """
 import collections
 import dataclasses
@@ -100,30 +102,14 @@ METAL_REFLECTION = 0.25  # mean linear reflection (about sRGB 137 grey) above wh
 CORONA_METAL_IOR = 10.0  # a CoronaLegacyMtl Fresnel IOR from which a bright reflection is a metal (made with 999)
 GREY_SRGB = 128 / 255  # the grey of a material without a rule: MaxDrop's own, not a swatch
 
-# The classes no fixture has: reader/classids.py takes a class only with a fixture.
-VRAY_LIGHT_MTL = ClassId(0x7CCF263E, 0x3F5B39B9)
-VRAY_FAST_SSS2 = ClassId(0x3F2C5FAA, 0x750008BC)
-VRAY_CAR_PAINT_MTL = ClassId(0x38312C74, 0x47280883)
-VRAY_CAR_PAINT_MTL2 = ClassId(0x56BC47E2, 0x03E008C7)
-VRAY_OVERRIDE_MTL = ClassId(0x15D20E6B, 0x54E217EB)
-VRAY_MTL_WRAPPER = ClassId(0x409517DF, 0x3A5F44B6)
-DOUBLE_SIDED_MTL = ClassId(0x00000210, 0)
-SHELLAC_MTL = ClassId(0x46EE536A, 0)
-
-CLASS_NAMES = {
-    VRAY_LIGHT_MTL: "VRayLightMtl", VRAY_FAST_SSS2: "VRayFastSSS2", VRAY_CAR_PAINT_MTL: "VRayCarPaintMtl",
-    VRAY_CAR_PAINT_MTL2: "VRayCarPaintMtl2", VRAY_OVERRIDE_MTL: "VRayOverrideMtl",
-    VRAY_MTL_WRAPPER: "VRayMtlWrapper", DOUBLE_SIDED_MTL: "DoubleSided", SHELLAC_MTL: "Shellac",
-}
-
 # wrapper ClassId -> its sub-material parameters (block 0) in getSubMtl order; a table parameter gives each element
 WRAPPERS = {
     classids.VRAY_2SIDED_MTL: (0, 1),  # frontMtl, backMtl
     classids.VRAY_BLEND_MTL: (0, 1),  # baseMtl, coatMtl (table)
-    VRAY_OVERRIDE_MTL: (0, 2, 4, 6, 8),  # baseMtl, giMtl, reflectMtl, refractMtl, shadowMtl
-    VRAY_MTL_WRAPPER: (0,),  # baseMtl
-    DOUBLE_SIDED_MTL: (0, 1),  # material1 (facing), material2 (back)
-    SHELLAC_MTL: (0, 1),  # shellacMtl1 (base), shellacMtl2
+    classids.VRAY_OVERRIDE_MTL: (0, 2, 4, 6, 8),  # baseMtl, giMtl, reflectMtl, refractMtl, shadowMtl
+    classids.VRAY_MTL_WRAPPER: (0,),  # baseMtl
+    classids.DOUBLE_SIDED_MTL: (0, 1),  # material1 (facing), material2 (back)
+    classids.SHELLAC_MTL: (0, 1),  # shellacMtl1 (base), shellacMtl2
     classids.CORONA_LAYERED_MTL: (1000, 1001),  # baseMtl, layers (table)
 }
 SHELL_RENDER_INDEX, SHELL_SUBS = 1, (2, 3)  # renderMtlIndex; originalMaterial, bakedMaterial
@@ -228,7 +214,7 @@ def class_name(superclass, class_id):
     """The class name for the report: the class directory's for a known class (without the blanks around it:
     CoronaPhysicalMtl's starts with a carriage return), else the ClassID."""
     cid = ClassId(*class_id)
-    return (classids.name_of(superclass, cid) or CLASS_NAMES.get(cid) or "ClassID%s" % (cid,)).strip()
+    return (classids.name_of(superclass, cid) or "ClassID%s" % (cid,)).strip()
 
 
 def _clamp01(v):
@@ -563,7 +549,7 @@ def vray_fast_sss2(conv, m, ir):
     ir.specular = Input(_clamp01(mean(conv.rgb(m, 40, 0, (1.0, 1.0, 1.0)))))
     ir.ior = _ior(_num(m, 31, 0, 1.3))
     ir.subsurface_weight = _clamp01(1.0 - _num(m, 36, 0, 0.0))
-    ir.subsurface_color = conv.rgb(m, 2, 0, (1.0, 1.0, 1.0))
+    ir.subsurface_color = conv.rgb(m, 2, 0, (0.5, 0.5, 0.5))
     ir.subsurface_radius = max(0.0, _num(m, 0, 0, 1.0) * _num(m, 22, 0, 1.0)) * 0.01
     conv.bump_slot(ir, conv.map_ref(m, 3, 4, None, 0, ir=ir))
     ir.alpha = Input(1.0, conv.map_ref(m, 85, 86, None, 0, ir=ir))
@@ -792,10 +778,10 @@ RULES = {
     (classids.SC_MATERIAL, classids.STANDARD_MTL): standard_mtl,
     (classids.SC_MATERIAL, classids.PHYSICAL_MTL): physical_mtl,
     (classids.SC_MATERIAL, classids.VRAY_MTL): vray_mtl,
-    (classids.SC_MATERIAL, VRAY_LIGHT_MTL): vray_light_mtl,
-    (classids.SC_MATERIAL, VRAY_FAST_SSS2): vray_fast_sss2,
-    (classids.SC_MATERIAL, VRAY_CAR_PAINT_MTL): vray_car_paint_mtl,
-    (classids.SC_MATERIAL, VRAY_CAR_PAINT_MTL2): vray_car_paint_mtl2,
+    (classids.SC_MATERIAL, classids.VRAY_LIGHT_MTL): vray_light_mtl,
+    (classids.SC_MATERIAL, classids.VRAY_FAST_SSS2): vray_fast_sss2,
+    (classids.SC_MATERIAL, classids.VRAY_CAR_PAINT_MTL): vray_car_paint_mtl,
+    (classids.SC_MATERIAL, classids.VRAY_CAR_PAINT_MTL2): vray_car_paint_mtl2,
     (classids.SC_MATERIAL, classids.CORONA_PHYSICAL_MTL): corona_physical_mtl,
     (classids.SC_MATERIAL, classids.CORONA_LEGACY_MTL): corona_legacy_mtl,
     (classids.SC_MATERIAL, classids.CORONA_LIGHT_MTL): corona_light_mtl,

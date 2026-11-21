@@ -137,6 +137,7 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1; kept literal: tes
     "vray_basic": ["UVMap"],
     "vray_maps": ["UVMap"],
     "vray_texmaps": ["UVMap"],
+    "vray_more": ["UVMap"],
     "vray_lights": [],  # lights and a target: no mesh
     "lights_standard": [],
     "lights_photometric": [],

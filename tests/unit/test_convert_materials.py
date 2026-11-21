@@ -3,9 +3,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """Tests of maxdrop/convert/materials.py, the material rules: no Blender. vray_basic's IR against values computed by
-hand from its authoring script (tools/fixtures/vray_basic.ms), vray_maps' map slots, vray_wrappers' peels, and each
-rule on synthetic parameters (the classes no fixture has: VRayLightMtl, VRayFastSSS2, the car paints, the other
-wrappers, the Standard shaders but Blinn). standard_physical's Standard and Physical Material and box_poly_standard's
+hand from its authoring script (tools/fixtures/vray_basic.ms), vray_maps' map slots, vray_wrappers' peels, vray_more's
+VRayLightMtl, VRayFastSSS2, car paints and other wrappers, and each rule on synthetic parameters (the Standard
+shaders but Blinn have no fixture). standard_physical's Standard and Physical Material and box_poly_standard's
 Standard against values computed by hand from their scripts; vray_wrappers' Multi/Sub-Object by material ID and the
 slot plan of its box.
 
@@ -137,7 +137,7 @@ class Helpers(unittest.TestCase, Close):
 
     def test_rules_use_the_swatch_rule(self):
         """Every rule's swatches go through it: a gamma-off scene decodes each one with the sRGB curve."""
-        light = FakeMtl(0, mat.VRAY_LIGHT_MTL, "Glow", {0: {0: (1.0, 0.5, 0.0)}})
+        light = FakeMtl(0, classids.VRAY_LIGHT_MTL, "Glow", {0: {0: (1.0, 0.5, 0.0)}})
         conv = mat.MaterialConverter(FakeGraph(light), swatches=colors.GAMMA_OFF)
         self.close(conv.convert(0).emission_color.value, (1.0, 0.214041, 0.0))
         std = FakeMtl(0, classids.STANDARD_MTL, "Std")  # no shader: the default diffuse 150
@@ -153,7 +153,7 @@ class Helpers(unittest.TestCase, Close):
 
     def test_class_name(self):
         self.assertEqual(mat.class_name(classids.SC_MATERIAL, classids.VRAY_MTL), "VRayMtl")
-        self.assertEqual(mat.class_name(classids.SC_MATERIAL, mat.VRAY_LIGHT_MTL), "VRayLightMtl")
+        self.assertEqual(mat.class_name(classids.SC_MATERIAL, classids.VRAY_LIGHT_MTL), "VRayLightMtl")
         self.assertEqual(mat.class_name(classids.SC_MATERIAL, (1, 2)), "ClassID(0x00000001, 0x00000002)")
 
     def test_not_a_material(self):
@@ -265,7 +265,7 @@ class VRayMtlRules(unittest.TestCase, Close):
 
 class OtherRules(unittest.TestCase, Close):
     def test_vray_light_mtl(self):
-        light = FakeMtl(0, mat.VRAY_LIGHT_MTL, "Glow",
+        light = FakeMtl(0, classids.VRAY_LIGHT_MTL, "Glow",
                         {0: {0: (1.0, 0.5, 0.0), 1: 7.5, 2: Ref(1), 3: 1, 5: Ref(2), 6: 0}})
         conv, ir = _convert(light, _map(1), _map(2))
         self.close(ir.base_color.value, (0.0, 0.0, 0.0))
@@ -278,7 +278,7 @@ class OtherRules(unittest.TestCase, Close):
         self.assertEqual((ir.name, ir.source), ("Glow", "VRayLightMtl"))
 
     def test_vray_fast_sss2(self):
-        sss = FakeMtl(0, mat.VRAY_FAST_SSS2, "Skin", {0: {
+        sss = FakeMtl(0, classids.VRAY_FAST_SSS2, "Skin", {0: {
             26: (0.5, 0.5, 0.5), 27: Ref(1), 28: 1, 36: 0.25, 2: (1.0, 0.5, 0.5), 0: 4.0, 22: 2.0, 31: 1.4,
             40: (1.0, 1.0, 1.0), 51: 0.7, 3: Ref(2), 4: 1, 85: Ref(3), 86: 1}})
         conv, ir = _convert(sss, _map(1), _map(2), _map(3))
@@ -292,11 +292,14 @@ class OtherRules(unittest.TestCase, Close):
         self.close(ir.subsurface_radius, 0.08)  # 4 cm x scale 2, in meters
         self.assertEqual(ir.bump, mat.MapRef(2, 1.0, False))
         self.assertEqual(ir.alpha.map, mat.MapRef(3, 1.0, False))
+        conv, ir = _convert(FakeMtl(0, classids.VRAY_FAST_SSS2, "Default", {0: {}}))
+        self.close(ir.subsurface_color, (0.5,) * 3)  # sub_surface_color's default: 127.5 grey
+        self.close((ir.subsurface_radius, ir.subsurface_weight, ir.ior), (0.01, 1.0, 1.3))
 
     def test_car_paints(self):
         common = {0: (0.5, 0.0, 0.0), 1: Ref(1), 2: 1, 4: 0.4, 8: 0.9, 27: (1.0, 1.0, 1.0), 39: 0.95}
         paint = {**common, 31: 0.05, 55: Ref(2), 56: 1}  # coat_strength: reflectance at normal incidence
-        conv, ir = _convert(FakeMtl(0, mat.VRAY_CAR_PAINT_MTL, "Paint", {0: paint}), _map(1), _map(2))
+        conv, ir = _convert(FakeMtl(0, classids.VRAY_CAR_PAINT_MTL, "Paint", {0: paint}), _map(1), _map(2))
         self.close(ir.base_color.value, (0.5, 0.0, 0.0))
         self.assertEqual(ir.base_color.map, mat.MapRef(1, 1.0, False))
         self.close(ir.roughness.value, 0.1)
@@ -307,20 +310,20 @@ class OtherRules(unittest.TestCase, Close):
         self.close(ir.coat_roughness, 0.05)
         self.close(ir.coat_color, (1.0, 1.0, 1.0))
         self.assertEqual(ir.bump, mat.MapRef(2, 1.0, False))
-        conv, ir = _convert(FakeMtl(0, mat.VRAY_CAR_PAINT_MTL, "Bare", {0: {**common, 31: 0.0}}), _map(1))
+        conv, ir = _convert(FakeMtl(0, classids.VRAY_CAR_PAINT_MTL, "Bare", {0: {**common, 31: 0.0}}), _map(1))
         self.close(ir.coat_weight, 0.0)
-        conv, ir = _convert(FakeMtl(0, mat.VRAY_CAR_PAINT_MTL, "Mirror", {0: {**common, 31: 1.0}}), _map(1))
+        conv, ir = _convert(FakeMtl(0, classids.VRAY_CAR_PAINT_MTL, "Mirror", {0: {**common, 31: 1.0}}), _map(1))
         self.close(ir.coat_ior, 100.0)  # reflectance 1 is an IOR near 400: clamped like every IOR
-        conv, ir = _convert(FakeMtl(0, mat.VRAY_CAR_PAINT_MTL, "Default", {0: {}}))
+        conv, ir = _convert(FakeMtl(0, classids.VRAY_CAR_PAINT_MTL, "Default", {0: {}}))
         self.close((ir.coat_weight, ir.roughness.value), (1.0, 0.4))  # coat_strength 0.05, base_glossiness 0.6
-        conv, ir = _convert(FakeMtl(0, mat.VRAY_CAR_PAINT_MTL2, "Paint2",
+        conv, ir = _convert(FakeMtl(0, classids.VRAY_CAR_PAINT_MTL2, "Paint2",
                                     {0: {**common, 31: 0.8, 81: 1.7, 54: Ref(2), 55: 1}}), _map(1), _map(2))
         self.close(ir.coat_weight, 0.8)
         self.close(ir.coat_ior, 1.7)
         self.close(ir.roughness.value, 0.1)
         self.assertEqual(ir.bump, mat.MapRef(2, 1.0, False))
         self.assertEqual(ir.source, "VRayCarPaintMtl2")
-        conv, ir = _convert(FakeMtl(0, mat.VRAY_CAR_PAINT_MTL2, "Default2", {0: {}}))
+        conv, ir = _convert(FakeMtl(0, classids.VRAY_CAR_PAINT_MTL2, "Default2", {0: {}}))
         self.close((ir.coat_weight, ir.coat_ior, ir.roughness.value), (1.0, 1.5, 0.6))
 
     def test_unknown_class_is_grey_and_counted(self):
@@ -344,10 +347,10 @@ def _wrapper(index, class_id, params, name="W"):
 class Wrappers(unittest.TestCase):
     def test_each_wrapper_peels_to_its_first_set_sub_material(self):
         cases = [
-            (mat.VRAY_OVERRIDE_MTL, {0: Ref(None), 2: Ref(1), 4: Ref(2)}, 1),  # empty base: the next slot
-            (mat.VRAY_MTL_WRAPPER, {0: Ref(1)}, 1),
-            (mat.DOUBLE_SIDED_MTL, {0: Ref(2), 1: Ref(1)}, 2),
-            (mat.SHELLAC_MTL, {0: Ref(1), 1: Ref(2)}, 1),
+            (classids.VRAY_OVERRIDE_MTL, {0: Ref(None), 2: Ref(1), 4: Ref(2)}, 1),  # empty base: the next slot
+            (classids.VRAY_MTL_WRAPPER, {0: Ref(1)}, 1),
+            (classids.DOUBLE_SIDED_MTL, {0: Ref(2), 1: Ref(1)}, 2),
+            (classids.SHELLAC_MTL, {0: Ref(1), 1: Ref(2)}, 1),
             (classids.VRAY_2SIDED_MTL, {0: Ref(None), 1: Ref(2)}, 2),
             (classids.VRAY_BLEND_MTL, {0: Ref(None), 1: [Ref(None), Ref(2), Ref(1)]}, 2),  # coat table
             (classids.SHELL_MTL, {1: 1, 2: Ref(1), 3: Ref(2)}, 2),  # render index 1: baked
@@ -363,8 +366,8 @@ class Wrappers(unittest.TestCase):
                 self.assertEqual(sum(conv.stats.peeled.values()), 1)
 
     def test_nested_wrappers_count_each_once(self):
-        objs = (_wrapper(0, mat.VRAY_MTL_WRAPPER, {0: Ref(1)}), _wrapper(1, classids.VRAY_2SIDED_MTL, {0: Ref(2)}),
-                _vray(2, "Base"), _wrapper(3, mat.VRAY_MTL_WRAPPER, {0: Ref(1)}))
+        objs = (_wrapper(0, classids.VRAY_MTL_WRAPPER, {0: Ref(1)}), _wrapper(1, classids.VRAY_2SIDED_MTL, {0: Ref(2)}),
+                _vray(2, "Base"), _wrapper(3, classids.VRAY_MTL_WRAPPER, {0: Ref(1)}))
         conv = mat.MaterialConverter(FakeGraph(*objs))
         self.assertEqual(conv.convert(0).name, "Base")
         self.assertEqual(conv.convert(3).name, "Base")
@@ -379,7 +382,7 @@ class Wrappers(unittest.TestCase):
         ]
         for params, reason in cases:
             with self.subTest(reason):
-                conv = mat.MaterialConverter(FakeGraph(_wrapper(0, mat.VRAY_MTL_WRAPPER, params, "Wrap"), _map(5)))
+                conv = mat.MaterialConverter(FakeGraph(_wrapper(0, classids.VRAY_MTL_WRAPPER, params, "Wrap"), _map(5)))
                 ir = conv.convert(0)
                 self.assertTrue(ir.unknown)
                 self.assertEqual(ir.name, "Wrap")
@@ -394,7 +397,7 @@ class Wrappers(unittest.TestCase):
         self.assertIn("render index", reason)
 
     def test_depth_guard(self):
-        objs = [_wrapper(i, mat.VRAY_MTL_WRAPPER, {0: Ref(i + 1)}) for i in range(mat.MAX_PEEL + 1)]
+        objs = [_wrapper(i, classids.VRAY_MTL_WRAPPER, {0: Ref(i + 1)}) for i in range(mat.MAX_PEEL + 1)]
         objs.append(_vray(mat.MAX_PEEL + 1, "Deep"))
         conv = mat.MaterialConverter(FakeGraph(*objs))
         base, reason = conv.peel(0)
@@ -512,6 +515,91 @@ class VRayWrappers(unittest.TestCase, Close):
             self.close(front.roughness.value, 1.0 - 0.61, "glossiness 0.61")
         self.assertEqual(dict(conv.stats.peeled), {"VRay2SidedMtl": 1, "VRayBlendMtl": 1, "Shell Material": 1})
         self.assertEqual(conv.stats.issues, [])
+
+
+class VRayMore(unittest.TestCase, Close):
+    """tools/fixtures/vray_more.ms, by hand (gamma off: sRGB s/255 -> linear). Every map at amount 1.0: the rules
+    do not read the multipliers yet (maxdrop-em3.103)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cf, graph, cls.by_name = _fixture("vray_more")
+        with cf:
+            cls.conv = mat.MaterialConverter(graph)
+            cls.irs = {n: cls.conv.convert(cls.by_name[n]) for n in (
+                "FixtureLightMtl", "FixtureFastSSS2", "FixtureCarPaint", "FixtureCarPaint2", "FixtureOverride",
+                "FixtureMtlWrapper", "FixtureDoubleSided", "FixtureShellac")}
+            cls.peels = {n: cls.conv.peel(cls.by_name[n]) for n in cls.irs}
+
+    def map(self, name):
+        return mat.MapRef(self.by_name[name], 1.0, False)
+
+    def test_light_mtl(self):
+        ir = self.irs["FixtureLightMtl"]
+        self.assertEqual((ir.source, ir.unknown), ("VRayLightMtl", False))
+        self.close(ir.emission_color.value, _lins(250, 120, 30))
+        self.assertEqual(ir.emission_color.map, self.map("FixtureLightMap"))
+        self.close(ir.emission_strength, 3.7)
+        self.assertIsNone(ir.alpha.map)  # opacity_texmap_on off
+        self.close((ir.base_color.value, ir.roughness.value, ir.specular.value), ((0.0,) * 3, 1.0, 0.0))
+
+    def test_fast_sss2(self):
+        ir = self.irs["FixtureFastSSS2"]
+        self.assertEqual(ir.source, "VRayFastSSS2")
+        self.close(ir.base_color.value, _lins(180, 120, 90))
+        self.assertEqual(ir.base_color.map, self.map("FixtureSSSDiffuseMap"))
+        self.close(ir.roughness.value, 1.0 - 0.72)
+        self.close(ir.specular.value, sum(_lins(200, 210, 220)) / 3)
+        self.close(ir.ior, 1.45)
+        self.close(ir.subsurface_weight, 1.0 - 0.35)
+        self.close(ir.subsurface_color, _lins(220, 90, 70))
+        self.close(ir.subsurface_radius, 3.0 * 0.7 / 100, "scatter_radius 3 cm times scale 0.7, in meters")
+        self.assertEqual(ir.bump, self.map("FixtureSSSBumpMap"))
+        self.assertIsNone(ir.normal)
+        self.assertIsNone(ir.alpha.map)  # texmap_opacity_on off
+
+    def test_car_paint(self):
+        ir = self.irs["FixtureCarPaint"]
+        self.assertEqual(ir.source, "VRayCarPaintMtl")
+        self.close(ir.base_color.value, _lins(150, 20, 30))
+        self.assertEqual(ir.base_color.map, self.map("FixtureCarPaintColorMap"))
+        self.close((ir.roughness.value, ir.metallic.value, ir.specular.value), (1.0 - 0.77, 1.0, 0.45))
+        self.close(ir.coat_color, _lins(240, 230, 220))
+        self.close(ir.coat_roughness, 1.0 - 0.93)
+        self.close(ir.coat_weight, 1.0)
+        self.close(ir.coat_ior, 1.3 / 0.7, "coat_strength 0.09: (1 + 0.3) / (1 - 0.3)")
+        self.assertEqual(ir.bump, self.map("FixtureCarPaintBumpMap"))
+
+    def test_car_paint2(self):
+        ir = self.irs["FixtureCarPaint2"]
+        self.assertEqual(ir.source, "VRayCarPaintMtl2")
+        self.close(ir.base_color.value, _lins(20, 60, 150))
+        self.assertIsNone(ir.base_color.map)  # texmap_base_color_on off
+        self.close((ir.roughness.value, ir.metallic.value, ir.specular.value), (1.0 - 0.66, 1.0, 0.35))
+        self.close(ir.coat_color, _lins(230, 240, 250))
+        self.close(ir.coat_roughness, 1.0 - 0.88)
+        self.close((ir.coat_weight, ir.coat_ior), (0.82, 1.62))
+        self.assertEqual(ir.bump, self.map("FixtureCarPaint2BumpMap"))
+
+    def test_wrappers_peel_to_their_base(self):
+        expect = {"FixtureOverride": ("FixtureOverrideBase", (200, 40, 40), 0.51),
+                  "FixtureMtlWrapper": ("FixtureWrapperBase", (160, 90, 200), 0.56),
+                  "FixtureDoubleSided": ("FixtureFacing", (210, 150, 60), 0.57),
+                  "FixtureShellac": ("FixtureShellacBase", (120, 200, 160), 0.59)}
+        for wrapper, (sub, diffuse, gloss) in expect.items():
+            with self.subTest(wrapper):
+                self.assertEqual(self.peels[wrapper], (self.by_name[sub], None))
+                ir = self.irs[wrapper]
+                self.assertEqual((ir.name, ir.index, ir.source), (sub, self.by_name[sub], "VRayMtl"))
+                self.close(ir.base_color.value, _lins(*diffuse))
+                self.close(ir.roughness.value, 1.0 - gloss)
+        self.assertEqual(dict(self.conv.stats.peeled),
+                         {"VRayOverrideMtl": 1, "VRayMtlWrapper": 1, "Double Sided": 1, "Shellac": 1})
+
+    def test_no_issues(self):
+        self.assertEqual((self.conv.stats.issues, dict(self.conv.stats.unknown)), ([], {}))
+        for name, ir in self.irs.items():
+            self.assertEqual(ir.issues, [], name)
 
 
 def _standard(index, shader_class, shader, blocks=None, maps=None, name="S"):
@@ -705,7 +793,7 @@ class MultiSub(unittest.TestCase):
 
     def test_wrappers_around_and_inside(self):
         objs = (
-            _wrapper(0, mat.VRAY_MTL_WRAPPER, {0: Ref(1)}),  # wrapper -> Multi
+            _wrapper(0, classids.VRAY_MTL_WRAPPER, {0: Ref(1)}),  # wrapper -> Multi
             _multi(1, [(4, Ref(2), 1), (5, Ref(3), 1), (6, Ref(4), 1)]),
             _wrapper(2, classids.VRAY_2SIDED_MTL, {0: Ref(5)}),  # Multi -> wrapper
             _multi(3, [(5, Ref(6), 1)]),  # nested Multi: the same ID

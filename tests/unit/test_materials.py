@@ -37,7 +37,8 @@ FLOORS = {"vray_lights": 0, "lights_standard": 0, "lights_photometric": 0, "box_
           "saved_as_2018": 120, "saved_as_2019": 120, "shapes": 120, "stack_basic": 120, "stack_convert": 120,
           "stack_shell": 120, "standard_physical": 290,
           "texmap_rules": 1570, "texmap_wrappers": 1690, "units_cm": 120, "units_in": 120, "units_mm": 120, "uvwmap": 120,
-          "uvwmap_oblique": 120, "vray_basic": 190, "vray_maps": 630, "vray_texmaps": 2900, "vray_wrappers": 2000}
+          "uvwmap_oblique": 120, "vray_basic": 190, "vray_maps": 630, "vray_more": 2500, "vray_texmaps": 2900,
+          "vray_wrappers": 2000}
 
 
 _PKG = "maxdrop_convert_test"  # the package the convert tests make: maxdrop/__init__.py (bpy) never runs
@@ -52,6 +53,7 @@ classids = importlib.import_module(_PKG + ".reader.classids")
 scene = importlib.import_module(_PKG + ".reader.scene")
 pblock = importlib.import_module(_PKG + ".reader.pblock")
 materials = importlib.import_module(_PKG + ".reader.materials")
+owner_slots = importlib.import_module(_PKG + ".reader.owner_slots")
 ChunkError = chunks.ChunkError
 
 
@@ -226,6 +228,44 @@ class Fixtures(unittest.TestCase):
                     x for part in e["parts"] for x in part["blocks"]])
                 self.assertEqual(parity.animated, want, name)
                 del cf
+
+    def test_owner_slots_match_the_fixtures(self):
+        """Each owner_slots.py entry a fixture's 0x0013 lists says what that table says; every entry has one but the
+        two measured on corpus scene B only."""
+        tables = {}
+        for path in FIXTURES:
+            with cfb.CompoundFile(path) as cf:
+                s = scene.Scene.from_file(cf)
+                for i in range(len(s)):
+                    entry = s.entry(i)
+                    if entry is None or entry.superclass not in (classids.SC_MATERIAL, classids.SC_TEXMAP):
+                        continue
+                    for target in s.refs(i).values():
+                        t = s.entry(target)
+                        if t is None or t.superclass != classids.SC_PARAMETER_BLOCK2:
+                            continue
+                        chunk = s.chunk(target)
+                        table = chunk.first(0x0013)
+                        if table is None:
+                            continue
+                        buf = table.view()
+                        found = {}
+                        for k in range(struct.unpack_from("<I", buf)[0]):
+                            pid, slot, _unknown = struct.unpack_from("<HHH", buf, 4 + 6 * k)
+                            found.setdefault(pid, slot)
+                        key = (entry.superclass, entry.class_id, pblock.ParamBlock2.from_chunk(chunk).block_id)
+                        self.assertEqual(tables.setdefault(key, found), found, os.path.basename(path))
+                del cf
+        corpus_only = {classids.COMPOSITE, owner_slots.LAYERED_TEXMAP}
+        for (superclass, class_id), blocks in owner_slots.TABLE.items():
+            for block_id, want in blocks.items():
+                with self.subTest(class_id=class_id, block=block_id):
+                    found = tables.get((superclass, class_id, block_id))
+                    if class_id in corpus_only:
+                        self.assertIsNone(found)
+                        continue
+                    self.assertIsNotNone(found, "no fixture 0x0013 for this entry")
+                    self.assertEqual({pid: found.get(pid) for pid in want}, want)
 
     def test_vray_values_by_id(self):
         """A few values docs/FORMAT.md quotes, read by parameter id as the converters will."""

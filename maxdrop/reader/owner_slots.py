@@ -18,9 +18,7 @@ and ClassId (a ClassId is unique only within its superclass). No bpy.
 from . import classids
 from .classdir import ClassId
 
-# Classes no fixture has (reader/classids.py takes a class only with a fixture): measured by the M2 gate.
-VRAY_OVERRIDE_MTL = ClassId(0x15D20E6B, 0x54E217EB)
-VRAY_LIGHT_MTL = ClassId(0x7CCF263E, 0x3F5B39B9)
+# A class no fixture has (reader/classids.py takes a class only with a fixture): measured by the M2 gate.
 LAYERED_TEXMAP = ClassId(0xC90017A5, 0x111940BB)  # a composite-like map from a plug-in; name not needed
 
 _MTL, _TEX = classids.SC_MATERIAL, classids.SC_TEXMAP
@@ -30,6 +28,11 @@ TABLE = {
     (_MTL, classids.MULTI_SUB_MTL): {0: {0: 1}},
     (_MTL, classids.SHELL_MTL): {0: {2: 1, 3: 2}},
     (_MTL, classids.VRAY_2SIDED_MTL): {0: {0: 1, 1: 2}},
+    (_MTL, classids.VRAY_OVERRIDE_MTL): {0: {0: 1, 2: 2, 4: 3, 6: 4, 8: 5}},  # also corpus scene B's
+    (_MTL, classids.VRAY_MTL_WRAPPER): {0: {0: 1}},
+    (_MTL, classids.DOUBLE_SIDED_MTL): {0: {0: 1, 1: 2}},
+    (_MTL, classids.SHELLAC_MTL): {0: {0: 1, 1: 2}},
+    (_MTL, classids.VRAY_LIGHT_MTL): {0: {2: 1, 5: 2, 9: 3}},  # also corpus scene B's
     (_MTL, classids.VRAY_MTL): {4: {100 + k: 7 + k for k in range(27)}},  # texmap_diffuse ... in the maps block
     (_TEX, classids.BITMAP_TEX): {0: {15: 2}},
     (_TEX, classids.VRAY_BITMAP): {0: {31: 2}},
@@ -41,9 +44,7 @@ TABLE = {
     (_TEX, classids.COLOR_CORRECTION): {0: {1: 1}},
     (_TEX, classids.NORMAL_BUMP): {0: {2: 1, 3: 2}},
     (_TEX, classids.FALLOFF): {0: {2: 4, 6: 5}},
-    # no fixture: measured by the M2 gate on corpus scene B's 0x0013 tables
-    (_MTL, VRAY_OVERRIDE_MTL): {0: {0: 1, 2: 2, 4: 3, 6: 4, 8: 5}},
-    (_MTL, VRAY_LIGHT_MTL): {0: {2: 1, 5: 2, 9: 3}},
+    # no fixture 0x0013: measured by the M2 gate on corpus scene B's tables
     # Composite: texmap_rules' (Max 2020) keeps its maps as block references (pids 9, 10) and has no 0x0013; pids 0
     # and 2 are the older parameters scene B's 0x0013 lists, both at slot 1 there
     (_TEX, classids.COMPOSITE): {0: {0: 1, 2: 1}},

@@ -985,9 +985,11 @@ Reference parameters, checked against the oracle's targets on every fixture:
   stored indices are -1 although 3ds Max reports the map set (Color Correction `map`, Mix `map1` / `map2` /
   `mask`, Falloff `map1` / `map2`, VRayMtl `texmap_diffuse` ...). The slot is the parameter definition's reference
   number, a constant of the class: `maxdrop/reader/owner_slots.py` keeps it per (superclass, ClassID, block id),
-  from the fixtures' `0x0013` tables and, for VRayOverrideMtl, VRayLightMtl, Composite and class `0xC90017A5`
-  (no fixture `0x0013` entry: texmap_rules' Composite keeps its maps as block references), from corpus scene B's
-  (format 20000); every object of scene A agrees. Only a block without
+  from the fixtures' `0x0013` tables (vray_more's: VRayOverrideMtl at 1 to 5, VRayLightMtl `texmap`,
+  `opacity_texmap`, `displacement_texmap` at 1, 2, 3, as corpus scene B has them; VRayMtlWrapper, Double Sided and
+  Shellac at 1, 2) and, for Composite and class `0xC90017A5` (no fixture `0x0013` entry: texmap_rules' Composite
+  keeps its maps as block references), from corpus scene B's (format 20000); every object of scene A agrees.
+  `test_materials.py` checks each entry against the fixtures' tables. Only a block without
   `0x0013` uses it: for a stored -1, and for a stored index that is none of the owner's references when the owner
   holds one at that slot (scene A stores 3704 such indices: 3702 equal the slot's, 2 are stale, a Normal Bump's
   `normal_map` naming another Normal Bump's Bitmap and a Falloff's `map1` naming a controller, where 3ds Max
@@ -1029,7 +1031,8 @@ reader's children.
 
 - A material has superclass `0x0C00`, a map `0x0C10`. The name is a `0x4001` string inside a container whose id
   depends on the class: `0x4000` (Standard, Bitmap, Multi/Sub-Object, Shell, VRay2SidedMtl, VRayBlendMtl,
-  VRayNormalMap), `0x5431` (VRayMtl), `0x0100` (Physical Material). The reader takes the first container child
+  VRayNormalMap, VRayFastSSS2, both car paints, VRayOverrideMtl, VRayMtlWrapper, Double Sided, Shellac), `0x5431`
+  (VRayMtl, VRayLightMtl), `0x0100` (Physical Material). The reader takes the first container child
   holding a `0x4001`.
 - The parameter blocks are among the material's references (VRayMtl: slots 1 to 6 = blocks 1 to 6; Standard:
   slots 3 to 7 = blocks 0 to 4). References of superclass UVGen (`0x0C20`), XYZGen (`0x0C30`), TexOutput
@@ -1067,6 +1070,14 @@ values by the fixture scripts or read by the tests):
 | VRay2SidedMtl `(0x6066686A, 0x11731B4B)` | 0 | 0 frontMtl, 1 backMtl, 7 translucency, 3 backMtlOn, 4 texmap_translucency, 8 force1SidedSubMtls |
 | VRayBlendMtl `(0x3DA0041B, 0x0F436E31)` | 0 | 0 baseMtl, 1 coatMtl (table), 2 blend (color table), 3 texmap_blend, 4 texmap_blend_multiplier, 6 coatMtl_enable, 5 additiveMode |
 | Shell Material `(0x255, 0)` | 0 | 2 originalMaterial, 3 bakedMaterial, 0 viewportMtlIndex, 1 renderMtlIndex |
+| VRayOverrideMtl `(0x15D20E6B, 0x54E217EB)` | 0 | 0 baseMtl, 2 giMtl, 4 reflectMtl, 6 refractMtl, 8 shadowMtl (getSubMtl order), each followed by its switch (1 baseMtl_on ... 9 shadowMtl_on) (vray_more) |
+| VRayMtlWrapper `(0x409517DF, 0x3A5F44B6)` | 0 | 0 baseMtl, 2 generateGIMult (vray_more) |
+| Double Sided `(0x210, 0)` | 0 | 0 material1 (facing), 1 material2 (back), 2 / 3 map1Enabled / map2Enabled, 4 translucency (percent) (vray_more) |
+| Shellac `(0x46EE536A, 0)` | 0 | 0 shellacMtl1 (base), 1 shellacMtl2, 2 shellacColorBlend (percent) (vray_more) |
+| VRayLightMtl `(0x7CCF263E, 0x3F5B39B9)` | 0 | 0 color, 1 multiplier, 2 / 3 texmap (on), 5 / 6 opacity_texmap (on), 9 displacement_texmap (vray_more) |
+| VRayFastSSS2 `(0x3F2C5FAA, 0x750008BC)` | 0 | 26 diffuse_color, 27 / 28 / 29 texmap_diffuse_color (on, multiplier), 36 diffuse_amount, 2 sub_surface_color, 16 scatter_color, 57 overall_color, 0 scatter_radius (a plain float in centimeters whatever the system unit), 22 scale, 31 IOR, 40 specular_color, 44 specular_amount, 51 specular_glossiness, 3 / 4 / 5 texmap_bump, 85 / 86 / 87 texmap_opacity (vray_more) |
+| VRayCarPaintMtl `(0x38312C74, 0x47280883)` | 0 | 0 base_color, 1 / 2 / 3 texmap_base_color (on, multiplier), 4 base_reflection, 8 base_glossiness, 12 flake_color, 16 flake_glossiness, 27 coat_color, 31 coat_strength, 39 coat_glossiness, 55 / 56 / 57 texmap_base_bump (vray_more) |
+| VRayCarPaintMtl2 `(0x56BC47E2, 0x03E008C7)` | 0 | 0 base_color, 1 / 2 / 3 texmap_base_color, 4 base_reflection, 8 base_glossiness, 12 flake_color, 16 flake_glossiness, 27 coat_color, 31 coat_amount, 81 coat_ior, 39 coat_glossiness, 54 / 55 / 56 texmap_base_bump (vray_more) |
 | Multi/Sub-Object `(0x200, 0)` | 0 | 0 materialList, 1 mapEnabled, 2 names, 3 materialIDList (zero-based) |
 | Standard `(2, 0)` | 0 shader | 0 shaderType, 2 twoSided |
 | | 1 extended | 1 opacity (fraction), 6 ior |

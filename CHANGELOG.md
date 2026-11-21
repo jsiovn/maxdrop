@@ -15,6 +15,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ### Fixed
 
+- Materials: the report names a peeled Double Sided material as 3ds Max does (it said "DoubleSided"), and a
+  VRayFastSSS2 whose subsurface color cannot be read (animated, damaged) takes V-Ray's default grey instead of white.
+  The V-Ray light, subsurface, car-paint and wrapper materials are now checked against a scene saved by 3ds Max.
 - Modifiers: a Shell whose inner and outer surfaces both lie on one side of the original (inner -1 and outer 2, for
   one) arrives as a Solidify there instead of being left out, and one whose amounts add up to less than zero is
   turned inside out as 3ds Max makes it (both amounts negative used to face the wrong way). The report no longer
