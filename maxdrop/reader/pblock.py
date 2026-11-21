@@ -32,15 +32,16 @@ then u16 param id, u16 slot, u16 unknown; a table's element k is at slot + k), w
 and so does a stored index that is none of the owner's references when the owner holds one at that slot (the index
 can be stale: another map's, or a controller's).
 Without either flag there is no value: the elements take the block's own reference slots 0, 1, 2 ... in entry
-order, tables and transient entries included. Controllers take the slots after those, in entry order (one probe, no fixture:
-unverified). docs/FORMAT.md says which fixture shows what.
+order, tables and transient entries included. A controller (an animated parameter, or one table element) takes the
+next slot in the same sequence: a VRayBlendMtl with base, coats 1-9 and blend maps 10-18 keeps an animated second
+blend color at 10 and the blend maps at 11-19 (pblock_animated). docs/FORMAT.md says which fixture shows what.
 
 The old ParamBlock: 0x0001 u32 count, then per parameter a 0x0002 container: 0x0003 u32 index, optionally 0x0004,
 and the value in chunk 0x0100 + ParamType (0 float, 1 int, 2 color, 3 point3, 4 bool).
 
 The file comes from anywhere: a missing or short header raises ChunkError; a damaged entry or table poisons its
-own parameter (values None, raw bytes and error kept) and, when it may have held block references, leaves the
-later block references and the controllers empty instead of shifted; a damaged 0x0013 only spoils the owner
+own parameter (values None, raw bytes and error kept) and, when it may have taken a slot (a block reference or a
+controller), leaves every later one empty instead of shifted; a damaged 0x0013 only spoils the owner
 references; an asset chunk is taken only right after its entry; a stored object index past the object count is
 an empty reference. Each of these is named in issues. Tables are bounded by their payload. No bpy, no numpy.
 """
@@ -175,6 +176,17 @@ def _entry(buf, strings=chunks.WIDE):
     return pid, ptype, flags, out
 
 
+def _may_take_slots(ptype, flags, data):
+    """Whether a damaged entry may have held block references or controllers: its head unreadable, a reference type
+    without a stored index, or an animatable table (or scalar cut before its tag). A scalar's tag is read before its
+    value, and a controller has no value, so an animatable scalar damaged after its tag holds a value."""
+    if ptype is None:
+        return True
+    if ptype & ~TABLE in REFERENCE_TYPES and not flags & (P_OWNERS_REF | P_NO_REF):
+        return True
+    return bool(flags & P_ANIMATABLE) and bool(ptype & TABLE or len(data) <= _ENTRY_HEAD.size)
+
+
 def _asset_id(chunk):
     """The 16-byte asset id of a 0x000F or 0x0003 sibling, None when it has none; _Damaged when it is broken."""
     if not chunk.container:
@@ -276,23 +288,20 @@ class ParamBlock2:
                 return Reference(None)
             return Reference(index)
 
-        # A damaged entry that may have held block references (a reference type without a stored index, or a type
-        # not readable) leaves the slots of every later one unknown: they stay empty rather than take a neighbour's
-        # target. Any damaged entry may hide controllers, whose slots follow all the block references.
-        params, next_slot, controllers, slots_lost, controllers_lost = {}, 0, [], None, False
+        # Block-held references and controllers share one slot sequence, in entry order. A damaged entry that may have
+        # taken slots leaves the slots of every later one unknown: they stay empty rather than take a neighbour's
+        # target.
+        params, next_slot, slots_lost = {}, 0, None
         for pid, ptype, flags, values, data, error in raw:
             if values is None:
-                controllers_lost = True
-                if slots_lost is None and (ptype is None or (ptype & ~TABLE in REFERENCE_TYPES
-                                                             and not flags & (P_OWNERS_REF | P_NO_REF))):
+                if slots_lost is None and _may_take_slots(ptype, flags, data):
                     slots_lost = pid
             else:
                 for k, v in enumerate(values):
-                    if v is _BLOCK_REF:
-                        values[k] = Reference(None if slots_lost is not None else block_refs.get(next_slot))
+                    if v is _BLOCK_REF or v is _CONTROLLER:
+                        index = None if slots_lost is not None else block_refs.get(next_slot)
+                        values[k] = Reference(index) if v is _BLOCK_REF else Animated(index)
                         next_slot += 1
-                    elif v is _CONTROLLER:
-                        controllers.append((values, k))
                     elif isinstance(v, tuple) and v and v[0] is _OWNER_REF:
                         if pid in slots and flags & P_OWNERS_REF:
                             values[k] = Reference(owner_refs.get(slots[pid] + k))
@@ -308,12 +317,7 @@ class ParamBlock2:
                 continue
             params[pid] = (ptype if ptype is not None else 0, flags, values, data, error)
         if slots_lost is not None:
-            issues.append("block references after parameter %d unresolved" % slots_lost)
-        if controllers and controllers_lost:
-            issues.append("controllers unresolved: a damaged parameter may hold some")
-        for values, k in controllers:
-            values[k] = Animated(None if controllers_lost else block_refs.get(next_slot))
-            next_slot += 1
+            issues.append("block references and controllers after parameter %d unresolved" % slots_lost)
         out = {}
         for pid, (ptype, flags, values, data, error) in params.items():
             out[pid] = Param(pid, ptype, flags, None if values is None else tuple(values), data, error)

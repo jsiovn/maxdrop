@@ -700,7 +700,7 @@
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 2000, 1500, 2000]
     }
   ],
-  "oracle_version": 7,
+  "oracle_version": 8,
   "render": {"camera": null, "height": 480, "pixel_aspect": 1, "width": 640},
   "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
   "time": 0,

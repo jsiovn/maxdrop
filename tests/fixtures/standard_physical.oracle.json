@@ -9,6 +9,7 @@
       "blocks": [
       {
         "block_id": 0,
+        "controllers": [],
         "kind": "pb2",
         "params": [
           {"id": 0, "name": "shaderType", "transient": false, "type": 1, "value": 1},
@@ -22,6 +23,7 @@
       },
       {
         "block_id": 1,
+        "controllers": [],
         "kind": "pb2",
         "params": [
           {"id": 0, "name": "opacityType", "transient": false, "type": 1, "value": 0},
@@ -41,6 +43,7 @@
       },
       {
         "block_id": 2,
+        "controllers": [],
         "kind": "pb2",
         "params": [
           {"id": 0, "name": "sampler", "transient": false, "type": 1, "value": 3},
@@ -59,6 +62,7 @@
       },
       {
         "block_id": 3,
+        "controllers": [],
         "kind": "pb2",
         "params": [
           {"id": 0, "name": "mapEnables", "transient": false, "type": 2052, "value": [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]},
@@ -70,6 +74,7 @@
       },
       {
         "block_id": 4,
+        "controllers": [],
         "kind": "pb2",
         "params": [
           {"id": 0, "name": "bounce", "transient": false, "type": 0, "value": 1},
@@ -88,6 +93,7 @@
         "blocks": [
         {
         "block_id": 0,
+        "controllers": [],
         "kind": "pb2",
         "params": [
           {"id": 0, "name": "ambient", "transient": false, "type": 2, "value": [0.0431373, 0.0823529, 0.121569]},
@@ -113,6 +119,7 @@
         "blocks": [
         {
         "block_id": null,
+        "controllers": [],
         "kind": "pb1",
         "params": [
           {"index": 0, "type": 0, "value": 0.5},
@@ -135,6 +142,7 @@
       "blocks": [
       {
         "block_id": 0,
+        "controllers": [],
         "kind": "pb2",
         "params": [
           {"id": 0, "name": "clipu", "transient": false, "type": 0, "value": 0},
@@ -159,6 +167,7 @@
       },
       {
         "block_id": 1,
+        "controllers": [],
         "kind": "pb2",
         "params": [
           {"id": 0, "name": "startTime", "transient": false, "type": 12, "value": 0},
@@ -178,6 +187,7 @@
         "blocks": [
         {
         "block_id": null,
+        "controllers": [],
         "kind": "pb1",
         "params": [
           {"index": 0, "type": 0, "value": 0},
@@ -204,6 +214,7 @@
         "blocks": [
         {
         "block_id": null,
+        "controllers": [],
         "kind": "pb1",
         "params": [
           {"index": 0, "type": 0, "value": 1},
@@ -225,6 +236,7 @@
       "blocks": [
       {
         "block_id": 0,
+        "controllers": [],
         "kind": "pb2",
         "params": [
           {"id": 0, "name": "material_mode", "transient": false, "type": 1, "value": 0},
@@ -423,7 +435,7 @@
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 40, 0, 0]
     }
   ],
-  "oracle_version": 7,
+  "oracle_version": 8,
   "render": {"camera": null, "height": 480, "pixel_aspect": 1, "width": 640},
   "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
   "time": 0,

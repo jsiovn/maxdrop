@@ -9,6 +9,7 @@
       "blocks": [
       {
         "block_id": 0,
+        "controllers": [],
         "kind": "pb2",
         "params": [
           {"id": 101, "name": "baseColor", "transient": false, "type": 2, "value": [0.784314, 0.470588, 0.235294]},
@@ -174,6 +175,7 @@
       "blocks": [
       {
         "block_id": 0,
+        "controllers": [],
         "kind": "pb2",
         "params": [
           {"id": 101, "name": "baseColor", "transient": false, "type": 2, "value": [0.862745, 0.705882, 0.352941]},
@@ -339,6 +341,7 @@
       "blocks": [
       {
         "block_id": 0,
+        "controllers": [],
         "kind": "pb2",
         "params": [
           {"id": 101, "name": "baseColor", "transient": false, "type": 2, "value": [0.156863, 0.156863, 0.156863]},
@@ -600,7 +603,7 @@
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 80, 0, 0]
     }
   ],
-  "oracle_version": 7,
+  "oracle_version": 8,
   "render": {"camera": null, "height": 480, "pixel_aspect": 1, "width": 640},
   "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
   "time": 0,

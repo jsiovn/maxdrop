@@ -870,7 +870,9 @@ picker and Material Editor switches off).
 `maxdrop/reader/pblock.py` reads them; `tests/unit/test_materials.py` (RAW-PARAM PARITY) checks every stored
 parameter of every block of every material and map in every fixture against the oracle's `material_graph`, by
 parameter id, within 1e-5 (relative above 1): 193 values in vray_basic, 637 in vray_maps, 2,024 in vray_wrappers,
-295 in standard_physical. `tests/unit/test_pblock.py` covers each rule on synthetic bytes.
+295 in standard_physical. An animated parameter is checked against the oracle's `controllers`: the reader's
+controller is the block reference 3ds Max holds it at, of the same class, and its saved value is the value at frame 0
+(pblock_animated: 7 controllers). `tests/unit/test_pblock.py` covers each rule on synthetic bytes.
 
 A ParamBlock2 is an object of class `(0x82, 0)`, superclass `0x82`, referenced by its owner (the material, map or
 part whose parameters it holds):
@@ -889,8 +891,11 @@ parameter definition's flags (the same bits the SDK's `ParamDef.Flags` reports: 
 transient, `0x100` P_NO_REF, `0x200` P_OWNERS_REF), `u32` unknown, then:
 
 - a scalar: a `u8` tag and the value. Tag `0x40` = a stored value, `0xC0` = the stored value of an animatable
-  parameter, `0x80` = a controller, no value (a probe saved by 3ds Max 2020 with three animated VRayMtl
-  parameters; no fixture);
+  parameter, `0x80` = a controller, no value (pblock_animated: VRayMtl `diffuse` and `reflection_glossiness`,
+  VRayBlendMtl `blend` element 1 and `texmap_blend_multiplier` element 0, VRayNormalMap `normal_map_multiplier` and
+  `bump_map_multiplier`). The controller is a reference of the block, below; a Bezier Float keeps its saved value
+  in `0x7127{0x2501: f32}`, a Bezier Color in `0x7127{0x2501: 3 x f32}` (0..1), the value at frame 0 when saved
+  there;
 - a table: a `u8` 0, a `u32` element count, then a tag and a value per element. vray_wrappers: Multi/Sub-Object
   `materialList`, `mapEnabled`, `names`, `materialIDList` (3 each); VRayBlendMtl `coatMtl`, `blend`,
   `texmap_blend`, `texmap_blend_multiplier` (9 each); Standard `maps`, `mapAmounts` (24 each).
@@ -935,6 +940,14 @@ Reference parameters, checked against the oracle's targets on every fixture:
   and transient entries included: VRayBlendMtl `baseMtl` 0, `coatMtl` 1-9, `texmap_blend` 10-18, its transient
   aliases `coatMtl_0`... and `texmap_blend_0`... 19-36 (37 slots, the block's `0x2035` count; the aliases' slots
   are empty); VRayNormalMap `normal_map` 0, `bump_map` 1.
+- A controller takes the next slot of the same sequence, in entry order, whichever was animated first
+  (pblock_animated, slots from 3ds Max's `GetControllerByID` and the block's references): VRayBlendMtl `baseMtl`
+  0, `coatMtl` 1-9, the controller of `blend` element 1 at 10, `texmap_blend` 11-19, the controller of
+  `texmap_blend_multiplier` element 0 at 20 (39 slots); VRayNormalMap `normal_map` 0, the controller of
+  `normal_map_multiplier` 1, `bump_map` 2, the controller of `bump_map_multiplier` 3; VRayMtl block 1 (no block
+  references) `diffuse` 0, `reflection_glossiness` 1. A parameter without a controller takes no slot. A damaged
+  entry that may have taken slots (head unreadable, a block-held reference type, an animatable table) leaves every
+  later slot unresolved.
 
 Transient parameters are mostly not stored (VRayMtl: 25 of the 80 parameters of block 1, among them
 `bump_multiplier` 102 and the `texmap_*` 109-128 that mirror block 4). Some are stored anyway with a stale value
@@ -1108,9 +1121,6 @@ Not shown by any fixture yet, so not stated above:
 - Parameter blocks seen only elsewhere (`pblock.py` relies on them):
   - entries in `0x000E` instead of `0x100E`, same layout, in corpus scene A (saved as 3ds Max 2012); scenes A and
     B walk without an issue: 726 and 560 materials and maps, 33,543 and 41,274 stored parameters;
-  - a controller on a parameter (tag `0x80`, no value): a probe with three animated VRayMtl parameters had them at
-    the block's reference slots 0, 1, 2 in entry order (`Animated(index)` in the reader). Where controllers go
-    when the block also holds references is assumed (after those), not shown; corpus scene A has 4 such values.
   - not known: the first `u32` of `0x0009`, the fourth `u32` of an entry, the third `u16` of a `0x0013` record,
     `0x0005` and `0x0004` of the old ParamBlock, and the value layout of the types no file has shown (matrix3,
     and the others the reader keeps as raw bytes).

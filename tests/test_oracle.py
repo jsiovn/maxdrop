@@ -34,7 +34,8 @@ SHAPE_KEYS = ["adaptive", "angle", "display_render_mesh", "length", "optimize", 
 KNOT_KEYS = ["in", "mid", "out", "pos", "segment", "type"]
 KNOT_TYPES = ("corner", "smooth", "bezier", "bezierCorner")
 GRAPH_KEYS = ["blocks", "class_id", "class_name", "index", "name", "parts", "subs", "superclass"]
-BLOCK_KEYS = ["block_id", "kind", "params", "ref"]
+BLOCK_KEYS = ["block_id", "controllers", "kind", "params", "ref"]
+CONTROLLER_KEYS = ["class_id", "id", "slot", "tab", "value"]
 PB2_PARAM_KEYS = ["id", "name", "transient", "type", "value"]
 PB1_PARAM_KEYS = ["index", "type", "value"]
 REF_TYPES = (14, 15)  # mtl, texmap: the value is an index into material_graph
@@ -120,7 +121,7 @@ class OracleFiles(unittest.TestCase):
             with self.subTest(name):
                 o = _oracle(name)
                 self.assertEqual(list(o), TOP_KEYS)
-                self.assertEqual(o["oracle_version"], 7)
+                self.assertEqual(o["oracle_version"], 8)
                 self.assertEqual(list(o["render"]), RENDER_KEYS)
                 self.assertTrue(o["render"]["width"] > 0 and o["render"]["height"] > 0)
                 self.assertEqual(o["file"], name + ".max")
@@ -202,9 +203,19 @@ class OracleFiles(unittest.TestCase):
                 if p["type"] & 0x7FF in REF_TYPES:
                     values = p["value"] if p["type"] & 0x800 else [p["value"]]
                     self.assertTrue(all(v is None or 0 <= v < size for v in values), p)
+            params = {p["id"]: p for p in b["params"]}
+            slots = [c["slot"] for c in b["controllers"]]
+            self.assertEqual(len(slots), len(set(slots)), b["controllers"])
+            for c in b["controllers"]:
+                self.assertEqual(list(c), CONTROLLER_KEYS)
+                self.assertTrue(all(CLASS_ID.match(h) for h in c["class_id"]), c)
+                self.assertGreaterEqual(c["slot"], 0, c)  # every controller is one of the block's references
+                p = params[c["id"]]
+                self.assertEqual(c["value"], p["value"][c["tab"]] if p["type"] & 0x800 else p["value"], c)
         else:
             self.assertEqual(b["kind"], "pb1")
             self.assertIsNone(b["block_id"])
+            self.assertEqual(b["controllers"], [])  # an old ParamBlock's controllers are not dumped
             self.assertEqual([p["index"] for p in b["params"]], list(range(len(b["params"]))))
             for p in b["params"]:
                 self.assertEqual(list(p), PB1_PARAM_KEYS)

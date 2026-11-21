@@ -9,6 +9,7 @@
       "blocks": [
       {
         "block_id": 1,
+        "controllers": [],
         "kind": "pb2",
         "params": [
           {"id": 93, "name": "preset", "transient": false, "type": 1, "value": 0},
@@ -96,6 +97,7 @@
       },
       {
         "block_id": 2,
+        "controllers": [],
         "kind": "pb2",
         "params": [
           {"id": 10, "name": "brdf_type", "transient": false, "type": 1, "value": 4},
@@ -117,6 +119,7 @@
       },
       {
         "block_id": 3,
+        "controllers": [],
         "kind": "pb2",
         "params": [
           {"id": 15, "name": "option_traceDiffuse", "transient": false, "type": 4, "value": 0},
@@ -141,6 +144,7 @@
       },
       {
         "block_id": 4,
+        "controllers": [],
         "kind": "pb2",
         "params": [
           {"id": 100, "name": "texmap_diffuse", "transient": false, "type": 15, "value": null},
@@ -228,6 +232,7 @@
       },
       {
         "block_id": 5,
+        "controllers": [],
         "kind": "pb2",
         "params": [
           {"id": 56, "name": "", "transient": true, "type": 4, "value": 0},
@@ -241,6 +246,7 @@
       },
       {
         "block_id": 6,
+        "controllers": [],
         "kind": "pb2",
         "params": [
           {"id": 57, "name": "", "transient": true, "type": 4, "value": 0},
@@ -299,7 +305,7 @@
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]
     }
   ],
-  "oracle_version": 7,
+  "oracle_version": 8,
   "render": {"camera": null, "height": 480, "pixel_aspect": 1, "width": 640},
   "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
   "time": 0,

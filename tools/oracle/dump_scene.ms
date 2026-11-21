@@ -17,7 +17,7 @@ global MaxDropOracle
 
 struct MaxDropOracleStruct
 (
-	version = 7,
+	version = 8,
 
 	fn num v =
 	(
@@ -430,9 +430,35 @@ struct MaxDropOracleStruct
 		list items
 	),
 
+	fn classPair c = list #(str ("0x" + (formattedPrint c.ClassID.PartA format:"08x")), str ("0x" + (formattedPrint c.ClassID.PartB format:"08x"))),
+
+	-- the controllers of a block's animated parameters (one per table element that has one): the controller's class,
+	-- the block reference that holds it (-1: none of them) and the parameter's value at frame 0
+	fn controllersOf pb id tp acc =
+	(
+		local out = #()
+		local n = if (bit.and tp 0x800) != 0 then pb.Count id else 1
+		for k = 0 to n - 1 do
+		(
+			local c = try (pb.GetControllerByID id k) catch undefined
+			if c != undefined do
+			(
+				local slot = -1
+				for s = 0 to pb.NumRefs - 1 do
+				(
+					local x = pb.GetReference s
+					if x != undefined and (ptrOf x) == (ptrOf c) do slot = s
+				)
+				append out (inline #(#("class_id", classPair c), #("id", (id as integer) as string), #("slot", slot as string), #("tab", k as string), #("value", pbValue pb id tp k acc)))
+			)
+		)
+		out
+	),
+
 	fn pb2Json pb r acc =
 	(
 		local items = #()
+		local ctrls = #()
 		for i = 0 to pb.NumParams - 1 do
 		(
 			local id = pb.IndextoID i
@@ -440,8 +466,9 @@ struct MaxDropOracleStruct
 			local tp = d.Type.value__
 			local v = if (bit.and tp 0x800) != 0 then tabValue pb id tp acc else pbValue pb id tp 0 acc
 			append items (inline #(#("id", (id as integer) as string), #("name", str d.IntName), #("transient", bool ((bit.and (d.Flags as integer) 2) != 0)), #("type", tp as string), #("value", v)))
+			join ctrls (controllersOf pb id tp acc)
 		)
-		obj #(#("block_id", (pb.Id as integer) as string), #("kind", str "pb2"), #("params", block items 8), #("ref", r as string)) 6
+		obj #(#("block_id", (pb.Id as integer) as string), #("controllers", block ctrls 8), #("kind", str "pb2"), #("params", block items 8), #("ref", r as string)) 6
 	),
 
 	fn pb1Value pb i tp =
@@ -465,7 +492,7 @@ struct MaxDropOracleStruct
 			local tp = (pb.GetParameterType i).value__
 			append items (inline #(#("index", i as string), #("type", tp as string), #("value", pb1Value pb i tp)))
 		)
-		obj #(#("block_id", "null"), #("kind", str "pb1"), #("params", block items 8), #("ref", r as string)) 6
+		obj #(#("block_id", "null"), #("controllers", "[]"), #("kind", str "pb1"), #("params", block items 8), #("ref", r as string)) 6
 	),
 
 	fn ownBlocks t acc =
@@ -482,9 +509,7 @@ struct MaxDropOracleStruct
 
 	fn partJson t r acc =
 	(
-		local c = t.ClassID
-		local pcid = list #(str ("0x" + (formattedPrint c.PartA format:"08x")), str ("0x" + (formattedPrint c.PartB format:"08x")))
-		obj #(#("blocks", block (ownBlocks t acc) 6), #("class_id", pcid), #("ref", r as string)) 6
+		obj #(#("blocks", block (ownBlocks t acc) 6), #("class_id", classPair t), #("ref", r as string)) 6
 	),
 
 	-- the parameter blocks among the references of a, and the parts that carry blocks of their own (a map's

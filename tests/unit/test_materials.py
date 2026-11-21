@@ -32,7 +32,7 @@ FLOORS = {"vray_lights": 0, "lights_standard": 0, "lights_photometric": 0, "box_
           "corona_maps": 950, "corona_physical": 500, "editable_mesh": 380, "extrude": 120, "gamma_swatches": 540,
           "hierarchy": 120, "instances": 120, "layers_flags": 120,
           "layers_more": 120, "lookat": 120, "modifier_pivot": 120,
-          "multi_uv": 120, "primitives": 120, "saved_as_2017": 120,
+          "multi_uv": 120, "pblock_animated": 920, "primitives": 120, "saved_as_2017": 120,
           "saved_as_2018": 120, "saved_as_2019": 120, "shapes": 120, "stack_basic": 120, "stack_convert": 120,
           "standard_physical": 290,
           "texmap_rules": 1570, "texmap_wrappers": 1690, "units_cm": 120, "units_in": 120, "units_mm": 120, "uvwmap": 120,
@@ -67,12 +67,36 @@ def _key(entry):
     return _cid(entry["class_id"]), entry["name"]
 
 
+def _saved_value(chunk):
+    """A Bezier Float's or Bezier Color's saved value (0x2501, directly or inside 0x7127): a float or a tuple."""
+    holder = chunk.first(0x7127) or chunk
+    value = holder.first(0x2501)
+    floats = value.unpack("<%df" % (value.payload_size // 4))
+    return floats[0] if len(floats) == 1 else floats
+
+
 class Parity:
     """Compares one fixture's reader graph with its oracle graph and counts what it compared."""
 
-    def __init__(self, case, graph, oracle_graph, by_key):
-        self.case, self.graph, self.oracle_graph, self.by_key = case, graph, oracle_graph, by_key
-        self.compared, self.skipped, self.not_stored = 0, 0, 0
+    def __init__(self, case, graph, oracle_graph, by_key, scene_):
+        self.case, self.graph, self.oracle_graph, self.by_key, self.scene = case, graph, oracle_graph, by_key, scene_
+        self.compared, self.skipped, self.not_stored, self.animated = 0, 0, 0, 0
+
+    def controller(self, ours, theirs, block_index, what):
+        """An animated parameter: the controller the reader names is the block reference the oracle found it at,
+        of the oracle's class, and its saved value is the oracle's value at frame 0."""
+        self.case.assertIsInstance(ours, pblock.Animated, what)
+        self.case.assertIsNotNone(ours.index, what)
+        self.case.assertEqual(ours.index, self.scene.refs(block_index).get(theirs["slot"]), what + ": slot")
+        self.case.assertEqual(tuple(self.scene.entry(ours.index).class_id), _cid(theirs["class_id"]), what)
+        saved = _saved_value(self.scene.chunk(ours.index))
+        if isinstance(theirs["value"], list):
+            self.case.assertEqual(len(saved), len(theirs["value"]), what)
+            for k, (a, b) in enumerate(zip(saved, theirs["value"])):
+                self.number(a, b, "%s saved[%d]" % (what, k))
+        else:
+            self.number(saved, theirs["value"], what + " saved")
+        self.animated += 1
 
     def number(self, ours, theirs, what):
         self.case.assertIsInstance(ours, (int, float), what)
@@ -80,7 +104,7 @@ class Parity:
         self.compared += 1
 
     def value(self, base, ours, theirs, what):
-        self.case.assertNotIsInstance(ours, pblock.Animated, what)  # no fixture animates a parameter
+        self.case.assertNotIsInstance(ours, pblock.Animated, what)  # the oracle names no controller here
         if base in pblock.FLOAT_TYPES:
             self.number(ours, theirs, what)
         elif base in pblock.INT_TYPES:
@@ -104,10 +128,12 @@ class Parity:
         else:  # file names are asset ids in the file (resolved by a later reader); nodes, bitmaps: oracle null
             self.skipped += 1
 
-    def blocks(self, oracle_blocks, blocks, legacy, where):
+    def blocks(self, oracle_blocks, blocks, legacy, owner, where):
         for b in oracle_blocks:
             if b["kind"] == "pb2":
                 ours = blocks.get(b["ref"])
+                controllers = {(c["id"], c["tab"]): c for c in b["controllers"]}
+                block_index = self.scene.refs(owner).get(b["ref"])
                 self.case.assertIsNotNone(ours, "%s: ParamBlock2 at slot %d" % (where, b["ref"]))
                 self.case.assertEqual(ours.block_id, b["block_id"], where)
                 self.case.assertEqual(ours.issues, (), where)  # also: as many entries as the header announces
@@ -130,12 +156,15 @@ class Parity:
                     self.case.assertEqual(rp.type, p["type"], what)
                     self.case.assertIsNone(rp.error, what)
                     base = p["type"] & ~pblock.TABLE
-                    if rp.table:
-                        self.case.assertEqual(len(rp.values), len(p["value"]), what)
-                        for k, (a, t) in enumerate(zip(rp.values, p["value"])):
-                            self.value(base, a, t, "%s[%d]" % (what, k))
-                    else:
-                        self.value(base, rp.values[0], p["value"], what)
+                    values = rp.values if rp.table else rp.values[:1]
+                    theirs = p["value"] if rp.table else [p["value"]]
+                    self.case.assertEqual(len(values), len(theirs), what)
+                    for k, (a, t) in enumerate(zip(values, theirs)):
+                        at = "%s[%d]" % (what, k) if rp.table else what
+                        if (p["id"], k) in controllers:
+                            self.controller(a, controllers[(p["id"], k)], block_index, at)
+                        else:
+                            self.value(base, a, t, at)
             else:
                 ours = legacy.get(b["ref"])
                 self.case.assertIsNotNone(ours, "%s: ParamBlock at slot %d" % (where, b["ref"]))
@@ -170,25 +199,29 @@ class Fixtures(unittest.TestCase):
                     self.assertNotIn(key, by_key, "names are unique in the fixtures")
                     by_key[key] = i
                 self.assertEqual(sorted(by_key), sorted(_key(e) for e in oracle))
-                parity = Parity(self, g, oracle, by_key)
+                parity = Parity(self, g, oracle, by_key, s)
                 for e in oracle:
                     m = g.get(by_key[_key(e)])
                     where = "%s %s" % (name, e["name"])
                     self.assertEqual(m.superclass, e["superclass"], where)
                     self.assertEqual(m.is_material, e["superclass"] == classids.SC_MATERIAL, where)
                     self.assertEqual(m.issues, (), where)
-                    parity.blocks(e["blocks"], m.blocks, m.legacy, where)
+                    parity.blocks(e["blocks"], m.blocks, m.legacy, m.index, where)
                     for part in e["parts"]:
                         ours = m.parts.get(part["ref"])
                         self.assertIsNotNone(ours, "%s: part at slot %d" % (where, part["ref"]))
                         self.assertEqual(tuple(ours.class_id), _cid(part["class_id"]), where)
-                        parity.blocks(part["blocks"], ours.blocks, ours.legacy, "%s part %d" % (where, part["ref"]))
+                        parity.blocks(part["blocks"], ours.blocks, ours.legacy, ours.index,
+                                      "%s part %d" % (where, part["ref"]))
                     self.assertEqual(len(m.parts), len(e["parts"]), where)
                     children = {(tuple(g.get(c).class_id), g.get(c).name) for c in m.children}
                     for sub in e["subs"]:
                         self.assertIn(_key(oracle[sub["target"]]), children, where)
                 self.assertIn(name, FLOORS, "no FLOORS entry in tests/unit/test_materials.py")
                 self.assertGreaterEqual(parity.compared, FLOORS[name], name)
+                want = sum(len(b["controllers"]) for e in oracle for b in e["blocks"] + [
+                    x for part in e["parts"] for x in part["blocks"]])
+                self.assertEqual(parity.animated, want, name)
                 del cf
 
     def test_vray_values_by_id(self):
@@ -234,6 +267,54 @@ class Fixtures(unittest.TestCase):
             shell = mats["FixtureShell"]
             self.assertEqual((name(shell.block(0).get(2)), name(shell.block(0).get(3)), shell.block(0).get(1)),
                              ("FixtureShellOriginal", "FixtureShellBaked", 0))
+
+    def test_animated_by_id(self):
+        """pblock_animated: a controller takes the next reference slot of its block in entry order, between the
+        block's own references (docs/FORMAT.md, Parameter blocks)."""
+        path = os.path.join(FIXTURE_DIR, "pblock_animated.max")
+        with cfb.CompoundFile(path) as cf:
+            s = scene.Scene.from_file(cf)
+            g = materials.MaterialGraph(s)
+            order = g.walk(s.node(i).material for i in s.walk())
+            mats = {g.get(i).name: g.get(i) for i in order}
+            name = lambda ref: g.get(ref.index).name if ref.index is not None else None  # noqa: E731
+
+            def slot(m, block_id, ref):  # the block's reference slot that holds ref's target
+                refs = s.refs(s.refs(m.index)[next(k for k, b in m.blocks.items() if b.block_id == block_id)])
+                return next(k for k, v in refs.items() if v == ref.index)
+
+            def controller(ref):  # class name and saved value of an Animated target
+                return s.entry(ref.index).name, _saved_value(s.chunk(ref.index))
+
+            blend = mats["FixtureAnimBlend"].block(0)
+            self.assertEqual(name(blend.get(0)), "FixtureAnimBase")
+            self.assertEqual([name(r) for r in blend.value(1)][:3], ["FixtureAnimCoatA", "FixtureAnimCoatB", None])
+            colors = blend.value(2)  # blend: the second color animated, the first stored
+            self.assertEqual([round(c * 255) for c in colors[0]], [40, 50, 60])
+            self.assertIsInstance(colors[1], pblock.Animated)
+            name_, value = controller(colors[1])
+            self.assertEqual((name_, [round(c * 255) for c in value]), ("Bezier Color", [70, 80, 90]))
+            self.assertEqual(slot(mats["FixtureAnimBlend"], 0, colors[1]), 10)  # after the coats (1-9)
+            self.assertEqual(name(blend.get(3)), "FixtureAnimBlendMap")  # texmap_blend[0]: slot 11, not 10
+            self.assertEqual(slot(mats["FixtureAnimBlend"], 0, blend.get(3)), 11)
+            mult = blend.value(4)[0]
+            self.assertEqual(controller(mult), ("Bezier Float", 37.0))
+            self.assertEqual(slot(mats["FixtureAnimBlend"], 0, mult), 20)  # after the blend maps (11-19)
+
+            vray = mats["FixtureAnimVRay"].block(1)
+            self.assertEqual(controller(vray.get(1))[0], "Bezier Color")  # diffuse
+            self.assertEqual([round(c * 255) for c in controller(vray.get(1))[1]], [10, 20, 30])
+            self.assertEqual(controller(vray.get(3))[0], "Bezier Float")  # reflection_glossiness, animated first
+            self.assertAlmostEqual(controller(vray.get(3))[1], 0.41, places=6)
+            self.assertEqual((slot(mats["FixtureAnimVRay"], 1, vray.get(1)), slot(mats["FixtureAnimVRay"], 1,
+                                                                                 vray.get(3))), (0, 1))
+
+            normal = mats["FixtureAnimNormal"]
+            nb = normal.block(0)
+            self.assertEqual((name(nb.get(0)), name(nb.get(4))), ("FixtureAnimNormalMap", "FixtureAnimBumpMap"))
+            self.assertAlmostEqual(controller(nb.get(3))[1], 0.55, places=6)  # normal_map_multiplier
+            self.assertAlmostEqual(controller(nb.get(6))[1], 0.35, places=6)  # bump_map_multiplier
+            self.assertEqual([slot(normal, 0, nb.get(pid)) for pid in (0, 3, 4, 6)], [0, 1, 2, 3])
 
     def test_maps_by_id(self):
         path = os.path.join(FIXTURE_DIR, "vray_maps.max")

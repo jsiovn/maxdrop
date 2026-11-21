@@ -60,7 +60,7 @@ Top level:
 | `max_version` | The Max that made the dump: `[release, year]`, e.g. `[22000, 2020]`. |
 | `node_count` | Number of entries in `nodes`. |
 | `nodes` | Every node of the scene, see below. |
-| `oracle_version` | Version of this layout (2: `material_graph` added; 3: the modifier context, switches and name of each modifier; 4: `shape`; 5: `eval_maps`; 6: `camera` and `render`; 7: a layer's `parent`, and a node's `hidden` and `frozen` its own flags). |
+| `oracle_version` | Version of this layout (2: `material_graph` added; 3: the modifier context, switches and name of each modifier; 4: `shape`; 5: `eval_maps`; 6: `camera` and `render`; 7: a layer's `parent`, and a node's `hidden` and `frozen` its own flags; 8: a block's `controllers`). |
 | `render` | The render settings: `width`, `height` (pixels), `pixel_aspect`, and `camera`: the handle of the camera of the view 3ds Max renders (the locked render view, `rendViewIndex`, else the active viewport; `viewport.getCamera`), `null` when that view looks through no camera. |
 | `renderer` | The current renderer: `class_id`, `class_name`. |
 | `time` | The frame every node was evaluated at: always 0. |
@@ -113,7 +113,15 @@ percentages and 0..255 colors MAXScript shows.
 | `subs` | The sub-materials and sub-maps that are set: `kind` (`material` or `map`), `slot` (0-based, as `getSubMtl` / `getSubTexmap` count), `target` (index into `material_graph`). |
 
 A block: `kind` `pb2` (ParamBlock2) or `pb1` (the old ParamBlock), `ref` (its reference slot in the entry or
-part), `block_id` (the ParamBlock2's descriptor id, `null` for `pb1`), and `params`:
+part), `block_id` (the ParamBlock2's descriptor id, `null` for `pb1`), `controllers` and `params`.
+
+`controllers`: one entry per animated parameter of a `pb2` (per element of an animated table), in parameter order:
+`id`, `tab` (the element, 0 for a scalar), `class_id` (the controller's, `IParamBlock2.GetControllerByID`), `slot`
+(the block's reference slot that holds the controller, found by comparing `GetReference` with it; -1 if none
+does), `value` (the parameter's value at frame 0, as in `params`). Always empty for `pb1`: its controllers are
+not dumped.
+
+`params`:
 
 - `pb2`: every parameter of the descriptor in its order: `id`, `name` (its internal name, may be empty), `type`
   (the SDK's ParamType2, `0x800` added for a table), `transient` (not saved in the file), `value`. A table's value

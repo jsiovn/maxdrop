@@ -181,13 +181,14 @@ class References(unittest.TestCase):
         self.assertEqual((pb.get(14), pb.get(15)), (Reference(358), Reference(None)))
         self.assertEqual(pb.value(1), [Reference(None), Reference(77)])  # Standard's maps: P_NO_REF
 
-    def test_controllers_after_block_references(self):
+    def test_controllers_share_the_slot_sequence(self):
+        # as pblock_animated's VRayBlendMtl: a controller takes the next slot in entry order, like a block reference
         pb = parse(block(scalar(1, RGBA, ANIM, 0x80), scalar(2, MTL, 0, 0x40), scalar(3, FLOAT, ANIM, 0x80),
-                         table(4, FLOAT, ANIM, (0xC0, f32(1)), (0x80, b""))),
-                   block_refs={0: 10, 1: 11, 2: 12, 3: 13})
-        self.assertEqual(pb.get(2), Reference(10))
-        self.assertEqual((pb.get(1), pb.get(3)), (Animated(11), Animated(12)))
+                         table(4, FLOAT, ANIM, (0xC0, f32(1)), (0x80, b"")), scalar(5, TEXMAP, 0, 0x40)),
+                   block_refs={0: 10, 1: 11, 2: 12, 3: 13, 4: 14})
+        self.assertEqual((pb.get(1), pb.get(2), pb.get(3)), (Animated(10), Reference(11), Animated(12)))
         self.assertEqual(pb.value(4), [1.0, Animated(13)])
+        self.assertEqual(pb.get(5), Reference(14))
 
     def test_assets_follow_their_entry(self):
         guid = bytes(range(16))
@@ -222,7 +223,7 @@ class Damaged(unittest.TestCase):
         self.assertIsNone(pb.value(3))
         self.assertIsNotNone(pb.param(5))
         self.assertEqual(len(pb.issues), 4)  # three entries, and the 2-byte one may have held block references
-        self.assertIn("block references after parameter 5 unresolved", pb.issues)
+        self.assertIn("block references and controllers after parameter 5 unresolved", pb.issues)
 
     def test_damaged_reference_table_leaves_later_slots_empty(self):
         cut = leaf(0x100E, head(1, MTL | TAB, 0) + b"\x00" + struct.pack("<I", 2) + b"\x40")  # 2 elements, 1 there
@@ -233,12 +234,26 @@ class Damaged(unittest.TestCase):
         self.assertEqual(pb.get(2), Reference(None))  # not slot 1's target
         self.assertEqual(pb.get(3), Animated(None))
         self.assertEqual(pb.get(4), Reference(9))  # a stored index does not depend on slots
-        self.assertIn("block references after parameter 1 unresolved", pb.issues)
+        self.assertIn("block references and controllers after parameter 1 unresolved", pb.issues)
 
-    def test_damaged_value_entry_keeps_slots_but_drops_controllers(self):
+    def test_damaged_scalar_after_its_tag_keeps_every_slot(self):
+        # the tag says a stored value: a controller has none, so the entry held no slot
         pb = parse(block(scalar(1, FLOAT, ANIM, 0xC0, b"\x00"), scalar(2, MTL, 0, 0x40),
                          scalar(3, FLOAT, ANIM, 0x80)), block_refs={0: 100, 1: 101})
-        self.assertEqual((pb.get(2), pb.get(3)), (Reference(100), Animated(None)))
+        self.assertEqual((pb.get(2), pb.get(3)), (Reference(100), Animated(101)))
+        self.assertFalse(any("unresolved" in x for x in pb.issues))
+
+    def test_damaged_animatable_table_leaves_later_slots_empty(self):
+        cut = leaf(0x100E, head(1, FLOAT | TAB, ANIM) + b"\x00" + struct.pack("<I", 2) + b"\x80\xc0")  # 2nd cut
+        pb = parse(block(cut, scalar(2, MTL, 0, 0x40), scalar(3, FLOAT, ANIM, 0x80)), block_refs={0: 100, 1: 101})
+        self.assertEqual((pb.get(2), pb.get(3)), (Reference(None), Animated(None)))
+        self.assertIn("block references and controllers after parameter 1 unresolved", pb.issues)
+
+    def test_damaged_table_that_cannot_be_animated_keeps_every_slot(self):
+        cut = leaf(0x100E, head(1, STRING | TAB, 0) + b"\x00" + struct.pack("<I", 1) + b"\x40\x10\x00\x00\x00")
+        pb = parse(block(cut, scalar(2, MTL, 0, 0x40), scalar(3, FLOAT, ANIM, 0x80)), block_refs={0: 100, 1: 101})
+        self.assertIsNotNone(pb.param(1).error)
+        self.assertEqual((pb.get(2), pb.get(3)), (Reference(100), Animated(101)))
 
     def test_stored_index_outside_the_objects(self):
         pb = pblock.ParamBlock2.from_chunk(

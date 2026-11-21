@@ -9,6 +9,7 @@
       "blocks": [
       {
         "block_id": 0,
+        "controllers": [],
         "kind": "pb2",
         "params": [
           {"id": 1000, "name": "baseMtl", "transient": false, "type": 14, "value": 1},
@@ -40,6 +41,7 @@
       "blocks": [
       {
         "block_id": 0,
+        "controllers": [],
         "kind": "pb2",
         "params": [
           {"id": 101, "name": "baseColor", "transient": false, "type": 2, "value": [0.352941, 0.627451, 0.27451]},
@@ -205,6 +207,7 @@
       "blocks": [
       {
         "block_id": 0,
+        "controllers": [],
         "kind": "pb2",
         "params": [
           {"id": 101, "name": "baseColor", "transient": false, "type": 2, "value": [0.941176, 0.941176, 0.941176]},
@@ -370,6 +373,7 @@
       "blocks": [
       {
         "block_id": 0,
+        "controllers": [],
         "kind": "pb2",
         "params": [
           {"id": 101, "name": "filename", "transient": false, "type": 9, "value": "fixture_c_layer_mask.png"},
@@ -416,6 +420,7 @@
         "blocks": [
         {
         "block_id": null,
+        "controllers": [],
         "kind": "pb1",
         "params": [
           {"index": 0, "type": 0, "value": 0},
@@ -446,6 +451,7 @@
       "blocks": [
       {
         "block_id": 0,
+        "controllers": [],
         "kind": "pb2",
         "params": [
           {"id": 1000, "name": "baseMtl", "transient": false, "type": 14, "value": null},
@@ -475,6 +481,7 @@
       "blocks": [
       {
         "block_id": 0,
+        "controllers": [],
         "kind": "pb2",
         "params": [
           {"id": 101, "name": "colorDiffuse", "transient": false, "type": 2, "value": [0.27451, 0.313726, 0.784314]},
@@ -685,7 +692,7 @@
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 40, 0, 0]
     }
   ],
-  "oracle_version": 7,
+  "oracle_version": 8,
   "render": {"camera": null, "height": 480, "pixel_aspect": 1, "width": 640},
   "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
   "time": 0,
