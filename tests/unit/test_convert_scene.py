@@ -186,11 +186,10 @@ ISSUES = {"uvwmap": ["uvw map: a UVW Map above Bend is not evaluated",
               "light: its rectangle shape is not imported: a point"],
           "vray_lights": ["light: diffuse contribution 0.5: Blender's diffuse factor, which only EEVEE uses",
                           "light: double-sided: Blender's area light shines on one side, with half the power",
-                          "light: not built: a mesh light is not imported: V-Ray keeps its mesh in the light's "
-                          "own data"],
+                          "light: not built: a mesh light is not imported yet"],
           "vray_dome": ["light: a second dome light: not imported (Blender has one World, FixtureDome's)",
-                        "light: not built: a mesh light is not imported: V-Ray keeps its mesh in the light's own "
-                        "data (picked from FixtureMeshSource)"]}
+                        "light: not built: a mesh light is not imported yet (V-Ray emits the mesh of "
+                        "FixtureMeshSource at the light's place)"]}
 # the oracle's base_class_id of the lights MaxDrop builds: VRayLight, VRaySun, VRayIES, the standard and the
 # photometric lights
 LIGHT_CLASSES = {("0x3c5575a1", "0x5fd602df"), ("0x732c0383", "0x7d993776"), ("0x2eaf2f07", "0x7ec44f31"),

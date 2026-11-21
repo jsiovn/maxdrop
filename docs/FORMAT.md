@@ -822,11 +822,12 @@ units mode (its key holds X² there too). The vray_lights fixture's FixtureDiscS
 FixtureSphereWide (2, 1, 1, in W: radius twice, flux the same) and FixtureSphereTall (1, 1, 2.5: as unscaled) are
 such nodes.
 
-**Mesh light.** Not imported: an empty and a line in the report, naming the node parameter 34 refers to when it is
-one of the scene. `mesh_source` set by a script is a plain node reference: V-Ray 5.2 does not emit from that node
-(its render shows the light's own mesh). V-Ray's Pick mesh copies the mesh into the light (Extract mesh gets it
-back) and, with Replace mesh on (the default), deletes the picked node: the emitting geometry is V-Ray's own data,
-which is not read.
+**Mesh light.** Not imported yet: an empty and a line in the report, naming the node parameter 34 refers to when it
+is one of the scene. Measured with `mesh_source` set by a script (a 20 × 40 box, an orthographic camera looking
+down): V-Ray 5.2 emits that node's mesh as it is now (the box made 60 wide afterwards emits 60 wide), placed at the
+light node's transform (the footprint follows the light's position and its turn about Z; where the box itself
+stands does not matter), and nothing once the box is deleted. What a Pick mesh in V-Ray's panel with Replace mesh on
+(which deletes the picked node) leaves in the file is not known.
 
 **Dome light → World.** The first dome node that is on becomes the scene's World (a new World, assigned to the
 scene; the one before is kept, the report says so); another dome node, an instance of it too, or one that is off is
@@ -841,8 +842,8 @@ white plane gets 0; the camera sees 0 below; turned 180° about X the lower half
 matter): a Math node masks the strength by the local Z of the direction. Invisible: World camera rays off (Cycles'
 `cycles_visibility`); affect diffuse / specular / reflections as a light's.
 
-The texture: a VRayBitmap in spherical mapping (`mapType` 2; block 0: 3 horizontal rotation, 4 vertical rotation, in
-radians) gives u = 0.5 + φ / 2π + h / 360 (φ = atan2(y, x) of the direction in the texture's frame, h the horizontal
+The texture: a VRayBitmap in spherical mapping (`mapType` 2; block 0: 3 horizontal rotation, 4 vertical rotation, 36
+axial rotation, in radians; 5 horizontal flip, 6 vertical flip, 26 ground projection, read from a probe scene) gives u = 0.5 + φ / 2π + h / 360 (φ = atan2(y, x) of the direction in the texture's frame, h the horizontal
 rotation in degrees) and v up the image; a Bitmap in spherical environment mapping (UVGen `0x9005` 1, `0x9009` 1, see
 [Materials and maps](#materials-and-maps)) u = 0.75 + φ / 2π, as a VRayBitmap of h = 90. Lock to dome 0: the world's frame; 1: the dome
 node's rotation (turned 90° about Z, the texture turns with it). Measured with a self-authored image of eight
@@ -850,8 +851,8 @@ colored blocks seen through cameras at ±X, ±Y and ±20° elevation. Blender's 
 round (u = 0.5 − φ / 2π): the direction (Texture Coordinate Generated) goes through a Mapping node of scale
 (1, −1, 1) and rotation Rz(−h) F T F (F the mirror in Y, T the axis conversion and lock turn into the texture's
 frame). The vray_dome fixture (h 30, locked, its node turned 90° about Z, a hemisphere) and a tilted copy imported
-with Y up give the same texels as V-Ray's renders. Other projections are drawn as spherical, the vertical rotation,
-an Output other than its amount, a gamma other than automatic or 1, crop or placement and a Bitmap's offset, tiling
+with Y up give the same texels as V-Ray's renders. Other projections are drawn as spherical; the vertical and axial
+rotation, the flips, the ground projection, an Output other than its amount, a gamma other than automatic or 1, crop or placement and a Bitmap's offset, tiling
 or angle are left out (a line each); a root other than an image map or a file not found leaves the World its color
 (a line).
 

@@ -49,12 +49,14 @@ scene's swatch rule (convert.colors) of the color, or in temperature mode kelvin
 sRGB, as CoronaColor's temperature; V-Ray's own temperature color, which it also stores, is not used.
 
 Plane -> AREA RECTANGLE, disc -> AREA DISK, sphere -> POINT with the radius: a V-Ray plane shines along its local
--Z, as a Blender area light does, so the node transform stays. A mesh light is not built (the reason): V-Ray copies
-the picked mesh into the light (Pick mesh; Extract mesh gets it back) and by default deletes the picked node, so the
-emitting geometry is V-Ray's own data; the mesh source a script sets is a plain node reference V-Ray does not emit
-from (measured). The reason names that node when it is one of the scene. The FBX route's spot mirrors and light
-de-instancing are dropped: the nodes of one VRayLight with the same area_scale share one LightDescription. build/
-multiplies the power by the import's Light Strength.
+-Z, as a Blender area light does, so the node transform stays. A mesh light is not built yet (the reason): V-Ray 5.2
+emits the mesh of the node its mesh source (34) names, as that mesh is now, placed at the light node's transform
+(measured: a 20 x 40 box's footprint follows the light's position and turn, a later change of the box's size shows,
+the box's own position does not matter; with the box deleted it emits nothing). The reason names that node when it
+is one of the scene. Building that emitter (the node's mesh at the light, its strength over the mesh's area) is later
+work; what a UI Pick mesh with Replace mesh on (the source node deleted) leaves is not known. The FBX route's spot
+mirrors and light de-instancing are dropped: the nodes of one VRayLight with the same area_scale share one
+LightDescription. build/ multiplies the power by the import's Light Strength.
 
 A dome light is the scene's World (describe_dome; docs/FORMAT.md, "VRayLight"): V-Ray 5.2 lights a white floor under
 a white dome of multiplier m with m in the default units, m x 0.00213024 in lm and lm/m2/sr, m x 1.43109 in W and
@@ -231,8 +233,8 @@ _NAMES = {P_ON: "on", P_TYPE: "type", P_SIZE0: "size0", P_SIZE1: "size1", P_COLO
           P_DIFFUSE: "diffuse_contribution", P_SPECULAR: "specular_contribution", P_DOME_SPHERICAL: "dome_spherical",
           P_DOME_LOCKED: "texmap_locktodome"}
 
-MESH_LIGHT = "a mesh light is not imported: V-Ray keeps its mesh in the light's own data"
-PICKED = " (picked from %s)"
+MESH_LIGHT = "a mesh light is not imported yet"
+PICKED = " (V-Ray emits the mesh of %s at the light's place)"
 NOT_SKYLIGHT = "a Skylight is not imported yet (Skylight -> World is later work)"
 DOME_OFF = "dome light off: not imported"
 SECOND_DOME = "a second dome light: not imported (Blender has one World, %s's)"
@@ -243,6 +245,8 @@ DOME_ROOT = "its texture is not an image map (%s): the World has its color"
 DOME_NOT_FOUND = "its texture %s is not found: the World has its color"
 DOME_PROJECTION = "its texture %s is not in spherical mapping (%s): drawn as spherical"
 DOME_VERTICAL = "its texture %s's vertical rotation %g degrees is not imported"
+DOME_AXIAL = "its texture %s's axial rotation %g degrees is not imported"
+DOME_SWITCH = "its texture %s's %s is not imported"
 DOME_PLACEMENT = "its texture %s's offset, tiling or angle is not imported"
 DOME_OUTPUT = "its texture %s's Output (invert, RGB level or offset) is not imported"
 DOME_GAMMA = "its texture %s's gamma %g is not applied"
@@ -691,6 +695,8 @@ def describe_dome(node, name, values, swatches, world):
 
 
 VB_H_ROTATION, VB_V_ROTATION, VB_SPHERICAL = 3, 4, 2  # VRayBitmap block 0: radians; mapType spherical
+# VRayBitmap block 0, read from a probe scene: horizontal and vertical flip, ground projection, axial rotation (radians)
+VB_H_FLIP, VB_V_FLIP, VB_GROUND, VB_AXIAL = 5, 6, 26, 36
 _VB_PROJECTIONS = {0: "angular", 1: "cubic", 3: "mirrored ball", 4: "3ds Max standard"}
 ENV_SPHERICAL = 1  # a Placement's env_mapping: 1 spherical, 2 cylindrical, 3 shrink-wrap, 4 screen
 _ENV_PROJECTIONS = {2: "cylindrical environment", 3: "shrink-wrap environment", 4: "screen environment"}
@@ -720,6 +726,13 @@ def dome_texture(graph_ir, material_graph):
         turn = float(h) if finite(h) else 0.0
         if finite(v) and v != 0:
             issues.append(DOME_VERTICAL % (img.name, math.degrees(v)))
+        axial = m.param(VB_AXIAL, 0)
+        if finite(axial) and axial != 0:
+            issues.append(DOME_AXIAL % (img.name, math.degrees(axial)))
+        for pid, what in ((VB_H_FLIP, "horizontal flip"), (VB_V_FLIP, "vertical flip"),
+                          (VB_GROUND, "ground projection")):
+            if m.param(pid, 0) not in (0, None, False):
+                issues.append(DOME_SWITCH % (img.name, what))
     elif cid == classids.CORONA_BITMAP:
         issues.append(DOME_PROJECTION % (img.name, "CoronaBitmap's own"))
     else:
