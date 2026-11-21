@@ -12,9 +12,10 @@ nodes, files of 3ds Max 2012 and older are read with their names (checked on mad
 hostile file instead of running Blender out of memory. A scene pack (`.zip`, `.rar`, `.7z`) is unpacked and its
 `.max` imported (see [Files](#files)), and several `.max` files chosen at once are imported one after the other.
 From 1.0.1 a V-Ray dome light becomes the scene's World, Corona's layered, skin and switch materials and CoronaMix's
-operations are converted, Slice and hemispheres of primitives, an Extrude's shape IDs and a shape's corner radius,
-outline, material and rectangular section are built as 3ds Max builds them, and a Falloff's mix curve, the LookAt
-Constraint's offset and orientation and the lights' shadow switches are read.
+operations are converted, Slice and hemispheres of primitives, an Extrude's shape IDs, an NGon's corner radius, an
+Ellipse's outline and a shape's rectangular section are built as 3ds Max builds them, a shape gets its material, a
+Falloff's mix curve is drawn as a curve, and the LookAt Constraint's offset and orientation and the lights' shadow
+switches are read.
 
 How far to trust the list: MaxDrop's test files (`tests/fixtures/`, saved by 3ds Max 2020) are compared with what
 3ds Max itself reports for every node: world matrix, bounding box, vertex and face counts, parents, instances,
@@ -26,7 +27,8 @@ Standard, Physical Material and the texture maps below): the parameters MaxDrop 
 reports, and the Blender material with those parameters, on Blender 4.2, 4.5 and 5.2. In the two commercial scenes,
 the conversion of 214 of 214 and 220 of 220 materials (100 %) gave in version 0.0.4 what the same rules give from
 the parameters 3ds Max reports, textures included (see [BASELINE.md](BASELINE.md)); in 1.0.0 and 1.0.1, 210 of
-scene A's 214 do (four differ in their base-color texture, not yet explained). Modifiers are checked the same
+the first scene's 214 do and 220 of 220 in the second (four differ in their base-color texture, not yet
+explained). Modifiers are checked the same
 way: in the test files, the meshes MaxDrop makes from shapes with an Extrude, from primitives, with UVW Maps and with
 the modifiers it keeps as Blender modifiers have 3ds Max's vertex and triangle counts and bounding box (Symmetry's
 weld aside, see its row), and UVW Map coordinates equal 3ds Max's. In the scene whose room is built from outlines
