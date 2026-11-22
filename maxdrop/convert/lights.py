@@ -24,9 +24,9 @@ A VRayLight keeps one ParamBlock2 in reference slot 0 (docs/FORMAT.md, "VRayLigh
 2 sphere, 3 mesh, 4 disc), 2 / 3 size0 / size1 (a plane's half length along local X and half width along local Y;
 a disc's or sphere's radius), 7 color, 8 multiplier, 9 double-sided, 10 invisible, 12 units (0 default, 1 lm,
 2 lm/m2/sr, 3 W, 4 W/m2/sr), 18 / 19 texmap (on), 25 / 26 / 30 affect diffuse / specular / reflections, 36
-directional, 38 color temperature, 39 color mode (1: temperature), 53 / 54 diffuse / specular contribution; a
-dome's 27 spherical (off: the half above its local XY plane) and 49 texture locked to the dome, a mesh light's 34
-mesh source (a node).
+directional, 38 color temperature, 39 color mode (1: temperature), 53 / 54 diffuse / specular contribution, 32
+cast shadows; a dome's 27 spherical (off: the half above its local XY plane) and 49 texture locked to the dome, a
+mesh light's 34 mesh source (a node).
 
 The rules are the ones of the 3ds Max -> FBX exporter (f_export_scene.ms, ocbaby_exsVrayLightWatts and
 ocbaby_exsKelvinRGB): the power is the total radiant flux in watts. Radiance units are integrated over the emitting
@@ -44,7 +44,8 @@ The nodes of one VRayLight share one LightDescription per factor (area_scale). B
 on one side only: a double-sided plane or disc gets half the flux, the side it faces (an issue). Cycles has no
 per-light diffuse or specular factor: affect diffuse off hides the light from diffuse rays, affect specular and
 affect reflections both off from glossy rays (one switch for both: an issue when only one is off); a contribution
-other than 1 sets the light's diffuse or specular factor, which only EEVEE uses (an issue). The color is the
+other than 1 sets the light's diffuse or specular factor, which only EEVEE uses (an issue). Cast shadows off ->
+shadow False (not stored: on, V-Ray's default). The color is the
 scene's swatch rule (convert.colors) of the color, or in temperature mode kelvin_rgb (convert.texmaps) decoded from
 sRGB, as CoronaColor's temperature; V-Ray's own temperature color, which it also stores, is not used.
 
@@ -64,7 +65,8 @@ W/m2/sr (a dome has no area: the flux and radiance units agree), and Cycles with
 dome's radiance in W/m2/sr is m x DOME_RADIANCE[units] and the World's strength that times the Light Strength (1.43:
 the default units within 0.05 %). Its color as a light's; a texture replaces the color (measured) and takes the same
 strength. Spherical off: only the half above the dome's local XY plane shines (it turns with the node, measured).
-Invisible: the camera does not see it; affect diffuse / specular / reflections as a light's. The texture
+Invisible: the camera does not see it; affect diffuse / specular / reflections as a light's; cast shadows off is
+not imported (a World has no such switch: an issue). The texture
 (dome_texture): a VRayBitmap in spherical mapping (u = 0.5 + phi / 2 pi + its horizontal rotation / 2 pi, phi =
 atan2(y, x)) or a Bitmap in spherical environment mapping (u = 0.75 + phi / 2 pi), v up the image, in the world's
 frame or, locked to the dome, in the dome node's; another root is not used (the World keeps the color, an issue),
@@ -109,8 +111,9 @@ watts at 683 lm/W: 4 pi I / 683 for a point or spot light of on-axis intensity I
 
 Every light shines along its local -Z, as Blender's spot, area and sun lights do: the node transform stays. Off ->
 hidden; affect diffuse / specular and V-Ray's contributions as for the VRayLight; ambient only, far attenuation: issues.
-Shadows off (a standard light's chunk 0x2570, a photometric light's castShadows, a VRayIES's cast_shadows; a VRaySun has
-no switch) -> shadow False; when the switch is not stored, on. A negative multiplier or intensity is 0 W (an issue).
+Shadows off (a standard light's chunk 0x2570, a photometric light's castShadows, a VRayIES's cast_shadows, as a
+VRayLight's 32; a VRaySun has no switch) -> shadow False; when the switch is not stored, on. A negative multiplier
+or intensity is 0 W (an issue).
 Their instances share one description (area_scale is 1 but for VRayLights).
 
 The file comes from anywhere: a parameter that is animated, missing or no finite number takes its default (the
@@ -222,19 +225,21 @@ P_DOUBLE_SIDED, P_INVISIBLE, P_UNITS, P_TEXMAP, P_TEXMAP_ON = 9, 10, 12, 18, 19
 P_AFFECT_DIFFUSE, P_AFFECT_SPECULAR, P_AFFECT_REFLECTIONS, P_DIRECTIONAL = 25, 26, 30, 36
 P_TEMPERATURE, P_COLOR_MODE, P_DIFFUSE, P_SPECULAR = 38, 39, 53, 54
 P_DOME_SPHERICAL, P_MESH_SOURCE, P_DOME_LOCKED = 27, 34, 49
+P_SHADOW = 32
 
 # V-Ray 5.2's values of a new VRayLight (sizes in world units)
 DEFAULTS = {P_ON: 1, P_TYPE: PLANE, P_SIZE0: 10.0, P_SIZE1: 10.0, P_COLOR: (1.0, 1.0, 1.0), P_MULTIPLIER: 30.0,
             P_DOUBLE_SIDED: 0, P_INVISIBLE: 0, P_UNITS: UNITS_DEFAULT, P_TEXMAP_ON: 1, P_AFFECT_DIFFUSE: 1,
             P_AFFECT_SPECULAR: 1, P_AFFECT_REFLECTIONS: 1, P_DIRECTIONAL: 0.0, P_TEMPERATURE: 6500.0,
-            P_COLOR_MODE: 0, P_DIFFUSE: 1.0, P_SPECULAR: 1.0, P_DOME_SPHERICAL: 1, P_DOME_LOCKED: 0}
+            P_COLOR_MODE: 0, P_DIFFUSE: 1.0, P_SPECULAR: 1.0, P_DOME_SPHERICAL: 1, P_DOME_LOCKED: 0,
+            P_SHADOW: 1}
 _NAMES = {P_ON: "on", P_TYPE: "type", P_SIZE0: "size0", P_SIZE1: "size1", P_COLOR: "color",
           P_MULTIPLIER: "multiplier", P_DOUBLE_SIDED: "doubleSided", P_INVISIBLE: "invisible",
           P_UNITS: "normalizeColor", P_TEXMAP_ON: "texmap_on", P_AFFECT_DIFFUSE: "affect_diffuse",
           P_AFFECT_SPECULAR: "affect_specular", P_AFFECT_REFLECTIONS: "affect_reflections",
           P_DIRECTIONAL: "lightDistribution", P_TEMPERATURE: "color_temperature", P_COLOR_MODE: "color_mode",
           P_DIFFUSE: "diffuse_contribution", P_SPECULAR: "specular_contribution", P_DOME_SPHERICAL: "dome_spherical",
-          P_DOME_LOCKED: "texmap_locktodome"}
+          P_DOME_LOCKED: "texmap_locktodome", P_SHADOW: "castShadows"}
 
 MESH_LIGHT = "a mesh light is not imported yet"
 PICKED = " (V-Ray emits the mesh of %s at the light's place)"
@@ -255,6 +260,7 @@ DOME_PLACEMENT = "its texture %s's offset, tiling or angle is not imported"
 DOME_OUTPUT = "its texture %s's Output (invert, RGB level or offset) is not imported"
 DOME_GAMMA = "its texture %s's gamma %g is not applied"
 DOME_CROP = "its texture %s's crop or placement is not imported"
+DOME_SHADOW = "cast shadows off is not imported: the World casts shadows"
 SKY = "the environment map is a VRaySky: not imported yet (environment -> World is later work)"
 NO_DECAY = "no decay: Blender's light falls off with the square of the distance; as bright as in 3ds Max at %g m"
 INVERSE = "inverse decay: Blender's light falls off with the square of the distance; as bright as in 3ds Max at %g m"
@@ -626,7 +632,8 @@ def describe(key, name, values, meters, swatches, scale=1.0):
     ld = LightDescription(key, name, POINT if kind == SPHERE else AREA, watts=w, power=w / 2.0 if double else w,
                           color=light_color(values, swatches), on=bool(values[P_ON]),
                           invisible=bool(values[P_INVISIBLE]), diffuse_rays=diffuse, glossy_rays=spec or refl,
-                          diffuse=values[P_DIFFUSE] if diffuse else 0.0, specular=values[P_SPECULAR] if spec else 0.0)
+                          diffuse=values[P_DIFFUSE] if diffuse else 0.0, specular=values[P_SPECULAR] if spec else 0.0,
+                          shadow=bool(values[P_SHADOW]))
     if kind == PLANE:
         ld.shape, ld.size, ld.size_y = RECTANGLE, 2.0 * size0 * meters, 2.0 * size1 * meters
     elif kind == DISC:
@@ -711,6 +718,8 @@ def describe_dome(node, name, values, swatches, world):
     diffuse, spec, refl = (bool(values[p]) for p in (P_AFFECT_DIFFUSE, P_AFFECT_SPECULAR, P_AFFECT_REFLECTIONS))
     if spec != refl:
         issues.append(GLOSSY % ("on" if spec else "off", "on" if refl else "off"))
+    if not values[P_SHADOW]:
+        issues.append(DOME_SHADOW)
     texmap = values[P_TEXMAP] if values[P_TEXMAP_ON] else None
     dd = DomeDescription(node, name, light_color(values, swatches), radiance, not values[P_DOME_SPHERICAL],
                          _rotation(world, issues), bool(values[P_DOME_LOCKED]), texmap, not values[P_INVISIBLE],

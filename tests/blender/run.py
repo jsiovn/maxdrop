@@ -54,7 +54,8 @@ of the description's type, shape and size and of the shape the fixture script ma
 energy the watts 3ds Max computed with the rules source's function times the default Light Strength (the disc's 4 / pi,
 the double-sided plane's half), its color, the off light hidden in viewport and render, the invisible one unseen by
 the camera and glossy rays; the instance shares the plane's light, the disc's instance scaled 2, 1.5, 1 has its
-own, three times as strong; imported again with Light Strength 2, twice the
+own, three times as strong; FixtureNoShadow's light casts no shadows (its own Cast shadows off), the others
+do; imported again with Light Strength 2, twice the
 power. vray_dome: the dome is the scene's World (its texture image, strength, hemisphere, the Mapping rotations
 that look its texels up where V-Ray does, camera visibility off), the report's World line, the World before it
 kept with a fake user; the second dome and the mesh light empties; the spheres' radii and powers (X scale only);
@@ -227,6 +228,7 @@ VRAY_LIGHT_WATTS = {"FixturePlane": 0.0527086444, "FixturePlaneInst": 0.05270864
                     "FixtureDisc": 0.00975400303, "FixtureSphere": 40.0, "FixtureSphereKelvin": 0.252661914,
                     "FixtureOff": 0.00439238735, "FixtureInvisible": 20.0, "FixtureTargeted": 25.0,
                     "FixtureDiscScaled": 0.00975400303,
+                    "FixtureNoShadow": 15.0,  # added later, in W: the multiplier by the rules
                     # vray_dome (tools/fixtures/vray_dome.ms): the rules' watts by hand (W/m2/sr: pi m 4 pi r^2; W: m),
                     # which V-Ray's X-scale rule leaves as they are for these scales
                     "FixtureSphereTall": math.pi * 2.0 * 4.0 * math.pi * 0.005 ** 2, "FixtureSphereWide": 40.0,
@@ -242,6 +244,7 @@ VRAY_LIGHT_SHAPES = {"FixturePlane": ('AREA', 'RECTANGLE', 0.04, 0.02, 0.0),
                                                                                                0.0, 0.0),
                      "FixtureTargeted": ('AREA', 'RECTANGLE', 0.02, 0.01, 0.0),
                      "FixtureDiscScaled": ('AREA', 'DISK', 0.03, 0.0, 0.0),
+                     "FixtureNoShadow": ('AREA', 'RECTANGLE', 0.02, 0.02, 0.0),
                      # vray_dome: radius 5 mm times the X scale (1, 2, 1), whatever the Y and Z scale
                      "FixtureSphereTall": ('POINT', None, 0.0, 0.0, 0.005),
                      "FixtureSphereWide": ('POINT', None, 0.0, 0.0, 0.01),
@@ -250,6 +253,7 @@ VRAY_LIGHT_COLORS = {"FixturePlane": (1.0, 0.57758, 0.304987), "FixturePlaneInst
                      "FixtureDisc": (0.187821, 0.351533, 1.0), "FixtureDiscScaled": (0.187821, 0.351533, 1.0),
                      "FixtureSphereKelvin": (1.0, 0.5304, 0.265643)}
 VRAY_LIGHT_FLAGS = {"FixtureInvisible": (False, True, False, 0.5, 0.0)}  # camera, diffuse, glossy, factors
+VRAY_NO_SHADOWS = {"FixtureNoShadow"}  # the VRayLights whose own Cast shadows is off (V-Ray's default on)
 # cameras (tools/fixtures/cameras.ms): Blender's shift (image widths) and sensor where they are not 0 and 36 mm
 CAMERA_SHIFTS = {"CamPhysShift": (-0.1, 0.15), "CamVRayShift": (-0.1, -0.25)}
 CAMERA_SENSORS = {"CamVRayTarget": 30.0}
@@ -668,8 +672,8 @@ def run_fixture(path, modules):
         check_lookat(path, desc, obs, nodes, meters)
     if name == "vray_lights":
         lit = sorted(ob.name for ob in obs if ob.type == 'LIGHT')
-        check("vray_lights: ten light objects, nine lights (the instance shares one, the scaled one has its own)",
-              len(lit) == 10 and len(bpy.data.lights) == 9 and bpy.data.objects["FixturePlane"].data ==
+        check("vray_lights: eleven light objects, ten lights (the instance shares one, the scaled one has its own)",
+              len(lit) == 11 and len(bpy.data.lights) == 10 and bpy.data.objects["FixturePlane"].data ==
               bpy.data.objects["FixturePlaneInst"].data and bpy.data.objects["FixtureDisc"].data !=
               bpy.data.objects["FixtureDiscScaled"].data, "%s, %d lights" % (lit, len(bpy.data.lights)))
         world = bpy.context.scene.world
@@ -759,7 +763,8 @@ def check_light(label, ob, ld, o):
     """vray_lights: a LIGHT node's object holds its light: the description's type, shape and size; its -Z axis
     (where a V-Ray plane and a Blender area light shine) along the oracle's; its energy the watts 3ds Max computed
     with the rules source's own function (VRAY_LIGHT_WATTS) times the operator's default Light Strength, halved for
-    the double-sided plane; its color and its object flags. Any other light: check_stock_light."""
+    the double-sided plane; its color, its object flags and its shadow switch (VRAY_NO_SHADOWS). Any other light:
+    check_stock_light."""
     light = ob.data
     check(label + ": a light object", ob.type == 'LIGHT', ob.type)
     if ob.type != 'LIGHT':
@@ -792,6 +797,8 @@ def check_light(label, ob, ld, o):
              round(light.specular_factor, 6))
     want = VRAY_LIGHT_FLAGS.get(o["name"], (True, True, True, 1.0, 1.0))
     check(label + ": camera, diffuse and glossy visibility, diffuse and specular factors", flags == want, str(flags))
+    check(label + ": shadows as in 3ds Max", light.use_shadow == ld.shadow == (o["name"] not in VRAY_NO_SHADOWS),
+          "%s, %s" % (light.use_shadow, ld.shadow))
 
 
 def check_stock_light(label, ob, ld, o):

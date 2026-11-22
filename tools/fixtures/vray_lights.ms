@@ -6,12 +6,14 @@
 -- W/m2/sr). A rotated plane with an instance; a double-sided plane; a sphere in temperature mode; a switched-off
 -- plane; an invisible disc that leaves out specular and reflections and halves its diffuse; a targeted plane aimed
 -- at its target; an instance of the disc scaled 2, 1.5, 1 (V-Ray grows its area, so its flux in lm/m2/sr, three
--- times). The mesh light has no mesh picked. Needs V-Ray (5, the one this was authored with); the scene
--- stays on the default renderer.
+-- times); a plane with its Cast shadows off (the light's own switch, baseObject.castShadows: the node's
+-- castShadows is its render flag). The mesh light has no mesh picked. Needs V-Ray (5, the one this was authored
+-- with); the scene stays on the default renderer.
 -- Authored for MaxDrop's tests (see CONTRIBUTING.md, "Test files"): it resets the scene, so run it in a 3ds Max
 -- session with nothing to keep, then sanitize and check the saved file before it goes into tests/fixtures/.
 (
 	resetMaxFile #noPrompt
+	IDisplayGamma.colorCorrectionMode = #none  -- the fixtures are saved with the gamma off (CONTRIBUTING.md)
 	local plane = VRayLight name:"FixturePlane" type:0 size0:20 size1:10 normalizeColor:0 multiplier:30 \
 		color:(color 255 200 150) pos:[0,0,90]
 	rotate plane (eulerAngles 30 0 20)
@@ -41,6 +43,9 @@
 	big.name = "FixtureDiscScaled"
 	big.pos = [90,30,90]
 	big.scale = [2,1.5,1]
+	local unshadowed = VRayLight name:"FixtureNoShadow" type:0 size0:10 size1:10 normalizeColor:3 multiplier:15 \
+		pos:[-90,-30,90]
+	unshadowed.baseObject.castShadows = false
 	makeDir @"C:\maxdrop_fixtures" all:true
 	saveMaxFile @"C:\maxdrop_fixtures\vray_lights.max" quiet:true
 	"vray_lights: " + (objects.count as string) + " objects"

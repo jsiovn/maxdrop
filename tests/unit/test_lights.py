@@ -49,7 +49,8 @@ MM = 0.001
 MAX_WATTS = {"FixturePlane": 0.0527086444, "FixturePlaneInst": 0.0527086444, "FixturePlaneLm": 2.19619322,
              "FixtureDisc": 0.00975400303, "FixtureSphere": 40.0, "FixtureSphereKelvin": 0.252661914,
              "FixtureOff": 0.00439238735, "FixtureInvisible": 20.0, "FixtureTargeted": 25.0,
-             "FixtureDiscScaled": 0.00975400303}  # the rules source ignores the node's scale
+             "FixtureDiscScaled": 0.00975400303,  # the rules source ignores the node's scale
+             "FixtureNoShadow": 15.0}  # added later, in W: the multiplier by the rules
 # what MaxDrop changes: the disc in lm/m2/sr (V-Ray's (2 r)^2), the scaled one's area (2 x 1.5, measured)
 FACTORS = {"FixtureDisc": 4.0 / math.pi, "FixtureDiscScaled": 4.0 / math.pi * 3.0}
 MAX_KELVIN_3500 = (255.0, 192.534, 140.827)  # ocbaby_exsKelvinRGB 3500 in 3ds Max
@@ -144,6 +145,14 @@ class Describe(unittest.TestCase):
         self.assertEqual(L.not_built(values(type=L.MESH, mesh_source=None), {7: "Box"}.get), L.MESH_LIGHT)
         self.assertIsNone(L.not_built(values(type=L.DOME)))
 
+    def test_shadow_switch(self):
+        """Cast shadows (32) off: no shadows, no issue (Blender does the same); V-Ray's default on."""
+        ld, issues = L.describe(1, "x", values(), MM, colors.GAMMA_ON)
+        self.assertEqual((ld.shadow, issues), (True, []))
+        for kind in (L.PLANE, L.DISC, L.SPHERE):
+            ld, issues = L.describe(1, "x", values(type=kind, shadow=0), MM, colors.GAMMA_ON)
+            self.assertEqual((ld.shadow, issues), (False, []), kind)
+
     def test_flags_and_issues(self):
         ld, issues = L.describe(1, "x", values(on=0, invisible=1, texmap=5, directional=0.4, affect_specular=0,
                                                diffuse=0.25), MM, colors.GAMMA_ON)
@@ -237,6 +246,13 @@ class Params(unittest.TestCase):
         self.assertEqual(L._value(block, L.P_SIZE1, issues), L.DEFAULTS[L.P_SIZE1])
         self.assertEqual(issues, ["multiplier is animated: 30.0 is used"])
 
+    def test_shadow_switch_not_stored_or_animated_is_on(self):
+        issues = []
+        self.assertEqual(L._value(_Block({}), L.P_SHADOW, issues), 1)
+        self.assertEqual(L._value(_Block({L.P_SHADOW: pblock.Animated(2)}), L.P_SHADOW, issues), 1)
+        self.assertEqual(L._value(_Block({L.P_SHADOW: 0}), L.P_SHADOW, issues), 0)
+        self.assertEqual(issues, ["castShadows is animated: 1 is used"])
+
     def test_no_block_raises(self):
         light = _Entry(classids.SC_LIGHT, classids.VRAY_LIGHT)
         sc = _Scene([light, _Entry(classids.SC_LIGHT, classids.VRAY_LIGHT)], {0: {0: 1}})
@@ -325,7 +341,13 @@ class Fixture(unittest.TestCase):
             "FixtureOff": ("AREA", "RECTANGLE", 0.02, 0.02, 0.0, False, False, True, True, 1.0, 1.0),
             "FixtureInvisible": ("AREA", "DISK", 0.02, 0.02, 0.0, True, True, True, False, 0.5, 0.0),
             "FixtureTargeted": ("AREA", "RECTANGLE", 0.02, 0.01, 0.0, True, False, True, True, 1.0, 1.0),
-            "FixtureDiscScaled": ("AREA", "DISK", 0.03, 0.03, 0.0, True, False, True, True, 1.0, 1.0)})
+            "FixtureDiscScaled": ("AREA", "DISK", 0.03, 0.03, 0.0, True, False, True, True, 1.0, 1.0),
+            "FixtureNoShadow": ("AREA", "RECTANGLE", 0.02, 0.02, 0.0, True, False, True, True, 1.0, 1.0)})
+
+    def test_shadows(self):
+        """FixtureNoShadow's own Cast shadows is off (parameter 32 as saved); the others keep V-Ray's default on."""
+        got = {n: self.light(n).shadow for n in MAX_WATTS}
+        self.assertEqual(got, {n: n != "FixtureNoShadow" for n in MAX_WATTS})
 
     def test_colors(self):
         """The fixture is saved with the gamma off: swatches decoded from sRGB."""
@@ -339,7 +361,7 @@ class Fixture(unittest.TestCase):
         plane, inst = self.by_name["FixturePlane"], self.by_name["FixturePlaneInst"]
         self.assertEqual(plane.light, inst.light)
         self.assertEqual(self.desc.lights[plane.light].users, [plane.index, inst.index])
-        self.assertEqual(len(self.desc.lights), 9)
+        self.assertEqual(len(self.desc.lights), 10)
 
     def test_a_scaled_instance_gets_its_own_light(self):
         disc, big = self.by_name["FixtureDisc"], self.by_name["FixtureDiscScaled"]
@@ -380,6 +402,14 @@ class DomeRules(unittest.TestCase):
                 self.assertAlmostEqual(a, b, delta=1e-12)
         dd, _ = L.describe_dome(4, "d", values(type=L.DOME, texmap=9, texmap_on=0), colors.GAMMA_ON, self.ROWS)
         self.assertIsNone(dd.texmap)
+
+    def test_shadows_off_is_a_line(self):
+        """A World has no shadow switch: a dome with cast shadows off is a line, built as before."""
+        on, _ = L.describe_dome(1, "d", values(type=L.DOME), colors.GAMMA_ON, self.ROWS)
+        dd, issues = L.describe_dome(1, "d", values(type=L.DOME, shadow=0), colors.GAMMA_ON, self.ROWS)
+        self.assertEqual(issues, [L.DOME_SHADOW])
+        self.assertEqual((dd.radiance, dd.color, dd.camera, dd.diffuse, dd.glossy), (on.radiance, on.color, on.camera,
+                                                                                    on.diffuse, on.glossy))
 
     def test_a_mirrored_or_flat_node_and_a_negative_multiplier(self):
         mirrored = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, -1.0), (0.0, 0.0, 0.0))

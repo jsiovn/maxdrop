@@ -893,6 +893,7 @@ units:
 | 18, 19 | texmap (a map reference), texmap on |
 | 25, 26, 30 | affect diffuse, affect specular, affect reflections |
 | 27 | dome spherical (`dome_spherical`; V-Ray 5.2's default on; off: the half above the dome's local XY plane) |
+| 32 | cast shadows (`castShadows`, the light's own switch; default 1, also for a VRayLight MAXScript makes) |
 | 34 | mesh source (`mesh_source`, a node reference) |
 | 36 | directional (`lightDistribution`) |
 | 38, 39 | color temperature (K); color mode: 0 color, 1 temperature |
@@ -904,6 +905,12 @@ In temperature mode V-Ray also stores its own color of that temperature in 7 (35
 takes the curve of the rules source instead (3500 K: 255, 192.5, 140.8 as an sRGB swatch). `on:false` given to the
 MAXScript constructor does not stick (the fixture script sets it afterwards), and `targeted:true` there makes no
 target.
+
+**Shadows.** Parameter 32 off: the light casts no shadows (`Light.use_shadow` off; not stored: on). Read with a
+VRayLight's block dumped before and after `baseObject.castShadows = false` (3dsmaxbatch, the .NET wrapper): 32 is
+the only parameter that changes. MAXScript's `light.castShadows` is the node's Cast Shadows render flag, not this
+switch. The vray_lights fixture's FixtureNoShadow has it off. A dome with it off is a line in the report: Blender's
+World has no such switch.
 
 **Power.** The rules source's watts (its `ocbaby_exsVrayLightWatts`): emitting area `a` = plane 2 size0 × 2 size1,
 disc π size0², sphere 4π size0² (m², doubled for a double-sided plane or disc); 1 lm: `m / 683`, 2 lm/m²/sr:

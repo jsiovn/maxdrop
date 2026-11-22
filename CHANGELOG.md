@@ -15,6 +15,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   report.
 - Objects: a mesh or curve with Cast Shadows off in 3ds Max (Object Properties) casts no shadows in Blender. Receive
   Shadows off, which Blender cannot set per object, is a line in the report.
+- Lights: a V-Ray light (plane, disc, sphere) whose own Cast shadows is off in 3ds Max casts no shadow in Blender;
+  a dome light with it off is a line in the report (Blender's World has no such switch).
 
 ### Fixed
 
