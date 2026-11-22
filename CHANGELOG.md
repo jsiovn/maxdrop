@@ -69,6 +69,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Shapes: a damaged or hostile file whose shape gives curve points past Blender's single precision (an NGon radius
   near the float range, say) imports that shape as an empty with a line in the report, instead of a curve with
   infinite or NaN points; a rectangular section or round thickness that large is left out, a line in the report.
+- Import: an AttributeError while reading a file (a defect in MaxDrop's reader) reports the file as not imported,
+  with the traceback in the console, as a TypeError or KeyError already did, instead of ending the import.
 
 ## [1.0.1] - 2026-11-22
 

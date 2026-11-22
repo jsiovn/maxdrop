@@ -3655,10 +3655,10 @@ def check_ies_header(max_path):
 
 
 def check_reader_defect(first, second):
-    """A TypeError or KeyError of the reading (a reader defect, never raised on purpose) reports the file as not
-    imported, its type in the reason, instead of ending the operator: in a run of two files, synchronous and with the
-    reading in the worker thread, the other file is still imported; alone, the operator reports Nothing imported;
-    the pre-flight line says it is not readable."""
+    """A TypeError, KeyError or AttributeError of the reading (a reader defect, never raised on purpose) reports the
+    file as not imported, its type in the reason, instead of ending the operator: in a run of two files, synchronous
+    and with the reading in the worker thread, the other file is still imported; alone, the operator reports Nothing
+    imported; the pre-flight line says it is not readable."""
     import contextlib
     import io
     from maxdrop import ops
@@ -3718,6 +3718,39 @@ def check_reader_defect(first, second):
         check("reader defect: the pre-flight line of a KeyError says the file is not readable",
               line == "Not readable as a .max file (a defect in MaxDrop's reader (KeyError: 'maxdrop test'), see "
                       "the console)", repr(line))
+        # An AttributeError (an attribute read on None in a chunk walker) is in the net too. Its message is given,
+        # so that the reason is the same on Python 3.11 and 3.13.
+        attribute = AttributeError("maxdrop test: reader defect")
+
+        def attribute_scene(cls, *args, **kwargs):
+            raise attribute
+
+        def attribute_first(cls, cf):
+            calls.append(cf)
+            if len(calls) == 1:
+                raise attribute
+            return original_table.__func__(cls, cf)
+
+        reader_scene.Scene.from_file = classmethod(attribute_scene)
+        line = ops._preflight(first)
+        reader_scene.Scene.from_file = original_scene
+        check("reader defect: the pre-flight line of an AttributeError says the file is not readable",
+              line == "Not readable as a .max file (a defect in MaxDrop's reader (AttributeError: maxdrop test: "
+                      "reader defect), see the console)", repr(line))
+        empty_scene()
+        del calls[:]
+        assets.AssetTable.from_file = classmethod(attribute_first)
+        run = _cancel_run([first, second])
+        console = io.StringIO()
+        with contextlib.redirect_stdout(console):
+            _advance(run.steps(threaded=False), lambda: False)
+        assets.AssetTable.from_file = original_table
+        sys.stdout.write(console.getvalue())
+        attribute_reason = reason.replace("TypeError", "AttributeError")
+        check("reader defect: an AttributeError of the read, the file is not imported, the other one is",
+              ('WARNING', "Not imported: %s: %s" % (name, attribute_reason)) in run.lines
+              and len(bpy.data.objects) > 0 and len(calls) == 2,
+              "%d objects, %d calls | %s" % (len(bpy.data.objects), len(calls), run.lines[-3:]))
     finally:
         assets.AssetTable.from_file = original_table
         reader_scene.Scene.from_file = original_scene

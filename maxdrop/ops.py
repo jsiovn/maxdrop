@@ -79,6 +79,7 @@
 # one.
 # Modified for MaxDrop, 2026-11-22 (jsiovn). The scene description gets a texture lookup of its own: a VRayIES whose
 # intensity is not overridden finds its IES file, whose rated lumens and flux give its power.
+# Modified for MaxDrop, 2026-11-22 (jsiovn). An AttributeError of the reading is a reader defect too (_DEFECTS).
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -130,9 +131,14 @@ _UNREADABLE = (OSError, ValueError, IndexError, struct.error, MemoryError, Recur
 # A defect of the reading (reader and scene description), never raised on purpose: _read_scene and _preflight report
 # it as _ReadDefect, one of _UNREADABLE, its traceback in the console. Not in _UNREADABLE itself, whose net in
 # _Run.steps also covers the build: a build's TypeError is a defect on Blender's side, not a file that cannot be
-# read. tests/unit/fuzz.py still counts both as escaped. A windowed import may print the traceback twice for one
+# read. tests/unit/fuzz.py still counts them as escaped. A windowed import may print the traceback twice for one
 # file, from the pre-flight in invoke() and from the read: both are kept, they need not be the same.
-_DEFECTS = (TypeError, KeyError)
+# AttributeError is named (decided 2026-11-22): an attribute read on None (a chunk walker that found no child, a
+# missing reference) is as likely a defect as a TypeError, and the reader raises none for a damaged file (that is
+# MaxFileError); the one it raises on purpose, convert.primitives.Params for a missing key, cannot miss a key of
+# its spec. The net stays this narrow, not Exception: NameError, ZeroDivisionError and the rest still end the run
+# with a traceback, so that the fuzz campaign and the console show them.
+_DEFECTS = (TypeError, KeyError, AttributeError)
 # What a build makes besides objects and collections, in the order a failed build removes them. Addresses, not
 # names: a new datablock could reuse the address of one freed meanwhile, but the build frees none.
 _MADE = ("meshes", "curves", "lights", "cameras", "materials", "worlds", "images")
