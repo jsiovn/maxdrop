@@ -5,7 +5,7 @@
 """3ds Max lights as Blender lights: shape, size in meters, linear color and power in watts.
 
     light_class(scene, i)               # VRAY, STANDARD, PHOTOMETRIC, SUN, IES or SKYLIGHT; None: not one read here
-    values, issues = read_params(scene, i, assets)   # the light's values, LightError without its block
+    values, issues = read_params(scene, i, assets, ies_files)   # the light's values, LightError without its block
     not_built(values, names)            # why a mesh light or a Skylight is not built, None for the others
     scale = area_scale(values, world)   # what a node's scale does to the area, rounded (part of the key)
     ld, issues = describe(key, name, values, meters, swatches, scale)   # LightDescription, or None and the reason
@@ -97,9 +97,11 @@ watts at 683 lm/W: 4 pi I / 683 for a point or spot light of on-axis intensity I
   measured 102.7 klx at the zenith), angle SUN_ANGLE x its size multiplier, its filter color; the sky model's
   dimming and color are not imported (issues).
 - VRayIES: its power in lm (V-Ray's flux with the intensity overridden, in either unit; without the override V-Ray
-  scales the IES file by power over its rated lumens, which are not read: an issue) -> SPOT of WEB_CONE, power
-  lm / 683, its color or temperature, the IES file named in an issue; a power of 0 (dark in V-Ray too) is 0 W, an
-  issue. With its light shape used and overridden, the spot's radius is half the largest
+  scales the IES file's candelas by power over its rated lumens: with the file found (read_params' ies_files, a
+  convert.ies.Lookup) the lumens are power x the file's flux / its rated lumens (convert.ies; the power itself for
+  rated lumens of -1), a file of more lamps rated above 0 lm an issue; a file not found or not read, the power, an
+  issue) -> SPOT of WEB_CONE, power lm / 683, its color or temperature, the IES file named in an issue; a power of 0
+  (dark in V-Ray too) is 0 W, an issue. With its light shape used and overridden, the spot's radius is half the largest
   size the shape uses (IES_SHAPES: a sphere's diameter exactly, any other shape an issue); without the override
   V-Ray takes the file's shape, which is not read: radius 0.
 - Skylight: not built (the reason; its World is later work). environment_sky finds a VRaySky as the environment map
@@ -268,7 +270,13 @@ WEB_FILE = "its photometric web %s is approximated by a spot of 170 degrees"
 IES_FILE = "its IES file %s is approximated by a spot of 170 degrees"
 IES_ZERO = "power 0: it gives no light, in V-Ray too: 0 W"
 IES_RATED = ("its power is taken as its flux: V-Ray scales the IES file's candelas by the power over the file's "
-             "rated lumens, which are not read")
+             "rated lumens, which are not read (the file is not found: beside the scene, in its maps or textures "
+             "folder or a texture search folder it would be)")
+IES_UNREAD = ("its power is taken as its flux: V-Ray scales the IES file's candelas by the power over the file's "
+              "rated lumens, and %s cannot be read (%s)")
+IES_LAMPS = ("its IES file %s has %d lamps: V-Ray's power is taken as scaling it by its lumens per lamp "
+             "(not measured)")
+IES_DARK = "its IES file %s gives no light: 0 W"
 IES_SHAPE = "its %s light shape is a sphere %g m across"
 NO_FILE = "(no file)"
 SUN_ZENITH = "its strength is the sun's at the zenith: the sky model's dimming toward the horizon is not imported"
@@ -409,17 +417,19 @@ def _value(block, pid, issues, default=None, name=None):
     return int(v) if isinstance(default, int) else float(v)
 
 
-def read_params(scene, i, assets=None):
+def read_params(scene, i, assets=None, ies_files=None):
     """(values of light object i, issues); LightError without its block. A VRayLight's are {parameter id: value} of
     every id of DEFAULTS, the others' {name: value} with CLASS; assets (reader.assets.AssetTable) names the file of
-    a web or IES light."""
+    a web or IES light; ies_files (convert.ies.Lookup) reads the IES file of a VRayIES whose power depends on it
+    (override off, power above 0): values "photometry" (convert.ies.Photometry, or None) and "photometry_issue" (why
+    a file found is not read, or None)."""
     family = light_class(scene, i)
     if family == STANDARD:
         return _read_standard(scene, i)
     if family == SKYLIGHT:
         return {CLASS: SKYLIGHT}, []
     if family in (PHOTOMETRIC, SUN, IES):
-        return _read_blocks(scene, i, family, assets)
+        return _read_blocks(scene, i, family, assets, ies_files)
     entry = scene.entry(i)
     refs = scene.refs(i)
     target = refs.get(SLOT_BLOCK)
@@ -457,16 +467,20 @@ def _blocks(scene, i):
     return found, issues
 
 
-def _file_name(blocks, where, assets):
-    """The base name of the asset at (block id, parameter id), None when there is none or the table lacks it."""
+def _asset(blocks, where, assets):
+    """The reader.assets.AssetEntry at (block id, parameter id), None when there is none or the table lacks it."""
     block = blocks.get(where[0])
-    entry = assets.entry(block.get(where[1])) if block is not None and assets is not None else None
+    return assets.entry(block.get(where[1])) if block is not None and assets is not None else None
+
+
+def _file_name(entry):
+    """The base name of an asset entry, None without one."""
     if entry is None:
         return None
     return pathnames.base_name(entry.path) or pathnames.base_name(entry.resolved) or None
 
 
-def _read_blocks(scene, i, family, assets):
+def _read_blocks(scene, i, family, assets, ies_files=None):
     """The values of a photometric light, VRaySun or VRayIES: its parameters by name, its file's name."""
     spec, where = {PHOTOMETRIC: (_PHOTOMETRIC_PARAMS, _PHOTOMETRIC_FILE), SUN: (_SUN_PARAMS, None),
                    IES: (_IES_PARAMS, _IES_FILE)}[family]
@@ -482,7 +496,12 @@ def _read_blocks(scene, i, family, assets):
         issues.append("parameter block %d is missing: its defaults are used" % bid)
     if family == PHOTOMETRIC:
         values["shape"] = _PHOTOMETRIC[scene.entry(i).class_id]
-    values["file"] = _file_name(blocks, where, assets) if where else None
+    entry = _asset(blocks, where, assets) if where else None
+    values["file"] = _file_name(entry)
+    if family == IES:
+        values["photometry"] = values["photometry_issue"] = None
+        if ies_files is not None and entry is not None and not values["override"] and values["power"] > 0:
+            values["photometry"], values["photometry_issue"] = ies_files.photometry(entry.path, entry.resolved)
     return values, issues
 
 
@@ -897,16 +916,27 @@ def _describe_ies(key, name, v, meters, swatches, issues):
     # panel converts cd with the file) and V-Ray renders that flux; without the override it scales the file's
     # candelas by power / the file's rated lumens, the flux only when those are the file's own. Power 0 is dark.
     lm = _nonnegative("power", v["power"], issues)
+    file = v["file"] or NO_FILE
     if v["power"] == 0:
         issues.append(IES_ZERO)
     elif lm > 0 and not v["override"]:  # a negative power is 0 W, said by _nonnegative
-        issues.append(IES_RATED)
+        photometry = v.get("photometry")
+        if photometry is not None:
+            lm *= photometry.scale  # past the float range: describe() makes it 0 W, OUT_OF_RANGE
+            if photometry.lamps != 1 and photometry.rated > 0:
+                issues.append(IES_LAMPS % (file, photometry.lamps))
+            if lm == 0:
+                issues.append(IES_DARK % file)
+        elif v.get("photometry_issue"):
+            issues.append(IES_UNREAD % (file, v["photometry_issue"]))
+        else:
+            issues.append(IES_RATED)
     color = colors.GAMMA_OFF.color(texmaps.kelvin_rgb(v["temperature"])) if v["color_mode"] == 1 else \
         swatches.color(v["color"])
     ld = LightDescription(key, name, SPOT, watts=lm / LUMENS_PER_WATT, power=lm / LUMENS_PER_WATT, color=color,
                           on=bool(v["on"]), spot_size=WEB_CONE, spot_blend=WEB_BLEND, shadow=bool(v["shadow"]))
     _rays(ld, bool(v["diffuse"]), bool(v["specular"]), v["diffuse_contribution"], v["specular_contribution"], issues)
-    issues.append(IES_FILE % (v["file"] or NO_FILE))
+    issues.append(IES_FILE % file)
     ld.radius = _ies_radius(v, meters, issues)
     return ld
 

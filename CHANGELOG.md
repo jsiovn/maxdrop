@@ -18,6 +18,32 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ### Fixed
 
+- Materials: a CoronaPhysicalMtl, a Standard material with the Strauss shader and the grey material of an
+  unsupported class reflect their IOR's full Fresnel (Specular IOR Level 0.5, Blender's default) instead of half of
+  it (0.25), which made every non-metal CoronaPhysicalMtl reflect too little.
+- Materials: a VRayMtl with reflection Fresnel off and a reflection map at full amount (the usual black to white
+  Falloff) keeps its diffuse instead of becoming a dark metal colored by the map: the bright reflection swatch the
+  map hides no longer makes it a metal; below full amount the swatch counts in proportion.
+- Materials: a grey reflection (a VRayMtl's reflection color, a Standard, Physical or Corona reflection level below
+  full) or a reflection map no longer brightens toward the silhouette: the whole Fresnel curve is scaled by it, as
+  V-Ray does, through a Mix Shader over a copy of the Principled BSDF without reflection (a grey 128 sphere at IOR
+  1.6 was about 50 % too bright near its rim in Cycles; it now matches V-Ray 5.2; the other renderers' materials
+  follow the same rule, not checked against them). Such a material shades two Principled BSDFs instead of one: a
+  scene of many may render somewhat slower (not measured).
+- Materials: the maps of a VRayFastSSS2, VRayCarPaintMtl and VRayCarPaintMtl2 take their slot's multiplier as their
+  amount, as VRayMtl's do (a bump at 30 % no longer arrives at full strength), and a VRayFastSSS2's specular amount
+  scales its specular.
+- Materials: a VRayOverrideMtl or Double Sided sub-material whose checkbox is off is no longer used: the peel skips
+  it like an empty slot and takes the next sub-material that is on (what V-Ray or 3ds Max renders without it is not
+  checked).
+- Maps: a Bitmap that tiles or mirrors in one direction and not in the other, or a placed image that tiles, no
+  longer shows a thin dark line at each tile and mirror line (EEVEE and Cycles): what it clips is now cut by a mask
+  instead of Blender's Clip extension, which faded the image's border toward black.
+- Lights: a VRayIES whose intensity is not overridden is as bright as V-Ray renders it when its IES file is found
+  (by the texture lookup's rules): its power is scaled by the file's own flux over its rated lumens, as V-Ray scales
+  the file (a relative-photometry file whose rated lumens exceed its luminaire's flux no longer arrives too bright).
+  A file not found, or one MaxDrop does not read (photometric type A or B, damaged), keeps the power as the flux,
+  a line in the report.
 - Extrude: a shape extruded downwards (a negative amount) with only one of its caps on gets that cap facing the way
   3ds Max faces it (into the solid, as for an upward extrusion) and its material ID, instead of turned out.
 - Extrude: the sides of an extruded pie Arc shade sharp at its corners (the arc's ends and the center), as in

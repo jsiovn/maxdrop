@@ -99,6 +99,8 @@ channel 1 and reported, a texture file without image data reported, a material w
 reported; a material conversion that raises leaves the scene imported without materials, the report says why.
 Images already in the file (an earlier import's) are reused by file and color space, unless modified, packed,
 generated or linked from a library; vray_maps imported twice with its textures adds no image the second time.
+lights_photometric copied beside a self-authored fixture_web.ies (rated 500 lm, 100 cd everywhere): IesPower's energy
+is 1500 x 400 pi / 500 / 683 W x Light Strength, IesOverride's stays 300 / 683 W, no rated-lumens line in the report.
 The performance budget of one big mesh (tests/blender/bench.py) runs last, without file arguments.
 Prints `FIXTURES PASSED` (exit 0) or `FIXTURES FAILED` (exit 1).
 """
@@ -331,6 +333,7 @@ EXTRUDE_EULER = {"FixtureExtRect": 2, "FixtureExtL": 2, "FixtureExtHole": 0, "Fi
                  "FixtureHoleExt": 0}
 VALUE_TOLERANCE = 1e-4
 SPECULAR_LEVEL = 0.5  # the IR's specular is a reflection weight: 1 is Blender's Specular IOR Level 0.5
+TWIN_LABEL, WEIGHT_LABEL = "Without reflection", "Reflection weight"  # a weight between 0 and 1 (maxdrop-em3.119)
 DEG = math.pi / 180.0
 failures = []
 
@@ -1410,9 +1413,86 @@ def _irs(path):
     return desc, slots
 
 
+def _bsdfs(material):
+    """The Principled BSDFs of a material, the twins of a reflection weight left out."""
+    return [n for n in material.node_tree.nodes if n.bl_idname == "ShaderNodeBsdfPrincipled" and n.label != TWIN_LABEL]
+
+
+def _shaders(material):
+    """The Mix Shaders of a material's layers (a reflection weight's left out)."""
+    return [n for n in material.node_tree.nodes if n.bl_idname == "ShaderNodeMixShader" and n.label != WEIGHT_LABEL]
+
+
 def _principled(material):
-    nodes = [n for n in material.node_tree.nodes if n.bl_idname == "ShaderNodeBsdfPrincipled"]
+    nodes = _bsdfs(material)
     return nodes[0] if len(nodes) == 1 else None
+
+
+def _weight_mix(p):
+    """The reflection weight's Mix Shader over Principled p, None when p's Specular IOR Level alone draws it."""
+    out = next(s for s in p.outputs if s.identifier == "BSDF")
+    return next((link.to_node for link in out.links if link.to_node.bl_idname == "ShaderNodeMixShader"
+                 and link.to_node.label == WEIGHT_LABEL), None)
+
+
+def _specular_socket(p):
+    """The input the IR's specular drives: the reflection weight's factor, else Specular IOR Level."""
+    mix = _weight_mix(p)
+    return mix.inputs[0] if mix is not None else p.inputs["Specular IOR Level"]
+
+
+def _constant_one(p, name):
+    s = p.inputs.get(name)
+    return s is not None and not s.is_linked and s.default_value >= 1.0
+
+
+def check_specular(label, p, ir, present):
+    """Specular IOR Level from the IR's reflection weight w: a weight map or a constant between 0 and 1 is a Mix
+    Shader by w over a twin without reflection (Specular IOR Level 0.5 on p), else 0.5 x w (w taken at most 1) on p
+    alone; a constant metal or full transmission is 0.5 x w alone."""
+    folded = _fold(ir.textures["specular"].root, present) if "specular" in ir.textures else LOST
+    linked = folded is MAP
+    w = None if linked else _mean(ir.specular.value if folded is LOST else folded)
+    metal_glass = _constant_one(p, "Metallic") or _constant_one(p, "Transmission Weight")
+    lone = metal_glass or (not linked and not 0 < w < 1)
+    s, mix = p.inputs["Specular IOR Level"], _weight_mix(p)
+    if lone:
+        check("%s: Specular IOR Level %s, no reflection weight" % (label, "linked" if linked else "value"),
+              mix is None and s.is_linked == linked and (linked or _value_ok(s, w * SPECULAR_LEVEL if metal_glass
+                                                                       else max(0.0, min(1.0, w)) * SPECULAR_LEVEL)),
+              "mix %s, linked %s, %r vs %r" % (mix is not None, s.is_linked, s.default_value, w))
+        return
+    fac = mix.inputs[0] if mix is not None else None
+    check("%s: reflection weight %s over a twin, Specular IOR Level 0.5" % (label, "linked" if linked else "value"),
+          mix is not None and not s.is_linked and _value_ok(s, SPECULAR_LEVEL) and fac.is_linked == linked
+          and (linked or _value_ok(fac, w)),
+          "mix %s, level %r, factor %r vs %r" % (mix is not None, s.default_value,
+                                                  None if fac is None else fac.default_value, w))
+    if mix is not None:
+        check_twin(label, p, mix)
+
+
+def check_twin(label, p, mix):
+    """The Mix Shader's first shader is p's twin: p's links and values, Specular IOR Level 0; its second p."""
+    twin = _from(mix.inputs[1])
+    ok = twin is not None and twin.bl_idname == "ShaderNodeBsdfPrincipled" and twin.label == TWIN_LABEL \
+        and _from(mix.inputs[2]) == p
+    bad = []
+    if ok:
+        for a, b in zip(p.inputs, twin.inputs):
+            if a.identifier == "Specular IOR Level":
+                same = not b.is_linked and b.default_value == 0.0
+            elif a.is_linked:
+                same = b.is_linked and b.links[0].from_socket == a.links[0].from_socket
+            elif hasattr(a, "default_value"):
+                va, vb = a.default_value, b.default_value
+                same = not b.is_linked and (close(list(va), list(vb), 1e-6) if hasattr(va, "__len__")
+                                            else abs(float(va) - float(vb)) <= 1e-6)
+            else:
+                same = True
+            if not same:
+                bad.append(a.identifier)
+    check(label + ": the twin is the Principled BSDF without reflection", ok and bad == [], str(bad))
 
 
 def _layers_of(ir):
@@ -1542,8 +1622,7 @@ def check_principled(label, material, ir, present=False):
     value the graph folds to, or the IR's when its images are missing), the render method, one Image Texture node
     per file. present: whether the texture files were found."""
     layers = _layers_of(ir)
-    bsdfs = [n for n in material.node_tree.nodes if n.bl_idname == "ShaderNodeBsdfPrincipled"] \
-        if material is not None and material.node_tree else []
+    bsdfs = _bsdfs(material) if material is not None and material.node_tree else []
     p = bsdfs[0] if len(bsdfs) == 1 + len(layers) else None
     check(label + ": one Principled BSDF, and one per layer", p is not None, "%d for %d layers" % (len(bsdfs),
                                                                                               len(layers)))
@@ -1556,12 +1635,12 @@ def check_principled(label, material, ir, present=False):
         ("Base Color", "base_color", ir.base_color.value, None),
         ("Metallic", "metallic", ir.metallic.value, 1.0),
         ("Roughness", "roughness", ir.roughness.value, 1.0),
-        ("Specular IOR Level", "specular", ir.specular.value, SPECULAR_LEVEL),
         ("Transmission Weight", "transmission", ir.transmission.value, 1.0),
         ("Emission Color", "emission_color", ir.emission_color.value, None),
         ("Alpha", "alpha", ir.alpha.value, 1.0),
     ]
     alpha = None
+    check_specular(label, p, ir, present)
     for socket, key, want, scale in wants:
         s = p.inputs[socket]
         folded = _fold(tex[key].root, present) if key in tex else LOST
@@ -1613,12 +1692,12 @@ def check_layers(label, material, layers, present=False):
     """A layered material: a Mix Shader per layer, the last one into the output; a layer whose mask graph a node
     drives has a linked factor, any other its amount (times the mask's constant)."""
     nodes = material.node_tree.nodes
-    mixes = [n for n in nodes if n.bl_idname == "ShaderNodeMixShader"]
+    mixes = _shaders(material)
     check(label + ": a Mix Shader per layer", len(mixes) == len(layers), "%d for %d" % (len(mixes), len(layers)))
     out = next(n for n in nodes if n.bl_idname == "ShaderNodeOutputMaterial")
     surface = out.inputs["Surface"]
     check(label + ": the top Mix Shader is the surface",
-          surface.is_linked and surface.links[0].from_node.bl_idname == "ShaderNodeMixShader")
+          surface.is_linked and surface.links[0].from_node in mixes)
     plain = []
     for layer in layers:
         folded = _fold(layer.graph.root, present) if layer.graph is not None else LOST
@@ -1636,6 +1715,7 @@ def check_fixture_materials(name, plan, desc, obs):
     the slot plan of _irs)."""
     by_index = {node.index: ob for node, ob in zip(desc.nodes, obs)}
     checked = set()
+    corona = []
     for slots in list(plan.values()) + list(plan.curves.values()):
         for s, irs in enumerate(slots.slots):
             for node, ir in zip(slots.users, irs):
@@ -1651,6 +1731,13 @@ def check_fixture_materials(name, plan, desc, obs):
                 check("%s/%s: material named after the 3ds Max material" % (name, material.name),
                       material.name.split(".")[0] == (ir.name or "Material").split(".")[0], ir.name)
                 check_principled("%s/%s" % (name, material.name), material, ir)
+                if ir.source == "CoronaPhysicalMtl":
+                    corona.append(material)
+    if name == "corona_physical":  # absolute: check_principled follows the IR, which drew 0.25 (maxdrop-em3.121)
+        sockets = [(m.name, n.inputs["Specular IOR Level"]) for m in corona for n in _bsdfs(m)]
+        levels = [(name, s.is_linked, round(s.default_value, 6)) for name, s in sockets]
+        check("corona_physical: every CoronaPhysicalMtl reflects the IOR's own Fresnel (Specular IOR Level 0.5)",
+              len(levels) >= 3 and all(not linked and v == 0.5 for _n, linked, v in levels), str(levels))
     for key, cd in desc.curves.items():  # each spline on its slot; without a plan, 0
         ob = next((by_index[u] for u in cd.users if u in by_index), None)
         if ob is None:
@@ -2408,7 +2495,8 @@ def check_found_textures():
                 ops = [getattr(_from(comb.inputs[a]), "operation", None) for a in ("X", "Y")] if comb else []
                 double = _from(_from(_from(comb.inputs["X"]).inputs[0]).inputs["Vector"]) if comb else None
                 check("texmap_rules: place_crop.png on map channel 3, cropped, mirrored (U doubled) in U and clipped "
-                      "in V", cropped.extension == 'CLIP' and any(n.uv_map == "UVChannel_3" for n in uv)
+                      "in V (a mask under EXTEND)", cropped.extension == 'EXTEND' and _clip_axes_of(cropped) == ["Y"]
+                      and any(n.uv_map == "UVChannel_3" for n in uv)
                       and ops == ['PINGPONG', 'MULTIPLY_ADD'] and getattr(double, "operation", None) == 'MULTIPLY'
                       and close(list(_input(double, "Vector_001").default_value), [2.0, 1.0, 1.0], 1e-6),
                       "%s %s %s" % (cropped.extension, [n.uv_map for n in uv], ops))
@@ -2516,16 +2604,19 @@ def check_builder():
         check("builder: every node kind of the graphs", need <= kinds, str(sorted(need - kinds)))
         place = next(n for n in mb.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage" and n.label == "shared.png"
                      and n.inputs["Vector"].is_linked)
-        check("builder: a placed crop clips", place.extension == 'CLIP', place.extension)
+        check("builder: a placed crop that mirrors clips by a mask on both axes under EXTEND",
+              place.extension == 'EXTEND' and _clip_axes_of(place) == ["X", "Y"],
+              "%s %s" % (place.extension, _clip_axes_of(place)))
         uv = [n.uv_map for n in mb.node_tree.nodes if n.bl_idname == "ShaderNodeUVMap"]
         nm = next(n for n in mb.node_tree.nodes if n.bl_idname == "ShaderNodeNormalMap")
         check("builder: map channel 2 is UVChannel_2, for the image and the normal map's tangents",
               uv == ["UVChannel_2"] and nm.uv_map == "UVChannel_2", "%s %s" % (uv, nm.uv_map))
-        spec = _principled(ma).inputs["Specular IOR Level"]
-        dot = spec.links[0].from_node if spec.is_linked else None
-        check("builder: a color graph on the specular goes through the mean, times 0.5",
-              dot is not None and dot.operation == 'DOT_PRODUCT'
-              and close(list(dot.inputs[1].default_value), [1 / 6.0] * 3, 1e-6))
+        pa = _principled(ma)
+        spec, mix = pa.inputs["Specular IOR Level"], _weight_mix(pa)
+        dot = _from(mix.inputs[0]) if mix is not None else None
+        check("builder: a color graph on the specular goes through the mean into the reflection weight, level 0.5",
+              not spec.is_linked and spec.default_value == SPECULAR_LEVEL and dot is not None
+              and dot.operation == 'DOT_PRODUCT' and close(list(dot.inputs[1].default_value), [1 / 3.0] * 3, 1e-6))
         check("builder: the viewport color is the base color", close(list(ma.diffuse_color)[:3], [0.5] * 3, 1e-6))
         check_builder_wiring(ma, mb, builder, cm, tx, srgb, data, lost, gamma)
         check_wrapper_wiring(builder, cm, tx, srgb, data)
@@ -2571,12 +2662,13 @@ def check_builder_blend():
               add is not None and not add.clamp_result and gammas == [round(1 / 2.2, 4)] * 2 + [2.2], str(gammas))
         floor = [n for n in nodes if n.bl_idname == "ShaderNodeVectorMath" and n.operation == 'MAXIMUM']
         check("blend: subtract floored at 0", len(floor) == 1)
-        pb = next(n for n in nodes if n.bl_idname == "ShaderNodeBsdfPrincipled")
-        spec = pb.inputs["Specular IOR Level"]
-        check("blend: two constants folded (max), the mean times 0.5", not spec.is_linked
-              and abs(spec.default_value - (0.5 + 0.4 + 0.9) / 3 * 0.5) < 1e-5, str(spec.default_value))
-        bsdfs = [n for n in nodes if n.bl_idname == "ShaderNodeBsdfPrincipled"]
-        shaders = [n for n in nodes if n.bl_idname == "ShaderNodeMixShader"]
+        bsdfs, shaders = _bsdfs(m), _shaders(m)
+        pb = bsdfs[0]
+        spec, mix = pb.inputs["Specular IOR Level"], _weight_mix(pb)
+        check("blend: two constants folded (max), the mean as the reflection weight", not spec.is_linked
+              and spec.default_value == SPECULAR_LEVEL and mix is not None and not mix.inputs[0].is_linked
+              and abs(mix.inputs[0].default_value - (0.5 + 0.4 + 0.9) / 3) < 1e-5,
+              str(mix.inputs[0].default_value if mix else None))
         check("layers: a Principled BSDF and a Mix Shader per layer", len(bsdfs) == 3 and len(shaders) == 2)
         plain = [n for n in shaders if not n.inputs[0].is_linked]
         masked = [n for n in shaders if n.inputs[0].is_linked]
@@ -2592,6 +2684,74 @@ def check_builder_blend():
         for img in list(bpy.data.images):
             bpy.data.images.remove(img)
         shutil.rmtree(scratch, ignore_errors=True)
+
+
+def check_builder_weight():
+    """A reflection weight (bead maxdrop-em3.119): between 0 and 1, or a map, a Mix Shader by the weight over a
+    twin without reflection; 0, 1, a metal and full glass keep the lone Principled at 0.5 x the weight; a layer
+    gets a twin of its own."""
+    from maxdrop.build import materials as build_materials
+    from maxdrop.convert import materials as cm
+    empty_scene()
+    builder = build_materials.MaterialBuilder()
+
+    def make(name, **kw):
+        return builder.make(cm.MaterialIR(70, name, "test", base_color=cm.Input((0.2, 0.3, 0.4)), **kw))
+
+    for name, kw, mixed, level in (
+            ("None", dict(specular=cm.Input(0.0)), False, 0.0),
+            ("Grey", dict(specular=cm.Input(0.4), roughness=cm.Input(0.3), alpha=cm.Input(0.5)), True, 0.5),
+            ("White", dict(specular=cm.Input(1.0)), False, 0.5),
+            ("Above", dict(specular=cm.Input(1.6)), False, 0.5),
+            ("Metal", dict(specular=cm.Input(0.4), metallic=cm.Input(1.0)), False, 0.2),
+            ("Glass", dict(specular=cm.Input(0.4), transmission=cm.Input(1.0)), False, 0.2),
+            ("HalfGlass", dict(specular=cm.Input(0.4), transmission=cm.Input(0.5)), True, 0.5)):
+        m = make(name, **kw)
+        p = _principled(m)
+        mix = _weight_mix(p) if p is not None else None
+        level_ok = p is not None and abs(p.inputs["Specular IOR Level"].default_value - level) < 1e-6
+        check("weight: %s: %s, Specular IOR Level %.1f" % (name, "a reflection weight" if mixed else "a lone BSDF",
+                                                           level), level_ok and (mix is not None) == mixed)
+        out = next(n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeOutputMaterial")
+        top = _from(out.inputs["Surface"])
+        check("weight: %s: the surface is the %s" % (name, "Mix Shader" if mixed else "Principled BSDF"),
+              top == (mix if mixed else p))
+        if mixed:
+            check("weight: %s: the factor is the weight" % name, abs(mix.inputs[0].default_value - 0.4) < 1e-6)
+            check_twin("weight: " + name, p, mix)
+            twin = _from(mix.inputs[1])
+            check("weight: %s: the twin keeps the BSDF's alpha and transmission" % name,
+                  abs(twin.inputs["Alpha"].default_value - p.inputs["Alpha"].default_value) < 1e-6
+                  and abs(twin.inputs["Transmission Weight"].default_value
+                          - p.inputs["Transmission Weight"].default_value) < 1e-6)
+    m = make("BlendedGrey", specular=cm.Input(0.4), alpha=cm.Input(0.5))
+    check("weight: a constant alpha below 1 still blends", m.surface_render_method == 'BLENDED',
+          m.surface_render_method)
+    top = cm.MaterialIR(71, "GreyTop", "test", specular=cm.Input(0.6))
+    ir = cm.MaterialIR(72, "Layered", "test", specular=cm.Input(1.0))
+    ir.layers = [cm.Layer(top, 0.5)]
+    m = builder.make(ir)
+    bsdfs, shaders = _bsdfs(m), _shaders(m)
+    weights = [n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeMixShader" and n.label == WEIGHT_LABEL]
+    layer_mix = shaders[0] if len(shaders) == 1 else None
+    check("weight: a grey layer over a white base: one weight, on the layer, into the layer's Mix Shader",
+          len(bsdfs) == 2 and len(weights) == 1 and _weight_mix(bsdfs[0]) is None and layer_mix is not None
+          and _weight_mix(bsdfs[1]) == weights[0] and _from(layer_mix.inputs[2]) == weights[0]
+          and _from(layer_mix.inputs[1]) == bsdfs[0], "%d BSDFs, %d weights" % (len(bsdfs), len(weights)))
+    if len(bsdfs) == 2 and len(weights) == 1:
+        check_twin("weight: the layer", bsdfs[1], weights[0])
+    ir = cm.MaterialIR(73, "GreyUnder", "test", specular=cm.Input(0.3))
+    ir.layers = [cm.Layer(top, 0.5)]
+    m = builder.make(ir)
+    bsdfs, shaders = _bsdfs(m), _shaders(m)
+    under = _weight_mix(bsdfs[0]) if bsdfs else None
+    layer_mix = shaders[0] if len(shaders) == 1 else None
+    check("weight: a grey base under a grey layer: the base's weight below the layer's Mix Shader",
+          len(bsdfs) == 2 and under is not None and layer_mix is not None and _from(layer_mix.inputs[1]) == under
+          and _weight_mix(bsdfs[1]) is not None and _from(layer_mix.inputs[2]) == _weight_mix(bsdfs[1]))
+    if under is not None:
+        check_twin("weight: the base under a layer", bsdfs[0], under)
+    empty_scene()
 
 
 def check_builder_mono():
@@ -2634,8 +2794,7 @@ def check_builder_mono():
             return
         mixed = _color_into_float(m)
         check("mono: no color output linked into a float input", mixed == [], str(mixed))
-        p = next(n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeBsdfPrincipled"
-                 and n.inputs["Roughness"].is_linked)
+        p = next(n for n in _bsdfs(m) if n.inputs["Roughness"].is_linked)
         rough = _meaned(p.inputs["Roughness"])
         check("mono: a colored roughness image through the mean",
               getattr(rough, "bl_idname", None) == "ShaderNodeTexImage")
@@ -2659,7 +2818,7 @@ def check_builder_mono():
         check("mono: a colored bump height through the mean",
               getattr(bump, "bl_idname", None) == "ShaderNodeBump"
               and getattr(_meaned(_input(bump, "Height")), "bl_idname", None) == "ShaderNodeTexImage")
-        shader = next((n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeMixShader"), None)
+        shader = next(iter(_shaders(m)), None)
         check("mono: a layer mask through the mean", shader is not None
               and getattr(_meaned(shader.inputs[0]), "bl_idname", None) == "ShaderNodeTexImage")
         dots = [n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeVectorMath" and n.operation == 'DOT_PRODUCT']
@@ -2886,7 +3045,7 @@ def _crop_case(builder, cm, tx, found, name, mapping, crop):
     img = tx.Image(1, "shared.png", "shared.png", "", found, mapping=mapping, crop=crop)
     ir.textures = {"base_color": tx.TextureGraphIR(img, tx.COLOR)}
     m = builder.make(ir)
-    tex = _from(_principled(m).inputs["Base Color"])
+    tex = _image_of(_principled(m).inputs["Base Color"])[0]
     return tex, _from(_from(tex.inputs["Vector"]).inputs["Vector"])
 
 
@@ -2914,8 +3073,9 @@ def check_builder_debt():
         chain = [_from(comb.inputs[a]) for a in ("X", "Y")]
         floors = [_from(n.inputs[0]) for n in chain]
         ks = [n.inputs[1].default_value for n in chain]
-        check("builder debt: a crop with tile off: c + K floor(c) per axis, K = 1/w + 1 and 1/h + 1, image CLIP",
-              tex.extension == 'CLIP' and all(n.operation == 'MULTIPLY_ADD' for n in chain)
+        check("builder debt: a crop with tile off: c + K floor(c) per axis, K = 1/w + 1 and 1/h + 1, image CLIP, "
+              "no mask",
+              tex.extension == 'CLIP' and all(n.operation == 'MULTIPLY_ADD' for n in chain) and not _clip_axes_of(tex)
               and all(f.operation == 'FLOOR' for f in floors) and close(ks, [3.0, 5.0], 1e-6)
               and all(_from(n.inputs[2]) == _from(f.inputs[0]) for n, f in zip(chain, floors))
               and _from(chain[0].inputs[2]).bl_idname == "ShaderNodeSeparateXYZ",
@@ -2957,10 +3117,12 @@ def check_builder_debt():
         tex, comb = _crop_case(builder, cm, tx, found, "PlaceMixed", tx.Mapping(tile=(True, False)),
                                tx.Crop(0.25, 0.0, 0.5, 0.25, place=True))
         x, y = _from(comb.inputs["X"]), _from(comb.inputs["Y"])
-        check("builder debt: a placed image tiled in U, clipped in V: wrap on X, V straight through, image CLIP",
-              tex.extension == 'CLIP' and x.operation == 'WRAP' and y.bl_idname == "ShaderNodeSeparateXYZ"
-              and comb.outputs["Vector"].links[0].to_node.vector_type == 'TEXTURE',
-              "%s %s %s" % (tex.extension, x.operation, y.bl_idname))
+        check("builder debt: a placed image tiled in U, clipped in V: wrap on X, V straight through, image EXTEND, "
+              "the placed rectangle masked on both axes",
+              tex.extension == 'EXTEND' and x.operation == 'WRAP' and y.bl_idname == "ShaderNodeSeparateXYZ"
+              and comb.outputs["Vector"].links[0].to_node.vector_type == 'TEXTURE'
+              and _clip_axes_of(tex) == ["X", "Y"], "%s %s %s %s" % (tex.extension, x.operation, y.bl_idname,
+                                                                      _clip_axes_of(tex)))
 
         tex, frac = _crop_case(builder, cm, tx, found, "CropTile", tx.Mapping(), crop)
         check("builder debt: a crop tiled both ways: one Fraction, image EXTEND",
@@ -3124,6 +3286,7 @@ def _sample_vector(socket, uv):
         a, b, c = (_sample_value(n.inputs[i], uv) for i in range(3))
         return {'PINGPONG': lambda: _pingpong(a, b), 'FLOOR': lambda: math.floor(a),
                 'WRAP': lambda: a - (b - c) * math.floor((a - c) / (b - c)), 'MULTIPLY_ADD': lambda: a * b + c,
+                'COMPARE': lambda: float(abs(a - b) <= max(c, 1e-5)), 'MULTIPLY': lambda: a * b,
                 }[n.operation]()
     v = _sample_vector(n.inputs["Vector"], uv)
     if n.bl_idname == "ShaderNodeVectorMath":
@@ -3145,9 +3308,11 @@ def _sample_value(socket, uv):
     return _sample_vector(socket, uv) if socket.is_linked else socket.default_value
 
 
-def _sample_image(tex, uv):
+def _sample_image(tex, uv, mask=None):
     """The image coordinate (x, y) an Image Texture node reads at uv, its extension applied; None outside a CLIP
-    image."""
+    image or where its clip mask (the socket mask, _image_of) is 0."""
+    if mask is not None and _sample_value(mask, uv) < 0.5:
+        return None
     v = _sample_vector(tex.inputs["Vector"], uv)
     v = Vector((uv[0], uv[1], 0.0)) if v is None else v
     xy = []
@@ -3162,6 +3327,49 @@ def _sample_image(tex, uv):
             return None
         xy.append(x)
     return xy
+
+
+CLIP_LABEL = "Clip"  # build/materials.py's CLIP_LABEL (the package is imported inside the checks)
+
+
+def _clip_mask_input(node):
+    """The input of a Clip node that carries the clip mask (Math MULTIPLY for Alpha, Vector Math SCALE for Color)."""
+    return node.inputs[1] if node.bl_idname == "ShaderNodeMath" else _input(node, "Scale")
+
+
+def _image_of(socket):
+    """(the Image Texture feeding an input, the input of its Clip node that carries the clip mask, or None without
+    one)."""
+    n = _from(socket)
+    if n is not None and n.label == CLIP_LABEL:
+        return _from(n.inputs[0]), _clip_mask_input(n)
+    return n, None
+
+
+def _clip_axes_of(tex):
+    """The axes ("X", "Y") an Image Texture's clip mask tests (Math COMPARE, |x - 0.5| <= 0.5, of the vector the
+    node reads), [] without a mask; None for a mask of another form or Clip nodes that disagree."""
+    clips = [n for n in tex.id_data.nodes if n.label == CLIP_LABEL and _from(n.inputs[0]) == tex]
+    if not clips:
+        return []
+    found = set()
+    for clip in clips:
+        todo, axes = [_from(_clip_mask_input(clip))], []
+        while todo:
+            n = todo.pop()
+            if n is None or n.bl_idname != "ShaderNodeMath":
+                return None
+            if n.operation == 'MULTIPLY':
+                todo += [_from(i) for i in n.inputs[:2]]
+                continue
+            sep = _from(n.inputs[0])
+            if n.operation != 'COMPARE' or n.inputs[1].default_value != 0.5 or n.inputs[2].default_value != 0.5 \
+                    or sep is None or sep.bl_idname != "ShaderNodeSeparateXYZ" or not tex.inputs["Vector"].is_linked \
+                    or sep.inputs["Vector"].links[0].from_socket != tex.inputs["Vector"].links[0].from_socket:
+                return None
+            axes.append(n.inputs[0].links[0].from_socket.identifier)
+        found.add(tuple(sorted(axes)))
+    return list(found.pop()) if len(found) == 1 else None
 
 
 def check_builder_mirror():
@@ -3183,18 +3391,21 @@ def check_builder_mirror():
         found = ct.Found(png, ct.SCENE)
         builder = build_materials.MaterialBuilder()
 
-        def tex_of(name, mapping, crop=None):
+        def tex_mask(name, mapping, crop=None):
             ir = cm.MaterialIR(30, name, "test", base_color=cm.Input((0.5, 0.5, 0.5), cm.MapRef(1)))
             img = tx.Image(1, "shared.png", "shared.png", "", found, mapping=mapping, crop=crop)
             ir.textures = {"base_color": tx.TextureGraphIR(img, tx.COLOR)}
-            return _from(_principled(builder.make(ir)).inputs["Base Color"])
+            return _image_of(_principled(builder.make(ir)).inputs["Base Color"])
+
+        def tex_of(name, mapping, crop=None):
+            return tex_mask(name, mapping, crop)[0]
 
         for label, kw, crop, (w, h), sweep, fixed, channel, values in _MIRROR_ROWS:
-            tex = tex_of("Mirror " + label, tx.Mapping(**kw), tx.Crop(*crop) if crop else None)
+            tex, mask = tex_mask("Mirror " + label, tx.Mapping(**kw), tx.Crop(*crop) if crop else None)
             bad = []
             for i, value in enumerate(values.split()):
                 x, y = (i, fixed) if sweep == "row" else (fixed, i)
-                got = _sample_image(tex, ((x + 0.5) / w, 1.0 - (y + 0.5) / h))
+                got = _sample_image(tex, ((x + 0.5) / w, 1.0 - (y + 0.5) / h), mask)
                 if value == "-":
                     if got is not None:
                         bad.append((i, value, got))
@@ -3231,16 +3442,105 @@ def check_builder_mirror():
         tex = tex_of("TileUOnly", tx.Mapping(tile=(True, False)))
         comb = _from(tex.inputs["Vector"])
         x, y = (_from(comb.inputs[a]) for a in ("X", "Y")) if comb is not None else (None, None)
-        check("builder mirror: tile U only: wrap X, Y straight through -> image CLIP",
-              tex.extension == 'CLIP' and x is not None and x.operation == 'WRAP'
-              and y.bl_idname == "ShaderNodeSeparateXYZ", "%s %s" % (tex.extension, comb and comb.bl_idname))
+        check("builder mirror: tile U only: wrap X, Y straight through -> image EXTEND, Y clipped by a mask (CLIP "
+              "would fade the border half-texel at every tile line)",
+              tex.extension == 'EXTEND' and x is not None and x.operation == 'WRAP'
+              and y.bl_idname == "ShaderNodeSeparateXYZ" and _clip_axes_of(tex) == ["Y"],
+              "%s %s %s" % (tex.extension, comb and comb.bl_idname, _clip_axes_of(tex)))
+        tex = tex_of("MirrorVClipU", tx.Mapping(tile=(False, True), mirror=(False, True)))
+        check("builder mirror: mirror V, U clipped: image EXTEND, X clipped by a mask",
+              tex.extension == 'EXTEND' and _clip_axes_of(tex) == ["X"], "%s %s" % (tex.extension,
+                                                                                    _clip_axes_of(tex)))
 
         tex = tex_of("TileBoth", tx.Mapping())
         check("builder mirror: tile both, no placement: no vector, image REPEAT",
               tex.extension == 'REPEAT' and not tex.inputs["Vector"].is_linked, tex.extension)
-        tex = tex_of("TileNone", tx.Mapping(tile=(False, False)))
-        check("builder mirror: tile off both, no placement: no vector, image CLIP",
-              tex.extension == 'CLIP' and not tex.inputs["Vector"].is_linked, tex.extension)
+        tex, mask = tex_mask("TileNone", tx.Mapping(tile=(False, False)))
+        check("builder mirror: tile off both, no placement: no vector, image CLIP, no mask",
+              tex.extension == 'CLIP' and not tex.inputs["Vector"].is_linked and mask is None, tex.extension)
+    finally:
+        empty_scene()
+        for img in list(bpy.data.images):
+            bpy.data.images.remove(img)
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def check_builder_clip_mask():
+    """MaterialBuilder on hand-made IRs (bead maxdrop-em3.112): an image that repeats on one axis and clips on the
+    other is drawn EXTEND with a clip mask, which every output of its Image Texture goes through (Color and Alpha:
+    an alpha image, a Composite layer's alpha), one Clip node per output however many inputs read it."""
+    from maxdrop.build import materials as build_materials
+    from maxdrop.convert import materials as cm
+    from maxdrop.convert import texmaps as tx
+    from maxdrop.convert import textures as ct
+    empty_scene()
+    for img in list(bpy.data.images):
+        bpy.data.images.remove(img)
+    scratch = tempfile.mkdtemp(prefix="maxdrop-builder-clip-")
+    try:
+        png = os.path.join(scratch, "shared.png")
+        _write_png(png)
+        found = ct.Found(png, ct.SCENE)
+        builder = build_materials.MaterialBuilder()
+        mixed = tx.Mapping(tiling=(2.0, 2.0), tile=(True, False))
+
+        def clips_of(tex):
+            """{output name: [the nodes its links go to]} of the linked outputs."""
+            return {o.name: [link.to_node for link in o.links] for o in tex.outputs if o.is_linked}
+
+        alpha = tx.Image(1, "shared.png", "shared.png", "", found, colorspace=tx.NON_COLOR, alpha=True, mapping=mixed)
+        ir = cm.MaterialIR(50, "ClipAlpha", "test", alpha=cm.Input(1.0, cm.MapRef(1)))
+        ir.textures = {"alpha": tx.TextureGraphIR(alpha, tx.DATA)}
+        m = builder.make(ir)
+        tex = next(n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage")
+        outs = clips_of(tex)
+        check("builder clip mask: an alpha image tiled in U, clipped in V: EXTEND, its Alpha only through a Clip node "
+              "masking V", tex.extension == 'EXTEND' and list(outs) == ["Alpha"]
+              and all(n.label == CLIP_LABEL for n in outs["Alpha"]) and _clip_axes_of(tex) == ["Y"], str(outs))
+
+        top = tx.Image(2, "shared.png", "shared.png", "", found, mapping=mixed)
+        bottom = tx.Image(3, "shared.png", "shared.png", "", found)
+        layered = tx.Composite((tx.CompositeLayer(bottom), tx.CompositeLayer(top, 0.5)))
+        ir = cm.MaterialIR(51, "ClipLayer", "test", base_color=cm.Input((0.5, 0.5, 0.5), cm.MapRef(1)),
+                           emission_color=cm.Input((0.0, 0.0, 0.0), cm.MapRef(2)))
+        ir.textures = {"base_color": tx.TextureGraphIR(layered, tx.COLOR),
+                       "emission_color": tx.TextureGraphIR(top, tx.COLOR)}
+        m = builder.make(ir)
+        texes = [n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage" and n.inputs["Vector"].is_linked]
+        tex = texes[0] if len(texes) == 1 else None
+        outs = clips_of(tex) if tex is not None else {}
+        clip_nodes = [n for n in m.node_tree.nodes if n.label == CLIP_LABEL]
+        check("builder clip mask: a Composite layer and the emission read one mixed-axis image: its Color and its "
+              "Alpha (the layer's factor) each through one Clip node, the same mask",
+              tex is not None and sorted(outs) == ["Alpha", "Color"]
+              and all(n.label == CLIP_LABEL and n in clip_nodes for ns in outs.values() for n in ns)
+              and len(clip_nodes) == 2 and len({_from(_clip_mask_input(n)) for n in clip_nodes}) == 1
+              and _clip_axes_of(tex) == ["Y"],
+              "%d textures, %s, %d Clip nodes" % (len(texes), sorted(outs), len(clip_nodes)))
+        for name in ("Base Color", "Emission Color"):
+            check("builder clip mask: %s linked" % name, _principled(m).inputs[name].is_linked)
+        check("builder clip mask: the tests' Clip label is the builder's",
+              CLIP_LABEL == build_materials.CLIP_LABEL, build_materials.CLIP_LABEL)
+
+        rough = tx.Image(4, "shared.png", "shared.png", "", found, colorspace=tx.NON_COLOR, mapping=mixed)
+        ir = cm.MaterialIR(52, "ClipData", "test", roughness=cm.Input(0.5, cm.MapRef(1)))
+        ir.textures = {"roughness": tx.TextureGraphIR(rough, tx.DATA)}
+        m = builder.make(ir)
+        tex = next(n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage")
+        outs = clips_of(tex)
+        mean = _meaned(_principled(m).inputs["Roughness"])
+        check("builder clip mask: a data map (roughness) over a mixed-axis image: the mean of its masked Color",
+              list(outs) == ["Color"] and all(n.label == CLIP_LABEL for n in outs["Color"])
+              and mean is not None and mean.label == CLIP_LABEL and _from(mean.inputs[0]) == tex,
+              "%s %s" % (outs, getattr(mean, "bl_idname", None)))
+
+        lost = tx.Image(5, "nothere.png", "C:\\x\\nothere.png", "", None, mapping=mixed)
+        ir = cm.MaterialIR(53, "ClipLost", "test", base_color=cm.Input((0.1, 0.2, 0.3), cm.MapRef(1)))
+        ir.textures = {"base_color": tx.TextureGraphIR(lost, tx.COLOR)}
+        m = builder.make(ir)
+        check("builder clip mask: a missing image gets no mask nodes",
+              not any(n.bl_idname == "ShaderNodeMath" and n.operation == 'COMPARE' for n in m.node_tree.nodes)
+              and not any(n.label == CLIP_LABEL for n in m.node_tree.nodes))
     finally:
         empty_scene()
         for img in list(bpy.data.images):
@@ -3294,6 +3594,36 @@ def check_light_note_on_failure(max_path):
           result == {'FINISHED'} and len(bpy.data.lights) > 0 and "color swatches: " + colors.GAMMA_NOTE in body,
           "%s %d lights | %s" % (result, len(bpy.data.lights), body[-500:]))
     empty_scene()
+
+
+def check_ies_header(max_path):
+    """max_path (lights_photometric) copied beside a self-authored fixture_web.ies, rated 500 lm, 100 cd in every
+    direction: the import finds it, IesPower (1500, override off) gets 1500 x 400 pi / 500 lm, IesOverride (override
+    on) keeps 300 lm; the report has no rated-lumens line for it."""
+    from maxdrop import ops
+    from maxdrop.convert import lights
+    empty_scene()
+    scratch = tempfile.mkdtemp(prefix="maxdrop-ies-")
+    try:
+        dst = os.path.join(scratch, os.path.basename(max_path))
+        shutil.copy(max_path, dst)
+        with open(os.path.join(scratch, "fixture_web.ies"), "wb") as f:
+            f.write(b"IESNA:LM-63-2002\n[TEST] MaxDrop test\nTILT=NONE\n1 500 1 3 1 1 2 0 0 0\n1 1 0\n0 90 180\n0\n"
+                    b"100 100 100\n")
+        result = bpy.ops.import_scene.maxdrop(filepath=dst)
+        energy = {n: bpy.data.objects[n].data.energy for n in ("IesPower", "IesOverride") if n in bpy.data.objects}
+        want = {"IesPower": 1500.0 * 400.0 * math.pi / 500.0 / 683.0 * ops.LIGHT_STRENGTH,
+                "IesOverride": 300.0 / 683.0 * ops.LIGHT_STRENGTH}
+        check("ies header: IesPower is power x the file's flux / its rated lumens, IesOverride its power",
+              result == {'FINISHED'} and set(energy) == set(want)
+              and all(abs(energy[n] - w) <= w * 1e-5 for n, w in want.items()), "%s %s vs %s" % (result, energy, want))
+        text = bpy.data.texts.get("MaxDrop Report")
+        body = text.as_string() if text is not None else ""
+        check("ies header: no rated-lumens line in the report", text is not None and lights.IES_RATED not in body,
+              body[-600:])
+    finally:
+        empty_scene()
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
 def check_reader_defect(first, second):
@@ -3402,7 +3732,7 @@ def check_builder_wiring(ma, mb, builder, cm, tx, srgb, data, lost, gamma):
     check("wiring: roughness 1 - the mean of the data image", inv.bl_idname == "ShaderNodeMath"
           and inv.operation == 'SUBTRACT' and inv.inputs[0].default_value == 1.0
           and getattr(_meaned(inv.inputs[1]), "bl_idname", None) == "ShaderNodeTexImage")
-    dot = _from(pa.inputs["Specular IOR Level"])
+    dot = _from(_specular_socket(pa))
     mul = _from(dot.inputs[0])
     check("wiring: specular map times 2 through a Multiply Mix", mul.bl_idname == "ShaderNodeMix"
           and mul.blend_type == 'MULTIPLY' and _input(mul, "Factor_Float").default_value == 1.0
@@ -3430,7 +3760,7 @@ def check_builder_wiring(ma, mb, builder, cm, tx, srgb, data, lost, gamma):
     amount = _from(_input(comp, "A_Color"))
     level = _from(amount.inputs[0])
     out_inv = _from(level.inputs[0])
-    tex = _from(out_inv.inputs["Color"])
+    tex, clip = _image_of(out_inv.inputs["Color"])
     crop = _from(tex.inputs["Vector"])
     comb = _from(crop.inputs["Vector"])
     pings = [_from(comb.inputs[axis]) for axis in ("X", "Y")]
@@ -3460,6 +3790,8 @@ def check_builder_wiring(ma, mb, builder, cm, tx, srgb, data, lost, gamma):
           and close(list(place.inputs["Location"].default_value), list(want[0]), 1e-6)
           and close(list(place.inputs["Rotation"].default_value), [0.0, 0.0, 0.5], 1e-6)
           and uv.bl_idname == "ShaderNodeUVMap" and uv.uv_map == "UVChannel_2")
+    check("wiring: the placed image's Color masked (Clip) before its Output's invert, as CLIP's black was",
+          clip is not None and _from(clip).bl_idname == "ShaderNodeMath" and out_inv.bl_idname == "ShaderNodeInvert")
     bump = _from(pb.inputs["Normal"])
     nm = _from(bump.inputs["Normal"])
     comb = _from(nm.inputs["Color"])
@@ -3518,15 +3850,15 @@ def _upstream(socket):
 
 
 def check_reflection_falloff():
-    """vray_texmaps imported: a Falloff in a VRayMtl's reflection drives Specular IOR Level by the angle (Layer
+    """vray_texmaps imported: a Falloff in a VRayMtl's reflection drives the reflection weight by the angle (Layer
     Weight for perpendicular / parallel, the Fresnel node for Fresnel), not its color 1."""
     for name, kind in (("FixtureVReflPerp", "ShaderNodeLayerWeight"), ("FixtureVReflFresnel", "ShaderNodeFresnel")):
         m = bpy.data.materials.get(name)
-        socket = _principled(m).inputs["Specular IOR Level"] if m is not None else None
+        socket = _specular_socket(_principled(m)) if m is not None else None
         nodes = _upstream(socket) if socket is not None else []
         by_facing = [n for n in nodes if n.bl_idname == "ShaderNodeMix"
                      and getattr(_from(_input(n, "Factor_Float")), "bl_idname", None) == kind]
-        check("vray_texmaps/%s: the reflection Falloff into Specular IOR Level, a Mix by %s" % (name, kind),
+        check("vray_texmaps/%s: the reflection Falloff into the reflection weight, a Mix by %s" % (name, kind),
               socket is not None and socket.is_linked and len(by_facing) == 1,
               str(sorted(n.bl_idname for n in nodes)))
 
@@ -3612,7 +3944,7 @@ def check_wrapper_wiring(builder, cm, tx, srgb, data):
           ma.bl_idname == "ShaderNodeMath" and ma.operation == 'MULTIPLY_ADD'
           and (ma.inputs[1].default_value, ma.inputs[2].default_value) == (-0.5, 0.5)
           and dot.operation == 'DOT_PRODUCT' and geo == {"Normal", "Incoming"})
-    dot = _from(_from(p.inputs["Specular IOR Level"]).inputs[0])
+    dot = _from(_from(_specular_socket(p)).inputs[0])
     check("wrappers: Color Correction monochrome: the mean of the channels",
           dot.bl_idname == "ShaderNodeVectorMath" and dot.operation == 'DOT_PRODUCT'
           and close(list(_input(dot, "Vector_001").default_value), [1 / 3.0] * 3, 1e-6)
@@ -4010,6 +4342,8 @@ def main():
                                  ("found textures", check_found_textures), ("builder", check_builder),
                                  ("builder debt", check_builder_debt), ("builder mirror", check_builder_mirror),
                                  ("builder blend", check_builder_blend), ("builder mono", check_builder_mono),
+                                 ("builder weight", check_builder_weight),
+                                 ("builder clip mask", check_builder_clip_mask),
                                  ("curve step", check_curve_step),
                                  ("crease open edges", check_crease_open_edges),
                                  ("linear fallback", check_linear_fallback),
@@ -4032,6 +4366,8 @@ def main():
                                      os.path.join(ROOT, "tests", "fixtures", "multi_uv.max"))),
                                  ("asset table once", lambda: check_asset_table_once(
                                      os.path.join(ROOT, "tests", "fixtures", "vray_lights.max"))),
+                                 ("ies header", lambda: check_ies_header(
+                                     os.path.join(ROOT, "tests", "fixtures", "lights_photometric.max"))),
                                  ("benchmark", lambda: _bench().run(check))):
             try:
                 run_check()

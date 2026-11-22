@@ -262,7 +262,7 @@ class SceneHook(unittest.TestCase):
         return desc, keys
 
     def test_a_damaged_light_is_named_on_every_node(self):
-        def read(scene, i, assets=None):
+        def read(scene, i, assets=None, ies_files=None):
             raise L.LightError("damaged")
         desc, keys = self.hook(read, [self.IDENTITY, self.IDENTITY])
         self.assertEqual(keys, [None, None])
@@ -271,18 +271,19 @@ class SceneHook(unittest.TestCase):
         self.assertEqual((desc.lights, dict(desc.placeholders)), ({}, {}))
 
     def test_the_first_dome_is_the_world_the_others_are_named(self):
-        desc, keys = self.hook(lambda scene, i, assets=None: (values(type=L.DOME), ["read"]),
+        desc, keys = self.hook(lambda scene, i, assets=None, ies_files=None: (values(type=L.DOME), ["read"]),
                                [self.IDENTITY, self.IDENTITY])
         self.assertEqual(keys, [None, None])
         self.assertEqual((desc.dome.node, desc.dome.name, desc.lights, dict(desc.placeholders)), (10, "n10", {}, {}))
         self.assertEqual(desc.issues, [(10, "light: read"), (11, "light: " + L.SECOND_DOME % "n10")])
 
     def test_a_dome_that_is_off_is_not_the_world(self):
-        desc, keys = self.hook(lambda scene, i, assets=None: (values(type=L.DOME, on=0), []), [self.IDENTITY])
+        desc, keys = self.hook(lambda scene, i, assets=None, ies_files=None: (values(type=L.DOME, on=0), []),
+                               [self.IDENTITY])
         self.assertEqual((keys, desc.dome, desc.issues), ([None], None, [(10, "light: " + L.DOME_OFF)]))
 
     def test_issues_once_per_light_and_per_scale(self):
-        desc, keys = self.hook(lambda scene, i, assets=None: (values(double_sided=1), ["read"]),
+        desc, keys = self.hook(lambda scene, i, assets=None, ies_files=None: (values(double_sided=1), ["read"]),
                                [self.IDENTITY, self.IDENTITY, self.BIG])
         self.assertEqual(keys, [(0, 1.0), (0, 1.0), (0, 4.0)])
         self.assertEqual(desc.issues, [(10, "light: read"), (10, "light: " + L.DOUBLE_SIDED),

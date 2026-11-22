@@ -70,6 +70,19 @@ class Fixture:
         self.cf.close()
 
 
+class _Swatch:
+    """A material whose parameter (pid, block id) reads value, the rest as saved."""
+
+    def __init__(self, m, key, value):
+        self._m, self._key, self._value = m, key, value
+
+    def __getattr__(self, name):
+        return getattr(self._m, name)
+
+    def param(self, pid, block_id=None, tab=0, default=None):
+        return self._value if (pid, block_id) == self._key else self._m.param(pid, block_id, tab, default)
+
+
 class Checks(unittest.TestCase):
     def close(self, ours, theirs, what=""):
         if isinstance(theirs, tuple):
@@ -1297,6 +1310,20 @@ class VRayTexmaps(Checks):
         g = self.f.irs["FixtureVReflFresnel"].textures["specular"]  # map amount 50: half the swatch (black)
         self.assertEqual(g.root, tx.Mix(black, tx.Mix(black, white, 0.0, tx.Facing(tx.FRESNEL, 1.5)), 0.5))
         self.assertEqual((g.approximated, g.issues), (False, ()))
+
+    def test_falloff_in_reflection_over_a_white_swatch(self):
+        """Fresnel off, a white swatch the Falloff at full amount hides: a dielectric, not a metal in the Falloff."""
+        black, white = tx.Constant((0.0, 0.0, 0.0)), tx.Constant((1.0, 1.0, 1.0))
+        dark = self.f.irs["FixtureVReflPerp"]
+        m = _Swatch(self.f.graph.get(dark.index), (2, 1), (1.0, 1.0, 1.0))  # reflection, block 1
+        ir = mat.MaterialIR(m.index, m.name)
+        mat.vray_mtl(self.f.conv, m, ir)
+        self.close(ir.specular.value, 1.0, "the hidden swatch")
+        self.assertEqual((ir.metallic.value, ir.metallic.map), (0.0, None))
+        self.assertEqual(ir.base_color, dark.base_color, "the diffuse")
+        textures = tx.texture_graphs(ir, self.f.tex)
+        self.assertNotIn("base_color", textures)
+        self.assertEqual(textures["specular"].root, tx.Mix(black, white, 0.0, tx.Facing(tx.PERPENDICULAR)))
 
     def test_color_correction_over_an_unsupported_map(self):
         ir = self.f.irs["FixtureCCNoise"]

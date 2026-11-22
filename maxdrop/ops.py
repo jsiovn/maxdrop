@@ -77,6 +77,8 @@
 # the scene's), the first of a run; the World before keeps a fake user and the report says so. A World that cannot be
 # built is an issue, not a failed import; a failed or cancelled build puts the World before back and removes the new
 # one.
+# Modified for MaxDrop, 2026-11-22 (jsiovn). The scene description gets a texture lookup of its own: a VRayIES whose
+# intensity is not overridden finds its IES file, whose rated lumens and flux give its power.
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -687,6 +689,7 @@ def _read_file(max_path, opts, dirs, cancel):
     """_read_scene() without its net for _DEFECTS."""
     from .convert import cameras, colors
     from .convert import scene as convert_scene
+    from .convert import textures as convert_textures
     from .reader import assets, cfb, units
     from .reader import scene as reader_scene
     name = os.path.basename(max_path)
@@ -696,8 +699,10 @@ def _read_file(max_path, opts, dirs, cancel):
         unit = units.system_unit(sc)
         meters, read.note = _meters(opts.units, unit, opts.scale_objects)
         table = assets.AssetTable.from_file(cf)
+        # a lookup of its own (walked only for an IES file): the materials' one counts textures for the report
+        files = convert_textures.TextureIndex(max_path, dirs, scene_subfolders=opts.use_image_search)
         desc = convert_scene.describe(sc, meters, unit, convert_modifiers=opts.modifiers == 'KEEP',
-                                      assets=table, views=cameras.saved_views(cf), cancel=cancel)
+                                      assets=table, views=cameras.saved_views(cf), cancel=cancel, files=files)
         read.slots, read.counts, read.failed = None, None, []
         if desc.dome is not None and desc.dome.texmap is not None:
             try:

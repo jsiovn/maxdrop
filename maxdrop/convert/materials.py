@@ -29,24 +29,28 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
 - VRayMtl: base color = diffuse; roughness = reflection glossiness g, or 1 - g unless brdf_useRoughness (a
   glossiness map is then inverted); metallic = reflection_metalness; specular = the mean of the linear reflection
   color (as in every rule, a reflection weight: 1 is the full Fresnel reflection at the IOR, which
-  build/materials.py draws as Specular IOR Level 0.5; with Fresnel on a white one matches V-Ray 5.2 at every angle,
-  a grey one only head-on: Blender's curve still rises to 1 at grazing where V-Ray scales it all, measured in the
-  maxdrop-em3.34 plan); emission = self-illumination color times its multiplier; transmission = the mean of the refraction color,
+  build/materials.py draws as Specular IOR Level 0.5, and a weight between 0 and 1 as a Mix Shader by it over a
+  twin without reflection, so the whole curve scales as V-Ray scales it; with Fresnel on a white and a grey one
+  match V-Ray 5.2 at every angle, measured in the maxdrop-em3.34 and maxdrop-em3.119 plans);
+  emission = self-illumination color times its multiplier; transmission = the mean of the refraction color,
   ior and thin-walled from the refraction parameters; maps where their slot is on, with their multiplier as the
   amount; a normal map (VRayNormalMap, Normal Bump, CoronaNormal) in a bump slot is the normal input, any other
   map the bump input. Added here: a refracting material takes its base color from the refraction color (mixed by
   the transmission), and with Fresnel off a bright reflection (mean >= METAL_REFLECTION) makes the material a metal
-  in the reflection color.
+  in the reflection color; beside a reflection map only the swatch's share counts (its mean times 1 - the map
+  amount): a map at full amount hides the swatch, so it never makes a metal (the map itself is not judged).
   The Fresnel IOR is the refraction IOR when the material refracts or locks the IOR, else the reflection IOR.
 - VRayLightMtl -> emission only; VRayFastSSS2 -> base + subsurface; VRayCarPaintMtl / VRayCarPaintMtl2 -> a metal
   base + coat (VRayCarPaintMtl's coat_strength is the coat's reflectance at normal incidence: a full coat whose
-  IOR gives that reflectance; VRayCarPaintMtl2's coat_amount is the coat weight).
+  IOR gives that reflectance; VRayCarPaintMtl2's coat_amount is the coat weight). Their maps where their slot is on,
+  with their multiplier as the amount, as VRayMtl's; VRayFastSSS2's specular is specular_amount times the mean of the
+  linear specular color.
 - Standard: the colors come from its shader (ids per shader class in SHADERS; Metal is a metal, Strauss has a
-  metalness); base = diffuse; roughness = 1 - glossiness; specular = specular level times the mean of the linear
-  specular color; alpha = opacity; self-illumination: its color at strength 1, or the diffuse at the amount;
-  two-sided flag; map slots with their amounts where switched on (a glossiness map inverted; the specular level
-  map drives the specular, else the specular color map); a map in the
-  reflection slot makes the specular at least that slot's amount (the map is an environment: not used).
+  metalness and no specular level: specular 1, the IOR's own Fresnel); base = diffuse; roughness = 1 - glossiness;
+  specular = specular level times the mean of the linear specular color; alpha = opacity; self-illumination: its
+  color at strength 1, or the diffuse at the amount; two-sided flag; map slots with their amounts where switched
+  on (a glossiness map inverted; the specular level map drives the specular, else the specular color map); a map
+  in the reflection slot makes the specular at least that slot's amount (the map is an environment: not used).
 - Physical Material: base = base color times base weight; roughness (1 - it with roughness_inv); metalness;
   specular = reflectivity times the mean of the linear reflection color; transparency is the transmission and
   mixes the transparency color into the base, as for VRayMtl; IOR, thin-walled; emission color at emission
@@ -58,9 +62,9 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   opacity color times its level; emission color at its level; clearcoat amount, IOR, roughness and absorption color;
   sheen amount, color and roughness; SSS amount, radius (world units, in meters) and scatter color (the per-channel
   radius); a metal with a complex IOR takes the F0 of its n and k as its base color; maps where on, their amounts
-  fractions. Specular stays 0.5 (Corona derives it from the IOR). Translucency, volumetric absorption and
-  scattering, a metal edge color other than the default, the IOR mode and maps in the sheen and SSS slots are
-  named issues.
+  fractions. Specular 1, the IOR's own Fresnel (the material has no reflection level). Translucency, volumetric
+  absorption and scattering, a metal edge color other than the default, the IOR mode and maps in the sheen and SSS
+  slots are named issues.
 - CoronaLegacyMtl (CoronaMtl): diffuse, reflection, refraction, opacity and self-illumination colors times their
   levels; specular = the mean reflection; roughness = 1 - glossiness (PBR mode or not); transmission and the glass
   base color as for VRayMtl, the IOR as well (refraction IOR when it refracts, else the Fresnel IOR); a Fresnel IOR
@@ -74,9 +78,12 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   lerp(1, mask, mask amount), Corona's map-amount convention (not measured: no Corona render here).
 - Wrappers (VRay2SidedMtl, VRayBlendMtl, VRayOverrideMtl, VRayMtlWrapper, Double Sided, Shellac, CoronaLayeredMtl
   without a base or without a layer on: base, then its layers that are on; CoronaRaySwitchMtl: direct, GI, reflect,
-  refract, each where switched on) -> the first set sub-material in 3ds Max's getSubMtl order; CoronaSelectMtl -> its
-  selected material (zero-based: the default is 0); Shell Material -> its render sub-material. Peeling stops at any
-  other class (a Multi/Sub-Object included), at most MAX_PEEL wrappers deep; each wrapper object peeled counts once.
+  refract, each where switched on) -> the first set sub-material in 3ds Max's getSubMtl order (VRayOverrideMtl's and
+  Double Sided's: those switched on; a slot switched off is read as empty, MaxDrop's choice: V-Ray's and 3ds Max's
+  documentation say only that the switch turns the material on or off, not what renders without it);
+  CoronaSelectMtl -> its selected material (zero-based: the default is 0); Shell Material -> its render sub-material.
+  Peeling stops at any other class (a Multi/Sub-Object included), at most MAX_PEEL wrappers deep; each wrapper object
+  peeled counts once.
 - Multi/Sub-Object: entry k has the material ID materialIDList[k] (zero-based, as the faces store it), the
   material materialList[k] and the switch mapEnabled[k]; the first entry with an ID wins. A face ID without an
   entry wraps as 3ds Max renders it: to ID modulo (the highest ID of the list + 1), every entry counted. A face ID
@@ -84,7 +91,7 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   it black). A Multi/Sub-Object inside a wrapper or inside another Multi/Sub-Object (which looks up the face's own
   ID and wraps it by its own list) resolves the same way, at most MAX_PEEL deep. convert() of one (a caller
   without face IDs) gives the material of its first entry that is on and set.
-- Any other class -> a grey material that keeps its name, counted by class name.
+- Any other class -> a grey material that keeps its name (specular 1, the IOR's own Fresnel), counted by class name.
 
 The slots of a mesh (assign): its distinct face IDs, each keyed by the materials its users (the nodes sharing the
 mesh) get for that ID; one slot per key, in ID order, faces remapped to their slot. A material that is not a
@@ -137,7 +144,12 @@ WRAPPERS = {
     classids.CORONA_RAY_SWITCH_MTL: (1603, 1600, 1601, 1602),  # directMtl, giMtl, reflectMtl, refractMtl
     classids.CORONA_SELECT_MTL: (312,),  # materials (table): the one at selected (313, zero-based)
 }
-WRAPPER_SWITCHES = {classids.CORONA_RAY_SWITCH_MTL: {1603: 1613, 1600: 1610, 1601: 1611, 1602: 1612}}
+# wrapper ClassId -> {sub-material parameter: its on switch}; a slot switched off is read as empty
+WRAPPER_SWITCHES = {
+    classids.CORONA_RAY_SWITCH_MTL: {1603: 1613, 1600: 1610, 1601: 1611, 1602: 1612},
+    classids.VRAY_OVERRIDE_MTL: {0: 1, 2: 3, 4: 5, 6: 7, 8: 9},  # baseMtl_on ... shadowMtl_on
+    classids.DOUBLE_SIDED_MTL: {0: 2, 1: 3},  # map1Enabled, map2Enabled
+}
 CORONA_SELECT_LIST, CORONA_SELECT_INDEX = 312, 313
 SHELL_RENDER_INDEX, SHELL_SUBS = 1, (2, 3)  # renderMtlIndex; originalMaterial, bakedMaterial
 # CoronaLayeredMtl, block 0: 1000 baseMtl, 1001 layers, 1002 amounts, 1003 mixmaps (masks), 1004 layersOn, 1005 masksOn,
@@ -146,6 +158,7 @@ CORONA_BASE, CORONA_LAYERS, CORONA_AMOUNTS, CORONA_MASKS, CORONA_LAYERS_ON, CORO
     1000, 1001, 1002, 1003, 1004, 1005, 1006)
 MAX_LAYERS = 16  # layers mixed over a CoronaLayeredMtl's base (Corona offers 10)
 MAX_LAYER_BSDFS = 64  # Principled BSDFs one material may draw, its layers' layers counted at each use
+# (each may come with a twin without reflection, build/materials.py's reflection weight: at most twice as many nodes)
 MAX_COMPLEX_IOR = 100.0  # n and k of a complex IOR are held within 0..this
 DEFAULT_METERS = 0.0254  # meters per system unit of a scene that does not say: 3ds Max's default, inches
 
@@ -215,7 +228,7 @@ class MaterialIR:
     base_color: Input = Input((0.8, 0.8, 0.8))
     metallic: Input = Input(0.0)
     roughness: Input = Input(0.5)
-    specular: Input = Input(0.5)
+    specular: Input = Input(1.0)  # a reflection weight: 1 is the IOR's own Fresnel (Blender's 0.5)
     ior: float = 1.5
     transmission: Input = Input(0.0)
     thin_walled: bool = False
@@ -353,13 +366,15 @@ class MaterialConverter:
             return None
         return MapRef(ref.index, amount, invert)
 
-    def map_ref(self, m, map_pid, on_pid, amount_pid, block, invert=False, ir=None, percent=True):
+    def map_ref(self, m, map_pid, on_pid, amount_pid, block, invert=False, ir=None, percent=True, default=None):
         """The MapRef of a map slot: None when it holds no map, is switched off or holds something else. The amount
-        parameter is in percent, or a plain factor when not percent."""
+        parameter is in percent, or a plain factor when not percent; default is the class's value of a missing
+        one, in the same unit (None: full)."""
         if on_pid is not None and not _flag(m, on_pid, block, True):
             return None
         scale = 100.0 if percent else 1.0
-        amount = 1.0 if amount_pid is None else max(0.0, _num(m, amount_pid, block, scale) / scale)
+        full = scale if default is None else default
+        amount = 1.0 if amount_pid is None else max(0.0, _num(m, amount_pid, block, full) / scale)
         return self.to_map(m, m.param(map_pid, block), "parameter %d" % map_pid, amount, invert, ir)
 
     def is_class(self, index, superclass, class_id):
@@ -433,7 +448,8 @@ class MaterialConverter:
         return out
 
     def bsdf_count(self, ir):
-        """The Principled BSDFs build/materials.py draws for ir: one, plus its layers' at each use."""
+        """The Principled BSDFs build/materials.py draws for ir: one, plus its layers' at each use (a reflection
+        weight's twin not counted: each BSDF draws at most one)."""
         k = id(ir)
         if k not in self._bsdfs:
             self._bsdfs[k] = (ir, 1 + sum(self.bsdf_count(layer.ir) for layer in ir.layers))
@@ -656,7 +672,10 @@ def vray_mtl(conv, m, ir):
     ir.metallic = Input(_clamp01(_num(m, 91, 1, 0.0)),  # reflection_metalness
                         conv.map_ref(m, 119, 169, 219, 4, ir=ir))
     ir.specular = Input(_clamp01(mean(reflection)), reflection_map)
-    if not _flag(m, 8, 1, True) and mean(reflection) >= METAL_REFLECTION:  # reflection_fresnel off
+    # the swatch's share of the slot: a map at full amount hides it (a Falloff there is a dielectric's ramp)
+    hidden = min(1.0, reflection_map.amount) if reflection_map is not None else 0.0
+    shown = mean(reflection) * (1.0 - hidden)
+    if not _flag(m, 8, 1, True) and shown >= METAL_REFLECTION:  # reflection_fresnel off
         ir.metallic = Input(1.0)
         ir.base_color = Input(reflection, reflection_map)
 
@@ -687,34 +706,39 @@ def vray_light_mtl(conv, m, ir):
 
 
 def vray_fast_sss2(conv, m, ir):
-    """VRayFastSSS2, block 0: 26 diffuse_color, 27 / 28 its map (on), 36 diffuse_amount, 2 sub_surface_color,
-    0 scatter_radius (cm, a plain float: not in system units), 22 scale, 31 IOR, 40 specular_color, 51 specular_glossiness, 3 / 4 texmap_bump (on),
-    85 / 86 texmap_opacity (on)."""
-    ir.base_color = Input(conv.rgb(m, 26, 0, (0.5, 0.5, 0.5)), conv.map_ref(m, 27, 28, None, 0, ir=ir))
+    """VRayFastSSS2, block 0: 26 diffuse_color, 27 / 28 / 29 its map (on, multiplier in %), 36 diffuse_amount,
+    2 sub_surface_color, 0 scatter_radius (cm, a plain float: not in system units), 22 scale, 31 IOR,
+    40 specular_color, 44 specular_amount, 51 specular_glossiness, 3 / 4 / 5 texmap_bump (on, multiplier: default
+    30), 85 / 86 / 87 texmap_opacity (on, multiplier)."""
+    ir.base_color = Input(conv.rgb(m, 26, 0, (0.5, 0.5, 0.5)), conv.map_ref(m, 27, 28, 29, 0, ir=ir))
     ir.roughness = Input(_roughness(_num(m, 51, 0, 0.6), False))
-    ir.specular = Input(_clamp01(mean(conv.rgb(m, 40, 0, (1.0, 1.0, 1.0)))))
+    amount = max(0.0, _num(m, 44, 0, 1.0))
+    ir.specular = Input(_clamp01(amount * mean(conv.rgb(m, 40, 0, (1.0, 1.0, 1.0)))))
     ir.ior = _ior(_num(m, 31, 0, 1.3))
     ir.subsurface_weight = _clamp01(1.0 - _num(m, 36, 0, 0.0))
     ir.subsurface_color = conv.rgb(m, 2, 0, (0.5, 0.5, 0.5))
     ir.subsurface_radius = max(0.0, _num(m, 0, 0, 1.0) * _num(m, 22, 0, 1.0)) * 0.01
-    conv.bump_slot(ir, conv.map_ref(m, 3, 4, None, 0, ir=ir))
-    ir.alpha = Input(1.0, conv.map_ref(m, 85, 86, None, 0, ir=ir))
+    conv.bump_slot(ir, conv.map_ref(m, 3, 4, 5, 0, ir=ir, default=30.0))
+    ir.alpha = Input(1.0, conv.map_ref(m, 85, 86, 87, 0, ir=ir))
 
 
 def _car_paint(conv, m, ir, base_gloss, bump_pid):
-    """Both car paints, block 0: 0 base_color, 1 / 2 its map (on), 4 base_reflection, 8 base_glossiness,
-    27 coat_color, 39 coat_glossiness, then the base bump map and its on switch at bump_pid, bump_pid + 1."""
-    ir.base_color = Input(conv.rgb(m, 0, 0, (0.3, 0.4, 0.5)), conv.map_ref(m, 1, 2, None, 0, ir=ir))
+    """Both car paints, block 0: 0 base_color, 1 / 2 / 3 its map (on, multiplier in %), 4 base_reflection,
+    8 base_glossiness, 27 coat_color, 39 coat_glossiness, then the base bump map, its on switch and its multiplier
+    at bump_pid, bump_pid + 1, bump_pid + 2."""
+    ir.base_color = Input(conv.rgb(m, 0, 0, (0.3, 0.4, 0.5)), conv.map_ref(m, 1, 2, 3, 0, ir=ir))
     ir.roughness = Input(_roughness(_num(m, 8, 0, base_gloss), False))
     ir.metallic = Input(1.0)
     ir.specular = Input(_clamp01(_num(m, 4, 0, 0.5)))
     ir.coat_color = conv.rgb(m, 27, 0, (1.0, 1.0, 1.0))
     ir.coat_roughness = _roughness(_num(m, 39, 0, 1.0), False)
-    conv.bump_slot(ir, conv.map_ref(m, bump_pid, bump_pid + 1, None, 0, ir=ir))
+    # a missing multiplier is read as 100: the car paints' as-created value is not recorded (FastSSS2's bump: 30)
+    conv.bump_slot(ir, conv.map_ref(m, bump_pid, bump_pid + 1, bump_pid + 2, 0, ir=ir))
 
 
 def vray_car_paint_mtl(conv, m, ir):
-    """31 coat_strength: the coat's reflectance at normal incidence (default 0.05), not a weight; 55 / 56 bump."""
+    """31 coat_strength: the coat's reflectance at normal incidence (default 0.05), not a weight; 55 / 56 / 57
+    bump."""
     _car_paint(conv, m, ir, 0.6, 55)
     f0 = _clamp01(_num(m, 31, 0, 0.05))
     ir.coat_weight = 1.0 if f0 > 0 else 0.0
@@ -722,7 +746,7 @@ def vray_car_paint_mtl(conv, m, ir):
 
 
 def vray_car_paint_mtl2(conv, m, ir):
-    """31 coat_amount (weight), 81 coat_ior; 54 / 55 bump."""
+    """31 coat_amount (weight), 81 coat_ior; 54 / 55 / 56 bump."""
     _car_paint(conv, m, ir, 0.4, 54)
     ir.coat_weight = _clamp01(_num(m, 31, 0, 1.0))
     ir.coat_ior = _ior(_num(m, 81, 0, 1.5))
@@ -768,7 +792,7 @@ def standard_mtl(conv, m, ir):
     if sid == classids.STRAUSS_SHADER:
         diffuse, gloss = conv.rgb(s, 0, 0, STD_DIFFUSE_DEFAULT), _num(s, 1, 0, 0.1)
         ir.metallic = Input(_clamp01(_num(s, 2, 0, 0.0)))
-        specular = 0.5
+        specular = 1.0  # no specular level: the IOR's own Fresnel
     elif sid in SHADERS:
         ids = SHADERS[sid]
         diffuse, gloss = conv.rgb(s, ids.diffuse, 0, STD_DIFFUSE_DEFAULT), _num(s, ids.glossiness, 0, 0.1)
@@ -888,6 +912,7 @@ def corona_physical_mtl(conv, m, ir):
     ir.metallic = Input(1.0 if m.param(111, 0) == 1 else 0.0, conv.map_ref(m, 411, 412, None, 0, ir=ir))
     ir.transmission = Input(t, _corona_amount_map(conv, m, 192, ir))
     ir.ior = _ior(_num(m, 171, 0, 1.5))
+    ir.specular = Input(1.0)  # no reflection level in the pblock: the IOR's own Fresnel
     if m.param(461, 0) not in (None, 0):  # iorMode: only the default (baseIor is the IOR) has been measured
         conv.issue(m.index, "CoronaPhysicalMtl %r: IOR mode %r read as an IOR" % (m.name, m.param(461, 0)), ir)
     ir.thin_walled = thin

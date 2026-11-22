@@ -13,7 +13,9 @@ ocbaby_exsKelvinRGB; hand-made values and blocks for the issues.
 import importlib
 import math
 import os
+import shutil
 import sys
+import tempfile
 import types
 import unittest
 
@@ -28,6 +30,8 @@ if _PKG not in sys.modules:
 lights = importlib.import_module(_PKG + ".convert.lights")
 colors = importlib.import_module(_PKG + ".convert.colors")
 pblock = importlib.import_module(_PKG + ".reader.pblock")
+ies_mod = importlib.import_module(_PKG + ".convert.ies")
+textures = importlib.import_module(_PKG + ".convert.textures")
 classids = importlib.import_module(_PKG + ".reader.classids")
 try:
     import numpy  # noqa: F401  convert.scene needs it for meshes
@@ -83,6 +87,19 @@ def ies(**changes):
 
 def describe(v):
     return L.describe(1, "x", v, MM, colors.GAMMA_ON)
+
+
+def ies_bytes(rated=500, candela=100, lamps=1):
+    """A self-authored isotropic LM-63 file: candela cd in every direction (4 pi candela lm), rated lumens rated."""
+    return ("IESNA:LM-63-2002\n[TEST] MaxDrop unit test\nTILT=NONE\n%d %s 1 3 1 1 2 0 0 0\n1 1 0\n0 90 180\n0\n"
+            "%s %s %s\n" % (lamps, rated, candela, candela, candela)).encode("ascii")
+
+
+def with_file(v, data=None, issue=None):
+    """VRayIES values with the photometry read_params gives for an IES file of these bytes (or why it is not read)."""
+    v["photometry"] = ies_mod.parse(data) if data is not None else None
+    v["photometry_issue"] = issue
+    return v
 
 
 class Calibration(unittest.TestCase):
@@ -267,6 +284,37 @@ class SunAndIes(unittest.TestCase):
             self.assertEqual((ld.watts, issues), (0.0, [L.IES_ZERO, L.IES_FILE % "a.ies"]), override)
         ld, issues = describe(ies(power=-5.0))
         self.assertEqual((ld.watts, issues), (0.0, [L.NEGATIVE % ("power", -5.0), L.IES_FILE % "a.ies"]))
+
+    def test_ies_header_scales_the_power(self):
+        """V-Ray renders power x the file's flux / its rated lumens with the override off (docs/FORMAT.md, "VRayIES
+        power, measured"): a rated-500 isotropic 100 cd file at power 1000 is 200 cd."""
+        ld, issues = describe(with_file(ies(power=1000.0), ies_bytes()))
+        self.assertAlmostEqual(ld.watts, 4.0 * math.pi * 200.0 / 683.0, delta=1e-9)
+        self.assertEqual(issues, [L.IES_FILE % "a.ies"])
+        ld, issues = describe(with_file(ies(power=1000.0), ies_bytes(rated=-1)))  # absolute: the power is the flux
+        self.assertAlmostEqual(ld.watts, 1000.0 / 683.0, delta=1e-12)
+        self.assertEqual(issues, [L.IES_FILE % "a.ies"])
+        ld, issues = describe(with_file(ies(power=1000.0), ies_bytes(lamps=2)))
+        self.assertAlmostEqual(ld.watts, 4.0 * math.pi * 200.0 / 683.0, delta=1e-9)
+        self.assertEqual(issues, [L.IES_LAMPS % ("a.ies", 2), L.IES_FILE % "a.ies"])
+        ld, issues = describe(with_file(ies(power=1000.0), ies_bytes(rated=-1, lamps=2)))  # lumens per lamp unused
+        self.assertEqual(issues, [L.IES_FILE % "a.ies"])
+        ld, issues = describe(with_file(ies(power=1000.0), ies_bytes(candela=0)))
+        self.assertEqual((ld.watts, issues), (0.0, [L.IES_DARK % "a.ies", L.IES_FILE % "a.ies"]))
+        ld, issues = describe(with_file(ies(power=1000.0), ies_bytes(rated="1e-300")))
+        self.assertEqual((ld.watts, ld.power, issues), (0.0, 0.0, [L.IES_FILE % "a.ies", L.OUT_OF_RANGE]))
+
+    def test_ies_file_not_read(self):
+        ld, issues = describe(with_file(ies(power=1000.0), issue="photometric type B is not read"))
+        self.assertAlmostEqual(ld.watts, 1000.0 / 683.0, delta=1e-12)
+        self.assertEqual(issues, [L.IES_UNREAD % ("a.ies", "photometric type B is not read"), L.IES_FILE % "a.ies"])
+        ld, issues = describe(with_file(ies(power=1000.0)))  # not found
+        self.assertEqual(issues, [L.IES_RATED, L.IES_FILE % "a.ies"])
+
+    def test_ies_override_ignores_the_file(self):
+        ld, issues = describe(with_file(ies(power=300.0, override=1), ies_bytes()))
+        self.assertAlmostEqual(ld.watts, 300.0 / 683.0, delta=1e-12)
+        self.assertEqual(issues, [L.IES_FILE % "a.ies"])
 
     def test_ies_shadow_switch(self):
         self.assertEqual(L._IES_PARAMS["shadow"], (0, 4, 1))
@@ -519,6 +567,28 @@ class Fixtures(unittest.TestCase):
         self.assertEqual(by_name["StdOmni"].light, by_name["StdOmniInst"].light)
         self.assertEqual((len(desc.lights), by_name["StdSky"].kind, dict(desc.placeholders)), (12, conv.EMPTY, {}))
         self.assertEqual(len(self.descs["lights_photometric"].lights), 16)
+
+    def test_a_found_ies_file_scales_the_power(self):
+        """lights_photometric copied beside a self-authored fixture_web.ies rated 500 lm, 100 cd everywhere: IesPower
+        (1500, override off) gets 1500 x 400 pi / 500 lm, looked up once; IesOverride (300 lm, override on) keeps its
+        power and is not looked up; the report keeps no rated-lumens line."""
+        scratch = tempfile.mkdtemp(prefix="maxdrop-ies-")
+        self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
+        dst = os.path.join(scratch, "lights_photometric.max")
+        shutil.copy(os.path.join(FIXTURES, "lights_photometric.max"), dst)
+        with open(os.path.join(scratch, "fixture_web.ies"), "wb") as f:
+            f.write(ies_bytes())
+        index = textures.TextureIndex(dst)
+        asked = []
+        find = index.find
+        index.find = lambda path, resolved="": asked.append(path) or find(path, resolved)
+        desc = conv.read(dst, files=index)
+        by_name = {n.name: desc.lights[n.light] for n in desc.nodes if n.kind == conv.LIGHT}
+        self.assertAlmostEqual(by_name["IesPower"].watts, 1500.0 * 400.0 * math.pi / 500.0 / 683.0, delta=1e-9)
+        self.assertAlmostEqual(by_name["IesOverride"].watts, 300.0 / 683.0, delta=1e-12)
+        self.assertAlmostEqual(by_name["PhWeb"].watts, 400.0 * CD, delta=1e-9)
+        self.assertEqual(len(asked), 1, asked)
+        self.assertNotIn("light: " + L.IES_RATED, [r for _i, r in desc.issues])
 
     def test_the_vraysky_is_named(self):
         desc = self.descs["lights_standard"]
