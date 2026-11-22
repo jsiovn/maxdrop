@@ -186,7 +186,7 @@ fixtures two (`0`, `FixtureLäyer中`), the other fixtures one (`0`):
 | `0x1020` | `u32` flags: `0x100000` hidden, `0x200000` frozen (the node's bits) | layers_more: `0x100000` on FixtureHiddenLayer, `0x200000` on FixtureFrozenLayer; layers_nested: `0x100000` on FixtureHiddenParentLayer and FixtureTopLayer, `0x200000` on FixtureFrozenParentLayer, `0` on the layers below them; `0` on every other layer of every fixture |
 | `0x1050` | `u32`, bit `0x8000` = renderable: the layout of a node's `0x099C` | `0x0B00D600` on every layer but layers_more's FixtureNoRenderLayer, `0x0B005600` |
 | `0x1090` | `u8`, not `0` = the layer has a parent layer | layers_more: `1` on FixtureChildLayer; layers_nested: `1` on FixtureHiddenChildLayer, FixtureFrozenChildLayer, FixtureMiddleLayer and FixtureBottomLayer; `0` on every other layer of every fixture |
-| `0x10A0` | the parent layer's name, UTF-16LE (not read: `0x10B0` names it) | layers_more: `FixtureParentLayer` on FixtureChildLayer |
+| `0x10A0` | the parent layer's name, UTF-16LE (not read: `0x10B0` names it) | layers_more: `FixtureParentLayer` on FixtureChildLayer; layers_nested: `FixtureMiddleLayer` on FixtureBottomLayer, `FixtureTopLayer` on FixtureMiddleLayer |
 | `0x10B0` | `i32` the parent layer's object index | layers_more: FixtureChildLayer's is FixtureParentLayer's (`0x236`), a higher index than its own; layers_nested: FixtureBottomLayer's is FixtureMiddleLayer's, whose is FixtureTopLayer's |
 
 A layer's flags are not copied to its nodes (see [Nodes](#nodes)); a parent layer may hold no node
