@@ -24,7 +24,8 @@ FixtureNoCastShadow is the one that casts none.
 shapes: each shape node a curve object (3D, FREE handles) with the oracle's splines, point counts and cyclic flags,
 its points where 3ds Max has its knots, each segment's middle (mathutils.geometry.interpolate_bezier) where 3ds Max
 interpolates it (the straight segment included), the resolution from the steps, a bevel and faces only on the
-renderable FixtureLine. shapes_more: the same for its NGon corners, Ellipse outlines and Arcs; a rectangular section
+renderable FixtureLine, its open spline capped at both ends (the polygon of its sides), its closed one not.
+shapes_more: the same for its NGon corners, Ellipse outlines and Arcs; a rectangular section
 a hidden bevel object in the import's collection, its corners where 3ds Max's render mesh has them; FixtureCurveStd's
 Standard material and FixtureCurveMulti's Multi/Sub-Object entry for ID 1 in one slot on their curves,
 FixtureCurveIds' two splines (IDs 2 and 1) each on the slot of its entry, FixtureCurveMixed (IDs 2, 1, 1) on ID 2's,
@@ -1211,6 +1212,7 @@ def check_curve(label, ob, shape, meters):
         check(label + ": a bevel of the thickness", abs(cu.bevel_depth - shape["thickness"] / 2 * meters) < 1e-9 and
               cu.bevel_resolution == (shape["sides"] - 4) // 2 and cu.bevel_mode == 'ROUND',
               "%g, %d, %s" % (cu.bevel_depth, cu.bevel_resolution, cu.bevel_mode))
+        check_round_caps(label, ob, shape)
     else:
         check(label + ": no bevel", cu.bevel_depth == 0 and cu.bevel_object is None, str(cu.bevel_depth))
     for k, (sp, w) in enumerate(zip(cu.splines, want)):
@@ -1237,6 +1239,32 @@ def check_curve(label, ob, shape, meters):
     faces = len(mesh.polygons)
     evaluated.to_mesh_clear()
     check(label + ": faces exactly when it renders", (faces > 0) == shape["renderable"], str(faces))
+
+
+def check_round_caps(label, ob, shape):
+    """A round bevel's ends, as 3ds Max renders an open shape: each end of an open spline capped (faces whose every
+    vertex lies on the bevel ring around the end point, together the regular polygon of the shape's sides), a
+    closed spline uncapped. Blender caps with sides - 2 triangles over a ring of their own."""
+    cu = ob.data
+    r, n = cu.bevel_depth, shape["sides"]
+    ngon = n / 2 * r * r * math.sin(2 * math.pi / n)
+    evaluated = ob.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    mesh = evaluated.to_mesh()
+
+    def cap_area(point):
+        return sum(f.area for f in mesh.polygons
+                   if all((mesh.vertices[i].co - point).length < r * (1 + 1e-6) for i in f.vertices))
+
+    for k, sp in enumerate(cu.splines):
+        pts = sp.bezier_points
+        if sp.use_cyclic_u:
+            area = cap_area(pts[0].co)
+            check("%s spline %d: closed, no cap" % (label, k), area == 0, str(area))
+            continue
+        areas = [cap_area(pts[0].co), cap_area(pts[-1].co)]
+        check("%s spline %d: open, capped at both ends as 3ds Max caps it (the %d-gon of its sides each)" %
+              (label, k, n), all(abs(a - ngon) < 1e-6 * ngon for a in areas), "%s vs %g" % (areas, ngon))
+    evaluated.to_mesh_clear()
 
 
 def check_section(label, ob, shape, meters):

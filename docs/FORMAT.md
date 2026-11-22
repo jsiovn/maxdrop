@@ -489,6 +489,8 @@ lies across the curve in its plane, the length along the plane's normal (a line 
 object maps profile x to the line's -Y and y to Z: the rectangle turned by +angle in the profile gives the same
 corners on FixtureSection, and FixtureSectionLoop spans what 3ds Max's does (convert.scene `rectangular_section`;
 the angle's sign is checked on that line along +X only), with the caps filled.
+A round section is capped too at the ends of an open spline (a Line, round, 4 sides: 8 vertices, 12 triangles);
+Blender's filled caps are the polygon of its sides at each end (shapes: FixtureLine's open spline).
 
 An Editable Spline keeps a BezierShape `0x1010`:
 
