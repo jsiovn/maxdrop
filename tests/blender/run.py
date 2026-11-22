@@ -187,7 +187,9 @@ SHARP_EDGES = {"editable_mesh": 8, "modifier_pivot": {"FixtureSmooth": 0, None: 
                "uvwmap_oblique": {"FixtureUVWObliqueCap": 20, None: 0},
                # the rims of 10-sided cylinders, smooth spheres
                "uvwmap_pole": {"FixtureUVWPoleCylinder": 20, "FixtureUVWPoleNear": 20, "FixtureUVWPoleOff": 20,
-                               "FixtureUVWPoleDiagonal": 20, None: 0},
+                               "FixtureUVWPoleDiagonal": 20,
+                               # the cone's base rim
+                               "FixtureUVWPoleCone": 10, "FixtureUVWPoleTile": 20, "FixtureUVWPoleCenter": 20, None: 0},
                # primitives (tests/unit/test_convert_scene.py, SHARP_EDGES_PRIMITIVES); the TurboSmooth smooths
                "primitives": {"FixtureBox": 36, "FixtureBoxCopy": 36, "FixtureBoxDown": 12, "FixtureBoxNoMap": 12,
                               "FixtureBoxSmooth": 0, "FixturePyramid": 18, "FixtureGeoOcta": 48,

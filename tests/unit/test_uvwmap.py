@@ -5,8 +5,8 @@
 """Tests of maxdrop/convert/uvwmap.py, the UVW Map modifier: no Blender. Every node of every fixture whose oracle
 dumps an evaluated map channel (eval_maps) and whose whole stack MaxDrop evaluates: per triangle corner of 3ds Max's
 mesh, matched to the face corner of the built mesh by world position and face normal, U and V within 1e-4 (planar,
-box) or 1e-3 (cylindrical, spherical: U up to a whole turn per face, the poles left out; on uvwmap_pole every corner,
-the poles included), and W the same way through the modifier alone; the parameters as the fixture script set them;
+box) or 1e-3 (cylindrical, spherical: U up to whole units per face, which show the same image, the poles left out; on
+uvwmap_pole every corner, the poles included, in 3ds Max's own turn), and W the same way through the modifier alone; the parameters as the fixture script set them;
 what is not evaluated (shrink-wrap, a UVW Map above a Bend, a switched-off one) keeps the stored channel; damaged and
 hostile parameters.
 
@@ -33,7 +33,7 @@ TOLERANCE = {"planar": 1e-4, "box": 1e-4, "cylindrical": 1e-3, "spherical": 1e-3
 POSITION_TOLERANCE = 1e-3  # the oracle keeps 6 significant digits
 POLE = 1e-3  # a spherical corner this close to v = 0 or 1 (before tiling) has no angle to compare
 # uvwmap_pole's nodes whose axis vertices are pushed past the bound: no pole, the angle
-PUSHED_OFF = ("FixtureUVWPoleOff", "FixtureUVWPoleDiagonal", "FixtureUVWPoleSphereOff")
+PUSHED_OFF = ("FixtureUVWPoleOff", "FixtureUVWPoleDiagonal", "FixtureUVWPoleSphereOff", "FixtureUVWPoleSphereTall")
 
 _PKG = "maxdrop_convert_test"  # the same package as test_convert_scene: the add-on's __init__ never runs
 if _PKG not in sys.modules:
@@ -110,16 +110,16 @@ def _around_the_axis(u, tile):
 
 
 def _compare(case, label, kind, tile, ours, theirs, poles, face_u):
-    """ours, theirs: (3, k) coordinates of one triangle; U may differ by a whole turn (times its tile) for the round
-    types, and is not compared on a face around the axis (face_u: the U of every corner of the built face)."""
+    """ours, theirs: (3, k) coordinates of one triangle; U may differ by whole units (the same image; a whole turn
+    is not one when the tile is not a whole number) for the round types, and is not compared on a face around the
+    axis (face_u: the U of every corner of the built face)."""
     tolerance = TOLERANCE[kind]
     d = ours - theirs
     if kind in ("cylindrical", "spherical"):
         keep = ~poles
         if not keep.any():
             return
-        turn = round(float(d[keep, 0].mean()) / tile)
-        d[:, 0] -= turn * tile
+        d[:, 0] -= round(float(d[keep, 0].mean()))
         d = d[keep]
         if numpy.abs(d[:, 0]).max() > tolerance and _around_the_axis(face_u, tile):
             d = d[:, 1:]
@@ -191,14 +191,14 @@ class Fixtures(unittest.TestCase):
                 numpy.zeros(3, dtype=bool)
             _compare(self, label, kind, tile[0], ours, tri[:, 6:8], poles, face_u)
             compared += 1
-        self.assertEqual(compared, 1648)  # the triangles of the 25 nodes whose stack is evaluated
+        self.assertEqual(compared, 1908)  # the triangles of the 30 nodes whose stack is evaluated
 
     def test_the_corners_on_the_axis_equal_the_oracle(self):
         """uvwmap_pole: every corner, the poles included, under turned gizmos (the axis vertices a float residue off
-        the axis) and pushed just inside and outside the bound: U 0.5 on a cylindrical map, the face mean on a
-        spherical one, or the angle. A face may differ by a whole turn as a whole, so a pole must also be on the
-        right side of the seam; a face that goes around the axis (a pushed vertex inside it) has no single U and is
-        compared per corner."""
+        the axis) and pushed just inside and outside the bound: U 0.5 on a cylindrical map (also a cone's apex with
+        cap on, also tiled), the face mean on a spherical one (also at the gizmo's center, V 0.5 there), or the angle.
+        A face has 3ds Max's own turn, also across the seam with a U tile of 2.5; a face that goes around the axis (a
+        pushed vertex inside it) has no single U and is compared per corner, in whole units."""
         oracle = dict((os.path.basename(p), o) for p, o, _d in self.cases)["uvwmap_pole.max"]
         centers = {}
         for o in oracle["nodes"]:
@@ -206,7 +206,7 @@ class Fixtures(unittest.TestCase):
             c = numpy.round(numpy.asarray(o["eval_maps"][0]["corners"], dtype=numpy.float64)[:, :3], 4)
             points, count = numpy.unique(c, axis=0, return_counts=True)
             centers[o["name"]] = points[count == 10]
-        self.assertEqual(sum(len(c) for c in centers.values()), 8 * 2)
+        self.assertEqual(sum(len(c) for c in centers.values()), 13 * 2)
         poles = whole = around = 0
         for path, name, kind, tile, label, tri, ours, _face_u in self.triangles():
             if os.path.basename(path) != "uvwmap_pole.max":
@@ -217,16 +217,15 @@ class Fixtures(unittest.TestCase):
                 pole[:] = False
             d = ours - theirs
             if _around_the_axis(theirs[~pole, 0], tile[0]):
-                d[:, 0] -= numpy.round(d[:, 0] / tile[0]) * tile[0]
+                d[:, 0] -= numpy.round(d[:, 0])
                 around += 1
             else:
-                d[:, 0] -= round(float(d[~pole, 0].mean()) / tile[0]) * tile[0]
                 whole += 1
                 poles += int(pole.sum())
             self.assertLessEqual(float(numpy.abs(d).max()), TOLERANCE[kind], "%s: %s vs %s" % (
                 label, ours.tolist(), theirs.tolist()))
-        # 4 cylinders of 40 triangles, 4 spheres of 80; a face around the axis at each pushed-off vertex
-        self.assertEqual((whole, around, poles), (474, 6, 5 * 2 * 10))
+        # 6 cylinders of 40 triangles, 6 spheres of 80, a cone of 20; a face around the axis at each pushed-off vertex
+        self.assertEqual((whole, around, poles), (732, 8, 9 * 2 * 10))
 
     def kinds(self, path):
         """{(node name, channel): (type name, (u tile, v tile))} of the UVW Maps evaluated in path."""
@@ -482,7 +481,7 @@ class Synthetic(unittest.TestCase):
         out = uvwmap.apply(data, self.params(maptype=uvwmap.CYLINDRICAL), IDENTITY, IDENTITY)
         u = out.maps[1].uvw[:, 0]
         self.assertLess(float(u.max() - u.min()), 0.5)
-        self.assertGreater(float(u.max()), 1.0)
+        self.assertLess(float(u.min()), 0.0)  # 3ds Max moves the corners above 0.5 down a turn
 
     def test_a_pole_takes_the_face_mean(self):
         data = _quad_mesh([(0, 0, 1), (1, -1, 0.5), (1, 1, 0.5)], [(0, 1, 2)])
@@ -491,10 +490,13 @@ class Synthetic(unittest.TestCase):
         self.assertAlmostEqual(float(u[0]), float((u[1] + u[2]) / 2), places=6)
         self.assertAlmostEqual(float(out.maps[1].uvw[0, 1]), 1.0, places=6)
 
-    def fan_u(self, maptype, pole, a=(1, -0.3, 0.3), b=(1, 0.3, 0.3)):
-        """U of the corners (pole, a, b) of one triangle under the identity gizmo of radius 1."""
+    def fan(self, maptype, pole, a=(1, -0.3, 0.3), b=(1, 0.3, 0.3), **kw):
+        """UVW of the corners (pole, a, b) of one triangle under the identity gizmo of radius 1."""
         data = _quad_mesh([pole, a, b], [(0, 1, 2)])
-        return uvwmap.apply(data, self.params(maptype=maptype), IDENTITY, IDENTITY).maps[1].uvw[:, 0].astype(float)
+        return uvwmap.apply(data, self.params(maptype=maptype, **kw), IDENTITY, IDENTITY).maps[1].uvw.astype(float)
+
+    def fan_u(self, maptype, pole, a=(1, -0.3, 0.3), b=(1, 0.3, 0.3)):
+        return self.fan(maptype, pole, a, b)[:, 0]
 
     def test_a_cylindrical_pole_gets_one_half(self):
         # 3ds Max shares one map vertex at U 0.5 on the axis of a cylindrical map, whatever the face
@@ -503,11 +505,29 @@ class Synthetic(unittest.TestCase):
             self.assertAlmostEqual(u[0], 0.5, places=6, msg=pole)
             self.assertNotAlmostEqual(u[0], (u[1] + u[2]) / 2, places=2)
 
-    def test_a_cylindrical_pole_goes_round_with_its_face(self):
-        # across the seam the other corners go up a turn (3ds Max: 0.5 and the two just above and below 0)
+    def test_a_cylindrical_pole_stays_at_one_half_across_the_seam(self):
+        # 3ds Max: 0.5 and the two just above and below 0 (the one above 0.5 goes down a turn)
         u = self.fan_u(uvwmap.CYLINDRICAL, (0, 0, 0), (0.2, -1, 0.3), (-0.2, -1, 0.3))
-        self.assertAlmostEqual(u[0], 1.5, places=6)
-        self.assertTrue(0.9 < u[1] < 1.1 and 0.9 < u[2] < 1.1, u)
+        numpy.testing.assert_allclose(u, [0.5, 0.0314164, -0.0314164], atol=1e-6)
+
+    def test_the_seam_keeps_the_image_with_a_fractional_tile(self):
+        # a turn down before tiling, as 3ds Max: with U tile 2.5 a turn up would be 2.5 units off, half an image
+        for maptype, first in ((uvwmap.CYLINDRICAL, 1.25), (uvwmap.SPHERICAL, 0.0)):
+            u = self.fan(maptype, (0, 0, 1), (0.2, -1, 0.3), (-0.2, -1, 0.3), utile=2.5)[:, 0]
+            numpy.testing.assert_allclose(u[1:], [0.0785410, -0.0785410], atol=1e-6, err_msg=maptype)
+            self.assertAlmostEqual(u[0], first, places=6, msg=maptype)
+
+    def test_the_center_of_a_spherical_gizmo(self):
+        # a float residue off the center: V 0.5 and the face mean, as 3ds Max at its own exact zero
+        for center in ((0, 0, 0), (1e-12, -1e-12, 1e-12), (0, 0, 1e-11)):
+            uvw = self.fan(uvwmap.SPHERICAL, center)
+            self.assertAlmostEqual(uvw[0, 0], (uvw[1, 0] + uvw[2, 0]) / 2, places=6, msg=center)
+            self.assertAlmostEqual(uvw[0, 1], 0.5, places=6, msg=center)
+        # 1e-7 off is a point with an angle (3ds Max: 1e-20 radii off already is)
+        uvw = self.fan(uvwmap.SPHERICAL, (1e-7, 0, 0))
+        self.assertAlmostEqual(uvw[0, 0], 0.25, places=6)
+        self.assertAlmostEqual(uvw[0, 1], 0.5, places=6)
+        self.assertAlmostEqual(self.fan(uvwmap.SPHERICAL, (0, 0, 1e-7))[0, 1], 1.0, places=6)
 
     def test_a_cylindrical_pole_is_found_by_its_distance_to_the_axis(self):
         # (8e-5, 8e-5) is 1.13e-4 radii off the axis: it has an angle (3ds Max: 0.375 there too)

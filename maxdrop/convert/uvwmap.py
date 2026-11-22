@@ -26,12 +26,13 @@ largest along c is mapped u = 0.5 - Y / 2, v = 0.5 + X / 2, w = c / height / 2. 
 u as cylindrical, v = 0.5 + asin(Z / r) / pi, w = r = |(X, Y, Z)|. Then each component is flipped (1 - x) and
 tiled (times its tile).
 
-Seams: a face with an edge across the seam (where u wraps from 1 to 0) gets +1 on its corners below 0.5, so it does
-not smear across the texture (3ds Max shares map vertices and may shift other faces by a whole turn too: the same
-image). A corner on the axis of a round map has no angle: on a cylindrical map it gets U 0.5 (a turn up with the
-rest of its face across the seam), on a spherical map the mean U of the rest of its face. On the axis means within
-POLE_TOLERANCE of it, as in 3ds Max: |(X, Y)| below it (cylindrical), each of |X| and |Y| below it times r
-(spherical), so that a turned gizmo's float residue is a pole, not an arbitrary angle.
+Seams: a face with an edge across the seam (where u wraps from 1 to 0) gets -1 on its corners above 0.5, so it does
+not smear across the texture: the turn 3ds Max gives it, which keeps the image also when the U tile is not a whole
+number. A corner on the axis of a round map has no angle: on a cylindrical map it gets U 0.5 (on every face, also
+across the seam), on a spherical map the mean U of the rest of its face. On the axis means within POLE_TOLERANCE of
+it, as in 3ds Max: |(X, Y)| below it (cylindrical), each of |X| and |Y| below it times r (spherical), so that a turned
+gizmo's float residue is a pole, not an arbitrary angle. A corner at a spherical gizmo's center (r below
+CENTER_TOLERANCE) is a pole with V 0.5.
 
 The file comes from anywhere: a parameter that is animated or no number, a zero or non-finite size, a map channel
 outside 0 .. 99 or a gizmo that cannot be evaluated or inverted raise UVWMapError (the stored channel stays).
@@ -56,6 +57,9 @@ MAX_CHANNEL = 99
 # found in 3ds Max 2020 by pushing an axis vertex off: 9.5e-5 is still a pole, 1.05e-4 is not (both kinds; exactly at
 # 1e-4 its single-precision results disagree with each other)
 POLE_TOLERANCE = 1e-4
+# 3ds Max 2020 takes a vertex at a spherical gizmo's center (U the face mean, V 0.5) only where its single-precision
+# point is exactly zero (1e-20 radii off is an angle); here the same vertex is a float64 residue of about 2e-16 radii
+CENTER_TOLERANCE = 1e-9
 _FATAL = (controllers.UNKNOWN_CLASS, controllers.DAMAGED, controllers.NON_FINITE)
 
 # (a, b, c) of the mapping frame from the gizmo-space point q, by (planar-like or round, alignment): index of q and
@@ -234,7 +238,9 @@ def apply(data, params, gizmo_tm, context_tm):
                                                   -1.0, 1.0)) / math.pi
                 w = r
                 capped = numpy.zeros(len(u), dtype=bool)
-                pole = (numpy.maximum(numpy.abs(big_x), numpy.abs(big_y)) < POLE_TOLERANCE * r) | (r == 0)
+                center = r < CENTER_TOLERANCE
+                v = numpy.where(center, 0.5, v)
+                pole = (numpy.maximum(numpy.abs(big_x), numpy.abs(big_y)) < POLE_TOLERANCE * r) | center
             u = _seam(numpy, u, big_x, big_y, ~capped, pole, kind == CYLINDRICAL, starts, totals, face)
         uvw = numpy.stack((u, v, w), axis=1)
     for k, (flip, tile) in enumerate(((params.uflip, params.utile), (params.vflip, params.vtile),
@@ -254,9 +260,9 @@ def apply(data, params, gizmo_tm, context_tm):
 
 def _seam(numpy, u, big_x, big_y, side, pole, cylindrical, starts, totals, face):
     """u of the side (not cap) corners of a round map with the seam and the axis handled per face: a face with an
-    edge across the seam (the half-plane X = 0, Y > 0, where u wraps) between two corners off the axis gets +1 on
-    those below 0.5; a corner on the axis (pole: no angle) gets 0.5 on a cylindrical map (1.5 on a face across the
-    seam), else the mean u of the rest of its face."""
+    edge across the seam (the half-plane X = 0, Y > 0, where u wraps) between two corners off the axis gets -1 on
+    those above 0.5; a corner on the axis (pole: no angle) gets 0.5 on a cylindrical map, else the mean u of the
+    rest of its face."""
     if not len(starts):
         return u
     following = numpy.arange(1, len(u) + 1)
@@ -269,9 +275,9 @@ def _seam(numpy, u, big_x, big_y, side, pole, cylindrical, starts, totals, face)
     # a pole's X and Y are a residue whose sign means nothing: its edges never cross the seam
     across = angled & angled[following] & ((x0 < 0) != (x1 < 0)) & (y_at > 0)
     crossing = (numpy.add.reduceat(across.astype(numpy.int64), starts) > 0)[face]
-    u = numpy.where(angled & crossing & (u < 0.5), u + 1.0, u)
+    u = numpy.where(angled & crossing & (u > 0.5), u - 1.0, u)
     if cylindrical:
-        return numpy.where(pole, numpy.where(crossing, 1.5, 0.5), u)
+        return numpy.where(pole, 0.5, u)
     if pole.any():
         total = numpy.add.reduceat(numpy.where(angled, u, 0.0), starts)[face]
         count = numpy.add.reduceat(angled.astype(numpy.float64), starts)[face]
