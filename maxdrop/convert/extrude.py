@@ -742,7 +742,8 @@ def _grid_cap(numpy, closed, s, hs, first, room, tests, budget):
             raise
         areas = [_area([xy[i] for i in t]) for t in tris]
         want = _area([xy[i] for i in outer]) + sum(_area([xy[i] for i in h]) for h in holes)
-        if (areas and min(areas) < -tolerance) or abs(sum(abs(a) for a in areas) - want) > 100 * tolerance + 1e-9 * want:
+        spread = abs(sum(abs(a) for a in areas) - want)
+        if (areas and min(areas) < -tolerance) or spread > 100 * tolerance + 1e-9 * want:
             raise CapError("its band does not triangulate")
         polys.extend([keys[i] for i in t] for t in tris)
     return polys, points
