@@ -623,8 +623,19 @@ class Curves(unittest.TestCase):
         for shape, meters, offset in ((line(1e39), 1.0, None), (line(1e36), 1000.0, None),
                                       (line(1.0, handle=-1e39), 1.0, None),
                                       (line(1.0), 1.0, ((1e39, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1)))):
-            with self.assertRaises(conv.CurveError):
+            with self.subTest(meters=meters, offset=offset is not None), self.assertRaises(conv.CurveError):
                 conv.curve_description("k", "n", shape, offset, meters)
+
+    def test_refused_curve_key_is_named_once(self):
+        """Two nodes sharing a curve key that does not fit: both EMPTY, one issue (on the first), described once."""
+        desc = types.SimpleNamespace(curves={}, issues=[])
+        shape_of, unbuilt = {7: self._ngon(1e308, 6)}, set()
+        with mock.patch.object(conv, "curve_description", wraps=conv.curve_description) as described:
+            got = [conv._curve(None, desc, shape_of, unbuilt, 7, node, "n", conv.controllers.IDENTITY, 1.0)
+                   for node in (3, 4)]
+        self.assertEqual(got, [(conv.EMPTY, None)] * 2)
+        self.assertEqual((desc.curves, len(desc.issues), desc.issues[0][0], described.call_count), ({}, 1, 3, 1))
+        self.assertTrue(desc.issues[0][1].startswith("shape: not built: "))
 
     def test_section_or_bevel_past_single_precision_is_not_drawn(self):
         """A rectangular section of width 1e308 at a large meters factor, or a round bevel of thickness 1e308, is
