@@ -1,10 +1,11 @@
 name: Test
 
 # The plain job, on Ubuntu and Windows, each with the Python and numpy of the oldest and of the newest supported
-# Blender (no Blender; the tests themselves use no network, only apt installs bsdtar, pip installs numpy and
-# ruff, and on Linux UnRAR and 7-Zip come from their vendors): the unit tests with the no-bpy guard, the tools,
-# the landing page, the license files and the scene packs; the scan of every file under tests/fixtures/ for user
-# names, computer names and user paths; ruff. Then on each Blender of the matrix: build, validate, the license
+# Blender, and on macOS once, with those of the newest (no Blender; the tests themselves use no network, only apt
+# installs bsdtar, pip installs numpy and ruff, and on Linux UnRAR and 7-Zip come from their vendors): the unit
+# tests with the no-bpy guard, the tools, the landing page, the license files and the scene packs; the native
+# rename once more, verbose (Linux and macOS); the scan of every file under tests/fixtures/ for user names,
+# computer names and user paths; ruff. Then on each Blender of the matrix: build, validate, the license
 # text in the zip, the register smoke test, the import smoke test on tests/fixtures/*.max and the fixture tests
 # (tests/blender/run.py).
 #
@@ -26,7 +27,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # A reader that only works on one operating system must not ship: the users are on both.
+        # A reader that only works on one operating system must not ship: the users are on all of them (macOS is
+        # the last entry of include, once).
         os: [ubuntu-latest, windows-latest]
         # The numpy of Blender 4.2 (1.24.3) and of 5.2 (2.3.4); 4.5 ships 1.26.4, between the two. The geometry
         # readers return numpy arrays: without numpy their tests skip.
@@ -37,6 +39,12 @@ jobs:
           - numpy: "1.24.3"
             python: "3.11"
           - numpy: "2.3.4"
+            python: "3.13"
+          # macOS once, on the newest Blender's Python and numpy: archive._noreplace binds renamex_np there, the
+          # add-on's one darwin branch (step "The rename that never replaces"). Its os is none of the list's, so it
+          # is a combination of its own and names all three values.
+          - os: macos-latest
+            numpy: "2.3.4"
             python: "3.13"
     defaults:
       run:
@@ -54,7 +62,8 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       # bsdtar for the .rar and .7z tests of the scene packs (ubuntu-latest has none). On Windows the unpacker is
-      # the tar.exe of System32, and UnRAR and 7-Zip are whatever the image holds: their cases may print SKIPPED.
+      # the tar.exe of System32, on macOS the system's /usr/bin/tar (a bsdtar), and UnRAR and 7-Zip are whatever the
+      # image holds: their cases may print SKIPPED.
       - name: bsdtar
         if: runner.os == 'Linux'
         run: |
@@ -129,6 +138,16 @@ jobs:
         env:
           MAXDROP_REQUIRE_TOOLS: ${{ runner.os == 'Linux' && 'unrar,7z,bsdtar' || '' }}
         run: python -I -m unittest discover tests
+      # The test of the native rename (archive._noreplace: renameat2 on Linux, renamex_np on macOS) again, verbose:
+      # a wrong binding fails safe to the look-then-rename fallback, and a skip would pass the step above unseen.
+      # The step fails unless the test's line ends in "ok" (Python 3.11 and later name the method in parentheses).
+      - name: The rename that never replaces (Linux and macOS)
+        if: runner.os != 'Windows'
+        run: |
+          set -euo pipefail
+          out=$(python -I -m unittest discover -v -s tests -p test_intake.py -k test_the_native_rename_works 2>&1)
+          printf '%s\n' "$out"
+          grep -Eq '^test_the_native_rename_works \(.*RenameNew.*\) \.\.\. ok$' <<<"$out"
       - name: Fixture scan (user names, computer names, user paths)
         run: python -I tools/check_fixture.py "tests/fixtures/**/*"
       # Once: ruff does not depend on numpy. Its version is `required-version` in pyproject.toml, the one place
