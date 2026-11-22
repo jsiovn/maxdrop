@@ -71,8 +71,10 @@ oracle's, and scene.camera the oracle's render camera (cameras: CamTarget, the l
 camera (lookat: FixtureCam); cameras holds eleven camera objects with a Camera each. Without a camera the scene's render
 size and camera stay as they were.
 Each fixture's import report is published (build.report) and must say nothing was left out; the one the
-operator published for vray_wrappers lists its three peeled wrappers by class. A changed layers_more description
-checks a hidden parent layer, which no fixture has: its child layer is out of the view layer with it. A hand-made
+operator published for vray_wrappers lists its three peeled wrappers by class. layers_nested: the objects below a
+hidden parent layer (one and two levels down) are out of the view layer, the one below a frozen parent layer cannot
+be selected, as the oracle's inherited layer flags say; only the flagged layers' own collections carry a flag.
+A hand-made
 description with sheared local matrices (top-level and parented, hidden, a zero scale) checks that Blender's world
 matrices equal the products of the locals, through the helper empty for top-level ones; controllers' FixtureScaleAxis
 (a scale along a turned axis) is such a top-level node in a fixture. Material
@@ -137,6 +139,7 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1; kept literal: tes
     "instances": ["UVMap"],
     "layers_flags": [],
     "layers_more": [],
+    "layers_nested": [],
     "lookat": [],  # boxes without Generate Mapping Coords
     "modifier_pivot": ["UVMap"],  # FixtureBent's UVW Map writes channel 1 (applied, the Bend above it is not)
     "multi_uv": ["UVMap", "UVChannel_2", "UVChannel_3"],
@@ -371,10 +374,11 @@ def close(a, b, tolerance):
 
 
 def world_of(ob):
-    """ob's world matrix: matrix_world, or for an object hidden in the viewport (left out of the evaluated scene,
-    so its matrix_world is never updated) the same product Blender evaluates, up the parent chain. A visible child
-    of a hidden parent is read from matrix_world: Blender must place it."""
-    if not ob.hide_viewport:
+    """ob's world matrix: matrix_world, or for an object hidden in the viewport or out of the view layer (an excluded
+    collection's, layers_nested) the same product Blender evaluates, up the parent chain: such an object is left out
+    of the evaluated scene, so its matrix_world is never updated. A visible child of a hidden parent is read from
+    matrix_world: Blender must place it."""
+    if not ob.hide_viewport and ob.name in bpy.context.view_layer.objects:
         return ob.matrix_world
     m = ob.matrix_basis.copy()
     while ob.parent is not None:
@@ -610,6 +614,8 @@ def run_fixture(path, modules):
         check("layers_flags: no layer excluded (none is hidden in 3ds Max)", excluded == [], str(excluded))
     if name == "layers_more":
         check_layers_more(root, obs, view_layer)
+    if name == "layers_nested":
+        check_layers_nested(root, obs, view_layer, oracle)
     bare = sorted(ob.name for ob in obs if ob.type == 'MESH' and not any(sl.material for sl in ob.material_slots)
                   and ob.name not in BARE_MESHES)
     check("%s: a material on every mesh" % name, bare == [], str(bare))
@@ -3692,23 +3698,38 @@ def check_layers_more(root, obs, view_layer):
           child.parent is bpy.data.objects["FixtureHiddenParent"] and child.visible_get(view_layer=view_layer))
 
 
-def check_hidden_parent_layer(modules):
-    """layers_more with its description changed: FixtureParentLayer hidden in 3ds Max, so its child layer
-    (FixtureChildLayer, holding FixtureNested) is out of the view layer with it. No fixture has a hidden parent
-    layer."""
-    convert_scene = modules[0]
-    empty_scene()
-    desc = convert_scene.read(os.path.join(ROOT, "tests", "fixtures", "layers_more.max"))
-    by_name = {la.name: la for la in desc.layers}
-    parent, child = by_name["FixtureParentLayer"], by_name["FixtureChildLayer"]
-    parent.hidden = True
-    cols, _built, view_layer = build_scene(desc, "hidden_parent_layer", modules)
-    lcs = view_layer.layer_collection.children["hidden_parent_layer"].children
-    check("hidden parent layer: excluded in the view layer, its child layer nested below it",
-          lcs[parent.name].exclude and [c.name for c in cols.layers[parent.index].children] == [child.name])
+def check_layers_nested(root, obs, view_layer, oracle):
+    """layers_nested as 3ds Max saved it: the flag sits on the parent layer only, and the layers below (one and two
+    levels down) are hidden or frozen with it, as the oracle's layer flags (MAXScript's) say. Excluding a parent's
+    collection leaves out the collections below it; hide_select on a parent's reaches them too."""
+    flags = {la["name"]: la for la in oracle["layers"]}
+    by_layer = {o["name"]: flags[o["layer"]] for o in oracle["nodes"]}
+    want_out = {k for k, la in by_layer.items() if la["hidden"]}
+    want_frozen = {k for k, la in by_layer.items() if la["frozen"]}
+    check("layers_nested: the oracle calls the layers below a hidden or frozen parent hidden or frozen",
+          want_out == {"FixtureUnderHiddenParent", "FixtureDeepNested"} and want_frozen == {"FixtureUnderFrozenParent"},
+          "%s %s" % (sorted(want_out), sorted(want_frozen)))
+    lcs = view_layer.layer_collection.children[root.name].children
+    excluded = [lc.name for lc in lcs if lc.exclude]
+    check("layers_nested: the hidden parent layers' collections excluded",
+          excluded == ["FixtureHiddenParentLayer", "FixtureTopLayer"], str(excluded))
+    check("layers_nested: hide_select on the frozen parent layer's collection only",
+          [c.name for c in root.children_recursive if c.hide_select] == ["FixtureFrozenParentLayer"]
+          and not any(c.hide_render for c in root.children_recursive))
     visible = {ob.name for ob in view_layer.objects}
-    check("hidden parent layer: its child layer's object is out of the view layer",
-          "FixtureNested" not in visible and "FixtureOnTextLayer" in visible, str(sorted(visible)))
+    names = {ob.name for ob in obs}
+    check("layers_nested: the objects below a hidden parent layer are out of the view layer",
+          names - visible == want_out, str(sorted(names - visible)))
+    shown = [ob for ob in obs if ob.name in visible]
+    check("layers_nested: no object carries a flag of its own",
+          not any(ob.hide_get(view_layer=view_layer) or ob.hide_select or ob.hide_render for ob in shown))
+    for ob in shown:
+        ob.select_set(True, view_layer=view_layer)
+    picked = {ob.name for ob in shown if ob.select_get(view_layer=view_layer)}
+    for ob in shown:
+        ob.select_set(False, view_layer=view_layer)
+    check("layers_nested: the object below the frozen parent layer cannot be selected, FixtureControl can",
+          picked == {ob.name for ob in shown} - want_frozen and "FixtureControl" in picked, str(sorted(picked)))
 
 
 def _local(a, t):
@@ -3975,11 +3996,6 @@ def main():
             traceback.print_exc()
             check("%s: no exception" % os.path.basename(path), False)
     if not argv:
-        try:
-            check_hidden_parent_layer(modules)
-        except Exception:
-            traceback.print_exc()
-            check("layer flags: no exception", False)
         try:
             check_shear(modules)
         except Exception:

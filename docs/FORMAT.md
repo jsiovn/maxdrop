@@ -175,20 +175,30 @@ a world-space modifier). Its references: `[-1, -1, a Map Scaler object]`. Neithe
 
 A layer is an object of class Base Layer `(0x7E9858FE, 0x1DBA1DF0)`, superclass `0x10F0`; a node's slot 6 points
 to it. layers_flags has three (`0`, FixtureLayerA, FixtureLayerB), layers_more seven (`0`, FixtureHiddenLayer,
-FixtureFrozenLayer, FixtureNoRenderLayer, FixtureParentLayer, FixtureChildLayer, `FixtureLäyer中`), the saved_as
+FixtureFrozenLayer, FixtureNoRenderLayer, FixtureParentLayer, FixtureChildLayer, `FixtureLäyer中`), layers_nested
+eight (`0`, FixtureHiddenParentLayer, FixtureHiddenChildLayer, FixtureFrozenParentLayer, FixtureFrozenChildLayer,
+FixtureTopLayer, FixtureMiddleLayer, FixtureBottomLayer), the saved_as
 fixtures two (`0`, `FixtureLäyer中`), the other fixtures one (`0`):
 
 | Chunk | Content | Shown by |
 |---|---|---|
 | `0x1010` | the layer name, no terminator: UTF-8 in every file 3ds Max 2020 saves (saved_as included), unlike the UTF-16 node names | layers_flags: `46 69 78 ...` (`FixtureLayerA`), `30` (`0`); layers_more: `46 69 78 74 75 72 65 4c c3 a4 79 65 72 e4 b8 ad` (`FixtureLäyer中`) |
-| `0x1020` | `u32` flags: `0x100000` hidden, `0x200000` frozen (the node's bits) | layers_more: `0x100000` on FixtureHiddenLayer, `0x200000` on FixtureFrozenLayer; `0` on every other layer of every fixture |
+| `0x1020` | `u32` flags: `0x100000` hidden, `0x200000` frozen (the node's bits) | layers_more: `0x100000` on FixtureHiddenLayer, `0x200000` on FixtureFrozenLayer; layers_nested: `0x100000` on FixtureHiddenParentLayer and FixtureTopLayer, `0x200000` on FixtureFrozenParentLayer, `0` on the layers below them; `0` on every other layer of every fixture |
 | `0x1050` | `u32`, bit `0x8000` = renderable: the layout of a node's `0x099C` | `0x0B00D600` on every layer but layers_more's FixtureNoRenderLayer, `0x0B005600` |
-| `0x1090` | `u8`, not `0` = the layer has a parent layer | layers_more: `1` on FixtureChildLayer, `0` on every other layer of every fixture |
+| `0x1090` | `u8`, not `0` = the layer has a parent layer | layers_more: `1` on FixtureChildLayer; layers_nested: `1` on FixtureHiddenChildLayer, FixtureFrozenChildLayer, FixtureMiddleLayer and FixtureBottomLayer; `0` on every other layer of every fixture |
 | `0x10A0` | the parent layer's name, UTF-16LE (not read: `0x10B0` names it) | layers_more: `FixtureParentLayer` on FixtureChildLayer |
-| `0x10B0` | `i32` the parent layer's object index | layers_more: FixtureChildLayer's is FixtureParentLayer's (`0x236`), a higher index than its own |
+| `0x10B0` | `i32` the parent layer's object index | layers_more: FixtureChildLayer's is FixtureParentLayer's (`0x236`), a higher index than its own; layers_nested: FixtureBottomLayer's is FixtureMiddleLayer's, whose is FixtureTopLayer's |
 
 A layer's flags are not copied to its nodes (see [Nodes](#nodes)); a parent layer may hold no node
-(FixtureParentLayer). The one Layer Manager `(0x0D7374FC, 0x51FF028E)`, superclass `0x200`, references the layers
+(FixtureParentLayer).
+Nor are they copied to the layers below: layers_nested's hidden and frozen parent layers carry the bit, their child
+layers (and the middle and bottom layers of its three-level nest) have `0x1020` = `0` and `0x0B00D600`, their
+nodes `0x800`. 3ds Max still treats them as hidden or frozen: MAXScript's `isHidden` / `isFrozen` of those layers
+and of their nodes answer true (the oracle's layer flags; .NET `ILayer.IsHidden(true)`, while `IsHidden(false)`
+is the layer's own bit), and in a probe's scanline render a node below a hidden parent layer shows nothing. The
+importer follows that: a hidden layer's collection is excluded, which leaves out the collections below it, and a
+frozen layer's `hide_select` reaches the objects of the collections below.
+The one Layer Manager `(0x0D7374FC, 0x51FF028E)`, superclass `0x200`, references the layers
 in `0x2034`: slot 0 is layer `0`, then the others in the order the fixture scripts made them, the order of the
 oracle's `layers` (`test_scene.py` checks names, order, flags and parent of every fixture's layers against the
 oracle).
@@ -1580,9 +1590,11 @@ Not shown by any fixture yet, so not stated above:
   gizmo controller combines with the context matrix; a modifier without `0x39BF` (4 of 74 modifier objects in scene
   A, 3 of 46 in scene B: read with every switch on and the class name).
 - The meaning of bit `0x800` and the other flag bits in `0x0960`.
-- Layers: a layer nested more than one level deep, a hidden or frozen parent layer (whether 3ds Max writes its
-  flags to the child layers), and the layer name's encoding in a version other than 3ds Max 2020 (the reader
-  replaces bytes that are not UTF-8).
+- Layers: the layer name's encoding in a version other than 3ds Max 2020 (the reader replaces bytes that are not
+  UTF-8); a non-rendering parent layer: a probe saved `0x0B005600` on the parent only, and MAXScript's
+  `renderable` of the child layer and of its node stayed true, but whether 3ds Max renders that node is not shown
+  (a node made by script does not render By Layer, maxdrop-em3.145), while Blender's `hide_render` on the
+  parent's collection reaches the collections below.
 - System unit types 1, 2, 5, 6 (feet, miles, meters, kilometers) and a scale other than 1: taken from the 3ds Max
   SDK, no fixture has them. A `Compressed` part in General (instead of `Uncompressed`) is assumed for a compressed
   file.

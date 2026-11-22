@@ -65,6 +65,7 @@ UV_LAYERS = {
     "instances": ["UVMap"],
     "layers_flags": [],
     "layers_more": [],
+    "layers_nested": [],
     "lookat": [],  # boxes without Generate Mapping Coords
     "modifier_pivot": ["UVMap"],  # FixtureBent's UVW Map writes channel 1 (applied, the Bend above it is not)
     "multi_uv": ["UVMap", "UVChannel_2", "UVChannel_3"],
@@ -1049,9 +1050,18 @@ class Fixtures(unittest.TestCase):
             self.assertEqual([la.name for la in desc.layers], sorted(used, key=order.index), name)
             flags = {la["name"]: (la["hidden"], la["frozen"], la["renderable"], la["parent"])
                      for la in oracle["layers"]}
+            by_index = {la.index: la for la in desc.layers}
+
+            def inherited(la, flag):  # the oracle's hidden and frozen hold for the layers below too (layers_nested)
+                while la is not None:
+                    if getattr(la, flag):
+                        return True
+                    la = by_index.get(la.parent)
+                return False
             for la in desc.layers:
                 parent = None if la.parent is None else names[la.parent]
-                self.assertEqual((la.hidden, la.frozen, la.renderable, parent), flags[la.name], la.name)
+                self.assertEqual((inherited(la, "hidden"), inherited(la, "frozen"), la.renderable, parent),
+                                 flags[la.name], la.name)
 
     def test_layers_flags_organisation(self):
         desc = dict((n, d) for n, d, _o in self.cases)["layers_flags"]

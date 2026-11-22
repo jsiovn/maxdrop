@@ -473,6 +473,24 @@ class OracleFiles(unittest.TestCase):
         self.assertEqual(sorted(n["name"] for n in o["nodes"] if n["parent"] == head["handle"]),
                          ["FixtureGroupA", "FixtureGroupB"])
 
+    def test_layers_nested(self):
+        """MAXScript answers a parent layer's hidden and frozen for every layer below it (the file keeps the bit on
+        the parent only: test_scene); the nodes' own flags stay off."""
+        o = _oracle("layers_nested")
+        self.assertEqual({la["name"]: (la["hidden"], la["frozen"], la["parent"]) for la in o["layers"]},
+                         {"0": (False, False, None), "FixtureHiddenParentLayer": (True, False, None),
+                          "FixtureHiddenChildLayer": (True, False, "FixtureHiddenParentLayer"),
+                          "FixtureFrozenParentLayer": (False, True, None),
+                          "FixtureFrozenChildLayer": (False, True, "FixtureFrozenParentLayer"),
+                          "FixtureTopLayer": (True, False, None),
+                          "FixtureMiddleLayer": (True, False, "FixtureTopLayer"),
+                          "FixtureBottomLayer": (True, False, "FixtureMiddleLayer")})
+        self.assertEqual({n["name"]: (n["hidden"], n["frozen"], n["layer"]) for n in o["nodes"]},
+                         {"FixtureUnderHiddenParent": (False, False, "FixtureHiddenChildLayer"),
+                          "FixtureUnderFrozenParent": (False, False, "FixtureFrozenChildLayer"),
+                          "FixtureDeepNested": (False, False, "FixtureBottomLayer"),
+                          "FixtureControl": (False, False, "0")})
+
     def test_no_private_strings(self):
         for path in self.oracles:
             with self.subTest(os.path.basename(path)):
