@@ -133,9 +133,9 @@ SHARP_EDGES_UVWMAP = {"FixtureUVWCyl": 32, "FixtureUVWSphere": 0, "FixtureUVWSha
                       "FixtureUVWPoleCylinder": 20, "FixtureUVWPoleNear": 20, "FixtureUVWPoleOff": 20,
                       "FixtureUVWPoleDiagonal": 20, "FixtureUVWPoleSphere": 0, "FixtureUVWPoleSphereCyl": 0,
                       "FixtureUVWPoleSphereNear": 0, "FixtureUVWPoleSphereOff": 0,
-                      # the cone's base rim
-                      "FixtureUVWPoleSphereTall": 0, "FixtureUVWPoleCone": 10, "FixtureUVWPoleTile": 20,
-                      "FixtureUVWPoleSphereTile": 0, "FixtureUVWPoleCenter": 20}
+                      "FixtureUVWPoleCone": 10,  # its base rim
+                      "FixtureUVWPoleSphereTall": 0, "FixtureUVWPoleTile": 20, "FixtureUVWPoleSphereTile": 0,
+                      "FixtureUVWPoleCenter": 20}
 # primitives: a group per side of a box (FixtureBox's edges in segments: 4 x 3 + 4 x 2 + 4 x 4), the rims of
 # cylinders, cones and tubes, the pyramid's four ridges of 2 segments and its base outline of 10, the torus's
 # alternating groups (every edge between two sides; on the odd one every edge between two segments), every edge of

@@ -6,9 +6,9 @@
 dumps an evaluated map channel (eval_maps) and whose whole stack MaxDrop evaluates: per triangle corner of 3ds Max's
 mesh, matched to the face corner of the built mesh by world position and face normal, U and V within 1e-4 (planar,
 box) or 1e-3 (cylindrical, spherical: U up to whole units per face, which show the same image, the poles left out; on
-uvwmap_pole every corner, the poles included, in 3ds Max's own turn), and W the same way through the modifier alone; the parameters as the fixture script set them;
-what is not evaluated (shrink-wrap, a UVW Map above a Bend, a switched-off one) keeps the stored channel; damaged and
-hostile parameters.
+uvwmap_pole every corner, the poles included, in 3ds Max's own turn), and W the same way through the modifier alone;
+the parameters as the fixture script set them; what is not evaluated (shrink-wrap, a UVW Map above a Bend, a
+switched-off one) keeps the stored channel; damaged and hostile parameters.
 
     python -I -m unittest discover tests
 """

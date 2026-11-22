@@ -59,6 +59,7 @@ MAX_CHANNEL = 99
 POLE_TOLERANCE = 1e-4
 # 3ds Max 2020 takes a vertex at a spherical gizmo's center (U the face mean, V 0.5) only where its single-precision
 # point is exactly zero (1e-20 radii off is an angle); here the same vertex is a float64 residue of about 2e-16 radii
+# (it grows with the coordinates over the gizmo's radius: past 1e-9 only at a ratio near 1e7)
 CENTER_TOLERANCE = 1e-9
 _FATAL = (controllers.UNKNOWN_CLASS, controllers.DAMAGED, controllers.NON_FINITE)
 
