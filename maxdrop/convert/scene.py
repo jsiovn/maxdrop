@@ -121,6 +121,8 @@ Layers: each node names its layer's object index (None without one, or when the 
 is an issue); desc.layers holds the layers that hold a node and their parent layers, in the Layer Manager's order
 with every parent before its children. A node's hidden, frozen and renderable flags are its own: a hidden layer
 hides its nodes in 3ds Max without setting their flag, so build/ applies the layer's flags to its collection.
+Cast Shadows and Receive Shadows are the node's own too; Blender has no per-object Receive Shadows, so a mesh or
+curve node with it off is an issue (NO_RECEIVE).
 
 A local matrix with shear (a scale along a rotated axis) sets node.sheared: Blender's matrix_basis cannot hold
 it, so build/ puts the rest into matrix_parent_inverse. A base object's reader arrays (an extruded shape's too) are
@@ -148,6 +150,7 @@ MAX_BUILT_CORNERS = 1 << 24
 _SPENT = "the primitives and extrusions before it reach %d face corners, the budget for one scene"
 SHEAR_TOLERANCE = 1e-5  # |cos| between two rows of a local matrix
 OFFSET = "its object is offset from its pivot: the camera looks from the pivot, 3ds Max from the object"
+NO_RECEIVE = "shadows: Receive Shadows is off: Blender has no such switch per object, it receives shadows"
 ENVIRONMENT = "environment"  # the label of an issue of the environment map (no node holds it)
 
 ChunkError = chunks.ChunkError
@@ -175,17 +178,18 @@ class NodeDescription:
     key into SceneDescription.lights, camera the key into SceneDescription.cameras (None when not one);
     class_name the base object's class ("" without one); modifiers the class names of its modifier stack not applied,
     top first, applied those evaluated into its mesh (an Extrude); layer the layer's object index (None without
-    one); hidden, frozen, renderable, group_head and group_member the node's own flags; sheared whether matrix has
-    shear (see sheared()); converted the modifiers that become Blender modifiers (convert.modifiers
-    ModifierDescriptions, bottom first); look_at the LookAtDescription of a Look At controller aimed at a node, else
+    one); hidden, frozen, renderable, cast_shadows, receive_shadows, group_head and group_member the node's own
+    flags; sheared whether matrix has shear (see sheared()); converted the modifiers that become Blender
+    modifiers (convert.modifiers ModifierDescriptions, bottom first); look_at the LookAtDescription of a Look At controller aimed at a node, else
     None."""
     __slots__ = ("index", "name", "parent", "matrix", "world", "kind", "mesh", "class_name", "mirrored",
                  "modifiers", "layer", "hidden", "frozen", "renderable", "group_head", "group_member", "sheared",
-                 "curve", "applied", "converted", "look_at", "light", "camera")
+                 "curve", "applied", "converted", "look_at", "light", "camera", "cast_shadows", "receive_shadows")
 
     def __init__(self, index, name, parent, matrix, world, kind, mesh, class_name, mirrored, modifiers, layer=None,
                  hidden=False, frozen=False, renderable=True, group_head=False, group_member=False, sheared=False,
-                 curve=None, applied=(), converted=(), look_at=None, light=None, camera=None):
+                 curve=None, applied=(), converted=(), look_at=None, light=None, camera=None, cast_shadows=True,
+                 receive_shadows=True):
         self.index, self.name, self.parent, self.matrix, self.world = index, name, parent, matrix, world
         self.kind, self.mesh, self.class_name, self.mirrored, self.modifiers = kind, mesh, class_name, mirrored, \
             modifiers
@@ -193,6 +197,7 @@ class NodeDescription:
         self.group_head, self.group_member, self.sheared = group_head, group_member, sheared
         self.curve, self.applied, self.converted, self.look_at = curve, applied, converted, look_at
         self.light, self.camera = light, camera
+        self.cast_shadows, self.receive_shadows = cast_shadows, receive_shadows
 
     def __repr__(self):
         return "NodeDescription(%d, %r, %s, parent=%r)" % (self.index, self.name, self.kind, self.parent)
@@ -781,7 +786,10 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
                                                         or base in light_params or base in unseen)):
             desc.placeholders[class_name] += 1
         flags = {} if node is None else dict(hidden=node.hidden, frozen=node.frozen, renderable=node.renderable,
-                                             group_head=node.group_head, group_member=node.group_member)
+                                             group_head=node.group_head, group_member=node.group_member,
+                                             cast_shadows=node.cast_shadows, receive_shadows=node.receive_shadows)
+        if node is not None and not node.receive_shadows and kind in (MESH, CURVE):
+            desc.issues.append((i, NO_RECEIVE))
         desc.nodes.append(NodeDescription(i, name, scene.parent(i), blender_matrix(local, meters),
                                           blender_matrix(world, meters), kind, key, class_name,
                                           determinant3(world) < 0, modifiers, layer, sheared=sheared(local),

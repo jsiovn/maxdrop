@@ -97,6 +97,7 @@ your computer.
 | Scene units | **Imported**: **Units: Auto** takes the system unit the file was saved with (inches, feet, miles, millimeters, centimeters, meters, kilometers, and a custom scale of those), so the scene arrives in meters. **Units** can name the unit instead, and **Scale** multiplies every length. A file that does not state its unit is imported at one meter per unit, times Scale, with a warning |
 | Layers | **Imported** as collections below a collection named after the file, nested like the layers. A hidden layer is excluded from the view layer, a frozen one is not selectable, one that does not render has rendering off |
 | Hidden, frozen and renderable flags of objects | **Imported** |
+| Cast Shadows and Receive Shadows of objects | Cast Shadows off: the mesh or curve casts no shadows in Blender (Object > Visibility > Shadow). Receive Shadows off: Blender has no such switch per object, so the object still receives shadows (a line in the report) |
 | Groups | Their head is an empty with the members as children |
 | Selection sets | Not yet |
 | A shear inside one object's transform (a scale along a rotated axis) | **Imported**: what Blender's location, rotation and scale cannot hold goes into the parent inverse. An object without a parent gets the empty **MaxDrop Shear** at the origin as its parent, one per imported file |

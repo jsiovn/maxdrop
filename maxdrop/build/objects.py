@@ -42,7 +42,8 @@ light's object flags; a CAMERA node an object of its Camera (build.cameras).
 
 With collections (build.collections.make), each object goes into its layer's collection, else into collection.
 A node hidden in 3ds Max gets hide_viewport and is hidden in view_layer (hide_set), one that does not render
-hide_render, a frozen one hide_select.
+hide_render, a frozen one hide_select. A mesh or curve node with Cast Shadows off gets visible_shadow False (the
+same on 4.2 and 5.2); a light's shadows are its Light's use_shadow, so its node's flag is not used.
 
     kept = track_targets(desc, built)   # "Keep Targets": a Track To to each look-at's target, [(node, reason)]
 
@@ -328,6 +329,8 @@ def build_steps(desc, collection, collections=None, view_layer=None, slots=None,
             _keep_shear(ob, node.matrix)
         ob.hide_render = not node.renderable
         ob.hide_select = node.frozen
+        if node.kind in (convert_scene.MESH, convert_scene.CURVE):
+            ob.visible_shadow = node.cast_shadows
         if node.hidden:
             ob.hide_viewport = True
             hidden.append(ob)

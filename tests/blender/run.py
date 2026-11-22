@@ -19,6 +19,8 @@ oracle's instances), outward normals as rendered (the inverse transpose of the w
 points away from the oracle's bounding box center, also on the mirrored object) and the class of each placeholder. The
 oracle has no map channels or smoothing groups of a base mesh: those expectations come from the fixture scripts
 (tools/fixtures/*.ms).
+Each mesh and curve object casts shadows (visible_shadow) as the oracle's cast_shadows says; layers_flags:
+FixtureNoCastShadow is the one that casts none.
 shapes: each shape node a curve object (3D, FREE handles) with the oracle's splines, point counts and cyclic flags,
 its points where 3ds Max has its knots, each segment's middle (mathutils.geometry.interpolate_bezier) where 3ds Max
 interpolates it (the straight segment included), the resolution from the steps, a bevel and faces only on the
@@ -461,6 +463,9 @@ def run_fixture(path, modules):
         if node.kind == convert_scene.LIGHT and not desc.lights[node.light].on:  # a light switched off
             want = (True, o["hidden"], True, o["frozen"])
         check(label + ": hidden, renderable and frozen flags", flags == want, str(flags))
+        if node.kind in (convert_scene.MESH, convert_scene.CURVE):
+            check(label + ": casts shadows as in 3ds Max", ob.visible_shadow == o["cast_shadows"],
+                  str(ob.visible_shadow))
         if node.kind == convert_scene.LIGHT:
             check_light(label, ob, desc.lights[node.light], o)
             continue
@@ -595,6 +600,8 @@ def run_fixture(path, modules):
         check("layers_flags: one hidden object", hidden == ["FixtureHidden"], str(hidden))
         no_render = [ob.name for ob in obs if ob.hide_render]
         check("layers_flags: one object with hide_render", no_render == ["FixtureNoRender"], str(no_render))
+        no_shadow = [ob.name for ob in obs if not ob.visible_shadow]
+        check("layers_flags: one object that casts no shadows", no_shadow == ["FixtureNoCastShadow"], str(no_shadow))
         group = bpy.data.objects["FixtureGroup"]
         members = sorted(ob.name for ob in group.children)
         check("layers_flags: the group head is an empty with its members as children",

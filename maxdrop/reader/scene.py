@@ -13,6 +13,7 @@
         scene.walk()                    # every node, pre-order from the top level
         scene.object_stack(node.object) # Stack(base, modifiers top first, derived objects)
         node.hidden, node.frozen, node.renderable, node.group_head, node.group_member
+        node.cast_shadows, node.receive_shadows
         scene.layers()                  # Layer records in the Layer Manager's order
         scene.layer(node.layer)         # name, hidden, frozen, renderable, parent (a layer's object index)
 
@@ -22,7 +23,8 @@ is an i32 array (position = slot, -1 = empty); 0x2035 is a u32 (meaning unknown)
 pairs. A Node (class (1, 0), superclass 1) has 0x0962 name, 0x0960 i32 parent + u32 flags, 0x096A/B/C pivot
 offset position, rotation and scale (+ scale axis), and reference slots 0 = transform controller, 1 = object,
 3 = material, 6 = layer. The 0x0960 flags hold hidden (0x100000), frozen (0x200000), group head (0x40) and group
-member (0x100); bit 0x8000 of the u32 in 0x099C is renderable. A layer is a Base Layer: 0x1010 its name (UTF-8),
+member (0x100); in the u32 of 0x099C bit 0x8000 is renderable, 0x200 Cast Shadows and 0x400 Receive Shadows
+(without the chunk all three are on). A layer is a Base Layer: 0x1010 its name (UTF-8),
 0x1020 the same hidden and frozen bits, bit 0x8000 of 0x1050 renderable and, when the byte 0x1090 is not 0, 0x10B0
 the i32 object index of its parent layer. The Layer Manager references the layers in its order (slot 0 = layer
 "0"). A derived object (special id 0x2032) references [modifier, ..., base object], the top
@@ -55,6 +57,8 @@ MAX_NODES = 1 << 20  # scene B, the largest corpus scene, has 2 251; Blender is 
 SLOT_TM, SLOT_OBJECT, SLOT_MATERIAL, SLOT_LAYER = 0, 1, 3, 6
 GROUP_HEAD, GROUP_MEMBER, HIDDEN, FROZEN = 0x40, 0x100, 0x100000, 0x200000  # node 0x0960, layer 0x1020
 RENDERABLE = 0x8000  # node 0x099C, layer 0x1050
+CAST_SHADOWS, RECEIVE_SHADOWS = 0x200, 0x400  # node 0x099C
+NODE_RENDER_DEFAULT = RENDERABLE | CAST_SHADOWS | RECEIVE_SHADOWS  # a node without 0x099C
 
 _REFS, _REF_PAIRS = 0x2034, 0x2035
 _NODE_PARENT, _NODE_NAME = 0x0960, 0x0962
@@ -78,7 +82,7 @@ class Node:
                  "pivot_scale", "pivot_scale_axis", "refs", "render_flags")
 
     def __init__(self, index, name, parent, parent_index, flags, pivot_position, pivot_rotation, pivot_scale,
-                 pivot_scale_axis, refs, render_flags=RENDERABLE):
+                 pivot_scale_axis, refs, render_flags=NODE_RENDER_DEFAULT):
         self.index, self.name, self.parent, self.parent_index, self.flags = index, name, parent, parent_index, flags
         self.pivot_position, self.pivot_rotation = pivot_position, pivot_rotation
         self.pivot_scale, self.pivot_scale_axis, self.refs = pivot_scale, pivot_scale_axis, refs
@@ -114,6 +118,14 @@ class Node:
     @property
     def renderable(self):
         return bool(self.render_flags & RENDERABLE)
+
+    @property
+    def cast_shadows(self):
+        return bool(self.render_flags & CAST_SHADOWS)
+
+    @property
+    def receive_shadows(self):
+        return bool(self.render_flags & RECEIVE_SHADOWS)
 
     @property
     def group_head(self):
@@ -395,7 +407,7 @@ class Scene:
         node = Node(i, name.text() if name is not None else "", self.parent(i), parent_index, flags,
                     _floats(chunk.first(_PIVOT_POSITION), 3, (0.0, 0.0, 0.0)),
                     _floats(chunk.first(_PIVOT_ROTATION), 4, (0.0, 0.0, 0.0, 1.0)), scale[:3], scale[3:],
-                    self.refs(i), _u32(chunk.first(_NODE_RENDER), RENDERABLE, "node %d" % i))
+                    self.refs(i), _u32(chunk.first(_NODE_RENDER), NODE_RENDER_DEFAULT, "node %d" % i))
         self._nodes[i] = node
         return node
 

@@ -380,7 +380,8 @@ class TestFixture(unittest.TestCase):
     def test_layers_flags(self):
         desc = conv.read(os.path.join(ROOT, "tests", "fixtures", "layers_flags.max"))
         rep = report.gather(desc, source="layers_flags.max")
-        self.assertEqual(rep.summary(), ("INFO", "Imported layers_flags.max: 8 objects, 7 meshes, nothing left out."))
+        self.assertEqual(rep.summary(), ("WARNING", "Imported layers_flags.max: 8 objects, 7 meshes; 1 issue. See the "
+                                                    "text MaxDrop Report."))
         self.assertEqual(rep.text().split("\n")[1:], [
             "Units: millimeters (0.001 m per unit)",
             "Nodes read: 8",
@@ -389,7 +390,9 @@ class TestFixture(unittest.TestCase):
             "Layers: 2 (0 hidden)",
             "Objects hidden: 1, not renderable: 1, frozen: 0",
             "Groups: 1",
-            "Nothing was left out.",
+            "Not converted:",
+            "  Other issues: 1",
+            "    FixtureNoReceiveShadow: " + conv.NO_RECEIVE,
         ])
 
 

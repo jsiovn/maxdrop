@@ -65,7 +65,7 @@ fixture.
 |---|---|---|
 | `0x0962` | node name | every fixture; hierarchy has two nodes named `FixtureTwin` |
 | `0x0960` | `i32` parent object index, `u32` flags | every fixture; a top-level node's parent is the RootNode |
-| `0x099C` | `u32`, bit `0x8000` = renderable | layers_flags, below |
+| `0x099C` | `u32`, bit `0x8000` = renderable, `0x200` = Cast Shadows, `0x400` = Receive Shadows | layers_flags, below |
 | `0x096A` | 3 x `f32` object offset position | hierarchy: `[5, 5, 0]` for FixtureRoot and FixtureChild = oracle `offset_pos` |
 | `0x096B` | 4 x `f32` object offset rotation | modifier_pivot: FixtureBent `[0, 0, 0.258819, 0.965926]` = oracle `offset_rot` (stored as MAXScript prints it); every other node `[0, 0, 0, 1]` |
 | `0x096C` | 7 x `f32`: object offset scale (3), then a scale axis rotation (4) | every fixture: `[1, 1, 1]`, `[0, 0, 0, 1]` |
@@ -107,6 +107,12 @@ renderable. A layer's flags stay on the layer: the nodes of layers_more's hidden
 have `0x800` and `0x0F00D600`, no `0x0975` or `0x0976` (MAXScript's `isHidden` and `isFrozen` still answer true
 for them; the oracle writes the node's own flags, see [ORACLE.md](ORACLE.md)). `test_scene.py` checks every node's
 hidden, frozen and renderable flags against the oracle.
+Cast Shadows and Receive Shadows (Object Properties, Rendering Control) are bits of the same `u32`: saves of a Box
+with one change each (maxdiff) give `0x0F00D400` with Cast Shadows off, `0x0F00D200` with Receive Shadows off and
+`0x0F00D000` with both (layers_flags: FixtureNoCastShadow, FixtureNoReceiveShadow; `test_scene.py` checks both
+flags of every node against the oracle). On a light node the bit `0x200` is MAXScript's `light.castShadows`, not
+the light's shadow switch (Lights, below). A layer's `0x1050` has the same two bits, used only by a node set to By
+Layer, which is not read.
 
 ## Modifiers
 

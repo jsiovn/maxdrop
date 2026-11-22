@@ -13,6 +13,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Extrude: grid caps (Cap Type Grid) are made as 3ds Max makes them, with the grid of points 3ds Max puts inside
   each cap, so an extruded shape gets 3ds Max's vertex and triangle counts, instead of morph caps and a line in the
   report.
+- Objects: a mesh or curve with Cast Shadows off in 3ds Max (Object Properties) casts no shadows in Blender. Receive
+  Shadows off, which Blender cannot set per object, is a line in the report.
 
 ### Fixed
 

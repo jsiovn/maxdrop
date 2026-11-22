@@ -425,6 +425,16 @@ class TestLayers(unittest.TestCase):
         self.assertEqual((la.name, la.hidden, la.frozen, la.renderable, la.parent), ("", False, False, True, None))
         n = s.node(1)
         self.assertEqual((n.renderable, n.hidden, n.layer), (True, False, None))
+        self.assertEqual((n.cast_shadows, n.receive_shadows), (True, True))  # a new node's state
+
+    def test_shadow_flags(self):
+        """0x099C as 3ds Max 2020 saved a Box with one change each (maxdiff): Receive Shadows off clears 0x400,
+        Cast Shadows off 0x200; renderable stays."""
+        for render, want in ((0x0F00D600, (True, True, True)), (0x0F00D200, (True, True, False)),
+                             (0x0F00D400, (True, False, True)), (0x0F00D000, (True, False, False)),
+                             (0x0F005600, (False, True, True))):
+            n = self.make(layer_obj("0"), layer_node("n", 0, render=render)).node(1)
+            self.assertEqual((n.renderable, n.cast_shadows, n.receive_shadows), want, hex(render))
 
     def test_damaged_records(self):
         s = self.make(node(L_LAYER, leaf(0x1020, b"\1")), node(L_LAYER, leaf(0x1050, b"")), leaf(L_LAYER),
@@ -494,6 +504,8 @@ class TestFixtures(unittest.TestCase):
                                     s.is_a(n.tm, classids.SC_CTRL_MATRIX3, classids.LOOK_AT), e["name"])
                     flags = (n.hidden, n.frozen, n.renderable, s.layer(n.layer).name)
                     self.assertEqual(flags, (e["hidden"], e["frozen"], e["renderable"], e["layer"]), e["name"])
+                    self.assertEqual((n.cast_shadows, n.receive_shadows), (e["cast_shadows"], e["receive_shadows"]),
+                                     e["name"])
                 layers = [(la.name, la.hidden, la.frozen, la.renderable,
                            None if la.parent is None else s.layer(la.parent).name) for la in s.layers()]
                 self.assertEqual(layers, [(e["name"], e["hidden"], e["frozen"], e["renderable"], e["parent"])

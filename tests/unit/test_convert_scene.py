@@ -167,6 +167,9 @@ NO_DECAY = "light: no decay: Blender's light falls off with the square of the di
 ISSUES = {"uvwmap": ["uvw map: a UVW Map above Bend is not evaluated",
                      "uvw map: shrink-wrap mapping is not evaluated: the stored channel stays"],
           "stack_convert": ["modifiers: TurboSmooth above Bend is not converted"],
+          # FixtureNoReceiveShadow (FixtureNoCastShadow is an object flag, no issue)
+          "layers_flags": ["shadows: Receive Shadows is off: Blender has no such switch per object, it receives "
+                           "shadows"],
           # the plane's rim corners (auto smooth), the open box's override group (auto smooth off)
           "stack_shell": ["modifiers: Shell: auto smooth: 4 corners of the rim sharper than 45 degrees shade smooth "
                           "(3ds Max splits the rim there)",
@@ -495,8 +498,9 @@ class DamagedInput(unittest.TestCase):
         self.assertEqual([la.name for la in desc.layers], ["FixtureLayerA"])
         lost = [n.name for n in desc.nodes if n.layer is None]
         self.assertEqual(sorted(lost), ["FixtureHidden", "FixtureNoRender"])
-        self.assertEqual(len(desc.issues), 2)
-        self.assertTrue(all(r.startswith("layer: ") for _n, r in desc.issues))
+        layer_issues = [r for _n, r in desc.issues if r != conv.NO_RECEIVE]
+        self.assertEqual(len(layer_issues), 2)
+        self.assertTrue(all(r.startswith("layer: ") for r in layer_issues))
 
     def test_unknown_controllers_are_counted_by_class(self):
         sc = self.scene("hierarchy")
@@ -1030,6 +1034,8 @@ class Fixtures(unittest.TestCase):
             for node, o in zip(desc.nodes, oracle["nodes"]):
                 self.assertEqual((node.hidden, node.frozen, node.renderable, names[node.layer]),
                                  (o["hidden"], o["frozen"], o["renderable"], o["layer"]), o["name"])
+                self.assertEqual((node.cast_shadows, node.receive_shadows), (o["cast_shadows"], o["receive_shadows"]),
+                                 o["name"])
                 if o["layer"] not in used:
                     used.append(o["layer"])
             parents = {la["name"]: la["parent"] for la in oracle["layers"]}
@@ -1053,6 +1059,9 @@ class Fixtures(unittest.TestCase):
         by_name = {n.name: n for n in desc.nodes}
         self.assertEqual([k for k, n in by_name.items() if n.hidden], ["FixtureHidden"])
         self.assertEqual([k for k, n in by_name.items() if not n.renderable], ["FixtureNoRender"])
+        self.assertEqual([k for k, n in by_name.items() if not n.cast_shadows], ["FixtureNoCastShadow"])
+        self.assertEqual([k for k, n in by_name.items() if not n.receive_shadows], ["FixtureNoReceiveShadow"])
+        self.assertEqual(desc.issues, [(by_name["FixtureNoReceiveShadow"].index, conv.NO_RECEIVE)])
         self.assertEqual([k for k, n in by_name.items() if n.group_head], ["FixtureGroup"])
         head = by_name["FixtureGroup"].index
         self.assertEqual(sorted(k for k, n in by_name.items() if n.group_member),

@@ -75,7 +75,8 @@ NOT_EVALUATED = {"FixtureUVWShrink"}
 FIXTURE_ISSUES = {"uvwmap.max": 2, "stack_convert.max": 1, "vray_lights.max": 3, "vray_dome.max": 2, "lookat.max": 1,
                   "lights_standard.max": 17, "lights_photometric.max": 11, "cameras.max": 6,
                   "stack_shell.max": 2,  # stack_shell: two Shell rims Blender cannot match
-                  "shapes_more.max": 1}  # shapes_more: FixtureCurveMixed's spline mixes material IDs
+                  "shapes_more.max": 1,  # shapes_more: FixtureCurveMixed's spline mixes material IDs
+                  "layers_flags.max": 1}  # layers_flags: FixtureNoReceiveShadow (no such switch in Blender)
 # issues a fixture adds when imported from a pack without its maps (two_scenes): vray_dome's dome texture not found
 MAPLESS_ISSUES = {"vray_dome.max": 1}
 # placeholders of classes MaxDrop does not build yet: lookat's Point
