@@ -40,8 +40,8 @@ jobs:
             python: "3.11"
           - numpy: "2.3.4"
             python: "3.13"
-          # macOS once, on the newest Blender's Python and numpy: archive._noreplace binds renamex_np there, the
-          # add-on's one darwin branch (step "The rename that never replaces"). Its os is none of the list's, so it
+          # macOS once, on the newest Blender's Python and numpy: archive._noreplace binds renamex_np there, which
+          # no other entry can check (step "The rename that never replaces"). Its os is none of the list's, so it
           # is a combination of its own and names all three values.
           - os: macos-latest
             numpy: "2.3.4"
@@ -140,12 +140,15 @@ jobs:
         run: python -I -m unittest discover tests
       # The test of the native rename (archive._noreplace: renameat2 on Linux, renamex_np on macOS) again, verbose:
       # a wrong binding fails safe to the look-then-rename fallback, and a skip would pass the step above unseen.
-      # The step fails unless the test's line ends in "ok" (Python 3.11 and later name the method in parentheses).
+      # The step fails unless the test's line ends in "ok" (Python 3.11 and later name the method in parentheses; a
+      # docstring on the test would move the "ok" to a line of its own). `|| true`: the output is printed on a
+      # failure too, and the grep decides.
       - name: The rename that never replaces (Linux and macOS)
         if: runner.os != 'Windows'
         run: |
           set -euo pipefail
-          out=$(python -I -m unittest discover -v -s tests -p test_intake.py -k test_the_native_rename_works 2>&1)
+          out=$(python -I -m unittest discover -v -s tests -p test_intake.py -k test_the_native_rename_works 2>&1 \
+            || true)
           printf '%s\n' "$out"
           grep -Eq '^test_the_native_rename_works \(.*RenameNew.*\) \.\.\. ok$' <<<"$out"
       - name: Fixture scan (user names, computer names, user paths)
