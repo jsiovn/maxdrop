@@ -24,13 +24,13 @@ pairs. A Node (class (1, 0), superclass 1) has 0x0962 name, 0x0960 i32 parent + 
 offset position, rotation and scale (+ scale axis), and reference slots 0 = transform controller, 1 = object,
 3 = material, 6 = layer. The 0x0960 flags hold hidden (0x100000), frozen (0x200000), group head (0x40) and group
 member (0x100); in the u32 of 0x099C bit 0x8000 is renderable, 0x200 Cast Shadows and 0x400 Receive Shadows
-(without the chunk all three are on). A layer is a Base Layer: 0x1010 its name (UTF-8),
-0x1020 the same hidden and frozen bits, bit 0x8000 of 0x1050 renderable and, when the byte 0x1090 is not 0, 0x10B0
-the i32 object index of its parent layer. The Layer Manager references the layers in its order (slot 0 = layer
-"0"). A derived object (special id 0x2032) references [modifier, ..., base object], the top
-of the stack first; its base can be another derived object. A world-space modifier sits in a derived object of its
-own (special id 0x2033), [world-space modifiers, the object's 0x2032 derived object or its base object], read the
-same way. docs/FORMAT.md says which fixture shows what.
+(without the chunk all three are on). A layer is a Base Layer: 0x1010 its name (UTF-8), 0x1020 the same hidden
+and frozen bits, bit 0x8000 of 0x1050 renderable and, when the byte 0x1090 is not 0, 0x10B0 the i32 object index
+of its parent layer. The Layer Manager references the layers in its order (slot 0 = layer "0"). A derived object
+(special id 0x2032) references [modifier, ..., base object], the top of the stack first; its base can be another
+derived object. A world-space modifier sits in a derived object of its own (special id 0x2033), [world-space
+modifiers, the object's 0x2032 derived object or its base object], read the same way. docs/FORMAT.md says which
+fixture shows what.
 
 Nodes are keyed by object index, never by name: two nodes with the same name are two nodes. A parent that is not
 a Node (the RootNode, another class, out of range) means top level. A parent cycle is cut at its member with the

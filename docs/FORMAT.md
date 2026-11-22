@@ -102,7 +102,8 @@ layers_flags, layers_more and lookat:
 | `0x4000` | the target of a Look At controller (the five Target objects and FixtureAim; not on a node only a LookAt Constraint aims at). Not read: the controller names its target |
 
 `0x800` is not decoded. Renderable is not in `0x0960` (FixtureNoRender has `0x800`) but in `0x099C`, a `u32` on
-every node of every fixture: `0x0F00D600` on each node, `0x0F005600` on FixtureNoRender, so bit `0x8000` is
+every node of every fixture: `0x0F00D600` on each node, `0x0F005600` on FixtureNoRender (and the two shadow
+values below), so bit `0x8000` is
 renderable. A layer's flags stay on the layer: the nodes of layers_more's hidden, frozen and non-rendering layers
 have `0x800` and `0x0F00D600`, no `0x0975` or `0x0976` (MAXScript's `isHidden` and `isFrozen` still answer true
 for them; the oracle writes the node's own flags, see [ORACLE.md](ORACLE.md)). `test_scene.py` checks every node's
@@ -110,8 +111,8 @@ hidden, frozen and renderable flags against the oracle.
 Cast Shadows and Receive Shadows (Object Properties, Rendering Control) are bits of the same `u32`: saves of a Box
 with one change each (maxdiff) give `0x0F00D400` with Cast Shadows off, `0x0F00D200` with Receive Shadows off and
 `0x0F00D000` with both (layers_flags: FixtureNoCastShadow, FixtureNoReceiveShadow; `test_scene.py` checks both
-flags of every node against the oracle). On a light node the bit `0x200` is MAXScript's `light.castShadows`, not
-the light's shadow switch (Lights, below). A layer's `0x1050` has the same two bits, used only by a node set to By
+flags of every node against the oracle). On a light node the bit `0x200` is the node's `castShadows` in MAXScript,
+not the light's shadow switch `baseObject.castShadows` (Lights, below). A layer's `0x1050` has the same two bits, used only by a node set to By
 Layer, which is not read.
 
 ## Modifiers
@@ -1203,7 +1204,7 @@ picker and Material Editor switches off).
   |---|---|
   | General | `3ds Max Version: 22.00`, `Uncompressed`, `Build: 22.2.0.2176`, `Saved As Version: 22.00` |
   | Mesh Totals | `Vertices: 8`, `Faces: 6` (`Vertices` = the sum of the oracle's `eval_verts`, after the modifiers: 114 in modifier_pivot, whose nodes' `base_verts` add up to 60) |
-  | Scene Totals | `Objects`, `Shapes`, `Lights`, `Cameras`, `Helpers`, `Space Warps`, `Total` (`Total` = the oracle's `node_count`: layers_flags has 5 objects and 1 helper, its group head) |
+  | Scene Totals | `Objects`, `Shapes`, `Lights`, `Cameras`, `Helpers`, `Space Warps`, `Total` (`Total` = the oracle's `node_count`: layers_flags has 7 objects and 1 helper, its group head) |
   | External Dependencies | file paths (none in the fixtures) |
   | Objects, Materials | node and material names (Materials: as many as the oracle's materials) |
   | Used Plug-Ins | DLL file names (`epoly.dlo`, `ctrl.dlc`, ...) |

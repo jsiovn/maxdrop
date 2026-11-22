@@ -180,8 +180,8 @@ class NodeDescription:
     top first, applied those evaluated into its mesh (an Extrude); layer the layer's object index (None without
     one); hidden, frozen, renderable, cast_shadows, receive_shadows, group_head and group_member the node's own
     flags; sheared whether matrix has shear (see sheared()); converted the modifiers that become Blender
-    modifiers (convert.modifiers ModifierDescriptions, bottom first); look_at the LookAtDescription of a Look At controller aimed at a node, else
-    None."""
+    modifiers (convert.modifiers ModifierDescriptions, bottom first); look_at the LookAtDescription of a Look At
+    controller aimed at a node, else None."""
     __slots__ = ("index", "name", "parent", "matrix", "world", "kind", "mesh", "class_name", "mirrored",
                  "modifiers", "layer", "hidden", "frozen", "renderable", "group_head", "group_member", "sheared",
                  "curve", "applied", "converted", "look_at", "light", "camera", "cast_shadows", "receive_shadows")
