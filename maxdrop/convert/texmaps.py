@@ -214,7 +214,7 @@ BLEND_OPS = (BLEND_ADD, BLEND_SUBTRACT, BLEND_DIVIDE, BLEND_MIN, BLEND_MAX, BLEN
 # renderMap (maxdrop-em3.28, maxdrop-em3.117): 0 add, 1 subtract (bottom - top, at least 0), 3 divide (bottom /
 # top), 4 minimum, 5 maximum, 8 difference, 9 screen, 10 overlay, 11 color dodge, 12 color burn, 13 linear burn, 14
 # linear light, 16 hard light, 20 exclusion (Blend's formulas, Corona's own). 7 gamma is bottom^(1 / top) (drawn
-# only for a grey top that is its color: _corona_gamma); 15 soft light (Photoshop's, not Blender's), 17 vivid
+# only for a grey top that is its color: _corona_gamma_exponent); 15 soft light (Photoshop's, not Blender's), 17 vivid
 # light, 18 pin light and 19 hard mix have no node (peeled). mixInSRgb (on by default) runs the operation on
 # layer^(1 / 2.2) and raises the magnitude of the result to 2.2 (linear light: black over black renders white);
 # multiply, divide, min and max come out the same either way. The amount lerp is linear in both modes.
@@ -582,7 +582,7 @@ def _overlay(x, y):
 def blend_value(op, a, b, gamma=1.0):
     """Blend's result for two constants (linear RGB tuples or floats), CoronaMix's formulas (Blend): a Gamma node
     leaves an input channel at or below 0 as it is, the result's magnitude is raised. Inputs held within
-    +-MAX_MULTIPLIER (no overflow), the result too."""
+    +-MAX_MULTIPLIER (no overflow), the result before its gamma too."""
     def power(v, p):
         return v ** p if v > 0.0 else v
 

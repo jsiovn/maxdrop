@@ -125,6 +125,7 @@ BLEND_OPS = {tx.BLEND_ADD: 'ADD', tx.BLEND_SUBTRACT: 'SUBTRACT', tx.BLEND_DIVIDE
              tx.BLEND_OVERLAY: 'OVERLAY', tx.BLEND_HARD_LIGHT: 'OVERLAY', tx.BLEND_DODGE: 'DODGE',
              tx.BLEND_BURN: 'BURN', tx.BLEND_LINEAR_BURN: 'ADD', tx.BLEND_LINEAR_LIGHT: 'LINEAR_LIGHT',
              tx.BLEND_EXCLUSION: 'EXCLUSION'}
+NON_NEGATIVE_BLENDS = (tx.BLEND_SUBTRACT, tx.BLEND_DIFFERENCE, tx.BLEND_LINEAR_BURN)  # never below 0: no ABSOLUTE
 # Composite blend mode -> the Mix node's blend type drawn at factor 1 (texmaps: AVERAGE, SPOTLIGHT, SPOTLIGHT_BLEND
 # and HARD_LIGHT have forms of their own, LINEAR_DODGE is ADD clamped before the opacity, as measured)
 BLEND_TYPES = {tx.ADDITION: 'ADD', tx.SUBTRACT: 'SUBTRACT', tx.DARKEN: 'DARKEN', tx.MULTIPLY_BLEND: 'MULTIPLY',
@@ -967,7 +968,7 @@ class _Tree:
     def arith(self, n, depth):
         """A Blend (a color socket): both sides through a Gamma node of 1 / gamma, a Mix node of the operation at
         factor 1, not clamped (subtract and linear burn floored at 0 by a Vector Math MAXIMUM, linear burn minus 1
-        first), then a Vector Math ABSOLUTE and a Gamma node of gamma. A missing side gives the other one when that is
+        first), then a Vector Math ABSOLUTE (but for NON_NEGATIVE_BLENDS) and a Gamma node of gamma. A missing side gives the other one when that is
         a map, else MISSING, as for Multiply."""
         va, vb = self.graph(n.a, COLOR, depth + 2), self.graph(n.b, COLOR, depth + 2)
         if va is MISSING or vb is MISSING:
@@ -993,7 +994,9 @@ class _Tree:
             out = self.vector_math('MAXIMUM', out, (0.0, 0.0, 0.0), depth)
         if n.gamma == 1.0:
             return out
-        return self.gamma(self.vector_math('ABSOLUTE', out, None, depth), n.gamma, depth)
+        if n.op not in NON_NEGATIVE_BLENDS:  # Corona raises the magnitude of a negative result
+            out = self.vector_math('ABSOLUTE', out, None, depth)
+        return self.gamma(out, n.gamma, depth)
 
     def vector_math(self, operation, socket, value, depth):
         """A Vector Math node of operation over socket and the constant value (None: a one-input operation)."""

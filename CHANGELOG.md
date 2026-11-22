@@ -20,7 +20,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - CoronaMix: the Screen, Overlay, Color Dodge, Color Burn, Linear Burn, Linear Light, Hard Light and Exclusion
   operations are imported as nodes, in gamma 2.2 with "mix in sRGB" on as Corona does it, and Gamma when its top is
   a grey color, instead of the first bitmap below and a line in the report; Soft Light, Vivid Light, Pin Light and
-  Hard Mix keep that, the line now naming the operation.
+  Hard Mix keep that, the line now naming the operation. An Add in sRGB mode whose sum is negative (negative
+  offsets or multipliers) now gives its magnitude raised to 2.2, as Corona does, instead of the negative value.
 
 ### Fixed
 

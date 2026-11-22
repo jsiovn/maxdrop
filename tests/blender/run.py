@@ -1546,12 +1546,13 @@ def _alpha_of(ir, present):
 
 
 def _value_ok(socket, want):
-    """The socket's value against want, held at the socket's own minimum (a color input stores no negative)."""
+    """The socket's value against want; a color input stores no negative, so want is held at 0 there."""
     got = socket.default_value
-    low = socket.bl_rna.properties["default_value"].hard_min
     if isinstance(want, (tuple, list)):
-        return close(list(got)[:3], [max(low, w) for w in list(want)[:3]], VALUE_TOLERANCE)
-    return abs(float(got) - max(low, float(want))) <= VALUE_TOLERANCE
+        if socket.type == 'RGBA':
+            want = [max(0.0, w) for w in want]
+        return close(list(got)[:3], list(want)[:3], VALUE_TOLERANCE)
+    return abs(float(got) - float(want)) <= VALUE_TOLERANCE
 
 
 def _mean(v):
@@ -2732,7 +2733,7 @@ def _reaches_image(socket, depth=4):
 def check_builder_blend_modes():
     """The CoronaMix blend modes of bead maxdrop-em3.117 over an image: a Mix node of the mode (bottom in A, hard
     light's top in A), linear burn's add minus 1 floored at 0; in sRGB mode a Vector Math ABSOLUTE before the
-    closing Gamma (Corona raises the magnitude), in linear mode none."""
+    closing Gamma (Corona raises the magnitude) but for linear burn, in linear mode none."""
     from maxdrop.build import materials as build_materials
     from maxdrop.convert import materials as cm
     from maxdrop.convert import texmaps as tx
@@ -2765,9 +2766,10 @@ def check_builder_blend_modes():
                                                                               else "A"), ok)
                 vm = {n.operation: n for n in nodes if n.bl_idname == "ShaderNodeVectorMath"}
                 absolute = vm.get('ABSOLUTE')
-                check("%s: %s" % (what, "ABSOLUTE into the closing Gamma" if gamma != 1.0 else "no ABSOLUTE"),
+                wants = gamma != 1.0 and op != tx.BLEND_LINEAR_BURN  # linear burn is floored at 0: none
+                check("%s: %s" % (what, "ABSOLUTE into the closing Gamma" if wants else "no ABSOLUTE"),
                       (absolute is not None and absolute.outputs[0].links
-                       and absolute.outputs[0].links[0].to_node.bl_idname == "ShaderNodeGamma") if gamma != 1.0
+                       and absolute.outputs[0].links[0].to_node.bl_idname == "ShaderNodeGamma") if wants
                       else absolute is None)
                 if op == tx.BLEND_LINEAR_BURN:
                     add, floor = vm.get('ADD'), vm.get('MAXIMUM')
