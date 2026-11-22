@@ -25,6 +25,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Shapes: a Multi/Sub-Object on a shape built as a curve gives each spline the entry for its segments' material ID,
   instead of ID 1's on every spline. A spline whose segments have different IDs takes its first segment's (a curve
   has one material per spline); the report says so when that changes its material.
+- UVW Map: on a cylindrical or spherical map with a U tile that is not a whole number (2.5, say), the faces across
+  the seam show the part of the image 3ds Max shows, instead of one half an image off; a vertex at a spherical
+  map's center gets 3ds Max's coordinates (V 0.5, U of its face), instead of arbitrary ones from a rounding error.
 
 ## [1.0.1] - 2026-11-22
 

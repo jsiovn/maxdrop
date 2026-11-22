@@ -628,18 +628,29 @@ within 1e-4 for planar and box, 1e-3 for the round types):
   u = 0.5 - Y / 2, v = 0.5 + X / 2, w = c / height / 2.
 - **Spherical**: Z = c / (height / 2), r = |(X, Y, Z)|; u as cylindrical, v = 0.5 + asin(Z / r) / π, w = r.
 - **Flip, tile**: per component, flipped (1 - value), then times its tile.
-- **Seam**: 3ds Max shares map vertices and may shift a face's U by a whole turn, also on faces that do not cross the
-  seam; the image is the same. MaxDrop gives +1 to the corners below 0.5 of a face with an edge across the seam
-  (X = 0, Y > 0) between two corners off the axis. A face that goes around the axis (FixtureUVWCylAxisX: 4
-  triangles; uvwmap_pole's 6 at a vertex pushed past the bound) has no single U; there the two differ.
-- **Axis**: a corner on the axis has no angle. Cylindrical: U 0.5, one map vertex shared by every face (MaxDrop: 1.5
-  on a face across the seam, whose other corners it moves up a turn). Spherical: the mean U of the face's other
-  corners. On the axis means within about 1e-4 of it, so that a turned gizmo's float residue (about 1e-7) is a
-  pole: cylindrical |(X, Y)| < 1e-4, spherical |X| and |Y| each < 1e-4 · r. Found by pushing an axis vertex off on
-  scratch scenes (9.5e-5 still a pole, 1.05e-4 not; (7.5e-5, 7.5e-5) not on a cylinder, (9.5e-5, 9.5e-5) still on a
-  sphere; a sphere's bound halves where Z at the pole is 0.5); exactly at 1e-4 3ds Max's single-precision results
-  disagree with each other. uvwmap_pole: the axis vertices of cylinders and spheres under turned gizmos, also pushed
-  just inside and past the bound; every corner equals 3ds Max's.
+- **Seam**: a face with an edge across the seam (X = 0, Y > 0) between two corners off the axis: 3ds Max moves its
+  corners above 0.5 down a turn (0.97 to -0.03), and so does MaxDrop. Another turn would show the same image only
+  with a whole-number U tile: with U tile 2.5 (uvwmap_pole's FixtureUVWPoleTile, FixtureUVWPoleSphereTile, also
+  flipped; scratch probes with -1.5) a turn is 2.5 units, half an image off; MaxDrop's earlier +1 below 0.5 was. On
+  the other fixtures, which have whole-number tiles, a face may still differ from 3ds Max's by whole units. A face
+  that goes around the axis (FixtureUVWCylAxisX: 4 triangles; uvwmap_pole's 8 at a vertex pushed past the bound)
+  has no single U; there the two differ.
+- **Axis**: a corner on the axis has no angle. Cylindrical: U 0.5 (times the tile), one map vertex shared by every
+  face, also across the seam and also with cap on (a cone's apex on its side faces: FixtureUVWPoleCone). Spherical:
+  the mean U of the face's other corners. On the axis means within about 1e-4 of it, so that a turned gizmo's float
+  residue (about 1e-7) is a pole: cylindrical |(X, Y)| < 1e-4, spherical |X| and |Y| each < 1e-4 · r. Found by
+  pushing an axis vertex off on scratch scenes (9.5e-5 still a pole, 1.05e-4 not; (7.5e-5, 7.5e-5) not on a
+  cylinder, (9.5e-5, 9.5e-5) still on a sphere; a sphere's bound halves where Z at the pole is 0.5:
+  FixtureUVWPoleSphereTall, pushed 6e-5 under a gizmo of height 32, has the angle); exactly at 1e-4 3ds Max's
+  single-precision results disagree with each other. uvwmap_pole: the axis vertices of cylinders, spheres and a cone
+  under turned gizmos, also pushed just inside and past the bound; every corner equals 3ds Max's, in its own turn.
+- **Center**: a corner at a spherical gizmo's center gets V 0.5 and the mean U of its face's other corners
+  (FixtureUVWPoleCenter: a cylinder's cap center under a turned gizmo). 3ds Max does so only where its
+  single-precision point is exactly zero: on scratch scenes a push of 1e-20 radii already gives the angle (a push
+  smaller than half a float ulp of the vertex's coordinates is lost when the vertex is stored, and is zero).
+  MaxDrop's float64 point of the same vertex is a residue of about 2e-16 radii: below 1e-9 radii it is the center.
+  Under a turned gizmo, a vertex 1e-7 to 1e-5 radii off the center gets an angle from 3ds Max's own
+  single-precision noise, which MaxDrop does not match.
 
 Evaluated: the UVW Maps that render right above the base object or above an applied Extrude (FixtureUVWExtrude;
 FixtureUVWTwo, two in a row). One above another modifier (FixtureUVWAboveBend), a switched-off one (FixtureUVWOff)
