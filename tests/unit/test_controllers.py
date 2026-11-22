@@ -118,7 +118,11 @@ def keyframed(b, name, saved=None, interval=None, keys=None):
 
 
 class Anim(float):
-    """A list weight held by a Bezier Float controller (a table element tagged 0x80) instead of stored."""
+    """A list or constraint weight held by a Bezier Float controller (a table element tagged 0x80) instead of
+    stored."""
+
+    def __repr__(self):
+        return "Anim(%r)" % float(self)
 
 
 def list_block(b, *weights):
@@ -1163,11 +1167,11 @@ MAX_OFFSETS = {
 
 
 def constraint_block(owner, weights, targets=0, settings=None, slots=()):
-    """A LookAt Constraint's ParamBlock2 as 3ds Max 2020 writes it: weights (floats), as many node elements as
-    targets (no value: the block's reference slots, slots), {param id: int} settings; the up node (9) with a
-    setting 9."""
+    """A LookAt Constraint's ParamBlock2 as 3ds Max 2020 writes it: weights (floats; an Anim is a controller,
+    no value), as many node elements as targets (no value: the block's reference slots, slots, after the weights'
+    controllers), {param id: int} settings; the up node (9) with a setting 9."""
     entries = [pb2_entry(0, 0x800, 0x121081, struct.pack("<BI", 0, len(weights)) +
-                         b"".join(struct.pack("<Bf", 0xC0, w) for w in weights)),
+                         b"".join(b"\x80" if isinstance(w, Anim) else struct.pack("<Bf", 0xC0, w) for w in weights)),
                pb2_entry(1, 0x811, 0x811000, struct.pack("<BI", 0, targets) + b"\x40" * targets)]
     for pid, value in sorted((settings or {}).items()):
         if pid == 9:
@@ -1194,11 +1198,15 @@ class LookAtBuild(Build):
         return self.node(self.add(node(C_LOOKAT, *parts)), parent=parent)
 
     def constrained(self, targets, weights, settings=None, pos=(-50, 50, 0), scale=(1, 1, 1), parent=0, up=None,
-                    offsets=None):
+                    offsets=None, weight_controllers=None):
         """A node whose PRS rotation is a LookAt Constraint; its block is the object right before the
-        constraint. offsets: {chunk id: quaternion (4 floats) or raw bytes} of the constraint's own chunks."""
+        constraint. offsets: {chunk id: quaternion (4 floats) or raw bytes} of the constraint's own chunks. An Anim
+        weight is held by a Bezier Float, or by weight_controllers' next object index (None: an empty slot)."""
+        given = iter(weight_controllers or ())
+        controllers = [(next(given) if weight_controllers is not None else self.flt(float(w)))
+                       for w in weights if isinstance(w, Anim)]
         block = len(self.objects)
-        slots = list(targets) + ([up] if up is not None else [])
+        slots = controllers + list(targets) + ([up] if up is not None else [])
         settings = dict(settings or {})
         if up is not None:
             settings[9] = 1
@@ -1368,6 +1376,58 @@ class TestConstraint(MatrixCase):
         self.assertMatrix(t.world(n), want, places=5)
         self.assertIsNone(t.look_at(n))
         self.assertEqual(t.issues, [])
+
+    def test_animated_weight(self):
+        """An animated weight is a controller in the block's next reference slot: weight (0) comes before the targets
+        (1) and the up node (9), so its controller takes slot 0 and moves each of them up by one."""
+        two = m3((0.91788, -0.393377, 0.0524503), (0.393919, 0.919145, 0), (-0.0482094, 0.0206612, 0.998624))
+        want = ct.multiply(ct.scale_matrix((1, 2, 1)), two[:3] + ((-50, 50, 0, 1),))
+        for weights in ([Anim(50.0), 100.0], [50.0, Anim(100.0)], [Anim(50.0), Anim(100.0)]):
+            with self.subTest(weights=weights):
+                b = LookAtBuild()
+                targets = [b.target((0, 0, 20)), b.target((100, 0, 0))]
+                n = b.constrained(targets, weights, scale=(1, 2, 1))
+                t = b.transforms()
+                self.assertMatrix(t.world(n), want, places=5)
+                self.assertEqual(t.issues, [])
+
+        def up_node(weight, up_pos):
+            b = LookAtBuild()
+            target, up = b.target((0, 0, 20)), b.target(up_pos)
+            n = b.constrained([target], [weight], {8: 0, 13: 0}, up=up)
+            t = b.transforms()
+            return t.world(n), t.issues
+
+        world, issues = up_node(Anim(50.0), (0, 0, 0))  # the up node at the origin, looked at: 3ds Max's frame
+        self.assertMatrix(world, MAX_CONSTRAINT[(0, False, 2, False, 2, 0)][:3] + ((-50, 50, 0, 1),), places=5)
+        self.assertEqual(issues, [])
+        world, issues = up_node(Anim(50.0), (30, -40, 60))  # off the origin: the up node itself, not the world
+        self.assertMatrix(world, up_node(50.0, (30, -40, 60))[0])
+        self.assertEqual(issues, [])
+        self.assertNotAlmostEqual(world[2][2], MAX_CONSTRAINT[(0, False, 2, False, 2, 0)][2][2], places=3)
+
+        def fallback(controller):
+            """The world of [Anim(50), 100] whose weight controller is made by controller(b), and the issues."""
+            b = LookAtBuild()
+            targets = [b.target((0, 0, 20)), b.target((100, 0, 0))]
+            n = b.constrained(targets, [Anim(50.0), 100.0], scale=(1, 2, 1), weight_controllers=[controller(b)])
+            t = b.transforms()
+            return t.world(n), [(i.controller, i.reason) for i in t.issues], targets
+
+        b = LookAtBuild()  # the weight a controller cannot give is 1
+        n = b.constrained([b.target((0, 0, 20)), b.target((100, 0, 0))], [1.0, 100.0], scale=(1, 2, 1))
+        one = b.transforms().world(n)
+        self.assertFalse(all(abs(one[r][c] - want[r][c]) < 1e-3 for r in range(3) for c in range(3)))
+        for name, controller in (("Bezier Float without a value or keys", lambda b: b.flt()),
+                                 ("empty slot", lambda b: None)):
+            with self.subTest(name):
+                world, issues, _targets = fallback(controller)
+                self.assertMatrix(world, one)
+                self.assertEqual(issues, [])
+        made = []
+        world, issues, _targets = fallback(lambda b: made.append(b.add(node(C_UNKNOWN_M3))) or made[-1])
+        self.assertMatrix(world, one)
+        self.assertEqual(issues, [(made[0], ct.UNKNOWN_CLASS)])
 
     def test_settings_and_up_node(self):
         for (axis, flip, source, source_flip, up_axis, control), expected in MAX_CONSTRAINT.items():

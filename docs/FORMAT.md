@@ -363,8 +363,8 @@ reference is a ParamBlock2:
 
 | Id | Parameter (MAXScript) | Type |
 |---|---|---|
-| 0 | `weight` | float table, one per target |
-| 1 | targets (`appendTarget`) | node table, no value: the block's reference slots |
+| 0 | `weight` | float table, one per target; an animated element is a controller (tag `0x80`) in the block's next reference slot ([Parameter blocks](#parameter-blocks)), before the targets': its value at frame 0, 1 when the slot is empty or the controller gives none |
+| 1 | targets (`appendTarget`) | node table, no value: the block's reference slots, after the weights' controllers |
 | 2 | `relative` (Keep Initial Offset) | bool |
 | 3 | `lookat_vector_length` | float (display) |
 | 4 | `set_orientation` | bool |
