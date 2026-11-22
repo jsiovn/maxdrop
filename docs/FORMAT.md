@@ -1248,8 +1248,8 @@ picker and Material Editor switches off).
   So with the gamma on an automatic Bitmap (and VRayBitmap From 3ds Max) takes the file input gamma; with it off a
   Bitmap is read as stored whatever its override, and a temperature color is decoded as a swatch is. CoronaBitmap
   and VRayBitmap Auto / sRGB apply their own curve in every case, so with the gamma off V-Ray shows them darker
-  than an sRGB image (and an EXR shows its value as stored), and VRayBitmap None shows as stored: not converted
-  (maxdrop-em3.123). Reopening the saved scenes from disk renders the same.
+  than an sRGB image (and an EXR shows its value as stored), and VRayBitmap None shows as stored: converted since
+  maxdrop-em3.123 but for CoronaBitmap (below). Reopening the saved scenes from disk renders the same.
 - LUT mode belongs to the session: a scene saved in it (Scene `1`, Config `0`) opens as `#gamma` from a `#none` or
   `#gamma` session and renders as gamma on (swatch 186, the PNG 128); a `#lut` session stays in LUT mode for a file
   whose chunk says `1` (and renders as gamma off there: 128, 128). MaxDrop reads the file's `1` as gamma on.
@@ -1273,6 +1273,26 @@ picker and Material Editor switches off).
   display-referred (Blender needs `srgb_to_linear` of it): a mask between black and white is the decoded number,
   a mask between two colors mixes display values (target 0.225 linear for the 0.511 above, a decoded mask gives
   0.171). The rules are in `maxdrop/convert/texmaps.py` (MASK, colorspace, `_swatch`).
+- Maps with their own decode (maxdrop-em3.123), V-Ray 5.2 renders of VRayLightMtl planes, each rendered alone, its
+  internal value (`getPixels ... linear:true` of an HDR bitmap); greys 64 / 128 / 192 as 8-bit PNGs, EXRs of 0.25 /
+  0.5 / 2.0. Gamma on (input 2.2) and off give the same internal value for every row:
+
+  | Map | internal value | shown with the gamma off (Blender linear) |
+  |---|---|---|
+  | VRayBitmap sRGB / Auto, 64 / 128 / 192 | 0.0513 / 0.2159 / 0.5271 | 0.0042 / 0.0383 / 0.2397 |
+  | VRayBitmap None, 64 / 192 | 0.251 / 0.753 | 0.0513 / 0.527 |
+  | VRayBitmap Inverse gamma 2.0 / 0.5, 128 | 0.7085 / 0.2520 | 0.4598 / 0.0516 |
+  | Bitmap automatic, EXR 0.25 / 0.5 / 2.0 | 0.25 / 0.5 / 2.0 | 0.0509 / 0.214 / 4.954 |
+  | VRayBitmap Auto / None / From 3ds Max, EXR 0.5; sRGB, EXR 0.5 | 0.5; 0.2140 | 0.214; 0.0376 |
+  | CoronaBitmap automatic 64 / 192, 1.0 192, automatic EXR 0.5 | 0.0478 / 0.5356, 0.753, 0.5 | Corona: not measured |
+  | CoronaColor HDR 0.25 / 0.5 / 2.0, 0.5 x multiplier 2 | 0.25 / 0.5 / 2.0, 1.0 | Corona: not measured |
+
+  Inverse gamma g is pixel ^ (1 / g). With the gamma off a color input or mask gets the gamma the scene shows: 2.2 x
+  the map's own (2.2: the sRGB color space, which Blender 4.2 to 5.2 applies to an EXR with the extended curve,
+  2.0 -> 4.954), 5.0 for the sRGB curve (`SRGB_TWICE`: twice the curve is within 0.008 of x ^ 5 over 0..1); a
+  Bitmap and From 3ds Max read any file as stored, sRGB. Data inputs keep the map's own curve. Blender 5.2 and 4.2
+  renders of the probe scenes agree within 0.02 (2 % above 1). CoronaBitmap and CoronaColor HDR are left as they
+  were: whether a Corona render shows them as V-Ray does is not known (no Corona license here).
 
 ## Summary properties
 
