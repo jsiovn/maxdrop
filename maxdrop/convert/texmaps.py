@@ -21,7 +21,7 @@ Image (None: automatic, sRGB; 1.0 for an EXR or HDR file): with the gamma on its
 input gamma (colors.Swatches.file_in); with the gamma off none, whatever its override, as 3ds Max reads the image as
 stored then (maxdrop-em3.38), an EXR or HDR file too (the display-referred scene shows it decoded; maxdrop-em3.123).
 A VRayBitmap's own decode on a color input or a mask is shown decoded once more with the gamma off (_shown,
-maxdrop-em3.123; CoronaBitmap's is not: a Corona render is not measured).
+maxdrop-em3.123; CoronaBitmap's is not: a Corona render is not measured, maxdrop-em3.165).
 The color space (colorspace): a gamma of 2.2 is sRGB, any other Linear Rec.709 (sRGB
 primaries: Blender converts them into the scene's working space; the builder falls back to Non-Color where the color
 space is missing) and the builder applies the gamma (1.0: none), on a COLOR, DATA or MASK input alike; on a DATA or
@@ -1497,7 +1497,8 @@ def _corona_color(conv, m, kind, walk, depth, chain):
     scaling the swatch value: 2 x 128 = 255); the temperature is Corona's own linear color (corona_kelvin) times the
     multiplier with the gamma on, decoded as a swatch (clamped) with it off: VRayColor's and CoronaColor's 3000 K
     render the same values with the gamma on and off (V-Ray 5.2, renderMap; maxdrop-em3.38), which a gamma-off
-    scene shows as stored. The HDR color is linear already (not measured with the gamma off). colorSpace (61)
+    scene shows as stored. The HDR color is linear already (with the gamma off V-Ray 5.2 renders it as stored; kept linear, Corona not
+    measured: maxdrop-em3.165). colorSpace (61)
     changed nothing in renderMap: not read."""
     method, mult = m.param(CC_METHOD, 0), max(0.0, _num(m, CC_MULTIPLIER, 1.0))
     if method == 1:

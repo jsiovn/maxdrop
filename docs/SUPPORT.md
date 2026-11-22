@@ -125,7 +125,8 @@ the number V-Ray 5.2 renders: a color map's constant (VRayColor, CoronaColor, a 
 as the mean of the swatch as stored, gamma on or off; an image decoded by its gamma with the gamma on, as stored with
 it off (a CoronaBitmap or a VRayBitmap in sRGB keeps its own curve). A mask decodes like the colors it mixes: exact
 between black and white; between two colors with the gamma off only close, as V-Ray mixes the shown values there.
-Not measured with the gamma off: a CoronaColor's HDR color, which MaxDrop keeps linear. A Corona render was not
+With the gamma off V-Ray 5.2 renders a CoronaColor's HDR color as stored, which MaxDrop keeps linear (whether Corona
+shows it decoded is not measured). A Corona render was not
 measured.
 Turn materials off with **Object Filter**.
 

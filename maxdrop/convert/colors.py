@@ -22,7 +22,8 @@ file_in is the file input gamma with the gamma on: a Bitmap with automatic gamma
 function is From 3ds Max) is read with it (texmaps). With the gamma off 3ds Max reads a Bitmap as stored whatever
 its gamma, and file_in stays 2.2. A rule with file_in 2.2 is GAMMA_ON itself.
 
-CoronaColor's HDR color (linear, not measured with the gamma off) and colors made by a curve fit in sRGB
+CoronaColor's HDR color (linear; with the gamma off V-Ray 5.2 renders it as stored, Corona not measured:
+maxdrop-em3.165) and colors made by a curve fit in sRGB
 (kelvin_rgb, the lights') do not go through the rule. No bpy.
 """
 import dataclasses

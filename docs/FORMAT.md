@@ -1253,7 +1253,7 @@ picker and Material Editor switches off).
 - LUT mode belongs to the session: a scene saved in it (Scene `1`, Config `0`) opens as `#gamma` from a `#none` or
   `#gamma` session and renders as gamma on (swatch 186, the PNG 128); a `#lut` session stays in LUT mode for a file
   whose chunk says `1` (and renders as gamma off there: 128, 128). MaxDrop reads the file's `1` as gamma on.
-- A Corona render does not run on this machine (`Corona license not found` under `3dsmaxbatch`): Corona's own
+- A Corona render does not run on this machine (not under `3dsmaxbatch`, not in a silent instance): Corona's own
   swatches are not measured.
 - Data inputs and masks (maxdrop-em3.122), V-Ray 5.2 renders of the same 128 grey PNG and of swatches: VRayMtl
   glossiness through the VRayMtlReflectGlossiness element, VRayMtl opacity as the render alpha, a Mix black -> white
@@ -1292,7 +1292,7 @@ picker and Material Editor switches off).
   2.0 -> 4.954), 5.0 for the sRGB curve (`SRGB_TWICE`: twice the curve is within 0.008 of x ^ 5 over 0..1); a
   Bitmap and From 3ds Max read any file as stored, sRGB. Data inputs keep the map's own curve. Blender 5.2 and 4.2
   renders of the probe scenes agree within 0.02 (2 % above 1). CoronaBitmap and CoronaColor HDR are left as they
-  were: whether a Corona render shows them as V-Ray does is not known (no Corona license here). A dome's texture
+  were: whether a Corona render shows them as V-Ray does is not known (no Corona render yet). A dome's texture
   gamma is drawn as a material's (a Gamma node in the World), but a float dome texture in a gamma-off scene keeps
   its own decode (a line in the report): the probe measured planes seen by the camera with values up to 2.0, not a
   float image lighting a scene, where decoding a sky's values far above 1 would give orders of magnitude more light.

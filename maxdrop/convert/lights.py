@@ -80,7 +80,8 @@ another projection is drawn as spherical (an issue), a CoronaBitmap too (V-Ray 5
 color, measured: an issue). Its gamma is drawn as a material's image's is (its color space, a Gamma node on a
 Linear Rec.709 image: build.world), but a float file (EXR, HDR) in a scene saved with the gamma off keeps its own
 decode (linear for automatic; an issue): the display decode V-Ray shows on a material (maxdrop-em3.123) would take a
-sky's values far above 1 to orders of magnitude more light, and a float image as a light is not measured. The first
+sky's values far above 1 to orders of magnitude more light, and a float image as a light is not measured
+(maxdrop-em3.166). The first
 dome that is on is the World; another one, or one that
 is off, is an issue (convert.scene).
 
