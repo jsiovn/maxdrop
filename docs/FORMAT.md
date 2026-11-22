@@ -248,7 +248,35 @@ Keyframe controllers (controllers fixture; every class read here is a 3ds Max 20
 - At time 0: a key at 0 gives its value (FixtureBezierKeys, the keyed nodes, the lists' animated entries); before
   the first key, the first key's value (FixtureTCBBefore, keys at frames 10 and 50); between two Linear keys, linear
   (FixtureLinearBetween, keys at -10 and 40: position `[-56, 93, 11]`, scale rows of length 1.1, 1.0, 1.4) and the
-  rotation by slerp.
+  rotation by slerp, the way the stored signs give (controllers_tangents' FixtureLinearRotationWide: 270 degrees about
+  Z between keys at -10 and 40 is 54 degrees on at frame 0, not -18; the later key is stored as `[0, 0, -0.707107,
+  -0.707107]`); between two Bezier, TCB or Smooth Rotation keys, the curve below.
+- Between two Bezier, TCB or Smooth Rotation keys (controllers_tangents, every node within the oracle's 6 digits;
+  three probes sampled every 2.5 frames, outside the repo), the record after time and flags (n = the value's
+  floats; a step key's value saved at frame 30 holds for its whole segment, so its `0x2500` can hold time 0):
+
+  | Class | Record after the flags |
+  |---|---|
+  | Bezier Float, Position, Scale | value, in tangent, out tangent, in length, out length, n floats each (Position: 3 more, zero) |
+  | TCB Float, Position, Scale | value, tension, continuity, bias, ease to, ease from (the UI's (x - 25) / 25 and x / 50), in tangent, out tangent |
+  | TCB Rotation | quaternion, the five TCB values, the axis and angle turned from the previous key, the in and the out control quaternion |
+  | Smooth Rotation | quaternion, the in and the out control quaternion (equal), two identity quaternions |
+
+  - Bezier: tangents in value per tick (MAXScript shows them times 30, a scale's times 3000), the in tangent pointing
+    back; every tangent type (smooth, linear, fast, slow, auto, custom) stores the tangent it computed. Flags: the in
+    tangent's type in bits 7-9, the out tangent's in bits 10-12 (0 smooth, 1 linear, 2 step, 3 fast, 4 slow, 5 custom
+    and auto), `0x8000` constant velocity, `0x100000` free handle. A length is a fraction of the segment, -1 a third.
+    The segment is the cubic through `(t0, v0)`, `(t0 + lo dt, v0 + out lo dt)`, `(t1 - li dt, v1 + in li dt)`,
+    `(t1, v1)`, its time curve solved for the time (FixtureBezierFloats, FixtureBezierCustom with lengths 0.6 and
+    0.15, FixtureBezierPosition and FixtureBezierScale with a length per axis); 3ds Max's own solve strays by up to
+    1e-3 next to a steep key. A step out of the earlier key or into the later holds the earlier key's value
+    (FixtureBezierFloats' Z). Constant velocity changes nothing on a Bezier Float (a probe).
+  - TCB: the Hermite cubic of the stored tangents (value per segment; with two keys `(p1 - p0) (1 - tension)`) at
+    the fraction of the segment eased by the earlier key's ease from and the later key's ease to (3D Studio's ease:
+    both scaled to a sum of 1 when larger), per component (FixtureTCBFloats, FixtureTCBPosition, FixtureTCBScale).
+  - TCB Rotation: squad of the two quaternions with the earlier key's out control and the later key's in control,
+    at the eased fraction (FixtureTCBRotation, a turn of 200 degrees); Smooth Rotation the same without ease
+    (FixtureSmoothRotation). Their slerps keep the stored signs, unlike the shorter arc.
 - Linear and TCB Float hold `0x2501` directly in the object; Bezier Float in `0x7127` in every fixture.
 
 List controllers: Float List `(0x4B4B1000, 0)`, Position List `(0x4B4B1002, 0)`, Rotation List `(0x4B4B1003, 0)`,
@@ -1573,10 +1601,11 @@ Not shown by any fixture yet, so not stated above:
   - Look At `(0x2006, 0)` on a camera and a light of each scene: evaluated as [Look At](#look-at) says, their
     world matrices equal the oracle's (all 662 nodes without modifiers of scene A, all 2,042 of scene B).
 - Controllers no file shows yet (`controllers.py` assumes them): a controller without `0x2500` (none in the corpus or
-  the fixtures; its value chunk is used, with an issue when several keys animate it); Bezier and TCB interpolation
-  between two keys (linear, an issue: their tangents are not read); how Linear Scale interpolates a turned scale
-  axis (slerp; the fixture's axes are the identity); whether Linear Rotation takes the shorter arc between keys more
-  than half a turn apart, as the reader's slerp does (FixtureLinearBetween's keys are 45 deg apart); the bare Euler orders 1 to 5 and 100 (read as the SDK numbers
+  the fixtures; its value chunk is used, with an issue when several keys animate it); between two Bezier keys, a
+  free handle (`0x100000`: neither a fraction of the segment nor frames fits a probe) and constant velocity on a
+  Position or Scale, between two TCB or Bezier Scale keys scale axes that differ, between two TCB Rotation keys a
+  turn of a revolution or more (linear, an issue each); how Linear Scale interpolates a turned scale
+  axis (slerp; the fixture's axes are the identity); the bare Euler orders 1 to 5 and 100 (read as the SDK numbers
   them: 1 = XZY ... 5 = ZYX, 100 = XYZ); the Euler orders 106 to 108 (an issue); the order of a Scale List's
   entries (the fixture's two scales are both along the axes, so they commute) and the weight of a Rotation List
   entry that turns about more than one axis (the fixture's turn about one axis each); parameter 1 of a list's

@@ -31,6 +31,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - UVW Map: on a cylindrical or spherical map with a U tile that is not a whole number (2.5, say), the faces across
   the seam show the part of the image 3ds Max shows, instead of one half an image off; a vertex at a spherical
   map's center gets 3ds Max's coordinates (V 0.5, U of its face), instead of arbitrary ones from a rounding error.
+- Animation: an object animated through frame 0 with Bezier, TCB or Smooth Rotation keys, in a file saved with the
+  time slider elsewhere, is placed where 3ds Max places it at frame 0: between two keys the value follows their
+  tangents (Bezier handles, step keys, tension, continuity, bias and ease), instead of a straight line and a line in
+  the report. A Linear Rotation turning more than half a revolution between two keys turns the long way round, as in
+  3ds Max. A key with a free handle, and a few rarer cases, still interpolate linearly with a line in the report.
 
 ## [1.0.1] - 2026-11-22
 
