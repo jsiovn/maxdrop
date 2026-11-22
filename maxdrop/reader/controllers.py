@@ -305,6 +305,13 @@ def _slerp_long(a, b, f):
     return tuple(wa * x + wb * y for x, y in zip(a, b))
 
 
+def _opposite(a, b):
+    """Whether quaternions a and b are opposite (a whole revolution apart): the arc the stored signs give has no
+    direction there, and 3ds Max's turn is not known."""
+    a, b = _unit_quat(a), _unit_quat(b)
+    return a is not None and b is not None and sum(x * y for x, y in zip(a, b)) < -0.9999995
+
+
 def squad(q0, a, b, q1, f):
     """The spherical quadrangle from q0 to q1 a fraction f of the way, a the out control of q0 and b the in control of
     q1 (stored with each key): how 3ds Max 2020 turns between TCB and Smooth Rotation keys."""
@@ -340,8 +347,8 @@ def hermite(p0, p1, out_tangent, in_tangent, u):
 def bezier(t0, v0, out_tangent, out_length, t1, v1, in_tangent, in_length, t):
     """A Bezier segment's value at time t (ticks): the cubic through (t0, v0), its out handle (t0 + l dt, v0 +
     tangent l dt), the in handle (t1 - l dt, v1 + tangent l dt) and (t1, v1), the tangents in value per tick (the in
-    tangent points back), the lengths fractions of the segment (-1: a third). The time curve is solved for t by
-    bisection; NaN for values that are not finite."""
+    tangent points back), the lengths fractions of the segment (-1, or any negative: a third). The time curve is
+    solved for t by bisection; NaN for values that are not finite."""
     if not all(math.isfinite(v) for v in (v0, out_tangent, out_length, v1, in_tangent, in_length)):
         return math.nan
     dt = t1 - t0
@@ -367,15 +374,15 @@ def bezier(t0, v0, out_tangent, out_length, t1, v1, in_tangent, in_length, t):
 def _between(cid, n, t0, a, flags_a, t1, b, flags_b, t=0):
     """The value at time t between the Bezier, TCB or Smooth Rotation keys a (at t0) and b (at t1), each the floats
     of its record after the flags, n of them the value; None where 3ds Max's curve is not known (a free handle,
-    constant velocity on a Position or Scale, scale axes that differ, a TCB turn of a full revolution or more)."""
+    constant velocity on a Position or Scale, scale axes that differ, a turn of a full revolution or more)."""
     f = (t - t0) / (t1 - t0)
     if cid in _BEZIER or cid in _TCB:
         if n == 7 and a[3:7] != b[3:7]:
             return None
         m = min(n, 3)
         if cid in _BEZIER:
-            if (flags_a | flags_b) & _FREE_HANDLE or cid != classids.BEZIER_FLOAT and \
-                    (flags_a | flags_b) & _CONSTANT_VELOCITY:
+            flags = flags_a | flags_b
+            if flags & _FREE_HANDLE or (cid != classids.BEZIER_FLOAT and flags & _CONSTANT_VELOCITY):
                 return None
             if (flags_a >> _OUT_TYPE) & 7 == _STEP or (flags_b >> _IN_TYPE) & 7 == _STEP:
                 return tuple(a[:n])
@@ -390,19 +397,22 @@ def _between(cid, n, t0, a, flags_a, t1, b, flags_b, t=0):
     if cid == classids.TCB_ROTATION:
         # quaternion, tension, continuity, bias, ease to, ease from, axis and angle turned from the previous key,
         # the in and the out control quaternion
-        if not abs(b[12]) < 2.0 * math.pi:
+        if not abs(b[12]) < 2.0 * math.pi or _opposite(a[:4], b[:4]) or _opposite(a[17:21], b[13:17]):
             return None
         return squad(a[:4], a[17:21], b[13:17], b[:4], ease(f, a[8], b[7]))
-    if cid == classids.BEZIER_ROTATION:
-        return squad(a[:4], a[8:12], b[4:8], b[:4], f)  # quaternion, the in and the out control quaternion
+    if cid == classids.BEZIER_ROTATION:  # quaternion, the in and the out control quaternion
+        if _opposite(a[:4], b[:4]) or _opposite(a[8:12], b[4:8]):
+            return None
+        return squad(a[:4], a[8:12], b[4:8], b[:4], f)
     return None
 
 
 def _interpolate(a, b, f, value_id):
     """The key value a fraction f of the way from a to b: components linearly, a rotation by slerp the way the stored
-    signs give (270 degrees between two Linear Rotation keys turn the long way round), a scale's axis by slerp."""
+    signs give (270 degrees between two Linear Rotation keys turn the long way round; opposite quaternions, whose turn
+    is not known, the shorter arc: the earlier rotation), a scale's axis by slerp."""
     if value_id == _QUAT_VALUE:
-        return _slerp_long(a, b, f)
+        return slerp(a, b, f) if _opposite(a, b) else _slerp_long(a, b, f)
     lerp = tuple(x + (y - x) * f for x, y in zip(a, b))
     if value_id == _SCALE_VALUE:
         return lerp[:3] + slerp(a[3:], b[3:], f)
@@ -613,11 +623,13 @@ class _Eval:
         if k == n or times[k - 1] == 0:
             return value_at(k - 1)
         if cid not in _LINEAR:
-            rest = "<I%df" % ((size - _KEY_VALUE) // 4)
-            a, b = (struct.unpack_from(rest, view, j * size + 4) for j in (k - 1, k))
+            record = "<I%df" % ((size - _KEY_VALUE) // 4)  # the flags, then every float
+            a, b = (struct.unpack_from(record, view, j * size + 4) for j in (k - 1, k))
             value = _between(cid, count, times[k - 1], a[1:], a[0], times[k], b[1:], b[0])
             if value is not None:
                 return value
+            self.issue(i, KEYS_INTERPOLATED)
+        elif value_id == _QUAT_VALUE and _opposite(value_at(k - 1), value_at(k)):
             self.issue(i, KEYS_INTERPOLATED)
         return _interpolate(value_at(k - 1), value_at(k), -times[k - 1] / (times[k] - times[k - 1]), value_id)
 

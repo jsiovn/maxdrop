@@ -274,6 +274,8 @@ Keyframe controllers (controllers fixture; every class read here is a 3ds Max 20
   - TCB: the Hermite cubic of the stored tangents (value per segment; with two keys `(p1 - p0) (1 - tension)`) at
     the fraction of the segment eased by the earlier key's ease from and the later key's ease to (3D Studio's ease:
     both scaled to a sum of 1 when larger), per component (FixtureTCBFloats, FixtureTCBPosition, FixtureTCBScale).
+    The stored tangents and control quaternions already allow for segments of unequal length (a probe with keys at
+    frames -30, 10, 20 and 50, TCB and Smooth Rotation alike).
   - TCB Rotation: squad of the two quaternions with the earlier key's out control and the later key's in control,
     at the eased fraction (FixtureTCBRotation, a turn of 200 degrees); Smooth Rotation the same without ease
     (FixtureSmoothRotation). Their slerps keep the stored signs, unlike the shorter arc.
@@ -1604,7 +1606,8 @@ Not shown by any fixture yet, so not stated above:
   the fixtures; its value chunk is used, with an issue when several keys animate it); between two Bezier keys, a
   free handle (`0x100000`: neither a fraction of the segment nor frames fits a probe) and constant velocity on a
   Position or Scale, between two TCB or Bezier Scale keys scale axes that differ, between two TCB Rotation keys a
-  turn of a revolution or more (linear, an issue each); how Linear Scale interpolates a turned scale
+  turn of a revolution or more (linear, an issue each); between two Linear, TCB or Smooth Rotation keys opposite
+  quaternions, a whole revolution (the earlier rotation, an issue); how Linear Scale interpolates a turned scale
   axis (slerp; the fixture's axes are the identity); the bare Euler orders 1 to 5 and 100 (read as the SDK numbers
   them: 1 = XZY ... 5 = ZYX, 100 = XYZ); the Euler orders 106 to 108 (an issue); the order of a Scale List's
   entries (the fixture's two scales are both along the axes, so they commute) and the weight of a Rotation List

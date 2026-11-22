@@ -559,15 +559,30 @@ TCB_TWO = ((-1600, 0, (-20, -0.6, 0.6, 1.4, 0, 0.4, 0, 80)), (6400, 0, (30, 0.4,
 BEZIER_POSITION = ((-1600, 0x1480, (1, 2, 3, 19, -12, 5, 0.02, -0.01, 1 / 150, -1, -1, -1, 0.5, 0.2, 0.4, 0, 0, 0)),
                    (6400, 0x680, (20, -10, 8, -1 / 150, 1 / 75, -1 / 60, -19, 12, -5, 0.1, 0.3, 0.6, -1, -1, -1,
                                   0, 0, 0)))
-BEZIER_SCALE = ((-1600, 0x1480, (1, 1, 1) + NO_TURN + (1, -0.5, 0.5) + NO_TURN + (0.05 / 3000, -0.02 / 3000, 0.01 / 3000) + NO_TURN +
-                 (-1, -1, -1) + NO_TURN + (0.5, 0.2, 0.4) + NO_TURN),
-                (6400, 0x680, (2, 0.5, 1.5) + NO_TURN + (-0.01 / 3000, 0.03 / 3000, -0.02 / 3000) + NO_TURN + (-1, 0.5, -0.5) + NO_TURN +
-                 (0.1, 0.3, 0.6) + NO_TURN + (-1, -1, -1) + NO_TURN))
+BEZIER_SCALE = ((-1600, 0x1480, (1, 1, 1) + NO_TURN + (1, -0.5, 0.5) + NO_TURN +
+                 (0.05 / 3000, -0.02 / 3000, 0.01 / 3000) + NO_TURN + (-1, -1, -1) + NO_TURN +
+                 (0.5, 0.2, 0.4) + NO_TURN),
+                (6400, 0x680, (2, 0.5, 1.5) + NO_TURN + (-0.01 / 3000, 0.03 / 3000, -0.02 / 3000) + NO_TURN +
+                 (-1, 0.5, -0.5) + NO_TURN + (0.1, 0.3, 0.6) + NO_TURN + (-1, -1, -1) + NO_TURN))
 TCB_POSITION = ((-1600, 0, (1, 2, 3, 0.6, 0, 0, 0, 0.6, 0, 0, 0, 7.6, -4.8, 2)),
                 (6400, 0, (20, -10, 8, 0, -0.8, 0, 0.2, 0, 19, -12, 5, 0, 0, 0)))
-TCB_SCALE = ((-3200, 0, (1, 1, 1) + NO_TURN + (-0.6, 0.6, 0, 0, 0) + (0, 0, 0) + NO_TURN + (0.8, -0.288, 0.288) + NO_TURN),
-             (1600, 0, (1.5, 0.8, 1.2) + NO_TURN + (0, 0, 0.2, 0.8, 0) + (0.5, -0.24, 0.24) + NO_TURN + (0.5, -0.24, 0.24) + NO_TURN),
+TCB_SCALE = ((-3200, 0, (1, 1, 1) + NO_TURN + (-0.6, 0.6, 0, 0, 0) + (0, 0, 0) + NO_TURN +
+              (0.8, -0.288, 0.288) + NO_TURN),
+             (1600, 0, (1.5, 0.8, 1.2) + NO_TURN + (0, 0, 0.2, 0.8, 0) + (0.5, -0.24, 0.24) + NO_TURN +
+              (0.5, -0.24, 0.24) + NO_TURN),
              (6400, 0, (2, 0.5, 1.5) + NO_TURN + (0, 0, 0, 0, 0) + (0.5, -0.33, 0.33) + NO_TURN + (0, 0, 0) + NO_TURN))
+# keys at frames -30, 10, 20, 50: segments of unequal length on either side of the second key
+TCB_UNEVEN = ((-4800, 0, (-20, -0.6, 0.6, 1.4, 0, 0.4, 0, 45.1945)),
+              (1600, 0, (5, 0.4, -0.4, 0.2, 0.8, 0, 18.5069, 4.96128)), (3200, 0, (12, 0, 0, 0, 0, 0, -0.5, -1.5)),
+              (8000, 0, (3, 0, 0, 0, 0, 0, -12.75, 0)))
+SMOOTH_UNEVEN = ((-4800, 0x480, (-0.217653, 0.122123, -0.508438, 0.824138) +
+                  (-0.0887743, 0.152137, -0.801977, 0.570795) * 2 + NO_TURN * 2),
+                 (1600, 0x480, (-0.350306, 0.00907553, 0.271078, 0.896504) +
+                  (-0.471429, 0.120902, 0.589106, 0.645052) * 2 + NO_TURN * 2),
+                 (3200, 0x480, (0.34758, -0.46743, -0.400732, 0.707185) +
+                  (0.536339, -0.553661, -0.554141, 0.314209) * 2 + NO_TURN * 2),
+                 (8000, 0x480, (-0.0416356, -0.0454372, -0.0416356, 0.99723) +
+                  (-0.241957, 0.191339, 0.160492, 0.937597) * 2 + NO_TURN * 2))
 _SR1, _SR2 = (-0.217653, 0.122123, -0.508438, 0.824138), (-0.350306, 0.00907553, 0.271078, 0.896504)
 SMOOTH = ((-1600, 0x480, _SR1 + (-0.0887743, 0.152137, -0.801977, 0.570795) * 2 + NO_TURN + NO_TURN),
           (6400, 0x480, _SR2 + (-0.331813, -0.0549815, 0.626207, 0.70338) * 2 + NO_TURN + NO_TURN))
@@ -606,6 +621,9 @@ class TestTangents(MatrixCase):
                                          (0.0145058, -0.512181, 0.858755), (0, 0, 0))),
             ("TCB Rotation", TCB_ROTATION, ((0.891253, -0.438291, -0.116489), (0.398801, 0.635144, 0.661476),
                                             (-0.215931, -0.635998, 0.740864), (0, 0, 0))),
+            ("TCB Float", TCB_UNEVEN, ct.translation((3.31704, 0, 0))),
+            ("Smooth Rotation", SMOOTH_UNEVEN, ((0.946646, -0.316752, 0.0594076), (0.172725, 0.654293, 0.736252),
+                                                (-0.27208, -0.686709, 0.674095), (0, 0, 0))),
         ]
         for name, keys, want in cases:
             with self.subTest(name, keys=keys[0][2][:2]):
@@ -642,9 +660,14 @@ class TestTangents(MatrixCase):
         cv = tuple((t, flags | 0x8000, floats) for t, flags, floats in BEZIER_POSITION)
         turned = (TCB_SCALE[0], (1600, 0, (1.5, 0.8, 1.2) + _rotz(30) + TCB_SCALE[1][2][7:]))
         spin = (TCB_ROTATION[0], (1600, 0, TCB_ROTATION[1][2][:12] + (2 * math.pi,) + TCB_ROTATION[1][2][13:]))
+        # a whole revolution: opposite quaternions, the earlier rotation kept (the shorter arc)
+        q, opposite = _rotz(30), tuple(-v for v in _rotz(30))
+        linear = ((-1600, 0, q), (6400, 0, opposite))
+        smooth = ((-1600, 0x480, q * 3 + NO_TURN * 2), (6400, 0x480, opposite * 3 + NO_TURN * 2))
         cases = [("Bezier Float", free, ct.translation((-10, 0, 0))),
                  ("Bezier Position", cv, ct.translation((4.8, -0.4, 4.0))),
-                 ("TCB Scale", turned, None), ("TCB Rotation", spin, None)]
+                 ("TCB Scale", turned, None), ("TCB Rotation", spin, None),
+                 ("Linear Rotation", linear, ct.quat_matrix(q)), ("Smooth Rotation", smooth, ct.quat_matrix(q))]
         for name, keys, want in cases:
             with self.subTest(name):
                 got, issues = self.world(name, keys)
@@ -1627,14 +1650,15 @@ class TestTangentsFixture(unittest.TestCase):
                 view = keys.view()
                 recs = [struct.unpack_from("<iI%df" % ((size - 8) // 4), view, k * size)
                         for k in range(len(view) // size)]
-                k = next(k for k in range(1, len(recs)) if recs[k - 1][0] < 0 < recs[k][0])
+                k = next((k for k in range(1, len(recs)) if recs[k - 1][0] < 0 < recs[k][0]), None)
+                self.assertIsNotNone(k, "%s: no two keys around frame 0" % name)
                 out.append((entry.name, holder, [(r[1], r[2:]) for r in recs[k - 1:k + 1]]))
         return out
 
     def test_frame_0_between_two_keys(self):
         for name, want in self.KEYED.items():
             with self.subTest(name):
-                found = self.keyed(name)  # next() above fails where no two keys straddle frame 0
+                found = self.keyed(name)  # fails where no two keys straddle frame 0
                 self.assertEqual(sorted(c for c, _h, _r in found), want)
                 for _c, holder, _r in found:
                     self.assertEqual(holder.first(0x2500).unpack("<ii"), AT_FRAME_30)
