@@ -932,7 +932,8 @@ def check_stock_light(label, ob, ld, o):
 
 def check_dome(desc):
     """vray_dome: the dome is the World: Background strength (through the hemisphere's Math nodes) = 2 x 1500 /
-    (683 pi) x Light Strength, its color an Environment Texture of fixture_dome.png, the texture's Mapping (scale 1, -1,
+    (683 pi) x Light Strength, its color an Environment Texture of fixture_dome.png (Linear Rec.709) through a Gamma
+    node (the gamma-off fixture's Auto VRayBitmap: SRGB_TWICE), the texture's Mapping (scale 1, -1,
     1; turned 60 degrees about Z: -30 of the VRayBitmap's horizontal rotation, then the mirrored dome turned 90 about Z)
     and the hemisphere's (the dome's -90 about Z), camera rays off, diffuse and glossy on. The two spheres share one
     light, the scaled one has its own. The report says the World and the one it replaced, which is kept."""
@@ -954,10 +955,19 @@ def check_dome(desc):
           times is not None and above is not None and abs(times.inputs[1].default_value - want) < 1e-5 and
           times.inputs[0].links and times.inputs[0].links[0].from_node == above,
           "%s" % (times and times.inputs[1].default_value))
+    from maxdrop.convert import texmaps as tx
+    links = nodes["Background"].inputs["Color"].links
+    power = links[0].from_node if links else None
     check("vray_dome: an Environment Texture of fixture_dome.png drives the color",
           env is not None and env.image is not None and env.image.name.startswith("fixture_dome") and
-          nodes["Background"].inputs["Color"].links and
-          nodes["Background"].inputs["Color"].links[0].from_node == env, str(env and env.image))
+          power is not None and power.inputs["Color"].links and power.inputs["Color"].links[0].from_node == env,
+          str(env and env.image))
+    # transfer function Auto in the gamma-off fixture: V-Ray's sRGB curve shown decoded once more (maxdrop-em3.123)
+    check("vray_dome: the texture in Linear Rec.709 through a Gamma node of SRGB_TWICE",
+          power is not None and power.bl_idname == "ShaderNodeGamma" and
+          abs(power.inputs["Gamma"].default_value - tx.SRGB_TWICE) < 1e-6 and env.image is not None and
+          env.image.colorspace_settings.name == "Linear Rec.709",
+          "%s %s" % (power and power.bl_idname, env and env.image and env.image.colorspace_settings.name))
     tex, up = maps.get((1.0, -1.0, 1.0)), maps.get((1.0, 1.0, 1.0))
     check("vray_dome: the texture's Mapping turned 60 degrees about Z, the hemisphere's -90",
           tex is not None and up is not None and
@@ -2645,8 +2655,8 @@ def check_found_textures():
                 check_reflection_falloff()
             if name == "falloff_curve":
                 check_falloff_curve(textured=True)
-        check("found textures: a linear color image (VRayBitmap transfer function None) imported in Linear Rec.709",
-              "vtx_linear.png" in linear, str(linear))
+        check("found textures: a linear color image (VRayBitmap transfer function Auto in the gamma-off fixture, "
+              "decoded twice) imported in Linear Rec.709", "vtx_diffuse.png" in linear, str(linear))
     finally:
         empty_scene()
         for img in list(bpy.data.images):

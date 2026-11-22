@@ -77,7 +77,8 @@ not imported (a World has no such switch: an issue). The texture
 atan2(y, x)) or a Bitmap in spherical environment mapping (u = 0.75 + phi / 2 pi), v up the image, in the world's
 frame or, locked to the dome, in the dome node's; another root is not used (the World keeps the color, an issue),
 another projection is drawn as spherical (an issue), a CoronaBitmap too (V-Ray 5.2 renders it on a dome as one flat
-color, measured: an issue). The first dome that is on is the World; another one, or one that
+color, measured: an issue). Its gamma is drawn as a material's image's is (its color space, a Gamma node on a
+Linear Rec.709 image: build.world). The first dome that is on is the World; another one, or one that
 is off, is an issue (convert.scene).
 
 The other lights (docs/FORMAT.md, "Standard and photometric lights"): V-Ray 5.2 lights a white floor at distance d
@@ -877,8 +878,8 @@ def dome_texture(graph_ir, material_graph):
         amount = max(0.0, out.amount)
         if out.invert or out.level != 1.0 or out.offset != 0.0:
             issues.append(DOME_OUTPUT % img.name)
-    if img.gamma not in (None, 1.0):
-        issues.append(DOME_GAMMA % (img.name, img.gamma))
+    if img.gamma not in (None, 1.0) and img.colorspace != texmaps.colorspace(texmaps.COLOR, img.gamma):
+        issues.append(DOME_GAMMA % (img.name, img.gamma))  # drawn: its color space, or Linear Rec.709 + a Gamma
     if img.crop is not None:
         issues.append(DOME_CROP % img.name)
     return DomeTexture(img, turn, amount), issues

@@ -19,7 +19,9 @@ it as it is; with the gamma on it is linear, with it off display-referred, so a 
 is decoded in Blender while a data number is not. The gamma 3ds Max reads a Bitmap with in this scene is kept on its
 Image (None: automatic, sRGB; 1.0 for an EXR or HDR file): with the gamma on its override, else the scene's file
 input gamma (colors.Swatches.file_in); with the gamma off none, whatever its override, as 3ds Max reads the image as
-stored then (maxdrop-em3.38). The color space (colorspace): a gamma of 2.2 is sRGB, any other Linear Rec.709 (sRGB
+stored then (maxdrop-em3.38), an EXR or HDR file too (the display-referred scene shows it decoded; maxdrop-em3.123).
+A VRayBitmap's own decode on a color input or a mask is shown decoded once more with the gamma off (_shown,
+maxdrop-em3.123; CoronaBitmap's is not: a Corona render is not measured). The color space (colorspace): a gamma of 2.2 is sRGB, any other Linear Rec.709 (sRGB
 primaries: Blender converts them into the scene's working space; the builder falls back to Non-Color where the color
 space is missing) and the builder applies the gamma (1.0: none), on a COLOR, DATA or MASK input alike; on a DATA or
 MASK input an image read as linear (1.0) is Non-Color, and so is a DATA image whose pixels are read as stored in
@@ -64,7 +66,8 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
   Bitmap's, its own crop / place and mono / RGB output alpha; its transfer function as the gamma (none: 1.0, inverse
   gamma g: 1 / g, sRGB and auto: automatic, from 3ds Max: a Bitmap's automatic gamma, linear for an EXR or HDR
   file), its overall times render multiplier times the Output's amount (the order against the Output's invert and
-  offset is assumed, not measured). An environment mapping type (angular, cubic, spherical, mirrored ball), a map
+  offset is assumed, not measured). With the gamma off a color input or mask shows that decode decoded once more
+  (V-Ray 5.2), From 3ds Max the image as stored, decoded as a Bitmap's. An environment mapping type (angular, cubic, spherical, mirrored ball), a map
   source, ACEScg primaries, RGB output intensity, an unusable transfer function or multiplier are issues.
 - CoronaColor -> Constant (color and hex as swatches, the HDR color linear, the temperature Corona's own linear
   color from CORONA_KELVIN, times the multiplier, decoded as a swatch with the gamma off). VRayColor -> Constant:
@@ -142,6 +145,9 @@ EXPLICIT, OBJECT_XYZ, VERTEX_COLOR, WORLD_XYZ = (  # Placement coordinate source
 MAX_DEPTH = 8
 MAX_NODES = 256  # nodes of one graph drawn as a tree
 SRGB_GAMMA, GAMMA_TOLERANCE = 2.2, 0.05
+# With the gamma off a map whose own decode is the sRGB curve shows decoded once more (_shown): the sRGB curve
+# applied twice is within 0.008 of x ^ 5 over 0..1 (2.2 x 2.2 = 4.84 within 0.019; maxdrop-em3.123).
+SRGB_TWICE = 5.0
 
 # ClassIDs (texmap superclass), aliased from reader/classids.py.
 FALLOFF = classids.FALLOFF
@@ -318,8 +324,9 @@ class Image:
     """An image map (Bitmap, CoronaBitmap, VRayBitmap). path / resolved: as the scene stores them (resolved:
     FileAssetMetaData3's); found: the textures.Found of the lookup, None without a lookup or when the file was not
     found; gamma: the gamma 3ds Max reads it with in this scene (linear = pixel ^ gamma: its override, or the file
-    input gamma), None for automatic (sRGB; 1.0 for an EXR or HDR file); alpha: the image's alpha is used, not its
-    color."""
+    input gamma), None for automatic (sRGB; 1.0 for an EXR or HDR file); with the gamma off on a color input or a
+    mask the one the display-referred scene shows it with (None, sRGB, for an image read as stored; _shown; a
+    CoronaBitmap keeps its own, Corona not measured); alpha: the image's alpha is used, not its color."""
     index: int
     name: str
     path: str = ""
@@ -641,6 +648,13 @@ def _auto_gamma(gamma, name):
     return 1.0 if gamma is None and name.lower().endswith(FLOAT_IMAGES) else gamma
 
 
+def _shown(gamma):
+    """The gamma Blender reads an image with when a gamma-off scene shows the map's own decode (gamma: linear =
+    pixel ^ gamma; None: the sRGB curve) decoded once more, as V-Ray 5.2 shows a VRayBitmap and a float file there
+    (maxdrop-em3.123): 2.2 x its own (2.2 itself: sRGB, exact), SRGB_TWICE for the sRGB curve."""
+    return SRGB_TWICE if gamma is None else gamma * SRGB_GAMMA
+
+
 class TexmapConverter:
     """Converts the maps of one MaterialGraph; assets: the scene's reader.assets.AssetTable (None: no file is
     known); textures: a convert.textures.TextureIndex to look each file up (None: no lookup); swatches: the
@@ -927,15 +941,21 @@ class TexmapConverter:
         output = dataclasses.replace(output, amount=output.amount * mult)
         alpha = m.param(VB_MONO if kind in FLOATS else VB_RGB, 0) == 1
         stored = m.param(VB_COLOR_SPACE, 0) == VB_FROM_MAX and not self.swatches.linear
+        if not self.swatches.linear and kind in (COLOR, MASK):
+            # gamma off: From 3ds Max reads any file as stored, which the scene shows decoded (a Bitmap's rule);
+            # every other transfer function is V-Ray's own decode, shown decoded once more
+            gamma = None if stored else _shown(gamma)
         return Image(m.index, entry.name, entry.path, entry.resolved, found, mapping, crop,
                      None if output == TexOutput() else output, colorspace(kind, gamma, stored), gamma, alpha)
 
     def _bitmap_gamma(self, override, name):
         """A Bitmap's gamma as 3ds Max reads it in this scene (maxdrop-em3.38, V-Ray 5.2 renders): with the gamma on
-        the override, else the file input gamma (None for 2.2: sRGB); with it off the image as stored (None)
-        whatever its override. A float file (EXR, HDR) without an override, or with the gamma off, is linear."""
+        the override, else the file input gamma (None for 2.2: sRGB), a float file (EXR, HDR) without an override
+        linear; with it off the image as stored whatever its override, which the display-referred scene shows
+        decoded: None (sRGB), a float file too (V-Ray 5.2: an EXR of 0.5 renders 0.5, shown from 0.214 linear;
+        maxdrop-em3.123)."""
         if not self.swatches.linear:
-            override = None
+            return None
         if override is None and name.lower().endswith(FLOAT_IMAGES):
             return 1.0
         return override if override is not None else self._file_in()
@@ -947,10 +967,10 @@ class TexmapConverter:
         return g if self.swatches.linear and g != colors.SRGB_FILE_GAMMA else None
 
     def _vray_gamma(self, m, walk, name):
-        """A VRayBitmap's transfer function as a Bitmap gamma, None for automatic. Auto and From 3ds Max read a float
-        file (EXR, HDR) as linear, as V-Ray and 3ds Max do; From 3ds Max reads an 8-bit file as a Bitmap with
-        automatic gamma does (the file input gamma with the gamma on, as stored with it off). None and Inverse
-        gamma are kept with the gamma off, where V-Ray shows None as stored (maxdrop-em3.123)."""
+        """A VRayBitmap's transfer function as a Bitmap gamma, None for automatic: V-Ray's own decode, the same with
+        the gamma on and off (V-Ray 5.2). Auto and From 3ds Max read a float file (EXR, HDR) as linear, as V-Ray and
+        3ds Max do; From 3ds Max reads an 8-bit file as a Bitmap with automatic gamma does (the file input gamma
+        with the gamma on). With the gamma off _vray_image turns it into what the scene shows (_shown)."""
         space = m.param(VB_COLOR_SPACE, 0)
         if space == VB_LINEAR:
             return 1.0

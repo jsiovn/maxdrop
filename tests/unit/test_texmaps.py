@@ -1353,20 +1353,22 @@ class VRayTexmaps(Checks):
 
     def test_defaults_in_diffuse(self):
         g = self.f.irs["FixtureVBDiffuse"].textures["base_color"]
-        self.image(g.root, "vtx_diffuse.png", tx.SRGB)  # transfer function Auto: sRGB for an 8-bit file
-        self.assertEqual((g.root.gamma, g.root.crop, g.root.output, g.root.alpha), (None, None, None, False))
+        # transfer function Auto: the sRGB curve for an 8-bit file, which the gamma-off fixture shows decoded once
+        # more (maxdrop-em3.123)
+        self.image(g.root, "vtx_diffuse.png", tx.LINEAR)
+        self.assertEqual((g.root.gamma, g.root.crop, g.root.output, g.root.alpha), (tx.SRGB_TWICE, None, None, False))
         self.assertEqual(g.root.path, "vtx_diffuse.png")
         self.assertEqual((g.approximated, g.issues), (False, ()))
 
     def test_spherical_mapping_is_an_issue(self):
         g = self.f.irs["FixtureVBDiffuse"].textures["specular"]
-        self.image(g.root, "vtx_sphere.png", tx.SRGB)
+        self.image(g.root, "vtx_sphere.png", tx.LINEAR)
         self.assertTrue(g.root.mapping.environment)
         self.assertTrue(any("environment mapping" in r for r in g.issues), g.issues)
 
     def test_own_placement_and_multipliers(self):
         g = self.f.irs["FixtureVBPlace"].textures["base_color"]
-        self.image(g.root, "vtx_place.png", tx.SRGB, tiling=(2.0, 3.0), offset=(0.1, 0.2), w_angle=30.0)
+        self.image(g.root, "vtx_place.png", tx.LINEAR, tiling=(2.0, 3.0), offset=(0.1, 0.2), w_angle=30.0)
         self.close(g.root.mapping.blur, 0.8)
         self.assertFalse(g.root.mapping.environment)
         self.close(g.root.output.amount, 3.0)  # overall 1.5 x render 2
@@ -1375,10 +1377,11 @@ class VRayTexmaps(Checks):
 
     def test_transfer_functions(self):
         t = self.f.irs["FixtureVBPlace"].textures
-        self.image(t["specular"].root, "vtx_linear.png", tx.LINEAR)  # None: linear
-        self.close(t["specular"].root.gamma, 1.0)
-        self.image(t["transmission"].root, "vtx_invgamma.png", tx.LINEAR)  # inverse gamma 2: pixel ^ 0.5
-        self.close(t["transmission"].root.gamma, 0.5)
+        # the gamma-off fixture shows V-Ray's own decode decoded once more (maxdrop-em3.123)
+        self.image(t["specular"].root, "vtx_linear.png", tx.SRGB)  # None: as stored, so sRGB
+        self.close(t["specular"].root.gamma, 2.2)
+        self.image(t["transmission"].root, "vtx_invgamma.png", tx.LINEAR)  # inverse gamma 2: pixel ^ 0.5, x 2.2
+        self.close(t["transmission"].root.gamma, 1.1)
         self.assertIsInstance(t["roughness"].root, tx.Invert)
         self.image(t["roughness"].root.input, "vtx_gloss.png", tx.SRGB)  # sRGB: V-Ray's curve on any input
         self.assertIsNone(t["roughness"].root.input.gamma)
@@ -1405,12 +1408,12 @@ class VRayTexmaps(Checks):
         self.close(cc.brightness, 0.1)
         self.assertIsInstance(cc.input, tx.Composite)
         a, b = cc.input.layers
-        self.image(a.node, "vtx_layer_a.png", tx.SRGB)
-        self.image(b.node, "vtx_layer_b.png", tx.SRGB)
+        self.image(a.node, "vtx_layer_a.png", tx.LINEAR)  # Auto in the gamma-off fixture: SRGB_TWICE
+        self.image(b.node, "vtx_layer_b.png", tx.LINEAR)
         self.close((a.opacity, b.opacity), (1.0, 0.5))
         mix = self.f.irs["FixtureMixMask"].textures["base_color"].root
         self.assertIsInstance(mix, tx.Mix)
-        self.image(mix.a, "vtx_mix_a.png", tx.SRGB)
+        self.image(mix.a, "vtx_mix_a.png", tx.LINEAR)
 
     def test_vray_color(self):
         t = self.f.irs["FixtureVColor"].textures
@@ -2047,8 +2050,10 @@ class SwatchRule(Checks):
 class SceneGammaImages(Checks):
     """maxdrop-em3.38: an image on a color input as 3ds Max 2020 + V-Ray 5.2 read a 128 grey PNG (docs/FORMAT.md,
     Scene gamma): with the gamma on a Bitmap with automatic gamma (and a VRayBitmap From 3ds Max) takes the file
-    input gamma; with it off a Bitmap is read as stored whatever its gamma; CoronaBitmap and VRayBitmap Auto / sRGB
-    keep their own."""
+    input gamma; with it off a Bitmap is read as stored whatever its gamma; CoronaBitmap keeps its own (Corona not
+    measured). maxdrop-em3.123 (the same renders, greys 64 / 128 / 192, EXRs 0.25 / 0.5 / 2.0): with the gamma off
+    V-Ray shows a VRayBitmap's own decode, and a float file read as stored, decoded once more on a color input or
+    a mask (the internal value v as srgb_to_linear(v))."""
 
     ON_10 = colors.Swatches(True, file_in=1.0)
     ON_18 = colors.Swatches(True, file_in=1.8)
@@ -2089,8 +2094,13 @@ class SceneGammaImages(Checks):
         table = assets.AssetTable([assets.AssetEntry(G1, "Bitmap", "maps\\sky.exr", "")])
         for rule in (colors.GAMMA_ON, self.ON_10, colors.GAMMA_OFF, colors.UNKNOWN):
             with self.subTest(rule):
-                self.check(self._bitmap(rule, table=table), 1.0, tx.LINEAR, "an EXR: linear")
-                self.check(self._bitmap(rule, table=table, kind=tx.DATA), 1.0, tx.NON_COLOR, "an EXR: as stored")
+                # gamma off: as stored, which the scene shows decoded (an EXR of 0.5 renders 0.5, shown 0.214)
+                self.check(self._bitmap(rule, table=table), 1.0 if rule.linear else None,
+                           tx.LINEAR if rule.linear else tx.SRGB, "an EXR: linear")
+                self.check(self._bitmap(rule, table=table, kind=tx.MASK), 1.0 if rule.linear else None,
+                           tx.NON_COLOR if rule.linear else tx.SRGB, "an EXR as a mask: the color rule")
+                self.check(self._bitmap(rule, table=table, kind=tx.DATA), 1.0 if rule.linear else None,
+                           tx.NON_COLOR, "an EXR: as stored")
                 # a data input: decoded as a color input with the gamma on, as stored with it off (em3.122)
                 for info in (None, _info(1.0, 5)):
                     color, data = self._bitmap(rule, info=info), self._bitmap(rule, info=info, kind=tx.DATA)
@@ -2100,7 +2110,7 @@ class SceneGammaImages(Checks):
                         self.assertEqual(data.colorspace, tx.SRGB, info)
         self.check(self._bitmap(colors.GAMMA_ON, info=_info(1.8, 5), table=table), 1.8, tx.LINEAR,
                    "gamma on: an EXR's override is kept")
-        self.check(self._bitmap(colors.GAMMA_OFF, info=_info(1.8, 5), table=table), 1.0, tx.LINEAR,
+        self.check(self._bitmap(colors.GAMMA_OFF, info=_info(1.8, 5), table=table), None, tx.SRGB,
                    "gamma off: an EXR's override does nothing (the rule's; only an automatic EXR was measured)")
 
     def test_vray_bitmap(self):
@@ -2109,19 +2119,57 @@ class SceneGammaImages(Checks):
                                    (colors.UNKNOWN, None, tx.SRGB)):
             with self.subTest(rule):
                 self.check(self._map(rule, _vbitmap(1, p25=3)), gamma, space, "From 3ds Max: the input gamma")
-                for cs in (2, 4):
-                    self.check(self._map(rule, _vbitmap(1, p25=cs)), None, tx.SRGB, "sRGB, Auto: V-Ray's own")
-                self.check(self._map(rule, _vbitmap(1, p25=0)), 1.0, tx.LINEAR, "None (gamma off: maxdrop-em3.123)")
+                for cs in (2, 4):  # V-Ray's own curve; with the gamma off shown decoded once more
+                    self.check(self._map(rule, _vbitmap(1, p25=cs)), None if rule.linear else tx.SRGB_TWICE,
+                               tx.SRGB if rule.linear else tx.LINEAR, "sRGB, Auto: V-Ray's own")
+                self.check(self._map(rule, _vbitmap(1, p25=0)), 1.0 if rule.linear else 2.2,
+                           tx.LINEAR if rule.linear else tx.SRGB, "None: as stored, shown decoded with the gamma off")
                 self.assertEqual(self._map(rule, _vbitmap(1, p25=3), kind=tx.DATA).colorspace,
                                  tx.colorspace(tx.DATA, gamma) if rule.linear else tx.NON_COLOR,
                                  "From 3ds Max on a data input")
                 self.assertEqual(self._map(rule, _vbitmap(1, p25=2), kind=tx.DATA).colorspace, tx.SRGB)
+
+    def test_vray_bitmap_gamma_off_is_shown_decoded(self):
+        # (params, file, color / mask gamma and space with the gamma off, the data input's)
+        exr = assets.AssetTable([assets.AssetEntry(G1, "Bitmap", "maps\\sky.exr", "")])
+        cases = (({"p25": 1, "p8": 2.0}, None, (1.1, tx.LINEAR), (1.1, tx.LINEAR), (0.5, tx.LINEAR)),
+                 ({"p25": 1, "p8": 2.2}, None, (1.0, tx.LINEAR), (1.0, tx.NON_COLOR), (1 / 2.2, tx.LINEAR)),
+                 ({"p25": 2}, None, (tx.SRGB_TWICE, tx.LINEAR), (tx.SRGB_TWICE, tx.LINEAR), (None, tx.SRGB)),
+                 ({"p25": 0}, None, (2.2, tx.SRGB), (2.2, tx.SRGB), (1.0, tx.NON_COLOR)),
+                 ({"p25": 3}, None, (None, tx.SRGB), (None, tx.SRGB), (None, tx.NON_COLOR)),
+                 ({"p25": 4}, exr, (2.2, tx.SRGB), (2.2, tx.SRGB), (1.0, tx.NON_COLOR)),
+                 ({"p25": 0}, exr, (2.2, tx.SRGB), (2.2, tx.SRGB), (1.0, tx.NON_COLOR)),
+                 ({"p25": 3}, exr, (None, tx.SRGB), (None, tx.SRGB), (1.0, tx.NON_COLOR)),
+                 ({"p25": 2}, exr, (tx.SRGB_TWICE, tx.LINEAR), (tx.SRGB_TWICE, tx.LINEAR), (None, tx.SRGB)))
+        for params, table, color, mask, data in cases:
+            with self.subTest(params=params, exr=table is not None):
+                for kind, (gamma, space) in ((tx.COLOR, color), (tx.MASK, mask), (tx.DATA, data)):
+                    tex = tx.TexmapConverter(FakeGraph(_vbitmap(1, **params)), _table() if table is None else table,
+                                             swatches=colors.GAMMA_OFF)
+                    self.check(tex.convert(mat.MapRef(1), kind).root, gamma, space, kind)
+
+    def test_shown_values_agree_with_v_ray(self):
+        # V-Ray 5.2 internal values with the gamma off (on: the same), shown as srgb_to_linear in Blender: what
+        # Blender draws (pixel ^ gamma, sRGB for 2.2) is within 0.02 of it
+        def drawn(pixel, gamma):
+            return colors.srgb_to_linear(pixel) if gamma is None or abs(gamma - 2.2) < 1e-9 else pixel ** gamma
+        cases = ((2, 64, 0.0512696), (2, 128, 0.215861), (2, 192, 0.527115), (0, 64, 0.25098), (0, 192, 0.752941),
+                 (1, 128, 0.708492), (1, 192, 0.867722))
+        for cs, grey, internal in cases:
+            with self.subTest(cs=cs, grey=grey):
+                params = {"p25": cs, "p8": 2.0} if cs == 1 else {"p25": cs}
+                image = self._map(colors.GAMMA_OFF, _vbitmap(1, **params))
+                self.assertLess(abs(drawn(grey / 255.0, image.gamma) - colors.srgb_to_linear(internal)), 0.02)
+        inverse = self._map(colors.GAMMA_OFF, _vbitmap(1, p25=1, p8=0.5))  # inverse gamma 0.5: 128 -> 0.252
+        self.assertLess(abs(drawn(128 / 255.0, inverse.gamma) - colors.srgb_to_linear(0.251965)), 0.02)
 
     def test_corona_bitmap_keeps_its_own(self):
         for rule in (colors.GAMMA_ON, self.ON_10, colors.GAMMA_OFF):
             with self.subTest(rule):
                 self.check(self._map(rule, _cbitmap(1)), None, tx.SRGB, "automatic: 2.2 whatever the scene")
                 self.check(self._map(rule, _cbitmap(1, p125=1.0)), 1.0, tx.LINEAR)
+                self.check(self._map(rule, _cbitmap(1), kind=tx.MASK), None, tx.SRGB,
+                           "a mask too: whether Corona shows it decoded once more is not measured")
 
 
 class DataAndMaskRule(Checks):

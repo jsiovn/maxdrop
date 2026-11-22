@@ -631,7 +631,7 @@ class DomeTextureRules(unittest.TestCase):
         self.assertEqual((dt.image.name, dt.turn, dt.amount, issues), ("sky.hdr", 0.5, 1.0, [other]))
 
     def test_its_amount_and_the_issues_of_what_is_not_imported(self):
-        img = self.image(output=texmaps.TexOutput(invert=True, amount=3.0), gamma=2.2,
+        img = self.image(output=texmaps.TexOutput(invert=True, amount=3.0), gamma=1.8,  # in sRGB: not drawn
                          crop=texmaps.Crop(0.0, 0.0, 0.5, 0.5))
         dt, issues = L.dome_texture(self.ir(img), self.vray({texmaps.VB_MAP_TYPE: 0, L.VB_V_ROTATION: math.pi,
                                                              L.VB_AXIAL: math.pi / 2.0, L.VB_H_FLIP: 1,
@@ -641,7 +641,12 @@ class DomeTextureRules(unittest.TestCase):
                                   L.DOME_AXIAL % ("sky.hdr", 90.0), L.DOME_SWITCH % ("sky.hdr", "horizontal flip"),
                                   L.DOME_SWITCH % ("sky.hdr", "vertical flip"),
                                   L.DOME_SWITCH % ("sky.hdr", "ground projection"), L.DOME_OUTPUT % "sky.hdr",
-                                  L.DOME_GAMMA % ("sky.hdr", 2.2), L.DOME_CROP % "sky.hdr"])
+                                  L.DOME_GAMMA % ("sky.hdr", 1.8), L.DOME_CROP % "sky.hdr"])
+
+    def test_a_gamma_the_world_draws_is_no_issue(self):
+        for gamma, space in ((2.2, texmaps.SRGB), (texmaps.SRGB_TWICE, texmaps.LINEAR), (0.5, texmaps.LINEAR)):
+            dt, issues = L.dome_texture(self.ir(self.image(gamma=gamma, colorspace=space)), self.vray({}))
+            self.assertEqual(issues, [], gamma)
 
     def test_a_bitmap_is_turned_a_quarter(self):
         graph = _Graph({3: _Map(tuple(classids.BITMAP_TEX), {})})  # no Placement part: texture mapping
