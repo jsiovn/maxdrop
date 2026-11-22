@@ -202,7 +202,7 @@ def _block_heads(lines, title):
 def only_known_gaps(body):
     """True when the report's only gaps are on the material side, which the fixtures have on purpose: wrappers and
     maps approximated, map classes without a map below (vray_texmaps has Noise), material classes without a rule
-    (none of the fixtures has one since CoronaHairMtl got a rule), texture files not found (the fixtures carry no images), material issues and,
+    (none in the fixtures), texture files not found (the fixtures carry no images), material issues and,
     on Blender 4, the Principled inputs it lacks (vray_basic is thin-walled: Thin Wall exists from Blender 5);
     modifiers only in a fixture whose oracle lists
     them (modifier_pivot), and the issues and placeholders a fixture is made to have (FIXTURE_ISSUES,

@@ -1693,7 +1693,8 @@ class CoronaClasses(unittest.TestCase, Close):
         self.close(ir.ior, 1.6)
         self.close(ir.specular.value, 1.0)
         self.close(ir.alpha.value, 200 / 255 * 0.8, "the opacity swatch as stored times its level")
-        self.assertEqual(ir.issues, ["CoronaHairMtl 'FixtureCoronaHairSet': melanin map not converted"])
+        self.assertEqual(ir.issues, ["CoronaHairMtl 'FixtureCoronaHairSet': tint map drawn without the melanin color",
+                                     "CoronaHairMtl 'FixtureCoronaHairSet': melanin map not converted"])
 
     def test_shadow_catchers(self):
         plain, refl = self.ir("ShadowCatcher"), self.ir("ShadowCatcherRefl")
@@ -1876,6 +1877,26 @@ class CoronaSynthetic(unittest.TestCase, Close):
         self.close(ir.roughness.value, 0.5)
         self.close(ir.ior, 1.55)
         self.assertEqual((ir.issues, dict(conv.stats.unknown)), ([], {}))
+
+    def test_hair_color_numbers(self):
+        """Literal numbers, apart from _hair_color: Corona's default (melanin 0.5) is a dark brown."""
+        self.close(mat.HAIR_ROUGHNESS_SCALE, 5.888415, "Cycles' polynomial at 0.3")
+        got = mat.hair_color(0.5, 0.0, (1.0, 1.0, 1.0))
+        for g, want in zip(got, (0.030584, 0.011156, 0.001831)):
+            self.assertAlmostEqual(g, want, delta=2e-6)
+        self.close(mat.hair_color(0.0, 0.0, (0.5, 0.25, 1.0)), (0.5, 0.25, 1.0), "no melanin: the tint itself")
+
+    def test_hair_tint_map_without_melanin_is_no_issue(self):
+        conv, ir = _convert(_corona(0, classids.CORONA_HAIR_MTL, p141=0.0, p112=Ref(1)), _map(1))
+        self.assertEqual((ir.base_color.map, ir.issues), (mat.MapRef(1, 1.0), []))
+
+    def test_layered_over_a_shadow_catcher_is_no_shadow_catcher(self):
+        layered = _corona(0, classids.CORONA_LAYERED_MTL, p1000=Ref(1), p1001=[Ref(2)], p1004=[1])
+        conv, ir = _convert(layered, _corona(1, classids.CORONA_SHADOW_CATCHER_MTL),
+                            _corona(2, classids.CORONA_PHYSICAL_MTL))
+        self.assertEqual(len(ir.layers), 1)
+        self.assertFalse(ir.shadow_catcher)
+        self.assertTrue(conv.convert(1).shadow_catcher, "the catcher itself still is one")
 
     def test_hair_melanin_bounds(self):
         _conv, black = _convert(_corona(0, classids.CORONA_HAIR_MTL, p141=1.0, p142=0.5))

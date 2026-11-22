@@ -81,8 +81,8 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   times the radius scale, weighted mean color), the first reflection as specular, roughness and IOR, opacity, bump.
 - CoronaHairMtl -> one Principled layer (not measured: no Corona render here): the base color Blender's Principled Hair
   BSDF gives a strand of its melanin, pheomelanin (read as Melanin Redness) and tint (hair_color), plus its diffuse
-  color; roughness = 1 - glossiness, IOR, opacity, bump; the tint map drives the base color. Its other maps are named
-  issues.
+  color; roughness = 1 - glossiness, IOR, opacity, bump; the tint map drives the base color (in place of the melanin
+  color: an issue). Its other maps are named issues.
 - CoronaShadowCatcherMtl -> the grey material marked shadow_catcher: an object whose every slot holds one is a shadow
   catcher (build/objects.py); a backplate map and a reflection are named issues.
 - CoronaVolumeMtl, CoronaScannedMtl, CoronaSlicerMtl -> the grey material with a named issue (CORONA_GREY), not
@@ -265,7 +265,8 @@ class Input:
 @dataclasses.dataclass
 class MaterialIR:
     """One material, renderer-neutral, linear color. index: the Max material object it was converted from; source:
-    that material's class name; unknown: the grey material of a class without a rule."""
+    that material's class name; unknown: a grey material (a class without a rule, or one whose rule names what it
+    leaves out: CORONA_GREY)."""
     index: object
     name: str
     source: str = ""
@@ -1067,13 +1068,13 @@ def corona_layered_mtl(conv, m, ir):
     """CoronaLayeredMtl with a base and a layer on (block 0, CORONA_*): the base's IR, named after the layered
     material, with every layer that is on and set as a Layer (its amount, its mask where masksOn, the mask amount);
     at most MAX_LAYERS, and no more than MAX_LAYER_BSDFS Principled BSDFs in all (the rest left out, an issue). A
-    base or layer that is a Multi/Sub-Object gives its first entry (an issue). Returns the IR: the textures are the
-    base's, the masks' graphs made here."""
+    base or layer that is a Multi/Sub-Object gives its first entry (an issue); a shadow-catcher base mixes as its grey,
+    not making the object a shadow catcher. Returns the IR: the textures are the base's, the masks' graphs made here."""
     base_index = m.param(CORONA_BASE, 0).index
     base = conv.convert(base_index)
     if base is None:  # not a material (the peel checks only that it is set)
         return conv._grey(m.index, "%s: base is not a material" % (m.name or "CoronaLayeredMtl",))
-    out = dataclasses.replace(base, index=ir.index, name=ir.name, source=ir.source, unknown=False,
+    out = dataclasses.replace(base, index=ir.index, name=ir.name, source=ir.source, unknown=False, shadow_catcher=False,
                               textures=dict(base.textures), issues=list(base.issues), layers=list(base.layers))
     layers = conv.corona_layers(m)
     for sub in [base_index] + [i for _k, i in layers]:
@@ -1156,8 +1157,9 @@ def corona_skin_mtl(conv, m, ir):
 HAIR_EUMELANIN = (0.506, 0.841, 1.653)
 HAIR_PHEOMELANIN = (0.343, 0.733, 1.924)
 HAIR_RADIAL_ROUGHNESS = 0.3
-HAIR_ROUGHNESS_SCALE = (((((0.245 * HAIR_RADIAL_ROUGHNESS) + 5.574) * HAIR_RADIAL_ROUGHNESS - 10.73)
-                         * HAIR_RADIAL_ROUGHNESS + 2.532) * HAIR_RADIAL_ROUGHNESS - 0.215) * HAIR_RADIAL_ROUGHNESS + 5.969
+_x = HAIR_RADIAL_ROUGHNESS
+HAIR_ROUGHNESS_SCALE = (((((0.245 * _x) + 5.574) * _x - 10.73) * _x + 2.532) * _x - 0.215) * _x + 5.969  # 5.888
+del _x
 HAIR_FLOOR = 1e-4  # Cycles' floor of 1 - melanin; MaxDrop's of the tint (ln 0)
 # CoronaHairMtl map slots no input of the IR takes: (map, its switch, what)
 HAIR_UNREAD = ((113, 122, "diffuse"), (115, 124, "IOR"), (117, 126, "softness"), (118, 127, "colorless glossiness"),
@@ -1184,15 +1186,19 @@ def corona_hair_mtl(conv, m, ir):
     """CoronaHairMtl, block 0, as one Principled layer (not measured: no Corona render here): base = hair_color of
     melanin (141) and pheomelanin (142, read as Blender's Melanin Redness) with the tint colorTint (101) x levelTint
     (104), plus colorDiffuse (102) x levelDiffuse (105), at most 1; the tint map (112, switch 121, amount 130) drives
-    the base color; roughness = 1 - glossiness (108, map 116 / 125 / 134 inverted); ior (107); specular 1; alpha =
-    mono_swatch(colorOpacity 103) x levelOpacity (106), map 114 / 123 / 132; bump 120 / 129 / 138. Maps in the other
-    slots (HAIR_UNREAD) are named issues; softness, highlight shift, the specular colors and the glint are not read."""
+    the base color in place of that color (an issue when melanin is above 0); roughness = 1 - glossiness (108, map
+    116 / 125 / 134 inverted); ior (107); specular 1; alpha = mono_swatch(colorOpacity 103) x levelOpacity (106), map
+    114 / 123 / 132; bump 120 / 129 / 138. Maps in the other slots (HAIR_UNREAD) are named issues; softness,
+    colorless glossiness, highlight shift, randomizeMelanin, the specular and transmission colors and the glint are
+    not read."""
     def slot(map_pid, invert=False):
         return conv.map_ref(m, map_pid, map_pid + 9, map_pid + 18, 0, invert=invert, ir=ir, percent=False)
     tint = tuple(c * max(0.0, _num(m, 104, 0, 1.0)) for c in conv.rgb(m, 101, 0, (1.0, 1.0, 1.0)))
     diffuse = tuple(c * max(0.0, _num(m, 105, 0, 1.0)) for c in conv.rgb(m, 102, 0, (0.0, 0.0, 0.0)))
     color = hair_color(_num(m, 141, 0, 0.5), _num(m, 142, 0, 0.0), tint)
     ir.base_color = Input(tuple(min(1.0, c + d) for c, d in zip(color, diffuse)), slot(112))
+    if ir.base_color.map is not None and _num(m, 141, 0, 0.5) > 0:
+        conv.issue(m.index, "CoronaHairMtl %r: tint map drawn without the melanin color" % (m.name,), ir)
     ir.roughness = Input(_roughness(_num(m, 108, 0, 0.5), False), slot(116, invert=True))
     ir.ior = _ior(_num(m, 107, 0, 1.55))
     opacity = _clamp01(conv.mono_swatch(m, 103, 0, (1.0, 1.0, 1.0)) * max(0.0, _num(m, 106, 0, 1.0)))
