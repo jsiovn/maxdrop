@@ -39,6 +39,9 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   the transmission), and with Fresnel off a bright reflection (mean >= METAL_REFLECTION) makes the material a metal
   in the reflection color; beside a reflection map only the swatch's share counts (its mean times 1 - the map
   amount): a map at full amount hides the swatch, so it never makes a metal (the map itself is not judged).
+  Below that rule Fresnel off sets fresnel False: the weight (a dim swatch, or a reflection map such as the black to
+  white Falloff) is reflected as it is at every angle, which build/materials.py draws as a white metal mixed by it
+  over the material without reflection (V-Ray 5.2: a 0.2 swatch reflects 0.200 facing the camera, maxdrop-em3.120).
   The Fresnel IOR is the refraction IOR when the material refracts or locks the IOR, else the reflection IOR.
 - VRayLightMtl -> emission only; VRayFastSSS2 -> base + subsurface; VRayCarPaintMtl / VRayCarPaintMtl2 -> a metal
   base + coat (VRayCarPaintMtl's coat_strength is the coat's reflectance at normal incidence: a full coat whose
@@ -260,6 +263,7 @@ class MaterialIR:
     metallic: Input = Input(0.0)
     roughness: Input = Input(0.5)
     specular: Input = Input(1.0)  # a reflection weight: 1 is the IOR's own Fresnel (Blender's 0.5)
+    fresnel: bool = True  # False: the weight is reflected at every angle, no Fresnel curve (VRayMtl Fresnel off)
     ior: float = 1.5
     transmission: Input = Input(0.0)
     thin_walled: bool = False
@@ -706,7 +710,8 @@ def vray_mtl(conv, m, ir):
     # the swatch's share of the slot: a map at full amount hides it (a Falloff there is a dielectric's ramp)
     hidden = min(1.0, reflection_map.amount) if reflection_map is not None else 0.0
     shown = mean(reflection) * (1.0 - hidden)
-    if not _flag(m, 8, 1, True) and shown >= METAL_REFLECTION:  # reflection_fresnel off
+    ir.fresnel = _flag(m, 8, 1, True)  # reflection_fresnel
+    if not ir.fresnel and shown >= METAL_REFLECTION:
         ir.metallic = Input(1.0)
         ir.base_color = Input(reflection, reflection_map)
 

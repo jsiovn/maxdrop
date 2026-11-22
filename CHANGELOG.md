@@ -73,6 +73,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   its Diffuse Level into account: a diffuse color at a Diffuse Level of 40 % arrives as dark as 3ds Max renders it,
   instead of at full brightness (a diffuse map is not scaled yet). A missing or animated diffuse, glossiness or specular level takes
   its own shader's default instead of Blinn's.
+- Materials: a VRayMtl with reflection Fresnel off reflects its reflection color or map as it is at every angle, as
+  V-Ray does, instead of that amount times a Fresnel curve: a 0.2 reflection reflected about 0.011 facing the camera
+  instead of 0.2, and the usual black to white Falloff in reflection reached a tenth of its brightness near the
+  silhouette. It is drawn as a white metal mixed by the amount over the material without reflection (matches V-Ray
+  5.2 in Cycles; EEVEE does not mirror neighbouring objects). A reflection bright enough for the metal rule is
+  unchanged.
 
 ## [1.0.1] - 2026-11-22
 

@@ -35,6 +35,12 @@ w of 0 or at least 1 (above 1 counted as 1, as a map is by the Mix Shader's fact
 constant Transmission Weight of 1 (Specular IOR Level does not change a transmissive Principled's reflection,
 measured in Cycles; so the refracting share of a partly transmissive one keeps its full reflection). Every material class follows: the rule reads
 the IR's weight, whatever made it (Standard, Physical, CoronaLegacyMtl: not measured against their renderers).
+An IR whose fresnel is off (VRayMtl Fresnel off) reflects its weight at every angle: the same Mix Shader then has the
+filled BSDF at Specular IOR Level 0 first and a copy of it second (MIRROR_LABEL: Metallic 1, Base Color white, both
+unlinked), a white metal reflecting 1 at every angle, so w + (1 - w) diffuse. Measured on V-Ray 5.2 (bead
+maxdrop-em3.120, the same scene): a 0.2 swatch reflects 0.200 facing the camera, where Specular IOR Level 0.1 gave
+0.011. A reflection map that did not convert keeps the twin (its swatch is a weight with Fresnel), so a bright swatch
+it hid never becomes a mirror.
 
 Data maps (a map on roughness, metallic or alpha, a mask, a bump height: a graph drawn as a float) take the mean of
 their channels too: wherever a float graph comes out as a color socket (an image's Color, a Color Correction, a
@@ -103,6 +109,8 @@ from ..convert import texmaps as tx
 
 SPECULAR_LEVEL = 0.5
 TWIN_LABEL, WEIGHT_LABEL = "Without reflection", "Reflection weight"  # reflection_weight()'s nodes
+MIRROR_LABEL = "Mirror reflection"  # reflection_weight()'s copy for a weight without Fresnel
+MIRROR_INPUTS = {"Metallic": 1.0, "Base Color": (1.0, 1.0, 1.0, 1.0), "Specular IOR Level": SPECULAR_LEVEL}
 CLIP_LABEL = "Clip"  # the node that masks an image's output (clip_axes)
 MAX_LAYER_DEPTH = 8  # layers within layers drawn (convert/materials.py already stops a deeper or cyclic chain)
 X_STEP, Y_STEP = 300, 280
@@ -460,8 +468,10 @@ class _Tree:
         return v
 
     def specular(self, ir):
-        """Specular IOR Level from the IR's reflection weight; the weight (a node output or a float) when it needs
-        reflection_weight()'s Mix Shader, else None (the level alone draws it)."""
+        """Specular IOR Level from the IR's reflection weight; (the weight: a node output or a float, mirror) when it
+        needs reflection_weight()'s Mix Shader, else None (the level alone draws it). mirror: the IR's fresnel is off
+        and the weight is a converted map or a swatch without a map (one that did not convert keeps the twin, so a
+        hidden bright swatch never becomes a mirror); Specular IOR Level is then 0, the reflection all the mirror's."""
         s = self.bsdf_input("Specular IOR Level")
         if s is None:
             return None
@@ -473,34 +483,39 @@ class _Tree:
         if not isinstance(w, bpy.types.NodeSocket) and not 0.0 < w < 1.0:
             _default(s, max(0.0, min(1.0, w)) * SPECULAR_LEVEL)
             return None
-        _default(s, SPECULAR_LEVEL)
-        return w
+        mirror = not ir.fresnel and (graph is not None or ir.specular.map is None)
+        _default(s, 0.0 if mirror else SPECULAR_LEVEL)
+        return w, mirror
 
     def constant_at_least(self, name, bound):
         s = self.bsdf.inputs.get(name)
         return s is not None and not s.is_linked and s.default_value >= bound
 
-    def reflection_weight(self, bsdf, weight):
+    def reflection_weight(self, bsdf, weight, mirror=False):
         """bsdf (at the IOR's full Fresnel) mixed by weight over a twin without reflection: the Mix Shader's
-        output. The twin has bsdf's links and values, but Specular IOR Level 0."""
+        output. The twin has bsdf's links and values, but Specular IOR Level 0. mirror: bsdf (without reflection)
+        is the first shader and its copy the second, a white metal (MIRROR_LABEL: Metallic 1, Base Color white)."""
         self.start_row()
         twin = self.nodes.new("ShaderNodeBsdfPrincipled")
-        twin.label = TWIN_LABEL
+        twin.label = MIRROR_LABEL if mirror else TWIN_LABEL
         twin.location = (bsdf.location[0], self.row - Y_STEP)
         self.columns[-1] = self.row - 2 * Y_STEP
         twin.distribution, twin.subsurface_method = bsdf.distribution, bsdf.subsurface_method
+        own = MIRROR_INPUTS if mirror else {"Specular IOR Level": 0.0}
         for src, dst in zip(bsdf.inputs, twin.inputs):
-            if src.is_linked:
+            if src.name in own:
+                dst.default_value = own[src.name]
+            elif src.is_linked:
                 self.links.new(src.links[0].from_socket, dst)
             elif hasattr(src, "default_value"):
                 dst.default_value = src.default_value
-        twin.inputs["Specular IOR Level"].default_value = 0.0
         mix = self.nodes.new("ShaderNodeMixShader")
         mix.label = WEIGHT_LABEL
         mix.location = (bsdf.location[0] + X_STEP * 0.5, twin.location[1])
         self.feed(mix.inputs[0], weight)
-        self.links.new(_out(twin, "BSDF"), mix.inputs[1])
-        self.links.new(_out(bsdf, "BSDF"), mix.inputs[2])
+        below, above = (bsdf, twin) if mirror else (twin, bsdf)
+        self.links.new(_out(below, "BSDF"), mix.inputs[1])
+        self.links.new(_out(above, "BSDF"), mix.inputs[2])
         return mix.outputs[0]
 
     def build(self):
@@ -589,7 +604,7 @@ class _Tree:
         if ir.thin_walled:
             self.value("Thin Wall", True)
         alpha = self.bsdf_input("Alpha", needed=False)
-        top = _out(bsdf, "BSDF") if weight is None else self.reflection_weight(bsdf, weight)
+        top = _out(bsdf, "BSDF") if weight is None else self.reflection_weight(bsdf, *weight)
         return top, (alpha_map, (None if alpha is None or alpha_map else alpha.default_value))
 
     def graph(self, node, space, depth):

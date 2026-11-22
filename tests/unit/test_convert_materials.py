@@ -267,6 +267,21 @@ class VRayMtlRules(unittest.TestCase, Close):
         conv, ir = _convert(_vray(0, b1=white, b4={101: Ref(1), 201: 75.0}), _map(1))  # 1 x 0.25: the threshold
         self.close(ir.metallic.value, 1.0)
 
+    def test_fresnel_flag(self):
+        """reflection_fresnel reaches the IR: off, the weight is a mirror's at every angle (build/materials.py draws
+        a white metal mixed by it, maxdrop-em3.120); a dim swatch keeps its mean as the weight, no metal."""
+        conv, ir = _convert(_vray(0, b1={1: (1.0, 0.0, 0.0), 2: (0.2, 0.2, 0.2), 8: 0}))
+        self.assertFalse(ir.fresnel)
+        self.close(ir.specular.value, 0.2)
+        self.close(ir.metallic.value, 0.0)
+        self.close(ir.base_color.value, (1.0, 0.0, 0.0))
+        conv, ir = _convert(_vray(0, b1={2: (0.2, 0.2, 0.2), 8: 1}))
+        self.assertTrue(ir.fresnel)
+        conv, ir = _convert(_vray(0, b1={2: (0.8, 0.8, 0.8), 8: 0}))  # the metal rule: Metallic 1 wins in build
+        self.assertFalse(ir.fresnel)
+        self.close(ir.metallic.value, 1.0)
+        self.assertTrue(mat.MaterialIR(0, "x").fresnel, "every other rule: the IOR's Fresnel")
+
     def test_fresnel_on_or_dark_reflection_keeps_diffuse(self):
         for b1 in ({1: (1.0, 0.0, 0.0), 2: (0.8, 0.8, 0.8), 8: 1, 91: 0.2},
                    {1: (1.0, 0.0, 0.0), 2: (0.2, 0.2, 0.2), 8: 0, 91: 0.2}):  # 0.2 < METAL_REFLECTION
