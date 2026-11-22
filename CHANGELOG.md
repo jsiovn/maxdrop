@@ -64,8 +64,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   tangents (Bezier handles, step keys, tension, continuity, bias and ease), instead of a straight line and a line in
   the report. A Linear Rotation turning more than half a revolution between two keys turns the long way round, as in
   3ds Max. A key with a free handle, and a few rarer cases, still interpolate linearly with a line in the report.
-- Shapes: an open shape that renders in 3ds Max with a round section (a Line or an Arc with Enable In Renderer)
-  is capped at both ends, as 3ds Max renders it, instead of a hollow tube with open ends.
+- Shapes: an open shape that renders in 3ds Max with a round section (a Line, an Arc or an open Editable Spline
+  with Enable In Renderer) is capped at both ends, as 3ds Max renders it, instead of a hollow tube with open ends.
 
 ## [1.0.1] - 2026-11-22
 

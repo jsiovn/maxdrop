@@ -1243,10 +1243,10 @@ def check_curve(label, ob, shape, meters):
 
 def check_round_caps(label, ob, shape):
     """A round bevel's ends, as 3ds Max renders an open shape: each end of an open spline capped (faces whose every
-    vertex lies on the bevel ring around the end point, together the regular polygon of the shape's sides), a
-    closed spline uncapped. Blender caps with sides - 2 triangles over a ring of their own."""
+    vertex lies on the bevel ring around the end point, together the regular polygon of the bevel ring), a
+    closed spline uncapped. Blender caps with n - 2 triangles over a ring of their own."""
     cu = ob.data
-    r, n = cu.bevel_depth, shape["sides"]
+    r, n = cu.bevel_depth, 4 + 2 * cu.bevel_resolution  # the ring Blender sweeps: 3ds Max's even sides
     ngon = n / 2 * r * r * math.sin(2 * math.pi / n)
     evaluated = ob.evaluated_get(bpy.context.evaluated_depsgraph_get())
     mesh = evaluated.to_mesh()

@@ -50,7 +50,7 @@ def make_curve(cd, collection):
     if cd.section:
         curve.bevel_mode = 'OBJECT'
         curve.bevel_object = _section(cd, collection)
-    curve.use_fill_caps = bool(cd.section) or cd.bevel_depth > 0  # 3ds Max caps an open spline's render mesh
+    curve.use_fill_caps = bool(cd.section) or cd.bevel_depth > 0
     return curve
 
 
