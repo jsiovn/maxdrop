@@ -141,14 +141,11 @@ class Describe(unittest.TestCase):
                              (7, "type 7 is not a VRayLight type")):
             self.assertEqual(L.describe(1, "x", values(type=kind), MM, colors.GAMMA_ON), (None, [reason]))
 
-    def test_a_mesh_light_needs_a_mesh(self):
+    def test_a_mesh_light_is_left_to_the_scene(self):
+        """Whether a mesh light has a mesh is convert.scene's to find (_emitter_mesh): not_built does not refuse it."""
         v = values(type=L.MESH, mesh_source=7)
-        self.assertIsNone(L.not_built(v, {7: "Box"}.get))
-        self.assertEqual(L.not_built(v, {}.get), L.NO_MESH)  # no node of the scene
-        self.assertEqual(L.not_built(values(type=L.MESH, mesh_source=None), {7: "Box"}.get), L.NO_MESH)
-        own = values(type=L.MESH, mesh_source=None)
-        own[L.MESH_OBJECT] = 9  # Replace mesh with light: its own mesh object
-        self.assertIsNone(L.not_built(own, {}.get))
+        self.assertIsNone(L.not_built(v))
+        self.assertIsNone(L.not_built(values(type=L.MESH, mesh_source=None)))
         self.assertTrue(L.is_mesh_light(v))
         self.assertFalse(L.is_mesh_light(values(type=L.DOME)))
         self.assertIsNone(L.not_built(values(type=L.DOME)))
@@ -487,6 +484,62 @@ class MeshLightFixture(unittest.TestCase):
         self.assertFalse(ed.glossy_rays)
         self.assertEqual(self.issues[node.index], ["light: " + L.EMITTER_MODIFIERS % "Shell"])
         self.assertEqual(len(md.loop_starts), 1)
+
+    def described(self, change):
+        """The fixture described with change(values) applied to the values of every mesh light read."""
+        read = conv.lights.read_params
+
+        def patched(scene, i, *args, **kw):
+            values, issues = read(scene, i, *args, **kw)
+            if L.is_mesh_light(values):
+                change(scene, i, values)
+            return values, issues
+
+        with mock.patch.object(conv.lights, "read_params", patched):
+            desc = conv.read(MESH_FIXTURE)
+        by_name = {n.name: n for n in desc.nodes}
+        issues = {}
+        for node, reason in desc.issues:
+            issues.setdefault(node, []).append(reason)
+        return desc, by_name, issues
+
+    def test_an_own_mesh_object_that_is_no_mesh_falls_back_to_the_picked_node(self):
+        """Reference 1 holding something else (its parameter block, the light itself): the node of 34 still emits."""
+        for target in ("block", "self"):
+            def change(scene, i, values):
+                values[L.MESH_OBJECT] = scene.refs(i)[0] if target == "block" else i
+            _desc, by_name, issues = self.described(change)
+            node = by_name["FixtureEmitter"]
+            self.assertEqual((node.kind, node.index in issues), (conv.MESH, False), target)
+
+    def test_hostile_mesh_references_leave_an_empty(self):
+        """The light itself as its own mesh and as its picked node, an index out of range: an empty, a line."""
+        nodes = {}
+
+        def change(scene, i, values):
+            values[L.MESH_OBJECT] = i
+            values[L.P_MESH_SOURCE] = nodes.setdefault(i, next(n for n in scene.walk() if scene.node(n).object
+                                                               is not None and scene.object_stack(
+                                                                   scene.node(n).object).base == i))
+        _desc, by_name, issues = self.described(change)
+        node = by_name["FixtureEmitter"]
+        self.assertEqual(node.kind, conv.EMPTY)
+        self.assertEqual(issues[node.index], ["light: not built: " + L.EMITTER_CLASS % "VRayLight"])
+
+        def far(scene, i, values):
+            values[L.MESH_OBJECT] = None
+            values[L.P_MESH_SOURCE] = len(scene) + 5
+        _desc, by_name, issues = self.described(far)
+        node = by_name["FixtureEmitter"]
+        self.assertEqual((node.kind, issues[node.index]), (conv.EMPTY, ["light: not built: " + L.NO_MESH]))
+
+    def test_off(self):
+        """A mesh light that is off: built, its description off (build hides it)."""
+        def change(scene, i, values):
+            values[L.P_ON] = 0
+        desc, by_name, _issues = self.described(change)
+        node = by_name["FixtureEmitter"]
+        self.assertEqual((node.kind, desc.emitters[node.emitter].on), (conv.MESH, False))
 
     def test_no_mesh(self):
         node = self.by_name["FixtureEmitterNone"]

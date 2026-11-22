@@ -176,6 +176,15 @@ class TestSynthetic(unittest.TestCase):
         self.assertIn("Render size: not stored, Blender's kept; scene camera: Cam, the first camera: the view 3ds Max "
                       "renders (viewport 4) looks through no camera", rep.text().split("\n"))
 
+    def test_emitters_are_counted_with_the_lights(self):
+        desc = conv.SceneDescription(1.0)
+        desc.nodes = [node(1, "Box"), node(2, "Strip")]
+        desc.meshes = {(1, None): None, ("emitter", 2, 1, None): None}
+        desc.lights = {(3, 1.0): None}
+        desc.emitters = {2: None}
+        rep = report.gather(desc, source="room.max")
+        self.assertEqual(rep.lights_built, 2)
+
     def test_curves_are_counted(self):
         desc = conv.SceneDescription(1.0)
         desc.nodes = [node(1, "Box"), node(2, "Outline", conv.CURVE)]

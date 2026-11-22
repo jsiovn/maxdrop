@@ -6,7 +6,7 @@
 
     light_class(scene, i)               # VRAY, STANDARD, PHOTOMETRIC, SUN, IES or SKYLIGHT; None: not one read here
     values, issues = read_params(scene, i, assets, ies_files)   # the light's values, LightError without its block
-    not_built(values, names)            # why a mesh light without a mesh or a Skylight is not built, else None
+    not_built(values)                   # why a Skylight or an unknown VRayLight type is not built, else None
     scale = area_scale(values, world)   # what a node's scale does to the area, rounded (part of the key)
     ld, issues = describe(key, name, values, meters, swatches, scale)   # LightDescription, or None and the reason
     is_dome(values)                     # a VRayLight dome: the scene's World, not a light (describe_dome)
@@ -595,11 +595,9 @@ def is_mesh_light(values):
     return values.get(CLASS, VRAY) == VRAY and values[P_TYPE] == MESH
 
 
-def not_built(values, name_of=None):
-    """Why a light of these values is not built (a mesh light without a mesh, a type 3ds Max does not have, a
-    Skylight), None when it is (a dome too: describe_dome; a mesh light: describe_emitter). name_of(object index):
-    the name of the node a mesh light picked, None when that is no node of the scene; a mesh light with its own mesh
-    object (MESH_OBJECT) needs none."""
+def not_built(values):
+    """Why a light of these values is not built (a type 3ds Max does not have, a Skylight), None when it is (a dome
+    too: describe_dome; a mesh light too: convert.scene finds its mesh, or says why it has none, NO_MESH)."""
     family = values.get(CLASS, VRAY)
     if family == SKYLIGHT:
         return NOT_SKYLIGHT
@@ -608,13 +606,7 @@ def not_built(values, name_of=None):
     kind = values[P_TYPE]
     if kind not in TYPE_NAMES:
         return "type %d is not a VRayLight type" % kind
-    if kind != MESH:
-        return None
-    if values.get(MESH_OBJECT) is not None:
-        return None
-    source = values.get(P_MESH_SOURCE)
-    picked = name_of(source) if name_of is not None and source is not None else None
-    return None if picked else NO_MESH
+    return None
 
 
 def describe(key, name, values, meters, swatches, scale=1.0):

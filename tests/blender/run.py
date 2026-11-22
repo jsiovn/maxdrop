@@ -62,9 +62,9 @@ kept with a fake user; the second dome an empty; the spheres' radii and powers (
 undo() after the run, and a build that fails after the World, put the World before back (no fake user) and remove
 the new one; a World that cannot be built leaves the scene imported, a line in the report; of two files with a dome
 the first gives the World. vray_mesh_light and vray_dome's mesh light: each emitter a mesh object of its mesh at the
-light's place (EMITTER_BOXES), its only material an Emission of the radiance V-Ray gives it (EMITTER_RADIANCE) times
-the Light Strength, one side through a Backfacing mix (flipped for Flip normals) or both, its camera, shadow, diffuse
-and glossy visibility; the mesh light without a mesh an empty. lights_standard, lights_photometric (and lookat's target spot): each light of the type,
+light's place (EMITTER_BOXES), its only material an Emission of the radiance V-Ray gives it (EMITTER_RADIANCE)
+times the Light Strength, one side through a Backfacing mix (flipped for Flip normals) or both, its camera, shadow,
+diffuse and glossy visibility; the mesh light without a mesh an empty. lights_standard, lights_photometric (and lookat's target spot): each light of the type,
 spot cone, power and color of the rules (STOCK_LIGHTS), its -Z axis along the oracle's, its flags, its shadow switch (STOCK_SHADOWS);
 the Skylight an empty.
 Cameras (cameras, lookat): each camera node a camera object of the description's type, sensor fit HORIZONTAL, sensor,
@@ -500,7 +500,8 @@ def run_fixture(path, modules):
         check(label + ": in its layer's collection", homes == [o["layer"]], str(homes))
         flags = (ob.hide_viewport, ob.hide_get(view_layer=view_layer), ob.hide_render, ob.hide_select)
         want = (o["hidden"], o["hidden"], not o["renderable"], o["frozen"])
-        if node.kind == convert_scene.LIGHT and not desc.lights[node.light].on:  # a light switched off
+        if node.kind == convert_scene.LIGHT and not desc.lights[node.light].on or \
+                node.emitter is not None and not desc.emitters[node.emitter].on:  # a light switched off
             want = (True, o["hidden"], True, o["frozen"])
         check(label + ": hidden, renderable and frozen flags", flags == want, str(flags))
         if node.emitter is not None:

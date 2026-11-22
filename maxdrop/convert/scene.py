@@ -500,21 +500,24 @@ def _disjoint(masks):
     return any(x & y == 0 for k, x in enumerate(distinct) for y in distinct[k + 1:])
 
 
-def mesh_area(positions, loop_vertices, loop_starts, loop_totals):
+def mesh_area(positions, loop_vertices, loop_starts, loop_totals, keep=None):
     """The total area of a mesh's polygons (Newell's vector of each, so a polygon that is not flat counts its
-    projected area), in the square of the positions' unit."""
+    projected area), in the square of the positions' unit; keep (bool (F,)): only those polygons."""
     import numpy
     starts = numpy.asarray(loop_starts, dtype=numpy.int64)
     totals = numpy.asarray(loop_totals, dtype=numpy.int64)
-    keep = totals > 0
-    starts, totals = starts[keep], totals[keep]
+    some = totals > 0
+    if keep is not None:
+        keep = numpy.asarray(keep, dtype=bool)[some]
+    starts, totals = starts[some], totals[some]
     if not len(starts):
         return 0.0
     p = numpy.asarray(positions, dtype=numpy.float64)[numpy.asarray(loop_vertices, dtype=numpy.int64)]
     following = numpy.arange(1, len(p) + 1)
     following[starts + totals - 1] = starts
     newell = numpy.add.reduceat(numpy.cross(p, p[following]), starts, axis=0)
-    return float(numpy.sqrt((newell * newell).sum(axis=1)).sum() / 2.0)
+    areas = numpy.sqrt((newell * newell).sum(axis=1))
+    return float((areas[keep] if keep is not None else areas).sum() / 2.0)
 
 
 def valid_faces(loop_vertices, loop_starts, loop_totals):
@@ -850,17 +853,6 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
     return desc
 
 
-def _node_name(scene, i):
-    """The name of node i, None when i is no node of the scene or its record cannot be read."""
-    if not 0 <= i < len(scene):
-        return None
-    try:
-        node = scene.node(i)
-    except ChunkError:  # not a node, or its record cannot be read
-        return None
-    return node.name or None
-
-
 def _dome(desc, values, node, name, swatches, world):
     """A dome light's node: desc.dome when it is the first that is on, else an issue."""
     if not values[lights.P_ON]:
@@ -879,7 +871,7 @@ def _light(scene, desc, unlit, params, base, node, name, meters, swatches, world
     if base not in params and base not in unlit:
         try:
             values, issues = lights.read_params(scene, base, assets, ies_files)
-            reason = lights.not_built(values, lambda i: _node_name(scene, i))
+            reason = lights.not_built(values)
         except ChunkError as exc:
             values, issues, reason = None, [], "parameters cannot be read: %s" % exc
         desc.issues.extend((node, "light: %s" % x) for x in issues)
@@ -937,25 +929,44 @@ def _emitter(scene, t, desc, meshes, values, base, node, name, meters, swatches,
 
 
 def _emitter_mesh(scene, desc, values, node, meters, built, check=None):
-    """(mesh base object index, reader MeshData, its object-space area in m^2, the class names of the modifiers above
-    it) of a mesh light's mesh: its own mesh object (lights.MESH_OBJECT: what V-Ray's Replace mesh with light keeps),
-    else the object of the node its mesh source (parameter 34) names; or why it has none."""
-    obj = values.get(lights.MESH_OBJECT)
-    if obj is None:
-        source = values.get(lights.P_MESH_SOURCE)
-        try:
-            obj = scene.node(source).object if source is not None and 0 <= source < len(scene) else None
-        except ChunkError:  # not a node, or its record cannot be read
-            obj = None
+    """(mesh base object index, reader MeshData, its object-space area in m^2 (the faces Blender holds), the class
+    names of the modifiers above it) of a mesh light's mesh: its own mesh object (lights.MESH_OBJECT: what V-Ray's
+    Replace mesh with light keeps), else (none, or not a mesh read here) the object of the node its mesh source
+    (parameter 34) names; or why it has none (the own object's reason when both fail)."""
+    reasons = []
+    for obj in (values.get(lights.MESH_OBJECT), _source_object(scene, values.get(lights.P_MESH_SOURCE))):
         if obj is None:
-            return lights.NO_MESH
+            continue
+        found = _mesh_of(scene, desc, obj, node, built, check)
+        if not isinstance(found, str):
+            mesh_base, data, stack = found
+            keep = valid_faces(data.loop_vertices, data.loop_starts, data.loop_totals)
+            area = mesh_area(data.positions, data.loop_vertices, data.loop_starts, data.loop_totals, keep)
+            return mesh_base, data, area * meters * meters, tuple(_class_name(scene, m) or "a modifier"
+                                                                  for m in stack.modifiers)
+        reasons.append(found)
+    return reasons[0] if reasons else lights.NO_MESH
+
+
+def _source_object(scene, source):
+    """The object of node source (a mesh light's parameter 34), None when it is no node or has none."""
+    if source is None or not 0 <= source < len(scene):
+        return None
+    try:
+        return scene.node(source).object
+    except ChunkError:  # not a node, or its record cannot be read
+        return None
+
+
+def _mesh_of(scene, desc, obj, node, built, check=None):
+    """(base object index, reader MeshData, reader Stack) of object obj's base mesh, or why there is none."""
     try:
         stack = scene.object_stack(obj)
     except ChunkError as exc:
         return lights.EMITTER_UNREAD % exc
     mesh_base = stack.base
     if mesh_base is None:
-        return lights.NO_MESH
+        return lights.EMITTER_UNREAD % "no base object"
     data = None
     if not shapes.is_shape(scene, mesh_base):
         try:
@@ -966,9 +977,7 @@ def _emitter_mesh(scene, desc, values, node, meters, built, check=None):
             data = _primitive(scene, mesh_base, desc.issues, node, built)
     if data is None:
         return lights.EMITTER_CLASS % (_class_name(scene, mesh_base) or "an unknown class")
-    own = mesh_description(None, "", data, None, meters, check)
-    area = mesh_area(own.positions, own.loop_vertices, own.loop_starts, own.loop_totals)
-    return mesh_base, data, area, tuple(_class_name(scene, m) or "a modifier" for m in stack.modifiers)
+    return mesh_base, data, stack
 
 
 def _camera(scene, t, desc, unseen, params, base, node, name, meters, mm):

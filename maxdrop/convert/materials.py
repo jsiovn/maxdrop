@@ -1231,7 +1231,8 @@ def assign(desc, materials, conv):
     ascending, are grouped by the materials its users get for them (material_for, by identity): one slot per group
     in order of first appearance. A mesh whose only group has no material gets no slot. A curve's splines the same
     by their material IDs (SplineDescription.material), indices per spline; a curve none of whose users gets a
-    material is left out. A spline mixing IDs that render differently adds an issue to desc.issues."""
+    material is left out. A spline mixing IDs that render differently adds an issue to desc.issues. A mesh light's
+    emitter mesh (its nodes' emitter set) is left out: build.objects gives it the emitter's Emission material."""
     import numpy
     out, mixed = Slots(), []
     for key, cd in desc.curves.items():
@@ -1243,7 +1244,10 @@ def assign(desc, materials, conv):
             where = dict(zip(ids, slot_of_id))
             out.curves[key] = MeshSlots(users, slots, numpy.asarray([where[m] for m in per_spline], dtype=numpy.int32))
             mixed.append(_mixed(cd, materials, conv))
+    emitters = {n.mesh for n in getattr(desc, "nodes", ()) if getattr(n, "emitter", None) is not None}
     for key, md in desc.meshes.items():
+        if key in emitters:
+            continue
         users = list(md.users)
         faces = numpy.asarray(md.material_indices, dtype=numpy.int64).ravel()
         ids, inverse = numpy.unique(faces, return_inverse=True)

@@ -991,10 +991,10 @@ colored blocks seen through cameras at ±X, ±Y and ±20° elevation. Blender's 
 round (u = 0.5 − φ / 2π): the direction (Texture Coordinate Generated) goes through a Mapping node of scale
 (1, −1, 1) and rotation Rz(−h) F T F (F the mirror in Y, T the axis conversion and lock turn into the texture's
 frame). The vray_dome fixture (h 30, locked, its node turned 90° about Z, a hemisphere) and a tilted copy imported
-with Y up give the same texels as V-Ray's renders. Other projections are drawn as spherical. A CoronaBitmap on a dome is too, with a line in the report: V-Ray 5.2 does
-not project it (a camera at the dome's center sees one flat color in every direction, for every `enviroMapping`, a U
-offset and a filtering blur of 0.01: 0.5 grey with the eight-block image, its mean; W angle 30°: 0.65, 0.41, 0.41).
-The vertical and axial
+with Y up give the same texels as V-Ray's renders. Other projections are drawn as spherical. A CoronaBitmap on a
+dome is too, with a line in the report: V-Ray 5.2 does not project it (a camera at the dome's center sees one flat
+color in every direction, for every `enviroMapping`, a U offset and a filtering blur of 0.01: 0.5 grey with the
+eight-block image, its mean; W angle 30°: 0.65, 0.41, 0.41). The vertical and axial
 rotation, the flips, the ground projection, an Output other than its amount, a gamma other than automatic or 1, crop or placement and a Bitmap's offset, tiling
 or angle are left out (a line each); a root other than an image map or a file not found leaves the World its color
 (a line).
@@ -1660,7 +1660,8 @@ Bitmap's).
 
 Not shown by any fixture yet, so not stated above:
 
-- Of VRayLight ([VRayLight](#vraylight)): the dome's parameters, size2, the texmap's use, the light units of a scene unit other than millimeters (the rules
+- Of VRayLight ([VRayLight](#vraylight)): the dome's parameters, size2, the texmap's use, the light units of a
+  scene unit other than millimeters (the rules
   scale lengths by the unit; the fixture is in millimeters), an animated parameter (its default is taken); a sphere
   scaled with Y or Z larger than X (taken as the largest scale), and whether a scaled sphere's radius in Blender
   follows the object's scale as V-Ray's does.

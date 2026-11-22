@@ -13,8 +13,9 @@ strength S as S, as a World; the calibration against V-Ray is in docs/FORMAT.md,
 single-sided mesh light along its faces' normals and shows the other side black (measured): a Mix Shader by
 Geometry Backfacing between the Emission and a black Emission (Flip normals: the other way round). A double-sided one
 emits on both sides. Per object: off hides it in the viewport and in renders; invisible makes it unseen by the
-camera and no shadow caster (V-Ray: a visible mesh light shadows other lights, an invisible one does not); diffuse
-and glossy rays see it as the description says (Object.visible_*, the same on 4.2 and 5.2).
+camera and no shadow caster (V-Ray: a visible mesh light shadows other lights, an invisible one does not; the
+node's own Cast Shadows flag is not used, as for any light); diffuse and glossy rays see it as the description says
+(Object.visible_*, the same on 4.2 and 5.2).
 """
 import bpy
 

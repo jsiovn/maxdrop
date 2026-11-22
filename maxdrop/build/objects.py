@@ -264,7 +264,7 @@ def _data_slots(built, data, plan, make):
 
 def _emitter_slots(desc, built):
     """The Emission material of each emitter mesh as its only slot, on every face (an emitter mesh is used by the
-    nodes of one mesh light only)."""
+    nodes of one mesh light only; convert.materials.assign gives it no slots)."""
     import numpy
     done = set()
     for node in desc.nodes:
