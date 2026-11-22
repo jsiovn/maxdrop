@@ -36,8 +36,8 @@ as 3ds Max puts them; a solid without a whole cell gets the morph cap. Downwards
 both are on: a lone cap faces as upwards, into the solid, as 3ds Max makes it. The cap facing +Z gets material ID 1,
 the one facing -Z ID 2, the sides ID 3 (zero-based here: 0, 1, 2) when Generate Material IDs is on, else every face
 ID 1; with Use Shape IDs too each side face takes the material ID of the spline segment it comes from (the caps keep
-1 and 2). Smooth gives the sides smoothing groups that change only at a corner or Bezier corner knot, the caps group
-16; without it the sides have none. Mapping: the sides' U runs along each polyline from its first point (0 to 1, or
+1 and 2). Smooth gives the sides smoothing groups that change only at a corner or Bezier corner knot or at a Bezier
+knot with a vector on its point (a pie Arc's corners), the caps group 16; without it the sides have none. Mapping: the sides' U runs along each polyline from its first point (0 to 1, or
 its length with Real-World Map Size), V up the levels (0 to 1, or the height); the caps map the shape's XY box (0 to
 1, or its size).
 
@@ -99,9 +99,8 @@ DEFAULT = Params(0.0, 1, True, True, CAP_MORPH, OUTPUT_MESH, False, True, False,
 
 
 class Polyline(collections.namedtuple("Polyline", "points hard closed ids")):
-    """A spline as points (x, y, z); hard[k]: point k is a corner or Bezier corner knot (the sides' smoothing
-    changes there); ids[k]: the zero-based material ID of the segment the column from point k belongs to (Use Shape
-    IDs)."""
+    """A spline as points (x, y, z); hard[k]: point k is a knot where the sides' smoothing changes (_hard);
+    ids[k]: the zero-based material ID of the segment the column from point k belongs to (Use Shape IDs)."""
     __slots__ = ()
 
 
@@ -206,7 +205,12 @@ def _adaptive_steps(p0, c1, c2, p3):
 
 
 def _hard(knot):
-    return knot.kind in (shapes.CORNER, shapes.BEZIER_CORNER)
+    """Whether the sides' smoothing changes at knot: a corner or Bezier corner knot whatever the angle, or a Bezier
+    knot with a vector exactly on its point (a pie Arc's from, center and to); never a smooth knot, nor a Bezier
+    knot whose vectors are off its point, kinked or not (3ds Max 2020, maxdrop-em3.111)."""
+    if knot.kind in (shapes.CORNER, shapes.BEZIER_CORNER):
+        return True
+    return knot.kind == shapes.BEZIER and (knot.in_vec == knot.point or knot.out_vec == knot.point)
 
 
 def _polyline(spline, steps, optimize, adaptive):

@@ -119,10 +119,10 @@ SHARP_EDGES_EXTRUDE = {"FixtureExtRect": 4 * 2 + 8, "FixtureExtL": 6 + 12, "Fixt
                        "FixtureUVWExtrude": 4 + 8,
                        # grid caps: as above (the circle smooth, one rim: Cap End off)
                        "FixtureExtGrid": 10 + 8 + 18, "FixtureExtGridCircle": 16,
-                       # arc_pie_reverse: both rims of a pie's 23 columns (3ds Max also breaks the side at from,
-                       # the center and to: 6 more, maxdrop-em3.111); the open arc none; the clockwise Line and
+                       # arc_pie_reverse: both rims of a pie's 23 columns and the side broken at from, the
+                       # center and to in 2 segments (maxdrop-em3.111); the open arc none; the clockwise Line and
                        # the holed cap as above
-                       "FixturePieRevExt": 46, "FixturePieRevWrapExt": 46, "FixturePieExt": 46,
+                       "FixturePieRevExt": 46 + 6, "FixturePieRevWrapExt": 46 + 6, "FixturePieExt": 46 + 6,
                        "FixtureArcRevExt": 0, "FixtureClockwiseExt": 4 * 2 + 8, "FixtureHoleExt": 4 * 2 + 8 + 56}
 # uvwmap: boxes of 3 x 2 x 2 segments, a group per side: 28 edges; the cylinder's two rims; the sphere is smooth
 SHARP_EDGES_UVWMAP = {"FixtureUVWCyl": 32, "FixtureUVWSphere": 0, "FixtureUVWSharedB": SHARP_EDGES_POLY_BOX,

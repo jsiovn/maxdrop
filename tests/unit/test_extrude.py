@@ -448,13 +448,58 @@ class ReversedPies(unittest.TestCase):
             _check_eval_mesh(self, data, md, self.oracle[name]["eval_mesh"], name)
 
     def test_hard_edges_equal_the_oracle(self):
-        """The smoothing groups' hard edges, as the oracle's eval_mesh.smoothing counts them; a pie's side is one
-        smooth group here, 3ds Max also breaks it at from, the center and to (6 edges, maxdrop-em3.111)."""
+        """The smoothing groups' hard edges, as the oracle's eval_mesh.smoothing counts them: a pie's side also
+        breaks at from, the center and to (Bezier knots with a vector on the point, maxdrop-em3.111)."""
         nodes = {n.name: n for n in self.desc.nodes}
         for name in self.data:
             md = self.desc.meshes[nodes[name].mesh]
-            want = self.oracle[name]["eval_mesh"]["smoothing"]["hard_edges"]
-            self.assertEqual(len(md.sharp_edges), want - 6 if name.startswith("FixturePie") else want, name)
+            self.assertEqual(len(md.sharp_edges), self.oracle[name]["eval_mesh"]["smoothing"]["hard_edges"], name)
+
+    def test_hard_edges_lie_where_3ds_max_puts_them(self):
+        """The hard edges by position, both ways, against those of the dump's triangles (their smoothing groups,
+        the vertices welded by position): 3ds Max's group bits differ, the edges between them do not."""
+        for name, want in self.dump.items():
+            theirs = _dump_hard_edges(want["faces"])
+            self.assertEqual(len(theirs), self.oracle[name]["eval_mesh"]["smoothing"]["hard_edges"], name)
+            data = self.data[name]
+            p = numpy.asarray(data.positions, dtype=numpy.float64)
+            got = [(p[a], p[b]) for a, b in conv.sharp_edges(data.loop_vertices, data.loop_starts,
+                                                              data.loop_totals, data.smoothing_groups).tolist()]
+            self.assertEqual(_unmatched_edges(theirs, got), [], name)
+            self.assertEqual(_unmatched_edges(got, theirs), [], name)
+
+
+def _dump_hard_edges(faces):
+    """[(p, q)] of the edges of exactly two triangles of a dump (positions and sg per face), both smoothed, that
+    share no group; the corners welded by position, as the oracle welds them by vertex index."""
+    points, corner = [], []
+    for f in faces:
+        for q in f["p"]:
+            q = numpy.asarray(q, dtype=numpy.float64)
+            at = next((k for k, r in enumerate(points) if numpy.abs(r - q).max() < _tolerance(q)), None)
+            if at is None:
+                at = len(points)
+                points.append(q)
+            corner.append(at)
+    edges = {}
+    for f in range(len(faces)):
+        vs = corner[3 * f:3 * f + 3]
+        for k in range(3):
+            edges.setdefault(tuple(sorted((vs[k], vs[(k + 1) % 3]))), []).append(f)
+    out = []
+    for (a, b), fs in edges.items():
+        if len(fs) == 2:
+            g1, g2 = (faces[f]["sg"] for f in fs)
+            if g1 and g2 and not g1 & g2:
+                out.append((points[a], points[b]))
+    return out
+
+
+def _unmatched_edges(a, b):
+    """The edges of a with no edge of b between the same two positions."""
+    def same(e, f):
+        return all(numpy.abs(x - y).max() < _tolerance(x) for x, y in zip(e, f))
+    return [e for e in a if not any(same(e, f) or same(e, f[::-1]) for f in b)]
 
     def test_every_corner_equals_the_oracle(self):
         """The oracle's eval_mesh corners of every extruded node, as the dump's."""
@@ -839,6 +884,55 @@ class Synthetic(unittest.TestCase):
             pts = [(math.cos(2 * math.pi * k / runs), math.sin(2 * math.pi * k / runs), 0) for k in range(runs)]
             groups = extrude._side_groups([True] * runs, True, runs, True)
             self.assertTrue(all(groups[k] & groups[(k + 1) % runs] == 0 for k in range(runs)), (runs, groups, pts))
+
+    def test_smoothing_breaks_where_3ds_max_breaks_it(self):
+        """The 3ds Max 2020 probe of maxdrop-em3.111: a 20 x 20 square of corner knots with a fifth knot A on its
+        bottom edge, kinked at (10, -4) or straight at (10, 0), under Extrude: the side breaks at a corner or
+        Bezier-corner knot whatever the angle, never at a smooth knot (also where line segments kink the spline)
+        or a Bezier knot with both vectors off its point (also kinked by lines), and at a Bezier knot whose in or
+        out vector is its point (kinked or straight, curve or line segments): exactly, a vector 1e-6 off (float32
+        apart at 10) or 1e-9 off at the origin is not on it."""
+        k, c, b, bc, sm = shapes.Knot, shapes.CORNER, shapes.BEZIER, shapes.BEZIER_CORNER, shapes.SMOOTH
+        kink, flat = (10.0, -4.0, 0.0), (10.0, 0.0, 0.0)
+        left, right = (6.0, -4.0, 0.0), (14.0, -4.0, 0.0)
+        line, curve = shapes.LINE, shapes.CURVE
+        cases = (  # (name, knot A, the segment to A, breaks)
+            ("corner, kinked", k(c, line, kink, kink, kink), line, True),
+            ("corner, straight", k(c, line, flat, flat, flat), line, True),
+            ("corner, 2.3 degrees", k(c, line, (10.0, -0.2, 0.0), (10.0, -0.2, 0.0), (10.0, -0.2, 0.0)), line, True),
+            ("smooth, kinked by lines", k(sm, line, kink, (6.666666, -4.0, 0.0), (13.33333, -4.0, 0.0)), line,
+             False),
+            ("smooth, curved", k(sm, curve, kink, (6.666666, -4.0, 0.0), (13.33333, -4.0, 0.0)), curve, False),
+            ("Bezier", k(b, curve, kink, left, right), curve, False),
+            ("Bezier, kinked by lines", k(b, line, kink, left, right), line, False),
+            ("Bezier, line in, curve out", k(b, curve, kink, left, right), line, False),
+            ("Bezier, in on the point", k(b, curve, kink, kink, right), curve, True),
+            ("Bezier, out on the point", k(b, curve, kink, left, kink), curve, True),
+            ("Bezier, both on the point", k(b, curve, kink, kink, kink), curve, True),
+            ("Bezier, in on the point, straight", k(b, curve, flat, flat, (14.0, 0.0, 0.0)), curve, True),
+            ("Bezier, both on the point, lines", k(b, line, kink, kink, kink), line, True),
+            ("Bezier, in 1e-6 off", k(b, curve, kink, (9.999999, -4.0, 0.0), right), curve, False),
+            ("Bezier corner", k(bc, curve, kink, left, right), curve, True),
+        )
+        for name, a, into, breaks in cases:
+            ks = (k(c, into, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)), a,
+                  k(c, line, (20.0, 0.0, 0.0), (20.0, 0.0, 0.0), (20.0, 0.0, 0.0)),
+                  k(c, line, (20.0, 20.0, 0.0), (20.0, 20.0, 0.0), (20.0, 20.0, 0.0)),
+                  k(c, line, (0.0, 20.0, 0.0), (0.0, 20.0, 0.0), (0.0, 20.0, 0.0)))
+            pl = extrude.polylines(_shape([shapes.Spline(ks, True)]))[0]
+            self.assertEqual(pl.hard[pl.points.index(a.point)], breaks, name)
+            data, _issues = extrude.extrude(_shape([shapes.Spline(ks, True)]),
+                                            self.params(cap_start=False, cap_end=False))
+            g = data.smoothing_groups.tolist()
+            self.assertEqual(sum(g[j] & g[(j + 1) % len(g)] == 0 for j in range(len(g))), 5 if breaks else 4, name)
+        at_origin = k(b, curve, (0.0, 0.0, 0.0), (-1e-9, 0.0, 0.0), (4.0, 0.0, 0.0))
+        self.assertFalse(extrude._hard(at_origin))
+        self.assertTrue(extrude._hard(at_origin._replace(in_vec=at_origin.point)))
+        opened = (k(c, curve, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0)), k(b, curve, kink, kink, kink),
+                  k(c, curve, (20.0, 0.0, 0.0), (20.0, 0.0, 0.0), (20.0, 0.0, 0.0)))
+        data, _issues = extrude.extrude(_shape([shapes.Spline(opened, False)]), self.params())
+        g = data.smoothing_groups.tolist()
+        self.assertEqual([g[j] & g[j + 1] == 0 for j in range(len(g) - 1)], [True], "open")
 
     def rect(self, x0, y0, x1, y1):
         return shapes.Spline(_knots([(x0, y0, 0), (x1, y0, 0), (x1, y1, 0), (x0, y1, 0)]), True)

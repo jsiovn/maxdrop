@@ -315,7 +315,7 @@ EXTRUDE_SHARP_EDGES = {"FixtureExtRect": 16, "FixtureExtL": 18, "FixtureExtHole"
                        "FixtureExtOpen": 0, "FixtureExtMirror": 72, "FixtureExtAdaptive": 256,
                        "FixtureExtShapeIDs": 41, "FixtureExtShapeIDsRect": 12, "FixtureUVWExtrude": 12,
                        "FixtureExtGrid": 36, "FixtureExtGridCircle": 16,
-                       "FixturePieRevExt": 46, "FixturePieRevWrapExt": 46, "FixturePieExt": 46,
+                       "FixturePieRevExt": 52, "FixturePieRevWrapExt": 52, "FixturePieExt": 52,
                        "FixtureArcRevExt": 0, "FixtureClockwiseExt": 16, "FixtureHoleExt": 72}
 EXTRUDE_EULER = {"FixtureExtRect": 2, "FixtureExtL": 2, "FixtureExtHole": 0, "FixtureExtIsland": 2,
                  "FixtureExtOpen": None, "FixtureExtMirror": 2, "FixtureExtAdaptive": 2, "FixtureExtShapeIDs": 0,
