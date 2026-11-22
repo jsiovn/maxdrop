@@ -17,7 +17,7 @@ global MaxDropOracle
 
 struct MaxDropOracleStruct
 (
-	version = 12,
+	version = 13,
 
 	fn num v =
 	(
@@ -459,6 +459,7 @@ struct MaxDropOracleStruct
 			#("bbox_max", bmax), \
 			#("bbox_min", bmin), \
 			#("camera", cameraJson n), \
+			#("cast_shadows", bool n.castShadows), \
 			#("eval_faces", intOrNull ev[2]), \
 			#("eval_maps", evalMapsJson n), \
 			#("eval_mesh", evalMeshJson n), \
@@ -477,6 +478,7 @@ struct MaxDropOracleStruct
 			#("offset_rot", quat4 n.objectOffsetRot), \
 			#("offset_scale", vec n.objectOffsetScale), \
 			#("parent", parent), \
+			#("receive_shadows", bool n.receiveShadows), \
 			#("renderable", bool n.renderable), \
 			#("shape", shapeJson n), \
 			#("transform", mat12 n.transform) \

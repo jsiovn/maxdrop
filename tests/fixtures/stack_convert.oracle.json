@@ -152,6 +152,7 @@
       "bbox_max": [10, 10, 20],
       "bbox_min": [-10, -10, 0],
       "camera": null,
+      "cast_shadows": true,
       "eval_faces": 48,
       "eval_maps": null,
       "eval_mesh": {
@@ -174,6 +175,7 @@
       "offset_rot": [0, 0, 0, 1],
       "offset_scale": [1, 1, 1],
       "parent": null,
+      "receive_shadows": true,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]
@@ -187,6 +189,7 @@
       "bbox_max": [50, 10, 20],
       "bbox_min": [30, -10, 0],
       "camera": null,
+      "cast_shadows": true,
       "eval_faces": 48,
       "eval_maps": null,
       "eval_mesh": {
@@ -209,6 +212,7 @@
       "offset_rot": [0, 0, 0, 1],
       "offset_scale": [1, 1, 1],
       "parent": null,
+      "receive_shadows": true,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 40, 0, 0]
@@ -222,6 +226,7 @@
       "bbox_max": [88.7847, 8.78472, 18.7847],
       "bbox_min": [71.2153, -8.78472, 1.21528],
       "camera": null,
+      "cast_shadows": true,
       "eval_faces": 192,
       "eval_maps": null,
       "eval_mesh": {
@@ -244,6 +249,7 @@
       "offset_rot": [0, 0, 0, 1],
       "offset_scale": [1, 1, 1],
       "parent": null,
+      "receive_shadows": true,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 80, 0, 0]
@@ -257,6 +263,7 @@
       "bbox_max": [131.155, 11.1547, 21.1547],
       "bbox_min": [108.845, -11.1547, -1.1547],
       "camera": null,
+      "cast_shadows": true,
       "eval_faces": 24,
       "eval_maps": null,
       "eval_mesh": {
@@ -279,6 +286,7 @@
       "offset_rot": [0, 0, 0, 1],
       "offset_scale": [1, 1, 1],
       "parent": null,
+      "receive_shadows": true,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 120, 0, 0]
@@ -292,6 +300,7 @@
       "bbox_max": [10, 70, 20],
       "bbox_min": [0, 50, 0],
       "camera": null,
+      "cast_shadows": true,
       "eval_faces": 20,
       "eval_maps": null,
       "eval_mesh": {
@@ -314,6 +323,7 @@
       "offset_rot": [0, 0, 0, 1],
       "offset_scale": [1, 1, 1],
       "parent": null,
+      "receive_shadows": true,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 60, 0]
@@ -327,6 +337,7 @@
       "bbox_max": [57.2583, 79.8923, 20],
       "bbox_min": [30, 50, 0],
       "camera": null,
+      "cast_shadows": true,
       "eval_faces": 20,
       "eval_maps": null,
       "eval_mesh": {
@@ -349,6 +360,7 @@
       "offset_rot": [0, 0, 0, 1],
       "offset_scale": [1, 1, 1],
       "parent": null,
+      "receive_shadows": true,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 40, 60, 0]
@@ -362,6 +374,7 @@
       "bbox_max": [90, 70, 20],
       "bbox_min": [70, 50, -20],
       "camera": null,
+      "cast_shadows": true,
       "eval_faces": 24,
       "eval_maps": null,
       "eval_mesh": {
@@ -384,6 +397,7 @@
       "offset_rot": [0, 0, 0, 1],
       "offset_scale": [1, 1, 1],
       "parent": null,
+      "receive_shadows": true,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 80, 60, 0]
@@ -397,6 +411,7 @@
       "bbox_max": [10.5774, 130.577, 20.5774],
       "bbox_min": [-10.5774, 109.423, -0.57735],
       "camera": null,
+      "cast_shadows": true,
       "eval_faces": 192,
       "eval_maps": null,
       "eval_mesh": {
@@ -419,6 +434,7 @@
       "offset_rot": [0, 0, 0, 1],
       "offset_scale": [1, 1, 1],
       "parent": null,
+      "receive_shadows": true,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 120, 0]
@@ -432,6 +448,7 @@
       "bbox_max": [51.8889, 130, 19.8363],
       "bbox_min": [33.2286, 110, 0],
       "camera": null,
+      "cast_shadows": true,
       "eval_faces": 48,
       "eval_maps": null,
       "eval_mesh": {
@@ -454,12 +471,13 @@
       "offset_rot": [0, 0, 0, 1],
       "offset_scale": [1, 1, 1],
       "parent": null,
+      "receive_shadows": true,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 40, 120, 0]
     }
   ],
-  "oracle_version": 12,
+  "oracle_version": 13,
   "render": {"camera": null, "height": 480, "pixel_aspect": 1, "width": 640},
   "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
   "time": 0,

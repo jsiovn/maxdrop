@@ -152,6 +152,7 @@
       "bbox_max": [10, 10, 20],
       "bbox_min": [-10, -10, 0],
       "camera": null,
+      "cast_shadows": true,
       "eval_faces": 12,
       "eval_maps": null,
       "eval_mesh": null,
@@ -170,12 +171,13 @@
       "offset_rot": [0, 0, 0, 1],
       "offset_scale": [1, 1, 1],
       "parent": null,
+      "receive_shadows": true,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]
     }
   ],
-  "oracle_version": 12,
+  "oracle_version": 13,
   "render": {"camera": null, "height": 480, "pixel_aspect": 1, "width": 640},
   "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
   "time": 0,

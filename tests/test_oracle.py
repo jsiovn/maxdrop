@@ -21,9 +21,10 @@ FIXTURE_DIR = os.path.join(ROOT, "tests", "fixtures")
 TOP_KEYS = ["file", "file_version", "layers", "material_graph", "materials", "max_version", "node_count", "nodes",
             "oracle_version", "render", "renderer", "time", "units"]
 NODE_KEYS = ["base_class_id", "base_class_name", "base_faces", "base_superclass", "base_verts", "bbox_max",
-             "bbox_min", "camera", "eval_faces", "eval_maps", "eval_mesh", "eval_verts", "frozen", "handle", "hidden",
-             "index", "instances", "layer", "material", "modifiers", "name", "object_transform", "offset_pos",
-             "offset_rot", "offset_scale", "parent", "renderable", "shape", "transform"]
+             "bbox_min", "camera", "cast_shadows", "eval_faces", "eval_maps", "eval_mesh", "eval_verts", "frozen",
+             "handle", "hidden", "index", "instances", "layer", "material", "modifiers", "name", "object_transform",
+             "offset_pos", "offset_rot", "offset_scale", "parent", "receive_shadows", "renderable", "shape",
+             "transform"]
 MODIFIER_KEYS = ["class_id", "class_name", "context_bbox_max", "context_bbox_min", "context_tm", "enabled",
                  "enabled_in_renders", "enabled_in_views", "name"]
 LAYER_KEYS = ["frozen", "hidden", "name", "parent", "renderable"]
@@ -121,7 +122,7 @@ class OracleFiles(unittest.TestCase):
             with self.subTest(name):
                 o = _oracle(name)
                 self.assertEqual(list(o), TOP_KEYS)
-                self.assertEqual(o["oracle_version"], 12)
+                self.assertEqual(o["oracle_version"], 13)
                 self.assertEqual(list(o["render"]), RENDER_KEYS)
                 self.assertTrue(o["render"]["width"] > 0 and o["render"]["height"] > 0)
                 self.assertEqual(o["file"], name + ".max")
@@ -464,6 +465,9 @@ class OracleFiles(unittest.TestCase):
         self.assertEqual(flags["FixtureHidden"][:2], (True, True))
         self.assertEqual(flags["FixtureNoRender"][:2], (False, False))
         self.assertEqual(flags["FixtureVisible"][:2], (False, True))
+        shadows = {n["name"]: (n["cast_shadows"], n["receive_shadows"]) for n in o["nodes"]}
+        self.assertEqual({k: v for k, v in shadows.items() if v != (True, True)},
+                         {"FixtureNoCastShadow": (False, True), "FixtureNoReceiveShadow": (True, False)})
         self.assertEqual({layer["name"] for layer in o["layers"]}, {"0", "FixtureLayerA", "FixtureLayerB"})
         head = next(n for n in o["nodes"] if n["name"] == "FixtureGroup")
         self.assertEqual(sorted(n["name"] for n in o["nodes"] if n["parent"] == head["handle"]),

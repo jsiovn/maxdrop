@@ -380,11 +380,11 @@ class TestFixture(unittest.TestCase):
     def test_layers_flags(self):
         desc = conv.read(os.path.join(ROOT, "tests", "fixtures", "layers_flags.max"))
         rep = report.gather(desc, source="layers_flags.max")
-        self.assertEqual(rep.summary(), ("INFO", "Imported layers_flags.max: 6 objects, 5 meshes, nothing left out."))
+        self.assertEqual(rep.summary(), ("INFO", "Imported layers_flags.max: 8 objects, 7 meshes, nothing left out."))
         self.assertEqual(rep.text().split("\n")[1:], [
             "Units: millimeters (0.001 m per unit)",
-            "Nodes read: 6",
-            "Objects built: 6, meshes: 5",
+            "Nodes read: 8",
+            "Objects built: 8, meshes: 7",
             "Render size: 640 x 480 (not applied: the file has no camera); scene camera: none",
             "Layers: 2 (0 hidden)",
             "Objects hidden: 1, not renderable: 1, frozen: 0",
