@@ -50,7 +50,10 @@ is the diameter) with about as many sides, or with a rectangular section a secti
 turned by its angle, which build.curves makes a bevel object of, capped at the ends of an open spline as 3ds Max
 caps it (on the shapes_more fixture's line along X and loop, flat in XY, the corners land where 3ds Max's render
 mesh has them; on a curve that is not flat an issue says the section may turn otherwise; a width or length of 0 is
-not drawn, an issue).
+not drawn, an issue). Blender holds curves in single precision: a curve whose points or handles (offset and meters
+applied) are past the largest float32, inf or NaN (a hostile NGon radius near 1e308) is an EMPTY placeholder (an
+issue, on the first node of its key), as a primitive whose sizes leave the float range; a section or a round bevel
+that does not fit is not drawn (an issue).
 
 A standard primitive (Box, Plane, Pyramid, Sphere, GeoSphere, Cylinder, Cone, Tube, Torus) becomes the mesh 3ds Max
 builds from its parameters (convert.primitives) and from there on is a mesh like any other; one with an option that is
@@ -156,6 +159,10 @@ NO_RECEIVE = "shadows: Receive Shadows is off: Blender has no such switch per ob
 ENVIRONMENT = "environment"  # the label of an issue of the environment map (no node holds it)
 
 ChunkError = chunks.ChunkError
+
+
+class CurveError(ValueError):
+    """A shape's curve cannot be built: its points or handles do not fit single precision (Blender's)."""
 
 
 class Cancelled(Exception):
@@ -613,13 +620,19 @@ def curve_description(key, name, shape, offset, meters):
         left, right = _straight(sp.knots, sp.closed)
         splines.append(SplineDescription([place(k.point) for k in sp.knots], [place(p) for p in left],
                                          [place(p) for p in right], sp.closed, segment_ids(sp.knots, sp.closed)))
+    if not all(_fits(p) for sd in splines for ps in (sd.points, sd.left, sd.right) for p in ps):
+        raise CurveError("its points do not fit single precision (Blender's curves hold no larger value)")
     resolution = ADAPTIVE if shape.adaptive else shape.steps + 1
     depth, profile, section = 0.0, 0, None
     r = shape.render
     if r.renderable and r.rectangular:
         if r.width > 0 and r.length > 0:
             section = rectangular_section(r.width * meters, r.length * meters, r.section_angle)
-            if not _flat(splines):
+            if not all(_fits(c) for c in section):
+                section = None
+                issues.append("a rectangular section of %g x %g does not fit single precision: not drawn"
+                              % (r.width, r.length))
+            elif not _flat(splines):
                 issues.append("a rectangular section on a curve that is not flat in XY may turn otherwise than in "
                               "3ds Max")
         else:
@@ -627,6 +640,9 @@ def curve_description(key, name, shape, offset, meters):
     elif r.renderable and r.thickness > 0:
         depth = r.thickness / 2.0 * meters
         profile = max(0, (r.sides - 4) // 2)  # Blender's round profile has 4 + 2 * resolution sides
+        if not _fits((depth,)):
+            depth, profile = 0.0, 0
+            issues.append("a thickness of %g does not fit single precision: not drawn" % r.thickness)
     return CurveDescription(key, name, splines, resolution, depth, profile, section), issues
 
 
@@ -638,6 +654,11 @@ def rectangular_section(width, length, angle):
     c, s = math.cos(a), math.sin(a)
     x, y = width / 2.0, length / 2.0
     return [(px * c - py * s, px * s + py * c) for px, py in ((x, y), (-x, y), (-x, -y), (x, -y))]
+
+
+def _fits(p):
+    """Whether every coordinate of p is a number Blender's single precision holds (not inf, not NaN)."""
+    return all(abs(c) < lights.MAX_FLOAT for c in p)
 
 
 def _flat(splines):
@@ -680,6 +701,7 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
     order = scene.walk()
     found = {}  # node -> (reader Node, Stack or None), or the ChunkError its record or object stack raised
     shape_of = {}  # base object index -> reader Shape, or None when the reader refused it
+    unbuilt = set()  # curve keys refused for their range (CurveError), named on their first node
     remaining = collections.Counter()  # base object -> nodes still to build: its MeshData goes with the last
     for i in order:
         if check is not None:
@@ -740,7 +762,7 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
                     _name_rim(desc, rims, shell, key, i, check)
                     applied, modifiers = _split(scene, stack.modifiers, (ext,) + done, conv)
                 else:
-                    kind, curve = _curve(scene, desc, shape_of, base, i, name, t.offset(i), meters)
+                    kind, curve = _curve(scene, desc, shape_of, unbuilt, base, i, name, t.offset(i), meters)
                 remaining[base] -= 1
                 if not remaining[base]:
                     extruded.pop(base, None)
@@ -937,18 +959,26 @@ def _shape(scene, desc, shape_of, base, node):
     return shape_of[base]
 
 
-def _curve(scene, desc, shape_of, base, node, name, offset, meters):
+def _curve(scene, desc, shape_of, unbuilt, base, node, name, offset, meters):
     """(kind, curve key) of a node whose base object is a shape: CURVE and its key in desc.curves, made on first
-    use; EMPTY and None when the reader refuses the shape (an issue). shape_of caches the reader's Shapes (small:
-    knots, no arrays), whose issues are named once, on the first node."""
+    use; EMPTY and None when the reader refuses the shape or its curve does not fit single precision (an issue,
+    named on the first node of the key: unbuilt holds the keys refused). shape_of caches the reader's Shapes
+    (small: knots, no arrays), whose issues are named once, on the first node."""
     sh = _shape(scene, desc, shape_of, base, node)
     if sh is None:
         return EMPTY, None
     offset = None if offset == controllers.IDENTITY else offset
     key = (base, offset)
+    if key in unbuilt:
+        return EMPTY, None
     cd = desc.curves.get(key)
     if cd is None:
-        cd, issues = curve_description(key, name, sh, offset, meters)
+        try:
+            cd, issues = curve_description(key, name, sh, offset, meters)
+        except CurveError as exc:
+            unbuilt.add(key)
+            desc.issues.append((node, "shape: not built: %s" % exc))
+            return EMPTY, None
         desc.curves[key] = cd
         desc.issues.extend((node, "shape: %s" % x) for x in issues)
     cd.users.append(node)
