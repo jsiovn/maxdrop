@@ -2912,9 +2912,9 @@ def check_builder_mono():
 
 def check_builder_multiply():
     """A Multiply of two maps in a float graph (bead maxdrop-em3.124): V-Ray 5.2 takes the product of the two maps'
-    means (red x green 1/9, measured on an RGB Multiply and a CoronaMix Multiply as a Mix mask and a glossiness
-    map), not the mean of their product (0). On roughness and on a color Mix's mask: a Math MULTIPLY of two
-    DOT_PRODUCTs by (1/3, 1/3, 1/3), each from an image's Color."""
+    means (red x green 1/9, measured on an RGB Multiply as a Mix mask and a glossiness map, a CoronaMix Multiply as
+    a Mix mask), not the mean of their product (0). On roughness and on a color Mix's mask: a Math MULTIPLY of two
+    DOT_PRODUCTs by (1/3, 1/3, 1/3), one from each image."""
     from maxdrop.build import materials as build_materials
     from maxdrop.convert import materials as cm
     from maxdrop.convert import texmaps as tx
@@ -2949,7 +2949,7 @@ def check_builder_multiply():
             if mul is None or mul.bl_idname != "ShaderNodeMath" or mul.operation != 'MULTIPLY':
                 return False
             sides = [_meaned(s) for s in mul.inputs[:2]]
-            return all(getattr(n, "bl_idname", None) == "ShaderNodeTexImage" for n in sides)
+            return all(getattr(n, "bl_idname", None) == "ShaderNodeTexImage" for n in sides) and sides[0] != sides[1]
 
         check("multiply: roughness is the product of the two images' means", means_product(p.inputs["Roughness"]))
         base = _from(p.inputs["Base Color"])
