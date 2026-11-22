@@ -468,6 +468,22 @@ class ReversedPies(unittest.TestCase):
             self.assertEqual(_unmatched_edges(theirs, got), [], name)
             self.assertEqual(_unmatched_edges(got, theirs), [], name)
 
+    def test_every_corner_equals_the_oracle(self):
+        """The oracle's eval_mesh corners of every extruded node, as the dump's."""
+        self.assertEqual(sorted(n for n, o in self.oracle.items() if o["eval_mesh"]), sorted(self.dump))
+        for name in self.dump:
+            _check_corners(self, self.data[name], self.oracle[name], name)
+
+    def test_every_corner_equals_3ds_max(self):
+        """Position, face normal, map vertex and material ID of every corner, both ways: the side U starts where
+        3ds Max starts it (a reversed pie at the arc point after from, a turned outline at its last point)."""
+        for name, want in self.dump.items():
+            got = _corners(_reader_faces(self.data[name]))
+            theirs = _corners([(f["p"], f["uv"], f["mat"]) for f in want["faces"]])
+            self.assertEqual(len(theirs), 3 * len(want["faces"]), name)
+            self.assertEqual(_unmatched(theirs, got), [], name)
+            self.assertEqual(_unmatched(got, theirs), [], name)
+
 
 def _dump_hard_edges(faces):
     """[(p, q)] of the edges of exactly two triangles of a dump (positions and sg per face), both smoothed, that
@@ -500,22 +516,6 @@ def _unmatched_edges(a, b):
     def same(e, f):
         return all(numpy.abs(x - y).max() < _tolerance(x) for x, y in zip(e, f))
     return [e for e in a if not any(same(e, f) or same(e, f[::-1]) for f in b)]
-
-    def test_every_corner_equals_the_oracle(self):
-        """The oracle's eval_mesh corners of every extruded node, as the dump's."""
-        self.assertEqual(sorted(n for n, o in self.oracle.items() if o["eval_mesh"]), sorted(self.dump))
-        for name in self.dump:
-            _check_corners(self, self.data[name], self.oracle[name], name)
-
-    def test_every_corner_equals_3ds_max(self):
-        """Position, face normal, map vertex and material ID of every corner, both ways: the side U starts where
-        3ds Max starts it (a reversed pie at the arc point after from, a turned outline at its last point)."""
-        for name, want in self.dump.items():
-            got = _corners(_reader_faces(self.data[name]))
-            theirs = _corners([(f["p"], f["uv"], f["mat"]) for f in want["faces"]])
-            self.assertEqual(len(theirs), 3 * len(want["faces"]), name)
-            self.assertEqual(_unmatched(theirs, got), [], name)
-            self.assertEqual(_unmatched(got, theirs), [], name)
 
 
 def _knots(points, kind=shapes.CORNER):
@@ -905,7 +905,7 @@ class Synthetic(unittest.TestCase):
             ("smooth, curved", k(sm, curve, kink, (6.666666, -4.0, 0.0), (13.33333, -4.0, 0.0)), curve, False),
             ("Bezier", k(b, curve, kink, left, right), curve, False),
             ("Bezier, kinked by lines", k(b, line, kink, left, right), line, False),
-            ("Bezier, line in, curve out", k(b, curve, kink, left, right), line, False),
+            ("Bezier, a line into it", k(b, curve, kink, left, right), line, False),
             ("Bezier, in on the point", k(b, curve, kink, kink, right), curve, True),
             ("Bezier, out on the point", k(b, curve, kink, left, kink), curve, True),
             ("Bezier, both on the point", k(b, curve, kink, kink, kink), curve, True),

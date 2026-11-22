@@ -569,18 +569,18 @@ What 3ds Max 2020 makes of it (`snapshotAsMesh`, probed on scratch scenes and ch
   grid at 0 and 2); their map is the cap's box mapping. Every interior edge is hidden: 3ds Max shows the cap as one
   polygon. No local scene has grid caps (443 scenes, 95 Extrudes, the corpus included, 2026-11-21).
 - **Smoothing**: caps group 16; the sides change group only at a corner or Bezier-corner knot (FixtureExtMirror's
-  rounded Rectangle: sharp at its 8 Bezier-corner knots), the groups alternating 1, 2 (4 where three runs meet,
-  1, 3, 2 ... along a spline with no corner). 3ds Max also breaks the side at a Bezier knot whose in or out vector
-  is exactly its point (float32 equal), such as a pie Arc's from (in), center (both) and to (out): arc_pie_reverse's
-  extruded pies, 52 hard edges. The 3ds Max 2020 probe (maxdrop-em3.111, a square with a fifth knot on one side,
-  kinked or straight): a corner or Bezier-corner knot breaks whatever the angle (also on a straight side, also at a
-  2.3 degree kink); a smooth knot never (also where line segments kink the spline); a Bezier knot with both vectors
-  off its point never (also kinked by line segments); one with a vector on its point always (kinked or straight,
-  curve or line segments, an open spline too), a vector 1e-6 off at x 10 or 1e-9 off at the origin is not on it.
-  3ds Max keeps a Bezier knot's vectors in line (`setInVec` / `setOutVec` out of line come back in line): a Bezier
-  knot with its vectors out of line is not made there. `tests/unit/test_extrude.py` has the cases.
-  The group bits differ (a pie's sides: MaxDrop 1, 2, 4; 3ds Max 1 to 4 or 5, overlapping along the arc), the hard
-  edges do not: `tests/unit/test_extrude.py` compares them by position with `arc_pie_reverse.maps.jsonl`.
+  rounded Rectangle: sharp at its 8 Bezier-corner knots) or a Bezier knot with a vector on its point, the groups
+  alternating 1, 2 (4 where three runs meet, 1, 3, 2 ... along a spline with no corner). A Bezier knot breaks the
+  side when its in or out vector is exactly its point (float32 equal), such as a pie Arc's from (in), center (both)
+  and to (out): arc_pie_reverse's extruded pies, 52 hard edges. The 3ds Max 2020 probe (maxdrop-em3.111, a square
+  with a fifth knot on one side, kinked or straight): a corner or Bezier-corner knot breaks whatever the angle (also
+  on a straight side, also at a 2.3 degree kink); a smooth knot never (also where line segments kink the spline); a
+  Bezier knot with both vectors off its point never (also kinked by line segments); one with a vector on its point
+  always (kinked or straight, curve or line segments, an open spline too), a vector 1e-6 off at x 10 or 1e-9 off at
+  the origin is not on it. 3ds Max keeps a Bezier knot's vectors in line (`setInVec` / `setOutVec` out of line come
+  back in line): a Bezier knot with its vectors out of line is not made there. `tests/unit/test_extrude.py` has the
+  cases. The group bits differ (a pie's sides: MaxDrop 1, 2, 4; 3ds Max 1 to 4 or 5, overlapping along the arc), the
+  hard edges do not: `tests/unit/test_extrude.py` compares them by position with `arc_pie_reverse.maps.jsonl`.
 - **Mapping**: the sides U along each spline by length (0 to 1, the seam at its first point), V up the levels; the
   caps the shape's XY box, 0 to 1. Real-World Map Size: the lengths and sizes in file units instead. A closed spline
   that runs the other way than its role (a clockwise solid, a counter-clockwise hole) is turned whole: its U starts
