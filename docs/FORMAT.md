@@ -1445,7 +1445,7 @@ in the stored value, and MaxDrop applies the level before the swatch rule, which
 FixtureMultiLayerLevel: green 200 at 150 % is white), the opposite order of CoronaLegacyMtl's levels and Physical's
 base weight; the emission keeps the unscaled diffuse; a diffuse map is not scaled and the Diffuse Level map channel
 is not read (maxdrop-em3.150). A missing or animated diffuse, glossiness or specular level takes the shader's value
-as created (3ds Max 2020): diffuse 149.94 grey (Blinn, Phong, Metal) or 127.5 (the others, Strauss included);
+as created (3ds Max 2020): diffuse 149.94 grey (Blinn, Phong, Metal; MaxDrop 150) or 127.5 (the others, Strauss included);
 glossiness 10 % (Blinn, Phong, Metal), Anisotropic 25, Multi-Layer 50, Oren-Nayar-Blinn 25, Translucent 30,
 Strauss 20; specular level 5 % (Anisotropic, Multi-Layer), 0 the others (`SHADER_DEFAULTS`).
 

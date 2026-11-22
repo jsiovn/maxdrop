@@ -50,10 +50,10 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   Oren-Nayar-Blinn, Translucent: the swatch times the Diffuse Level, before the swatch rule); roughness = 1 -
   glossiness; specular = specular level times the mean of the linear specular color; a missing or animated diffuse,
   glossiness or specular level takes its shader's default (SHADER_DEFAULTS); alpha = opacity; self-illumination: its
-  color at strength 1, or the diffuse as set (not scaled) at the amount; two-sided flag; map slots with their amounts where switched
-  on, at the shader's own map channels (STD_SLOTS; Strauss: its metalness map drives the metallic) (a glossiness
-  map inverted; the specular level map drives the specular, else the specular color map); a map in the reflection
-  slot makes the specular at least that slot's amount (the map is an environment: not used).
+  color at strength 1, or the diffuse as set (not scaled) at the amount; two-sided flag; map slots with their
+  amounts where switched on, at the shader's own map channels (STD_SLOTS; Strauss: its metalness map drives the
+  metallic) (a glossiness map inverted; the specular level map drives the specular, else the specular color map); a
+  map in the reflection slot makes the specular at least that slot's amount (the map is an environment: not used).
 - Physical Material: base = base color times base weight; roughness (1 - it with roughness_inv); metalness;
   specular = reflectivity times the mean of the linear reflection color; transparency is the transmission and
   mixes the transparency color into the base, as for VRayMtl; IOR, thin-walled; emission color at emission

@@ -820,14 +820,16 @@ class Standard(unittest.TestCase, Close):
 
     def test_diffuse_level_decoys(self):
         """A value at another shader's Diffuse Level id scales nothing: Phong, Blinn and Metal have none, and
-        id 4, 7 or 8 is another parameter on the shaders that have one elsewhere."""
+        id 4, 7 or 8 is another parameter on the shaders that have one elsewhere (Multi-Layer, which reads 7 and 8:
+        5, its diffuse roughness)."""
         for sid in (classids.PHONG_SHADER, classids.BLINN_SHADER, classids.METAL_SHADER):
             with self.subTest(sid):
                 conv, ir = _convert(_standard(0, sid, {1: (0.8, 0.4, 0.2), 4: 0.5, 7: 0.0, 8: (0.0, 0.0, 0.0)}))
                 self.close(ir.base_color.value, (0.8, 0.4, 0.2))
         for sid, pid in self.DIFFUSE_LEVEL.items():
             shader = {1: (0.8, 0.4, 0.2), pid: 1.0}
-            shader.update({k: 0.5 for k in (4, 7, 8) if k != pid and k not in mat.SHADERS[sid][:7]})
+            shader.update({k: 0.5 for k in (4, 5, 7, 8) if k != pid and k not in mat.SHADERS[sid][:7]})
+            self.assertGreater(len(shader), 2, "at least one decoy")
             with self.subTest(sid):
                 conv, ir = _convert(_standard(0, sid, shader))
                 self.close(ir.base_color.value, (0.8, 0.4, 0.2))
@@ -1149,6 +1151,11 @@ class StandardShaders(unittest.TestCase, Close):
                 self.assertEqual(sid, getattr(classids, shader))
                 ids, d = mat.SHADERS[sid], mat.SHADER_DEFAULTS[sid]
                 self.assertEqual(names[ids.diffuse_level], "diffuseLevel")
+                block = self.oracle[name]["parts"]
+                stored = [p["value"] for part in block for b in part["blocks"][:1] for p in b["params"]
+                          if p.get("name") == "diffuseLevel"]
+                self.assertEqual(len(stored), 1)
+                self.close(stored[0], level / 100.0, "stored as a fraction")
                 ir = self.irs[name]
                 self.close(ir.base_color.value, _lins(*(min(255.0, c * level / 100.0) for c in diffuse)))
                 self.close(ir.roughness.value, 1.0 - d.glossiness)
