@@ -118,9 +118,13 @@ CLIP_LABEL = "Clip"  # the node that masks an image's output (clip_axes)
 MAX_LAYER_DEPTH = 8  # layers within layers drawn (convert/materials.py already stops a deeper or cyclic chain)
 X_STEP, Y_STEP = 300, 280
 COLOR, FLOAT = "color", "float"
-# Blend op -> the Mix node's blend type drawn at factor 1
+# Blend op -> the Mix node's blend type drawn at factor 1 (A the bottom; hard light swaps them, linear burn is an
+# add minus 1, floored at 0)
 BLEND_OPS = {tx.BLEND_ADD: 'ADD', tx.BLEND_SUBTRACT: 'SUBTRACT', tx.BLEND_DIVIDE: 'DIVIDE', tx.BLEND_MIN: 'DARKEN',
-             tx.BLEND_MAX: 'LIGHTEN', tx.BLEND_DIFFERENCE: 'DIFFERENCE'}
+             tx.BLEND_MAX: 'LIGHTEN', tx.BLEND_DIFFERENCE: 'DIFFERENCE', tx.BLEND_SCREEN: 'SCREEN',
+             tx.BLEND_OVERLAY: 'OVERLAY', tx.BLEND_HARD_LIGHT: 'OVERLAY', tx.BLEND_DODGE: 'DODGE',
+             tx.BLEND_BURN: 'BURN', tx.BLEND_LINEAR_BURN: 'ADD', tx.BLEND_LINEAR_LIGHT: 'LINEAR_LIGHT',
+             tx.BLEND_EXCLUSION: 'EXCLUSION'}
 # Composite blend mode -> the Mix node's blend type drawn at factor 1 (texmaps: AVERAGE, SPOTLIGHT, SPOTLIGHT_BLEND
 # and HARD_LIGHT have forms of their own, LINEAR_DODGE is ADD clamped before the opacity, as measured)
 BLEND_TYPES = {tx.ADDITION: 'ADD', tx.SUBTRACT: 'SUBTRACT', tx.DARKEN: 'DARKEN', tx.MULTIPLY_BLEND: 'MULTIPLY',
@@ -962,8 +966,9 @@ class _Tree:
 
     def arith(self, n, depth):
         """A Blend (a color socket): both sides through a Gamma node of 1 / gamma, a Mix node of the operation at
-        factor 1, not clamped (subtract floored at 0 by a Vector Math MAXIMUM), then a Gamma node of gamma. A missing
-        side gives the other one when that is a map, else MISSING, as for Multiply."""
+        factor 1, not clamped (subtract and linear burn floored at 0 by a Vector Math MAXIMUM, linear burn minus 1
+        first), then a Vector Math ABSOLUTE and a Gamma node of gamma. A missing side gives the other one when that is
+        a map, else MISSING, as for Multiply."""
         va, vb = self.graph(n.a, COLOR, depth + 2), self.graph(n.b, COLOR, depth + 2)
         if va is MISSING or vb is MISSING:
             other = vb if va is MISSING else va
@@ -978,15 +983,26 @@ class _Tree:
         node, a, b, out = self.mix_node(COLOR, depth, BLEND_OPS[n.op])
         _in(node, "Factor_Float").default_value = 1.0
         node.clamp_result = False
+        if n.op == tx.BLEND_HARD_LIGHT:  # overlay with the layers' roles swapped
+            sides.reverse()
         self.feed(a, sides[0])
         self.feed(b, sides[1])
-        if n.op == tx.BLEND_SUBTRACT:
-            floor = self.node("ShaderNodeVectorMath", depth)
-            floor.operation = 'MAXIMUM'
-            self.links.new(out, _in(floor, "Vector"))
-            _in(floor, "Vector_001").default_value = (0.0, 0.0, 0.0)
-            out = _out(floor, "Vector")
-        return self.gamma(out, n.gamma, depth) if n.gamma != 1.0 else out
+        if n.op == tx.BLEND_LINEAR_BURN:
+            out = self.vector_math('ADD', out, (-1.0, -1.0, -1.0), depth)
+        if n.op in (tx.BLEND_SUBTRACT, tx.BLEND_LINEAR_BURN):
+            out = self.vector_math('MAXIMUM', out, (0.0, 0.0, 0.0), depth)
+        if n.gamma == 1.0:
+            return out
+        return self.gamma(self.vector_math('ABSOLUTE', out, None, depth), n.gamma, depth)
+
+    def vector_math(self, operation, socket, value, depth):
+        """A Vector Math node of operation over socket and the constant value (None: a one-input operation)."""
+        vm = self.node("ShaderNodeVectorMath", depth)
+        vm.operation = operation
+        self.links.new(socket, _in(vm, "Vector"))
+        if value is not None:
+            _in(vm, "Vector_001").default_value = value
+        return _out(vm, "Vector")
 
     def gamma(self, socket, value, depth):
         """socket raised to value (a Gamma node; a negative channel stays as it is)."""

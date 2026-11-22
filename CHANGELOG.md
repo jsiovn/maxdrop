@@ -17,6 +17,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   Shadows off, which Blender cannot set per object, is a line in the report.
 - Lights: a V-Ray light (plane, disc, sphere) whose own Cast shadows is off in 3ds Max casts no shadow in Blender;
   a dome light with it off is a line in the report (Blender's World has no such switch).
+- CoronaMix: the Screen, Overlay, Color Dodge, Color Burn, Linear Burn, Linear Light, Hard Light and Exclusion
+  operations are imported as nodes, in gamma 2.2 with "mix in sRGB" on as Corona does it, and Gamma when its top is
+  a grey color, instead of the first bitmap below and a line in the report; Soft Light, Vivid Light, Pin Light and
+  Hard Mix keep that, the line now naming the operation.
 
 ### Fixed
 

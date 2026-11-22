@@ -128,6 +128,7 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1; kept literal: tes
     "arc_pie_reverse": ["UVMap"],  # every Extrude with Generate Mapping Coords; the two plain arcs are curves
     "box_poly_standard": ["UVMap"],
     "corona_layered": ["UVMap"],
+    "corona_mix_blends": ["UVMap"],
     "corona_mix_ops": ["UVMap"],
     "corona_more": ["UVMap"],
     "corona_legacy": ["UVMap"],
@@ -2718,6 +2719,59 @@ def check_builder_blend():
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def check_builder_blend_modes():
+    """The CoronaMix blend modes of bead maxdrop-em3.117 over an image: a Mix node of the mode (bottom in A, hard
+    light's top in A), linear burn's add minus 1 floored at 0; in sRGB mode a Vector Math ABSOLUTE before the
+    closing Gamma (Corona raises the magnitude), in linear mode none."""
+    from maxdrop.build import materials as build_materials
+    from maxdrop.convert import materials as cm
+    from maxdrop.convert import texmaps as tx
+    from maxdrop.convert import textures as ct
+    empty_scene()
+    scratch = tempfile.mkdtemp(prefix="maxdrop-blend-modes-")
+    try:
+        png = os.path.join(scratch, "blend.png")
+        _write_png(png)
+        img = tx.Image(1, "blend.png", "blend.png", "", ct.Found(png, ct.SCENE))
+        top = tx.Constant((0.6, 0.2, 0.75))
+        types = {tx.BLEND_SCREEN: 'SCREEN', tx.BLEND_OVERLAY: 'OVERLAY', tx.BLEND_HARD_LIGHT: 'OVERLAY',
+                 tx.BLEND_DODGE: 'DODGE', tx.BLEND_BURN: 'BURN', tx.BLEND_LINEAR_BURN: 'ADD',
+                 tx.BLEND_LINEAR_LIGHT: 'LINEAR_LIGHT', tx.BLEND_EXCLUSION: 'EXCLUSION'}
+        builder = build_materials.MaterialBuilder()
+        for op, blend_type in types.items():
+            for gamma in (2.2, 1.0):
+                ir = cm.MaterialIR(30, "Mode", "test", base_color=cm.Input((0.5,) * 3, cm.MapRef(1)))
+                ir.textures = {"base_color": tx.TextureGraphIR(tx.Blend(op, img, top, gamma), tx.COLOR)}
+                m = builder.make(ir)
+                nodes = m.node_tree.nodes
+                what = "blend mode %s, gamma %s" % (op, gamma)
+                mix = [n for n in nodes if n.bl_idname == "ShaderNodeMix" and n.blend_type == blend_type]
+                ok = len(mix) == 1 and not mix[0].clamp_result
+                if ok:
+                    a, b = _input(mix[0], "A_Color"), _input(mix[0], "B_Color")
+                    linked = (b, a) if op == tx.BLEND_HARD_LIGHT else (a, b)
+                    ok = linked[0].is_linked and not linked[1].is_linked
+                check("%s: one unclamped Mix node, the bottom image in %s" % (what, "B" if op == tx.BLEND_HARD_LIGHT
+                                                                              else "A"), ok)
+                vm = {n.operation: n for n in nodes if n.bl_idname == "ShaderNodeVectorMath"}
+                absolute = vm.get('ABSOLUTE')
+                check("%s: %s" % (what, "ABSOLUTE into the closing Gamma" if gamma != 1.0 else "no ABSOLUTE"),
+                      (absolute is not None and absolute.outputs[0].links
+                       and absolute.outputs[0].links[0].to_node.bl_idname == "ShaderNodeGamma") if gamma != 1.0
+                      else absolute is None)
+                if op == tx.BLEND_LINEAR_BURN:
+                    add, floor = vm.get('ADD'), vm.get('MAXIMUM')
+                    check("%s: minus 1, then floored at 0" % what,
+                          add is not None and tuple(_input(add, "Vector_001").default_value) == (-1.0, -1.0, -1.0)
+                          and floor is not None and floor.inputs[0].links[0].from_node == add)
+                bpy.data.materials.remove(m)
+    finally:
+        empty_scene()
+        for img in list(bpy.data.images):
+            bpy.data.images.remove(img)
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def check_builder_weight():
     """A reflection weight (bead maxdrop-em3.119): between 0 and 1, or a map, a Mix Shader by the weight over a
     twin without reflection; 0, 1, a metal and full glass keep the lone Principled at 0.5 x the weight; a layer
@@ -4476,6 +4530,7 @@ def main():
                                  ("found textures", check_found_textures), ("builder", check_builder),
                                  ("builder debt", check_builder_debt), ("builder mirror", check_builder_mirror),
                                  ("builder blend", check_builder_blend), ("builder mono", check_builder_mono),
+                                 ("builder blend modes", check_builder_blend_modes),
                                  ("builder multiply", check_builder_multiply),
                                  ("builder weight", check_builder_weight),
                                  ("builder fresnel off", check_builder_fresnel_off),

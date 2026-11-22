@@ -50,6 +50,7 @@ UV_LAYERS = {
     "arc_pie_reverse": ["UVMap"],  # every Extrude with Generate Mapping Coords; the two plain arcs are curves
     "box_poly_standard": ["UVMap"],
     "corona_layered": ["UVMap"],
+    "corona_mix_blends": ["UVMap"],
     "corona_mix_ops": ["UVMap"],
     "corona_more": ["UVMap"],
     "corona_legacy": ["UVMap"],

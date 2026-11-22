@@ -893,6 +893,53 @@ class CoronaMixOps(Checks):
         self.assertEqual(self.f.tex.stats.issues, [])
 
 
+class CoronaMixBlends(Checks):
+    """tools/fixtures/corona_mix_blends.ms: CoronaColor HDR layers (linear, no swatch decode), so the IR is compared
+    with renderMap of the saved file in 3ds Max 2020 + Corona 12 (maxdrop-em3.117, read through (v + 4) x 0.05:
+    within 3e-4; Corona's sRGB mode renders 1 as 0.998)."""
+    RENDERMAP = {  # box -> renderMap of its base map
+        "Screen": (0.691844, 0.651865, 0.987258), "Overlay": (0.137636, 0.383001, 0.974746),
+        "ColorDodge": (0.999771, 0.999771, 0.999771), "ColorBurn": (0.00213623, 0.0665293, 0.886549),
+        "LinearBurn": (0.0012207, 0.0131226, 0.664988), "LinearLight": (0.68452, 0.351263, 3.24804),
+        "HardLight": (0.444343, 0.367437, 0.974746), "Exclusion": (0.378119, 0.223392, 0.0170903),
+        "LinearLightLinear": (0.249943, -0.200198, 1.39986), "LinearBurnLinear": (0.0, 0.0, 0.649729),
+        "LinearLightDark": (0.998245, 0.000915527, 0.0), "Gamma": (0.01648, 0.284733, 0.865491)}
+
+    @classmethod
+    def setUpClass(cls):
+        cls.f = Fixture("corona_mix_blends")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.f.close()
+
+    def root(self, name):
+        g = self.f.irs["FixtureCoronaMix" + name].textures["base_color"]
+        self.assertFalse(g.approximated, name)
+        self.assertEqual(g.issues, (), name)
+        return g.root
+
+    def test_folded_as_renderMap(self):
+        for name, want in self.RENDERMAP.items():
+            with self.subTest(name):
+                root = self.root(name)
+                self.assertIsInstance(root, tx.Constant)
+                for ours, theirs in zip(root.value, want):
+                    self.assertAlmostEqual(ours, theirs, delta=2e-3, msg=name)
+
+    def test_gamma_at_half_amount(self):
+        root = self.root("GammaHalf")
+        self.assertIsInstance(root, tx.Mix)
+        self.close(root.factor, 0.5)
+        value = tuple(a + (b - a) * 0.5 for a, b in zip(root.a.value, root.b.value))
+        for ours, theirs in zip(value, (0.0329595, 0.342412, 0.882582)):  # renderMap
+            self.assertAlmostEqual(ours, theirs, delta=1e-3)
+
+    def test_nothing_peeled(self):
+        self.assertEqual(self.f.tex.stats.peeled, collections.Counter())
+        self.assertEqual(self.f.tex.stats.issues, [])
+
+
 G2 = bytes(range(16, 32))
 
 
@@ -972,13 +1019,23 @@ class CoronaSynthetic(Checks):
 
     def test_corona_mix_blends(self):
         top, bottom = (0.8, 0.4, 0.2), (0.25, 0.5, 0.75)
+        self.assertEqual(sorted(tx.CM_BLENDS), [0, 1, 3, 4, 5, 8, 9, 10, 11, 12, 13, 14, 16, 20])
+        self.assertEqual(set(tx.CM_BLENDS.values()) - set(tx.CM_GAMMA_OPS),
+                         {tx.BLEND_DIVIDE, tx.BLEND_MIN, tx.BLEND_MAX}, "the same in both modes")
         for op, blend in tx.CM_BLENDS.items():
             for srgb in (1, 0):
                 with self.subTest(op=op, srgb=srgb):
                     tex = _tex(_cmix(1, p200=op, p208=top, p209=bottom, p214=srgb))
-                    gamma = 2.2 if srgb and blend in (tx.BLEND_ADD, tx.BLEND_SUBTRACT, tx.BLEND_DIFFERENCE) else 1.0
+                    gamma = 2.2 if srgb and blend in tx.CM_GAMMA_OPS else 1.0
                     root = tex.convert(mat.MapRef(1), tx.COLOR).root
                     self.close(root.value, tx.blend_value(blend, bottom, top, gamma), "two colors: folded")
+                    tex = _tex(_cmix(1, [2], p200=op, p206=Ref(2), p209=bottom, p214=srgb), _cbitmap(2))
+                    g = tex.convert(mat.MapRef(1), tx.COLOR)
+                    self.assertIsInstance(g.root, tx.Blend)
+                    self.assertEqual((g.root.op, g.root.gamma), (blend, gamma))
+                    self.assertEqual(g.root.b.name, "a.png", "the top")
+                    self.assertFalse(g.approximated)
+                    self.assertEqual(g.issues, ())
         tex = _tex(_cmix(1, [2], p200=1, p201=0.5, p206=Ref(2), p209=bottom), _cbitmap(2))
         root = tex.convert(mat.MapRef(1), tx.COLOR).root
         self.assertIsInstance(root, tx.Mix)
@@ -997,6 +1054,75 @@ class CoronaSynthetic(Checks):
         self.close(tx.blend_value(tx.BLEND_ADD, -0.1, 0.25, 2.2), (-0.1 + 0.25 ** (1 / 2.2)) ** 2.2,
                    "a negative channel through a Gamma node as it is")
         self.assertTrue(math.isfinite(tx.blend_value(tx.BLEND_ADD, 1e308, 1e308, 2.2)), "no overflow")
+        for op in tx.BLEND_OPS:
+            for a, b in ((1e308, 1e-308), (-1e308, 1.0), (1.0, 1.0), (0.0, 0.0), (1e-320, -1e-320)):
+                for gamma in (1.0, 2.2):
+                    self.assertTrue(math.isfinite(tx.blend_value(op, a, b, gamma)), (op, a, b, gamma))
+
+    def test_blend_value_as_renderMap(self):
+        """renderMap of CoronaMix in 3ds Max 2020 + Corona 12 (maxdrop-em3.117): CoronaColor HDR layers bottom / top
+        per channel, mixInSRgb on (2.2) and off; within 2e-3 (the probe reads within 3e-4, Corona's sRGB mode
+        renders 1 as 0.998)."""
+        cases = (
+            (tx.BLEND_SCREEN, (0.25, 0.5, 1.5), (2.0, 0.5, 0.25), 1.0, (1.7499, 0.749828, 1.37484)),
+            (tx.BLEND_SCREEN, (0.25, 0.5, 1.5), (2.0, 0.5, 0.25), 2.2, (1.42062, 0.846265, 1.21981)),
+            (tx.BLEND_OVERLAY, (3.0, 2.0, 0.0), (1.5, 3.0, 2.0), 1.0, (-1.00008, -3.00023, 0.0)),
+            (tx.BLEND_OVERLAY, (0.05, 0.4, 0.9), (0.6, 0.2, 0.75), 2.2, (0.137636, 0.383001, 0.974746)),
+            (tx.BLEND_HARD_LIGHT, (0.25, 0.5, 1.5), (2.0, 0.5, 0.25), 1.0, (2.49973, 0.499886, 0.749828)),
+            (tx.BLEND_DODGE, (0.25, 0.3, 0.0), (2.0, 1.0, 0.0), 1.0, (-0.250248, 0.999771, 0.0)),
+            (tx.BLEND_DODGE, (0.25, 0.5, 1.5), (2.0, 0.5, 0.25), 2.2, (2.22507, 0.999771, 0.999771)),
+            (tx.BLEND_BURN, (0.25, 0.5, 1.5), (2.0, 0.5, 0.25), 1.0, (0.624704, 0.0, 2.99992)),
+            (tx.BLEND_BURN, (0.5, 0.2, 0.05), (0.0, 1.0, 0.6), 1.0, (0.0, 0.199893, 0.0)),
+            (tx.BLEND_LINEAR_BURN, (0.05, 0.4, 0.9), (0.6, 0.2, 0.75), 1.0, (0.0, 0.0, 0.649729)),
+            (tx.BLEND_LINEAR_BURN, (3.0, 2.0, 0.0), (1.5, 3.0, 2.0), 2.2, (3.87091, 4.68635, 0.112307)),
+            (tx.BLEND_LINEAR_LIGHT, (3.0, 2.0, 0.0), (1.5, 3.0, 2.0), 1.0, (4.99977, 6.99992, 2.99992)),
+            (tx.BLEND_LINEAR_LIGHT, (0.0, 0.05, 0.2), (0.0, 0.1, 0.05), 2.2, (0.998245, 0.000915527, 0.0)),
+            (tx.BLEND_EXCLUSION, (2.0, 1.0, 0.0), (2.0, 1.0, 0.0), 2.2, (1.03243, 0.0, 0.0)),
+            (tx.BLEND_EXCLUSION, (0.25, 0.5, 1.5), (2.0, 0.5, 0.25), 1.0, (1.24971, 0.499886, 0.999771)),
+        )
+        for op, bottom, top, gamma, want in cases:
+            with self.subTest(op=op, gamma=gamma):
+                for ours, theirs in zip(tx.blend_value(op, bottom, top, gamma), want):
+                    self.assertAlmostEqual(ours, theirs, delta=2e-3)
+
+    def test_corona_mix_gamma(self):
+        bottom = (0.05, 0.4, 0.9)
+        # two colors: folded per channel; renderMap of bottom 0.05 0.4 0.9 under a top of 0.5 in sRGB mode
+        tex = _tex(_cmix(1, p200=7, p208=(1.0, 1.0, 1.0), p202=0.5, p209=bottom))
+        for ours, theirs in zip(tex.convert(mat.MapRef(1), tx.COLOR).root.value, (0.01648, 0.284733, 0.865491)):
+            self.assertAlmostEqual(ours, theirs, delta=1e-3)
+        tex = _tex(_cmix(1, p200=7, p208=(0.5, 0.25, 1.0), p209=bottom, p214=0))
+        self.close(tex.convert(mat.MapRef(1), tx.COLOR).root.value, (0.05 ** 2, 0.4 ** 4, 0.9),
+                   "linear mode, a colored top")
+        # a grey top color over a map: a ColorCorrect gamma, under a Mix for an amount below 1
+        for srgb, want in ((1, 0.5 ** (1 / 2.2)), (0, 0.5)):
+            tex = _tex(_cmix(1, [2], p200=7, p207=Ref(2), p208=(1.0, 1.0, 1.0), p202=0.5, p214=srgb), _cbitmap(2))
+            g = tex.convert(mat.MapRef(1), tx.COLOR)
+            self.assertIsInstance(g.root, tx.ColorCorrect)
+            self.close(g.root.gamma, want)
+            self.assertEqual(g.root.input.name, "a.png")
+            self.assertEqual((g.approximated, g.issues), (False, ()))
+        tex = _tex(_cmix(1, [2], p200=7, p201=0.5, p207=Ref(2), p208=(0.5, 0.5, 0.5)), _cbitmap(2))
+        root = tex.convert(mat.MapRef(1), tx.COLOR).root
+        self.assertIsInstance(root, tx.Mix)
+        self.assertIs(root.a, root.b.input, "the bottom, shared")
+        # a colored top over a map, a top map, a top of 0: peeled to the first bitmap, the operation named
+        for params in (dict(p208=(0.5, 0.25, 1.0)), dict(p206=Ref(3)), dict(p208=(0.0, 0.0, 0.0))):
+            with self.subTest(params=params):
+                tex = _tex(_cmix(1, [2, 3], p200=7, p207=Ref(2), **params), _cbitmap(2), _cbitmap(3, G2))
+                g = tex.convert(mat.MapRef(1), tx.COLOR)
+                self.assertEqual(g.root.name, "a.png")
+                self.assertTrue(g.approximated)
+                self.assertIn("operation gamma drawn as its first bitmap", tex.stats.issues[0][1])
+        self.close(tx._gamma_value(1e6, 0.01), tx.MAX_MULTIPLIER, "held")
+
+    def test_corona_mix_peeled_operations_named(self):
+        for op, name in ((15, "soft light"), (17, "vivid light"), (18, "pin light"), (19, "hard mix")):
+            with self.subTest(op=op):
+                tex = _tex(_cmix(1, [2], p200=op, p206=Ref(2)), _cbitmap(2))
+                g = tex.convert(mat.MapRef(1), tx.COLOR)
+                self.assertEqual(g.root.name, "a.png")
+                self.assertIn("operation %s drawn as its first bitmap" % name, tex.stats.issues[0][1])
 
     def test_corona_mix_huge_multiplier_folds(self):
         tex = _tex(_cmix(1, p200=0, p202=1e300, p203=1e300, p208=(1.0, 1.0, 1.0), p209=(1.0, 1.0, 1.0)))
@@ -1004,14 +1130,14 @@ class CoronaSynthetic(Checks):
         self.assertTrue(all(math.isfinite(c) for c in root.value))
 
     def test_corona_mix_peeled_does_not_convert_its_layers_first(self):
-        tex = _tex(_cmix(1, [2, 3], p200=7, p206=Ref(2), p207=Ref(3)), _cbitmap(2),
+        tex = _tex(_cmix(1, [2, 3], p200=15, p206=Ref(2), p207=Ref(3)), _cbitmap(2),
                    FakeMap(3, (0x1234, 0), cls="Noise"))
         g = tex.convert(mat.MapRef(1), tx.COLOR)
         self.assertEqual(g.root.name, "a.png")
         self.assertEqual(tex.stats.unsupported, collections.Counter(), "the bottom Noise is never drawn")
 
     def test_corona_mix_other_operation_without_a_bitmap(self):
-        tex = _tex(_cmix(1, p200=9))
+        tex = _tex(_cmix(1, p200=17))
         self.assertIsNone(tex.convert(mat.MapRef(1), tx.COLOR))
         self.assertEqual(tex.stats.unsupported, collections.Counter({"CoronaMix": 1}))
 

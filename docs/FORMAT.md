@@ -1529,8 +1529,8 @@ A Mix's Use Curve has no curve control: renderMap of a Mix of black and white gi
 alike, 0 below lower, 1 from upper on and smoothstep of (x - lower) / (upper - lower) between (lower 0.3, upper 0.7:
 0.04295 at 0.35, 0.15624 at 0.4); with lower at or above upper it is a step at lower.
 
-The Corona classes of corona_physical, corona_legacy, corona_maps, corona_layered, corona_light, corona_more and
-corona_mix_ops (3ds Max 2020 + Corona 12, DLL `coronamaxutils2020.dlt`; block 0 each). CoronaPhysicalMtl's class-directory name starts with a
+The Corona classes of corona_physical, corona_legacy, corona_maps, corona_layered, corona_light, corona_more,
+corona_mix_ops and corona_mix_blends (3ds Max 2020 + Corona 12, DLL `coronamaxutils2020.dlt`; block 0 each). CoronaPhysicalMtl's class-directory name starts with a
 carriage return (`"\rCoronaPhysicalMtl"`); MAXScript's `CoronaMtl` is CoronaLegacyMtl. Corona names its obsolete
 parameters `removedParam`: they are not saved. A Corona map amount is a fraction (CoronaPhysicalMtl's base and
 roughness amounts and CoronaLayeredMtl's amounts are percent in MAXScript: 75.0 there is 0.75 here). One older scene
@@ -1549,7 +1549,7 @@ CoronaLegacyMtl, CoronaBitmap and CoronaNormal.
 | CoronaLightMtl `(0x53B7717A, 0x500D5093)` | 110 intensity, 111 texmap, 112 texmapOn, 113 color, 150 opacityTexmap, 151 opacityTexmapOn, 168 twosidedEmission |
 | CoronaBitmap `(0xABBA5784, 0x65484244)` | 101 filename (asset), 103 uvwChannel, 105 uvwScale, 106 uvwOffset (point3), 107 filteringBlur, 108 / 109 tilingU / V (0 none, 1 repeat, 2 mirror), 114 realWorldScale, 117 monoChannelOutput, 118 rgbChannelOutput (1 alpha as gray), 119 clippingOn, 120 clippingMode (0 crop, 1 place), 121-124 clipping u, v, width, height, 125 gamma (-1 automatic), 129 wAngle (radians), 130 uAngle (the U offset times 2 pi, kept in step by Corona); its Output part at slot 1 |
 | CoronaColor `(0x68426DCA, 0x372362D4)` | 50 method (0 color, 1 HDR color, 2 temperature, 3 hex), 51 temperature (K), 52 color, 56 alpha, 57 multiplier, 58 colorHdr, 59 hexColor |
-| CoronaMix `(0x6847286F, 0x3FFFAAB4)` | 200 mixOperation (0 add, 1 subtract, 2 multiply, 3 divide, 4 minimum, 5 maximum, 6 mix, 7 gamma, 8 difference), 201 mixAmount, 202 / 203 multiplierTop / Bottom, 204 / 205 offsetTop / Bottom, 206 / 207 texmapTop / Bottom, 208 / 209 colorTop / Bottom, 210 texmapMix, 211 / 212 / 213 switches of the mix, top and bottom maps, 214 mixInSRgb |
+| CoronaMix `(0x6847286F, 0x3FFFAAB4)` | 200 mixOperation (0 add, 1 subtract, 2 multiply, 3 divide, 4 minimum, 5 maximum, 6 mix, 7 gamma, 8 difference, 9 screen, 10 overlay, 11 color dodge, 12 color burn, 13 linear burn, 14 linear light, 15 soft light, 16 hard light, 17 vivid light, 18 pin light, 19 hard mix, 20 exclusion: Corona's Mix Operation list), 201 mixAmount, 202 / 203 multiplierTop / Bottom, 204 / 205 offsetTop / Bottom, 206 / 207 texmapTop / Bottom, 208 / 209 colorTop / Bottom, 210 texmapMix, 211 / 212 / 213 switches of the mix, top and bottom maps, 214 mixInSRgb |
 
 What the Corona maps do was measured with `renderMap` in 3ds Max 2020: a CoronaBitmap's UVW scale, offset and W
 angle place the image exactly as a Bitmap's tiling, offset and W angle; CoronaMix gives mix(bottom, operation(bottom,
@@ -1559,7 +1559,16 @@ on (the default) the operation runs on each layer raised to 1 / 2.2 and its resu
 40 of 255: add 206.1, off 90.0; the sRGB curve would give 207.2); multiply, divide, min and max come out the same
 either way; results are not clamped (an add's 2.14 shows through a 0.25 mask). Each layer is its map or color times
 its multiplier, plus its offset times -0.1 (offset 1.0 lowers it by 25.5 of 255, -1.0 raises it; the multiplier
-first). Operations 7 and 9-20 are not identified. CoronaColor's temperature is Corona's own linear color, the
+first). Operations 7 and 9-20 (maxdrop-em3.117, CoronaColor HDR layers read through (v + 4) x 0.05, so -4 to 16
+show), a the bottom and b the top per channel: gamma a^(1 / b) (in sRGB mode b^(1 / 2.2), the 2.2s of a cancel; no
+number at b = 0), screen 1 - (1 - a)(1 - b), overlay 2ab for a below 0.5 else 1 - 2(1 - a)(1 - b), hard light the
+overlay with a and b swapped, color dodge a / (1 - b) at most 1 (1 at b = 1; a top above 1 gives a negative), color
+burn 1 - (1 - a) / b at least 0 (0 at b = 0; not clamped above), linear burn a + b - 1 at least 0, linear light
+a + 2b - 1, exclusion a + b - 2ab, none of them clamped otherwise; soft light is Photoshop's (not Blender's Pegtop
+form), vivid light, pin light and hard mix have no Mix node type. In sRGB mode Corona raises the magnitude of a
+result to 2.2 (linear light of black over black gives 0.998, |-1|^2.2) and takes the magnitude of a negative layer
+(an add of -0.1 and 0.5 gives 1.186), and renders 1 as about 0.998. The amount lerp is linear in both modes for
+these operations too. CoronaColor's temperature is Corona's own linear color, the
 brightest channel 1 (`texmaps.CORONA_KELVIN`, 24 points from 1000 K to 40000 K; 3000 K = (255, 121.6, 39.2));
 colorSpace (61) changed nothing for a color, a hex value or a temperature. A Corona render (`render`) does not run
 here, under `3dsmaxbatch` or in an own `3dsmax.exe -silent` instance ("Unable to open renderer, possible
