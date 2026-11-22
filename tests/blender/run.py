@@ -3720,15 +3720,13 @@ def check_reader_defect(first, second):
                       "the console)", repr(line))
         # An AttributeError (an attribute read on None in a chunk walker) is in the net too. Its message is given,
         # so that the reason is the same on Python 3.11 and 3.13.
-        attribute = AttributeError("maxdrop test: reader defect")
-
         def attribute_scene(cls, *args, **kwargs):
-            raise attribute
+            raise AttributeError("maxdrop test: reader defect")
 
         def attribute_first(cls, cf):
             calls.append(cf)
             if len(calls) == 1:
-                raise attribute
+                raise AttributeError("maxdrop test: reader defect")
             return original_table.__func__(cls, cf)
 
         reader_scene.Scene.from_file = classmethod(attribute_scene)
@@ -3745,7 +3743,11 @@ def check_reader_defect(first, second):
         with contextlib.redirect_stdout(console):
             _advance(run.steps(threaded=False), lambda: False)
         assets.AssetTable.from_file = original_table
-        sys.stdout.write(console.getvalue())
+        printed = console.getvalue()
+        sys.stdout.write(printed)
+        check("reader defect: an AttributeError of the read, the traceback is in the console",
+              "MaxDrop: reading %s failed, a defect in MaxDrop (please report it with this traceback):" % name
+              in printed and "AttributeError: maxdrop test: reader defect" in printed, printed[-500:])
         attribute_reason = reason.replace("TypeError", "AttributeError")
         check("reader defect: an AttributeError of the read, the file is not imported, the other one is",
               ('WARNING', "Not imported: %s: %s" % (name, attribute_reason)) in run.lines
