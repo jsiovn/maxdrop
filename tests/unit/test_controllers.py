@@ -714,6 +714,15 @@ class TestTangents(MatrixCase):
         self.assertAlmostEqual(ct.bezier(0, 0.0, 0.01, 1 / 3, 300, 3.0, -0.01, 1 / 3, 100), 1.0)  # a straight line
         self.assertTrue(math.isnan(ct.bezier(0, 0.0, math.nan, -1, 300, 3.0, 0.0, -1, 150)))
 
+    def test_bezier_negative_length_is_a_third(self):
+        # tangents that make the handle length matter: any negative length, not only -1, is the default third
+        third = ct.bezier(0, 0.0, 0.02, 1 / 3, 300, 3.0, -0.005, 1 / 3, 100)
+        self.assertNotAlmostEqual(ct.bezier(0, 0.0, 0.02, 0.5, 300, 3.0, -0.005, 0.5, 100), third)
+        for length in (-1.0, -2.5, -1e30):
+            with self.subTest(length=length):
+                self.assertAlmostEqual(ct.bezier(0, 0.0, 0.02, length, 300, 3.0, -0.005, 1 / 3, 100), third)
+                self.assertAlmostEqual(ct.bezier(0, 0.0, 0.02, 1 / 3, 300, 3.0, -0.005, length, 100), third)
+
     def test_squad_keeps_the_stored_signs(self):
         q0, q1 = NO_TURN, (0.0, 0.0, -0.7071068, -0.7071068)  # 270 degrees about Z, stored the long way
         self.assertMatrix(ct.quat_matrix(ct.squad(q0, q0, q1, q1, 0.5)), ct.quat_matrix(_rotz(-135)), places=5)
