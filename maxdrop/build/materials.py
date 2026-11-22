@@ -54,7 +54,8 @@ blue, yellow, cyan and magenta): a Mix mask, a VRayMtl reflection glossiness map
 for red, green and blue and 2/3 for the others, where the luminance gave 0.21, 0.72 and 0.07. The same rule, not
 measured, for a metallic map, a layer or Composite mask, a bump height (3ds Max's own mono value is that mean) and
 Corona's materials. A Multiply of two maps in a float graph is the product of their means, not the mean of their
-product (not measured either: maxdrop-em3.124).
+product: measured on V-Ray 5.2 (bead maxdrop-em3.124, an RGB Multiply as a Mix mask and a reflection glossiness map,
+a CoronaMix Multiply as a Mix mask), red x green gives 1/9 (not 0) and yellow x cyan 4/9 (not 1/3).
 
 Texture graphs (convert/texmaps.py) become nodes, a node of the IR shared by several inputs once per material: Image
 -> Image Texture (its image datablock reused per file and color space: one file used in two color spaces is two

@@ -2910,6 +2910,59 @@ def check_builder_mono():
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def check_builder_multiply():
+    """A Multiply of two maps in a float graph (bead maxdrop-em3.124): V-Ray 5.2 takes the product of the two maps'
+    means (red x green 1/9, measured on an RGB Multiply and a CoronaMix Multiply as a Mix mask and a glossiness
+    map), not the mean of their product (0). On roughness and on a color Mix's mask: a Math MULTIPLY of two
+    DOT_PRODUCTs by (1/3, 1/3, 1/3), each from an image's Color."""
+    from maxdrop.build import materials as build_materials
+    from maxdrop.convert import materials as cm
+    from maxdrop.convert import texmaps as tx
+    from maxdrop.convert import textures as ct
+    empty_scene()
+    for img in list(bpy.data.images):
+        bpy.data.images.remove(img)
+    scratch = tempfile.mkdtemp(prefix="maxdrop-multiply-")
+    try:
+        png = os.path.join(scratch, "mult.png")
+        _write_png(png)
+        found = ct.Found(png, ct.SCENE)
+        a = tx.Image(1, "mult.png", "mult.png", "", found, colorspace=tx.NON_COLOR)
+        b = tx.Image(2, "mult.png", "mult.png", "", found, colorspace=tx.NON_COLOR,
+                     mapping=tx.Mapping(tiling=(2.0, 2.0)))
+        ir = cm.MaterialIR(52, "Multiply", "test", base_color=cm.Input((0.5,) * 3, cm.MapRef(1)),
+                           roughness=cm.Input(0.5, cm.MapRef(1)))
+        ir.textures = {
+            "base_color": tx.TextureGraphIR(tx.Mix(tx.Constant((0.0,) * 3), tx.Constant((1.0,) * 3), 0.0,
+                                                   tx.Multiply(a, b)), tx.COLOR),
+            "roughness": tx.TextureGraphIR(tx.Multiply(a, b), tx.DATA)}
+        m = build_materials.MaterialBuilder().make(ir)
+        check("multiply: material built", m is not None)
+        if m is None:
+            return
+        mixed = _color_into_float(m)
+        check("multiply: no color output linked into a float input", mixed == [], str(mixed))
+        p = _principled(m)
+
+        def means_product(socket):
+            mul = _from(socket)
+            if mul is None or mul.bl_idname != "ShaderNodeMath" or mul.operation != 'MULTIPLY':
+                return False
+            sides = [_meaned(s) for s in mul.inputs[:2]]
+            return all(getattr(n, "bl_idname", None) == "ShaderNodeTexImage" for n in sides)
+
+        check("multiply: roughness is the product of the two images' means", means_product(p.inputs["Roughness"]))
+        base = _from(p.inputs["Base Color"])
+        check("multiply: a color Mix's mask is the product of the two images' means",
+              base is not None and base.bl_idname == "ShaderNodeMix"
+              and means_product(_input(base, "Factor_Float")))
+    finally:
+        empty_scene()
+        for img in list(bpy.data.images):
+            bpy.data.images.remove(img)
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def check_linear_fallback():
     """A color management config without Linear Rec.709 (a custom OCIO config; the stock one of every supported
     version has it): a linear color image falls back to Non-Color, shares the datablock of the same file as data,
@@ -4423,6 +4476,7 @@ def main():
                                  ("found textures", check_found_textures), ("builder", check_builder),
                                  ("builder debt", check_builder_debt), ("builder mirror", check_builder_mirror),
                                  ("builder blend", check_builder_blend), ("builder mono", check_builder_mono),
+                                 ("builder multiply", check_builder_multiply),
                                  ("builder weight", check_builder_weight),
                                  ("builder fresnel off", check_builder_fresnel_off),
                                  ("builder clip mask", check_builder_clip_mask),
