@@ -112,6 +112,7 @@ class GzipSeedTest(unittest.TestCase):
                 if name != "Scene":
                     self.assertEqual(cf.open(name).read(), plain.open(name).read(), name)
 
+    @unittest.skipIf(numpy is None, "numpy missing: the read reaches the geometry reader")
     def test_it_reads_like_its_fixture(self):
         reader = fuzz._Reader()
 
