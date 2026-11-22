@@ -46,9 +46,11 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   with their multiplier as the amount, as VRayMtl's; VRayFastSSS2's specular is specular_amount times the mean of the
   linear specular color.
 - Standard: the colors come from its shader (ids per shader class in SHADERS; Metal is a metal, Strauss has a
-  metalness and no specular level: specular 1, the IOR's own Fresnel); base = diffuse; roughness = 1 - glossiness;
-  specular = specular level times the mean of the linear specular color; alpha = opacity; self-illumination: its
-  color at strength 1, or the diffuse at the amount; two-sided flag; map slots with their amounts where switched
+  metalness and no specular level: specular 1, the IOR's own Fresnel); base = diffuse (Anisotropic, Multi-Layer,
+  Oren-Nayar-Blinn, Translucent: the swatch times the Diffuse Level, before the swatch rule); roughness = 1 -
+  glossiness; specular = specular level times the mean of the linear specular color; a missing or animated diffuse,
+  glossiness or specular level takes its shader's default (SHADER_DEFAULTS); alpha = opacity; self-illumination: its
+  color at strength 1, or the diffuse as set (not scaled) at the amount; two-sided flag; map slots with their amounts where switched
   on, at the shader's own map channels (STD_SLOTS; Strauss: its metalness map drives the metallic) (a glossiness
   map inverted; the specular level map drives the specular, else the specular color map); a map in the reflection
   slot makes the specular at least that slot's amount (the map is an environment: not used).
@@ -170,17 +172,34 @@ MULTI_MATERIALS, MULTI_ENABLED, MULTI_IDS = 0, 1, 3
 
 # Standard: the shader is a part (superclass Shader); its block 0 holds the colors, with ids per shader class
 # (fixture standard_shaders).
-# Strauss (classids.STRAUSS_SHADER) has its own: 0 diffuse, 1 glossiness, 2 metalness.
-ShaderIds = collections.namedtuple("ShaderIds", "diffuse specular level glossiness si_amount si_color use_si_color")
+# Strauss (classids.STRAUSS_SHADER) has its own: 0 diffuse, 1 glossiness, 2 metalness. diffuse_level (a fraction,
+# 1 = 100 %): None where the shader has none.
+ShaderIds = collections.namedtuple(
+    "ShaderIds", "diffuse specular level glossiness si_amount si_color use_si_color diffuse_level", defaults=(None,))
 _BLINN_IDS = ShaderIds(1, 2, 9, 10, 7, 8, 6)
 SHADERS = {
     classids.PHONG_SHADER: _BLINN_IDS,
     classids.BLINN_SHADER: _BLINN_IDS,
     classids.METAL_SHADER: _BLINN_IDS,
-    classids.ANISOTROPIC_SHADER: ShaderIds(1, 2, 5, 7, 6, 3, 14),
-    classids.OREN_NAYAR_BLINN_SHADER: ShaderIds(1, 2, 6, 5, 4, 3, 13),
-    classids.MULTI_LAYER_SHADER: ShaderIds(1, 6, 7, 8, 3, 2, 19),  # the first specular layer
-    classids.TRANSLUCENT_SHADER: ShaderIds(1, 2, 6, 5, 4, 3, 14),
+    classids.ANISOTROPIC_SHADER: ShaderIds(1, 2, 5, 7, 6, 3, 14, 4),
+    classids.OREN_NAYAR_BLINN_SHADER: ShaderIds(1, 2, 6, 5, 4, 3, 13, 8),
+    classids.MULTI_LAYER_SHADER: ShaderIds(1, 6, 7, 8, 3, 2, 19, 4),  # the first specular layer
+    classids.TRANSLUCENT_SHADER: ShaderIds(1, 2, 6, 5, 4, 3, 14, 7),
+}
+# What a shader holds as created (3ds Max 2020), read where its parameter is missing or animated: diffuse swatch,
+# glossiness and specular level (fractions). A shader without a rule takes Blinn's.
+ShaderDefaults = collections.namedtuple("ShaderDefaults", "diffuse glossiness level")
+_BLINN_DEFAULTS = ShaderDefaults((150 / 255,) * 3, 0.1, 0.0)
+_GREY = (0.5, 0.5, 0.5)  # 127.5
+SHADER_DEFAULTS = {
+    classids.PHONG_SHADER: _BLINN_DEFAULTS,
+    classids.BLINN_SHADER: _BLINN_DEFAULTS,
+    classids.METAL_SHADER: _BLINN_DEFAULTS,
+    classids.ANISOTROPIC_SHADER: ShaderDefaults(_GREY, 0.25, 0.05),
+    classids.OREN_NAYAR_BLINN_SHADER: ShaderDefaults(_GREY, 0.25, 0.0),
+    classids.MULTI_LAYER_SHADER: ShaderDefaults(_GREY, 0.5, 0.05),
+    classids.TRANSLUCENT_SHADER: ShaderDefaults(_GREY, 0.3, 0.0),
+    classids.STRAUSS_SHADER: ShaderDefaults(_GREY, 0.2, 0.0),
 }
 # Physical Material, block 0: the ids physical_mtl reads, keyed by the names 3ds Max gives them (fixture
 # standard_shaders checks every one against its oracle); a map's switch (`<name>_on`) is at its id + PHYSICAL_SWITCH.
@@ -211,7 +230,6 @@ STD_SLOTS = {
     classids.TRANSLUCENT_SHADER: _ONB_SLOTS,
     classids.STRAUSS_SHADER: StdSlots(0, None, None, 1, None, 3, 5, 6, 2),
 }
-STD_DIFFUSE_DEFAULT = (150 / 255,) * 3
 STD_SPECULAR_DEFAULT = (0.9, 0.9, 0.9)
 
 
@@ -350,13 +368,13 @@ class MaterialConverter:
         self._active = []  # the materials whose rule is running: a layer that comes back to one is a cycle
         self._bsdfs = {}  # id(MaterialIR) -> (the IR, the Principled BSDFs it draws): bsdf_count
 
-    def rgb(self, m, pid, block, default):
+    def rgb(self, m, pid, block, default, scale=1.0):
         """A swatch parameter as linear RGB by the scene's rule; default is the swatch value (0..1) used when the
-        parameter is unusable."""
+        parameter is unusable; scale multiplies the swatch before the rule (which clamps it to 0..1)."""
         v = m.param(pid, block)
         if not (isinstance(v, tuple) and len(v) >= 3 and all(_finite(c) for c in v[:3])):
             v = default
-        return self.swatches.color(v)
+        return self.swatches.color(tuple(c * scale for c in v[:3]) if scale != 1.0 else v)
 
     def issue(self, index, reason, ir=None):
         self.stats.issues.append((index, reason))
@@ -805,14 +823,20 @@ def standard_mtl(conv, m, ir):
     level_map = _std_map(conv, m, slots.level, ir) or _std_map(conv, m, slots.specular, ir)
     emit_map = _std_map(conv, m, slots.self_illum, ir)
     specular, amount, emit = 0.0, 0.0, None
+    d = SHADER_DEFAULTS.get(sid, _BLINN_DEFAULTS)
+    base = None
     if sid == classids.STRAUSS_SHADER:
-        diffuse, gloss = conv.rgb(s, 0, 0, STD_DIFFUSE_DEFAULT), _num(s, 1, 0, 0.1)
+        diffuse, gloss = conv.rgb(s, 0, 0, d.diffuse), _num(s, 1, 0, d.glossiness)
         ir.metallic = Input(_clamp01(_num(s, 2, 0, 0.0)), _std_map(conv, m, slots.metalness, ir))
         specular = 1.0  # no specular level: the IOR's own Fresnel
     elif sid in SHADERS:
         ids = SHADERS[sid]
-        diffuse, gloss = conv.rgb(s, ids.diffuse, 0, STD_DIFFUSE_DEFAULT), _num(s, ids.glossiness, 0, 0.1)
-        specular = max(0.0, _num(s, ids.level, 0, 0.0)) * mean(conv.rgb(s, ids.specular, 0, STD_SPECULAR_DEFAULT))
+        diffuse, gloss = conv.rgb(s, ids.diffuse, 0, d.diffuse), _num(s, ids.glossiness, 0, d.glossiness)
+        if ids.diffuse_level is not None:
+            # 3ds Max shades with swatch x level (not clamped; Default Scanline, gamma off: linear in the stored
+            # value), so the level applies before the swatch rule; the self-illumination keeps the swatch as set.
+            base = conv.rgb(s, ids.diffuse, 0, d.diffuse, max(0.0, _num(s, ids.diffuse_level, 0, 1.0)))
+        specular = max(0.0, _num(s, ids.level, 0, d.level)) * mean(conv.rgb(s, ids.specular, 0, STD_SPECULAR_DEFAULT))
         if _flag(s, ids.use_si_color, 0, False):
             emit = conv.rgb(s, ids.si_color, 0, (0.0, 0.0, 0.0))
         else:
@@ -820,10 +844,10 @@ def standard_mtl(conv, m, ir):
         if sid == classids.METAL_SHADER:
             ir.metallic = Input(1.0)
     else:
-        diffuse, gloss = conv.swatches.color(STD_DIFFUSE_DEFAULT), 0.1
+        diffuse, gloss = conv.swatches.color(d.diffuse), d.glossiness
         conv.issue(m.index, "Standard: shader %s has no rule: its defaults" % (
             "missing" if sid is None else "ClassID%s" % (sid,)), ir)
-    ir.base_color = Input(diffuse, _std_map(conv, m, slots.diffuse, ir))
+    ir.base_color = Input(diffuse if base is None else base, _std_map(conv, m, slots.diffuse, ir))
     ir.roughness = Input(_roughness(gloss, False), gloss_map)
     reflection = _std_map(conv, m, slots.reflection, ir)
     if reflection is not None:

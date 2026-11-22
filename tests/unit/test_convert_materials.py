@@ -776,6 +776,8 @@ class Standard(unittest.TestCase, Close):
             with self.subTest(sid):
                 shader = {ids.diffuse: diffuse, ids.specular: (1.0, 1.0, 1.0), ids.level: 0.4, ids.glossiness: 0.3,
                           ids.si_amount: 0.0, ids.use_si_color: 1, ids.si_color: (0.0, 1.0, 0.0)}
+                if ids.diffuse_level is not None:
+                    shader[ids.diffuse_level] = 1.0
                 conv, ir = _convert(_standard(0, sid, shader))
                 self.close(ir.base_color.value, diffuse)
                 self.close(ir.roughness.value, 0.7)
@@ -798,6 +800,58 @@ class Standard(unittest.TestCase, Close):
                 self.close(ir.base_color.value, (150 / 255,) * 3)
                 self.assertFalse(ir.unknown)
                 self.assertIn("Standard: shader", ir.issues[0])
+
+    # Diffuse Level ids (a fraction; measured in 3ds Max 2020, docs/FORMAT.md); the other shaders have none.
+    DIFFUSE_LEVEL = {classids.ANISOTROPIC_SHADER: 4, classids.MULTI_LAYER_SHADER: 4,
+                     classids.OREN_NAYAR_BLINN_SHADER: 8, classids.TRANSLUCENT_SHADER: 7}
+
+    def test_diffuse_level_scales_the_swatch(self):
+        """The level scales the swatch (clamped per channel after the product), not the self-illumination, which
+        lights with the diffuse as set (Default Scanline renders, docs/FORMAT.md)."""
+        for sid, pid in self.DIFFUSE_LEVEL.items():
+            ids = mat.SHADERS[sid]
+            for level, want in ((0.5, (0.4, 0.2, 0.1)), (1.5, (1.0, 0.6, 0.3)), (-1.0, (0.0, 0.0, 0.0))):
+                with self.subTest(sid=sid, level=level):
+                    shader = {ids.diffuse: (0.8, 0.4, 0.2), pid: level, ids.si_amount: 0.3, ids.use_si_color: 0}
+                    conv, ir = _convert(_standard(0, sid, shader))
+                    self.close(ir.base_color.value, want)
+                    self.close(ir.emission_color.value, (0.8, 0.4, 0.2), "self-illumination: the unscaled diffuse")
+                    self.close(ir.emission_strength, 0.3)
+
+    def test_diffuse_level_decoys(self):
+        """A value at another shader's Diffuse Level id scales nothing: Phong, Blinn and Metal have none, and
+        id 4, 7 or 8 is another parameter on the shaders that have one elsewhere."""
+        for sid in (classids.PHONG_SHADER, classids.BLINN_SHADER, classids.METAL_SHADER):
+            with self.subTest(sid):
+                conv, ir = _convert(_standard(0, sid, {1: (0.8, 0.4, 0.2), 4: 0.5, 7: 0.0, 8: (0.0, 0.0, 0.0)}))
+                self.close(ir.base_color.value, (0.8, 0.4, 0.2))
+        for sid, pid in self.DIFFUSE_LEVEL.items():
+            shader = {1: (0.8, 0.4, 0.2), pid: 1.0}
+            shader.update({k: 0.5 for k in (4, 7, 8) if k != pid and k not in mat.SHADERS[sid][:7]})
+            with self.subTest(sid):
+                conv, ir = _convert(_standard(0, sid, shader))
+                self.close(ir.base_color.value, (0.8, 0.4, 0.2))
+
+    def test_shader_defaults(self):
+        """A shader block without its values: each shader's own defaults, as 3ds Max 2020 creates them (diffuse
+        150 / 255 or 127.5 / 255 grey, glossiness, specular level times the 0.9 specular color)."""
+        blinn = ((150 / 255,) * 3, 0.9, 0.0)
+        want = {  # base color, roughness (1 - glossiness), specular
+            classids.PHONG_SHADER: blinn, classids.BLINN_SHADER: blinn, classids.METAL_SHADER: blinn,
+            classids.ANISOTROPIC_SHADER: ((0.5,) * 3, 0.75, 0.05 * 0.9),
+            classids.MULTI_LAYER_SHADER: ((0.5,) * 3, 0.5, 0.05 * 0.9),
+            classids.OREN_NAYAR_BLINN_SHADER: ((0.5,) * 3, 0.75, 0.0),
+            classids.TRANSLUCENT_SHADER: ((0.5,) * 3, 0.7, 0.0),
+            classids.STRAUSS_SHADER: ((0.5,) * 3, 0.8, 1.0),  # no specular level: the IOR's own Fresnel
+        }
+        self.assertEqual(set(want), set(mat.SHADER_DEFAULTS))
+        for sid, (base, rough, spec) in want.items():
+            with self.subTest(sid):
+                conv, ir = _convert(_standard(0, sid, {}))
+                self.close(ir.base_color.value, base)
+                self.close(ir.roughness.value, rough)
+                self.close(ir.specular.value, spec)
+                self.assertEqual(conv.stats.issues, [])
 
     # Each shader's map channels (zero-based, measured in 3ds Max 2020, docs/FORMAT.md): diffuse, specular color,
     # specular level, glossiness, self-illumination, opacity, bump, reflection, metalness; None: no such channel.
