@@ -479,7 +479,8 @@ class OwnerSlotsOnFixtures(unittest.TestCase):
 class HeaderOnFixtures(unittest.TestCase):
     """docs/FORMAT.md's header rows on every ParamBlock2 of every fixture's Scene stream: the owner's object index
     names an object that references the block; 0x0009's first u32 is the owner's class index (its chunk id); 0x000B
-    gives the owner's ClassID, then its superclass where 0x0009 has the class index."""
+    gives the owner's ClassID, then its superclass where 0x0009 has the class index (every 0x000B owner of the
+    fixtures is of superclass 0x1160, so that half is not told apart from a constant yet)."""
 
     def test_header_names_the_owner_and_its_class(self):
         cfb = importlib.import_module(_PKG + ".reader.cfb")

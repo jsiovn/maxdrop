@@ -1259,7 +1259,7 @@ part whose parameters it holds):
 
 | Chunk | Content |
 |---|---|
-| `0x0009` | 16 bytes: `u32` the owner's class index (its chunk id in the Scene stream), `u16` block id (the descriptor's: VRayMtl 1 to 6, Bitmap 0 and 1), `u32` descriptor version (`0x55F03700` in most blocks, other values occur: as of 2026-11-22, 869 of the 991 blocks of the 54 fixtures' material graphs), `u16` number of entries, `u32` the owner's object index (an object that references the block). `tests/unit/test_pblock.py` checks the owner and its class index on every block of every fixture |
+| `0x0009` | 16 bytes: `u32` the owner's class index (its chunk id in the Scene stream), `u16` block id (the descriptor's: VRayMtl 1 to 6, Bitmap 0 and 1), `u32` descriptor version (`0x55F03700` in most blocks: as of 2026-11-22 in 869 of the 991 blocks of the 54 fixtures' material graphs, other values in the rest), `u16` number of entries, `u32` the owner's object index (an object that references the block). `tests/unit/test_pblock.py` checks the owner and its class index on every block of every fixture |
 | `0x000B` | instead of `0x0009`: the owner's ClassID (8 bytes, the descriptor's class), then the same 16 bytes with the owner's superclass in place of its class index (checked the same way). As of 2026-11-22 no material-graph block of the fixtures has it, and every owner is of superclass `0x1160` (ViewportManager, Properties, ParameterCollectorCA, Area Light Sampling Custom Attribute, VRayPhysCamAttributes) |
 | `0x100E` | one per stored parameter, below |
 | `0x0013` | the owner references, below |
