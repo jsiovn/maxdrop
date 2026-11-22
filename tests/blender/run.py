@@ -1466,7 +1466,7 @@ def check_specular(label, p, ir, present):
               "mix %s, linked %s, %r vs %r" % (mix is not None, s.is_linked, s.default_value, w))
         return
     fac = mix.inputs[0] if mix is not None else None
-    mirror = not ir.fresnel and ("specular" in ir.textures or ir.specular.map is None)
+    mirror = not ir.fresnel and (linked or ir.specular.map is None)
     level = 0.0 if mirror else SPECULAR_LEVEL
     check("%s: reflection weight %s %s, Specular IOR Level %.1f" % (
               label, "linked" if linked else "value", "under a mirror" if mirror else "over a twin", level),
@@ -1504,7 +1504,8 @@ def check_mirror(label, p, mix):
     """A weight without Fresnel: the Mix Shader's first shader is p (Specular IOR Level 0), its second p's copy as
     a white metal: p's links and values but Metallic 1, Base Color white (both unlinked), Specular IOR Level 0.5."""
     copy = _from(mix.inputs[2])
-    ok = copy is not None and copy.bl_idname == "ShaderNodeBsdfPrincipled" and copy.label == MIRROR_LABEL         and _from(mix.inputs[1]) == p
+    ok = copy is not None and copy.bl_idname == "ShaderNodeBsdfPrincipled" and copy.label == MIRROR_LABEL \
+        and _from(mix.inputs[1]) == p
     bad = _same_inputs(p, copy, {"Metallic": 1.0, "Base Color": (1.0, 1.0, 1.0, 1.0),
                                  "Specular IOR Level": SPECULAR_LEVEL}) if ok else []
     check(label + ": the mirror is the Principled BSDF as a white metal", ok and bad == [], str(bad))
@@ -1513,7 +1514,8 @@ def check_mirror(label, p, mix):
 def check_twin(label, p, mix):
     """The Mix Shader's first shader is p's twin: p's links and values, Specular IOR Level 0; its second p."""
     twin = _from(mix.inputs[1])
-    ok = twin is not None and twin.bl_idname == "ShaderNodeBsdfPrincipled" and twin.label == TWIN_LABEL         and _from(mix.inputs[2]) == p
+    ok = twin is not None and twin.bl_idname == "ShaderNodeBsdfPrincipled" and twin.label == TWIN_LABEL \
+        and _from(mix.inputs[2]) == p
     bad = _same_inputs(p, twin, {"Specular IOR Level": 0.0}) if ok else []
     check(label + ": the twin is the Principled BSDF without reflection", ok and bad == [], str(bad))
 
@@ -2780,7 +2782,8 @@ def check_builder_weight():
 def check_builder_fresnel_off():
     """A weight without Fresnel (bead maxdrop-em3.120, VRayMtl Fresnel off): between 0 and 1, or a converted map, a
     Mix Shader by the weight from the BSDF at Specular IOR Level 0 to its copy as a white metal; 0, a metal and a
-    reflection map that did not convert keep em3.119's drawing; Fresnel on keeps the twin."""
+    reflection map that did not convert or whose image is not found (no node: its swatch) keep em3.119's drawing;
+    Fresnel on keeps the twin."""
     from maxdrop.build import materials as build_materials
     from maxdrop.convert import materials as cm
     from maxdrop.convert import texmaps as tx
@@ -2792,11 +2795,16 @@ def check_builder_fresnel_off():
             ("Dim", dict(specular=cm.Input(0.2), roughness=cm.Input(0.3)), {}, "mirror", 0.0),
             ("DimRed", dict(specular=cm.Input(0.2), base_color=cm.Input((1.0, 0.0, 0.0), cm.MapRef(1)),
                             metallic=cm.Input(0.2, cm.MapRef(1))),
-             {"base_color": facing, "metallic": tx.TextureGraphIR(tx.Constant(0.5), tx.DATA)}, "mirror", 0.0),
+             {"base_color": facing, "metallic": tx.TextureGraphIR(tx.Mix(tx.Constant(0.0), tx.Constant(0.5), 0.0,
+                                                                          tx.Facing(tx.PERPENDICULAR)), tx.DATA)},
+             "mirror", 0.0),
             ("Falloff", dict(specular=cm.Input(0.0, cm.MapRef(1))), {"specular": facing}, "mirror", 0.0),
             ("None", dict(specular=cm.Input(0.0)), {}, "lone", 0.0),
             ("Metal", dict(specular=cm.Input(0.4), metallic=cm.Input(1.0)), {}, "lone", 0.2),
             ("Unconverted", dict(specular=cm.Input(0.6, cm.MapRef(1))), {}, "twin", 0.5),
+            ("LostImage", dict(specular=cm.Input(0.8, cm.MapRef(2))),
+             {"specular": tx.TextureGraphIR(tx.Image(2, "nothere.png", "C:\\x\\nothere.png", "", None), tx.COLOR)},
+             "twin", 0.5),
             ("On", dict(specular=cm.Input(0.2), fresnel=True), {}, "twin", 0.5)):
         ir = cm.MaterialIR(80, name, "test", **{"fresnel": False, **kw})
         ir.textures = textures
@@ -2808,8 +2816,11 @@ def check_builder_fresnel_off():
         got = "lone" if mix is None else "mirror" if getattr(second, "label", "") == MIRROR_LABEL else "twin"
         check("fresnel off: %s: %s, Specular IOR Level %.1f" % (name, drawing, level), level_ok and got == drawing,
               "%s, level %r" % (got, None if p is None else p.inputs["Specular IOR Level"].default_value))
+        if name == "DimRed" and got == "mirror":
+            check("fresnel off: DimRed: the source's Base Color and Metallic are linked (the copy's are not)",
+                  p.inputs["Base Color"].is_linked and p.inputs["Metallic"].is_linked)
         if p is not None and mix is not None:
-            check_specular("fresnel off: " + name, p, ir, True)
+            check_specular("fresnel off: " + name, p, ir, name != "LostImage")
             out = next(n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeOutputMaterial")
             check("fresnel off: %s: the surface is the Mix Shader" % name, _from(out.inputs["Surface"]) == mix)
     empty_scene()

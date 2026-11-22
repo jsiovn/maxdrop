@@ -39,8 +39,8 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   the transmission), and with Fresnel off a bright reflection (mean >= METAL_REFLECTION) makes the material a metal
   in the reflection color; beside a reflection map only the swatch's share counts (its mean times 1 - the map
   amount): a map at full amount hides the swatch, so it never makes a metal (the map itself is not judged).
-  Below that rule Fresnel off sets fresnel False: the weight (a dim swatch, or a reflection map such as the black to
-  white Falloff) is reflected as it is at every angle, which build/materials.py draws as a white metal mixed by it
+  Fresnel off sets fresnel False; below that rule the weight (a dim swatch, or a reflection map such as the black to
+  white Falloff) is then reflected as it is at every angle, which build/materials.py draws as a white metal mixed by it
   over the material without reflection (V-Ray 5.2: a 0.2 swatch reflects 0.200 facing the camera, maxdrop-em3.120).
   The Fresnel IOR is the refraction IOR when the material refracts or locks the IOR, else the reflection IOR.
 - VRayLightMtl -> emission only; VRayFastSSS2 -> base + subsurface; VRayCarPaintMtl / VRayCarPaintMtl2 -> a metal
