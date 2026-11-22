@@ -23,9 +23,9 @@ VRayLight:
 A VRayLight keeps one ParamBlock2 in reference slot 0 (docs/FORMAT.md, "VRayLight"): 0 on, 1 type (0 plane, 1 dome,
 2 sphere, 3 mesh, 4 disc), 2 / 3 size0 / size1 (a plane's half length along local X and half width along local Y;
 a disc's or sphere's radius), 7 color, 8 multiplier, 9 double-sided, 10 invisible, 12 units (0 default, 1 lm,
-2 lm/m2/sr, 3 W, 4 W/m2/sr), 18 / 19 texmap (on), 25 / 26 / 30 affect diffuse / specular / reflections, 36
-directional, 38 color temperature, 39 color mode (1: temperature), 53 / 54 diffuse / specular contribution, 32
-cast shadows; a dome's 27 spherical (off: the half above its local XY plane) and 49 texture locked to the dome, a
+2 lm/m2/sr, 3 W, 4 W/m2/sr), 18 / 19 texmap (on), 25 / 26 / 30 affect diffuse / specular / reflections, 32 cast
+shadows, 36 directional, 38 color temperature, 39 color mode (1: temperature), 53 / 54 diffuse / specular
+contribution; a dome's 27 spherical (off: the half above its local XY plane) and 49 texture locked to the dome, a
 mesh light's 34 mesh source (a node).
 
 The rules are the ones of the 3ds Max -> FBX exporter (f_export_scene.ms, ocbaby_exsVrayLightWatts and

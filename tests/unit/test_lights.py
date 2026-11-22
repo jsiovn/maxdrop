@@ -50,7 +50,7 @@ MAX_WATTS = {"FixturePlane": 0.0527086444, "FixturePlaneInst": 0.0527086444, "Fi
              "FixtureDisc": 0.00975400303, "FixtureSphere": 40.0, "FixtureSphereKelvin": 0.252661914,
              "FixtureOff": 0.00439238735, "FixtureInvisible": 20.0, "FixtureTargeted": 25.0,
              "FixtureDiscScaled": 0.00975400303,  # the rules source ignores the node's scale
-             "FixtureNoShadow": 15.0}  # added later, in W: the multiplier by the rules
+             "FixtureNoShadow": 15.0}  # by hand, not run in 3ds Max: in W the rules give the multiplier
 # what MaxDrop changes: the disc in lm/m2/sr (V-Ray's (2 r)^2), the scaled one's area (2 x 1.5, measured)
 FACTORS = {"FixtureDisc": 4.0 / math.pi, "FixtureDiscScaled": 4.0 / math.pi * 3.0}
 MAX_KELVIN_3500 = (255.0, 192.534, 140.827)  # ocbaby_exsKelvinRGB 3500 in 3ds Max

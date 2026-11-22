@@ -228,7 +228,7 @@ VRAY_LIGHT_WATTS = {"FixturePlane": 0.0527086444, "FixturePlaneInst": 0.05270864
                     "FixtureDisc": 0.00975400303, "FixtureSphere": 40.0, "FixtureSphereKelvin": 0.252661914,
                     "FixtureOff": 0.00439238735, "FixtureInvisible": 20.0, "FixtureTargeted": 25.0,
                     "FixtureDiscScaled": 0.00975400303,
-                    "FixtureNoShadow": 15.0,  # added later, in W: the multiplier by the rules
+                    "FixtureNoShadow": 15.0,  # by hand, not run in 3ds Max: in W the rules give the multiplier
                     # vray_dome (tools/fixtures/vray_dome.ms): the rules' watts by hand (W/m2/sr: pi m 4 pi r^2; W: m),
                     # which V-Ray's X-scale rule leaves as they are for these scales
                     "FixtureSphereTall": math.pi * 2.0 * 4.0 * math.pi * 0.005 ** 2, "FixtureSphereWide": 40.0,
