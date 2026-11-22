@@ -22,6 +22,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   a grey color, instead of the first bitmap below and a line in the report; Soft Light, Vivid Light, Pin Light and
   Hard Mix keep that, the line now naming the operation. An Add in sRGB mode whose sum is negative (negative
   offsets or multipliers) now gives its magnitude raised to 2.2, as Corona does, instead of the negative value.
+- Lights: a V-Ray mesh light is imported as an emissive mesh (the mesh it emits, at the light's place) instead of an
+  empty: its strength in every units mode as bright as V-Ray 5.2 (measured) times Light Strength, one side or both,
+  Flip normals, invisible (not seen by the camera, no shadow), affect diffuse, specular and reflections, on / off.
+  Also a mesh light made with "Replace mesh with light", which keeps the mesh itself. A mesh light without a mesh
+  stays an empty with a line in the report; the modifiers of its mesh are left out (a line in the report).
 
 ### Fixed
 

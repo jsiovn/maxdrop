@@ -725,7 +725,7 @@ def _read_file(max_path, opts, dirs, cancel):
             if cancel is not None and cancel():
                 raise convert_scene.Cancelled()
         # light colors follow the swatch rule too; converted materials bring its note to the report
-        read.light_note = colors.of_scene(sc).note if desc.lights and read.counts is None else ""
+        read.light_note = colors.of_scene(sc).note if (desc.lights or desc.emitters) and read.counts is None else ""
         del sc  # the Scene holds the inflated stream of a compressed file
     if 'UV' not in opts.object_filter:
         for md in desc.meshes.values():
@@ -824,7 +824,8 @@ def _scene_steps(opts, scene, view_layer, max_path, pack=None, pack_name="", dir
     del slots
     rep = convert_report.gather(desc, source=name, objects_built=len(built.objects),
                                 meshes_built=len(built.meshes), curves_built=len(built.curves),
-                                lights_built=len(built.lights), cameras_built=len(built.cameras),
+                                lights_built=len(built.lights) + len(built.emitters),
+                                cameras_built=len(built.cameras),
                                 dropped_uv_layers=built.dropped_uv_layers,
                                 pack=pack, pack_name=pack_name)
     if settings_skipped:

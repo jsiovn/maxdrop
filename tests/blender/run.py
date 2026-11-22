@@ -58,10 +58,13 @@ own, three times as strong; FixtureNoShadow's light casts no shadows (its own Ca
 do; imported again with Light Strength 2, twice the
 power. vray_dome: the dome is the scene's World (its texture image, strength, hemisphere, the Mapping rotations
 that look its texels up where V-Ray does, camera visibility off), the report's World line, the World before it
-kept with a fake user; the second dome and the mesh light empties; the spheres' radii and powers (X scale only);
+kept with a fake user; the second dome an empty; the spheres' radii and powers (X scale only);
 undo() after the run, and a build that fails after the World, put the World before back (no fake user) and remove
 the new one; a World that cannot be built leaves the scene imported, a line in the report; of two files with a dome
-the first gives the World. lights_standard, lights_photometric (and lookat's target spot): each light of the type,
+the first gives the World. vray_mesh_light and vray_dome's mesh light: each emitter a mesh object of its mesh at the
+light's place (EMITTER_BOXES), its only material an Emission of the radiance V-Ray gives it (EMITTER_RADIANCE) times
+the Light Strength, one side through a Backfacing mix (flipped for Flip normals) or both, its camera, shadow, diffuse
+and glossy visibility; the mesh light without a mesh an empty. lights_standard, lights_photometric (and lookat's target spot): each light of the type,
 spot cone, power and color of the rules (STOCK_LIGHTS), its -Z axis along the oracle's, its flags, its shadow switch (STOCK_SHADOWS);
 the Skylight an empty.
 Cameras (cameras, lookat): each camera node a camera object of the description's type, sensor fit HORIZONTAL, sensor,
@@ -172,6 +175,7 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1; kept literal: tes
     "vray_more": ["UVMap"],
     "vray_lights": [],  # lights and a target: no mesh
     "vray_dome": [],  # lights and a box without Generate Mapping Coords
+    "vray_mesh_light": ["UVMap"],  # Planes, also as the emitters' meshes
     "lights_standard": [],
     "lights_photometric": [],
     "cameras": [],  # its box, without Generate Mapping Coords
@@ -192,6 +196,7 @@ SHARP_EDGES = {"editable_mesh": 8, "modifier_pivot": {"FixtureSmooth": 0, None: 
                # rim makes sharp; the plane's open edges; a TurboSmooth below the Shell clears the groups, not the
                # open edges; one above it smooths the rim too
                "stack_shell": {"FixtureShellPlane": 4, "FixtureShellTurbo": 4, "FixtureShellSmoothed": 0, None: 12},
+               "vray_mesh_light": 0,  # Planes: open edges only
                # boxes of 3 x 2 x 2 segments: 28; the cylinder's rims 2 x 16; the sphere is smooth
                "uvwmap": {"FixtureUVWCyl": 32, "FixtureUVWSphere": 0, "FixtureUVWSharedB": 12, None: 28},
                # smooth spheres, the rims of a 10-sided cylinder
@@ -219,7 +224,8 @@ FLAT_SHADED = {"FixtureGeoOcta"}  # a GeoSphere not smoothed: no smoothing group
 # primitives whose normals are not "away from the box center": a Plane's point up or down (by its sizes' signs), and
 # a Box of width -12 keeps 3ds Max's faces, which point in
 PLANE_NORMALS = {"FixturePlane": 1.0, "FixturePlaneDown": -1.0, "FixturePlaneReal": 1.0,
-                 "FixtureShellPlane": 1.0}  # stack_shell's base plane (its Shell is a Solidify)
+                 "FixtureShellPlane": 1.0,  # stack_shell's base plane (its Shell is a Solidify)
+                 "FixtureEmitterSource": 1.0}  # vray_mesh_light's source
 INSIDE_OUT = {"FixtureBoxInside"}
 # vray_lights (tools/fixtures/vray_lights.ms): watts of the rules source's ocbaby_exsVrayLightWatts, run in 3ds Max
 # on each light; the factor MaxDrop changes them by (the disc in lm/m2/sr, measured against V-Ray; the double-sided
@@ -261,7 +267,27 @@ CAMERA_SENSORS = {"CamVRayTarget": 30.0}
 FOV_TOLERANCE = 0.05  # degrees
 KEPT_SIZE = (1234, 567, 50)  # the scene's render size before each import (empty_scene)
 USER_WORLD = "UserWorld"  # the scene's World before each import (empty_scene)
-BARE_MESHES = {"FixtureMeshSource"}  # meshes a fixture leaves without a material: vray_dome's mesh light source
+BARE_MESHES = {"FixtureMeshSource", "FixtureEmitterSource"}  # meshes a fixture leaves without a material: the
+# mesh lights' sources (vray_dome, vray_mesh_light)
+# mesh lights (tools/fixtures/vray_mesh_light.ms, vray_dome.ms): the radiance in W/m2/sr by hand (docs/FORMAT.md,
+# "VRayLight": default units m 1500 / (683 pi); W m / (pi a), a double-sided one over 2 a; lm m / (683 pi a); a the
+# object-space mesh area), the world box of the emitter's mesh in file units from the scripts (the source's mesh at
+# the light's place: its position, turn, scale and object offset), double-sided, flip, camera, shadow, diffuse, glossy
+EMITTER_RADIANCE = {"FixtureEmitter": 2.0 * 1500.0 / (683.0 * math.pi),
+                    "FixtureEmitterW": 5.0 / (2.0 * math.pi * 0.0008),
+                    "FixtureEmitterOwn": 100.0 / 683.0 / (math.pi * 0.0003),
+                    "FixtureMeshLight": 10.0 / (math.pi * 0.0016)}
+EMITTER_BOXES = {"FixtureEmitter": ((-20.0, -10.0, 50.0), (20.0, 10.0, 50.0)),
+                 "FixtureEmitterW": ((60.0, -10.0, 50.0), (140.0, 10.0, 50.0)),
+                 "FixtureEmitterOwn": ((-80.0 - 15.0 * math.cos(math.radians(30.0)) - 2.5,
+                                        -7.5 - 5.0 * math.cos(math.radians(30.0)), 40.0),
+                                       (-80.0 + 15.0 * math.cos(math.radians(30.0)) + 2.5,
+                                        7.5 + 5.0 * math.cos(math.radians(30.0)), 40.0)),
+                 "FixtureMeshLight": ((-10.0, -70.0, 50.0), (10.0, -50.0, 60.0))}
+EMITTER_FLAGS = {"FixtureEmitter": (False, False, True, True, True, True),
+                 "FixtureEmitterW": (True, True, False, False, True, True),
+                 "FixtureEmitterOwn": (False, False, True, True, True, False),
+                 "FixtureMeshLight": (False, False, True, True, True, True)}
 
 # lights_standard, lights_photometric (tools/fixtures/*.ms) and lookat's target spot: Blender's light type, spot
 # size in degrees and blend, and the watts of the rules (docs/FORMAT.md, "Standard and photometric lights") from
@@ -477,6 +503,9 @@ def run_fixture(path, modules):
         if node.kind == convert_scene.LIGHT and not desc.lights[node.light].on:  # a light switched off
             want = (True, o["hidden"], True, o["frozen"])
         check(label + ": hidden, renderable and frozen flags", flags == want, str(flags))
+        if node.emitter is not None:
+            check_emitter(label, ob, desc.emitters[node.emitter], o, meters)
+            continue
         if node.kind in (convert_scene.MESH, convert_scene.CURVE):
             check(label + ": casts shadows as in 3ds Max", ob.visible_shadow == o["cast_shadows"],
                   str(ob.visible_shadow))
@@ -687,6 +716,13 @@ def run_fixture(path, modules):
         check_light_strength(path)
     if name == "vray_dome":
         check_dome(desc)
+    if name == "vray_mesh_light":
+        lit = sorted(ob.name for ob in obs if ob.type == 'MESH' and ob.name.startswith("FixtureEmitter")
+                     and ob.name != "FixtureEmitterSource")
+        none = bpy.data.objects.get("FixtureEmitterNone")
+        check("vray_mesh_light: three emitters, three Emission materials, the mesh light without a mesh an empty",
+              lit == ["FixtureEmitter", "FixtureEmitterOwn", "FixtureEmitterW"] and len(bpy.data.materials) == 3
+              and none is not None and none.type == 'EMPTY', "%s %d" % (lit, len(bpy.data.materials)))
     if name in ("lights_standard", "lights_photometric"):
         lit = [ob for ob in obs if ob.type == 'LIGHT']
         shared = {"lights_standard": ("StdOmni", "StdOmniInst"), "lights_photometric": ("PhPoint", "PhPointInst")}
@@ -758,6 +794,59 @@ def check_render(name, oracle, obs, desc):
               scene.camera is not None and scene.camera.name == "FixtureCam" and desc.camera is not None
               and desc.camera_note is not None and not any(r.startswith("camera: ") for _i, r in desc.issues),
               str(desc.camera_note))
+
+
+def check_emitter(label, ob, ed, o, meters):
+    """A mesh light's node: a mesh object at the light's place whose box is the script's (EMITTER_BOXES), its mesh's
+    only material an Emission of the radiance by hand (EMITTER_RADIANCE) times the operator's default Light Strength
+    and the light's color; one side: a Mix Shader by Geometry Backfacing between it and a black Emission, in the order
+    flip says; double-sided: the Emission alone; its flags (EMITTER_FLAGS: double-sided, flip, camera, shadow,
+    diffuse, glossy)."""
+    from maxdrop import ops
+    check(label + ": an emitter mesh object", ob.type == 'MESH', ob.type)
+    if ob.type != 'MESH':
+        return
+    name = o["name"]
+    mw = world_of(ob)
+    world = [mw @ v.co for v in ob.data.vertices]
+    lo = [min(p[k] for p in world) / meters for k in range(3)]
+    hi = [max(p[k] for p in world) / meters for k in range(3)]
+    box = EMITTER_BOXES.get(name)
+    check(label + ": the source's mesh at the light's place", box is not None and close(lo, box[0], 1e-3) and
+          close(hi, box[1], 1e-3), "%s..%s vs %s" % (["%.6g" % v for v in lo], ["%.6g" % v for v in hi], box))
+    mats = [m for m in ob.data.materials]
+    indices = {p.material_index for p in ob.data.polygons}
+    check(label + ": one material on every face", len(mats) == 1 and mats[0] is not None and indices == {0} and
+          all(not s.link == 'OBJECT' for s in ob.material_slots), "%s %s" % (mats, indices))
+    if len(mats) != 1 or mats[0] is None:
+        return
+    nodes = mats[0].node_tree.nodes
+    out = next((n for n in nodes if n.bl_idname == "ShaderNodeOutputMaterial"), None)
+    lit = [n for n in nodes if n.bl_idname == "ShaderNodeEmission" and n.inputs["Strength"].default_value > 0]
+    want = EMITTER_RADIANCE.get(name, -1.0) * ops.LIGHT_STRENGTH
+    got = lit[0].inputs["Strength"].default_value if len(lit) == 1 else None
+    check(label + ": Emission strength = the radiance x Light Strength", got is not None and
+          abs(got - want) <= want * 1e-5 and abs(got - ed.radiance * ops.LIGHT_STRENGTH) <= want * 1e-6,
+          "%s vs %g" % (got, want))
+    check(label + ": Emission color = the light's", len(lit) == 1 and
+          close(tuple(lit[0].inputs["Color"].default_value)[:3], ed.color, 1e-6), str(ed.color))
+    surface = out.inputs["Surface"].links[0].from_node if out is not None and out.inputs["Surface"].links else None
+    flags = EMITTER_FLAGS.get(name)
+    double, flip = flags[:2] if flags else (None, None)
+    if double:
+        check(label + ": double-sided: the Emission alone", surface is not None and lit and surface == lit[0],
+              str(surface))
+    else:
+        ok = surface is not None and surface.bl_idname == "ShaderNodeMixShader"
+        fac = surface.inputs["Fac"].links[0].from_socket if ok and surface.inputs["Fac"].links else None
+        sides = [surface.inputs[k].links[0].from_node if ok and surface.inputs[k].links else None for k in (1, 2)]
+        lit_side = 1 if flip else 0  # the side the Emission is on: front (Backfacing 0, input 1) unless flipped
+        check(label + ": one side: Backfacing mixes the Emission and black (%s)" % ("back" if flip else "front"),
+              ok and fac is not None and fac.name == "Backfacing" and fac.node.bl_idname == "ShaderNodeNewGeometry"
+              and lit and sides[lit_side] == lit[0] and sides[1 - lit_side] is not None and
+              sides[1 - lit_side].inputs["Strength"].default_value == 0.0, str(sides))
+    got = (ed.double_sided, ed.flip, ob.visible_camera, ob.visible_shadow, ob.visible_diffuse, ob.visible_glossy)
+    check(label + ": double-sided, flip, camera, shadow, diffuse and glossy visibility", got == flags, str(got))
 
 
 def check_light(label, ob, ld, o):
@@ -877,9 +966,8 @@ def check_dome(desc):
     rays = world.cycles_visibility
     check("vray_dome: invisible: camera rays off, diffuse and glossy on", (rays.camera, rays.diffuse, rays.glossy) ==
           (False, True, True), str((rays.camera, rays.diffuse, rays.glossy)))
-    for name in ("FixtureDomeColor", "FixtureMeshLight"):
-        ob = bpy.data.objects.get(name)
-        check("vray_dome: %s an empty" % name, ob is not None and ob.type == 'EMPTY', ob and ob.type)
+    ob = bpy.data.objects.get("FixtureDomeColor")
+    check("vray_dome: FixtureDomeColor an empty", ob is not None and ob.type == 'EMPTY', ob and ob.type)
     check("vray_dome: three sphere objects, three lights (the scaled instance its own)",
           len([ob for ob in bpy.data.objects if ob.type == 'LIGHT']) == 3 and len(bpy.data.lights) == 3 and
           bpy.data.objects["FixtureSphereWide"].data != bpy.data.objects["FixtureSphereWideInst"].data,

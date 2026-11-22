@@ -29,6 +29,7 @@ TOLERANCE = 1e-5  # relative above 1: the oracle prints 6 significant digits
 # material.
 FLOORS = {"vray_lights": 0, "vray_dome": 0, "lights_standard": 0, "lights_photometric": 0, "box_poly_standard": 120,
           "cameras": 120,
+          "vray_mesh_light": 0,
           "arc_pie_reverse": 120, "controllers": 120,
           "controllers_tangents": 120,
           "corona_layered": 630, "corona_legacy": 370, "corona_light": 180, "corona_mix_ops": 2450,

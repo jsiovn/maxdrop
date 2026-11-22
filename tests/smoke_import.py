@@ -72,11 +72,12 @@ FIXTURE = {"modifiers": 0, "issues": 0, "placeholders": 0, "lights_only": False}
 # What the oracle does not tell: a UVW Map of a type MaxDrop does not evaluate (shrink-wrap), and the issues each
 # fixture is made to raise (ISSUES in tests/unit/test_convert_scene.py)
 NOT_EVALUATED = {"FixtureUVWShrink"}
-FIXTURE_ISSUES = {"uvwmap.max": 2, "stack_convert.max": 1, "vray_lights.max": 3, "vray_dome.max": 2, "lookat.max": 1,
+FIXTURE_ISSUES = {"uvwmap.max": 2, "stack_convert.max": 1, "vray_lights.max": 3, "vray_dome.max": 1, "lookat.max": 1,
                   "lights_standard.max": 17, "lights_photometric.max": 11, "cameras.max": 6,
                   "stack_shell.max": 2,  # stack_shell: two Shell rims Blender cannot match
                   "shapes_more.max": 1,  # shapes_more: FixtureCurveMixed's spline mixes material IDs
-                  "layers_flags.max": 1}  # layers_flags: FixtureNoReceiveShadow (no such switch in Blender)
+                  "layers_flags.max": 1,  # layers_flags: FixtureNoReceiveShadow (no such switch in Blender)
+                  "vray_mesh_light.max": 2}  # vray_mesh_light: an own mesh's Shell, a mesh light without a mesh
 # issues a fixture adds when imported from a pack without its maps (two_scenes): vray_dome's dome texture not found
 MAPLESS_ISSUES = {"vray_dome.max": 1}
 # placeholders of classes MaxDrop does not build yet: lookat's Point

@@ -23,6 +23,8 @@ BOX = os.path.join(ROOT, "tests", "fixtures", "box_poly_standard.max")
 # saved_as_2018 and saved_as_2019 are 3ds Max 2020 files saved as 2017, 2018 and 2019.
 ROOT_IDS = {19000: "0x2022", 20000: "0x2023", 21000: "0x2023", 22000: "0x2025"}
 STACK_BASIC = os.path.join(ROOT, "tests", "fixtures", "stack_basic.max")
+# derived objects no node holds: vray_mesh_light's light keeps its own mesh under a Shell (Replace mesh with light)
+OWN_DERIVED = {"vray_mesh_light.max": 1}
 
 
 def _load_tool():
@@ -78,14 +80,17 @@ class TestFixtures(unittest.TestCase):
                 for stack in stacks:
                     depths[str(len(stack))] = depths.get(str(len(stack)), 0) + 1
                 both = sum(1 for stack in stacks if len({m["context_tm"] is None for m in stack}) == 2)
+                own = OWN_DERIVED.get(os.path.basename(path), 0)
                 self.assertEqual((mods["stacks"], mods["stack_depths"], mods["derived_objects"], mods["unreadable"],
-                                  mods["nodes_with_issues"]), (len(stacks), depths, len(stacks) + both, 0, 0))
+                                  mods["nodes_with_issues"]), (len(stacks), depths, len(stacks) + both + own, 0, 0))
                 # nodes per modifier class, each class once per node
                 by_class = {}
                 for stack in stacks:
                     for cid in {tuple("0x" + x[2:].upper() for x in m["class_id"]) for m in stack}:
                         by_class[cid] = by_class.get(cid, 0) + 1
-                self.assertEqual({tuple(r["class_id"]): r["nodes"] for r in mods["by_class"]}, by_class)
+                # a modifier of a stack no node holds (OWN_DERIVED) is counted on no node
+                self.assertEqual({tuple(r["class_id"]): r["nodes"] for r in mods["by_class"] if r["nodes"] or not own},
+                                 by_class)
                 for r in mods["by_class"]:
                     self.assertLessEqual(r["objects"], r["count"])
                     self.assertLessEqual(r["derived_objects"], r["count"])

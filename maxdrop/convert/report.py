@@ -332,7 +332,8 @@ def gather(desc, source="", objects_built=None, meshes_built=None, dropped_uv_la
     rep.objects_built = len(desc.nodes) if objects_built is None else objects_built
     rep.meshes_built = len(desc.meshes) if meshes_built is None else meshes_built
     rep.curves_built = len(desc.curves) if curves_built is None else curves_built
-    rep.lights_built = len(getattr(desc, "lights", ())) if lights_built is None else lights_built
+    rep.lights_built = (len(getattr(desc, "lights", ())) + len(getattr(desc, "emitters", ())) if lights_built is None
+                       else lights_built)
     rep.cameras_built = len(getattr(desc, "cameras", ())) if cameras_built is None else cameras_built
     render, camera = getattr(desc, "render", None), getattr(desc, "camera", None)
     if render is not None:

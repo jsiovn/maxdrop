@@ -6,12 +6,14 @@
 
     light_class(scene, i)               # VRAY, STANDARD, PHOTOMETRIC, SUN, IES or SKYLIGHT; None: not one read here
     values, issues = read_params(scene, i, assets, ies_files)   # the light's values, LightError without its block
-    not_built(values, names)            # why a mesh light or a Skylight is not built, None for the others
+    not_built(values, names)            # why a mesh light without a mesh or a Skylight is not built, else None
     scale = area_scale(values, world)   # what a node's scale does to the area, rounded (part of the key)
     ld, issues = describe(key, name, values, meters, swatches, scale)   # LightDescription, or None and the reason
     is_dome(values)                     # a VRayLight dome: the scene's World, not a light (describe_dome)
     dd, issues = describe_dome(node, name, values, swatches, world)     # DomeDescription
     dt, issues = dome_texture(graph_ir, material_graph)   # DomeTexture of the dome's converted map, or None
+    is_mesh_light(values)               # a VRayLight mesh light: an emissive mesh, not a light (describe_emitter)
+    ed, issues = describe_emitter(key, name, values, swatches, area)   # EmitterDescription (area: the mesh's, m^2)
     watts(units, multiplier, area(kind, size0, size1, double_sided, meters))
     environment_sky(scene)              # the object index of a VRaySky that is the environment map, else None
 
@@ -26,7 +28,8 @@ a disc's or sphere's radius), 7 color, 8 multiplier, 9 double-sided, 10 invisibl
 2 lm/m2/sr, 3 W, 4 W/m2/sr), 18 / 19 texmap (on), 25 / 26 / 30 affect diffuse / specular / reflections, 32 cast
 shadows, 36 directional, 38 color temperature, 39 color mode (1: temperature), 53 / 54 diffuse / specular
 contribution; a dome's 27 spherical (off: the half above its local XY plane) and 49 texture locked to the dome, a
-mesh light's 34 mesh source (a node).
+mesh light's 34 mesh source (a node) and 35 flip normals; a mesh light's own mesh object in reference SLOT_MESH (what
+V-Ray's Pick mesh with "Replace mesh with light" keeps, the picked node deleted).
 
 The rules are the ones of the 3ds Max -> FBX exporter (f_export_scene.ms, ocbaby_exsVrayLightWatts and
 ocbaby_exsKelvinRGB): the power is the total radiant flux in watts. Radiance units are integrated over the emitting
@@ -50,14 +53,17 @@ scene's swatch rule (convert.colors) of the color, or in temperature mode kelvin
 sRGB, as CoronaColor's temperature; V-Ray's own temperature color, which it also stores, is not used.
 
 Plane -> AREA RECTANGLE, disc -> AREA DISK, sphere -> POINT with the radius: a V-Ray plane shines along its local
--Z, as a Blender area light does, so the node transform stays. A mesh light is not built yet (the reason): V-Ray 5.2
-emits the mesh of the node its mesh source (34) names, as that mesh is now, placed at the light node's transform
-(measured: a 20 x 40 box's footprint follows the light's position and turn, a later change of the box's size shows,
-the box's own position does not matter; with the box deleted it emits nothing). The reason names that node when it
-is one of the scene. Building that emitter (the node's mesh at the light, its strength over the mesh's area) is later
-work; what a UI Pick mesh with Replace mesh on (the source node deleted) leaves is not known. The FBX route's spot
-mirrors and light de-instancing are dropped: the nodes of one VRayLight with the same area_scale share one
-LightDescription. build/ multiplies the power by the import's Light Strength.
+-Z, as a Blender area light does, so the node transform stays. The FBX route's spot mirrors and light de-instancing
+are dropped: the nodes of one VRayLight with the same area_scale share one LightDescription. build/ multiplies the
+power by the import's Light Strength.
+
+A mesh light is an emissive mesh (describe_emitter; docs/FORMAT.md, "VRayLight"): V-Ray 5.2 emits its mesh object's
+mesh (reference SLOT_MESH, else the object of the node 34 names; neither: not built, the reason) in object space at
+the light node's object transform, along the faces' normals (35: the other side; double-sided: both), its back black,
+with the radiance of the units mode's flux spread over the mesh's object-space area as a Lambertian emitter (flux =
+pi L a; the node's scale does not change it): emitter_radiance. Invisible: not seen by the camera and no occluder (a
+visible one shadows other lights, measured); affect diffuse / specular / reflections as a light's; its texture,
+directional spread, contributions and cast shadows off are not imported (issues). convert.scene builds the mesh.
 
 A dome light is the scene's World (describe_dome; docs/FORMAT.md, "VRayLight"): V-Ray 5.2 lights a white floor under
 a white dome of multiplier m with m in the default units, m x 0.00213024 in lm and lm/m2/sr, m x 1.43109 in W and
@@ -70,7 +76,8 @@ not imported (a World has no such switch: an issue). The texture
 (dome_texture): a VRayBitmap in spherical mapping (u = 0.5 + phi / 2 pi + its horizontal rotation / 2 pi, phi =
 atan2(y, x)) or a Bitmap in spherical environment mapping (u = 0.75 + phi / 2 pi), v up the image, in the world's
 frame or, locked to the dome, in the dome node's; another root is not used (the World keeps the color, an issue),
-another projection is drawn as spherical (an issue). The first dome that is on is the World; another one, or one that
+another projection is drawn as spherical (an issue), a CoronaBitmap too (V-Ray 5.2 renders it on a dome as one flat
+color, measured: an issue). The first dome that is on is the World; another one, or one that
 is off, is an issue (convert.scene).
 
 The other lights (docs/FORMAT.md, "Standard and photometric lights"): V-Ray 5.2 lights a white floor at distance d
@@ -225,24 +232,37 @@ P_DOUBLE_SIDED, P_INVISIBLE, P_UNITS, P_TEXMAP, P_TEXMAP_ON = 9, 10, 12, 18, 19
 P_AFFECT_DIFFUSE, P_AFFECT_SPECULAR, P_AFFECT_REFLECTIONS, P_DIRECTIONAL = 25, 26, 30, 36
 P_TEMPERATURE, P_COLOR_MODE, P_DIFFUSE, P_SPECULAR = 38, 39, 53, 54
 P_DOME_SPHERICAL, P_MESH_SOURCE, P_DOME_LOCKED = 27, 34, 49
-P_SHADOW = 32
+P_SHADOW, P_MESH_FLIP = 32, 35
+SLOT_MESH = 1  # a mesh light's own mesh object (V-Ray's Pick mesh with Replace mesh with light on)
+MESH_OBJECT = "mesh object"  # its object index in a VRayLight's values, None without one
 
 # V-Ray 5.2's values of a new VRayLight (sizes in world units)
 DEFAULTS = {P_ON: 1, P_TYPE: PLANE, P_SIZE0: 10.0, P_SIZE1: 10.0, P_COLOR: (1.0, 1.0, 1.0), P_MULTIPLIER: 30.0,
             P_DOUBLE_SIDED: 0, P_INVISIBLE: 0, P_UNITS: UNITS_DEFAULT, P_TEXMAP_ON: 1, P_AFFECT_DIFFUSE: 1,
             P_AFFECT_SPECULAR: 1, P_AFFECT_REFLECTIONS: 1, P_DIRECTIONAL: 0.0, P_TEMPERATURE: 6500.0,
             P_COLOR_MODE: 0, P_DIFFUSE: 1.0, P_SPECULAR: 1.0, P_DOME_SPHERICAL: 1, P_DOME_LOCKED: 0,
-            P_SHADOW: 1}
+            P_SHADOW: 1, P_MESH_FLIP: 0}
 _NAMES = {P_ON: "on", P_TYPE: "type", P_SIZE0: "size0", P_SIZE1: "size1", P_COLOR: "color",
           P_MULTIPLIER: "multiplier", P_DOUBLE_SIDED: "doubleSided", P_INVISIBLE: "invisible",
           P_UNITS: "normalizeColor", P_TEXMAP_ON: "texmap_on", P_AFFECT_DIFFUSE: "affect_diffuse",
           P_AFFECT_SPECULAR: "affect_specular", P_AFFECT_REFLECTIONS: "affect_reflections",
           P_DIRECTIONAL: "lightDistribution", P_TEMPERATURE: "color_temperature", P_COLOR_MODE: "color_mode",
           P_DIFFUSE: "diffuse_contribution", P_SPECULAR: "specular_contribution", P_DOME_SPHERICAL: "dome_spherical",
-          P_DOME_LOCKED: "texmap_locktodome", P_SHADOW: "castShadows"}
+          P_DOME_LOCKED: "texmap_locktodome", P_SHADOW: "castShadows",
+          P_MESH_FLIP: "mesh_flip"}
 
-MESH_LIGHT = "a mesh light is not imported yet"
-PICKED = " (V-Ray emits the mesh of %s at the light's place)"
+NO_MESH = "a mesh light without a mesh (none picked, or its node deleted): not imported"
+EMITTER = "a mesh light is an emitter, not a light"
+EMITTER_CLASS = "its mesh is a %s, which MaxDrop does not build: not imported"
+EMITTER_UNREAD = "its mesh cannot be read: %s"
+EMITTER_MODIFIERS = ("the modifiers of its mesh (%s) are not applied: the emitter is the base mesh (V-Ray emits the "
+                     "evaluated mesh, and in lm and W spreads the flux over that one's area)")
+EMITTER_TEXMAP = "its texture is not imported: the emitter has its color"
+EMITTER_CONTRIBUTION = "%s contribution %g is not imported: an emitter has no such factor"
+EMITTER_GLOSSY = ("affect specular %s, affect reflections %s: Blender has one switch for both, glossy rays, "
+                  "which stays on")
+EMITTER_SHADOW = "cast shadows off is not imported: what the emitter lights casts shadows"
+EMITTER_FLAT = "its mesh has no area: 0 W/m2/sr (V-Ray spreads its %s over the mesh's area)"
 NOT_SKYLIGHT = "a Skylight is not imported yet (Skylight -> World is later work)"
 DOME_OFF = "dome light off: not imported"
 SECOND_DOME = "a second dome light: not imported (Blender has one World, %s's)"
@@ -253,6 +273,8 @@ DOME_NO_TEXTURE = "its texture converts to nothing: the World has its color"
 DOME_ROOT = "its texture is not an image map (%s): the World has its color"
 DOME_NOT_FOUND = "its texture %s is not found: the World has its color"
 DOME_PROJECTION = "its texture %s is not in spherical mapping (%s): drawn as spherical"
+DOME_CORONA = ("its texture %s is a CoronaBitmap, which V-Ray 5.2 does not project on a dome (one flat color, "
+               "measured): drawn as spherical")
 DOME_VERTICAL = "its texture %s's vertical rotation %g degrees is not imported"
 DOME_AXIAL = "its texture %s's axial rotation %g degrees is not imported"
 DOME_SWITCH = "its texture %s's %s is not imported"
@@ -449,6 +471,8 @@ def read_params(scene, i, assets=None, ies_files=None):
     for pid in (P_TEXMAP, P_MESH_SOURCE):
         ref = block.get(pid)
         values[pid] = ref.index if isinstance(ref, pblock.Reference) else None
+    own = refs.get(SLOT_MESH)
+    values[MESH_OBJECT] = own if own is not None and 0 <= own < len(scene) else None
     return values, issues
 
 
@@ -566,10 +590,16 @@ def is_dome(values):
     return values.get(CLASS, VRAY) == VRAY and values[P_TYPE] == DOME
 
 
+def is_mesh_light(values):
+    """Whether the values are a VRayLight mesh light's: an emitter, not a light (describe_emitter)."""
+    return values.get(CLASS, VRAY) == VRAY and values[P_TYPE] == MESH
+
+
 def not_built(values, name_of=None):
-    """Why a light of these values is not built (a mesh light, a type 3ds Max does not have, a Skylight), None when it
-    is (a dome too: describe_dome). name_of(object index): the name of the node a mesh light picked, None when that
-    is no node of the scene (None: not named)."""
+    """Why a light of these values is not built (a mesh light without a mesh, a type 3ds Max does not have, a
+    Skylight), None when it is (a dome too: describe_dome; a mesh light: describe_emitter). name_of(object index):
+    the name of the node a mesh light picked, None when that is no node of the scene; a mesh light with its own mesh
+    object (MESH_OBJECT) needs none."""
     family = values.get(CLASS, VRAY)
     if family == SKYLIGHT:
         return NOT_SKYLIGHT
@@ -580,15 +610,18 @@ def not_built(values, name_of=None):
         return "type %d is not a VRayLight type" % kind
     if kind != MESH:
         return None
+    if values.get(MESH_OBJECT) is not None:
+        return None
     source = values.get(P_MESH_SOURCE)
     picked = name_of(source) if name_of is not None and source is not None else None
-    return MESH_LIGHT + (PICKED % picked if picked else "")
+    return None if picked else NO_MESH
 
 
 def describe(key, name, values, meters, swatches, scale=1.0):
     """(LightDescription of a light's values, or None, issues): None and the reason when it is not built
-    (not_built; a dome: describe_dome). scale: area_scale of its nodes."""
-    reason = not_built(values) or ("a dome light is the World, not a light" if is_dome(values) else None)
+    (not_built; a dome: describe_dome; a mesh light: describe_emitter). scale: area_scale of its nodes."""
+    reason = EMITTER if is_mesh_light(values) else (
+        not_built(values) or ("a dome light is the World, not a light" if is_dome(values) else None))
     if reason is not None:
         return None, [reason]
     family = values.get(CLASS, VRAY)
@@ -644,6 +677,72 @@ def describe(key, name, values, meters, swatches, scale=1.0):
         if not ld.radius <= MAX_FLOAT:  # past the float32 range a Blender light's radius holds
             ld.radius = 0.0
     return ld, issues
+
+
+class EmitterDescription:
+    """A mesh light as an emissive mesh: key and name (its first node's); color linear RGB; radiance in W/m^2/sr (the
+    Emission strength before the Light Strength); area the mesh's object-space area in m^2; double_sided: both sides
+    emit, else the side its faces' normals point to (flip: the other one); on; camera: the camera sees it; occluder:
+    it shadows other lights (V-Ray: when visible); diffuse_rays and glossy_rays as a light's; users the object
+    indices of its nodes, in walk order."""
+    __slots__ = ("key", "name", "color", "radiance", "area", "double_sided", "flip", "on", "camera", "occluder",
+                 "diffuse_rays", "glossy_rays", "users")
+
+    def __init__(self, key, name, color=(1.0, 1.0, 1.0), radiance=0.0, area=0.0, double_sided=False, flip=False,
+                 on=True, camera=True, occluder=True, diffuse_rays=True, glossy_rays=True):
+        self.key, self.name, self.color, self.radiance, self.area = key, name, color, radiance, area
+        self.double_sided, self.flip, self.on, self.camera, self.occluder = double_sided, flip, on, camera, occluder
+        self.diffuse_rays, self.glossy_rays = diffuse_rays, glossy_rays
+        self.users = []
+
+    def __repr__(self):
+        return "EmitterDescription(%r, %g W/m2/sr)" % (self.name, self.radiance)
+
+
+def emitter_radiance(units, multiplier, a, double_sided=False):
+    """The radiance in W/m^2/sr of a mesh light of the units mode and multiplier whose mesh has the object-space area
+    a (m^2): V-Ray 5.2 gives a mesh light the radiance of its flux (watts) spread over that area, both sides of it
+    when double-sided, a Lambertian emitter (flux = pi L a); in the radiance units (default, lm/m2/sr, W/m2/sr) the
+    multiplier alone. Raises ZeroDivisionError for an area of 0 in lm and W."""
+    if units in (UNITS_LM, UNITS_W):
+        return watts(units, multiplier, a) / (math.pi * a * (2.0 if double_sided else 1.0))
+    return watts(units, multiplier, 1.0) / math.pi
+
+
+def describe_emitter(key, name, values, swatches, a):
+    """(EmitterDescription of a mesh light's values whose mesh has the object-space area a in m^2, issues)."""
+    issues = []
+    units = values[P_UNITS]
+    double = bool(values[P_DOUBLE_SIDED])
+    try:
+        radiance = emitter_radiance(units, values[P_MULTIPLIER], a, double)
+    except ZeroDivisionError:
+        issues.append(EMITTER_FLAT % ("lumens" if units == UNITS_LM else "watts"))
+        radiance = 0.0
+    except OverflowError:
+        radiance = math.inf
+    if not abs(radiance) <= MAX_POWER:  # also NaN
+        issues.append(OUT_OF_RANGE)
+        radiance = 0.0
+    if radiance < 0:
+        issues.append(NEGATIVE % ("multiplier", values[P_MULTIPLIER]))
+        radiance = 0.0
+    if values[P_TEXMAP] is not None and values[P_TEXMAP_ON]:
+        issues.append(EMITTER_TEXMAP)
+    if values[P_DIRECTIONAL] > 0:
+        issues.append(DIRECTIONAL % values[P_DIRECTIONAL])
+    if not values[P_SHADOW]:
+        issues.append(EMITTER_SHADOW)
+    diffuse, spec, refl = (bool(values[p]) for p in (P_AFFECT_DIFFUSE, P_AFFECT_SPECULAR, P_AFFECT_REFLECTIONS))
+    if spec != refl:
+        issues.append(EMITTER_GLOSSY % ("on" if spec else "off", "on" if refl else "off"))
+    for on, pid, label in ((diffuse, P_DIFFUSE, "diffuse"), (spec, P_SPECULAR, "specular")):
+        if on and values[pid] != 1.0:
+            issues.append(EMITTER_CONTRIBUTION % (label, values[pid]))
+    visible = not values[P_INVISIBLE]
+    ed = EmitterDescription(key, name, light_color(values, swatches), radiance, a, double, bool(values[P_MESH_FLIP]),
+                            bool(values[P_ON]), visible, visible, diffuse, spec or refl)
+    return ed, issues
 
 
 class DomeDescription:
@@ -769,7 +868,7 @@ def dome_texture(graph_ir, material_graph):
             if m.param(pid, 0) not in (0, None, False):
                 issues.append(DOME_SWITCH % (img.name, what))
     elif cid == classids.CORONA_BITMAP:
-        issues.append(DOME_PROJECTION % (img.name, "CoronaBitmap's own"))
+        issues.append(DOME_CORONA % img.name)
     else:
         uv = next((p for _s, p in sorted(m.parts.items()) if p.superclass == classids.SC_UVGEN), None)
         env = reader_materials.placement(material_graph.scene, uv.index).env_mapping if uv is not None else None

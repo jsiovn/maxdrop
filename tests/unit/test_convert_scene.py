@@ -95,6 +95,7 @@ UV_LAYERS = {
     "vray_more": ["UVMap"],
     "vray_lights": [],  # lights and a target: no mesh
     "vray_dome": [],  # lights and a box without Generate Mapping Coords
+    "vray_mesh_light": ["UVMap"],  # Planes, also as the emitters' meshes
     "lights_standard": [],
     "lights_photometric": [],
     "cameras": [],  # its box, without Generate Mapping Coords; the cameras are no mesh
@@ -212,10 +213,14 @@ ISSUES = {"uvwmap": ["uvw map: a UVW Map above Bend is not evaluated",
               "light: its rectangle shape is not imported: a point"],
           "vray_lights": ["light: diffuse contribution 0.5: Blender's diffuse factor, which only EEVEE uses",
                           "light: double-sided: Blender's area light shines on one side, with half the power",
-                          "light: not built: a mesh light is not imported yet"],
-          "vray_dome": ["light: a second dome light: not imported (Blender has one World, FixtureDome's)",
-                        "light: not built: a mesh light is not imported yet (V-Ray emits the mesh of "
-                        "FixtureMeshSource at the light's place)"]}
+                          "light: not built: a mesh light without a mesh (none picked, or its node deleted): not "
+                          "imported"],
+          "vray_dome": ["light: a second dome light: not imported (Blender has one World, FixtureDome's)"],
+          "vray_mesh_light": ["light: not built: a mesh light without a mesh (none picked, or its node deleted): not "
+                              "imported",
+                              "light: the modifiers of its mesh (Shell) are not applied: the emitter is the base mesh "
+                              "(V-Ray emits the evaluated mesh, and in lm and W spreads the flux over that one's "
+                              "area)"]}
 # the oracle's base_class_id of the lights MaxDrop builds: VRayLight, VRaySun, VRayIES, the standard and the
 # photometric lights
 LIGHT_CLASSES = {("0x3c5575a1", "0x5fd602df"), ("0x732c0383", "0x7d993776"), ("0x2eaf2f07", "0x7ec44f31"),
@@ -225,9 +230,11 @@ LIGHT_CLASSES = {("0x3c5575a1", "0x5fd602df"), ("0x732c0383", "0x7d993776"), ("0
                  ("0x7ca93582", "0x1abb6b32"), ("0x46f634e3", "0x0a327aaf"), ("0x658d4f97", "0x72cd4259"),
                  ("0x45076885", "0x40791449"), ("0x71794f9d", "0x70ae52f2"), ("0x38732348", "0x201758b3"),
                  ("0x33fc7ae9", "0x54433dc5"), ("0x7c8b5b10", "0x4bd33e86")}
-# not built as lights: vray_lights' and vray_dome's mesh lights and domes (a dome is the World), lights_standard's
-# Skylight (not in LIGHT_CLASSES)
-UNBUILT_LIGHTS = {"FixtureMesh", "FixtureDome", "FixtureDomeColor", "FixtureMeshLight"}
+# not built as lights: vray_lights' mesh light without a mesh and the domes (a dome is the World), vray_mesh_light's
+# mesh light without a mesh, lights_standard's Skylight (not in LIGHT_CLASSES)
+UNBUILT_LIGHTS = {"FixtureMesh", "FixtureDome", "FixtureDomeColor", "FixtureEmitterNone"}
+# mesh lights built as emitters: MESH nodes whose 3ds Max counts and box are the light's icon, not the mesh
+EMITTERS = {"FixtureMeshLight", "FixtureEmitter", "FixtureEmitterW", "FixtureEmitterOwn"}
 # meshes under a converted smoother with Smooth Result: no sharp edge (modifier_pivot's reference, stack_basic's box)
 SHARP_EDGES_SMOOTHED = {"FixtureSmooth": 0, "FixtureTurbo": 0, "FixtureTurboOne": 0, "FixtureMeshSmooth": 0,
                         "FixtureOrder": 0}
@@ -918,7 +925,7 @@ class Fixtures(unittest.TestCase):
             for node, o in zip(desc.nodes, oracle["nodes"]):
                 # the oracle's box is after every modifier: a UVW Map left as it is moves nothing
                 if node.kind != conv.MESH or any(m != "UVW Map" for m in node.modifiers) or node.converted or \
-                        (o["modifiers"] and not node.applied):
+                        (o["modifiers"] and not node.applied) or node.emitter is not None:
                     continue
                 p = _world_points(node, desc.meshes[node.mesh]) / desc.meters
                 numpy.testing.assert_allclose(p.min(axis=0), o["bbox_min"], atol=BBOX_TOLERANCE,
@@ -931,12 +938,13 @@ class Fixtures(unittest.TestCase):
             for node, o in zip(desc.nodes, oracle["nodes"]):
                 extruded = o["shape"] is not None and o["eval_verts"] is not None  # an Extrude on the shape
                 primitive = tuple(o["base_class_id"]) in PRIMITIVE_CLASSES
-                light = tuple(o["base_class_id"] or ()) in LIGHT_CLASSES and o["name"] not in UNBUILT_LIGHTS
-                kind = conv.MESH if o["base_verts"] is not None or extruded or primitive else \
+                light = tuple(o["base_class_id"] or ()) in LIGHT_CLASSES and o["name"] not in UNBUILT_LIGHTS | EMITTERS
+                kind = conv.MESH if o["base_verts"] is not None or extruded or primitive or o["name"] in EMITTERS else \
                     conv.CURVE if o["shape"] else conv.LIGHT if light else \
                     conv.CAMERA if o["camera"] is not None else conv.EMPTY
                 self.assertEqual(node.kind, kind, "%s %s" % (name, node.name))
-                if node.kind == conv.MESH:
+                self.assertEqual(node.emitter is not None, o["name"] in EMITTERS, "%s %s" % (name, node.name))
+                if node.kind == conv.MESH and node.emitter is None:
                     md = desc.meshes[node.mesh]
                     if primitive and o["modifiers"]:  # 3ds Max's counts are after the TurboSmooth
                         self.assertTrue(node.converted, "%s %s" % (name, node.name))
@@ -1007,7 +1015,7 @@ class Fixtures(unittest.TestCase):
         for name, desc, _o in self.cases:
             want = {"editable_mesh": SHARP_EDGES_EDITABLE_MESH,
                     "modifier_pivot": SHARP_EDGES_TALL_BOX, "uvwmap": 28,
-                    "stack_shell": SHARP_EDGES_OPEN_BOX}.get(name, SHARP_EDGES_POLY_BOX)
+                    "stack_shell": SHARP_EDGES_OPEN_BOX, "vray_mesh_light": 0}.get(name, SHARP_EDGES_POLY_BOX)
             for md in desc.meshes.values():
                 if name == "primitives":  # FixtureBox is a name of other fixtures too
                     want = SHARP_EDGES_PRIMITIVES[md.name]

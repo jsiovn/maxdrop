@@ -895,6 +895,7 @@ units:
 | 27 | dome spherical (`dome_spherical`; V-Ray 5.2's default on; off: the half above the dome's local XY plane) |
 | 32 | cast shadows (`castShadows`, the light's own switch; default 1, also for a VRayLight MAXScript makes) |
 | 34 | mesh source (`mesh_source`, a node reference) |
+| 35 | flip normals (`mesh_flip`): a mesh light emits on the other side |
 | 36 | directional (`lightDistribution`) |
 | 38, 39 | color temperature (K); color mode: 0 color, 1 temperature |
 | 43 | targeted (the node has a Look At controller and a Target, [Look At](#look-at)) |
@@ -931,12 +932,40 @@ units mode (its key holds X² there too). The vray_lights fixture's FixtureDiscS
 FixtureSphereWide (2, 1, 1, in W: radius twice, flux the same) and FixtureSphereTall (1, 1, 2.5: as unscaled) are
 such nodes.
 
-**Mesh light.** Not imported yet: an empty and a line in the report, naming the node parameter 34 refers to when it
-is one of the scene. Measured with `mesh_source` set by a script (a 20 × 40 box, an orthographic camera looking
-down): V-Ray 5.2 emits that node's mesh as it is now (the box made 60 wide afterwards emits 60 wide), placed at the
-light node's transform (the footprint follows the light's position and its turn about Z; where the box itself
-stands does not matter), and nothing once the box is deleted. What a Pick mesh in V-Ray's panel with Replace mesh on
-(which deletes the picked node) leaves in the file is not known.
+**Mesh light → emissive mesh.** The light's mesh object is its reference 1 when that holds one, else the object of
+the node parameter 34 names. V-Ray's Pick mesh with "Replace mesh with light" on (picked in V-Ray's panel in 3ds Max
+2020) deletes the picked node, gives the light node its transform, leaves parameter 34 empty and keeps the node's
+object in the light's reference 1 (the base object itself, or its DerivedObject when it has modifiers); a
+`mesh_source` set by a script leaves reference 1 empty, and `refs.replaceReference` of reference 1 writes the
+first structure (the vray_mesh_light fixture's FixtureEmitterOwn). Measured (V-Ray 5.2, the calibration below with
+a mesh light 1 m above the floor, its mesh a Plane 200 × 200 mm far away):
+
+- V-Ray emits the mesh object's mesh in its **object space**, placed at the light node's object transform: the
+  footprint follows the light's position, turn and object offset; the source node's position, turn, scale and
+  object offset do not matter; a later change of the mesh shows; with the node deleted (parameter 34 empty) it emits
+  nothing.
+- One side, along the faces' normals (turned away: 0); Flip normals (35) the other side; the camera sees the back
+  black, and an invisible one not at all. Double-sided: both sides, each with half the radiance in W (0.0715
+  against 0.143).
+- The flux of the units mode spread over the **object-space** area `a` of the mesh as a Lambertian emitter (flux = π
+  L a): W 1 0.143013 (a plane VRayLight of 1 W and the same size: 0.142992), lm 683 the same (683 lm/W, not the
+  dome's 671.8), default 1 0.0125633 (m a 1500 / 683 W), W/m²/sr 1 0.0179715 (π m a); the light node scaled (2, 2,
+  1) gives 4 × the floor of a 400 × 400 mesh in W too: the node's scale does not change the radiance. A Shell on the
+  mesh (5 mm) halves it in W: the area is the evaluated mesh's.
+- Seen by the camera (W 1): 11.3833 = the radiance (1 / (π 0.04)) × π 683 / 1500.
+- A visible mesh light shadows other lights (multiplier 1e-6 between a large plane light and the floor: 1.56
+  against 2.73); an invisible one, or one that is off, does not.
+
+So the radiance is: default m 1500 / (683 π), lm/m²/sr m / 683, W/m²/sr m, W m / (π a), lm m / (683 π a), with `a`
+doubled for a double-sided one in W and lm. MaxDrop makes the mesh object's base mesh (Editable Mesh, Editable Poly,
+a primitive it builds) in object space with the light node's offset, the light node a mesh object of it, and an
+Emission of that radiance × Light Strength (Cycles renders an Emission of strength S as S): one side through a Mix
+by Geometry Backfacing with a black Emission (flipped for 35), both sides when double-sided; invisible: camera and
+shadow off. The `calib_*` scenes of the calibration (W, default, lm, double-sided, flipped, seen by the camera)
+imported and rendered in Cycles (Blender 5.2, 512 samples, the floor a Diffuse BSDF of 1.0, Light Strength 1.43):
+V-Ray / Cycles 1.0003 to 1.0004. The modifiers of the mesh are left out (a line in the report: the base mesh emits,
+and in W and lm its area sets the radiance); no mesh object, or a class MaxDrop does not build, is an empty with a
+line in the report.
 
 **Dome light → World.** The first dome node that is on becomes the scene's World (a new World, assigned to the
 scene; the one before is kept, with a fake user when it has no other, and the report says so; in an import of
@@ -962,7 +991,10 @@ colored blocks seen through cameras at ±X, ±Y and ±20° elevation. Blender's 
 round (u = 0.5 − φ / 2π): the direction (Texture Coordinate Generated) goes through a Mapping node of scale
 (1, −1, 1) and rotation Rz(−h) F T F (F the mirror in Y, T the axis conversion and lock turn into the texture's
 frame). The vray_dome fixture (h 30, locked, its node turned 90° about Z, a hemisphere) and a tilted copy imported
-with Y up give the same texels as V-Ray's renders. Other projections are drawn as spherical; the vertical and axial
+with Y up give the same texels as V-Ray's renders. Other projections are drawn as spherical. A CoronaBitmap on a dome is too, with a line in the report: V-Ray 5.2 does
+not project it (a camera at the dome's center sees one flat color in every direction, for every `enviroMapping`, a U
+offset and a filtering blur of 0.01: 0.5 grey with the eight-block image, its mean; W angle 30°: 0.65, 0.41, 0.41).
+The vertical and axial
 rotation, the flips, the ground projection, an Output other than its amount, a gamma other than automatic or 1, crop or placement and a Bitmap's offset, tiling
 or angle are left out (a line each); a root other than an image map or a file not found leaves the World its color
 (a line).
@@ -1628,8 +1660,7 @@ Bitmap's).
 
 Not shown by any fixture yet, so not stated above:
 
-- Of VRayLight ([VRayLight](#vraylight)): a mesh light's mesh (parameter 34, a node; none picked in the fixture),
-  the dome's parameters, size2, the texmap's use, the light units of a scene unit other than millimeters (the rules
+- Of VRayLight ([VRayLight](#vraylight)): the dome's parameters, size2, the texmap's use, the light units of a scene unit other than millimeters (the rules
   scale lengths by the unit; the fixture is in millimeters), an animated parameter (its default is taken); a sphere
   scaled with Y or Z larger than X (taken as the largest scale), and whether a scaled sphere's radius in Blender
   follows the object's scale as V-Ray's does.

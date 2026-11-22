@@ -9,9 +9,12 @@ vray_lights fixture (tools/fixtures/vray_lights.ms) read through convert.scene a
 said of it: the watts its rules source's own ocbaby_exsVrayLightWatts computed in 3ds Max on each light, the Kelvin
 color of ocbaby_exsKelvinRGB, sizes, flags and the instance sharing one light; hand-made parameter values and blocks
 for the issues (animated, texture, directional, the glossy switch, contributions, a missing block). The vray_dome
-fixture (tools/fixtures/vray_dome.ms): the dome that is the World, its texture's projection, the second dome and the
-mesh light named, the scaled spheres as V-Ray 5.2 renders them (X scale only); hand-made texture graphs for the
-rules of dome_texture.
+fixture (tools/fixtures/vray_dome.ms): the dome that is the World, its texture's projection, the second dome, the
+mesh light's emitter, the scaled spheres as V-Ray 5.2 renders them (X scale only); hand-made texture graphs for the
+rules of dome_texture. Mesh lights: the radiance of emitter_radiance against the V-Ray 5.2 renders of
+docs/FORMAT.md "VRayLight" (a 200 x 200 mm source), describe_emitter's issues on hand-made values, and the
+vray_mesh_light fixture (tools/fixtures/vray_mesh_light.ms): a picked source, a scaled double-sided flipped one with
+an object offset, one holding its own mesh (Replace mesh with light) with a Shell, one without a mesh.
 """
 import importlib
 import math
@@ -24,6 +27,7 @@ from unittest import mock
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 FIXTURE = os.path.join(ROOT, "tests", "fixtures", "vray_lights.max")
 DOME_FIXTURE = os.path.join(ROOT, "tests", "fixtures", "vray_dome.max")
+MESH_FIXTURE = os.path.join(ROOT, "tests", "fixtures", "vray_mesh_light.max")
 
 # A package named apart from the add-on whose path is maxdrop/: relative imports resolve, maxdrop/__init__.py (which
 # imports bpy) never runs.
@@ -133,16 +137,20 @@ class Describe(unittest.TestCase):
         self.assertEqual((ld.power, issues), (8.0, []))
 
     def test_not_built(self):
-        for kind, reason in ((L.MESH, L.MESH_LIGHT), (L.DOME, "a dome light is the World, not a light"),
+        for kind, reason in ((L.MESH, L.EMITTER), (L.DOME, "a dome light is the World, not a light"),
                              (7, "type 7 is not a VRayLight type")):
             self.assertEqual(L.describe(1, "x", values(type=kind), MM, colors.GAMMA_ON), (None, [reason]))
 
-    def test_a_mesh_light_names_its_picked_node(self):
+    def test_a_mesh_light_needs_a_mesh(self):
         v = values(type=L.MESH, mesh_source=7)
-        self.assertEqual(L.not_built(v, {7: "Box"}.get), L.MESH_LIGHT + " (V-Ray emits the mesh of Box at the "
-                                                                          "light's place)")
-        self.assertEqual(L.not_built(v, {}.get), L.MESH_LIGHT)  # no node of the scene
-        self.assertEqual(L.not_built(values(type=L.MESH, mesh_source=None), {7: "Box"}.get), L.MESH_LIGHT)
+        self.assertIsNone(L.not_built(v, {7: "Box"}.get))
+        self.assertEqual(L.not_built(v, {}.get), L.NO_MESH)  # no node of the scene
+        self.assertEqual(L.not_built(values(type=L.MESH, mesh_source=None), {7: "Box"}.get), L.NO_MESH)
+        own = values(type=L.MESH, mesh_source=None)
+        own[L.MESH_OBJECT] = 9  # Replace mesh with light: its own mesh object
+        self.assertIsNone(L.not_built(own, {}.get))
+        self.assertTrue(L.is_mesh_light(v))
+        self.assertFalse(L.is_mesh_light(values(type=L.DOME)))
         self.assertIsNone(L.not_built(values(type=L.DOME)))
 
     def test_shadow_switch(self):
@@ -378,6 +386,116 @@ class Fixture(unittest.TestCase):
         self.assertAlmostEqual(dome.radiance, L.DOME_RADIANCE[L.UNITS_DEFAULT], delta=1e-12)
 
 
+class EmitterRules(unittest.TestCase):
+    """Mesh lights: V-Ray 5.2 renders of a 200 x 200 mm source 1 m above a white floor (docs/FORMAT.md, "VRayLight")
+    fit one radiance per light, the flux spread over the object-space mesh area (pi L a)."""
+    A = 0.04  # m^2
+
+    def test_radiance_each_units_mode(self):
+        a = self.A
+        for units, m, want in ((L.UNITS_W, 1.0, 1.0 / (math.pi * a)), (L.UNITS_LM, 683.0, 1.0 / (math.pi * a)),
+                               (L.UNITS_W_M2_SR, 1.0, 1.0), (L.UNITS_LM_M2_SR, 683.0, 1.0),
+                               (L.UNITS_DEFAULT, 1.0, 1500.0 / (683.0 * math.pi))):
+            self.assertAlmostEqual(L.emitter_radiance(units, m, a), want, delta=want * 1e-12, msg=units)
+
+    def test_the_renders_fit(self):
+        """Floor pixels (V-Ray): W 1 0.143013, default 1 0.0125633, W/m2/sr 1 0.0179715: in the ratio of the
+        radiances; W 1 seen by the camera 11.3833 = its radiance x 1.4305 (Light Strength 1.43, pi 683 / 1500)."""
+        w, d, r = (L.emitter_radiance(u, 1.0, self.A) for u in (L.UNITS_W, L.UNITS_DEFAULT, L.UNITS_W_M2_SR))
+        self.assertAlmostEqual(d / w, 0.0125633 / 0.143013, delta=1e-4)
+        self.assertAlmostEqual(r / w, 0.0179715 / 0.143013, delta=1e-4)
+        self.assertAlmostEqual(w * math.pi * 683.0 / 1500.0, 11.3833, delta=1e-3)
+
+    def test_double_sided(self):
+        """W: half the radiance on each side (floor 0.0715 against 0.143, seen 5.69 against 11.38); the radiance
+        units keep theirs."""
+        self.assertAlmostEqual(L.emitter_radiance(L.UNITS_W, 1.0, self.A, True),
+                               L.emitter_radiance(L.UNITS_W, 1.0, self.A) / 2.0, delta=1e-12)
+        self.assertEqual(L.emitter_radiance(L.UNITS_W_M2_SR, 3.0, self.A, True), 3.0)
+
+    def test_issues(self):
+        ed, issues = L.describe_emitter(1, "e", values(type=L.MESH), colors.GAMMA_ON, self.A)
+        self.assertEqual((ed.camera, ed.occluder, ed.on, ed.diffuse_rays, ed.glossy_rays, issues),
+                         (True, True, True, True, True, []))
+        v = values(type=L.MESH, texmap=5, directional=0.5, shadow=0, affect_reflections=0, diffuse=0.5, invisible=1,
+                   mesh_flip=1, on=0)
+        ed, issues = L.describe_emitter(1, "e", v, colors.GAMMA_ON, self.A)
+        self.assertEqual(issues, [L.EMITTER_TEXMAP, L.DIRECTIONAL % 0.5, L.EMITTER_SHADOW,
+                                  L.EMITTER_GLOSSY % ("on", "off"), L.EMITTER_CONTRIBUTION % ("diffuse", 0.5)])
+        self.assertEqual((ed.camera, ed.occluder, ed.on, ed.flip, ed.glossy_rays), (False, False, False, True, True))
+
+    def test_no_area_and_bad_values(self):
+        ed, issues = L.describe_emitter(1, "e", values(type=L.MESH, units=L.UNITS_W), colors.GAMMA_ON, 0.0)
+        self.assertEqual((ed.radiance, issues), (0.0, [L.EMITTER_FLAT % "watts"]))
+        ed, issues = L.describe_emitter(1, "e", values(type=L.MESH, units=L.UNITS_LM), colors.GAMMA_ON, 0.0)
+        self.assertEqual((ed.radiance, issues), (0.0, [L.EMITTER_FLAT % "lumens"]))
+        ed, issues = L.describe_emitter(1, "e", values(type=L.MESH), colors.GAMMA_ON, 0.0)  # default: no area needed
+        self.assertGreater(ed.radiance, 0.0)
+        ed, issues = L.describe_emitter(1, "e", values(type=L.MESH, multiplier=-2.0), colors.GAMMA_ON, self.A)
+        self.assertEqual((ed.radiance, issues), (0.0, [L.NEGATIVE % ("multiplier", -2.0)]))
+        ed, issues = L.describe_emitter(1, "e", values(type=L.MESH, units=L.UNITS_W, multiplier=1e300),
+                                        colors.GAMMA_ON, 1e-300)
+        self.assertEqual((ed.radiance, issues), (0.0, [L.OUT_OF_RANGE]))
+
+
+@unittest.skipIf(conv is None, "numpy is not installed")
+class MeshLightFixture(unittest.TestCase):
+    """tools/fixtures/vray_mesh_light.ms in millimeters: the Plane source 40 x 20 at (0, -80, 0)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.desc = conv.read(MESH_FIXTURE)
+        cls.by_name = {n.name: n for n in cls.desc.nodes}
+        cls.issues = {}
+        for node, reason in cls.desc.issues:
+            cls.issues.setdefault(node, []).append(reason)
+
+    def emitter(self, name):
+        node = self.by_name[name]
+        return node, self.desc.emitters[node.emitter], self.desc.meshes[node.mesh]
+
+    def test_picked_source(self):
+        """Default units, multiplier 2: 2 x 1500 / (683 pi); the source's object-space mesh at the light's place."""
+        node, ed, md = self.emitter("FixtureEmitter")
+        self.assertEqual((node.kind, ed.double_sided, ed.flip, ed.camera, ed.occluder), (conv.MESH, False, False,
+                                                                                        True, True))
+        self.assertAlmostEqual(ed.radiance, 2.0 * 1500.0 / (683.0 * math.pi), delta=1e-9)
+        self.assertAlmostEqual(ed.area, 0.0008, delta=1e-9)
+        lo, hi = md.positions.min(axis=0).tolist(), md.positions.max(axis=0).tolist()
+        for got, want in zip(lo + hi, [-0.02, -0.01, 0.0, 0.02, 0.01, 0.0]):
+            self.assertAlmostEqual(got, want, delta=1e-7)
+        self.assertEqual(md.users, [node.index])
+        self.assertNotIn(node.index, self.issues)
+        self.assertEqual(self.by_name["FixtureEmitterSource"].kind, conv.MESH)  # the source stays itself
+
+    def test_scaled_double_sided_flipped_with_an_offset(self):
+        """W, multiplier 5, double-sided: 5 / (2 pi a), a the unscaled area; the offset (10, 0, 0) in the mesh."""
+        node, ed, md = self.emitter("FixtureEmitterW")
+        self.assertEqual((ed.double_sided, ed.flip, ed.camera, ed.occluder), (True, True, False, False))
+        self.assertAlmostEqual(ed.radiance, 5.0 / (2.0 * math.pi * 0.0008), delta=1e-3)
+        lo, hi = md.positions.min(axis=0).tolist(), md.positions.max(axis=0).tolist()
+        for got, want in zip(lo + hi, [-0.01, -0.01, 0.0, 0.03, 0.01, 0.0]):
+            self.assertAlmostEqual(got, want, delta=1e-7)
+        self.assertNotEqual(node.mesh, self.by_name["FixtureEmitter"].mesh)  # another light: a mesh of its own
+
+    def test_own_mesh_with_a_shell(self):
+        """Replace mesh with light: reference 1 holds the plane (30 x 10) under a Shell; lm 100 over its area; the
+        Shell named, not applied; affect specular and reflections off: no glossy rays."""
+        node, ed, md = self.emitter("FixtureEmitterOwn")
+        self.assertAlmostEqual(ed.area, 0.0003, delta=1e-9)
+        self.assertAlmostEqual(ed.radiance, 100.0 / 683.0 / (math.pi * 0.0003), delta=1e-4)
+        self.assertFalse(ed.glossy_rays)
+        self.assertEqual(self.issues[node.index], ["light: " + L.EMITTER_MODIFIERS % "Shell"])
+        self.assertEqual(len(md.loop_starts), 1)
+
+    def test_no_mesh(self):
+        node = self.by_name["FixtureEmitterNone"]
+        self.assertEqual((node.kind, node.emitter), (conv.EMPTY, None))
+        self.assertEqual(self.issues[node.index], ["light: not built: " + L.NO_MESH])
+        self.assertEqual(dict(self.desc.placeholders), {})
+        self.assertEqual(len(self.desc.emitters), 3)
+
+
 class DomeRules(unittest.TestCase):
     ROWS = ((0.0, 2.0, 0.0), (-2.0, 0.0, 0.0), (0.0, 0.0, 2.0), (1.0, 2.0, 3.0))  # turned 90 about Z, scaled 2
 
@@ -481,6 +599,12 @@ class DomeTextureRules(unittest.TestCase):
         self.assertEqual(issues, [L.DOME_PROJECTION % ("sky.hdr", "an unknown environment mapping"),
                                   L.DOME_PLACEMENT % "sky.hdr"])
 
+    def test_a_corona_bitmap_is_drawn_spherical_with_a_line(self):
+        """V-Ray 5.2 renders a CoronaBitmap on a dome as one flat color (measured): drawn as V-Ray's spherical, the
+        line says so."""
+        dt, issues = L.dome_texture(self.ir(self.image()), _Graph({3: _Map(tuple(classids.CORONA_BITMAP), {})}))
+        self.assertEqual((dt.turn, issues), (0.0, [L.DOME_CORONA % "sky.hdr"]))
+
     def test_no_texture_the_color(self):
         self.assertEqual(L.dome_texture(None, None), (None, [L.DOME_NO_TEXTURE]))
         self.assertEqual(L.dome_texture(self.ir(texmaps.Constant((1.0, 0.0, 0.0)), ["x"]), None),
@@ -510,10 +634,23 @@ class DomeFixture(unittest.TestCase):
             for a, b in zip(got, want):
                 self.assertAlmostEqual(a, b, delta=1e-6)
 
-    def test_domes_and_the_mesh_light_are_empties_not_placeholders(self):
-        for name in ("FixtureDome", "FixtureDomeColor", "FixtureMeshLight"):
+    def test_domes_are_empties_not_placeholders(self):
+        for name in ("FixtureDome", "FixtureDomeColor"):
             self.assertEqual(self.by_name[name].kind, conv.EMPTY, name)
         self.assertEqual(dict(self.desc.placeholders), {})
+
+    def test_the_mesh_light_is_an_emitter_of_its_box(self):
+        """W, multiplier 10, the 20 x 20 x 10 box: its flux over the box's 1600 mm^2."""
+        node, box = self.by_name["FixtureMeshLight"], self.by_name["FixtureMeshSource"]
+        self.assertEqual((node.kind, node.light), (conv.MESH, None))
+        ed = self.desc.emitters[node.emitter]
+        self.assertEqual((ed.name, ed.users, ed.double_sided, ed.flip, ed.camera), ("FixtureMeshLight", [node.index],
+                                                                                  False, False, True))
+        self.assertAlmostEqual(ed.area, 0.0016, delta=1e-9)
+        self.assertAlmostEqual(ed.radiance, 10.0 / (math.pi * 0.0016), delta=1e-3)  # float32 vertices
+        self.assertNotEqual(node.mesh, box.mesh)  # a mesh of its own, the box's vertices
+        a, b = self.desc.meshes[node.mesh], self.desc.meshes[box.mesh]
+        self.assertEqual(a.positions.tolist(), b.positions.tolist())
 
     def test_spheres_take_the_x_scale(self):
         tall, wide, inst = (self.desc.lights[self.by_name[n].light] for n in
