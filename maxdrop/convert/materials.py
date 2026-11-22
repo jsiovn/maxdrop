@@ -62,15 +62,15 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   mixes the transparency color into the base, as for VRayMtl; IOR, thin-walled; emission color at emission
   weight times luminance / LUMENS_PER_WATT (cd/m2 to Blender's W/(m2 sr)), a weight map standing for the
   weight; coating; map slots where on.
-- CoronaPhysicalMtl: base = base color times base level; roughness, or 1 - it in glossiness mode (every roughness
-  of the material, a map then inverted); metallic from the metalness mode; transmission = refraction amount, the base
-  mixed toward white (thin mode: the thin absorption color) by it; IOR, thin mode; alpha = the mean of the stored
-  opacity color (mono_swatch) times its level; emission color at its level; clearcoat amount, IOR, roughness and absorption color;
-  sheen amount, color and roughness; SSS amount, radius (world units, in meters) and scatter color (the per-channel
-  radius); a metal with a complex IOR takes the F0 of its n and k as its base color; maps where on, their amounts
-  fractions. Specular 1, the IOR's own Fresnel (the material has no reflection level). Translucency, volumetric
-  absorption and scattering, a metal edge color other than the default, the IOR mode and maps in the sheen and SSS
-  slots are named issues.
+- CoronaPhysicalMtl: base = base color times base level; roughness, or 1 - it in glossiness mode (every roughness of the
+  material, a map then inverted); metallic from the metalness mode; transmission = refraction amount, the base mixed
+  toward white (thin mode: the thin absorption color) by it; IOR, thin mode; alpha = the mean of the stored opacity
+  color (mono_swatch) times its level; emission color at its level; clearcoat amount, IOR, roughness and absorption
+  color; sheen amount, color and roughness; SSS amount, radius (world units, in meters) and scatter color (the
+  per-channel radius); a metal with a complex IOR takes the F0 of its n and k as its base color; maps where on, their
+  amounts fractions. Specular 1, the IOR's own Fresnel (the material has no reflection level). Translucency, volumetric
+  absorption and scattering, a metal edge color other than the default, the IOR mode and maps in the sheen and SSS slots
+  are named issues.
 - CoronaLegacyMtl (CoronaMtl): diffuse, reflection, refraction, opacity and self-illumination colors times their
   levels; specular = the mean reflection; roughness = 1 - glossiness (PBR mode or not); transmission and the glass
   base color as for VRayMtl, the IOR as well (refraction IOR when it refracts, else the Fresnel IOR); a Fresnel IOR
@@ -1113,7 +1113,7 @@ def corona_skin_mtl(conv, m, ir):
     weight: 105-107, 108-110, 111-113) as one: radius = sssRadiusScale (104) x their weighted mean radius, per-channel
     color their weighted mean color; specular = reflection1Level (115) x the mean of reflection1Color (114),
     roughness = 1 - reflection1Glossiness (116, map 137 / 158 / 179 inverted), ior = reflection1Ior (117);
-    alpha = mean(opacityColor 122) x opacityLevel (123), map 143 / 164 / 185; bump 144 / 165 / 186. The second
+    alpha = mono_swatch(opacityColor 122) x opacityLevel (123), map 143 / 164 / 185; bump 144 / 165 / 186. The second
     reflection and the SSS maps are named issues."""
     def slot(map_pid, invert=False):
         return conv.map_ref(m, map_pid, map_pid + 21, map_pid + 42, 0, invert=invert, ir=ir, percent=False)

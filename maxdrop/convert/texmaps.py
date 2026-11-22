@@ -23,15 +23,16 @@ stored then (maxdrop-em3.38). The color space (colorspace): a gamma of 2.2 is sR
 primaries: Blender converts them into the scene's working space; the builder falls back to Non-Color where the color
 space is missing) and the builder applies the gamma (1.0: none), on a COLOR, DATA or MASK input alike; on a DATA or
 MASK input an image read as linear (1.0) is Non-Color, and so is a DATA image whose pixels are read as stored in
-this scene (a Bitmap, a VRayBitmap From 3ds Max, with the gamma off). NORMAL and BUMP images are always Non-Color (not measured). A 128 grey PNG as glossiness, opacity or a
-mask renders 0.2195 with the gamma on (Bitmap auto or 2.2, CoronaBitmap auto, VRayBitmap From 3ds Max), 0.502 with
-it off (Bitmap whatever its override; CoronaBitmap and VRayBitmap sRGB keep their curve: 0.2195, 0.2159).
+this scene (a Bitmap, a VRayBitmap From 3ds Max, with the gamma off). NORMAL and BUMP images are always Non-Color
+(not measured). A 128 grey PNG as glossiness, opacity or a mask renders 0.2195 with the gamma on (Bitmap auto or 2.2,
+CoronaBitmap auto, VRayBitmap From 3ds Max), 0.502 with it off (Bitmap whatever its override; CoronaBitmap and
+VRayBitmap sRGB keep their curve: 0.2195, 0.2159).
 Constants are linear, a swatch made so by the scene's swatch rule (convert/colors.py: linear with the gamma on, the
 sRGB curve with it off): in a COLOR graph always linear RGB (also when the input itself is a float, as specular and
 transmission are: the builder takes the mean of the graph's color there, the measure materials.py uses); in a MASK
 graph a float, the scene's rule applied to the mean of the swatch (V-Ray 5.2 renders a red mask as 1 / 3 before any
-gamma; TexmapConverter._swatch); in a DATA or BUMP graph the mean of the swatch as stored, whatever the gamma (a grey
-64 VRayColor renders glossiness 0.251 in both modes); the mean of the color for one that is linear already
+gamma; TexmapConverter._swatch); in a DATA, BUMP or NORMAL graph the mean of the swatch as stored, whatever the
+gamma (a grey 64 VRayColor renders glossiness 0.251 in both modes); the mean of the color for one that is linear already
 (CoronaColor's HDR color; its temperature with the gamma on). With the gamma off V-Ray mixes display values, so a
 mask between two colors is approximated (a 0.502 mask between grey 40 and 220 renders 0.511, shown from 0.225
 linear; MaxDrop's decoded mask gives 0.171).
@@ -788,12 +789,12 @@ class TexmapConverter:
         return self._swatch(rgb, kind)
 
     def _swatch(self, rgb, kind):
-        """A swatch (0..1 per channel) as a Constant of the input's kind: on a color input the linear color; on a
-        mask in a color graph the scene's rule applied to the mean of the swatch (maxdrop-em3.36); on a data input
-        (and a height) the mean as stored, whatever the gamma (maxdrop-em3.122). Each channel clamped to 0..1 first.
+        """A swatch (0..1 per channel) as a Constant of the input's kind: on a color input the linear color; on a mask
+        in a color graph the scene's rule applied to the mean of the swatch (maxdrop-em3.36); on a data input (and a
+        height or normal) the mean as stored, whatever the gamma (maxdrop-em3.122). Each channel clamped to 0..1 first.
         V-Ray 5.2 renders a grey 64 / red VRayColor as glossiness or opacity 0.251 / 0.333 in both modes; as a mask
-        between black and white with the gamma off it renders byte 64 / 85, which Blender shows from the decoded
-        number. Between two colors V-Ray mixes the display values, so the decoded mask is only close there."""
+        between black and white with the gamma off it renders byte 64 / 85, which Blender shows from the decoded number.
+        Between two colors V-Ray mixes the display values, so the decoded mask is only close there."""
         if kind == COLOR:
             return Constant(self.swatches.color(rgb))
         mean = sum(min(1.0, max(0.0, c)) for c in rgb[:3]) / 3.0
@@ -1366,8 +1367,8 @@ def _rewire(conv, m, walk):
 def _composite(conv, m, kind, walk, depth, chain):
     """Tables: 1 mapEnabled, 3 maskEnabled, 5 blendMode, 8 opacity (%), 9 mapList, 10 mask. Kept when every used
     layer above the bottom one has a blend mode in BLENDS (the bottom one is over black whatever its mode); else
-    peeled to its first Bitmap. A layer's mask (on and set) is a data node; one that converts to nothing leaves the
-    opacity (an approximation)."""
+    peeled to its first Bitmap. A layer's mask (on and set) is a float node of mask_kind(kind); one that converts to
+    nothing leaves the opacity (an approximation)."""
     block = m.block(0)
     maps = block.value(9) if block is not None else None
     maps = maps if isinstance(maps, list) else []
@@ -1454,9 +1455,9 @@ def _vray_color(conv, m, kind, walk, depth, chain):
     (renderMap in 3ds Max: (100 gray, multiplier 2, gamma 2) -> 255 * (200 / 255) ^ 2), then made linear by the
     scene's rule like every swatch. In temperature mode color holds V-Ray's own temperature color, taken through
     the same rule (V-Ray 5.2 renders it the same with the gamma on and off: decoded with it off, as CoronaColor's
-    temperature). A
-    mono input takes the color, not the alpha (measured with a Mix mask); on a data input the Constant is the
-    scene's rule applied to the mean of the swatch, as every swatch constant's (_swatch)."""
+    temperature). A mono input takes the color, not the alpha (measured with a Mix mask); on a mask in a color
+    graph the Constant is the scene's rule applied to the mean of the swatch, on a data input the mean as stored
+    (V-Ray 5.2: glossiness 0.251 for grey 64 in both modes), as every swatch constant's (_swatch)."""
     mode = m.param(VC_MODE, 0)
     v = m.param(VC_COLOR, 0)
     if not (isinstance(v, tuple) and len(v) >= 3 and all(_finite(c) for c in v[:3])):
