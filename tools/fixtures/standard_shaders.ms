@@ -2,15 +2,17 @@
 --
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
--- Ten Editable Poly boxes: one Standard material per shader (Anisotropic, Blinn, Metal, Multi-Layer,
+-- Fourteen Editable Poly boxes: one Standard material per shader (Anisotropic, Blinn, Metal, Multi-Layer,
 -- Oren-Nayar-Blinn, Phong, Strauss, Translucent) and two Physical Materials. Each Standard material sets ambient
--- (Anisotropic, Multi-Layer, Oren-Nayar-Blinn and Translucent store their diffuse there whatever is set), diffuse,
+-- (one save held the diffuse there for Anisotropic, Multi-Layer, Oren-Nayar-Blinn and Translucent), diffuse,
 -- specular color, specular level, glossiness, self-illumination amount and color to its own values, the
 -- self-illumination color switched on for Blinn, Metal, Oren-Nayar-Blinn and Translucent; Multi-Layer's second
 -- layer and Translucent's translucent color hold values the first layer does not. Both Physical Materials hold a
 -- Checker or Noise map in the same nine slots (base color, reflectivity, roughness, metalness, transparency,
 -- emission, emission color, bump, cutout), each slot switched off in one of them and on in the other; the first
--- inverts its roughness and coat roughness and is thin-walled.
+-- inverts its roughness and coat roughness and is thin-walled. Four more Standard materials, after them, hold a
+-- Diffuse Level away from 100: Anisotropic 40 with a self-illumination amount, Multi-Layer 150 (its green past
+-- white), Oren-Nayar-Blinn 65, Translucent 80.
 -- Authored for MaxDrop's tests (see CONTRIBUTING.md, "Test files"): it resets the scene, so run it in a 3ds Max
 -- session with nothing to keep, then sanitize and check the saved file before it goes into tests/fixtures/.
 (
@@ -131,6 +133,26 @@
 	fixturePhysicalMaps q "Off" #(#base_color_map, #reflectivity_map, #roughness_map, #metalness_map, \
 		#emit_color_map, #bump_map, #cutout_map)
 	fixtureBox "FixturePhysicalOffBox" 360 q
+
+	-- Diffuse Level (percent), set after the shader; the other values as created
+	fn fixtureLevel name shader dif level siAmount =
+	(
+		local s = StandardMaterial name:name
+		s.shaderType = shader
+		s.adLock = false
+		s.diffuse = dif
+		s.diffuseLevel = level
+		s.selfIllumAmount = siAmount
+		s
+	)
+	fixtureBox "FixtureAnisotropicLevelBox" 400 \
+		(fixtureLevel "FixtureAnisotropicLevel" 0 (color 200 120 60) 40.0 35.0)
+	fixtureBox "FixtureMultiLayerLevelBox" 440 \
+		(fixtureLevel "FixtureMultiLayerLevel" 3 (color 60 200 140) 150.0 0.0)
+	fixtureBox "FixtureOrenNayarBlinnLevelBox" 480 \
+		(fixtureLevel "FixtureOrenNayarBlinnLevel" 4 (color 120 80 220) 65.0 0.0)
+	fixtureBox "FixtureTranslucentLevelBox" 520 \
+		(fixtureLevel "FixtureTranslucentLevel" 7 (color 90 180 50) 80.0 0.0)
 
 	makeDir @"C:\maxdrop_fixtures" all:true
 	saveMaxFile @"C:\maxdrop_fixtures\standard_shaders.max" quiet:true

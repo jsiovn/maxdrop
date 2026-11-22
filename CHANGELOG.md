@@ -69,6 +69,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   the diffuse map, an Anisotropic self-illumination map as the bump. A Strauss metalness map drives the metallic.
   A map whose amount was left as it was after the shader switch can still get the amount of Blinn's slot (a bump
   map at 100 instead of 30), see docs/SUPPORT.md.
+- Materials: a Standard material with the Anisotropic, Multi-Layer, Oren-Nayar-Blinn or Translucent shader takes
+  its Diffuse Level into account: a diffuse color at 40 % arrives as dark as 3ds Max renders it, instead of at full
+  brightness (a diffuse map is not scaled yet). A missing or animated diffuse, glossiness or specular level takes
+  its own shader's default instead of Blinn's.
 
 ## [1.0.1] - 2026-11-22
 

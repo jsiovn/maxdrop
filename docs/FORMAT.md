@@ -1405,7 +1405,7 @@ values by the fixture scripts or read by the tests):
 | | | Oren-Nayar-Blinn `(0x2857F421, 0)`: 0 ambient, 1 diffuse, 2 specular, 3 selfIllumColor, 4 selfIllumAmount, 5 glossiness, 6 specularLevel, 7 soften, 8 diffuseLevel, 9 diffuseRoughness, 13 useSelfIllumColor |
 | | | Multi-Layer `(0x2857F470, 0)`: 0 ambient, 1 diffuse, 2 selfIllumColor, 3 selfIllumAmount, 4 diffuseLevel, 5 diffuseRoughness, 6 / 7 / 8 / 9 / 10 specular, specularLevel, glossiness, anisotropy, orientation of the first layer, 11-15 the same of the second, 19 useSelfIllumColor |
 | | | Translucent Shader `(0x2857F480, 0)`: 0 ambient, 1 diffuse, 2 specular, 3 selfIllumColor, 4 selfIllumAmount, 5 glossiness, 6 specularLevel, 7 diffuseLevel, 8 filter, 9 translucentColor, 10 backsideSpecular, 14 useSelfIllumColor |
-| | | Strauss `(0x2857F450, 0)`: 0 diffuse, 1 glossiness, 2 metalness (standard_shaders). Anisotropic, Oren-Nayar-Blinn, Multi-Layer and Translucent store their diffuse in ambient whatever is set |
+| | | Strauss `(0x2857F450, 0)`: 0 diffuse, 1 glossiness, 2 metalness (standard_shaders). Ambient is not read: one save of standard_shaders held the diffuse there for Anisotropic, Oren-Nayar-Blinn, Multi-Layer and Translucent whatever was set, a later save of the same script (maxdrop-em3.105) the ambient as set |
 | Physical Material `(0x3D6B1CEC, 0xDEADC001)` | 0 | 1 base_weight, 2 base_color (float color with alpha), 3 reflectivity, 4 roughness, 5 roughness_inv, 6 metalness, 10 refl_color, 11 diff_roughness, 30 transparency, 31 trans_color, 33 trans_ior, 37 thin_walled, 50 emission, 51 emit_color, 52 emit_luminance (cd/m2), 60 coating, 61 coat_color, 62 coat_roughness, 63 coat_roughness_inv, 66 coat_ior; maps 100-120 (`*_map`: 101 base_color, 102 reflectivity, 103 refl_color, 104 roughness, 105 metalness, 109 transparency, 116 emission, 117 emit_color, ...), 130 bump_map, 131 coat_bump_map, 132 displacement_map, 133 cutout_map, each switched on by its id + 50 (`*_map_on`, default on), 230 bump_map_amt (a factor, default 0.3); 250-270 mapM0 ... mapM20 are saved empty, 3ds Max answers the map of id - 150 (standard_physical, standard_shaders) |
 | Bitmap `(0x240, 0)` | 0 | 0-3 clip u, v, w, h, 7 cropPlace, 8 filtering, 12 preMultAlpha, 13 bitmap (asset), 14 coords, 15 output |
 | VRayNormalMap `(0x71FA6E51, 0x72057C2F)` | 0 | 0 normal_map, 2 normal_map_on, 3 normal_map_multiplier, 4 bump_map, 5 bump_map_on, 6 bump_map_multiplier, 1 map_channel, 7 flip_red, 8 flip_green, 9 swap_red_and_green |
@@ -1435,6 +1435,19 @@ container, chunk `0x5100 + channel` holds a channel's amount (`f32`) where it is
 a `u32` bit mask over the channels (bit k = channel k; set exactly at the channels holding a map in every fixture so
 far: whether it is the on switch or the occupancy is not measured). MaxDrop still reads the table's amounts
 (maxdrop-em3.148).
+
+Diffuse Level (Anisotropic, Multi-Layer, Oren-Nayar-Blinn, Translucent Shader; a fraction, 1 = 100 %), measured
+with Default Scanline renders of a plane lit head-on, gamma off, swatch (200, 100, 50): the pixel is linear in the
+level on all four (50 % half, 200 % exactly double: the product is not clamped), Blinn has none; with
+self-illumination the lit part is scaled and the self-lit part is the swatch as set (amount 100 % renders the swatch
+at level 50 and 100); a diffuse map (amount 100 or 50) is scaled too. So the shader's diffuse is swatch times level
+in the stored value, and MaxDrop applies the level before the swatch rule, which clamps to 0..1 (standard_shaders
+FixtureMultiLayerLevel: green 200 at 150 % is white), the opposite order of CoronaLegacyMtl's levels and Physical's
+base weight; the emission keeps the unscaled diffuse; a diffuse map is not scaled and the Diffuse Level map channel
+is not read (maxdrop-em3.150). A missing or animated diffuse, glossiness or specular level takes the shader's value
+as created (3ds Max 2020): diffuse 149.94 grey (Blinn, Phong, Metal) or 127.5 (the others, Strauss included);
+glossiness 10 % (Blinn, Phong, Metal), Anisotropic 25, Multi-Layer 50, Oren-Nayar-Blinn 25, Translucent 30,
+Strauss 20; specular level 5 % (Anisotropic, Multi-Layer), 0 the others (`SHADER_DEFAULTS`).
 
 The maps of texmap_rules (block 0 each; `convert/texmaps.py`):
 

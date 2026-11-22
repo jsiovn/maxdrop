@@ -1080,13 +1080,22 @@ class StandardShaders(unittest.TestCase, Close):
     }
     FIELDS = {"diffuse": "diffuse", "specular": "specular", "level": "specularLevel", "glossiness": "glossiness",
               "si_amount": "selfIllumAmount", "si_color": "selfIllumColor", "use_si_color": "useSelfIllumColor"}
+    # material: (shader, diffuse, Diffuse Level %, self-illumination amount %); glossiness and specular level as
+    # created
+    LEVELS = {
+        "FixtureAnisotropicLevel": ("ANISOTROPIC_SHADER", (200, 120, 60), 40, 35),
+        "FixtureMultiLayerLevel": ("MULTI_LAYER_SHADER", (60, 200, 140), 150, 0),
+        "FixtureOrenNayarBlinnLevel": ("OREN_NAYAR_BLINN_SHADER", (120, 80, 220), 65, 0),
+        "FixtureTranslucentLevel": ("TRANSLUCENT_SHADER", (90, 180, 50), 80, 0),
+    }
 
     @classmethod
     def setUpClass(cls):
         cf, graph, cls.by_name = _fixture("standard_shaders")
         with cf:
             cls.conv = mat.MaterialConverter(graph)
-            cls.irs = {n: cls.conv.convert(cls.by_name[n]) for n in list(cls.VALUES) + ["FixtureStrauss"]}
+            cls.irs = {n: cls.conv.convert(cls.by_name[n])
+                       for n in list(cls.VALUES) + list(cls.LEVELS) + ["FixtureStrauss"]}
         cls.oracle = _oracle_graph("standard_shaders")
 
     def shader_block(self, name):
@@ -1130,6 +1139,24 @@ class StandardShaders(unittest.TestCase, Close):
         self.assertEqual(sid, classids.STRAUSS_SHADER)
         self.assertEqual((names[0], names[1], names[2]), ("diffuse", "glossiness", "metalness"))
         self.assertEqual(set(mat.SHADERS), {getattr(classids, v[0]) for v in self.VALUES.values()})
+
+    def test_diffuse_level_by_hand(self):
+        """The swatch times the level, clamped to 255, then decoded (Multi-Layer's green 200 x 1.5 is white); the
+        self-illumination keeps the diffuse as set; glossiness and specular level are the shader's as created."""
+        for name, (shader, diffuse, level, amount) in self.LEVELS.items():
+            with self.subTest(name):
+                sid, names = self.shader_block(name)
+                self.assertEqual(sid, getattr(classids, shader))
+                ids, d = mat.SHADERS[sid], mat.SHADER_DEFAULTS[sid]
+                self.assertEqual(names[ids.diffuse_level], "diffuseLevel")
+                ir = self.irs[name]
+                self.close(ir.base_color.value, _lins(*(min(255.0, c * level / 100.0) for c in diffuse)))
+                self.close(ir.roughness.value, 1.0 - d.glossiness)
+                self.close(ir.specular.value, d.level * _lin(229.5), "level as created times the 0.9 grey specular")
+                if amount:
+                    self.close(ir.emission_color.value, _lins(*diffuse), "the unscaled diffuse")
+                self.close(ir.emission_strength, amount / 100.0)
+        self.close(self.irs["FixtureMultiLayerLevel"].base_color.value[1], 1.0, "past white: clamped")
 
     def test_no_issues(self):
         self.assertEqual((self.conv.stats.issues, dict(self.conv.stats.unknown)), ([], {}))
