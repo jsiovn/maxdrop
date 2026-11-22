@@ -1411,8 +1411,9 @@ values by the fixture scripts or read by the tests):
 | VRayNormalMap `(0x71FA6E51, 0x72057C2F)` | 0 | 0 normal_map, 2 normal_map_on, 3 normal_map_multiplier, 4 bump_map, 5 bump_map_on, 6 bump_map_multiplier, 1 map_channel, 7 flip_red, 8 flip_green, 9 swap_red_and_green |
 
 A Standard material's map tables follow its shader's map channels (3ds Max 2020, zero-based; `getSubTexmapSlotName`
-and the saved table agree: standard_maps puts a named map into every channel MaxDrop reads by the name 3ds Max gives
-it, on Blinn, Anisotropic, Multi-Layer, Oren-Nayar-Blinn, Translucent and Strauss). Blinn, Phong, Metal: 0 ambient, 1 diffuse, 2 specular color, 3 specular level, 4
+and the saved table agree on a probe scene with a map in each channel; standard_maps puts a named map into every
+channel MaxDrop reads by the name 3ds Max gives it, on Blinn, Anisotropic, Multi-Layer, Oren-Nayar-Blinn, Translucent
+and Strauss). Blinn, Phong, Metal: 0 ambient, 1 diffuse, 2 specular color, 3 specular level, 4
 glossiness, 5 self-illumination, 6 opacity, 7 filter color, 8 bump, 9 reflection, 10 refraction, 11 displacement.
 Anisotropic: 0 ambient, 1 diffuse, 2 specular color, 3 diffuse level, 4 specular level, 5 glossiness, 6 anisotropy,
 7 orientation, 8 self-illumination, 9 opacity, 10 filter color, 11 bump, 12 reflection, 13 refraction, 14

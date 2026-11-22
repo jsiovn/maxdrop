@@ -928,12 +928,12 @@ class StandardMaps(unittest.TestCase, Close):
         self.assertEqual(set(mat.STD_SLOTS), set(mat.SHADERS) | {classids.STRAUSS_SHADER})
 
     def test_amounts_never_set_after_the_shader_switch(self):
-        """FixtureMapsUnsetAmounts (Anisotropic, created as Blinn): the maps land in their inputs. Their amounts
-        are not checked: the map table keeps those of the material as created (self-illumination 0.3, bump 1.0;
-        3ds Max answers 1.0 and 0.3), docs/FORMAT.md."""
+        """FixtureMapsUnsetAmounts (Anisotropic, created as Blinn): the maps land in their inputs, at the amounts
+        the map table keeps from the material as created (self-illumination 0.3, bump 1.0), not 3ds Max's (1.0
+        and 0.3, kept in the Texmaps object), docs/FORMAT.md: maxdrop-em3.148 makes these 1.0 and 0.3."""
         ir = self.irs["UnsetAmounts"]
-        self.assertEqual(ir.emission_color.map.index, self.by_name["FixtureMapUnsetAmountsSelfIllum"])
-        self.assertEqual(ir.bump.index, self.by_name["FixtureMapUnsetAmountsBump"])
+        self.same_map(ir.emission_color.map, self.map("UnsetAmounts", "SelfIllum", 0.3), "self-illumination")
+        self.same_map(ir.bump, self.map("UnsetAmounts", "Bump", 1.0), "bump")
         self.assertIsNone(ir.base_color.map)
 
     def test_no_issues(self):

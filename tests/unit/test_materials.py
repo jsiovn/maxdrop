@@ -61,6 +61,12 @@ materials = importlib.import_module(_PKG + ".reader.materials")
 owner_slots = importlib.import_module(_PKG + ".reader.owner_slots")
 STANDARD_SHADER_SLOT = 2  # a Standard material's reference to its shader
 TEXMAPS = (0x1200, 0)  # a Standard material's Texmaps object
+
+
+def BLINN_AMOUNT(k):  # noqa: N802 - a table: a Standard material's map amounts as created (Blinn's channels)
+    return 0.3 if k == 8 else 1.0
+
+
 BLINN_LAYOUT = {classids.PHONG_SHADER, classids.BLINN_SHADER, classids.METAL_SHADER}  # map channels as created
 ChunkError = chunks.ChunkError
 
@@ -150,7 +156,7 @@ class Parity:
                 holder = self.scene.chunk(target)
                 holder = holder.first(0x0003) or holder
                 return {c.id - 0x5100: c.unpack("<f")[0] for c in holder.children if 0x5100 <= c.id < 0x5200}
-        return {}
+        self.case.fail("Standard material %d without a Texmaps object" % owner)
 
     def stale(self, owner, oracle_block):
         """skip(pid, k, ours): whether a value of this block is one the file keeps stale while 3ds Max computes its
@@ -158,9 +164,9 @@ class Parity:
         - a Standard material whose shader is not Blinn, Phong or Metal, block 3 mapAmounts: the file keeps the
           amounts of the material as created (Blinn's map channels, bump 0.3 at slot 8) where they were not set
           after the shader switch, 3ds Max answers those of its shader's channels (Anisotropic: 0.3 at slot 11).
-          Every amount without a map is skipped (none is used); one with a map that differs only where its
-          Texmaps object holds 3ds Max's value (chunk 0x5100 + slot, 1.0 when absent; standard_maps
-          FixtureMapsUnsetAmounts).
+          Every amount without a map is skipped (none is used); one with a map that differs only where the file
+          holds the created layout's value (BLINN_AMOUNT) and its Texmaps object 3ds Max's (chunk 0x5100 + slot,
+          1.0 when absent; standard_maps FixtureMapsUnsetAmounts).
         - a Physical Material's mapM0 ... mapM20 (block 0, 250-270): saved empty, 3ds Max answers the map of
           parameter id - 150 (mapM1 = base_color_map)."""
         entry = self.scene.entry(owner)
@@ -173,7 +179,8 @@ class Parity:
             if shader is not None and shader.class_id not in BLINN_LAYOUT:
                 kept = self.texmaps_amounts(owner)
                 return lambda pid, k, ours: pid == 2 and (params[1][k] is None or (
-                    abs(ours - params[2][k]) > TOLERANCE and abs(kept.get(k, 1.0) - params[2][k]) <= TOLERANCE))
+                    abs(ours - params[2][k]) > TOLERANCE and abs(ours - BLINN_AMOUNT(k)) <= TOLERANCE
+                    and abs(kept.get(k, 1.0) - params[2][k]) <= TOLERANCE))
         if entry.class_id == classids.PHYSICAL_MTL and oracle_block["block_id"] == 0:
             return lambda pid, k, ours: (250 <= pid <= 270 and isinstance(ours, pblock.Reference)
                                          and ours.index is None and params.get(pid) is not None

@@ -67,6 +67,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Materials: a Standard material with the Anisotropic, Multi-Layer, Oren-Nayar-Blinn, Translucent or Strauss shader
   takes each map from its shader's own map slot, instead of Blinn's: a Strauss glossiness map no longer arrives as
   the diffuse map, an Anisotropic self-illumination map as the bump. A Strauss metalness map drives the metallic.
+  A map whose amount was left as it was after the shader switch can still get the amount of Blinn's slot (a bump
+  map at 100 instead of 30), see docs/SUPPORT.md.
 
 ## [1.0.1] - 2026-11-22
 
