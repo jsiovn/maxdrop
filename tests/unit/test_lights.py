@@ -648,6 +648,29 @@ class DomeTextureRules(unittest.TestCase):
             dt, issues = L.dome_texture(self.ir(self.image(gamma=gamma, colorspace=space)), self.vray({}))
             self.assertEqual(issues, [], gamma)
 
+    def test_a_float_texture_in_a_gamma_off_scene_keeps_its_own_decode(self):
+        # the converter's gamma-off images of sky.hdr: Auto / None (2.2), sRGB (SRGB_TWICE), From 3ds Max or a Bitmap
+        # (None, read as stored), inverse gamma 2 (1.1); a light keeps the map's own decode (maxdrop-em3.123)
+        for gamma, space, own, own_space in ((2.2, texmaps.SRGB, 1.0, texmaps.LINEAR),
+                                             (texmaps.SRGB_TWICE, texmaps.LINEAR, None, texmaps.SRGB),
+                                             (None, texmaps.SRGB, 1.0, texmaps.LINEAR),
+                                             (1.1, texmaps.LINEAR, 0.5, texmaps.LINEAR)):
+            with self.subTest(gamma=gamma):
+                dt, issues = L.dome_texture(self.ir(self.image(gamma=gamma, colorspace=space)), self.vray({}),
+                                            colors.GAMMA_OFF)
+                self.assertEqual(dt.image.colorspace, own_space)
+                if own is None:
+                    self.assertIsNone(dt.image.gamma)
+                else:
+                    self.assertAlmostEqual(dt.image.gamma, own, delta=1e-9)
+                self.assertEqual(issues, [L.DOME_FLOAT_OFF % "sky.hdr"])
+        lin = self.image(gamma=1.0, colorspace=texmaps.LINEAR)
+        dt, issues = L.dome_texture(self.ir(lin), self.vray({}), colors.GAMMA_ON)
+        self.assertEqual((dt.image, issues), (lin, []), "gamma on: as converted")
+        png = texmaps.Image(3, "sky.png", found=self.FOUND, gamma=texmaps.SRGB_TWICE, colorspace=texmaps.LINEAR)
+        dt, issues = L.dome_texture(self.ir(png), self.vray({}), colors.GAMMA_OFF)
+        self.assertEqual((dt.image, issues), (png, []), "an 8-bit file: decoded once more, as on a material")
+
     def test_a_bitmap_is_turned_a_quarter(self):
         graph = _Graph({3: _Map(tuple(classids.BITMAP_TEX), {})})  # no Placement part: texture mapping
         dt, issues = L.dome_texture(self.ir(self.image()), graph)

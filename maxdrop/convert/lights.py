@@ -11,7 +11,7 @@
     ld, issues = describe(key, name, values, meters, swatches, scale)   # LightDescription, or None and the reason
     is_dome(values)                     # a VRayLight dome: the scene's World, not a light (describe_dome)
     dd, issues = describe_dome(node, name, values, swatches, world)     # DomeDescription
-    dt, issues = dome_texture(graph_ir, material_graph)   # DomeTexture of the dome's converted map, or None
+    dt, issues = dome_texture(graph_ir, material_graph, swatches)   # DomeTexture of the dome's converted map, or None
     is_mesh_light(values)               # a VRayLight mesh light: an emissive mesh, not a light (describe_emitter)
     ed, issues = describe_emitter(key, name, values, swatches, area)   # EmitterDescription (area: the mesh's, m^2)
     watts(units, multiplier, area(kind, size0, size1, double_sided, meters))
@@ -78,7 +78,10 @@ atan2(y, x)) or a Bitmap in spherical environment mapping (u = 0.75 + phi / 2 pi
 frame or, locked to the dome, in the dome node's; another root is not used (the World keeps the color, an issue),
 another projection is drawn as spherical (an issue), a CoronaBitmap too (V-Ray 5.2 renders it on a dome as one flat
 color, measured: an issue). Its gamma is drawn as a material's image's is (its color space, a Gamma node on a
-Linear Rec.709 image: build.world). The first dome that is on is the World; another one, or one that
+Linear Rec.709 image: build.world), but a float file (EXR, HDR) in a scene saved with the gamma off keeps its own
+decode (linear for automatic; an issue): the display decode V-Ray shows on a material (maxdrop-em3.123) would take a
+sky's values far above 1 to orders of magnitude more light, and a float image as a light is not measured. The first
+dome that is on is the World; another one, or one that
 is off, is an issue (convert.scene).
 
 The other lights (docs/FORMAT.md, "Standard and photometric lights"): V-Ray 5.2 lights a white floor at distance d
@@ -282,6 +285,8 @@ DOME_SWITCH = "its texture %s's %s is not imported"
 DOME_PLACEMENT = "its texture %s's offset, tiling or angle is not imported"
 DOME_OUTPUT = "its texture %s's Output (invert, RGB level or offset) is not imported"
 DOME_GAMMA = "its texture %s's gamma %g is not applied"
+DOME_FLOAT_OFF = ("its texture %s is a float image in a scene saved with the gamma off: kept linear (its own decode), "
+                  "not decoded once more for the display as on a material (not measured as a light)")
 DOME_CROP = "its texture %s's crop or placement is not imported"
 DOME_SHADOW = "cast shadows off is not imported: the World casts shadows"
 SKY = "the environment map is a VRaySky: not imported yet (environment -> World is later work)"
@@ -827,10 +832,11 @@ ENV_SPHERICAL = 1  # a Placement's env_mapping: 1 spherical, 2 cylindrical, 3 sh
 _ENV_PROJECTIONS = {2: "cylindrical environment", 3: "shrink-wrap environment", 4: "screen environment"}
 
 
-def dome_texture(graph_ir, material_graph):
+def dome_texture(graph_ir, material_graph, swatches=None):
     """(DomeTexture of a dome's converted texture map (convert.texmaps.TextureGraphIR of kind COLOR, None when it
     converts to nothing), or None: the World keeps the color, issues). material_graph (reader.materials
-    MaterialGraph) reads the map's projection."""
+    MaterialGraph) reads the map's projection; swatches: the scene's colors.Swatches (None: read from
+    material_graph's scene)."""
     if graph_ir is None:
         return None, [DOME_NO_TEXTURE]
     issues = list(graph_ir.issues)
@@ -878,8 +884,13 @@ def dome_texture(graph_ir, material_graph):
         amount = max(0.0, out.amount)
         if out.invert or out.level != 1.0 or out.offset != 0.0:
             issues.append(DOME_OUTPUT % img.name)
+    if cid != classids.CORONA_BITMAP and img.name.lower().endswith(texmaps.FLOAT_IMAGES) \
+            and not (swatches if swatches is not None else colors.of_graph(material_graph)).linear:
+        img = texmaps.unshown(img)
+        issues.append(DOME_FLOAT_OFF % img.name)
+    # a guard: the converter's images always have the color space of their gamma (drawn by it or a Gamma node)
     if img.gamma not in (None, 1.0) and img.colorspace != texmaps.colorspace(texmaps.COLOR, img.gamma):
-        issues.append(DOME_GAMMA % (img.name, img.gamma))  # drawn: its color space, or Linear Rec.709 + a Gamma
+        issues.append(DOME_GAMMA % (img.name, img.gamma))
     if img.crop is not None:
         issues.append(DOME_CROP % img.name)
     return DomeTexture(img, turn, amount), issues

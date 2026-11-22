@@ -108,7 +108,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   an EXR or HDR image (a Bitmap, a VRayBitmap From 3ds Max or Auto) on a color map or a mask show as V-Ray 5.2
   renders them, their own decode decoded once more for the display-referred scene, instead of brighter (a 128 grey
   VRayBitmap in sRGB: 0.038 linear instead of 0.216, measured). A dome light's texture gamma is now drawn (a Gamma
-  node in the World) instead of a line in the report. A CoronaBitmap and a CoronaColor's HDR color stay as before:
+  node in the World) instead of a line in the report, so a gamma-off dome with an 8-bit VRayBitmap is darker; an
+  EXR or HDR dome texture stays linear there (a line in the report: not measured as a light). A CoronaBitmap and a CoronaColor's HDR color stay as before:
   whether Corona shows them as V-Ray does was not measured (no Corona render here).
 
 ## [1.0.1] - 2026-11-22

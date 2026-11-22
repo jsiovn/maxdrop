@@ -21,7 +21,8 @@ Image (None: automatic, sRGB; 1.0 for an EXR or HDR file): with the gamma on its
 input gamma (colors.Swatches.file_in); with the gamma off none, whatever its override, as 3ds Max reads the image as
 stored then (maxdrop-em3.38), an EXR or HDR file too (the display-referred scene shows it decoded; maxdrop-em3.123).
 A VRayBitmap's own decode on a color input or a mask is shown decoded once more with the gamma off (_shown,
-maxdrop-em3.123; CoronaBitmap's is not: a Corona render is not measured). The color space (colorspace): a gamma of 2.2 is sRGB, any other Linear Rec.709 (sRGB
+maxdrop-em3.123; CoronaBitmap's is not: a Corona render is not measured).
+The color space (colorspace): a gamma of 2.2 is sRGB, any other Linear Rec.709 (sRGB
 primaries: Blender converts them into the scene's working space; the builder falls back to Non-Color where the color
 space is missing) and the builder applies the gamma (1.0: none), on a COLOR, DATA or MASK input alike; on a DATA or
 MASK input an image read as linear (1.0) is Non-Color, and so is a DATA image whose pixels are read as stored in
@@ -67,7 +68,8 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
   gamma g: 1 / g, sRGB and auto: automatic, from 3ds Max: a Bitmap's automatic gamma, linear for an EXR or HDR
   file), its overall times render multiplier times the Output's amount (the order against the Output's invert and
   offset is assumed, not measured). With the gamma off a color input or mask shows that decode decoded once more
-  (V-Ray 5.2), From 3ds Max the image as stored, decoded as a Bitmap's. An environment mapping type (angular, cubic, spherical, mirrored ball), a map
+  (V-Ray 5.2), From 3ds Max the image as stored, decoded as a Bitmap's.
+  An environment mapping type (angular, cubic, spherical, mirrored ball), a map
   source, ACEScg primaries, RGB output intensity, an unusable transfer function or multiplier are issues.
 - CoronaColor -> Constant (color and hex as swatches, the HDR color linear, the temperature Corona's own linear
   color from CORONA_KELVIN, times the multiplier, decoded as a swatch with the gamma off). VRayColor -> Constant:
@@ -653,6 +655,24 @@ def _shown(gamma):
     pixel ^ gamma; None: the sRGB curve) decoded once more, as V-Ray 5.2 shows a VRayBitmap and a float file there
     (maxdrop-em3.123): 2.2 x its own (2.2 itself: sRGB, exact), SRGB_TWICE for the sRGB curve."""
     return SRGB_TWICE if gamma is None else gamma * SRGB_GAMMA
+
+
+def unshown(image):
+    """A Bitmap's or VRayBitmap's color Image made in a gamma-off scene with its own decode again (_shown undone;
+    None, an image read as stored, gives linear): for a float file lighting a scene, where the display decode of
+    values far above 1 is not measured (convert.lights.dome_texture)."""
+    g = image.gamma
+    own = 1.0 if g is None else (None if abs(g - SRGB_TWICE) <= GAMMA_TOLERANCE else g / SRGB_GAMMA)
+    return dataclasses.replace(image, gamma=own, colorspace=colorspace(COLOR, own))
+
+
+def drawn_gamma(image):
+    """The power a builder applies after an Image's texture, None for none: its gamma when the image is Linear
+    Rec.709 for it (any other gamma is its color space's, or 1.0)."""
+    g = image.gamma
+    if g is not None and abs(g - 1.0) > 1e-6 and image.colorspace == LINEAR == colorspace(COLOR, g):
+        return g
+    return None
 
 
 class TexmapConverter:

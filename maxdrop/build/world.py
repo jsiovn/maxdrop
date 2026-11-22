@@ -8,9 +8,9 @@
 
 The World's Background has the dome's color, or with a texture an Environment Texture of its image, and the
 strength dd.radiance x strength (the import's Light Strength) x the texture's amount; an image the converter made
-Linear Rec.709 for its gamma gets a Gamma node, as a material's image does (build.materials). Directions: Texture
-Coordinate Generated is the direction in Blender's world; axis (a 3x3 mathutils Matrix: the import's axis conversion, file to
-Blender) and dd.rotation take it into the dome's frame. A hemisphere multiplies the strength by (local Z > 0). The
+Linear Rec.709 for its gamma gets a Gamma node, as a material's image does (texmaps.drawn_gamma). Directions:
+Texture Coordinate Generated is the direction in Blender's world; axis (a 3x3 mathutils Matrix: the import's axis
+conversion, file to Blender) and dd.rotation take it into the dome's frame. A hemisphere multiplies the strength by (local Z > 0). The
 texture is looked up as V-Ray does (convert.lights, "A dome light"): V-Ray's u = 0.5 + (phi + turn) / 2 pi runs the
 other way round from Blender's equirectangular u = 0.5 - phi / 2 pi, so the direction is mirrored in Y and turned
 by -turn about Z: a Mapping node of scale (1, -1, 1), whose rotation R' = Rz(-turn) F T F (F the mirror, T the
@@ -62,9 +62,8 @@ def make_world(dd, image=None, strength=1.0, axis=None):
         links.new(coords.outputs["Generated"], mapping.inputs["Vector"])
         links.new(mapping.outputs["Vector"], env.inputs["Vector"])
         color = env.outputs["Color"]
-        gamma = texture.image.gamma
-        if gamma is not None and abs(gamma - 1.0) > 1e-6 \
-                and texture.image.colorspace == tx.LINEAR == tx.colorspace(tx.COLOR, gamma):
+        gamma = tx.drawn_gamma(texture.image)
+        if gamma is not None:
             power = nodes.new("ShaderNodeGamma")
             power.location = (-X_STEP, X_STEP)
             power.inputs["Gamma"].default_value = gamma

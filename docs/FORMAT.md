@@ -995,7 +995,7 @@ with Y up give the same texels as V-Ray's renders. Other projections are drawn a
 dome is too, with a line in the report: V-Ray 5.2 does not project it (a camera at the dome's center sees one flat
 color in every direction, for every `enviroMapping`, a U offset and a filtering blur of 0.01: 0.5 grey with the
 eight-block image, its mean; W angle 30°: 0.65, 0.41, 0.41). The vertical and axial
-rotation, the flips, the ground projection, an Output other than its amount, a gamma other than automatic or 1, crop or placement and a Bitmap's offset, tiling
+rotation, the flips, the ground projection, an Output other than its amount, crop or placement and a Bitmap's offset, tiling
 or angle are left out (a line each); a root other than an image map or a file not found leaves the World its color
 (a line).
 
@@ -1292,7 +1292,10 @@ picker and Material Editor switches off).
   2.0 -> 4.954), 5.0 for the sRGB curve (`SRGB_TWICE`: twice the curve is within 0.008 of x ^ 5 over 0..1); a
   Bitmap and From 3ds Max read any file as stored, sRGB. Data inputs keep the map's own curve. Blender 5.2 and 4.2
   renders of the probe scenes agree within 0.02 (2 % above 1). CoronaBitmap and CoronaColor HDR are left as they
-  were: whether a Corona render shows them as V-Ray does is not known (no Corona license here).
+  were: whether a Corona render shows them as V-Ray does is not known (no Corona license here). A dome's texture
+  gamma is drawn as a material's (a Gamma node in the World), but a float dome texture in a gamma-off scene keeps
+  its own decode (a line in the report): the probe measured planes seen by the camera with values up to 2.0, not a
+  float image lighting a scene, where decoding a sky's values far above 1 would give orders of magnitude more light.
 
 ## Summary properties
 

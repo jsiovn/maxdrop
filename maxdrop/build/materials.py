@@ -756,8 +756,7 @@ class _Tree:
         # gamma, on a color, data or mask input alike (a data input's image is Non-Color where its pixels are taken
         # as stored). The power comes after Blender's primaries conversion: exact in the default working space
         # (Linear Rec.709) and on greys; in FLOAT the mean is taken after it, of the decoded channels.
-        if not img.alpha and img.gamma is not None and abs(img.gamma - 1.0) > _EPS \
-                and img.colorspace == tx.LINEAR == tx.colorspace(tx.COLOR, img.gamma):
+        if not img.alpha and tx.drawn_gamma(img) is not None:
             out = self.gamma(out, img.gamma, depth)
         return self.output(img.output, out, depth) if img.output is not None else out
 

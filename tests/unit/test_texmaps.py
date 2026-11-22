@@ -10,6 +10,7 @@ into materials.py, and the guards on synthetic maps.
     python -I -m unittest discover tests
 """
 import collections
+import dataclasses
 import importlib
 import json
 import math
@@ -2147,6 +2148,18 @@ class SceneGammaImages(Checks):
                     tex = tx.TexmapConverter(FakeGraph(_vbitmap(1, **params)), _table() if table is None else table,
                                              swatches=colors.GAMMA_OFF)
                     self.check(tex.convert(mat.MapRef(1), kind).root, gamma, space, kind)
+
+    def test_unshown_and_drawn_gamma(self):
+        img = tx.Image(1, "sky.exr")
+        for shown, own, space in ((None, 1.0, tx.LINEAR), (2.2, 1.0, tx.LINEAR), (tx.SRGB_TWICE, None, tx.SRGB),
+                                  (1.1, 0.5, tx.LINEAR)):
+            back = tx.unshown(dataclasses.replace(img, gamma=shown, colorspace=tx.colorspace(tx.COLOR, shown)))
+            self.check(back, own, space, shown)
+        for gamma, space, drawn in ((None, tx.SRGB, None), (2.2, tx.SRGB, None), (1.0, tx.LINEAR, None),
+                                    (tx.SRGB_TWICE, tx.LINEAR, tx.SRGB_TWICE), (0.5, tx.LINEAR, 0.5),
+                                    (0.5, tx.NON_COLOR, None), (1.8, tx.SRGB, None)):
+            self.assertEqual(tx.drawn_gamma(dataclasses.replace(img, gamma=gamma, colorspace=space)), drawn,
+                             (gamma, space))
 
     def test_shown_values_agree_with_v_ray(self):
         # V-Ray 5.2 internal values with the gamma off (on: the same), shown as srgb_to_linear in Blender: what
