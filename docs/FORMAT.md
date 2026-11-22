@@ -1588,7 +1588,7 @@ Not shown by any fixture yet, so not stated above:
 - Parameter blocks seen only elsewhere (`pblock.py` relies on them):
   - entries in `0x000E` instead of `0x100E`, same layout, in corpus scene A (saved as 3ds Max 2012); scenes A and
     B walk without an issue: 726 and 560 materials and maps, 33,543 and 41,274 stored parameters;
-  - not known: the first `u32` of `0x0009`, the fourth `u32` of an entry, the third `u16` of a `0x0013` record,
+  - not known: the fourth `u32` of an entry, the third `u16` of a `0x0013` record,
     `0x0005` and `0x0004` of the old ParamBlock, and the value layout of the types no file has shown (matrix3,
     and the others the reader keeps as raw bytes).
 - Other root container ids: `0x2014` (the 2012 format, corpus scene A) occurs in the corpus, and the 64-bit
