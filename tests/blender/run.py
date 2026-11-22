@@ -131,6 +131,7 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1; kept literal: tes
     "arc_pie_reverse": ["UVMap"],  # every Extrude with Generate Mapping Coords; the two plain arcs are curves
     "box_poly_standard": ["UVMap"],
     "corona_layered": ["UVMap"],
+    "corona_classes": ["UVMap"],
     "corona_mix_blends": ["UVMap"],
     "corona_mix_ops": ["UVMap"],
     "corona_more": ["UVMap"],
