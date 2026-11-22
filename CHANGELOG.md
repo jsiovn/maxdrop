@@ -20,7 +20,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   full) or a reflection map no longer brightens toward the silhouette: the whole Fresnel curve is scaled by it, as
   V-Ray does, through a Mix Shader over a copy of the Principled BSDF without reflection (a grey 128 sphere at IOR
   1.6 was about 50 % too bright near its rim in Cycles; it now matches V-Ray 5.2; the other renderers' materials
-  follow the same rule, not checked against them).
+  follow the same rule, not checked against them). Such a material shades two Principled BSDFs instead of one: a
+  scene of many may render somewhat slower (not measured).
 - Materials: the maps of a VRayFastSSS2, VRayCarPaintMtl and VRayCarPaintMtl2 take their slot's multiplier as their
   amount, as VRayMtl's do (a bump at 30 % no longer arrives at full strength), and a VRayFastSSS2's specular amount
   scales its specular.

@@ -100,8 +100,8 @@ watts at 683 lm/W: 4 pi I / 683 for a point or spot light of on-axis intensity I
   scales the IES file's candelas by power over its rated lumens: with the file found (read_params' ies_files, a
   convert.ies.Lookup) the lumens are power x the file's flux / its rated lumens (convert.ies; the power itself for
   rated lumens of -1), a file of more lamps rated above 0 lm an issue; a file not found or not read, the power, an
-  issue) -> SPOT of WEB_CONE, power lm / 683, its color or temperature, the IES file named in an issue; a power of 0 (dark
-  in V-Ray too) is 0 W, an issue. With its light shape used and overridden, the spot's radius is half the largest
+  issue) -> SPOT of WEB_CONE, power lm / 683, its color or temperature, the IES file named in an issue; a power of 0
+  (dark in V-Ray too) is 0 W, an issue. With its light shape used and overridden, the spot's radius is half the largest
   size the shape uses (IES_SHAPES: a sphere's diameter exactly, any other shape an issue); without the override
   V-Ray takes the file's shape, which is not read: radius 0.
 - Skylight: not built (the reason; its World is later work). environment_sky finds a VRaySky as the environment map
