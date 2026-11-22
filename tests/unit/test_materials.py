@@ -40,6 +40,7 @@ FLOORS = {"vray_lights": 0, "vray_dome": 0, "lights_standard": 0, "lights_photom
           "multi_uv": 120, "pblock_animated": 920, "primitives": 120, "saved_as_2017": 120,
           "saved_as_2018": 120, "saved_as_2019": 120, "shapes": 120, "shapes_more": 120, "stack_basic": 120,
           "stack_convert": 120, "stack_shell": 120, "stack_wsm": 120, "standard_physical": 290, "standard_shaders": 1600,
+          "standard_maps": 1900,
           "texmap_rules": 1570, "texmap_wrappers": 1690, "units_cm": 120, "units_in": 120, "units_mm": 120, "uvwmap": 120,
           "uvwmap_oblique": 120, "uvwmap_pole": 120, "vray_basic": 190, "vray_maps": 630, "vray_more": 2500,
           "vray_texmaps": 2900, "vray_wrappers": 2000}
@@ -59,6 +60,7 @@ pblock = importlib.import_module(_PKG + ".reader.pblock")
 materials = importlib.import_module(_PKG + ".reader.materials")
 owner_slots = importlib.import_module(_PKG + ".reader.owner_slots")
 STANDARD_SHADER_SLOT = 2  # a Standard material's reference to its shader
+TEXMAPS = (0x1200, 0)  # a Standard material's Texmaps object
 BLINN_LAYOUT = {classids.PHONG_SHADER, classids.BLINN_SHADER, classids.METAL_SHADER}  # map channels as created
 ChunkError = chunks.ChunkError
 
@@ -139,13 +141,26 @@ class Parity:
         else:  # file names are asset ids in the file (resolved by a later reader); nodes, bitmaps: oracle null
             self.skipped += 1
 
+    def texmaps_amounts(self, owner):
+        """{slot: amount} a Standard material's Texmaps object (class (0x1200, 0)) keeps in its chunks 0x5100 +
+        slot."""
+        for target in self.scene.refs(owner).values():
+            entry = self.scene.entry(target)
+            if entry is not None and tuple(entry.class_id) == TEXMAPS:
+                holder = self.scene.chunk(target)
+                holder = holder.first(0x0003) or holder
+                return {c.id - 0x5100: c.unpack("<f")[0] for c in holder.children if 0x5100 <= c.id < 0x5200}
+        return {}
+
     def stale(self, owner, oracle_block):
         """skip(pid, k, ours): whether a value of this block is one the file keeps stale while 3ds Max computes its
-        own (standard_shaders):
-        - a Standard material whose shader is not Blinn, Phong or Metal, block 3 mapAmounts at a slot without a
-          map: the file keeps the amounts of the material as created (Blinn's map channels, bump 0.3 at slot 8),
-          3ds Max answers those of its shader's channels (Anisotropic: 0.3 at slot 11). Every amount without a
-          map is skipped (only those two slots differ): none is used.
+        own (standard_shaders, standard_maps):
+        - a Standard material whose shader is not Blinn, Phong or Metal, block 3 mapAmounts: the file keeps the
+          amounts of the material as created (Blinn's map channels, bump 0.3 at slot 8) where they were not set
+          after the shader switch, 3ds Max answers those of its shader's channels (Anisotropic: 0.3 at slot 11).
+          Every amount without a map is skipped (none is used); one with a map that differs only where its
+          Texmaps object holds 3ds Max's value (chunk 0x5100 + slot, 1.0 when absent; standard_maps
+          FixtureMapsUnsetAmounts).
         - a Physical Material's mapM0 ... mapM20 (block 0, 250-270): saved empty, 3ds Max answers the map of
           parameter id - 150 (mapM1 = base_color_map)."""
         entry = self.scene.entry(owner)
@@ -156,7 +171,9 @@ class Parity:
             slot = self.scene.refs(owner).get(STANDARD_SHADER_SLOT)
             shader = self.scene.entry(slot) if slot is not None else None
             if shader is not None and shader.class_id not in BLINN_LAYOUT:
-                return lambda pid, k, ours: pid == 2 and params[1][k] is None
+                kept = self.texmaps_amounts(owner)
+                return lambda pid, k, ours: pid == 2 and (params[1][k] is None or (
+                    abs(ours - params[2][k]) > TOLERANCE and abs(kept.get(k, 1.0) - params[2][k]) <= TOLERANCE))
         if entry.class_id == classids.PHYSICAL_MTL and oracle_block["block_id"] == 0:
             return lambda pid, k, ours: (250 <= pid <= 270 and isinstance(ours, pblock.Reference)
                                          and ours.index is None and params.get(pid) is not None

@@ -64,6 +64,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   tangents (Bezier handles, step keys, tension, continuity, bias and ease), instead of a straight line and a line in
   the report. A Linear Rotation turning more than half a revolution between two keys turns the long way round, as in
   3ds Max. A key with a free handle, and a few rarer cases, still interpolate linearly with a line in the report.
+- Materials: a Standard material with the Anisotropic, Multi-Layer, Oren-Nayar-Blinn, Translucent or Strauss shader
+  takes each map from its shader's own map slot, instead of Blinn's: a Strauss glossiness map no longer arrives as
+  the diffuse map, an Anisotropic self-illumination map as the bump. A Strauss metalness map drives the metallic.
 
 ## [1.0.1] - 2026-11-22
 

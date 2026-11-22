@@ -49,8 +49,9 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   metalness and no specular level: specular 1, the IOR's own Fresnel); base = diffuse; roughness = 1 - glossiness;
   specular = specular level times the mean of the linear specular color; alpha = opacity; self-illumination: its
   color at strength 1, or the diffuse at the amount; two-sided flag; map slots with their amounts where switched
-  on (a glossiness map inverted; the specular level map drives the specular, else the specular color map); a map
-  in the reflection slot makes the specular at least that slot's amount (the map is an environment: not used).
+  on, at the shader's own map channels (STD_SLOTS; Strauss: its metalness map drives the metallic) (a glossiness
+  map inverted; the specular level map drives the specular, else the specular color map); a map in the reflection
+  slot makes the specular at least that slot's amount (the map is an environment: not used).
 - Physical Material: base = base color times base weight; roughness (1 - it with roughness_inv); metalness;
   specular = reflectivity times the mean of the linear reflection color; transparency is the transmission and
   mixes the transparency color into the base, as for VRayMtl; IOR, thin-walled; emission color at emission
@@ -108,8 +109,8 @@ in meters: VRayFastSSS2's scatter_radius is in centimeters whatever the system u
 documentation says both). VRayCarPaintMtl's coat_strength is, in V-Ray's documentation, the strength of the coat
 reflections seen from the front; that Fresnel gives the other angles is this rule's reading.
 Parameter ids: docs/FORMAT.md for the classes of the fixtures (the Corona ones: Corona 12; the V-Ray ones: V-Ray 5.2);
-standard_shaders sets every shader's ids and the Physical Material's maps. The Standard map slots (STD_*) are Blinn's
-map channels, not yet the other shaders' (maxdrop-em3.104).
+standard_shaders sets every shader's ids and the Physical Material's maps; standard_maps a map in every Standard map
+slot each shader reads.
 No bpy, no mathutils.
 """
 import collections
@@ -193,11 +194,23 @@ PHYSICAL = {
 }
 PHYSICAL_SWITCH = 50
 
-# Standard map slots: index into block 3's tables (mapEnables 0, maps 1, mapAmounts 2). The tables follow the
-# shader's map channels: these are Blinn's, Phong's and Metal's; the other shaders order them otherwise
-# (docs/FORMAT.md) and are read with these all the same: maxdrop-em3.104.
-STD_DIFFUSE, STD_SPECULAR, STD_LEVEL, STD_GLOSSINESS, STD_SELF_ILLUM, STD_OPACITY, STD_BUMP, STD_REFLECTION = (
-    1, 2, 3, 4, 5, 6, 8, 9)
+# Standard map slots: index into block 3's tables (mapEnables 0, maps 1, mapAmounts 2), which follow the shader's
+# own map channels (docs/FORMAT.md; fixture standard_maps); None: the shader has no such channel. A shader without a
+# rule is read with Blinn's.
+StdSlots = collections.namedtuple(
+    "StdSlots", "diffuse specular level glossiness self_illum opacity bump reflection metalness")
+_BLINN_SLOTS = StdSlots(1, 2, 3, 4, 5, 6, 8, 9, None)
+_ONB_SLOTS = StdSlots(1, 2, 4, 3, 5, 6, 10, 11, None)  # Oren-Nayar-Blinn, Translucent Shader
+STD_SLOTS = {
+    classids.PHONG_SHADER: _BLINN_SLOTS,
+    classids.BLINN_SHADER: _BLINN_SLOTS,
+    classids.METAL_SHADER: _BLINN_SLOTS,
+    classids.ANISOTROPIC_SHADER: StdSlots(1, 2, 4, 5, 8, 9, 11, 12, None),
+    classids.OREN_NAYAR_BLINN_SHADER: _ONB_SLOTS,
+    classids.MULTI_LAYER_SHADER: StdSlots(1, 4, 5, 6, 14, 15, 17, 18, None),  # the first specular layer
+    classids.TRANSLUCENT_SHADER: _ONB_SLOTS,
+    classids.STRAUSS_SHADER: StdSlots(0, None, None, 1, None, 3, 5, 6, 2),
+}
 STD_DIFFUSE_DEFAULT = (150 / 255,) * 3
 STD_SPECULAR_DEFAULT = (0.9, 0.9, 0.9)
 
@@ -767,7 +780,9 @@ class _PartParams:
 
 def _std_map(conv, m, slot, ir, invert=False):
     """Standard's map slot (block 3: mapEnables 0, maps 1, mapAmounts 2, one table element per slot): None when
-    empty or switched off; its amount is a fraction."""
+    the shader has no such slot (None), empty or switched off; its amount is a fraction."""
+    if slot is None:
+        return None
     on = m.param(0, 3, tab=slot)
     if _finite(on) and not on:
         return None
@@ -781,17 +796,18 @@ def standard_mtl(conv, m, ir):
     shader part's block 0 (SHADERS; Strauss its own)."""
     ir.two_sided = _flag(m, 2, 0, False)
     ir.ior = _ior(_num(m, 6, 1, 1.5))
-    ir.alpha = Input(_clamp01(_num(m, 1, 1, 1.0)), _std_map(conv, m, STD_OPACITY, ir))
     shader = next((p for _slot, p in sorted(m.parts.items()) if p.superclass == classids.SC_SHADER), None)
     sid = ClassId(*shader.class_id) if shader is not None else None
     s = _PartParams(shader)
-    gloss_map = _std_map(conv, m, STD_GLOSSINESS, ir, invert=True)
-    level_map = _std_map(conv, m, STD_LEVEL, ir) or _std_map(conv, m, STD_SPECULAR, ir)
-    emit_map = _std_map(conv, m, STD_SELF_ILLUM, ir)
+    slots = STD_SLOTS.get(sid, _BLINN_SLOTS)
+    ir.alpha = Input(_clamp01(_num(m, 1, 1, 1.0)), _std_map(conv, m, slots.opacity, ir))
+    gloss_map = _std_map(conv, m, slots.glossiness, ir, invert=True)
+    level_map = _std_map(conv, m, slots.level, ir) or _std_map(conv, m, slots.specular, ir)
+    emit_map = _std_map(conv, m, slots.self_illum, ir)
     specular, amount, emit = 0.0, 0.0, None
     if sid == classids.STRAUSS_SHADER:
         diffuse, gloss = conv.rgb(s, 0, 0, STD_DIFFUSE_DEFAULT), _num(s, 1, 0, 0.1)
-        ir.metallic = Input(_clamp01(_num(s, 2, 0, 0.0)))
+        ir.metallic = Input(_clamp01(_num(s, 2, 0, 0.0)), _std_map(conv, m, slots.metalness, ir))
         specular = 1.0  # no specular level: the IOR's own Fresnel
     elif sid in SHADERS:
         ids = SHADERS[sid]
@@ -807,9 +823,9 @@ def standard_mtl(conv, m, ir):
         diffuse, gloss = conv.swatches.color(STD_DIFFUSE_DEFAULT), 0.1
         conv.issue(m.index, "Standard: shader %s has no rule: its defaults" % (
             "missing" if sid is None else "ClassID%s" % (sid,)), ir)
-    ir.base_color = Input(diffuse, _std_map(conv, m, STD_DIFFUSE, ir))
+    ir.base_color = Input(diffuse, _std_map(conv, m, slots.diffuse, ir))
     ir.roughness = Input(_roughness(gloss, False), gloss_map)
-    reflection = _std_map(conv, m, STD_REFLECTION, ir)
+    reflection = _std_map(conv, m, slots.reflection, ir)
     if reflection is not None:
         specular = max(specular, min(1.0, reflection.amount))
     ir.specular = Input(_clamp01(specular), level_map)
@@ -819,7 +835,7 @@ def standard_mtl(conv, m, ir):
     elif amount > 0 or emit_map is not None:  # the diffuse lights itself by the amount; a map overrides it
         ir.emission_color = Input(diffuse, emit_map)
         ir.emission_strength = 1.0 if emit_map is not None else amount
-    conv.bump_slot(ir, _std_map(conv, m, STD_BUMP, ir))
+    conv.bump_slot(ir, _std_map(conv, m, slots.bump, ir))
 
 
 def physical_mtl(conv, m, ir):

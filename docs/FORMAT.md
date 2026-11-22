@@ -1410,9 +1410,9 @@ values by the fixture scripts or read by the tests):
 | Bitmap `(0x240, 0)` | 0 | 0-3 clip u, v, w, h, 7 cropPlace, 8 filtering, 12 preMultAlpha, 13 bitmap (asset), 14 coords, 15 output |
 | VRayNormalMap `(0x71FA6E51, 0x72057C2F)` | 0 | 0 normal_map, 2 normal_map_on, 3 normal_map_multiplier, 4 bump_map, 5 bump_map_on, 6 bump_map_multiplier, 1 map_channel, 7 flip_red, 8 flip_green, 9 swap_red_and_green |
 
-A Standard material's map tables follow its shader's map channels (3ds Max 2020, zero-based; measured on a probe
-scene with a map in each slot, where `getSubTexmapSlotName` and the saved table agree; standard_shaders, without
-Standard maps, shows only where each shader's bump amount sits). Blinn, Phong, Metal: 0 ambient, 1 diffuse, 2 specular color, 3 specular level, 4
+A Standard material's map tables follow its shader's map channels (3ds Max 2020, zero-based; `getSubTexmapSlotName`
+and the saved table agree: standard_maps puts a named map into every channel MaxDrop reads by the name 3ds Max gives
+it, on Blinn, Anisotropic, Multi-Layer, Oren-Nayar-Blinn, Translucent and Strauss). Blinn, Phong, Metal: 0 ambient, 1 diffuse, 2 specular color, 3 specular level, 4
 glossiness, 5 self-illumination, 6 opacity, 7 filter color, 8 bump, 9 reflection, 10 refraction, 11 displacement.
 Anisotropic: 0 ambient, 1 diffuse, 2 specular color, 3 diffuse level, 4 specular level, 5 glossiness, 6 anisotropy,
 7 orientation, 8 self-illumination, 9 opacity, 10 filter color, 11 bump, 12 reflection, 13 refraction, 14
@@ -1422,9 +1422,18 @@ translucent color), 10 bump, 11 reflection, 12 refraction, 13 displacement. Mult
 diffuse level, 3 diffuse roughness, 4-8 specular color, level, glossiness, anisotropy, orientation of the first
 layer, 9-13 of the second, 14 self-illumination, 15 opacity, 16 filter color, 17 bump, 18 reflection, 19 refraction,
 20 displacement. Strauss: 0 color, 1 glossiness, 2 metalness, 3 opacity, 4 refraction filter, 5 bump, 6 reflection,
-7 refraction, 8 displacement. The amounts of channels without a map keep the layout the material was created with
-(Blinn's: bump 0.3 at 8) in the file, while 3ds Max answers its shader's. MaxDrop reads Blinn's channels for every
-shader so far (maxdrop-em3.104).
+7 refraction, 8 displacement. MaxDrop reads each shader's own channels (`STD_SLOTS` in `convert/materials.py`; a
+shader without a rule with Blinn's); on Strauss the metalness map drives the metallic input.
+
+The amounts in the table keep the layout the material was created with (Blinn's: bump 0.3 at 8) at every channel
+whose amount was not set after the shader switch, with or without a map, while 3ds Max answers its shader's
+(standard_maps FixtureMapsUnsetAmounts, Anisotropic created as Blinn, maps set without touching their amounts:
+self-illumination at 8 stored 0.3, bump at 11 stored 1.0; 3ds Max answers 1.0 and 0.3). 3ds Max takes them from the
+material's Texmaps object (class `(0x1200, 0)`, the Standard material's reference 1): inside its `0x0003`
+container, chunk `0x5100 + channel` holds a channel's amount (`f32`) where it is not 1.0 (absent: 1.0), and `0x5003`
+a `u32` bit mask over the channels (bit k = channel k; set exactly at the channels holding a map in every fixture so
+far: whether it is the on switch or the occupancy is not measured). MaxDrop still reads the table's amounts
+(maxdrop-em3.148).
 
 The maps of texmap_rules (block 0 each; `convert/texmaps.py`):
 

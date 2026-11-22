@@ -155,6 +155,7 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1; kept literal: tes
     "stack_wsm": ["UVMap"],  # FixtureWSM's UVW Map writes channel 1; the Map Scaler bindings are not applied
     "standard_physical": ["UVMap"],
     "standard_shaders": ["UVMap"],
+    "standard_maps": ["UVMap"],
     "saved_as_2017": ["UVMap"],
     "saved_as_2018": ["UVMap"],
     "saved_as_2019": ["UVMap"],

@@ -7,7 +7,8 @@ hand from its authoring script (tools/fixtures/vray_basic.ms), vray_maps' map sl
 VRayLightMtl, VRayFastSSS2, car paints and other wrappers, and each rule on synthetic parameters. standard_physical's
 Standard and Physical Material, box_poly_standard's Standard, standard_shaders' Standard shaders and Physical map slots
 against values computed by hand from their scripts (and the ids by the names the oracle gives them); vray_wrappers'
-Multi/Sub-Object by material ID and the slot plan of its box.
+Multi/Sub-Object by material ID and the slot plan of its box. standard_maps' Standard map slots per shader by the
+names of the maps its script puts in each channel.
 
     python -I -m unittest discover tests
 """
@@ -798,27 +799,57 @@ class Standard(unittest.TestCase, Close):
                 self.assertFalse(ir.unknown)
                 self.assertIn("Standard: shader", ir.issues[0])
 
+    # Each shader's map channels (zero-based, measured in 3ds Max 2020, docs/FORMAT.md): diffuse, specular color,
+    # specular level, glossiness, self-illumination, opacity, bump, reflection, metalness; None: no such channel.
+    CHANNELS = {
+        classids.BLINN_SHADER: (1, 2, 3, 4, 5, 6, 8, 9, None),
+        classids.PHONG_SHADER: (1, 2, 3, 4, 5, 6, 8, 9, None),
+        classids.METAL_SHADER: (1, 2, 3, 4, 5, 6, 8, 9, None),
+        classids.ANISOTROPIC_SHADER: (1, 2, 4, 5, 8, 9, 11, 12, None),
+        classids.MULTI_LAYER_SHADER: (1, 4, 5, 6, 14, 15, 17, 18, None),  # the first specular layer
+        classids.OREN_NAYAR_BLINN_SHADER: (1, 2, 4, 3, 5, 6, 10, 11, None),
+        classids.TRANSLUCENT_SHADER: (1, 2, 4, 3, 5, 6, 10, 11, None),
+        classids.STRAUSS_SHADER: (0, None, None, 1, None, 3, 5, 6, 2),
+    }
+
     def test_map_slots(self):
-        maps = {
-            mat.STD_DIFFUSE: (Ref(1), 1, 0.5), mat.STD_GLOSSINESS: (Ref(2), 1, 0.8), mat.STD_LEVEL: (Ref(3), 1, 1.0),
-            mat.STD_OPACITY: (Ref(4), 1, 0.9), mat.STD_SELF_ILLUM: (Ref(5), 1, 1.0), mat.STD_BUMP: (Ref(6), 1, 0.3),
-            mat.STD_REFLECTION: (Ref(7), 1, 0.6),
-        }
-        objs = [_map(i) for i in range(1, 8)]
-        conv, ir = _convert(_standard(0, classids.BLINN_SHADER, {1: (1.0, 1.0, 1.0), 9: 0.1}, maps=maps), *objs)
-        self.assertEqual(ir.base_color.map, mat.MapRef(1, 0.5, False))
-        self.assertEqual(ir.roughness.map, mat.MapRef(2, 0.8, True))  # a glossiness map: inverted
-        self.assertEqual(ir.specular.map, mat.MapRef(3, 1.0, False))
-        self.close(ir.specular.value, 0.6, "reflection amount 0.6 over level 0.1")
-        self.assertEqual(ir.alpha.map, mat.MapRef(4, 0.9, False))
-        self.assertEqual(ir.emission_color.map, mat.MapRef(5, 1.0, False))
-        self.close(ir.emission_strength, 1.0, "a self-illumination map drives the emission")
-        self.assertEqual(ir.bump, mat.MapRef(6, 0.3, False))
-        self.assertEqual(conv.stats.issues, [])
+        """Every shader reads its own channels: a map in each read channel (object = its field's number + 1, at
+        an amount of its own), every other channel holds a map no input may take (object 50 + the channel)."""
+        for sid, channels in self.CHANNELS.items():
+            with self.subTest(sid):
+                maps = {k: (Ref(50 + k), 1, 0.25) for k in range(21)}
+                for field, k in enumerate(channels):
+                    if k is not None:
+                        maps[k] = (Ref(field + 1), 1, 0.5 + field / 100.0)
+                objs = [_map(i) for i in range(1, 10)] + [_map(50 + k) for k in range(21)]
+                conv, ir = _convert(_standard(0, sid, {}, maps=maps), *objs)
+                diffuse, spec, level, gloss, emit, opacity, bump, refl, metal = channels
+                self.assertEqual(ir.base_color.map, mat.MapRef(1, 0.50, False))
+                self.assertEqual(ir.roughness.map, mat.MapRef(4, 0.53, True))  # a glossiness map: inverted
+                self.assertEqual(ir.specular.map, None if level is None else mat.MapRef(3, 0.52, False))
+                self.close(ir.specular.value, 1.0 if sid == classids.STRAUSS_SHADER else 0.57,
+                           "the reflection amount over level 0")
+                self.assertEqual(ir.alpha.map, mat.MapRef(6, 0.55, False))
+                if emit is None:
+                    self.assertIsNone(ir.emission_color.map)
+                    self.close(ir.emission_strength, 0.0)
+                else:
+                    self.assertEqual(ir.emission_color.map, mat.MapRef(5, 0.54, False))
+                    self.close(ir.emission_strength, 1.0, "a self-illumination map drives the emission")
+                self.assertEqual(ir.bump, mat.MapRef(7, 0.56, False))
+                self.assertEqual(ir.metallic.map, None if metal is None else mat.MapRef(9, 0.58, False))
+                self.assertEqual(conv.stats.issues, [])
+
+    def test_specular_color_map_without_a_level_map(self):
+        for sid, channels in self.CHANNELS.items():
+            if channels[1] is None:
+                continue
+            with self.subTest(sid):
+                conv, ir = _convert(_standard(0, sid, {}, maps={channels[1]: (Ref(1), 1, 0.4)}), _map(1))
+                self.assertEqual(ir.specular.map, mat.MapRef(1, 0.4, False))
 
     def test_switched_off_slots_and_the_specular_color_map(self):
-        maps = {mat.STD_DIFFUSE: (Ref(1), 0, 1.0), mat.STD_SPECULAR: (Ref(2), 1, 0.4),
-                mat.STD_REFLECTION: (Ref(3), 0, 1.0), mat.STD_BUMP: (Ref(9), 1, 1.0)}
+        maps = {1: (Ref(1), 0, 1.0), 2: (Ref(2), 1, 0.4), 9: (Ref(3), 0, 1.0), 8: (Ref(9), 1, 1.0)}
         conv, ir = _convert(_standard(0, classids.BLINN_SHADER, {9: 0.2, 2: (1.0, 1.0, 1.0)}, maps=maps),
                             _map(1), _map(2), _map(3), _vray(9))
         self.assertIsNone(ir.base_color.map)
@@ -826,6 +857,87 @@ class Standard(unittest.TestCase, Close):
         self.close(ir.specular.value, 0.2, "reflection slot off")
         self.assertIsNone(ir.bump)
         self.assertIn("map slot 8: object 9 is not a map", ir.issues[0])
+
+
+class StandardMaps(unittest.TestCase, Close):
+    """tools/fixtures/standard_maps.ms: a Standard material per shader with a Checker in every channel the rule
+    reads, named after the input it drives ("FixtureMap" + shader + field) and put into the channel 3ds Max names
+    that way on that shader; amounts 0.51 (diffuse) to 0.59 (metalness)."""
+
+    LABELS = {"Blinn": "BLINN_SHADER", "Anisotropic": "ANISOTROPIC_SHADER", "MultiLayer": "MULTI_LAYER_SHADER",
+              "OrenNayarBlinn": "OREN_NAYAR_BLINN_SHADER", "Translucent": "TRANSLUCENT_SHADER",
+              "Strauss": "STRAUSS_SHADER"}
+    FIELDS = {"diffuse": "Diffuse", "specular": "Specular", "level": "Level", "glossiness": "Glossiness",
+              "self_illum": "SelfIllum", "opacity": "Opacity", "bump": "Bump", "reflection": "Reflection",
+              "metalness": "Metalness"}
+
+    @classmethod
+    def setUpClass(cls):
+        cf, cls.graph, cls.by_name = _fixture("standard_maps")
+        with cf:
+            cls.conv = mat.MaterialConverter(cls.graph)
+            cls.irs = {n: cls.conv.convert(cls.by_name["FixtureMaps" + n])
+                       for n in list(cls.LABELS) + ["UnsetAmounts"]}
+
+    def map(self, label, field, amount, invert=False):
+        return mat.MapRef(self.by_name["FixtureMap" + label + field], amount, invert)
+
+    def same_map(self, got, want, what):
+        """The same map and invert; the amount within float precision (stored as a 32-bit float)."""
+        self.assertIsNotNone(got, what)
+        self.assertEqual((got.index, got.invert), (want.index, want.invert), what)
+        self.close(got.amount, want.amount, what + " amount")
+
+    def test_each_shader_reads_its_maps(self):
+        for label in self.LABELS:
+            with self.subTest(label):
+                ir, strauss = self.irs[label], label == "Strauss"
+                self.same_map(ir.base_color.map, self.map(label, "Diffuse", 0.51), "diffuse")
+                self.same_map(ir.roughness.map, self.map(label, "Glossiness", 0.54, invert=True), "glossiness")
+                if strauss:
+                    self.assertIsNone(ir.specular.map)
+                else:
+                    self.same_map(ir.specular.map, self.map(label, "Level", 0.53), "specular level")
+                self.close(ir.specular.value, 1.0 if strauss else 0.58, "the reflection slot's amount")
+                self.same_map(ir.alpha.map, self.map(label, "Opacity", 0.56), "opacity")
+                self.same_map(ir.bump, self.map(label, "Bump", 0.57), "bump")
+                if strauss:
+                    self.assertIsNone(ir.emission_color.map)
+                    self.close(ir.emission_strength, 0.0)
+                    self.same_map(ir.metallic.map, self.map(label, "Metalness", 0.59), "metalness")
+                    self.close(ir.metallic.value, 0.40)
+                else:
+                    self.same_map(ir.emission_color.map, self.map(label, "SelfIllum", 0.55), "self-illumination")
+                    self.close(ir.emission_strength, 1.0)
+                    self.assertIsNone(ir.metallic.map)
+
+    def test_the_slot_table_names_the_maps(self):
+        """mat.STD_SLOTS against the channel 3ds Max put each named map into (the specular color map, which
+        the level map hides, included)."""
+        for label, shader in self.LABELS.items():
+            m = self.graph.get(self.by_name["FixtureMaps" + label])
+            sid = getattr(classids, shader)
+            slots = mat.STD_SLOTS[sid]
+            with self.subTest(label):
+                for field, suffix in self.FIELDS.items():
+                    want = self.by_name.get("FixtureMap" + label + suffix)
+                    k = getattr(slots, field)
+                    self.assertEqual(want is None, k is None, field)
+                    if k is not None:
+                        self.assertEqual(m.param(1, 3, tab=k).index, want, field)
+        self.assertEqual(set(mat.STD_SLOTS), set(mat.SHADERS) | {classids.STRAUSS_SHADER})
+
+    def test_amounts_never_set_after_the_shader_switch(self):
+        """FixtureMapsUnsetAmounts (Anisotropic, created as Blinn): the maps land in their inputs. Their amounts
+        are not checked: the map table keeps those of the material as created (self-illumination 0.3, bump 1.0;
+        3ds Max answers 1.0 and 0.3), docs/FORMAT.md."""
+        ir = self.irs["UnsetAmounts"]
+        self.assertEqual(ir.emission_color.map.index, self.by_name["FixtureMapUnsetAmountsSelfIllum"])
+        self.assertEqual(ir.bump.index, self.by_name["FixtureMapUnsetAmountsBump"])
+        self.assertIsNone(ir.base_color.map)
+
+    def test_no_issues(self):
+        self.assertEqual((self.conv.stats.issues, dict(self.conv.stats.unknown)), ([], {}))
 
 
 class Physical(unittest.TestCase, Close):
