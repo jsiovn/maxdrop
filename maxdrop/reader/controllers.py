@@ -23,7 +23,9 @@ with 0x2500, the interval that value holds for (forever without keys), and its k
 (_KEYFRAMED: i32 time, u32 flags, the value at byte 8, then tangents or TCB parameters). The saved value is used
 when its interval holds time 0; otherwise the keys are evaluated at time 0: the first key's value at or before it,
 the last key's after it (out-of-range types are not read), between two keys linear for a Linear controller
-(rotation by slerp), linear with an issue for the others (Max follows their tangents). A saved value without an
+(rotation by slerp the way the stored signs give), along the stored tangents for Bezier (the cubic of the handles,
+its time curve solved; a step key held) and TCB (Hermite at the eased fraction; rotations by squad), and linear with
+an issue where 3ds Max's curve is not known (_between). A saved value without an
 interval is used as it is, with an issue when several keys animate it (it may be another frame's). Euler angles
 are radians, the axis order (0x1003) 0 for XYZ and 100 + order for the others; a Max quaternion (x, y, z, w) as
 stored is the conjugate of the usual one, so the standard column-vector formula applied to it gives the row-vector
@@ -128,6 +130,14 @@ _KEYFRAMED = {
 }
 _LINEAR = frozenset((classids.LINEAR_FLOAT, classids.LINEAR_POSITION, classids.LINEAR_ROTATION,
                      classids.LINEAR_SCALE))
+_BEZIER = frozenset((classids.BEZIER_FLOAT, classids.BEZIER_POSITION, classids.BEZIER_SCALE))
+_TCB = frozenset((classids.TCB_FLOAT, classids.TCB_POSITION, classids.TCB_SCALE))
+# a Bezier key's flags: the in tangent's type in bits 7-9, the out tangent's in bits 10-12 (1 linear, 2 step, 5 custom
+# or auto, 0 smooth, 3 fast, 4 slow); constant velocity; a free handle, whose length is not a fraction of the segment
+_IN_TYPE, _OUT_TYPE, _STEP = 7, 10, 2
+_CONSTANT_VELOCITY, _FREE_HANDLE = 0x8000, 0x100000
+_DEFAULT_LENGTH = 1.0 / 3.0  # a handle length stored as -1
+_SOLVE_STEPS = 60  # bisections of a Bezier segment's time curve: well below a tick
 _LOOK_AXIS, _LOOK_FLIP, _LOOK_TARGET_UP = 0x0100, 0x0110, 0x0201
 # the LookAt Constraint's ParamBlock2 (3 viewline length, 12 viewline length absolute: display only)
 (_LC_WEIGHTS, _LC_TARGETS, _LC_RELATIVE, _LC_SET_ORIENTATION, _LC_AXIS, _LC_AXIS_FLIP, _LC_UP_AXIS, _LC_UP_WORLD,
@@ -277,11 +287,122 @@ def slerp(a, b, f):
     return tuple(wa * x + wb * y for x, y in zip(a, b))
 
 
+def _slerp_long(a, b, f):
+    """slerp from quaternion a to b without turning b to a's side: the arc the stored signs give (a TCB or Smooth
+    Rotation key past half a turn keeps the sign of the long way); NaN when either is not finite."""
+    a, b = _unit_quat(a), _unit_quat(b)
+    if a is None or b is None or not math.isfinite(f):
+        return (math.nan,) * 4
+    d = sum(x * y for x, y in zip(a, b))
+    if abs(d) > 0.9999995:  # the same or the opposite quaternion: no arc to divide by
+        return tuple(x + (y - x) * f for x, y in zip(a, b))
+    theta = math.acos(d)
+    s = math.sin(theta)
+    ta, tb = (1.0 - f) * theta, f * theta
+    if not (math.isfinite(ta) and math.isfinite(tb)):  # a fraction from a damaged ease, where math.sin raises
+        return (math.nan,) * 4
+    wa, wb = math.sin(ta) / s, math.sin(tb) / s
+    return tuple(wa * x + wb * y for x, y in zip(a, b))
+
+
+def squad(q0, a, b, q1, f):
+    """The spherical quadrangle from q0 to q1 a fraction f of the way, a the out control of q0 and b the in control of
+    q1 (stored with each key): how 3ds Max 2020 turns between TCB and Smooth Rotation keys."""
+    return _slerp_long(_slerp_long(q0, q1, f), _slerp_long(a, b, f), 2.0 * f * (1.0 - f))
+
+
+def ease(u, ease_from, ease_to):
+    """The fraction u of a TCB segment after its ease: ease_from of the earlier key, ease_to of the later, fractions
+    (MAXScript's percentages / 50). Accelerates over ease_from, decelerates over ease_to, both scaled down when they
+    add up past 1."""
+    s = ease_from + ease_to
+    if s == 0.0:
+        return u
+    if s > 1.0:
+        ease_from, ease_to = ease_from / s, ease_to / s
+    k = 1.0 / (2.0 - ease_from - ease_to)
+    if u < ease_from:
+        return k / ease_from * u * u
+    if u < 1.0 - ease_to:
+        return k * (2.0 * u - ease_from)
+    u = 1.0 - u
+    return 1.0 - k / ease_to * u * u
+
+
+def hermite(p0, p1, out_tangent, in_tangent, u):
+    """The cubic from p0 to p1 with the stored TCB tangents (value per segment) at fraction u."""
+    u2 = u * u
+    u3 = u2 * u
+    return (p0 * (2.0 * u3 - 3.0 * u2 + 1.0) + p1 * (3.0 * u2 - 2.0 * u3) + out_tangent * (u3 - 2.0 * u2 + u) +
+            in_tangent * (u3 - u2))
+
+
+def bezier(t0, v0, out_tangent, out_length, t1, v1, in_tangent, in_length, t):
+    """A Bezier segment's value at time t (ticks): the cubic through (t0, v0), its out handle (t0 + l dt, v0 +
+    tangent l dt), the in handle (t1 - l dt, v1 + tangent l dt) and (t1, v1), the tangents in value per tick (the in
+    tangent points back), the lengths fractions of the segment (-1: a third). The time curve is solved for t by
+    bisection; NaN for values that are not finite."""
+    if not all(math.isfinite(v) for v in (v0, out_tangent, out_length, v1, in_tangent, in_length)):
+        return math.nan
+    dt = t1 - t0
+    out_length = _DEFAULT_LENGTH if out_length < 0.0 else out_length
+    in_length = _DEFAULT_LENGTH if in_length < 0.0 else in_length
+    x1, x2 = t0 + out_length * dt, t1 - in_length * dt
+    y1, y2 = v0 + out_tangent * out_length * dt, v1 + in_tangent * in_length * dt
+
+    def cubic(p0, p1, p2, p3, u):
+        w = 1.0 - u
+        return w * w * w * p0 + 3.0 * w * w * u * p1 + 3.0 * w * u * u * p2 + u * u * u * p3
+
+    lo, hi = 0.0, 1.0
+    for _ in range(_SOLVE_STEPS):
+        mid = (lo + hi) / 2.0
+        if cubic(t0, x1, x2, t1, mid) < t:
+            lo = mid
+        else:
+            hi = mid
+    return cubic(v0, y1, y2, v1, (lo + hi) / 2.0)
+
+
+def _between(cid, n, t0, a, flags_a, t1, b, flags_b, t=0):
+    """The value at time t between the Bezier, TCB or Smooth Rotation keys a (at t0) and b (at t1), each the floats
+    of its record after the flags, n of them the value; None where 3ds Max's curve is not known (a free handle,
+    constant velocity on a Position or Scale, scale axes that differ, a TCB turn of a full revolution or more)."""
+    f = (t - t0) / (t1 - t0)
+    if cid in _BEZIER or cid in _TCB:
+        if n == 7 and a[3:7] != b[3:7]:
+            return None
+        m = min(n, 3)
+        if cid in _BEZIER:
+            if (flags_a | flags_b) & _FREE_HANDLE or cid != classids.BEZIER_FLOAT and \
+                    (flags_a | flags_b) & _CONSTANT_VELOCITY:
+                return None
+            if (flags_a >> _OUT_TYPE) & 7 == _STEP or (flags_b >> _IN_TYPE) & 7 == _STEP:
+                return tuple(a[:n])
+            # value, in tangent, out tangent, in length, out length: n floats each
+            v = tuple(bezier(t0, a[c], a[2 * n + c], a[4 * n + c], t1, b[c], b[n + c], b[3 * n + c], t)
+                      for c in range(m))
+        else:
+            # value, tension, continuity, bias, ease to, ease from, in tangent, out tangent
+            u = ease(f, a[n + 4], b[n + 3])
+            v = tuple(hermite(a[c], b[c], a[2 * n + 5 + c], b[n + 5 + c], u) for c in range(m))
+        return v + tuple(a[3:7]) if n == 7 else v
+    if cid == classids.TCB_ROTATION:
+        # quaternion, tension, continuity, bias, ease to, ease from, axis and angle turned from the previous key,
+        # the in and the out control quaternion
+        if not abs(b[12]) < 2.0 * math.pi:
+            return None
+        return squad(a[:4], a[17:21], b[13:17], b[:4], ease(f, a[8], b[7]))
+    if cid == classids.BEZIER_ROTATION:
+        return squad(a[:4], a[8:12], b[4:8], b[:4], f)  # quaternion, the in and the out control quaternion
+    return None
+
+
 def _interpolate(a, b, f, value_id):
-    """The key value a fraction f of the way from a to b: components linearly, a quaternion (a rotation, a scale's
-    axis) by slerp."""
+    """The key value a fraction f of the way from a to b: components linearly, a rotation by slerp the way the stored
+    signs give (270 degrees between two Linear Rotation keys turn the long way round), a scale's axis by slerp."""
     if value_id == _QUAT_VALUE:
-        return slerp(a, b, f)
+        return _slerp_long(a, b, f)
     lerp = tuple(x + (y - x) * f for x, y in zip(a, b))
     if value_id == _SCALE_VALUE:
         return lerp[:3] + slerp(a[3:], b[3:], f)
@@ -492,6 +613,11 @@ class _Eval:
         if k == n or times[k - 1] == 0:
             return value_at(k - 1)
         if cid not in _LINEAR:
+            rest = "<I%df" % ((size - _KEY_VALUE) // 4)
+            a, b = (struct.unpack_from(rest, view, j * size + 4) for j in (k - 1, k))
+            value = _between(cid, count, times[k - 1], a[1:], a[0], times[k], b[1:], b[0])
+            if value is not None:
+                return value
             self.issue(i, KEYS_INTERPOLATED)
         return _interpolate(value_at(k - 1), value_at(k), -times[k - 1] / (times[k] - times[k - 1]), value_id)
 

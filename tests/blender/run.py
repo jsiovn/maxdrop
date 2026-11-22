@@ -166,6 +166,7 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1; kept literal: tes
     "lights_photometric": [],
     "cameras": [],  # its box, without Generate Mapping Coords
     "controllers": [],  # boxes without Generate Mapping Coords
+    "controllers_tangents": [],  # boxes without Generate Mapping Coords
     "vray_wrappers": ["UVMap"],
     "uvwmap": {"FixtureUVWGizmo": ["UVMap", "UVChannel_2"], "FixtureUVWTwo": ["UVMap", "UVChannel_3"]},  # else UVMap
     "uvwmap_oblique": ["UVMap"],
