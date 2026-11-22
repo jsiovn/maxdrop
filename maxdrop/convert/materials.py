@@ -64,8 +64,8 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   weight; coating; map slots where on.
 - CoronaPhysicalMtl: base = base color times base level; roughness, or 1 - it in glossiness mode (every roughness
   of the material, a map then inverted); metallic from the metalness mode; transmission = refraction amount, the base
-  mixed toward white (thin mode: the thin absorption color) by it; IOR, thin mode; alpha = the mean of the linear
-  opacity color times its level; emission color at its level; clearcoat amount, IOR, roughness and absorption color;
+  mixed toward white (thin mode: the thin absorption color) by it; IOR, thin mode; alpha = the mean of the stored
+  opacity color (mono_swatch) times its level; emission color at its level; clearcoat amount, IOR, roughness and absorption color;
   sheen amount, color and roughness; SSS amount, radius (world units, in meters) and scatter color (the per-channel
   radius); a metal with a complex IOR takes the F0 of its n and k as its base color; maps where on, their amounts
   fractions. Specular 1, the IOR's own Fresnel (the material has no reflection level). Translucency, volumetric
@@ -108,7 +108,9 @@ spline whose segments have other IDs too is drawn with its first segment's mater
 user (SceneDescription.issues) when a user gets another material for one of those IDs.
 
 Colors are 3ds Max swatches, clamped to 0..1 and made linear by the scene's swatch rule (convert/colors.py): the
-value itself when the scene was saved with the gamma on (or does not say), the sRGB curve when it was off.
+value itself when the scene was saved with the gamma on (or does not say), the sRGB curve when it was off. A color
+that stands for a number (the Corona opacity colors) is the mean of the swatch as stored, whatever the gamma, as V-Ray
+5.2 renders a swatch on a data input (maxdrop-em3.122; Corona assumed to follow it: no Corona render here).
 A missing, animated or non-finite parameter takes the class's default; an IOR is clamped to 1..100. The SSS radius is
 in meters: VRayFastSSS2's scatter_radius is in centimeters whatever the system unit, multiplied by its scale (V-Ray's
 documentation says both). VRayCarPaintMtl's coat_strength is, in V-Ray's documentation, the strength of the coat
@@ -292,7 +294,7 @@ class MaterialIR:
 @dataclasses.dataclass
 class Layer:
     """A material mixed over the ones below it (CoronaLayeredMtl): its MaterialIR, its amount, its mask (a MapRef
-    whose amount is the mask amount, or None) and the mask's TextureGraphIR (DATA) when a TexmapConverter made one.
+    whose amount is the mask amount, or None) and the mask's TextureGraphIR (MASK) when a TexmapConverter made one.
     Its weight is amount x the mask graph, the graph being lerp(1, mask, mask amount)."""
     ir: MaterialIR
     amount: float = 1.0
@@ -379,6 +381,14 @@ class MaterialConverter:
         if not (isinstance(v, tuple) and len(v) >= 3 and all(_finite(c) for c in v[:3])):
             v = default
         return self.swatches.color(tuple(c * scale for c in v[:3]) if scale != 1.0 else v)
+
+    def mono_swatch(self, m, pid, block, default):
+        """A swatch parameter that stands for a number (an opacity color): the mean of the swatch as stored, each
+        channel clamped to 0..1, with no swatch rule (see Colors above); default as rgb's."""
+        v = m.param(pid, block)
+        if not (isinstance(v, tuple) and len(v) >= 3 and all(_finite(c) for c in v[:3])):
+            v = default
+        return mean(tuple(min(1.0, max(0.0, c)) for c in v[:3]))
 
     def issue(self, index, reason, ir=None):
         self.stats.issues.append((index, reason))
@@ -961,7 +971,7 @@ def corona_physical_mtl(conv, m, ir):
     if m.param(461, 0) not in (None, 0):  # iorMode: only the default (baseIor is the IOR) has been measured
         conv.issue(m.index, "CoronaPhysicalMtl %r: IOR mode %r read as an IOR" % (m.name, m.param(461, 0)), ir)
     ir.thin_walled = thin
-    opacity = _clamp01(mean(conv.rgb(m, 121, 0, (1.0, 1.0, 1.0))) * max(0.0, _num(m, 122, 0, 1.0)))
+    opacity = _clamp01(conv.mono_swatch(m, 121, 0, (1.0, 1.0, 1.0)) * max(0.0, _num(m, 122, 0, 1.0)))
     ir.alpha = Input(opacity, _corona_amount_map(conv, m, 123, ir))
     ir.emission_color = Input(conv.rgb(m, 331, 0, (1.0, 1.0, 1.0)), _corona_amount_map(conv, m, 333, ir))
     ir.emission_strength = max(0.0, _num(m, 332, 0, 0.0))
@@ -1020,7 +1030,7 @@ def corona_legacy_mtl(conv, m, ir):
     ir.transmission = Input(t, slot(144, 164, 293))
     ir.ior = _ior(_num(m, 183, 0, 1.52) if t > 0 else fresnel_ior)
     ir.thin_walled = _flag(m, 210, 0, False)
-    opacity = _clamp01(mean(conv.rgb(m, 105, 0, (1.0, 1.0, 1.0))) * max(0.0, _num(m, 127, 0, 1.0)))
+    opacity = _clamp01(conv.mono_swatch(m, 105, 0, (1.0, 1.0, 1.0)) * max(0.0, _num(m, 127, 0, 1.0)))
     ir.alpha = Input(opacity, slot(146, 166, 295))
     ir.emission_color = Input(conv.rgb(m, 107, 0, (1.0, 1.0, 1.0)), slot(158, 178, 303))
     ir.emission_strength = max(0.0, _num(m, 128, 0, 0.0))
@@ -1080,7 +1090,7 @@ def corona_layered_mtl(conv, m, ir):
             mask = conv.to_map(m, m.param(CORONA_MASKS, 0, tab=k), "layer mask %d" % k, mask_amount, ir=out)
         graph = None
         if mask is not None and conv.texmaps is not None:
-            graph = conv.texmaps.convert(mask, _texmaps.DATA, 1.0)
+            graph = conv.texmaps.convert(mask, _texmaps.MASK, 1.0)  # it mixes two shaded colors
             if graph is not None:
                 out.issues.extend(r for r in graph.issues if r not in out.issues)
         out.layers.append(Layer(layer, amount, mask, graph))
@@ -1122,7 +1132,7 @@ def corona_skin_mtl(conv, m, ir):
     ir.specular = Input(_clamp01(max(0.0, _num(m, 115, 0, 1.0)) * reflection), slot(135))
     ir.roughness = Input(_roughness(_num(m, 116, 0, 0.5), False), slot(137, invert=True))
     ir.ior = _ior(_num(m, 117, 0, 1.4))
-    opacity = _clamp01(mean(conv.rgb(m, 122, 0, (1.0, 1.0, 1.0))) * max(0.0, _num(m, 123, 0, 1.0)))
+    opacity = _clamp01(conv.mono_swatch(m, 122, 0, (1.0, 1.0, 1.0)) * max(0.0, _num(m, 123, 0, 1.0)))
     ir.alpha = Input(opacity, slot(143))
     conv.bump_slot(ir, slot(144))
     if _num(m, 119, 0, 0.0) > 0:

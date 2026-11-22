@@ -81,6 +81,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   silhouette. It is drawn as a white metal mixed by the amount over the material without reflection (matches V-Ray
   5.2 in Cycles; EEVEE does not mirror neighbouring objects). A reflection bright enough for the metal rule is
   unchanged.
+- Materials: in a scene saved with the gamma on (3ds Max's default), an image map on a glossiness, roughness,
+  metallic or opacity input, or as a mask, is decoded by its gamma as 3ds Max and V-Ray read it, instead of taken as
+  stored: a 128 grey glossiness map with automatic gamma gives glossiness 0.22 as in V-Ray 5.2, not 0.50, and image
+  masks are no longer too bright. Normal and bump maps stay as stored. With the gamma off a mask image is decoded
+  like the colors it mixes (a mask between black and white now shows as in 3ds Max).
+- Materials: a color map's constant (VRayColor, CoronaColor, a Mix color) on a glossiness, roughness, metallic or
+  opacity input, and a Corona material's opacity color, are taken as stored in a scene saved with the gamma off, as
+  V-Ray 5.2 renders them (a grey 64 glossiness map is glossiness 0.25, not 0.05).
 
 ## [1.0.1] - 2026-11-22
 

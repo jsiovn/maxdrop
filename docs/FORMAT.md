@@ -1223,6 +1223,24 @@ picker and Material Editor switches off).
   whose chunk says `1` (and renders as gamma off there: 128, 128). MaxDrop reads the file's `1` as gamma on.
 - A Corona render does not run on this machine (`Corona license not found` under `3dsmaxbatch`): Corona's own
   swatches are not measured.
+- Data inputs and masks (maxdrop-em3.122), V-Ray 5.2 renders of the same 128 grey PNG and of swatches: VRayMtl
+  glossiness through the VRayMtlReflectGlossiness element, VRayMtl opacity as the render alpha, a Mix black -> white
+  mask on a VRayLightMtl (its internal value, `getPixels ... linear:true`):
+
+  | Map | on | off |
+  |---|---|---|
+  | glossiness or opacity: VRayColor grey 64 / red; Mix black -> white by VRayColor 64 | 0.251 / 0.333; 0.251 | the same |
+  | glossiness, opacity or mask: Bitmap automatic / 2.2 / 1.0 | 0.2195 / 0.2195 / 0.502 | 0.502 / 0.502 / 0.502 |
+  | glossiness or mask: CoronaBitmap automatic / 2.2 / 1.0 | 0.2195 / 0.2195 / 0.502 | the same |
+  | glossiness or mask: VRayBitmap sRGB / From 3ds Max / None | 0.2159 / 0.2195 / 0.502 | 0.2159 / 0.502 / 0.502 |
+  | opacity, emission: Mix grey 40 -> 220 by VRayColor 128 | 0.511 | 0.511 |
+  | emission: Mix grey 40 -> 220 by the Bitmap automatic | 0.312 | 0.511 |
+
+  A map's value does not depend on the slot it drives, and a data input uses it as it is: a swatch as stored in
+  both modes, an image decoded by its gamma with the gamma on. In a color graph with the gamma off the result is
+  display-referred (Blender needs `srgb_to_linear` of it): a mask between black and white is the decoded number,
+  a mask between two colors mixes display values (target 0.225 linear for the 0.511 above, a decoded mask gives
+  0.171). The rules are in `maxdrop/convert/texmaps.py` (MASK, colorspace, `_swatch`).
 
 ## Summary properties
 

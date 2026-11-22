@@ -3893,8 +3893,10 @@ def check_builder_wiring(ma, mb, builder, cm, tx, srgb, data, lost, gamma):
     b = _from(_principled(mc).inputs["Normal"])
     check("wiring: a negative bump amount inverts the Bump node", b.invert and b.inputs["Strength"].default_value == 0.5)
     mask = _meaned(_input(_from(_principled(mc).inputs["Base Color"]), "Factor_Float"))
-    check("wiring: a mask with a gamma override gets no Gamma node, only the mean",
-          getattr(mask, "bl_idname", None) == "ShaderNodeTexImage")
+    check("wiring: a mask with a gamma override is decoded by a Gamma node of 1.8, then the mean (maxdrop-em3.122)",
+          getattr(mask, "bl_idname", None) == "ShaderNodeGamma"
+          and abs(_input(mask, "Gamma").default_value - 1.8) < 1e-6
+          and getattr(_from(_input(mask, "Color")), "bl_idname", None) == "ShaderNodeTexImage")
     pd = _principled(md)
     check("wiring: missing images leave the IR's values: Normal free, alpha 0.8 (BLENDED), base color the swatch",
           not pd.inputs["Normal"].is_linked and not pd.inputs["Alpha"].is_linked

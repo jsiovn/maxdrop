@@ -1415,7 +1415,7 @@ class Corona(unittest.TestCase, Close):
         self.close(rough.coat_color, _lins(230, 210, 190), "clearcoat absorption color")
         self.close(rough.emission_color.value, _lins(255, 128, 0))
         self.close(rough.emission_strength, 2.5)
-        self.close(rough.alpha.value, _lin(200) * 0.8, "mean opacity color x level")
+        self.close(rough.alpha.value, 200 / 255.0 * 0.8, "mean opacity color as stored x level (em3.122)")
         self.close(rough.specular.value, 1.0, "the IOR's own Fresnel: no level parameter")
         self.close(gloss.base_color.value, _lins(220, 180, 90))
         self.close(gloss.metallic.value, 1.0, "metalness mode metal")
@@ -1440,7 +1440,7 @@ class Corona(unittest.TestCase, Close):
         self.close(pbr.ior, 1.6, "Fresnel IOR without refraction")
         self.close(pbr.emission_color.value, _lins(0, 128, 255))
         self.close(pbr.emission_strength, 1.5)
-        self.close(pbr.alpha.value, _lin(230) * 0.9)
+        self.close(pbr.alpha.value, 230 / 255.0 * 0.9)  # a data input: the swatch as stored
         refract = _lins(200, 230, 255)
         t = sum(refract) / 3 * 0.75
         self.close(old.transmission.value, t, "mean refraction x level")
