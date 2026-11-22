@@ -253,7 +253,8 @@ Keyframe controllers (controllers fixture; every class read here is a 3ds Max 20
   -0.707107]`); between two Bezier, TCB or Smooth Rotation keys, the curve below.
 - Between two Bezier, TCB or Smooth Rotation keys (controllers_tangents, every node within the oracle's 6 digits;
   three probes sampled every 2.5 frames, outside the repo), the record after time and flags (n = the value's
-  floats; a step key's value saved at frame 30 holds for its whole segment, so its `0x2500` can hold time 0):
+  floats; a step key's value saved at frame 30 holds for its whole segment, so its `0x2500` can hold time 0, a
+  probe):
 
   | Class | Record after the flags |
   |---|---|
@@ -268,8 +269,9 @@ Keyframe controllers (controllers fixture; every class read here is a 3ds Max 20
     and auto), `0x8000` constant velocity, `0x100000` free handle. A length is a fraction of the segment, -1 a third.
     The segment is the cubic through `(t0, v0)`, `(t0 + lo dt, v0 + out lo dt)`, `(t1 - li dt, v1 + in li dt)`,
     `(t1, v1)`, its time curve solved for the time (FixtureBezierFloats, FixtureBezierCustom with lengths 0.6 and
-    0.15, FixtureBezierPosition and FixtureBezierScale with a length per axis); 3ds Max's own solve strays by up to
-    1e-3 next to a steep key. A step out of the earlier key or into the later holds the earlier key's value
+    0.15, FixtureBezierPosition and FixtureBezierScale with a length per axis); in the probes this curve and
+    3ds Max's differ by up to 8.5e-4 next to a steep key and by ~1e-4 between auto keys, cause not known. A step
+    out of the earlier key or into the later holds the earlier key's value
     (FixtureBezierFloats' Z). Constant velocity changes nothing on a Bezier Float (a probe).
   - TCB: the Hermite cubic of the stored tangents (value per segment; with two keys `(p1 - p0) (1 - tension)`) at
     the fraction of the segment eased by the earlier key's ease from and the later key's ease to (3D Studio's ease:

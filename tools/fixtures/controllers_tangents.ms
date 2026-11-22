@@ -9,7 +9,7 @@
 -- turn of 200 degrees between two keys) and TCB Scale with tension, continuity, bias and ease set; a Linear Rotation
 -- turning 270 degrees between two keys. Saved with the time
 -- slider at frame 30, so the value saved for the slider's frame is not the frame-0 value the oracle reports. Values
--- and slopes stay moderate: 3ds Max solves a Bezier segment's time curve to about 1e-3 near a steep key.
+-- and slopes stay moderate: next to a steep Bezier key the reader and 3ds Max differed by up to 1e-3 in a probe.
 -- Authored for MaxDrop's tests (see CONTRIBUTING.md, "Test files"): it resets the scene, so run it in a 3ds Max
 -- session with nothing to keep, then sanitize and check the saved file before it goes into tests/fixtures/.
 (
