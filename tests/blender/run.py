@@ -1546,10 +1546,12 @@ def _alpha_of(ir, present):
 
 
 def _value_ok(socket, want):
+    """The socket's value against want, held at the socket's own minimum (a color input stores no negative)."""
     got = socket.default_value
+    low = socket.bl_rna.properties["default_value"].hard_min
     if isinstance(want, (tuple, list)):
-        return close(list(got)[:3], list(want)[:3], VALUE_TOLERANCE)
-    return abs(float(got) - float(want)) <= VALUE_TOLERANCE
+        return close(list(got)[:3], [max(low, w) for w in list(want)[:3]], VALUE_TOLERANCE)
+    return abs(float(got) - max(low, float(want))) <= VALUE_TOLERANCE
 
 
 def _mean(v):
@@ -2719,6 +2721,14 @@ def check_builder_blend():
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def _reaches_image(socket, depth=4):
+    """Whether an Image Texture node feeds socket, through at most depth nodes."""
+    if depth == 0 or not socket.is_linked:
+        return False
+    n = socket.links[0].from_node
+    return n.bl_idname == "ShaderNodeTexImage" or any(_reaches_image(i, depth - 1) for i in n.inputs)
+
+
 def check_builder_blend_modes():
     """The CoronaMix blend modes of bead maxdrop-em3.117 over an image: a Mix node of the mode (bottom in A, hard
     light's top in A), linear burn's add minus 1 floored at 0; in sRGB mode a Vector Math ABSOLUTE before the
@@ -2749,8 +2759,8 @@ def check_builder_blend_modes():
                 ok = len(mix) == 1 and not mix[0].clamp_result
                 if ok:
                     a, b = _input(mix[0], "A_Color"), _input(mix[0], "B_Color")
-                    linked = (b, a) if op == tx.BLEND_HARD_LIGHT else (a, b)
-                    ok = linked[0].is_linked and not linked[1].is_linked
+                    image, constant = (b, a) if op == tx.BLEND_HARD_LIGHT else (a, b)
+                    ok = _reaches_image(image) and not _reaches_image(constant)
                 check("%s: one unclamped Mix node, the bottom image in %s" % (what, "B" if op == tx.BLEND_HARD_LIGHT
                                                                               else "A"), ok)
                 vm = {n.operation: n for n in nodes if n.bl_idname == "ShaderNodeVectorMath"}
