@@ -1391,6 +1391,20 @@ def _lins(*s):
     return tuple(_lin(c) for c in s)
 
 
+def _hair_color(melanin, redness, tint, diffuse=(0.0, 0.0, 0.0)):
+    """CoronaHairMtl's base color as Blender's Principled Hair BSDF colors a strand (Cycles 4.2, svm/closure.h and
+    closure/bsdf_util.h: melanin remapped by -ln(1 - m), the eumelanin and pheomelanin absorption, the tint's
+    absorption at Radial Roughness 0.3), plus the diffuse color."""
+    x = 0.3
+    scale = (((((0.245 * x) + 5.574) * x - 10.73) * x + 2.532) * x - 0.215) * x + 5.969
+    c = -math.log(max(1.0 - melanin, 1e-4))
+    out = []
+    for eu, pheo, t, d in zip((0.506, 0.841, 1.653), (0.343, 0.733, 1.924), tint, diffuse):
+        sigma = c * (1.0 - redness) * eu + c * redness * pheo + (math.log(min(1.0, max(1e-4, t))) / scale) ** 2
+        out.append(min(1.0, math.exp(-math.sqrt(sigma) * scale) + d))
+    return tuple(out)
+
+
 class Corona(unittest.TestCase, Close):
     """tools/fixtures/corona_physical.ms, corona_legacy.ms, corona_layered.ms and corona_light.ms, by hand."""
 
@@ -1633,16 +1647,90 @@ class CoronaMore(unittest.TestCase, Close):
         self.close(ir.alpha.value, 0.9)
         self.assertEqual(ir.issues, [])
 
-    def test_hair_stays_grey(self):
+    def test_hair_defaults(self):
         ir = self.ir("Hair")
-        self.assertTrue(ir.unknown)
-        self.assertEqual(self.conv.stats.unknown["CoronaHairMtl"], 1)
+        self.assertFalse(ir.unknown)
+        self.assertEqual(self.conv.stats.unknown["CoronaHairMtl"], 0)
+        self.close(ir.base_color.value, _hair_color(0.5, 0.0, (1.0, 1.0, 1.0)))
+        self.close(ir.roughness.value, 0.5)
+        self.close(ir.ior, 1.55)
+        self.close(ir.alpha.value, 1.0)
+        self.assertEqual(ir.issues, [])
 
     def test_ray_switch_and_select_peel(self):
         self.assertIs(self.ir("RaySwitch"), self.ir("RaySwitchDirect"), "what the camera sees")
         self.assertIs(self.ir("Select"), self.ir("SelectB"), "selected 1, zero-based")
         self.assertEqual(self.conv.stats.peeled["CoronaRaySwitchMtl"], 1)
         self.assertEqual(self.conv.stats.peeled["CoronaSelectMtl"], 1)
+
+
+class CoronaClasses(unittest.TestCase, Close):
+    """tools/fixtures/corona_classes.ms, by hand (millimeters, gamma off)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.cf, cls.graph, cls.by_name = _fixture("corona_classes")
+        cls.conv = mat.MaterialConverter(cls.graph)
+        cls.irs = {n: cls.conv.convert(i) for n, i in cls.by_name.items()}
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.cf.close()
+
+    def ir(self, name):
+        return self.irs["FixtureCorona" + name]
+
+    def test_hair(self):
+        ir = self.ir("HairSet")
+        self.assertFalse(ir.unknown)
+        self.assertEqual(ir.source, "CoronaHairMtl")
+        tint = tuple(0.9 * c for c in _lins(230, 200, 180))
+        diffuse = tuple(0.5 * c for c in _lins(40, 30, 20))
+        self.close(ir.base_color.value, _hair_color(0.3, 0.6, tint, diffuse))
+        tint_map = self.graph.get(ir.base_color.map.index)
+        self.assertEqual((tint_map.name, ir.base_color.map.amount), ("FixtureCHairTint", 0.5))
+        self.close(ir.roughness.value, 0.3, "1 - glossiness 0.7")
+        self.close(ir.ior, 1.6)
+        self.close(ir.specular.value, 1.0)
+        self.close(ir.alpha.value, 200 / 255 * 0.8, "the opacity swatch as stored times its level")
+        self.assertEqual(ir.issues, ["CoronaHairMtl 'FixtureCoronaHairSet': melanin map not converted"])
+
+    def test_shadow_catchers(self):
+        plain, refl = self.ir("ShadowCatcher"), self.ir("ShadowCatcherRefl")
+        for ir in (plain, refl):
+            self.assertTrue(ir.shadow_catcher)
+            self.assertFalse(ir.unknown)
+            self.close(ir.base_color.value, GREY)
+        self.assertEqual(plain.issues, [])
+        self.assertEqual(refl.issues, ["CoronaShadowCatcherMtl 'FixtureCoronaShadowCatcherRefl': backplate map not "
+                                       "converted", "CoronaShadowCatcherMtl 'FixtureCoronaShadowCatcherRefl': "
+                                       "reflection not converted"])
+        self.assertFalse(self.ir("CatcherMixedPhys").shadow_catcher)
+        self.assertFalse(self.ir("HairSet").shadow_catcher)
+
+    def test_named_greys(self):
+        for name, cls, what in (("Volume", "CoronaVolumeMtl", "volume not converted"),
+                                ("Scanned", "CoronaScannedMtl", "scanned material (.ctf) not read"),
+                                ("Slicer", "CoronaSlicerMtl", "slicing not converted")):
+            ir = self.ir(name)
+            self.assertTrue(ir.unknown, name)
+            self.assertEqual(ir.source, cls)
+            self.close(ir.base_color.value, GREY)
+            self.assertEqual(ir.issues, ["%s 'FixtureCorona%s': %s, grey" % (cls, name, what)])
+
+    def test_no_class_without_a_rule(self):
+        self.assertEqual(dict(self.conv.stats.unknown), {})
+
+    @unittest.skipIf(numpy is None, "numpy missing")  # assign() needs it
+    def test_shadow_catcher_users(self):
+        s = reader_scene.Scene.from_file(self.cf)
+        desc = importlib.import_module(_PKG + ".convert.scene").describe(s, 0.001, None)
+        plan = mat.assign(desc, mat.node_materials(s, desc), self.conv)
+        names = {n.index: n.name for n in desc.nodes}
+        got = sorted(names[u] for ms in plan.values() for u in mat.shadow_catcher_users(ms))
+        self.assertEqual(got, ["FixtureCoronaShadowCatcherBox", "FixtureCoronaShadowCatcherReflBox"])
+        mixed = next(ms for ms in plan.values() if names[ms.users[0]] == "FixtureCoronaCatcherMixedBox")
+        self.assertEqual(len(mixed.slots), 2, "the catcher and the physical material, one slot each")
 
 
 def _corona(index, class_id, **params):
@@ -1781,6 +1869,62 @@ class CoronaSynthetic(unittest.TestCase, Close):
         self.assertTrue(ir.unknown)
         self.close(ir.base_color.value, GREY)
         self.assertTrue(any("no sub-material" in r for _i, r in conv.stats.issues))
+
+    def test_hair_defaults(self):
+        conv, ir = _convert(_corona(0, classids.CORONA_HAIR_MTL))
+        self.close(ir.base_color.value, _hair_color(0.5, 0.0, (1.0, 1.0, 1.0)))
+        self.close(ir.roughness.value, 0.5)
+        self.close(ir.ior, 1.55)
+        self.assertEqual((ir.issues, dict(conv.stats.unknown)), ([], {}))
+
+    def test_hair_melanin_bounds(self):
+        _conv, black = _convert(_corona(0, classids.CORONA_HAIR_MTL, p141=1.0, p142=0.5))
+        self.close(black.base_color.value, _hair_color(1.0, 0.5, (1.0, 1.0, 1.0)), "1 - melanin floored at 1e-4")
+        _conv, white = _convert(_corona(0, classids.CORONA_HAIR_MTL, p141=0.0))
+        self.close(white.base_color.value, (1.0, 1.0, 1.0), "no pigment, a white tint")
+        _conv, inked = _convert(_corona(0, classids.CORONA_HAIR_MTL, p141=0.0, p101=(0.0, 0.0, 0.0)))
+        self.close(inked.base_color.value, _hair_color(0.0, 0.0, (0.0, 0.0, 0.0)), "a black tint floored at 1e-4")
+        self.assertTrue(all(c > 0 for c in inked.base_color.value))
+
+    def test_hair_diffuse_added_and_clamped(self):
+        _conv, ir = _convert(_corona(0, classids.CORONA_HAIR_MTL, p141=0.0, p102=(1.0, 0.5, 0.0), p105=0.5))
+        self.close(ir.base_color.value, (1.0, 1.0, 1.0), "white plus the diffuse, at most 1")
+        _conv, ir = _convert(_corona(0, classids.CORONA_HAIR_MTL, p102=(1.0, 0.5, 0.0), p105=0.5))
+        self.close(ir.base_color.value, _hair_color(0.5, 0.0, (1.0, 1.0, 1.0), (0.5, 0.25, 0.0)))
+
+    def test_hair_maps(self):
+        maps = [_map(i) for i in range(1, 6)]
+        hair = _corona(0, classids.CORONA_HAIR_MTL, p114=Ref(1), p132=0.4, p116=Ref(2), p120=Ref(3), p138=0.5,
+                       p155=Ref(4), p163=Ref(5), p164=0)
+        conv, ir = _convert(hair, *maps)
+        self.assertEqual(ir.alpha.map, mat.MapRef(1, 0.4))
+        self.assertEqual(ir.roughness.map, mat.MapRef(2, 1.0, True))
+        self.assertEqual(ir.bump, mat.MapRef(3, 0.5))
+        self.assertEqual(ir.issues, ["CoronaHairMtl 'C': transmission map not converted"], "the glint map is off")
+
+    def test_volume_scanned_slicer_named(self):
+        for key, what in ((classids.CORONA_VOLUME_MTL, "volume"), (classids.CORONA_SCANNED_MTL, "scanned"),
+                          (classids.CORONA_SLICER_MTL, "slicing")):
+            conv, ir = _convert(_corona(0, key))
+            self.assertTrue(ir.unknown)
+            self.close(ir.base_color.value, GREY)
+            self.assertEqual(len(ir.issues), 1)
+            self.assertIn(what, ir.issues[0])
+            self.assertEqual(dict(conv.stats.unknown), {})
+
+    def test_shadow_catcher_defaults(self):
+        conv, ir = _convert(_corona(0, classids.CORONA_SHADOW_CATCHER_MTL))
+        self.assertTrue(ir.shadow_catcher)
+        self.assertEqual((ir.issues, dict(conv.stats.unknown)), ([], {}))
+        _conv, off = _convert(_corona(0, classids.CORONA_SHADOW_CATCHER_MTL, p302=Ref(1), p360=0),
+                              _map(1))
+        self.assertEqual(off.issues, [], "a backplate map switched off")
+
+    def test_shadow_catcher_users(self):
+        catcher, other = mat.MaterialIR(0, "a", shadow_catcher=True), mat.MaterialIR(1, "b")
+        plan = mat.MeshSlots([10, 11, 12], [[catcher, catcher, catcher], [catcher, other, None]], None)
+        self.assertEqual(mat.shadow_catcher_users(plan), [10], "every slot of the user a catcher")
+        self.assertEqual(mat.shadow_catcher_users(mat.MeshSlots([10], [], None)), [], "no slot, no catcher")
 
 
 @unittest.skipIf(numpy is None, "numpy missing")  # assign() and the mesh reader need it

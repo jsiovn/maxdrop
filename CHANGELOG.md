@@ -27,6 +27,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   Flip normals, invisible (not seen by the camera, no shadow), affect diffuse, specular and reflections, on / off.
   Also a mesh light made with "Replace mesh with light", which keeps the mesh itself. A mesh light without a mesh
   stays an empty with a line in the report; the modifiers of its mesh are left out (a line in the report).
+- Corona materials: CoronaHairMtl is imported as a surface with the color Blender's Principled Hair BSDF gives its
+  melanin, pheomelanin and tint (plus its diffuse color), its glossiness, IOR, opacity and bump, instead of grey; a
+  CoronaShadowCatcherMtl makes its object a shadow catcher (Cycles) when the object has no other material. A
+  CoronaVolumeMtl, CoronaScannedMtl or CoronaSlicerMtl stays grey, now with a line in the report naming what is
+  left out, no longer listed as a material class without a rule.
 
 ### Fixed
 

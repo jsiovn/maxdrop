@@ -79,6 +79,14 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
 - CoronaLightMtl -> emission (color, intensity, map) and its opacity map.
 - CoronaSkinMtl -> one Principled layer: skin color times level, its three SSS layers as one (weighted mean radius
   times the radius scale, weighted mean color), the first reflection as specular, roughness and IOR, opacity, bump.
+- CoronaHairMtl -> one Principled layer (not measured: no Corona render here): the base color Blender's Principled Hair
+  BSDF gives a strand of its melanin, pheomelanin (read as Melanin Redness) and tint (hair_color), plus its diffuse
+  color; roughness = 1 - glossiness, IOR, opacity, bump; the tint map drives the base color. Its other maps are named
+  issues.
+- CoronaShadowCatcherMtl -> the grey material marked shadow_catcher: an object whose every slot holds one is a shadow
+  catcher (build/objects.py); a backplate map and a reflection are named issues.
+- CoronaVolumeMtl, CoronaScannedMtl, CoronaSlicerMtl -> the grey material with a named issue (CORONA_GREY), not
+  counted as a class without a rule.
 - CoronaLayeredMtl with a base and a layer that is on -> the base's IR with its layers (Layer: IR, amount, mask
   with its mask amount; at most MAX_LAYERS), which build/materials.py mixes over it; the weight is the amount times
   lerp(1, mask, mask amount), Corona's map-amount convention (not measured: no Corona render here).
@@ -285,6 +293,7 @@ class MaterialIR:
     sheen_color: tuple = (1.0, 1.0, 1.0)
     sheen_roughness: float = 0.5
     two_sided: bool = False  # Standard's twoSided: 3ds Max renders the back faces too
+    shadow_catcher: bool = False  # CoronaShadowCatcherMtl: an object with nothing else is a shadow catcher
     unknown: bool = False
     textures: dict = dataclasses.field(default_factory=dict)  # {input name: texmaps.TextureGraphIR}
     issues: list = dataclasses.field(default_factory=list)
@@ -1141,6 +1150,85 @@ def corona_skin_mtl(conv, m, ir):
         conv.issue(m.index, "CoronaSkinMtl %r: SSS maps not converted" % (m.name,), ir)
 
 
+# CoronaHairMtl's base color as Blender's Principled Hair BSDF colors a strand from melanin (Cycles 4.2,
+# kernel/svm/closure.h, kernel/closure/bsdf_util.h): the absorption of eumelanin and of pheomelanin per unit of
+# concentration, and the roughness scale of its reflectance parametrization at its default Radial Roughness 0.3
+HAIR_EUMELANIN = (0.506, 0.841, 1.653)
+HAIR_PHEOMELANIN = (0.343, 0.733, 1.924)
+HAIR_RADIAL_ROUGHNESS = 0.3
+HAIR_ROUGHNESS_SCALE = (((((0.245 * HAIR_RADIAL_ROUGHNESS) + 5.574) * HAIR_RADIAL_ROUGHNESS - 10.73)
+                         * HAIR_RADIAL_ROUGHNESS + 2.532) * HAIR_RADIAL_ROUGHNESS - 0.215) * HAIR_RADIAL_ROUGHNESS + 5.969
+HAIR_FLOOR = 1e-4  # Cycles' floor of 1 - melanin; MaxDrop's of the tint (ln 0)
+# CoronaHairMtl map slots no input of the IR takes: (map, its switch, what)
+HAIR_UNREAD = ((113, 122, "diffuse"), (115, 124, "IOR"), (117, 126, "softness"), (118, 127, "colorless glossiness"),
+               (119, 128, "highlight shift"), (144, 146, "melanin"), (145, 147, "pheomelanin"),
+               (153, 156, "colorless specular"), (154, 157, "colored specular"), (155, 158, "transmission"),
+               (163, 164, "glint strength"))
+
+
+def hair_color(melanin, redness, tint):
+    """The linear color Blender's Principled Hair BSDF gives a strand of this melanin (0..1), melanin redness (the
+    fraction that is pheomelanin, 0..1) and tint (linear RGB): -ln(1 - melanin) as the concentration, the tint's
+    absorption added, the color exp(-sqrt(absorption) x HAIR_ROUGHNESS_SCALE)."""
+    c = -math.log(max(1.0 - _clamp01(melanin), HAIR_FLOOR))
+    r = _clamp01(redness)
+    out = []
+    for eu, pheo, t in zip(HAIR_EUMELANIN, HAIR_PHEOMELANIN, tint):
+        sigma = c * (1.0 - r) * eu + c * r * pheo + (
+            math.log(min(1.0, max(HAIR_FLOOR, t))) / HAIR_ROUGHNESS_SCALE) ** 2
+        out.append(math.exp(-math.sqrt(sigma) * HAIR_ROUGHNESS_SCALE))
+    return tuple(out)
+
+
+def corona_hair_mtl(conv, m, ir):
+    """CoronaHairMtl, block 0, as one Principled layer (not measured: no Corona render here): base = hair_color of
+    melanin (141) and pheomelanin (142, read as Blender's Melanin Redness) with the tint colorTint (101) x levelTint
+    (104), plus colorDiffuse (102) x levelDiffuse (105), at most 1; the tint map (112, switch 121, amount 130) drives
+    the base color; roughness = 1 - glossiness (108, map 116 / 125 / 134 inverted); ior (107); specular 1; alpha =
+    mono_swatch(colorOpacity 103) x levelOpacity (106), map 114 / 123 / 132; bump 120 / 129 / 138. Maps in the other
+    slots (HAIR_UNREAD) are named issues; softness, highlight shift, the specular colors and the glint are not read."""
+    def slot(map_pid, invert=False):
+        return conv.map_ref(m, map_pid, map_pid + 9, map_pid + 18, 0, invert=invert, ir=ir, percent=False)
+    tint = tuple(c * max(0.0, _num(m, 104, 0, 1.0)) for c in conv.rgb(m, 101, 0, (1.0, 1.0, 1.0)))
+    diffuse = tuple(c * max(0.0, _num(m, 105, 0, 1.0)) for c in conv.rgb(m, 102, 0, (0.0, 0.0, 0.0)))
+    color = hair_color(_num(m, 141, 0, 0.5), _num(m, 142, 0, 0.0), tint)
+    ir.base_color = Input(tuple(min(1.0, c + d) for c, d in zip(color, diffuse)), slot(112))
+    ir.roughness = Input(_roughness(_num(m, 108, 0, 0.5), False), slot(116, invert=True))
+    ir.ior = _ior(_num(m, 107, 0, 1.55))
+    opacity = _clamp01(conv.mono_swatch(m, 103, 0, (1.0, 1.0, 1.0)) * max(0.0, _num(m, 106, 0, 1.0)))
+    ir.alpha = Input(opacity, slot(114))
+    conv.bump_slot(ir, slot(120))
+    for map_pid, on_pid, what in HAIR_UNREAD:
+        if conv.map_ref(m, map_pid, on_pid, None, 0, ir=ir) is not None:
+            conv.issue(m.index, "CoronaHairMtl %r: %s map not converted" % (m.name, what), ir)
+
+
+def corona_shadow_catcher_mtl(conv, m, ir):
+    """CoronaShadowCatcherMtl, block 0: the grey material with shadow_catcher set (build/objects.py makes an object
+    whose every slot holds one a shadow catcher). A backplate map (302, switch 360) and a reflection (reflectLevel 306
+    above 0) are named issues."""
+    g = colors.srgb_to_linear(GREY_SRGB)
+    ir.base_color, ir.shadow_catcher = Input((g, g, g)), True
+    if conv.map_ref(m, 302, 360, None, 0, ir=ir) is not None:
+        conv.issue(m.index, "CoronaShadowCatcherMtl %r: backplate map not converted" % (m.name,), ir)
+    if _num(m, 306, 0, 0.0) > 0:
+        conv.issue(m.index, "CoronaShadowCatcherMtl %r: reflection not converted" % (m.name,), ir)
+
+
+# Corona material classes without a Principled equivalent: grey, with what is not converted named
+CORONA_GREY = {
+    classids.CORONA_VOLUME_MTL: "volume not converted",
+    classids.CORONA_SCANNED_MTL: "scanned material (.ctf) not read",
+    classids.CORONA_SLICER_MTL: "slicing not converted",
+}
+
+
+def corona_named_grey(conv, m, ir):
+    """CoronaVolumeMtl, CoronaScannedMtl, CoronaSlicerMtl: the grey material, its issue naming what is lost
+    (CORONA_GREY); not counted as a class without a rule."""
+    return conv._grey(m.index, "%s %r: %s, grey" % (ir.source, m.name, CORONA_GREY[ClassId(*m.class_id)]))
+
+
 # (superclass, ClassId) -> rule(converter, MtlBase, MaterialIR): fills the IR in place, or returns the IR it made
 RULES = {
     (classids.SC_MATERIAL, classids.STANDARD_MTL): standard_mtl,
@@ -1155,6 +1243,11 @@ RULES = {
     (classids.SC_MATERIAL, classids.CORONA_LIGHT_MTL): corona_light_mtl,
     (classids.SC_MATERIAL, classids.CORONA_LAYERED_MTL): corona_layered_mtl,  # a wrapper without a layer on
     (classids.SC_MATERIAL, classids.CORONA_SKIN_MTL): corona_skin_mtl,
+    (classids.SC_MATERIAL, classids.CORONA_HAIR_MTL): corona_hair_mtl,
+    (classids.SC_MATERIAL, classids.CORONA_SHADOW_CATCHER_MTL): corona_shadow_catcher_mtl,
+    (classids.SC_MATERIAL, classids.CORONA_VOLUME_MTL): corona_named_grey,
+    (classids.SC_MATERIAL, classids.CORONA_SCANNED_MTL): corona_named_grey,
+    (classids.SC_MATERIAL, classids.CORONA_SLICER_MTL): corona_named_grey,
 }
 
 
@@ -1169,6 +1262,13 @@ class MeshSlots:
 
     def __repr__(self):
         return "MeshSlots(%d users, %d slots)" % (len(self.users), len(self.slots))
+
+
+def shadow_catcher_users(plan):
+    """The users of a MeshSlots whose every slot holds a shadow-catcher material (MaterialIR.shadow_catcher): none
+    without a slot."""
+    return [node for u, node in enumerate(plan.users)
+            if plan.slots and all(s[u] is not None and s[u].shadow_catcher for s in plan.slots)]
 
 
 class Slots(dict):

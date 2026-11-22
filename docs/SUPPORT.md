@@ -142,7 +142,10 @@ Turn materials off with **Object Filter**.
 | CoronaLayeredMtl | **Imported**: each layer that is on mixed over the base by its amount and mask (a Mix Shader per layer; how the mask amount weighs in follows Corona's map amounts, not checked against a Corona render). Without a base it gives its first layer that is on |
 | CoronaSkinMtl | **Simplified**: skin color and level, its three subsurface layers as one, the first reflection, opacity, bump |
 | CoronaRaySwitchMtl, CoronaSelectMtl | **The material the camera sees** (the direct one, else the GI one); **the selected material** |
-| Corona Hair, Volume and Shadow Catcher, Arnold Standard Surface, Raytrace, Architectural and every other material | Not yet: a grey material that keeps its name |
+| CoronaHairMtl | **Simplified**: one surface (hair curves are not imported) with the color Blender's Principled Hair BSDF gives its melanin, pheomelanin and tint, plus its diffuse color; glossiness, IOR, opacity, bump; a tint map drives the color. Not checked against a Corona render. Its other maps are named in the report |
+| CoronaShadowCatcherMtl | **Simplified**: its object becomes a shadow catcher (Cycles; EEVEE has none) when it has no other material, drawn grey; a backplate map and a reflection are named in the report |
+| CoronaVolumeMtl, CoronaScannedMtl, CoronaSlicerMtl | Not yet: a grey material that keeps its name, with a line in the report (volume, scanned material, slicing not converted) |
+| Arnold Standard Surface, Raytrace, Architectural and every other material | Not yet: a grey material that keeps its name |
 
 | Channel | This version |
 |---|---|

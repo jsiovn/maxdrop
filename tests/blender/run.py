@@ -1871,6 +1871,10 @@ def check_fixture_materials(name, plan, desc, obs):
         got = [sp.material_index for sp in ob.data.splines]
         want = plan.curves[key].indices.tolist() if key in plan.curves else [0] * len(cd.splines)
         check("%s/%s: each spline on its material's slot" % (name, ob.name), got == want, "%s vs %s" % (got, want))
+    if name == "corona_classes":  # a shadow catcher only where every slot is a CoronaShadowCatcherMtl
+        catchers = sorted(ob.name for ob in obs if ob.is_shadow_catcher)
+        check("corona_classes: the shadow-catcher boxes are shadow catchers, the mixed box and the others not",
+              catchers == ["FixtureCoronaShadowCatcherBox", "FixtureCoronaShadowCatcherReflBox"], str(catchers))
     if name == "falloff_curve":
         check_falloff_curve(textured=False)
     if name == "vray_maps":

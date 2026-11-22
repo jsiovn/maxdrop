@@ -41,7 +41,9 @@ Curve, with the slot of slots.curves (a rectangular section's hidden bevel objec
 material: build.curves); a LIGHT node an object of its Light (build.lights, power times light_strength), with the
 light's object flags; a CAMERA node an object of its Camera (build.cameras). A mesh light's node (node.emitter) is a
 MESH of its emitter mesh, whose every face gets the emitter's Emission material (build.emitters, strength times
-light_strength), its only slot whatever the slots say, with the emitter's object flags.
+light_strength), its only slot whatever the slots say, with the emitter's object flags. An object whose every
+slot holds a shadow-catcher material (convert.materials.shadow_catcher_users: CoronaShadowCatcherMtl) gets
+is_shadow_catcher (Cycles; EEVEE has no shadow catcher and draws its grey material).
 
 With collections (build.collections.make), each object goes into its layer's collection, else into collection.
 A node hidden in 3ds Max gets hide_viewport and is hidden in view_layer (hide_set), one that does not render
@@ -57,6 +59,7 @@ target moves. The ones no Track To can aim as 3ds Max does keep the baked rotati
 import bpy
 from mathutils import Matrix
 
+from ..convert import materials as convert_materials
 from ..convert import scene as convert_scene
 from . import cameras as build_cameras
 from . import curves as build_curves
@@ -248,7 +251,8 @@ def _slots(built, slots, make):
 
 
 def _data_slots(built, data, plan, make):
-    """plan's slots on data (a Mesh or a Curve) and its users' objects."""
+    """plan's slots on data (a Mesh or a Curve) and its users' objects; the users whose every slot is a shadow
+    catcher become one."""
     for s, irs in enumerate(plan.slots):
         if all(ir is irs[0] for ir in irs):
             data.materials.append(_material(built, irs[0], make))
@@ -260,6 +264,10 @@ def _data_slots(built, data, plan, make):
                 slot = ob.material_slots[s]
                 slot.link = 'OBJECT'
                 slot.material = _material(built, ir, make)
+    for node in convert_materials.shadow_catcher_users(plan):
+        ob = built.objects.get(node)
+        if ob is not None:
+            ob.is_shadow_catcher = True
 
 
 def _emitter_slots(desc, built):
