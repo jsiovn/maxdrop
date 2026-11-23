@@ -34,6 +34,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   CoronaShadowCatcherMtl makes its object a shadow catcher (Cycles) when the object has no other material. A
   CoronaVolumeMtl, CoronaScannedMtl or CoronaSlicerMtl stays grey, now with a line in the report naming what is
   left out, no longer listed as a material class without a rule.
+- Corona materials, measured against Corona 12 renders: a CoronaMtl with PBR mode off gets the roughness Corona
+  renders for its glossiness (a glossiness of 0.4 is roughness 0.32, not 0.6), no longer a line in the report; a
+  CoronaPhysicalMtl in IOR mode Specular reads its base and clearcoat IORs as specular levels (0.5 is IOR 1.5)
+  instead of IORs with a line in the report; CoronaPhysicalMtl translucency is a line in the report only in thin
+  mode, the one mode Corona renders it in.
 
 ### Fixed
 
