@@ -60,6 +60,17 @@ the mirror's first shader is the refraction twin, its factor raised to 1 under t
 0.200 in every band in Cycles (the lone glass gave 0.053 facing the camera to 0.166 at 0.9-0.95 of the radius), a
 base 0.25 0.400 (0.2 + 0.8 x 0.25), a thin wall and half transmission 0.200; a rotated cube of white glass keeps 1.0
 of the white environment in Cycles; EEVEE 0.198-0.199 on the black base and 0.356-0.358 on the 0.25 one, flat.
+EEVEE gives w + ((1 - w) c)^2 for the twin's color c (= the square root of T), not w + (1 - w) T: it refracts
+through a solid as two events, each applying the refraction closure's weight times color, the Mix Shader's factor
+included, and has no internal bounce to return the share the mirror reflects back inside, as Cycles' bounces do.
+Measured in Blender 4.2, 4.5 and 5.2 (bead maxdrop-6n0.7.4, w 0.2, white glass): a rotated cube 0.836-0.839 and
+a smooth sphere 0.831-0.834, flat (Cycles 1.000 both; w 0.5 on the cube: EEVEE 0.746-0.748, Cycles 0.995); the
+lone Principled glass gave 0.926-0.930 on the cube in EEVEE. Not total internal reflection: on the cube a lone
+Refraction BSDF keeps 0.994 of the environment, one of color 0.8 0.636 (0.8^2; hand-wired, 5.2). The drawing
+stays: both engines read the same factor and color, so a tree that lifts EEVEE lifts Cycles too. Material Output's
+Thickness linked to 0 (one refraction event in EEVEE; Cycles ignores it) gives white glass 0.990-0.994, but applies
+c once, so tinted glass gets too light (a sphere, c 0.5, w 0.2: 0.594-0.596, where Cycles gives 0.400 and the
+default 0.356-0.358; hand-wired, 4.2 to 5.2); left out.
 Glass that refracting() refuses keeps the filled BSDF under the mirror, its glass Fresnel still reflecting; a
 constant w of at least 1 keeps the lone BSDF (a VRayMtl's bright Fresnel-off reflection is a metal before it gets
 here). Not measured against V-Ray.
