@@ -1408,7 +1408,7 @@ class MeshRange(unittest.TestCase):
         with mock.patch.object(conv, "_positions", side_effect=conv.MeshError("its points do not fit")):
             desc = conv.read(path)
         self.assertEqual({n.kind for n in desc.nodes if n.index in extruded}, {conv.CURVE})
-        refused = [i for i, r in desc.issues if r == "geometry: not built: its points do not fit"]
+        refused = [i for i, r in desc.issues if r == "extrude: not made: its points do not fit"]
         self.assertEqual(len(refused), len(set(extruded.values())))
         self.assertTrue(set(refused) <= set(extruded))
 

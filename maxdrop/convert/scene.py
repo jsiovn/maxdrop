@@ -40,8 +40,9 @@ vertex used twice, the vertex set of an earlier face) are left out and reported.
 "UVChannel_<n>"; the w coordinate is dropped.
 Blender holds mesh positions in single precision: a mesh whose positions (offset and meters applied) are past the
 largest float32, inf or NaN is an EMPTY placeholder (an issue, on the first node of its key), as a curve or a
-primitive; a mesh light's emitter is then not built. A U or V coordinate that is not a number (inf, NaN) becomes 0
-(an issue): stored UVs do not depend on the positions, so the mesh is kept, as a UVW Map's refused UVs keep it.
+primitive (an extruded shape is drawn as its curve); a mesh light's emitter is then not built. A U or V coordinate
+that is not a number (inf, NaN) becomes 0 (an issue): stored UVs do not depend on the positions, so the mesh is
+kept, as a UVW Map's refused UVs keep it.
 
 A shape (reader.shapes: Line, Editable Spline, Rectangle, Circle, Ellipse, Arc, NGon) becomes a CURVE, keyed and
 shared like a mesh, its offset baked into the knots: one Bezier spline per spline, Max's in and out vectors as the
@@ -1401,7 +1402,7 @@ def _mapping(scene, mapped, m, issues, node):
 
 
 def _mapped_mesh(scene, desc, mapped, key, data, maps, node, name, offset, meters, shading=None, check=None,
-                 rim=False, mirrors=(), ranges=None):
+                 rim=False, mirrors=(), ranges=None, refusal="geometry: not built"):
     """(the key in desc.meshes of reader MeshData data under the UVW Maps maps, the maps applied), made on first use:
     key extended by (modifier index, context matrix) per UVW Map evaluated, then by ("shading", shading) when a
     converted smoother changes the shading (SMOOTH: no sharp edge or flat face; CREASE: the sharp edges creased),
@@ -1410,7 +1411,7 @@ def _mapped_mesh(scene, desc, mapped, key, data, maps, node, name, offset, meter
     weld shut stay smooth (_rim_edges): marked sharp, the weld would make them a hard seam. check goes to
     mesh_description. (None, ()) when its positions do not fit single precision (MeshError: an issue), found before
     any UVW Map is read (the maps, the shading and the rim leave the positions as they are); ranges caches per key
-    as given whether they fit, a refusal then named on the first node only."""
+    as given whether they fit, a refusal (its issue starts with refusal) then named on the first node only."""
     if ranges is not None and key in ranges:
         if not ranges[key]:
             return None, ()
@@ -1419,7 +1420,7 @@ def _mapped_mesh(scene, desc, mapped, key, data, maps, node, name, offset, meter
         try:
             _positions(data, offset, meters)  # checked before the maps so a refused mesh gets no UVW Map issue
         except MeshError as exc:
-            desc.issues.append((node, "geometry: not built: %s" % exc))
+            desc.issues.append((node, "%s: %s" % (refusal, exc)))
             fits = False
         if ranges is not None:
             ranges[key] = fits  # a flag: a kept MeshError's traceback would hold the refused mesh in memory
@@ -1476,7 +1477,8 @@ def _extruded(scene, desc, shape_of, extruded, mapped, base, ext, maps, node, na
     """(the key in desc.meshes of shape base under the Extrude ext and the UVW Maps maps, the maps applied), made on
     first use; (None, ()) when the shape or the Extrude cannot be read or the scene's MAX_BUILT_CORNERS are spent (an
     issue, once per base object and Extrude), or when its positions do not fit single precision (_mapped_mesh, which
-    gets ranges). extruded caches the MeshData per base object, built counts the face corners made."""
+    gets ranges; the shape is then drawn as a curve). extruded caches the MeshData per base object, built counts the
+    face corners made."""
     cache = extruded.setdefault(base, {})
     if ext.index not in cache:
         cache[ext.index] = None
@@ -1497,7 +1499,7 @@ def _extruded(scene, desc, shape_of, extruded, mapped, base, ext, maps, node, na
         return None, ()
     offset = None if offset == controllers.IDENTITY else offset
     return _mapped_mesh(scene, desc, mapped, (base, offset, ext.index), data, maps, node, name, offset, meters,
-                        shading, check, rim, mirrors, ranges)
+                        shading, check, rim, mirrors, ranges, "extrude: not made")
 
 
 def _layer(scene, i, layers, issues, node):
