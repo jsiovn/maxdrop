@@ -1456,7 +1456,7 @@ picker and Material Editor switches off).
   through CGeometry_NormalsShading (both store (n + 1) / 2; an orthographic top camera), 8-bit PNGs: a flat
   (128, 128, 255) and a tilted (180, 100, 220) normal map under VRayNormalMap, Normal Bump and CoronaNormal, a
   grey ramp tiled 10 times as a height (in the bump slot and as a normal map's bump), its slope read at 0.25 and
-  0.75 of a tooth (as stored equal; decoded by 2.2 about 1 : 3.4):
+  0.75 of a tooth (as stored equal; decoded by 2.2 about 1 : 3.3):
 
   | Image | gamma on | gamma off |
   |---|---|---|
@@ -1468,7 +1468,10 @@ picker and Material Editor switches off).
   | CoronaNormal Add gamma to input over Bitmap or CoronaBitmap automatic; 1.0 | as stored; raised to 1 / 2.2 | no effect |
 
   So a normal or bump input takes an image as a data input does (the same rule for Bitmap and CoronaBitmap in
-  Corona 12), except a VRayBitmap below a normal map, which V-Ray reads as stored. One reading MaxDrop does not
+  Corona 12), except a VRayBitmap below a normal map, which V-Ray reads as stored (below a CoronaNormal assumed
+  alike: not probed). A scene whose gamma setting is not found is taken as gamma on, as for swatches. CoronaNormal's
+  Add gamma is folded into its image's gamma only for an image without an Output and not read for its alpha (else
+  a line in the report). One reading MaxDrop does not
   follow: a VRayBitmap From 3ds Max directly in a VRayMtl bump slot with the gamma off is decoded (below
   VRayNormalMap's bump input it is stored, as on a data input; maxdrop-6n0.6.19). V-Ray bends a normal tilted over
   about 44 degrees back toward the surface: the tilted map decoded renders 44.2 degrees for 59.2, and so does that

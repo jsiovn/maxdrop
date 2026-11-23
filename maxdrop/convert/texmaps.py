@@ -1050,13 +1050,13 @@ class TexmapConverter:
             self._placement_issues(m, walk, "VRayBitmap", mapping)
         if _flag(m, VB_SOURCE_ON, True) and _ref(m, VB_SOURCE) is not None:
             self._issue(walk, m.index, "VRayBitmap %r: the placement of its map source not converted" % (m.name,))
-        if kind == NORMAL:  # below a normal map V-Ray 5.2 reads it as stored, whatever its transfer function
-            gamma, stored = 1.0, True
+        if kind == NORMAL:  # below VRayNormalMap and Normal Bump V-Ray 5.2 reads it as stored, whatever its transfer
+            gamma, stored = 1.0, True  # function (CoronaNormal assumed alike)
         else:
             gamma = self._vray_gamma(m, walk, entry.name)
             stored = m.param(VB_COLOR_SPACE, 0) == VB_FROM_MAX and not self.swatches.linear
-            if m.param(VB_RGB_SPACE, VB_RGB_SPACE_BLOCK) == VB_ACESCG:
-                self._issue(walk, m.index, "VRayBitmap %r: ACEScg primaries drawn as sRGB" % (m.name,))
+        if m.param(VB_RGB_SPACE, VB_RGB_SPACE_BLOCK) == VB_ACESCG:
+            self._issue(walk, m.index, "VRayBitmap %r: ACEScg primaries drawn as sRGB" % (m.name,))
         if kind not in FLOATS and m.param(VB_RGB, 0) == VB_INTENSITY:
             self._issue(walk, m.index, "VRayBitmap %r: RGB output intensity as gray drawn as its color" % (m.name,))
         crop = None
@@ -1204,8 +1204,9 @@ class TexmapConverter:
             self._issue(walk, m.index, "Normal Bump %r: method %r drawn as tangent space" % (
                 m.name, m.param(NORMAL_BUMP_METHOD, 0)))
         if key == CORONA_NORMAL and _flag(m, CORONA_ADD_GAMMA, False) and self.swatches.linear:
-            # Corona 12 raises the input to 1 / 2.2 with the gamma on, and does nothing with it off (maxdrop-em3.159)
-            if isinstance(normal, Image):
+            # Corona 12 raises the input to 1 / 2.2 with the gamma on, and does nothing with it off (maxdrop-em3.159);
+            # folded into the image's gamma, which the builder applies before its Output and not to its alpha
+            if isinstance(normal, Image) and normal.output is None and not normal.alpha:
                 normal = _add_gamma(normal)
             elif normal is not None:
                 self._issue(walk, m.index, "CoronaNormal %r: 'add gamma to input' not converted" % (m.name,))

@@ -2519,6 +2519,7 @@ class DataAndMaskRule(Checks):
                 self.assertEqual(self._root(colors.GAMMA_OFF, m, kind=tx.DATA).colorspace, off)
                 self.assertEqual(self._root(colors.GAMMA_ON, m, kind=tx.DATA).colorspace, on)
 
+
 class NormalAndBumpImages(Checks):
     """maxdrop-em3.159, V-Ray 5.2 and Corona 12 renders of 8-bit normal and height PNGs (docs/FORMAT.md, Scene
     gamma): a normal or bump input takes an image as a data input does (em3.122). A Bitmap is decoded by its gamma
@@ -2623,6 +2624,19 @@ class NormalAndBumpImages(Checks):
         mix = FakeMap(2, tx.MIX, {6: Ref(3)}, [3], cls="Mix")
         g = self._convert(colors.GAMMA_ON, self._cnormal(True), mix, _cbitmap(3))
         self.assertTrue(any("add gamma" in r for r in g.issues), g.issues)
+
+    def test_corona_normal_add_gamma_not_folded_past_an_output_or_alpha(self):
+        # the builder applies an image's gamma before its Output and not to its alpha: Corona's re-encode comes after
+        for child in (_vbitmap(2, p25=2, p1=2.0), _cbitmap(2, p118=1)):
+            with self.subTest(cls=child.cls):
+                g = self._convert(colors.GAMMA_ON, self._cnormal(True), child)
+                self.assertIn(g.root.input.gamma, (None, 1.0), "left as without add gamma")
+                self.assertTrue(any("add gamma" in r for r in g.issues), g.issues)
+
+    def test_vray_bitmap_below_a_corona_normal_that_adds_gamma(self):
+        g = self._convert(colors.GAMMA_ON, self._cnormal(True), _vbitmap(2, p25=2))
+        self.assertEqual((g.root.input.colorspace, g.root.input.gamma), (tx.LINEAR, 1 / 2.2), "stored, raised")
+        self.assertEqual(g.issues, ())
 
 
 _dec = colors.srgb_to_linear
