@@ -730,7 +730,7 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
     layers = {}  # layer object index -> reader Layer, or None when its record cannot be read
     unlit = {}  # light base object index -> why it is not built
     light_params = {}  # light base object index -> its values (convert.lights.read_params)
-    emitter_meshes = {}  # mesh light base object index -> its mesh (_emitter_mesh), or why it has none
+    emitter_meshes = {}  # mesh light base -> its mesh (_emitter_mesh) or why it has none, until its last node
     ies_files = ies.Lookup(files) if files is not None else None
     swatches = None  # the scene's swatch rule, read for the first light
     unseen = {}  # camera base object index -> why it is not built
@@ -786,6 +786,9 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
                                             meters, swatches, built, check)
                     if key is not None:
                         kind = MESH
+                remaining[base] -= 1
+                if not remaining[base]:
+                    emitter_meshes.pop(base, None)
             elif base is not None and cameras.camera_class(scene, base) is not None:
                 class_name = _class_name(scene, base)
                 camera = _camera(scene, t, desc, unseen, camera_params, base, i, name, meters, mm)

@@ -965,7 +965,9 @@ shadow off. The `calib_*` scenes of the calibration (W, default, lm, double-side
 imported and rendered in Cycles (Blender 5.2, 512 samples, the floor a Diffuse BSDF of 1.0, Light Strength 1.43):
 V-Ray / Cycles 1.0003 to 1.0004. The modifiers of the mesh are left out (a line in the report: the base mesh emits,
 and in W and lm its area sets the radiance); no mesh object, or a class MaxDrop does not build, is an empty with a
-line in the report.
+line in the report. A mirrored light node follows the rules of every mesh (an offset with a negative determinant
+reverses the loops, a mirrored node is left to Blender), so the lit side is the mesh's front as Blender sees it: not
+measured against V-Ray.
 
 **Dome light → World.** The first dome node that is on becomes the scene's World (a new World, assigned to the
 scene; the one before is kept, with a fake user when it has no other, and the report says so; in an import of
