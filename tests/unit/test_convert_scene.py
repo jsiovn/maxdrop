@@ -1370,6 +1370,48 @@ class MeshRange(unittest.TestCase):
         refused = [r for _n, r in desc.issues if r == "light: not built: its points do not fit single precision"]
         self.assertEqual(len(refused), 3)
 
+    def test_a_refused_mesh_converts_no_modifier(self):
+        """stack_convert with FixtureTurboOne's mesh refused: that node a placeholder without converted modifiers or
+        their issues, its TurboSmooth taken back from the modifiers whose issues were named (told); the others
+        as before."""
+        sc = self.scene("stack_convert")
+        fresh = conv.describe(sc, 0.001)
+        turbo = next(n for n in fresh.nodes if n.name == "FixtureTurboOne")
+        refused_base = turbo.mesh[0]
+        real = conv.geometry.read_mesh
+
+        def read(scene, i, check=None):
+            return self.data((float("nan"), 0.0, 0.0)) if i == refused_base else real(scene, i, check)
+
+        with mock.patch.object(conv.geometry, "read_mesh", read), \
+                mock.patch.object(conv, "_converted", wraps=conv._converted) as converted:
+            desc = conv.describe(self.scene("stack_convert"), 0.001)
+        told = converted.call_args_list[0].args[4]
+        node = next(n for n in desc.nodes if n.name == "FixtureTurboOne")
+        self.assertEqual((node.kind, node.converted, node.applied), (conv.EMPTY, (), ()))
+        self.assertNotIn(turbo.converted[0].index, told)
+        self.assertTrue(all(m.index in told for n in fresh.nodes if n.name != "FixtureTurboOne"
+                            for m in n.converted))
+        self.assertEqual([r for i, r in desc.issues if i == node.index],
+                         ["geometry: not built: its points do not fit single precision (Blender's meshes hold no "
+                          "larger value)"])
+        others = [(n.name, n.kind, n.converted) for n in desc.nodes if n.name != "FixtureTurboOne"]
+        self.assertEqual(others, [(n.name, n.kind, n.converted) for n in fresh.nodes if n.name != "FixtureTurboOne"])
+
+    def test_a_refused_extrusion_falls_back_to_its_curve(self):
+        """extrude with every extruded mesh refused: each extruded node a curve (as when its Extrude cannot be
+        read), one issue per mesh key before its maps."""
+        path = os.path.join(ROOT, "tests", "fixtures", "extrude.max")
+        fresh = conv.read(path)
+        extruded = {n.index: n.mesh[:3] for n in fresh.nodes if n.kind == conv.MESH and "Extrude" in n.applied}
+        self.assertTrue(extruded)
+        with mock.patch.object(conv, "_positions", side_effect=conv.MeshError("its points do not fit")):
+            desc = conv.read(path)
+        self.assertEqual({n.kind for n in desc.nodes if n.index in extruded}, {conv.CURVE})
+        refused = [i for i, r in desc.issues if r == "geometry: not built: its points do not fit"]
+        self.assertEqual(len(refused), len(set(extruded.values())))
+        self.assertTrue(set(refused) <= set(extruded))
+
 
 if __name__ == "__main__":
     unittest.main()

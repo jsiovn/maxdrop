@@ -272,7 +272,7 @@ class MeshDescription:
                  "zeroed_uvs")
 
     def __init__(self, key, name, positions, loop_vertices, loop_starts, loop_totals, material_indices,
-                 sharp_faces, sharp_edges, uv_layers, dropped_faces=0):
+                 sharp_faces, sharp_edges, uv_layers, dropped_faces=0, zeroed_uvs=0):
         self.key, self.name, self.positions = key, name, positions
         self.loop_vertices, self.loop_starts, self.loop_totals = loop_vertices, loop_starts, loop_totals
         self.material_indices, self.sharp_faces, self.sharp_edges = material_indices, sharp_faces, sharp_edges
@@ -280,7 +280,7 @@ class MeshDescription:
         self.users = []
         self.applied = ()
         self.creases = False
-        self.zeroed_uvs = 0
+        self.zeroed_uvs = zeroed_uvs
 
     def __repr__(self):
         return "MeshDescription(%r, %d vertices, %d faces, %d UV layers)" % (
@@ -639,10 +639,8 @@ def mesh_description(key, name, data, offset, meters, check=None):
     if check is not None:
         check()
     sharp = sharp_edges(lv, starts, totals, groups)
-    md = MeshDescription(key, name, positions, lv, starts.astype(numpy.int32), totals.astype(numpy.int32),
-                         materials.astype(numpy.int32), groups == 0, sharp, uv_layers, dropped)
-    md.zeroed_uvs = zeroed
-    return md
+    return MeshDescription(key, name, positions, lv, starts.astype(numpy.int32), totals.astype(numpy.int32),
+                           materials.astype(numpy.int32), groups == 0, sharp, uv_layers, dropped, zeroed)
 
 
 def _straight(knots, closed):
@@ -787,7 +785,7 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
     mapped = {}  # UVW Map modifier index -> (Params, gizmo matrix), or None when it is not evaluated
     told = set()  # modifier indices whose conversion issues were named (on the first node only)
     rims = set()  # (Shell modifier index, mesh key) whose rim issues were named
-    ranges = {}  # mesh key before its maps -> None when its positions fit single precision, else the MeshError
+    ranges = {}  # mesh key before its maps -> whether its positions fit single precision (_mapped_mesh)
     layers = {}  # layer object index -> reader Layer, or None when its record cannot be read
     unlit = {}  # light base object index -> why it is not built
     light_params = {}  # light base object index -> its values (convert.lights.read_params)
@@ -1057,7 +1055,7 @@ def _mesh_of(scene, desc, obj, node, built, check=None):
     if data is None:
         return lights.EMITTER_CLASS % (_class_name(scene, mesh_base) or "an unknown class")
     try:
-        _positions(data, None, desc.meters)  # the light node's offset is applied later (_emitter, describe)
+        _positions(data, None, desc.meters)  # before the light node's offset, applied in _emitter (describe)
     except MeshError as exc:
         return lights.EMITTER_UNREAD % exc
     return mesh_base, data, stack
@@ -1412,20 +1410,21 @@ def _mapped_mesh(scene, desc, mapped, key, data, maps, node, name, offset, meter
     weld shut stay smooth (_rim_edges): marked sharp, the weld would make them a hard seam. check goes to
     mesh_description. (None, ()) when its positions do not fit single precision (MeshError: an issue), found before
     any UVW Map is read (the maps, the shading and the rim leave the positions as they are); ranges caches per key
-    as given whether they fit (None) or the refusal, which is then named on the first node only."""
+    as given whether they fit, a refusal then named on the first node only."""
     if ranges is not None and key in ranges:
-        if ranges[key] is not None:
+        if not ranges[key]:
             return None, ()
     else:
+        fits = True
         try:
-            _positions(data, offset, meters)
+            _positions(data, offset, meters)  # checked before the maps so a refused mesh gets no UVW Map issue
         except MeshError as exc:
             desc.issues.append((node, "geometry: not built: %s" % exc))
-            if ranges is not None:
-                ranges[key] = exc
-            return None, ()
+            fits = False
         if ranges is not None:
-            ranges[key] = None
+            ranges[key] = fits  # a flag: a kept MeshError's traceback would hold the refused mesh in memory
+        if not fits:
+            return None, ()
     usable = []
     for m in maps:
         found = _mapping(scene, mapped, m, desc.issues, node)
