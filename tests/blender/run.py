@@ -1574,7 +1574,7 @@ def _principled(material):
 def _weight_mix(p):
     """The reflection weight's Mix Shader over Principled p, None when p's Specular IOR Level alone draws it. A
     mirror on refracting glass (bead maxdrop-6n0.7.2) leaves p unlinked: then the weight Mix Shader whose second
-    shader is a mirror copy and whose first is not a Principled BSDF, of several the one whose copy repeats p."""
+    shader is a mirror copy that repeats p and whose first is not a Principled BSDF."""
     out = next(s for s in p.outputs if s.identifier == "BSDF")
     mix = next((link.to_node for link in out.links if link.to_node.bl_idname == "ShaderNodeMixShader"
                 and link.to_node.label == WEIGHT_LABEL), None)
@@ -1585,11 +1585,9 @@ def _weight_mix(p):
         copy = _from(n.inputs[2]) if n.bl_idname == "ShaderNodeMixShader" and n.label == WEIGHT_LABEL else None
         below = _from(n.inputs[1]) if copy is not None else None
         if getattr(copy, "label", "") == MIRROR_LABEL and below is not None \
-                and below.bl_idname != "ShaderNodeBsdfPrincipled":
-            found.append((copy, n))
-    if len(found) > 1:
-        found = [(copy, n) for copy, n in found if _same_inputs(p, copy, MIRROR_INPUTS) == []] or found
-    return found[0][1] if found else None
+                and below.bl_idname != "ShaderNodeBsdfPrincipled" and _same_inputs(p, copy, MIRROR_INPUTS) == []:
+            found.append(n)
+    return found[0] if found else None
 
 
 def _weight_factor(mix):
@@ -1741,8 +1739,8 @@ def check_refraction_twin(label, p, mix, above=None):
         bad = _same_inputs(p, twin, {"Specular IOR Level": 0.0, "Transmission Weight": 0.0}) if ok else ["structure"]
         check(label + ": the refracting twin's Principled is the BSDF without reflection or transmission",
               ok and bad == [], str(bad))
-    ok = ok and _from(mix.inputs[2]) == (p if above is None else above) and refr is not None and refr.bl_idname == "ShaderNodeBsdfRefraction" \
-        and refr.label == REFRACTION_LABEL
+    ok = ok and _from(mix.inputs[2]) == (p if above is None else above) and refr is not None \
+        and refr.bl_idname == "ShaderNodeBsdfRefraction" and refr.label == REFRACTION_LABEL
     check(label + ": the twin refracts through a Refraction BSDF%s" % ("" if full else " by the transmission"), ok)
     if not ok:
         return
@@ -3196,6 +3194,7 @@ def check_builder_fresnel_off():
             ("GlassOffCoat", dict(glass, coat_weight=0.5), {}, "mirror", 0.0),
             ("GlassOffBlack", dict(glass, specular=cm.Input(0.0)), {}, "twin", 0.5),
             ("GlassOffWhite", dict(glass, specular=cm.Input(1.0)), {}, "lone", 0.5),
+            ("GlassOffUnconverted", dict(glass, specular=cm.Input(0.6, cm.MapRef(1))), {}, "twin", 0.5),
             ("Dim", dict(specular=cm.Input(0.2), roughness=cm.Input(0.3)), {}, "mirror", 0.0),
             ("DimRed", dict(specular=cm.Input(0.2), base_color=cm.Input((1.0, 0.0, 0.0), cm.MapRef(1)),
                             metallic=cm.Input(0.2, cm.MapRef(1))),
@@ -3247,6 +3246,20 @@ def check_builder_fresnel_off():
           "%d BSDFs, %d shaders" % (len(bsdfs), len(shaders)))
     if under is not None:
         check_specular("fresnel off: the glass layer", bsdfs[1], base.layers[0].ir, True)
+    base = cm.MaterialIR(83, "OffGlassBase", "test", fresnel=False, roughness=cm.Input(0.1), **glass)
+    base.layers = [cm.Layer(cm.MaterialIR(84, "OffGlassTop", "test", fresnel=False, roughness=cm.Input(0.3),
+                                          **glass), 0.5)]
+    m = builder.make(base)
+    bsdfs, shaders = _bsdfs(m), _shaders(m)
+    mixes = [_weight_mix(b) for b in bsdfs]
+    layer_mix = shaders[0] if len(shaders) == 1 else None
+    check("fresnel off: a glass layer over a glass base: each BSDF's own mirror, the base's below the layer's",
+          len(bsdfs) == 2 and None not in mixes and mixes[0] != mixes[1] and layer_mix is not None
+          and _from(layer_mix.inputs[1]) == mixes[0] and _from(layer_mix.inputs[2]) == mixes[1],
+          "%d BSDFs, %d shaders" % (len(bsdfs), len(shaders)))
+    if len(bsdfs) == 2 and None not in mixes:
+        check_specular("fresnel off: the glass base", bsdfs[0], base, True)
+        check_specular("fresnel off: the glass top", bsdfs[1], base.layers[0].ir, True)
     empty_scene()
 
 
