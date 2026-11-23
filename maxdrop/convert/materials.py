@@ -157,7 +157,8 @@ from .params import finite as _finite, flag as _flag, num as _num
 ChunkError = chunks.ChunkError
 
 MAX_PEEL = 8
-METAL_REFLECTION = 0.25  # mean linear reflection (about sRGB 137 grey) above which Fresnel off means metal
+METAL_REFLECTION = 0.25  # mean linear reflection (about sRGB 137 grey) above which Fresnel off means metal (VRayMtl: not a
+# grey swatch below 1 without a map, NEUTRAL_REFLECTION)
 NEUTRAL_REFLECTION = 0.02  # VRayMtl: a Fresnel-off swatch within this channel spread is grey (the mirror, not a metal)
 CORONA_EDGE_DEFAULT = 0.75  # CoronaPhysicalMtl's edgeColor as created (grey): not reported
 CORONA_METAL_IOR = 10.0  # a CoronaLegacyMtl Fresnel IOR from which a bright reflection is a metal (made with 999)
@@ -766,8 +767,8 @@ def vray_mtl(conv, m, ir):
     hidden = min(1.0, reflection_map.amount) if reflection_map is not None else 0.0
     shown = mean(reflection) * (1.0 - hidden)
     ir.fresnel = _flag(m, 8, 1, True)  # reflection_fresnel
-    # a grey swatch below 1 without a map is the mirror drawing (w + (1 - w) diffuse, V-Ray's split); the copy is
-    # white, so a colored or full one stays a metal in its color
+    # a grey swatch below 1 without a map is the mirror drawing (w + (1 - w) diffuse, V-Ray's split); a colored one
+    # stays a metal in its color (the copy is white), a full one too (build draws no mirror at w >= 1)
     grey = (reflection_map is None and mean(reflection) < 1.0
             and max(reflection) - min(reflection) <= NEUTRAL_REFLECTION)
     if not ir.fresnel and shown >= METAL_REFLECTION and not grey:

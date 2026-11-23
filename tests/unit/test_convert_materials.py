@@ -255,6 +255,10 @@ class VRayMtlRules(unittest.TestCase, Close):
             self.close(ir.base_color.value, (1.0, 0.0, 0.0), str(swatch))
             self.close(ir.specular.value, sum(swatch) / 3.0, str(swatch))
             self.assertIsNone(ir.specular.map)
+        conv, ir = _convert(_vray(0, b1={2: (0.5, 0.5, 0.5), 5: (1.0, 1.0, 1.0), 8: 0}))  # glass stays glass
+        self.close(ir.metallic.value, 0.0)
+        self.close(ir.transmission.value, 1.0)
+        self.close(ir.base_color.value, (1.0, 1.0, 1.0))
 
     def test_fresnel_off_full_or_colored_reflection_is_metal(self):
         """A full reflection (mean 1 or more) and a colored one (channel spread above NEUTRAL_REFLECTION) keep the
@@ -598,7 +602,8 @@ class VRayBasic(unittest.TestCase, Close):
             conv = mat.MaterialConverter(graph)
             ir = conv.convert(by_name["FixtureVRay"])
             self.assertIsNone(conv.convert(None))  # the real graph: a node without a material
-        reflection = (0.309469, 0.361307, 0.417885)  # 151 162 173; mean 0.362887 >= 0.25, Fresnel off: metal
+        reflection = (0.309469, 0.361307, 0.417885)  # 151 162 173; mean 0.362887 >= 0.25, colored (spread
+        # 0.108 > NEUTRAL_REFLECTION), Fresnel off: metal
         self.assertEqual((ir.name, ir.source, ir.unknown), ("FixtureVRay", "VRayMtl", False))
         self.close(ir.base_color.value, reflection, "base color = reflection (metal rule)")
         self.close(ir.metallic.value, 1.0, "metallic")
