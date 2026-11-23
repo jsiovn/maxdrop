@@ -28,15 +28,15 @@ offset position, rotation and scale (+ scale axis), and reference slots 0 = tran
 member (0x100); in the u32 of 0x099C bit 0x8000 is renderable, 0x200 Cast Shadows and 0x400 Receive Shadows
 (without the chunk all three are on). The second u32 of the node's 0x0A28 is its By Layer mask: the 0x099C bits
 taken from its layer instead (Rendering Control By Layer sets 0x8000, 0x400 and 0x200 in it; render_flags merges
-them, only from the node's own layer, never a parent layer). A layer is a Base Layer: 0x1010 its name (UTF-8),
-0x1020 the same hidden and frozen bits, 0x1050 a node's three render bits (all on without it) and, when the
-byte 0x1090 is not 0, 0x10B0 the i32 object index of its parent layer. The Layer Manager references the layers
-in its order (slot 0 = layer "0"). A derived object (special id 0x2032) references [modifier, ..., base object],
-the top of the stack first; its base can be another derived object. A world-space modifier sits in a derived
-object of its own (special id 0x2033), [world-space modifiers, the object's 0x2032 derived object or its base
-object], read the same way. docs/FORMAT.md says which fixture shows what. The frame rate is not in the Scene
-stream: Config `0x20B0/0x0010` is an i32 of frames per second, read by from_file (ticks_per_frame(cf)); without
-it, or with a value outside 1 to 4800, 30 fps.
+them, only from the node's own layer, never a parent layer; a shorter 0x0A28 reads as 0). A layer is a Base
+Layer: 0x1010 its name (UTF-8), 0x1020 the same hidden and frozen bits, 0x1050 a node's three render bits (all
+on without it) and, when the byte 0x1090 is not 0, 0x10B0 the i32 object index of its parent layer. The Layer
+Manager references the layers in its order (slot 0 = layer "0"). A derived object (special id 0x2032) references
+[modifier, ..., base object], the top of the stack first; its base can be another derived object. A world-space
+modifier sits in a derived object of its own (special id 0x2033), [world-space modifiers, the object's 0x2032
+derived object or its base object], read the same way. docs/FORMAT.md says which fixture shows what. The frame
+rate is not in the Scene stream: Config `0x20B0/0x0010` is an i32 of frames per second, read by from_file
+(ticks_per_frame(cf)); without it, or with a value outside 1 to 4800, 30 fps.
 
 Nodes are keyed by object index, never by name: two nodes with the same name are two nodes. A parent that is not
 a Node (the RootNode, another class, out of range) means top level. A parent cycle is cut at its member with the
@@ -215,12 +215,12 @@ def ticks_per_frame(cf):
     return TICKS_PER_SECOND // fps if 1 <= fps <= TICKS_PER_SECOND else DEFAULT_TICKS_PER_FRAME
 
 
-def _by_layer(chunk, what):
-    """The node's By Layer render mask: the second u32 of 0x0A28 (its first is the display mask), 0 without it."""
-    if chunk is None:
+def _by_layer(chunk):
+    """The node's By Layer render mask: the second u32 of 0x0A28 (its first is the display mask). 0 (By Object)
+    without it or when it is shorter: every file seen stores 8 bytes, and the node's own flags are the safe
+    reading of a layout not seen."""
+    if chunk is None or chunk.payload_size < 8:
         return 0
-    if chunk.payload_size < 8:
-        raise ChunkError("%s: %04X of %d bytes" % (what, chunk.id, chunk.payload_size))
     return chunk.unpack("<2I")[1]
 
 
@@ -468,7 +468,7 @@ class Scene:
                     _floats(chunk.first(_PIVOT_POSITION), 3, (0.0, 0.0, 0.0)),
                     _floats(chunk.first(_PIVOT_ROTATION), 4, (0.0, 0.0, 0.0, 1.0)), scale[:3], scale[3:],
                     self.refs(i), _u32(chunk.first(_NODE_RENDER), NODE_RENDER_DEFAULT, "node %d" % i),
-                    _by_layer(chunk.first(_NODE_BY_LAYER), "node %d" % i))
+                    _by_layer(chunk.first(_NODE_BY_LAYER)))
         self._nodes[i] = node
         return node
 

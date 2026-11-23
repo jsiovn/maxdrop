@@ -468,9 +468,11 @@ class TestLayers(unittest.TestCase):
         self.assertEqual(scene.render_flags(bl, None), 0x0F00D600)  # no layer record: its own
         own_off = self.make(layer_obj("L"), layer_node("n", 0, render=0x0F005000, by_layer=0x3040C600))
         self.assertEqual(scene.render_flags(own_off.node(1), own_off.layer(0)), 0x0F00D600)
-        short = self.make(layer_obj("L"), layer_node("n", 0, by_layer=b"\0\0\0\0"))
-        with self.assertRaises(ChunkError):
-            short.node(1)
+        short = self.make(layer_obj("L", render=0x0B005000),
+                          layer_node("n", 0, by_layer=struct.pack("<I", 0x3040C600)))  # not a layout seen
+        n = short.node(1)
+        self.assertEqual(n.render_by_layer, 0)
+        self.assertEqual(scene.render_flags(n, short.layer(0)), 0x0F00D600)
 
     def test_damaged_records(self):
         s = self.make(node(L_LAYER, leaf(0x1020, b"\1")), node(L_LAYER, leaf(0x1050, b"")), leaf(L_LAYER),

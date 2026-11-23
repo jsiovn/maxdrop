@@ -108,7 +108,8 @@ values below, and layers_render's FixtureByLayerOwnOff, `0x0F005000`, set By Lay
 renderable. A layer's flags stay on the layer: the nodes of layers_more's hidden, frozen and non-rendering layers
 have `0x800` and `0x0F00D600`, no `0x0975` or `0x0976` (MAXScript's `isHidden` and `isFrozen` still answer true
 for them; the oracle writes the node's own flags, see [ORACLE.md](ORACLE.md)). `test_scene.py` checks every node's
-hidden, frozen and renderable flags against the oracle.
+hidden, frozen and renderable flags against the oracle (renderable merged with its layer's for a node set By
+Layer, below).
 Cast Shadows and Receive Shadows (Object Properties, Rendering Control) are bits of the same `u32`: saves of a Box
 with one change each (maxdiff) give `0x0F00D400` with Cast Shadows off, `0x0F00D200` with Receive Shadows off and
 `0x0F00D000` with both (layers_flags: FixtureNoCastShadow, FixtureNoReceiveShadow; `test_scene.py` checks both

@@ -28,8 +28,8 @@ scene was downloaded as. Blender 4.2 or newer; tested on 4.2 LTS, 4.5 LTS and 5.
 - **Position, rotation, scale and the whole hierarchy**, matched by the file's own object references (two objects
   with the same name stay apart); groups and Dummy helpers become empties.
 - **Scene units**: a scene saved in millimeters, centimeters, inches or feet arrives at its real size in meters.
-- **Layers** as collections, nested like the layers; hidden, frozen and non-rendering layers and objects keep
-  those flags.
+- **Layers** as collections, nested like the layers; hidden and frozen layers and objects keep those flags, and
+  objects render and cast shadows as 3ds Max renders them (their own flags, or their layer's when set By Layer).
 - **Materials** as a Principled BSDF with their maps as nodes (tiling, offset, rotation, cropping, Mix, Color
   Correction, Falloff, Composite, normal and bump maps): VRayMtl and the other V-Ray materials and wrappers,
   Standard, Physical, Multi/Sub-Object, CoronaPhysicalMtl, CoronaMtl, CoronaLightMtl and CoronaLayeredMtl.
