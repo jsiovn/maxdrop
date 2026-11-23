@@ -11,13 +11,15 @@ unreachable-code check ruff has no rule for at that version.
 The ruff used is `ruff` on PATH when it is that version, otherwise `uvx --offline ruff@<version>` when uv has it
 cached (`--offline`: never a download). The unreachable-code check reads the files ruff checks (`ruff check <the
 arguments> --show-files`) and reports a statement that follows `return`, `raise`, `continue` or `break` in the same
-block: a test method left nested after a return drops out of its suite without a failure. No flow analysis (an
-if/else returning on both branches is not followed) and no suppression comment (`return` then `yield`, the empty
-generator, is flagged too); a file this Python cannot parse is noted on stderr and not checked; the check is
-skipped with an argument ruff refuses beside --show-files (--statistics, --add-noqa, ...). Exit: ruff's own (0
-clean, 1 findings, 2 a ruff error such as a bad argument; an unreachable statement turns 0 into 1 unless
---exit-zero), 3 when no ruff of that version is found or pyproject.toml has no pin. Standard library only, Python
-3.9 and later (no tomllib).
+block, or a compound statement no path through falls out of (a `with` whose body exits, an `if`/`else` exiting on
+both branches, a `try` whose `finally` exits or whose body and handlers do, a `match` ending in an irrefutable
+case with every case exiting): a test method left nested after a return drops out of its suite without a failure.
+Loops are never followed (a `break` leaves them, `while True` included) and there is no suppression comment
+(`return` then `yield`, the empty generator, is flagged too); a file this Python cannot parse is noted on stderr
+and not checked; the check is skipped with an argument ruff refuses beside --show-files (--statistics,
+--add-noqa, ...). Exit: ruff's own (0 clean, 1 findings, 2 a ruff error such as a bad argument; an unreachable
+statement turns 0 into 1 unless --exit-zero), 3 when no ruff of that version is found or pyproject.toml has no
+pin. Standard library only, Python 3.9 and later (no tomllib).
 """
 import ast
 import os
@@ -74,6 +76,41 @@ def _echo(data, stream):
 
 
 _TERMINAL = (ast.Return, ast.Raise, ast.Continue, ast.Break)
+_TRY = tuple(getattr(ast, name) for name in ("Try", "TryStar") if hasattr(ast, name))  # TryStar: 3.11
+_MATCH = getattr(ast, "Match", None)  # 3.10
+_NAMES = {"AsyncWith": "async with", "TryStar": "try"}
+
+
+def _block_exits(block):
+    # Control never passes a statement that exits, so a block exits when any statement in it does.
+    return any(_exits(stmt) for stmt in block)
+
+
+def _irrefutable(pattern):
+    if isinstance(pattern, ast.MatchOr):
+        return any(_irrefutable(p) for p in pattern.patterns)
+    return isinstance(pattern, ast.MatchAs) and pattern.pattern is None  # `case _:` / `case name:`
+
+
+def _exits(stmt):
+    """True when no path through `stmt` falls through to the next statement. Loops never exit (a break leaves
+    them, `while True` included), nor do definitions."""
+    if isinstance(stmt, _TERMINAL):
+        return True
+    if isinstance(stmt, (ast.With, ast.AsyncWith)):
+        return _block_exits(stmt.body)
+    if isinstance(stmt, ast.If):  # elif: an If in orelse
+        return bool(stmt.orelse) and _block_exits(stmt.body) and _block_exits(stmt.orelse)
+    if isinstance(stmt, _TRY):
+        # The else runs only after the body completes: either one exiting covers the path without an exception.
+        return _block_exits(stmt.finalbody) or (
+            all(_block_exits(handler.body) for handler in stmt.handlers)
+            and (_block_exits(stmt.body) or _block_exits(stmt.orelse)))
+    if _MATCH is not None and isinstance(stmt, _MATCH):
+        last = stmt.cases[-1]
+        return (last.guard is None and _irrefutable(last.pattern)
+                and all(_block_exits(case.body) for case in stmt.cases))
+    return False
 
 
 def _blocks(node):
@@ -85,17 +122,18 @@ def _blocks(node):
 
 
 def unreachable(path):
-    """[(line, column, message)] of the first statement after a terminal one, once per block; columns from 1.
-    Raises SyntaxError when this Python cannot parse the file (ruff's E9 reports a real one)."""
+    """[(line, column, message)] of the first statement after one that exits (`_exits`), once per block; columns
+    from 1. Raises SyntaxError when this Python cannot parse the file (ruff's E9 reports a real one)."""
     with open(path, "rb") as f:
         tree = ast.parse(f.read(), path)
     found = []
     for node in ast.walk(tree):
         for block in _blocks(node):
             for before, dead in zip(block, block[1:]):
-                if isinstance(before, _TERMINAL):
+                if _exits(before):
+                    name = type(before).__name__
                     found.append((dead.lineno, dead.col_offset + 1,
-                                  "unreachable code after `%s`" % type(before).__name__.lower()))
+                                  "unreachable code after `%s`" % _NAMES.get(name, name.lower())))
                     break
     return sorted(found)
 

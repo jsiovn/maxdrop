@@ -16,6 +16,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -162,7 +163,69 @@ class UnreachableTest(unittest.TestCase):
     def test_one_finding_per_block(self):
         self.assertEqual(len(self.findings("def f():\n    return 1\n    a = 1\n    b = 2\n")), 1)
 
-    def test_syntax_error_is_raised_for_main_to_note(self):
+    def lines(self, source):
+        return [line for line, _, _ in self.findings(source)]
+
+    def test_def_after_with_that_returns(self):
+        # maxdrop-6n0.7.1: the helper's last statement holds the return, the test def after it is nested.
+        source = ("class T:\n"
+                  "    def read(self, p):\n"
+                  "        with open(p) as f:\n"
+                  "            return f.read()\n"
+                  "        def test_b(self):\n"      # 5
+                  "            pass\n")
+        found = self.findings(source)
+        self.assertEqual([(line, col) for line, col, _ in found], [(5, 9)])
+        self.assertIn("`with`", found[0][2])
+        self.assertEqual(self.lines(source.replace("with open", "async with open")), [5])
+
+    def test_after_if_else_both_exiting(self):
+        self.assertEqual(self.lines("def f(x):\n    if x:\n        return 1\n    else:\n        raise ValueError\n"
+                                    "    x = 2\n"), [6])
+        self.assertEqual(self.lines("def f(x):\n    if x:\n        return 1\n    elif x is None:\n"
+                                    "        return 2\n    else:\n        return 3\n    x = 2\n"), [8])
+        # A body ending in a nested if/else that exits on both branches exits too.
+        self.assertEqual(self.lines("def f(x, y):\n    with x:\n        if y:\n            return 1\n"
+                                    "        else:\n            return 2\n    y = 3\n"), [7])
+
+    def test_after_try_except_both_returning(self):
+        self.assertEqual(self.lines("def f():\n    try:\n        return g()\n    except OSError:\n"
+                                    "        return None\n    h()\n"), [6])
+        # try/finally whose finally returns; a body that returns with else and handlers returning.
+        self.assertEqual(self.lines("def f():\n    try:\n        g()\n    finally:\n        return 1\n    h()\n"),
+                         [6])
+        self.assertEqual(self.lines("def f():\n    try:\n        g()\n    except OSError:\n        raise\n"
+                                    "    else:\n        return 1\n    h()\n"), [8])
+        # One handler falls through: the statement after the try runs.
+        self.assertEqual(self.lines("def f():\n    try:\n        return g()\n    except OSError:\n"
+                                    "        return None\n    except ValueError:\n        pass\n    h()\n"), [])
+
+    def test_not_after_loop_or_open_if(self):
+        self.assertEqual(self.lines("def f(xs):\n    for x in xs:\n        return x\n    return None\n"), [])
+        self.assertEqual(self.lines("def f():\n    while True:\n        return 1\n    return None\n"), [])
+        self.assertEqual(self.lines("def f(x):\n    if x:\n        return 1\n    return 2\n"), [])
+        self.assertEqual(self.lines("def f(x):\n    if x:\n        return 1\n    else:\n        x = 0\n"
+                                    "    return x\n"), [])
+        self.assertEqual(self.lines("def f(x):\n    with x:\n        pass\n    return x\n"), [])
+
+    def test_nested_compound_inside_loop(self):
+        source = ("def f(xs):\n"
+                  "    for x in xs:\n"
+                  "        with x:\n"
+                  "            continue\n"
+                  "        x.close()\n"          # 5: dead inside the loop
+                  "    return xs\n")             # 6: the loop is never terminal
+        self.assertEqual(self.lines(source), [5])
+
+    @unittest.skipIf(sys.version_info < (3, 10), "match needs Python 3.10")
+    def test_after_match_with_wildcard(self):
+        head = "def f(x):\n    match x:\n        case 1:\n            return 1\n"
+        self.assertEqual(self.lines(head + "        case _:\n            return 2\n    x = 3\n"), [7])
+        self.assertEqual(self.lines(head + "        case 2 | other:\n            return 2\n    x = 3\n"), [7])
+        self.assertEqual(self.lines(head + "        case 2:\n            return 2\n    x = 3\n"), [])
+        self.assertEqual(self.lines(head + "        case _ if x:\n            return 2\n    x = 3\n"), [])
+        self.assertEqual(self.lines(head + "        case _:\n            pass\n    x = 3\n"), [])
+
         # Ruff's E9 reports it; main() prints a note and goes on with the other files.
         with self.assertRaises(SyntaxError):
             self.findings("def f(:\n    return\n")
