@@ -67,9 +67,10 @@ Measured in Blender 4.2, 4.5 and 5.2 (bead maxdrop-6n0.7.4, w 0.2, white glass):
 a smooth sphere 0.831-0.834, flat (Cycles 1.000 both; w 0.5 on the cube: EEVEE 0.746-0.748, Cycles 0.995); the
 lone Principled glass gave 0.926-0.930 on the cube in EEVEE. Not total internal reflection: on the cube a lone
 Refraction BSDF keeps 0.994 of the environment, one of color 0.8 0.636 (0.8^2; hand-wired, 5.2). The drawing
-stays: both engines read the same factor and color, so a tree that lifts EEVEE lifts Cycles too. Material Output's
-Thickness linked to 0 (one refraction event in EEVEE; Cycles ignores it) gives white glass 0.990-0.994, but applies
-c once, so tinted glass gets too light (a sphere, c 0.5, w 0.2: 0.594-0.596, where Cycles gives 0.400 and the
+stays: both engines read the same factor and color, so a factor or color that lifts EEVEE lifts Cycles too (short
+of a second Material Output for EEVEE only, which would duplicate the stack above every such BSDF). Material
+Output's Thickness linked to 0 (one refraction event in EEVEE, a thin shell's look; Cycles ignores it) gives white
+glass 0.990-0.994 (a sphere), but applies c once, so tinted glass gets too light (a sphere, c 0.5, w 0.2: 0.594-0.596, where Cycles gives 0.400 and the
 default 0.356-0.358; hand-wired, 4.2 to 5.2); left out.
 Glass that refracting() refuses keeps the filled BSDF under the mirror, its glass Fresnel still reflecting; a
 constant w of at least 1 keeps the lone BSDF (a VRayMtl's bright Fresnel-off reflection is a metal before it gets
