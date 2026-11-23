@@ -89,10 +89,10 @@ def describe(v):
     return L.describe(1, "x", v, MM, colors.GAMMA_ON)
 
 
-def ies_bytes(rated=500, candela=100, lamps=1):
+def ies_bytes(rated=500, candela=100, lamps=1, ballast=1):
     """A self-authored isotropic LM-63 file: candela cd in every direction (4 pi candela lm), rated lumens rated."""
-    return ("IESNA:LM-63-2002\n[TEST] MaxDrop unit test\nTILT=NONE\n%d %s 1 3 1 1 2 0 0 0\n1 1 0\n0 90 180\n0\n"
-            "%s %s %s\n" % (lamps, rated, candela, candela, candela)).encode("ascii")
+    return ("IESNA:LM-63-2002\n[TEST] MaxDrop unit test\nTILT=NONE\n%d %s 1 3 1 1 2 0 0 0\n%s 1 0\n0 90 180\n0\n"
+            "%s %s %s\n" % (lamps, rated, ballast, candela, candela, candela)).encode("ascii")
 
 
 def with_file(v, data=None, issue=None):
@@ -294,20 +294,26 @@ class SunAndIes(unittest.TestCase):
         ld, issues = describe(with_file(ies(power=1000.0), ies_bytes(rated=-1)))  # absolute: the power is the flux
         self.assertAlmostEqual(ld.watts, 1000.0 / 683.0, delta=1e-12)
         self.assertEqual(issues, [L.IES_FILE % "a.ies"])
-        ld, issues = describe(with_file(ies(power=1000.0), ies_bytes(lamps=2)))
-        self.assertAlmostEqual(ld.watts, 4.0 * math.pi * 200.0 / 683.0, delta=1e-9)
-        self.assertEqual(issues, [L.IES_LAMPS % ("a.ies", 2), L.IES_FILE % "a.ies"])
-        ld, issues = describe(with_file(ies(power=1000.0), ies_bytes(rated=-1, lamps=2)))  # lumens per lamp unused
+        ld, issues = describe(with_file(ies(power=1000.0), ies_bytes(lamps=2)))  # rated 2 x 500 lm (measured)
+        self.assertAlmostEqual(ld.watts, 4.0 * math.pi * 100.0 / 683.0, delta=1e-9)
         self.assertEqual(issues, [L.IES_FILE % "a.ies"])
+        ld, issues = describe(with_file(ies(power=1000.0), ies_bytes(rated=-1, lamps=2)))  # lumens per lamp unused
+        self.assertAlmostEqual(ld.watts, 1000.0 / 683.0, delta=1e-12)
+        self.assertEqual(issues, [L.IES_FILE % "a.ies"])
+        ld, issues = describe(with_file(ies(power=1000.0), ies_bytes(ballast=0.5)))  # the ballast factor applies
+        self.assertAlmostEqual(ld.watts, 4.0 * math.pi * 100.0 / 683.0, delta=1e-9)
+        self.assertEqual(issues, [L.IES_FILE % "a.ies"])
+        ld, issues = describe(with_file(ies(power=1000.0), ies_bytes(rated=0)))  # 0 lm: the power is the flux
+        self.assertAlmostEqual(ld.watts, 1000.0 / 683.0, delta=1e-12)
         ld, issues = describe(with_file(ies(power=1000.0), ies_bytes(candela=0)))
         self.assertEqual((ld.watts, issues), (0.0, [L.IES_DARK % "a.ies", L.IES_FILE % "a.ies"]))
         ld, issues = describe(with_file(ies(power=1000.0), ies_bytes(rated="1e-300")))
         self.assertEqual((ld.watts, ld.power, issues), (0.0, 0.0, [L.IES_FILE % "a.ies", L.OUT_OF_RANGE]))
 
     def test_ies_file_not_read(self):
-        ld, issues = describe(with_file(ies(power=1000.0), issue="photometric type B is not read"))
+        ld, issues = describe(with_file(ies(power=1000.0), issue="a candela value is negative"))
         self.assertAlmostEqual(ld.watts, 1000.0 / 683.0, delta=1e-12)
-        self.assertEqual(issues, [L.IES_UNREAD % ("a.ies", "photometric type B is not read"), L.IES_FILE % "a.ies"])
+        self.assertEqual(issues, [L.IES_UNREAD % ("a.ies", "a candela value is negative"), L.IES_FILE % "a.ies"])
         ld, issues = describe(with_file(ies(power=1000.0)))  # not found
         self.assertEqual(issues, [L.IES_RATED, L.IES_FILE % "a.ies"])
 
