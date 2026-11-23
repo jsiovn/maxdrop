@@ -188,6 +188,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   Addition, Screen and the other blend modes likewise. Its images below are read as stored and its result goes
   through a Gamma node of 2.2. A Mix between black and white by a mask stays exact as before, and its mix amount is
   now decoded too (50 % is 0.214, not 0.5). An RGB Multiply was already within 0.005 and is unchanged.
+- Maps: a normal map or bump map image is read as V-Ray 5.2 and Corona 12 read it instead of always as stored: in
+  a scene saved with the gamma on a Bitmap at automatic gamma (or 2.2) is decoded, which bends the normals of a
+  map whose author left it so, as those renderers do; a CoronaBitmap at automatic gamma is decoded with the gamma
+  on and off. A Bitmap at gamma 1.0, any Bitmap in a scene saved with the gamma off and a VRayBitmap below a normal
+  map stay as stored. A CoronaNormal's Add gamma to input over an image is now applied (with the gamma on; with it
+  off it changes nothing) instead of being a line in the report.
 
 ## [1.0.1] - 2026-11-22
 

@@ -1452,6 +1452,27 @@ picker and Material Editor switches off).
   by up to 0.27 (the colored pair), 16 of 24 planes by more than 0.02. A product commutes with a power law, so a
   decoded RGB Multiply is within 0.005. The rule is in `maxdrop/convert/texmaps.py` (STORED, Decode); Blender 5.2
   renders of the probe scenes agree with V-Ray within 0.0085 on every plane. Falloff and CoronaMix were not probed.
+- Normal and bump images (maxdrop-em3.159), V-Ray 5.2 renders read through VRayBumpNormals and Corona 12 renders
+  through CGeometry_NormalsShading (both store (n + 1) / 2; an orthographic top camera), 8-bit PNGs: a flat
+  (128, 128, 255) and a tilted (180, 100, 220) normal map under VRayNormalMap, Normal Bump and CoronaNormal, a
+  grey ramp tiled 10 times as a height (in the bump slot and as a normal map's bump), its slope read at 0.25 and
+  0.75 of a tooth (as stored equal; decoded by 2.2 about 1 : 3.4):
+
+  | Image | gamma on | gamma off |
+  |---|---|---|
+  | Bitmap automatic / 2.2 | decoded: flat (-0.44, -0.44, 0.78), 38.5 degrees; height 0.015 / 0.050 | as stored: (0, 0, 1); 0.030 / 0.030 |
+  | Bitmap 1.0 | as stored | as stored |
+  | CoronaBitmap automatic / 2.2; 1.0 | decoded; as stored | decoded; as stored |
+  | VRayBitmap None / sRGB / From 3ds Max below a normal map | as stored | as stored |
+  | VRayBitmap height None / sRGB / From 3ds Max | stored / decoded / decoded | stored / decoded / stored |
+  | CoronaNormal Add gamma to input over Bitmap or CoronaBitmap automatic; 1.0 | as stored; raised to 1 / 2.2 | no effect |
+
+  So a normal or bump input takes an image as a data input does (the same rule for Bitmap and CoronaBitmap in
+  Corona 12), except a VRayBitmap below a normal map, which V-Ray reads as stored. One reading MaxDrop does not
+  follow: a VRayBitmap From 3ds Max directly in a VRayMtl bump slot with the gamma off is decoded (below
+  VRayNormalMap's bump input it is stored, as on a data input). V-Ray bends a decoded tilt over about 44 degrees
+  back toward the surface (the tilted map decoded: 44.2 degrees for 59.2, the decoded azimuth). The rule is in
+  `maxdrop/convert/texmaps.py` (colorspace, `_vray_image`, `_add_gamma`).
 
 ## Summary properties
 
