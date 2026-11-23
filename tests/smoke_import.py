@@ -77,7 +77,7 @@ FIXTURE_ISSUES = {"uvwmap.max": 2, "stack_convert.max": 1, "vray_lights.max": 3,
                   "stack_shell.max": 2,  # stack_shell: two Shell rims Blender cannot match
                   "shapes_more.max": 1,  # shapes_more: FixtureCurveMixed's spline mixes material IDs
                   "layers_flags.max": 1,  # layers_flags: FixtureNoReceiveShadow (no such switch in Blender)
-                  "layers_render.max": 1,  # layers_render: FixtureByLayerNoReceive, By Layer, the same
+                  "layers_render.max": 1,  # layers_render: FixtureByLayerNoReceive (its layer)
                   "vray_mesh_light.max": 2}  # vray_mesh_light: an own mesh's Shell, a mesh light without a mesh
 # issues a fixture adds when imported from a pack without its maps (two_scenes): vray_dome's dome texture not found
 MAPLESS_ISSUES = {"vray_dome.max": 1}

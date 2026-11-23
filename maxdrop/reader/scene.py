@@ -29,14 +29,14 @@ member (0x100); in the u32 of 0x099C bit 0x8000 is renderable, 0x200 Cast Shadow
 (without the chunk all three are on). The second u32 of the node's 0x0A28 is its By Layer mask: the 0x099C bits
 taken from its layer instead (Rendering Control By Layer sets 0x8000, 0x400 and 0x200 in it; render_flags merges
 them, only from the node's own layer, never a parent layer). A layer is a Base Layer: 0x1010 its name (UTF-8),
-0x1020 the same hidden and frozen bits, 0x1050 the node's three render bits (all on without it) and, when the
+0x1020 the same hidden and frozen bits, 0x1050 a node's three render bits (all on without it) and, when the
 byte 0x1090 is not 0, 0x10B0 the i32 object index of its parent layer. The Layer Manager references the layers
 in its order (slot 0 = layer "0"). A derived object (special id 0x2032) references [modifier, ..., base object],
 the top of the stack first; its base can be another derived object. A world-space modifier sits in a derived
 object of its own (special id 0x2033), [world-space modifiers, the object's 0x2032 derived object or its base
-object], read the same way. docs/FORMAT.md says which
-fixture shows what. The frame rate is not in the Scene stream: Config `0x20B0/0x0010` is an i32 of frames per
-second, read by from_file (ticks_per_frame(cf)); without it, or with a value outside 1 to 4800, 30 fps.
+object], read the same way. docs/FORMAT.md says which fixture shows what. The frame rate is not in the Scene
+stream: Config `0x20B0/0x0010` is an i32 of frames per second, read by from_file (ticks_per_frame(cf)); without
+it, or with a value outside 1 to 4800, 30 fps.
 
 Nodes are keyed by object index, never by name: two nodes with the same name are two nodes. A parent that is not
 a Node (the RootNode, another class, out of range) means top level. A parent cycle is cut at its member with the
@@ -65,7 +65,8 @@ SLOT_TM, SLOT_OBJECT, SLOT_MATERIAL, SLOT_LAYER = 0, 1, 3, 6
 GROUP_HEAD, GROUP_MEMBER, HIDDEN, FROZEN = 0x40, 0x100, 0x100000, 0x200000  # node 0x0960, layer 0x1020
 RENDERABLE = 0x8000  # node 0x099C, layer 0x1050
 CAST_SHADOWS, RECEIVE_SHADOWS = 0x200, 0x400  # node 0x099C, layer 0x1050
-NODE_RENDER_DEFAULT = RENDERABLE | CAST_SHADOWS | RECEIVE_SHADOWS  # a node without 0x099C, a layer without 0x1050
+RENDER_BITS = RENDERABLE | CAST_SHADOWS | RECEIVE_SHADOWS  # the render bits read; render_flags() merges only these
+NODE_RENDER_DEFAULT = RENDER_BITS  # a node without 0x099C, a layer without 0x1050
 TICKS_PER_SECOND = 4800
 DEFAULT_TICKS_PER_FRAME = 160  # 30 fps, 3ds Max's default
 MAX_CONFIG = 1 << 24  # bytes: a Config stream is tens of kilobytes
@@ -88,9 +89,9 @@ class Stack(collections.namedtuple("Stack", "base modifiers derived")):
 
 class Node:
     """One node. parent is the parent node's object index after cycle cutting (None = top level); parent_index is
-    the index as stored. render_flags is its own 0x099C, render_by_layer the mask of the bits its layer gives (0
-    when By Object); renderable, cast_shadows and receive_shadows are its own bits, render_flags() the merged
-    ones."""
+    the index as stored. The attribute render_flags is its own 0x099C, render_by_layer the mask of the bits its
+    layer gives (0 when By Object); renderable, cast_shadows and receive_shadows are its own bits, the module's
+    render_flags(node, layer) the merged ones."""
     __slots__ = ("index", "name", "parent", "parent_index", "flags", "pivot_position", "pivot_rotation",
                  "pivot_scale", "pivot_scale_axis", "refs", "render_flags", "render_by_layer")
 
@@ -181,11 +182,11 @@ class Layer:
 
 
 def render_flags(node, layer):
-    """The 0x099C bits 3ds Max renders node with: its own, but those of NODE_RENDER_DEFAULT its By Layer mask names
-    taken from layer (its own Layer record; None, as for a node without a layer, keeps its own)."""
+    """The 0x099C bits 3ds Max renders node with: its own, but those of RENDER_BITS its By Layer mask names taken
+    from layer (its own Layer record; None, as for a node without a layer, keeps its own)."""
     if layer is None:
         return node.render_flags
-    mask = node.render_by_layer & NODE_RENDER_DEFAULT
+    mask = node.render_by_layer & RENDER_BITS
     return (node.render_flags & ~mask) | (layer.render_flags & mask)
 
 

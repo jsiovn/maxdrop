@@ -608,6 +608,17 @@ class TestFixtures(unittest.TestCase):
                                            e["receive_shadows"], e["parent"]) for e in oracle["layers"]])
                 del nodes
 
+    def test_layers_render_own_bits(self):
+        """layers_render's FixtureByLayerOwnOff keeps its own three bits off in 0x099C (0x0F005000); By Layer, it
+        renders with its layer's, all on, as the oracle says."""
+        with cfb.CompoundFile(os.path.join(ROOT, "tests", "fixtures", "layers_render.max")) as cf:
+            s = _scene(cf)
+            n = next(n for n in s.nodes() if n.name == "FixtureByLayerOwnOff")
+            self.assertEqual((n.render_flags, n.renderable, n.cast_shadows, n.receive_shadows),
+                             (0x0F005000, False, False, False))
+            self.assertEqual(n.render_by_layer, 0x3040C600)
+            self.assertEqual(scene.render_flags(n, s.layer(n.layer)), 0x0F00D600)
+
     def test_layers_more_records(self):
         """The bytes docs/FORMAT.md quotes from layers_more: a hidden or frozen layer sets its own bits, not its
         nodes'; the empty 0x0975 / 0x0976 beside a node's own hidden / frozen bit; a nested layer's parent."""
