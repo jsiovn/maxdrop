@@ -2,7 +2,7 @@
   "file": "extrude.max",
   "file_version": [22000, 22000],
   "layers": [
-    {"frozen": false, "hidden": false, "name": "0", "parent": null, "renderable": true}
+    {"cast_shadows": true, "frozen": false, "hidden": false, "name": "0", "parent": null, "receive_shadows": true, "renderable": true}
   ],
   "material_graph": [
     {
@@ -242,6 +242,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": {
         "adaptive": false,
@@ -302,6 +303,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": {
         "adaptive": false,
@@ -364,6 +366,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": {
         "adaptive": false,
@@ -433,6 +436,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": {
         "adaptive": false,
@@ -511,6 +515,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": {
         "adaptive": false,
@@ -570,6 +575,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": {
         "adaptive": false,
@@ -2164,6 +2170,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": {
         "adaptive": true,
@@ -2220,6 +2227,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": {
         "adaptive": false,
@@ -2280,6 +2288,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": {
         "adaptive": false,
@@ -2352,6 +2361,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": {
         "adaptive": false,
@@ -2412,6 +2422,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": {
         "adaptive": false,
@@ -2482,6 +2493,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": {
         "adaptive": false,
@@ -2510,7 +2522,7 @@
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 180, 120, 0]
     }
   ],
-  "oracle_version": 13,
+  "oracle_version": 14,
   "render": {"camera": null, "height": 480, "pixel_aspect": 1, "width": 640},
   "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
   "time": 0,

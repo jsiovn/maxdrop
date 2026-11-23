@@ -2,7 +2,7 @@
   "file": "lights_photometric.max",
   "file_version": [22000, 22000],
   "layers": [
-    {"frozen": false, "hidden": false, "name": "0", "parent": null, "renderable": true}
+    {"cast_shadows": true, "frozen": false, "hidden": false, "name": "0", "parent": null, "receive_shadows": true, "renderable": true}
   ],
   "material_graph": [],
   "materials": [],
@@ -38,6 +38,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1500]
@@ -71,6 +72,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, -500, 0, 1500]
@@ -104,6 +106,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [0.906308, 0, -0.422618, 0.109382, 0.965926, 0.23457, 0.408218, -0.258819, 0.875426, 500, 0, 1500]
@@ -137,6 +140,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 1000, 0, 2500]
@@ -170,6 +174,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 1500, 0, 2500]
@@ -203,6 +208,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 500, 2500]
@@ -236,6 +242,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 500, 500, 1500]
@@ -269,6 +276,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 1000, 500, 1500]
@@ -302,6 +310,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 1700, 700, 0]
@@ -335,6 +344,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [0.707107, -0.707107, 0, 0.702624, 0.702624, 0.11242, -0.0794929, -0.0794929, 0.993661, 1500, 500, 2500]
@@ -368,6 +378,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1000, 1500]
@@ -401,6 +412,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 500, 1000, 2500]
@@ -434,6 +446,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [0.866025, 0, -0.5, 0, 1, 0, 0.5, 0, 0.866025, 1000, 1000, 2500]
@@ -467,6 +480,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1500, 0]
@@ -500,6 +514,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1500, 2000]
@@ -533,6 +548,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 500, 1500, 0]
@@ -566,6 +582,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 500, 1500, 2000]
@@ -599,6 +616,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 1000, 1500, 0]
@@ -632,6 +650,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 1000, 1500, 2000]
@@ -665,6 +684,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 1500, 1500, 0]
@@ -698,6 +718,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 1500, 1500, 2000]
@@ -731,6 +752,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 2000, 1500, 0]
@@ -764,12 +786,13 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 2000, 1500, 2000]
     }
   ],
-  "oracle_version": 13,
+  "oracle_version": 14,
   "render": {"camera": null, "height": 480, "pixel_aspect": 1, "width": 640},
   "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
   "time": 0,

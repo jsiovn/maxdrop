@@ -17,7 +17,7 @@ global MaxDropOracle
 
 struct MaxDropOracleStruct
 (
-	version = 13,
+	version = 14,
 
 	fn num v =
 	(
@@ -479,6 +479,7 @@ struct MaxDropOracleStruct
 			#("offset_scale", vec n.objectOffsetScale), \
 			#("parent", parent), \
 			#("receive_shadows", bool n.receiveShadows), \
+			#("render_by_layer", bool n.renderByLayer), \
 			#("renderable", bool n.renderable), \
 			#("shape", shapeJson n), \
 			#("transform", mat12 n.transform) \
@@ -723,7 +724,7 @@ struct MaxDropOracleStruct
 		(
 			local l = LayerManager.getLayer i
 			local p = l.getParent()
-			append items (inline #(#("frozen", bool l.isFrozen), #("hidden", bool l.isHidden), #("name", str l.name), #("parent", if p == undefined then "null" else str p.name), #("renderable", bool l.renderable)))
+			append items (inline #(#("cast_shadows", bool l.castShadows), #("frozen", bool l.isFrozen), #("hidden", bool l.isHidden), #("name", str l.name), #("parent", if p == undefined then "null" else str p.name), #("receive_shadows", bool l.receiveShadows), #("renderable", bool l.renderable)))
 		)
 		block items 2
 	),

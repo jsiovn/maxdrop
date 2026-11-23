@@ -2,7 +2,7 @@
   "file": "controllers_tangents.max",
   "file_version": [22000, 22000],
   "layers": [
-    {"frozen": false, "hidden": false, "name": "0", "parent": null, "renderable": true}
+    {"cast_shadows": true, "frozen": false, "hidden": false, "name": "0", "parent": null, "receive_shadows": true, "renderable": true}
   ],
   "material_graph": [
     {
@@ -172,6 +172,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, -33.8519, -35.8889, 5]
@@ -205,6 +206,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, -11.5948, 0, 0]
@@ -238,6 +240,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 2.91391, 28.1018, 5.984]
@@ -271,6 +274,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1.07181, 0, 0, 0, 0.919857, 0, 0, 0, 1.05302, 20, 0, 0]
@@ -304,6 +308,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [0.969968, -0.179964, 0.163632, 0.00579782, 0.689653, 0.724116, -0.243164, -0.701421, 0.669985, 40, 0, 0]
@@ -337,6 +342,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, -14.5944, 31.8083, 0]
@@ -370,6 +376,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 23.5393, 38.2304, 3.87515]
@@ -403,6 +410,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [0.124875, -0.0461677, 0.991098, 0.99065, 0.061116, -0.121971, -0.0549408, 0.997062, 0.0533679, 40, 40, 0]
@@ -436,6 +444,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1.44568, 0, 0, 0, 0.825726, 0, 0, 0, 1.17427, 60, 40, 0]
@@ -469,6 +478,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [0.587785, 0.809017, 0, -0.809017, 0.587785, 0, 0, 0, 1, 60, 0, 0]
@@ -502,6 +512,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, -19.0836, -25.7606, 20.3225]
@@ -535,6 +546,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, -6.72017, -29.0172, 6.34337]
@@ -568,6 +580,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 8.64994, -70.7223, 12.3126]
@@ -601,6 +614,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1.66655, -0.0122759, -0.00129855, -0.0122759, 0.973952, 0.436968, -0.00129855, 0.436968, 2.19283, 0, 0, 0]
@@ -634,6 +648,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1.58837, -0.011323, -0.00763645, -0.011323, 1.15798, 0.599178, -0.00763645, 0.599178, 2.82914, 0, 0, 0]
@@ -667,6 +682,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1.73954, 0.423386, 0.0260402, 0.423386, 0.77815, -0.117973, 0.0260402, -0.117973, 1.38231, 0, 0, 0]
@@ -700,6 +716,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [0.644248, -0.486978, -0.589743, -0.22803, 0.613718, -0.755879, 0.730032, 0.621453, 0.284341, 0, 0, 0]
@@ -733,6 +750,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [-0.805625, -0.551892, 0.215368, 0.590311, -0.717137, 0.37047, -0.0500113, 0.425594, 0.903531, 0, 0, 0]
@@ -766,6 +784,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [0.913654, -0.194245, -0.357078, -0.0469113, 0.822183, -0.567287, 0.403777, 0.535055, 0.742078, 0, 0, 0]
@@ -799,6 +818,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [-0.529872, 0.0482785, 0.846702, 0.814452, 0.307311, 0.492167, -0.23644, 0.950384, -0.202156, 0, 0, 0]
@@ -832,6 +852,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [0.987621, 0.155577, 0.0200349, -0.126691, 0.866442, -0.482937, -0.0924928, 0.47442, 0.875426, 0, 0, 0]
@@ -865,6 +886,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [3.28889, 0.496216, 0.680987, -0.780359, 0.516441, 0.298545, 1.20664, 0.397848, 2.56391, 0, 0, 0]
@@ -898,12 +920,13 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [0.670823, 0.38658, -0.632893, -0.427836, 0.898795, 0.0955198, 0.605767, 0.206697, 0.768325, 0, 0, 0]
     }
   ],
-  "oracle_version": 13,
+  "oracle_version": 14,
   "render": {"camera": null, "height": 480, "pixel_aspect": 1, "width": 640},
   "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
   "time": 0,

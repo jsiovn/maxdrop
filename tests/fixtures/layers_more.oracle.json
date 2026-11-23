@@ -2,13 +2,13 @@
   "file": "layers_more.max",
   "file_version": [22000, 22000],
   "layers": [
-    {"frozen": false, "hidden": false, "name": "0", "parent": null, "renderable": true},
-    {"frozen": false, "hidden": true, "name": "FixtureHiddenLayer", "parent": null, "renderable": true},
-    {"frozen": true, "hidden": false, "name": "FixtureFrozenLayer", "parent": null, "renderable": true},
-    {"frozen": false, "hidden": false, "name": "FixtureNoRenderLayer", "parent": null, "renderable": false},
-    {"frozen": false, "hidden": false, "name": "FixtureParentLayer", "parent": null, "renderable": true},
-    {"frozen": false, "hidden": false, "name": "FixtureChildLayer", "parent": "FixtureParentLayer", "renderable": true},
-    {"frozen": false, "hidden": false, "name": "FixtureL\u00e4yer\u4e2d", "parent": null, "renderable": true}
+    {"cast_shadows": true, "frozen": false, "hidden": false, "name": "0", "parent": null, "receive_shadows": true, "renderable": true},
+    {"cast_shadows": true, "frozen": false, "hidden": true, "name": "FixtureHiddenLayer", "parent": null, "receive_shadows": true, "renderable": true},
+    {"cast_shadows": true, "frozen": true, "hidden": false, "name": "FixtureFrozenLayer", "parent": null, "receive_shadows": true, "renderable": true},
+    {"cast_shadows": true, "frozen": false, "hidden": false, "name": "FixtureNoRenderLayer", "parent": null, "receive_shadows": true, "renderable": false},
+    {"cast_shadows": true, "frozen": false, "hidden": false, "name": "FixtureParentLayer", "parent": null, "receive_shadows": true, "renderable": true},
+    {"cast_shadows": true, "frozen": false, "hidden": false, "name": "FixtureChildLayer", "parent": "FixtureParentLayer", "receive_shadows": true, "renderable": true},
+    {"cast_shadows": true, "frozen": false, "hidden": false, "name": "FixtureL\u00e4yer\u4e2d", "parent": null, "receive_shadows": true, "renderable": true}
   ],
   "material_graph": [
     {
@@ -178,6 +178,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]
@@ -211,6 +212,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 20, 0, 0]
@@ -244,6 +246,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 40, 0, 0]
@@ -277,6 +280,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 60, 0, 0]
@@ -310,6 +314,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 80, 0, 0]
@@ -343,6 +348,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 30, 0]
@@ -376,6 +382,7 @@
       "offset_scale": [1, 1, 1],
       "parent": null,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 20, 30, 0]
@@ -409,12 +416,13 @@
       "offset_scale": [1, 1, 1],
       "parent": 7,
       "receive_shadows": true,
+      "render_by_layer": false,
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 40, 30, 0]
     }
   ],
-  "oracle_version": 13,
+  "oracle_version": 14,
   "render": {"camera": null, "height": 480, "pixel_aspect": 1, "width": 640},
   "renderer": {"class_id": ["0x00000001", "0x00000000"], "class_name": "Default_Scanline_Renderer"},
   "time": 0,

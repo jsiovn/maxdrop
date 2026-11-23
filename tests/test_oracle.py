@@ -23,11 +23,11 @@ TOP_KEYS = ["file", "file_version", "layers", "material_graph", "materials", "ma
 NODE_KEYS = ["base_class_id", "base_class_name", "base_faces", "base_superclass", "base_verts", "bbox_max",
              "bbox_min", "camera", "cast_shadows", "eval_faces", "eval_maps", "eval_mesh", "eval_verts", "frozen",
              "handle", "hidden", "index", "instances", "layer", "material", "modifiers", "name", "object_transform",
-             "offset_pos", "offset_rot", "offset_scale", "parent", "receive_shadows", "renderable", "shape",
-             "transform"]
+             "offset_pos", "offset_rot", "offset_scale", "parent", "receive_shadows", "render_by_layer", "renderable",
+             "shape", "transform"]
 MODIFIER_KEYS = ["class_id", "class_name", "context_bbox_max", "context_bbox_min", "context_tm", "enabled",
                  "enabled_in_renders", "enabled_in_views", "name"]
-LAYER_KEYS = ["frozen", "hidden", "name", "parent", "renderable"]
+LAYER_KEYS = ["cast_shadows", "frozen", "hidden", "name", "parent", "receive_shadows", "renderable"]
 CAMERA_KEYS = ["fov", "hither", "manual_clip", "ortho", "tdist", "yon"]
 RENDER_KEYS = ["camera", "height", "pixel_aspect", "width"]
 SHAPE_KEYS = ["adaptive", "angle", "display_render_mesh", "length", "optimize", "rectangular", "renderable", "sides",
@@ -122,7 +122,7 @@ class OracleFiles(unittest.TestCase):
             with self.subTest(name):
                 o = _oracle(name)
                 self.assertEqual(list(o), TOP_KEYS)
-                self.assertEqual(o["oracle_version"], 13)
+                self.assertEqual(o["oracle_version"], 14)
                 self.assertEqual(list(o["render"]), RENDER_KEYS)
                 self.assertTrue(o["render"]["width"] > 0 and o["render"]["height"] > 0)
                 self.assertEqual(o["file"], name + ".max")
