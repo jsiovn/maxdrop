@@ -454,6 +454,42 @@ class TestLayers(unittest.TestCase):
         self.assertIsNone(s.layer(1).parent)
 
 
+class TestFrameRate(unittest.TestCase):
+    """Config 0x20B0/0x0010, the frames per second (four saves of an empty scene at 24, 25, 30 and 60 fps differ
+    only there, maxdrop-em3.144)."""
+
+    class Config:
+        def __init__(self, data):
+            self.data = data
+
+        def exists(self, name):
+            return name == "Config" and self.data is not None
+
+        def open(self, name, max_size=None):
+            return self.data
+
+    def ticks(self, data):
+        return scene.ticks_per_frame(self.Config(data))
+
+    def test_frame_rates(self):
+        for fps, ticks in ((30, 160), (25, 192), (24, 200), (60, 80), (7, 685), (4800, 1)):
+            with self.subTest(fps=fps):
+                self.assertEqual(self.ticks(node(0x20B0, leaf(0x0010, struct.pack("<i", fps)))), ticks)
+
+    def test_default_30_fps(self):
+        rate = struct.pack("<i", 25)
+        for data in (None, b"", b"\xff\xff\xff", leaf(0x20B0, rate), node(0x20B0, leaf(0x0011, rate)),
+                     node(0x20B0, leaf(0x0010, b"\x19\0")), node(0x20B0, node(0x0010, leaf(1, rate))),
+                     node(0x20B0, leaf(0x0010, struct.pack("<i", 0))),
+                     node(0x20B0, leaf(0x0010, struct.pack("<i", -25))),
+                     node(0x20B0, leaf(0x0010, struct.pack("<i", 4801)))):
+            with self.subTest(data=data):
+                self.assertEqual(self.ticks(data), 160)
+
+    def test_scene_default(self):
+        self.assertEqual(make(node_obj("A", -1)).ticks_per_frame, 160)
+
+
 def _scene(cf):
     return scene.Scene.from_file(cf)
 
@@ -475,6 +511,7 @@ class TestFixtures(unittest.TestCase):
             with self.subTest(fixture=os.path.basename(path)), cfb.CompoundFile(path) as cf:
                 s = _scene(cf)
                 self.assertIn(s.root_id, scene.ROOT_IDS)
+                self.assertEqual(s.ticks_per_frame, 160)  # every fixture is saved at 30 fps
                 self.assertEqual(s.cut_cycles, ())
                 order = s.walk()
                 expected = oracle["nodes"]

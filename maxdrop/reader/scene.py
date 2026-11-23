@@ -16,6 +16,7 @@
         node.cast_shadows, node.receive_shadows
         scene.layers()                  # Layer records in the Layer Manager's order
         scene.layer(node.layer)         # name, hidden, frozen, renderable, parent (a layer's object index)
+        scene.ticks_per_frame           # 4800 / the frame rate of the file's Config stream (160 at 30 fps)
 
 The Scene stream holds one root container (0x2014, 0x2022, 0x2023 or 0x2025 so far); its children are the objects. The
 object index is a child's position, its chunk id the class index into the class directory. References: 0x2034
@@ -30,7 +31,8 @@ of its parent layer. The Layer Manager references the layers in its order (slot 
 (special id 0x2032) references [modifier, ..., base object], the top of the stack first; its base can be another
 derived object. A world-space modifier sits in a derived object of its own (special id 0x2033), [world-space
 modifiers, the object's 0x2032 derived object or its base object], read the same way. docs/FORMAT.md says which
-fixture shows what.
+fixture shows what. The frame rate is not in the Scene stream: Config `0x20B0/0x0010` is an i32 of frames per
+second, read by from_file (ticks_per_frame(cf)); without it, or with a value outside 1 to 4800, 30 fps.
 
 Nodes are keyed by object index, never by name: two nodes with the same name are two nodes. A parent that is not
 a Node (the RootNode, another class, out of range) means top level. A parent cycle is cut at its member with the
@@ -46,6 +48,7 @@ import collections
 import struct
 
 from . import chunks, classdir, classids, strings as strings_mod
+from .errors import MaxFileError
 
 ChunkError = chunks.ChunkError
 
@@ -59,6 +62,9 @@ GROUP_HEAD, GROUP_MEMBER, HIDDEN, FROZEN = 0x40, 0x100, 0x100000, 0x200000  # no
 RENDERABLE = 0x8000  # node 0x099C, layer 0x1050
 CAST_SHADOWS, RECEIVE_SHADOWS = 0x200, 0x400  # node 0x099C
 NODE_RENDER_DEFAULT = RENDERABLE | CAST_SHADOWS | RECEIVE_SHADOWS  # a node without 0x099C
+TICKS_PER_SECOND = 4800
+DEFAULT_TICKS_PER_FRAME = 160  # 30 fps, 3ds Max's default
+MAX_CONFIG = 1 << 24  # bytes: a Config stream is tens of kilobytes
 
 _REFS, _REF_PAIRS = 0x2034, 0x2035
 _NODE_PARENT, _NODE_NAME = 0x0960, 0x0962
@@ -66,6 +72,7 @@ _PIVOT_POSITION, _PIVOT_ROTATION, _PIVOT_SCALE = 0x096A, 0x096B, 0x096C
 _NODE_RENDER = 0x099C
 _LAYER_NAME, _LAYER_FLAGS, _LAYER_RENDER, _LAYER_HAS_PARENT, _LAYER_PARENT = 0x1010, 0x1020, 0x1050, 0x1090, 0x10B0
 _PAIR = struct.Struct("<Ii")
+_TIME_CONFIG, _FRAME_RATE = 0x20B0, 0x0010  # Config: the time configuration, its i32 frames per second
 
 
 class Stack(collections.namedtuple("Stack", "base modifiers derived")):
@@ -167,6 +174,23 @@ def _u32(chunk, default, what):
     return chunk.unpack("<I")[0]
 
 
+def ticks_per_frame(cf):
+    """Ticks per frame of an open cfb.CompoundFile: 4800 / the frames per second in its Config stream (integer
+    division, as 3ds Max's GetTicksPerFrame); 160 (30 fps) without a Config stream, without the chunk, with a value
+    outside 1 to 4800 or a stream that cannot be read."""
+    try:
+        if not cf.exists("Config"):
+            return DEFAULT_TICKS_PER_FRAME
+        holder = chunks.index(cf.open("Config", max_size=MAX_CONFIG)).first(_TIME_CONFIG)
+        rate = holder.first(_FRAME_RATE) if holder is not None and holder.container else None
+        if rate is None or rate.container or rate.payload_size < 4:
+            return DEFAULT_TICKS_PER_FRAME
+        fps = rate.unpack("<i")[0]
+    except (MaxFileError, OSError):
+        return DEFAULT_TICKS_PER_FRAME
+    return TICKS_PER_SECOND // fps if 1 <= fps <= TICKS_PER_SECOND else DEFAULT_TICKS_PER_FRAME
+
+
 def _floats(chunk, count, default):
     if chunk is None:
         return default
@@ -185,6 +209,7 @@ class Scene:
         if not root.container:
             raise ChunkError("the Scene stream starts with a leaf chunk %04X, not a container" % root.id)
         self.classes = classes
+        self.ticks_per_frame = DEFAULT_TICKS_PER_FRAME  # from_file reads the file's own
         self.strings = root.strings  # how the names decode: chunks.WIDE or a strings.Strings
         self.root_id = root.id
         self._root = root
@@ -229,7 +254,9 @@ class Scene:
         strings = strings_mod.of_file(cf, encoding)
         if classes is None:
             classes = classdir.ClassDirectory.from_file(cf, strings)
-        return cls(cf.open("Scene"), classes, strings=strings)
+        scene = cls(cf.open("Scene"), classes, strings=strings)
+        scene.ticks_per_frame = ticks_per_frame(cf)
+        return scene
 
     def __len__(self):
         return len(self._ids)
