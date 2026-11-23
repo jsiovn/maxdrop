@@ -187,8 +187,10 @@ class Build:
                       leaf(0x096C, struct.pack("<7f", *scl, 0, 0, 0, 1))]
         return self.add(node(C_NODE, *parts))
 
-    def transforms(self):
-        return ct.Transforms(scene.Scene(node(0x2025, *self.objects), CLASSES))
+    def transforms(self, ticks_per_frame=160):
+        s = scene.Scene(node(0x2025, *self.objects), CLASSES)
+        s.ticks_per_frame = ticks_per_frame
+        return ct.Transforms(s)
 
 
 def rows12(m):
@@ -320,10 +322,10 @@ class TestValues(MatrixCase):
         pos, issues = self.float_node(keys=float_keys((-100, 2.0), (300, 6.0)))
         self.assertAlmostEqual(pos[0], 2.625)  # flat tangents, handles a third long: 3u^2 - 2u^3 of the way
         self.assertEqual(issues, [])
-        free = leaf(0x2525, b"".join(struct.pack("<iIf4f", t, 0x101690, v, 0, 0, 1 / 3, 1 / 3)
+        free = leaf(0x2525, b"".join(struct.pack("<iIf4f", t, 0x101690, v, 0, 0, -1, -1)
                                      for t, v in ((-100, 2.0), (300, 6.0))))
         pos, issues = self.float_node(keys=free)
-        self.assertAlmostEqual(pos[0], 3.0)  # a free handle: linear, an issue
+        self.assertAlmostEqual(pos[0], 3.0)  # a free handle of a negative length: linear, an issue
         self.assertEqual([i.reason for i in issues], [ct.KEYS_INTERPOLATED])
         self.assertEqual(self.float_node(keys=float_keys())[0], (0.0, 0.0, 0.0))
 
@@ -448,8 +450,9 @@ class TestKeyframe(MatrixCase):
         return ct.scale_matrix(value[:3], value[3:])
 
     @staticmethod
-    def world(name, **kw):
-        """(world matrix, issues) of a node whose controller of keyframe class name is made with kw."""
+    def world(name, ticks_per_frame=160, **kw):
+        """(world matrix, issues) of a node whose controller of keyframe class name is made with kw, in a scene of
+        ticks_per_frame."""
         b = Build()
         obj = keyframed(b, name, **kw)
         count = KEYFRAMED[name][3]
@@ -458,7 +461,7 @@ class TestKeyframe(MatrixCase):
         else:
             prs = b.prs(*[obj if k == {3: 0, 4: 1, 7: 2}[count] else None for k in range(3)])
         n = b.node(prs)
-        t = b.transforms()
+        t = b.transforms(ticks_per_frame)
         return t.world(n), t.issues
 
     def test_every_class_reads_its_keys(self):
@@ -596,14 +599,83 @@ TCB_ROTATION = ((-3200, 0, _SR1 + (-0.6, 0.6, 1.4, 0, 0.4) + (-0.384283, 0.21561
                  (-0.38782, 0.0192559, 0.498383, 0.775138) + (-0.517174, 0.186085, 0.533234, 0.64309)),
                 (6400, 0, (0.34758, -0.46743, -0.400732, 0.707185) + (0, 0, 0, 0, 0) +
                  (0.47586, -0.41374, -0.776129, 2.31995) + (0.34758, -0.46743, -0.400732, 0.707185) * 2))
+# key records of the maxdrop-em3.144 probes (3ds Max 2020; key times moved so that the sample taken lies at 0) and
+# 3ds Max's rows there
+_Q1 = (0.2176535, -0.1221225, 0.508438, 0.8241383)  # eulerAngles 15 -25 60, as the probes store it
+_POS_A, _POS_B = (-10, 30, 5), (5, 25, 12)
+# free handles: lengths in frames of the scene's frame rate (0x100000 on both keys), steep tangents
+FREE_STEEP = ((-1600, 0x101480, (-25, 10, 0.1, -1, 0.6)), (6400, 0x100680, (-15, -0.05, -10, 0.15, -1)))
+FREE_25FPS = ((-1920, 0x101480, (-25, 10, 0.12, -1, 0.6)), (7680, 0x100680, (-15, -0.06, -10, 0.15, -1)))
+FREE_POSITION = ((-1600, 0x101480, _POS_A + (15, -5, 7, 0.01, -0.005, 0.003333333, -1, -1, -1, 0.5, 0.2, 0.4, 0, 0, 0)),
+                 (6400, 0x100680, _POS_B + (-0.003333333, 0.006666667, -0.008333334, -15, 5, -7, 0.1, 0.3, 0.6, -1, -1,
+                                            -1, 0, 0, 0)))
+# constant velocity (0x8000) out of the earlier key: handles of a third whatever the lengths or a free handle say
+_CV_OUT = _POS_A + (15, -5, 7, 0.03, -0.02, 0.01333333)
+_CV_IN = _POS_B + (-0.003333333, 0.02666667, -0.01666667, -15, 5, -7)
+_CV_CACHE = (113.7363, 0.8749997, 91.86395)  # 3ds Max's last length lookup: not read
+CONSTANT_VELOCITY = ((-1600, 0x9480, _CV_OUT + (-1,) * 6 + _CV_CACHE), (6400, 0x8680, _CV_IN + (-1,) * 6 + (0,) * 3))
+CONSTANT_VELOCITY_LENGTHS = ((-1600, 0x9480, _CV_OUT + (-1, -1, -1, 0.3333, 0.3333, 0.3333) + _CV_CACHE),
+                             (6400, 0x680, _CV_IN + (0.6, 0.1, 0.3, -1, -1, -1, 0, 0, 0)))
+CONSTANT_VELOCITY_FREE = ((-1600, 0x109480, _CV_OUT + (-1, -1, -1, 8, 3, 5) + _CV_CACHE),
+                          (6400, 0x680, _CV_IN + (0.3333, 0.3333, 0.3333, -1, -1, -1, 0, 0, 0)))
+_CV_WANT = ct.translation((8.649943, 19.27765, 12.3126))
+# scale axes that differ: the axis turns by slerp at the plain fraction of the time
+_AXIS_A, _AXIS_B = (-0.1677313, -0.04494344, -0.254887, 0.9512512), (0.3094445, 0.02984081, 0.1391709, 0.9402048)
+_AXIS_C = (0.3213206, 0.1919111, -0.02149021, 0.9270713)
+_AXES_ROWS = ((1.739538, 0.4233863, 0.02604014), (0.4233864, 0.7781497, -0.1179727),
+              (0.02604019, -0.1179726, 1.382313))
+AXES_BEZIER = ((-1600, 0x480, (2, 0.5, 1) + _AXIS_A + (-0.5, 0.5, 2) + NO_TURN + (-6.25e-05, 6.25e-05, 0.00025) +
+                NO_TURN + (-1, -1, -1) + NO_TURN + (-1, -1, -1) + NO_TURN),
+               (6400, 0x480, (1.5, 1, 3) + _AXIS_B + (6.25e-05, -6.25e-05, -0.00025) + NO_TURN + (0.5, -0.5, -2) +
+                NO_TURN + (-1, -1, -1) + NO_TURN + (-1, -1, -1) + NO_TURN))
+AXES_TCB = ((-3200, 0, (2, 0.5, 1) + _AXIS_A + (-0.6, 0, 0, 0, 0) + (0, 0, 0) + NO_TURN +
+             (-0.6080004, 0.9919998, 5.12) + NO_TURN),
+            (1600, 0, (1.5, 1, 3) + _AXIS_B + (0, 0.6, 0, 0.6, 0) + (-0.7399999, 0.2600001, -0.4) + NO_TURN +
+             (-0.5600001, 0.44, 1.4) + NO_TURN),
+            (6400, 0, (0.7, 1.2, 2) + _AXIS_C + (0, 0, 0, 0, 0) + (-0.9199998, 0.08000018, -2.2) + NO_TURN + (0, 0, 0) +
+             NO_TURN))
+AXES_LINEAR = ((-1600, 0, (2, 0.5, 1) + _AXIS_A), (6400, 0, (1.5, 1, 3) + _AXIS_B))
+# TCB Rotation turns of a revolution or more: squad over a half-turn at either end, the plain turn between
+TURN_TCB = ((-1600, 0, _Q1 + (0, 0, 0, 0, 0) + (0.3842829, -0.2156161, 0.8976839, 1.204234) + _Q1 * 2),
+            (6400, 0, tuple(-v for v in _Q1) + (0, 0, 0, 0, 0) + (-0.7071068, -0.7071068, 0, 6.2831855) +
+             tuple(-v for v in _Q1) * 2))
+_SPIN_KEY1 = _Q1 + (-0.6, 0, 0, 0, 0.4) + (0.3842829, -0.2156161, 0.8976839, 1.204234) + \
+    (0.177091, -0.05708491, 0.5239475, 0.8311793, 0.2568741, -0.1864072, 0.4897937, 0.8120161)
+_SPIN_KEY2 = (0.3418306, -0.331264, 0.4347805, 0.7644488, 0, -0.4, 0.2, 0.8, 0.2, 0, -1, 0, 0.5235988, 0.3042242,
+              -0.312087, 0.564356, 0.7011075, 0.2673074, -0.2867367, 0.657185, 0.6437677)
+_SPIN_KEY3 = (-0.4493841, 0.4115395, 0.3177683, -0.7264383, 0.4, 0.6, 1.4, 0.6, 0, -0.2672612, -0.5345225,
+              -0.8017837, 7.853981, -0.3374873, 0.3064483, 0.7745848, -0.438418, -0.3780216, 0.2699545, 0.8783795,
+              -0.1125782)
+_SPIN_KEY4 = (-0.1738264, 0.2780375, 0.4393593, -0.8363271, 0, 0, 0, 0, 0, -1, 0, 0, 0.6981317, -0.1738264,
+              0.2780375, 0.4393593, -0.8363271, -0.1738264, 0.2780375, 0.4393593, -0.8363271)
+# 450 degrees between keys at frames -5 and 25, frame 0 a sixth of the way: the first half-turn
+SPIN_START = ((-4000, 0, _SPIN_KEY1), (-800, 0, _SPIN_KEY2), (4000, 0, _SPIN_KEY3), (8800, 0, _SPIN_KEY4))
+_FIRST = _Q1 + (0, 0, 0, 0, 0) + (0.3842829, -0.2156161, 0.8976839, 1.204234) + _Q1 * 2
+_SPUN = (-0.2556345, 0.2522139, -0.2008212, -0.911433, 0, 0, 0, 0, 0, -0.2672612, -0.5345225, -0.8017837, 6.981317)
+# 400 degrees into a key with a control, frame 0 two thirds of the way: the last half-turn
+SPIN_END = ((-3200, 0, _FIRST), (1600, 0, _SPUN + (-0.2405288, 0.2500319, 0.1379594, -0.9276838) * 2),
+            (6400, 0, (-0.3217966, 0.6741401, -0.04609904, -0.6632172, 0, 0, 0, 0, 0, 0, -1, 0, 1.047198) +
+             (-0.3217966, 0.6741401, -0.04609904, -0.6632172) * 2))
+# 760 degrees after a turn of 400, frame 0 half way: the plain turn
+_SPUN2 = (-0.3264801, 0.1495713, 0.1230183, -0.9251517)
+SPIN_MIDDLE = ((-7200, 0, _FIRST), (-2400, 0, _SPUN + (-0.1754667, 0.4744749, -0.1856225, -0.842395) * 2),
+               (2400, 0, _SPUN2 + (0, 0, 0, 0, 0, 0, 0, -1, 13.2645) + _SPUN2 * 2))
+# 359 degrees after a turn of 60, frame 0 half way: neither squad nor the spin fits 3ds Max
+NEAR_TCB = ((-7200, 0, _FIRST),
+            (-2400, 0, (0.4427125, -0.5178303, 0.3314935, 0.6526634, 0, 0, 0, 0, 0, 0, -1, 0, 1.047198) +
+             (0.4830321, -0.5986848, 0.2688695, 0.5796254) * 2),
+            (2400, 0, (-0.4390483, 0.5170906, -0.3393202, -0.6517021, 0, 0, 0, 0, 0, -0.2672612, -0.5345225,
+                       -0.8017837, 6.265732) + (-0.4390483, 0.5170906, -0.3393202, -0.6517021) * 2))
+# a whole turn between Linear Rotation keys: about the earlier key's local Z, whichever axis it was made about
+OPPOSITE_LINEAR = ((-1600, 0, _Q1), (6400, 0, tuple(-v for v in _Q1)))
 
 
 class TestTangents(MatrixCase):
     """Between two Bezier, TCB or Smooth Rotation keys: the curve of their stored tangents, as 3ds Max samples it."""
 
     @staticmethod
-    def world(name, keys):
-        return TestKeyframe.world(name, saved=STALE[KEYFRAMED[name][3]], interval=AT_FRAME_30,
+    def world(name, keys, ticks_per_frame=160):
+        return TestKeyframe.world(name, ticks_per_frame, saved=STALE[KEYFRAMED[name][3]], interval=AT_FRAME_30,
                                   keys=records(name, *keys))
 
     def assertNear(self, got, rows):
@@ -659,21 +731,71 @@ class TestTangents(MatrixCase):
             self.assertNear(got, ct.translation((8.33333, 0, 0)))
             self.assertEqual(issues, [])
 
+    def test_free_handles_spins_and_axes_equal_3ds_max(self):
+        cases = [
+            ("Bezier Float", FREE_STEEP, 160, ct.translation((-19.08361, 0, 0))),
+            ("Bezier Float", FREE_25FPS, 192, ct.translation((-17.35247, 0, 0))),
+            ("Bezier Position", FREE_POSITION, 160, ct.translation((-6.720174, 28.98971, 6.343373))),
+            ("Bezier Position", CONSTANT_VELOCITY, 160, _CV_WANT),
+            ("Bezier Position", CONSTANT_VELOCITY_LENGTHS, 160, _CV_WANT),
+            ("Bezier Position", CONSTANT_VELOCITY_FREE, 160, _CV_WANT),
+            ("Bezier Scale", AXES_BEZIER, 160, _AXES_ROWS),
+            ("TCB Scale", AXES_TCB, 160, ((1.588367, -0.01132296, -0.007636474), (-0.01132295, 1.157975, 0.5991784),
+                                          (-0.007636414, 0.5991784, 2.829143))),
+            ("Linear Scale", AXES_LINEAR, 160, _AXES_ROWS),
+            ("TCB Rotation", TURN_TCB, 160, ((0.002162099, -0.4402154, -0.8978895), (0.3230723, 0.8500489, -0.4159822),
+                                             (0.9463718, -0.2891839, 0.1440593))),
+            ("TCB Rotation", SPIN_START, 160, ((0.6442479, -0.4869778, -0.5897434), (-0.2280298, 0.6137177, -0.755879),
+                                               (0.7300323, 0.6214526, 0.2843409))),
+            ("TCB Rotation", SPIN_END, 160, ((-0.8056253, -0.5518919, 0.2153679), (0.5903108, -0.7171367, 0.3704703),
+                                             (-0.05001131, 0.4255942, 0.9035311))),
+            ("TCB Rotation", SPIN_MIDDLE, 160, ((0.913654, -0.1942455, -0.3570784),
+                                                (-0.04691131, 0.8221828, -0.5672872),
+                                                (0.4037767, 0.5350553, 0.7420783))),
+            ("Linear Rotation", OPPOSITE_LINEAR, 160, ((0.9876206, 0.1555768, 0.02003492),
+                                                       (-0.126691, 0.866442, -0.4829366),
+                                                       (-0.09249283, 0.4744199, 0.8754261))),
+        ]
+        for name, keys, ticks, want in cases:
+            with self.subTest(name, keys=keys[0][2][:2], ticks=ticks):
+                got, issues = self.world(name, keys, ticks)
+                self.assertNear(got, want)
+                self.assertEqual(issues, [])
+
+    def test_free_handle_length_is_in_frames(self):
+        # the 25 fps probe read at 30 fps: handles 160 / 192 as long, and 3ds Max's value is missed
+        got, issues = self.world("Bezier Float", FREE_25FPS, 160)
+        self.assertGreater(abs(got[3][0] - -17.35247), 0.5)
+        self.assertEqual(issues, [])
+
+    def test_spin_pieces(self):
+        # a turn of 2 pi from the identity about Z, keys without controls: the plain turn in every piece
+        a = NO_TURN + (0, 0, 0, 0, 0) + (0, 0, 1, 0) + NO_TURN * 2
+        b = tuple(-v for v in NO_TURN) + (0, 0, 0, 0, 0) + (0, 0, 1, 2 * math.pi) + tuple(-v for v in NO_TURN) * 2
+        for frame in (5, 20, 35):  # the first half-turn, the middle, the last half-turn of 40 frames
+            with self.subTest(frame=frame):
+                got, issues = self.world("TCB Rotation", ((-160 * frame, 0, a), (160 * (40 - frame), 0, b)))
+                self.assertMatrix(got, ct.quat_matrix(_rotz(9 * frame)), places=5)
+                self.assertEqual(issues, [])
+
     def test_unknown_curves_stay_linear_with_an_issue(self):
-        free = tuple((t, flags | 0x100000, floats) for t, flags, floats in BEZIER_CUSTOM)
-        cv = tuple((t, flags | 0x8000, floats) for t, flags, floats in BEZIER_POSITION)
-        turned = (TCB_SCALE[0], (1600, 0, (1.5, 0.8, 1.2) + _rotz(30) + TCB_SCALE[1][2][7:]))
-        spin = (TCB_ROTATION[0], (1600, 0, TCB_ROTATION[1][2][:12] + (2 * math.pi,) + TCB_ROTATION[1][2][13:]))
-        # a whole revolution: opposite quaternions, the earlier rotation kept (the shorter arc)
+        # a free handle of a negative length (3ds Max converts a third into frames when the handle is freed)
+        free = ((-1600, 0x101480, (-20, 50, 0.1, -1, -1)), (6400, 0x100680, (30, -0.05, -50, -1, -1)))
+        # scale axes whose stored quaternions point apart (the same turn, the other sign)
+        turned = (TCB_SCALE[0], (1600, 0, (1.5, 0.8, 1.2) + (0, 0, 0.5, -0.8660254) + TCB_SCALE[1][2][7:]))
+        linear_scale = ((-1600, 0, (2, 0.5, 1) + _AXIS_A), (6400, 0, (1.5, 1, 3) + tuple(-v for v in _AXIS_B)))
+        no_axis = (TURN_TCB[0], (6400, 0, TURN_TCB[1][2][:9] + (0, 0, 0, 7.0) + TURN_TCB[1][2][13:]))
+        # 359 degrees from the identity between Linear Rotation keys: 3ds Max's branch is not known
+        near = ((-1600, 0, NO_TURN), (6400, 0, (0, 0, math.sin(math.radians(179.5)), math.cos(math.radians(179.5)))))
+        # a whole revolution between Smooth Rotation keys: opposite quaternions, the earlier rotation kept
         q, opposite = _rotz(30), tuple(-v for v in _rotz(30))
-        linear = ((-1600, 0, q), (6400, 0, opposite))
         smooth = ((-1600, 0x480, q * 3 + NO_TURN * 2), (6400, 0x480, opposite * 3 + NO_TURN * 2))
-        cases = [("Bezier Float", free, ct.translation((-10, 0, 0))),
-                 ("Bezier Position", cv, ct.translation((4.8, -0.4, 4.0))),
-                 ("TCB Scale", turned, None), ("TCB Rotation", spin, None),
-                 ("Linear Rotation", linear, ct.quat_matrix(q)), ("Smooth Rotation", smooth, ct.quat_matrix(q))]
+        cases = [("Bezier Float", free, ct.translation((-10, 0, 0))), ("TCB Scale", turned, None),
+                 ("Linear Scale", linear_scale, None), ("TCB Rotation", NEAR_TCB, None),
+                 ("TCB Rotation", no_axis, None), ("Linear Rotation", near, None),
+                 ("Smooth Rotation", smooth, ct.quat_matrix(q))]
         for name, keys, want in cases:
-            with self.subTest(name):
+            with self.subTest(name, keys=keys[1][2][:4]):
                 got, issues = self.world(name, keys)
                 if want is not None:
                     self.assertMatrix(got, want, places=5)
@@ -688,7 +810,14 @@ class TestTangents(MatrixCase):
                  ("TCB Float", ((-1600, 0, (-20, -0.6, 0.6, 1.4, 0, 0.4, 0, nan)), TCB_TWO[1])),
                  ("TCB Rotation", ((-3200, 0, TCB_ROTATION[0][2][:8] + (inf,) + TCB_ROTATION[0][2][9:]),
                                    TCB_ROTATION[1])),
-                 ("Smooth Rotation", ((-1600, 0x480, _SR1 + (nan, 0, 0, 1) * 2 + NO_TURN + NO_TURN), SMOOTH[1]))]
+                 ("Smooth Rotation", ((-1600, 0x480, _SR1 + (nan, 0, 0, 1) * 2 + NO_TURN + NO_TURN), SMOOTH[1])),
+                 ("TCB Rotation", (TCB_ROTATION[0], (1600, 0, TCB_ROTATION[1][2][:12] + (nan,) +
+                                                     TCB_ROTATION[1][2][13:]))),
+                 ("TCB Rotation", (TURN_TCB[0], (6400, 0, TURN_TCB[1][2][:9] + (0, inf, 0, 7.0) +
+                                                 TURN_TCB[1][2][13:]))),
+                 ("Bezier Float", ((-1600, 0x101480, (-25, 10, 0.1, -1, inf)), FREE_STEEP[1])),
+                 ("Bezier Position", ((-1600, 0x9480, _POS_A + (15, -5, 7, nan, -0.02, 0.01333333) + (-1,) * 6 +
+                                       _CV_CACHE), CONSTANT_VELOCITY[1]))]
         for name, keys in cases:
             with self.subTest(name, keys=keys[0][2]):
                 got, issues = self.world(name, keys)

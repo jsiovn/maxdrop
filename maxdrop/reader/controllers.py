@@ -133,11 +133,16 @@ _LINEAR = frozenset((classids.LINEAR_FLOAT, classids.LINEAR_POSITION, classids.L
 _BEZIER = frozenset((classids.BEZIER_FLOAT, classids.BEZIER_POSITION, classids.BEZIER_SCALE))
 _TCB = frozenset((classids.TCB_FLOAT, classids.TCB_POSITION, classids.TCB_SCALE))
 # a Bezier key's flags: the in tangent's type in bits 7-9, the out tangent's in bits 10-12 (1 linear, 2 step, 5 custom
-# or auto, 0 smooth, 3 fast, 4 slow); constant velocity; a free handle, whose length is not a fraction of the segment
+# or auto, 0 smooth, 3 fast, 4 slow); constant velocity; a free handle, whose length is in frames, not a fraction
 _IN_TYPE, _OUT_TYPE, _STEP = 7, 10, 2
 _CONSTANT_VELOCITY, _FREE_HANDLE = 0x8000, 0x100000
 _DEFAULT_LENGTH = 1.0 / 3.0  # a handle length stored as -1
 _SOLVE_STEPS = 60  # bisections of a Bezier segment's time curve: well below a tick
+_CHORDS = 40  # constant velocity: the segment's curve as this many chords of equal parameter, as 3ds Max 2020 does
+_SPIN = 2.0 * math.pi  # a TCB Rotation turn from here on spins (the f32 of a whole turn, 6.2831855, is above it)
+_SPIN_GAP = math.radians(10.0)  # a TCB turn this close below a revolution: 3ds Max's curve is not known
+_OPPOSITE = 5e-7  # 1 + the dot of two unit quaternions below this: opposite, a whole revolution apart
+_NEAR_OPPOSITE = 1e-3  # 1 + the dot below this but not opposite: which branch 3ds Max takes is not known
 _LOOK_AXIS, _LOOK_FLIP, _LOOK_TARGET_UP = 0x0100, 0x0110, 0x0201
 # the LookAt Constraint's ParamBlock2 (3 viewline length, 12 viewline length absolute: display only)
 (_LC_WEIGHTS, _LC_TARGETS, _LC_RELATIVE, _LC_SET_ORIENTATION, _LC_AXIS, _LC_AXIS_FLIP, _LC_UP_AXIS, _LC_UP_WORLD,
@@ -305,11 +310,52 @@ def _slerp_long(a, b, f):
     return tuple(wa * x + wb * y for x, y in zip(a, b))
 
 
-def _opposite(a, b):
-    """Whether quaternions a and b are opposite (a whole revolution apart): the arc the stored signs give has no
-    direction there, and 3ds Max's turn is not known."""
+def _opposite(a, b, within=_OPPOSITE):
+    """Whether quaternions a and b are opposite (a whole revolution apart), 1 + their dot below within: the arc the
+    stored signs give has no direction there."""
     a, b = _unit_quat(a), _unit_quat(b)
-    return a is not None and b is not None and sum(x * y for x, y in zip(a, b)) < -0.9999995
+    return a is not None and b is not None and 1.0 + sum(x * y for x, y in zip(a, b)) < within
+
+
+def _qmul(a, b):
+    """The quaternion product a * b, (x, y, z, w): of two Max quaternions, the one whose matrix is quat_matrix(a) *
+    quat_matrix(b)."""
+    ax, ay, az, aw = a
+    bx, by, bz, bw = b
+    return (aw * bx + ax * bw + ay * bz - az * by, aw * by - ax * bz + ay * bw + az * bx,
+            aw * bz + ax * by - ay * bx + az * bw, aw * bw - ax * bx - ay * by - az * bz)
+
+
+def turn(q, f):
+    """Between opposite Linear Rotation keys, the earlier q (unit): a whole turn about its local Z, a fraction f of the
+    way, whatever axis the turn was made about (3ds Max 2020)."""
+    x, y, z, w = q
+    c, s = math.cos(math.pi * f), math.sin(math.pi * f)
+    return (c * x - s * y, c * y + s * x, c * z - s * w, c * w + s * z)
+
+
+def spin(q0, out_control, in_control, q1, axis, angle, u):
+    """A TCB Rotation turn of angle >= 2 pi about the unit axis (in q0's frame) from key q0 to key q1 at the eased
+    fraction u: squad over the first half-turn with the earlier key's out control, the plain turn, squad over the
+    last half-turn with the later key's in control (3ds Max 2020; turns of 360 to 800 degrees)."""
+    q0 = _unit_quat(q0)
+    if q0 is None or not math.isfinite(u):
+        return (math.nan,) * 4
+
+    def at(x):
+        s = math.sin(x / 2.0)
+        return _qmul(q0, (axis[0] * s, axis[1] * s, axis[2] * s, math.cos(x / 2.0)))
+
+    h = math.pi / angle
+    if u < h:
+        mid = at(math.pi)
+        return squad(q0, out_control, mid, mid, u / h)
+    if u > 1.0 - h:
+        mid, end = at(angle - math.pi), at(angle)
+        if sum(x * y for x, y in zip(end, q1)) < 0.0:  # the control on the computed end's side
+            in_control = tuple(-v for v in in_control)
+        return squad(mid, mid, in_control, end, (u - 1.0 + h) / h)
+    return at(angle * u)
 
 
 def squad(q0, a, b, q1, f):
@@ -344,62 +390,107 @@ def hermite(p0, p1, out_tangent, in_tangent, u):
             in_tangent * (u3 - u2))
 
 
-def bezier(t0, v0, out_tangent, out_length, t1, v1, in_tangent, in_length, t):
-    """A Bezier segment's value at time t (ticks): the cubic through (t0, v0), its out handle (t0 + l dt, v0 +
-    tangent l dt), the in handle (t1 - l dt, v1 + tangent l dt) and (t1, v1), the tangents in value per tick (the in
-    tangent points back), the lengths fractions of the segment (-1, or any negative: a third). The time curve is
-    solved for t by bisection; NaN for values that are not finite."""
+def handle(length, tangent, dt, ticks_per_frame=0):
+    """A Bezier handle's extent in ticks: length a fraction of the segment dt (-1, or any negative: a third); a free
+    handle's (ticks_per_frame given) length is in frames, measured along the handle in (ticks, stored value) space."""
+    if ticks_per_frame:
+        return length * ticks_per_frame / math.sqrt(1.0 + tangent * tangent)
+    return (_DEFAULT_LENGTH if length < 0.0 else length) * dt
+
+
+def _cubic(p0, p1, p2, p3, u):
+    w = 1.0 - u
+    return w * w * w * p0 + 3.0 * w * w * u * p1 + 3.0 * w * u * u * p2 + u * u * u * p3
+
+
+def bezier(t0, v0, out_tangent, out_length, t1, v1, in_tangent, in_length, t, free_out=0, free_in=0):
+    """A Bezier segment's value at time t (ticks): the cubic through (t0, v0), its out handle (t0 + x, v0 + tangent
+    x), the in handle (t1 - x, v1 + tangent x) and (t1, v1), the tangents in value per tick (the in tangent points
+    back), x the handle's extent (handle(); free_out and free_in: ticks per frame of a free handle, 0 for one whose
+    length is a fraction). The time curve is solved for t by bisection; NaN for values that are not finite."""
     if not all(math.isfinite(v) for v in (v0, out_tangent, out_length, v1, in_tangent, in_length)):
         return math.nan
     dt = t1 - t0
-    out_length = _DEFAULT_LENGTH if out_length < 0.0 else out_length
-    in_length = _DEFAULT_LENGTH if in_length < 0.0 else in_length
-    x1, x2 = t0 + out_length * dt, t1 - in_length * dt
-    y1, y2 = v0 + out_tangent * out_length * dt, v1 + in_tangent * in_length * dt
-
-    def cubic(p0, p1, p2, p3, u):
-        w = 1.0 - u
-        return w * w * w * p0 + 3.0 * w * w * u * p1 + 3.0 * w * u * u * p2 + u * u * u * p3
-
+    out_x, in_x = handle(out_length, out_tangent, dt, free_out), handle(in_length, in_tangent, dt, free_in)
+    x1, x2 = t0 + out_x, t1 - in_x
+    y1, y2 = v0 + out_tangent * out_x, v1 + in_tangent * in_x
     lo, hi = 0.0, 1.0
     for _ in range(_SOLVE_STEPS):
         mid = (lo + hi) / 2.0
-        if cubic(t0, x1, x2, t1, mid) < t:
+        if _cubic(t0, x1, x2, t1, mid) < t:
             lo = mid
         else:
             hi = mid
-    return cubic(v0, y1, y2, v1, (lo + hi) / 2.0)
+    return _cubic(v0, y1, y2, v1, (lo + hi) / 2.0)
 
 
-def _between(cid, n, t0, a, flags_a, t1, b, flags_b, t=0):
+def constant_velocity(v0, out_tangent, v1, in_tangent, dt, f):
+    """A Bezier Position segment with constant velocity out of its earlier key, a fraction f of its time on: the
+    cubic of the values and tangents (value per tick, the in tangent pointing back) with handles of a third of the
+    segment dt (the stored lengths and free handles do not count), cut into _CHORDS chords of equal parameter; the
+    point a fraction f of the polyline's length along it (3ds Max 2020). NaN for values that are not finite."""
+    controls = [(v0[c], v0[c] + out_tangent[c] * dt / 3.0, v1[c] + in_tangent[c] * dt / 3.0, v1[c])
+                for c in range(3)]
+    points = [tuple(_cubic(*p, k / _CHORDS) for p in controls) for k in range(_CHORDS + 1)]
+    lengths = [math.dist(p, q) for p, q in zip(points, points[1:])]
+    total = math.fsum(lengths)
+    if not (math.isfinite(total) and math.isfinite(f)):
+        return (math.nan,) * 3
+    left = f * total
+    for k, piece in enumerate(lengths):
+        if left <= piece and piece > 0.0:
+            s = left / piece
+            return tuple(p + (q - p) * s for p, q in zip(points[k], points[k + 1]))
+        left -= piece
+    return points[-1] if total > 0.0 else points[0]
+
+
+def _between(cid, n, t0, a, flags_a, t1, b, flags_b, t=0, ticks_per_frame=160):
     """The value at time t between the Bezier, TCB or Smooth Rotation keys a (at t0) and b (at t1), each the floats
-    of its record after the flags, n of them the value; None where 3ds Max's curve is not known (a free handle,
-    constant velocity on a Position or Scale, scale axes that differ, a turn of a full revolution or more)."""
+    of its record after the flags, n of them the value; a free handle's length is in frames of ticks_per_frame. None
+    where 3ds Max's curve is not known (a free handle of a negative length, scale axes whose quaternions point
+    apart, a TCB turn just short of a revolution or about no axis, opposite Smooth Rotation quaternions or
+    controls)."""
     f = (t - t0) / (t1 - t0)
     if cid in _BEZIER or cid in _TCB:
-        if n == 7 and a[3:7] != b[3:7]:
-            return None
+        axis = ()
+        if n == 7:  # the scale axis turns by slerp at the plain fraction of the time, whatever the class's curve
+            if sum(x * y for x, y in zip(a[3:7], b[3:7])) < 0.0:
+                return None
+            axis = slerp(a[3:7], b[3:7], f)
         m = min(n, 3)
         if cid in _BEZIER:
-            flags = flags_a | flags_b
-            if flags & _FREE_HANDLE or (cid != classids.BEZIER_FLOAT and flags & _CONSTANT_VELOCITY):
-                return None
+            # value, in tangent, out tangent, in length, out length: n floats each
             if (flags_a >> _OUT_TYPE) & 7 == _STEP or (flags_b >> _IN_TYPE) & 7 == _STEP:
                 return tuple(a[:n])
-            # value, in tangent, out tangent, in length, out length: n floats each
-            v = tuple(bezier(t0, a[c], a[2 * n + c], a[4 * n + c], t1, b[c], b[n + c], b[3 * n + c], t)
-                      for c in range(m))
+            if cid == classids.BEZIER_POSITION and flags_a & _CONSTANT_VELOCITY:
+                return constant_velocity(a[:3], a[6:9], b[:3], b[3:6], t1 - t0, f)
+            free_out = ticks_per_frame if flags_a & _FREE_HANDLE else 0
+            free_in = ticks_per_frame if flags_b & _FREE_HANDLE else 0
+            if (free_out and min(a[4 * n:4 * n + m]) < 0.0) or (free_in and min(b[3 * n:3 * n + m]) < 0.0):
+                return None
+            v = tuple(bezier(t0, a[c], a[2 * n + c], a[4 * n + c], t1, b[c], b[n + c], b[3 * n + c], t, free_out,
+                             free_in) for c in range(m))
         else:
             # value, tension, continuity, bias, ease to, ease from, in tangent, out tangent
             u = ease(f, a[n + 4], b[n + 3])
             v = tuple(hermite(a[c], b[c], a[2 * n + 5 + c], b[n + 5 + c], u) for c in range(m))
-        return v + tuple(a[3:7]) if n == 7 else v
+        return v + axis
     if cid == classids.TCB_ROTATION:
         # quaternion, tension, continuity, bias, ease to, ease from, axis and angle turned from the previous key,
         # the in and the out control quaternion
-        if not abs(b[12]) < 2.0 * math.pi or _opposite(a[:4], b[:4]) or _opposite(a[17:21], b[13:17]):
+        axis, angle, u = b[9:12], b[12], ease(f, a[8], b[7])
+        if not (math.isfinite(angle) and all(math.isfinite(v) for v in axis)):
+            return (math.nan,) * 4
+        if angle < 0.0:
+            axis, angle = _neg(axis), -angle
+        if angle >= _SPIN:
+            axis = _unit(axis)
+            return None if axis is None else spin(a[:4], a[17:21], b[13:17], b[:4], axis, angle, u)
+        if (angle > _SPIN - _SPIN_GAP or _opposite(a[:4], b[:4], _NEAR_OPPOSITE) or
+                _opposite(a[17:21], b[13:17], _NEAR_OPPOSITE)):
             return None
-        return squad(a[:4], a[17:21], b[13:17], b[:4], ease(f, a[8], b[7]))
+        return squad(a[:4], a[17:21], b[13:17], b[:4], u)
     if cid == classids.BEZIER_ROTATION:  # quaternion, the in and the out control quaternion
         if _opposite(a[:4], b[:4]) or _opposite(a[8:12], b[4:8]):
             return None
@@ -625,13 +716,22 @@ class _Eval:
         if cid not in _LINEAR:
             record = "<I%df" % ((size - _KEY_VALUE) // 4)  # the flags, then every float
             a, b = (struct.unpack_from(record, view, j * size + 4) for j in (k - 1, k))
-            value = _between(cid, count, times[k - 1], a[1:], a[0], times[k], b[1:], b[0])
+            value = _between(cid, count, times[k - 1], a[1:], a[0], times[k], b[1:], b[0],
+                             ticks_per_frame=self.scene.ticks_per_frame)
             if value is not None:
                 return value
             self.issue(i, KEYS_INTERPOLATED)
-        elif value_id == _QUAT_VALUE and _opposite(value_at(k - 1), value_at(k)):
-            self.issue(i, KEYS_INTERPOLATED)
-        return _interpolate(value_at(k - 1), value_at(k), -times[k - 1] / (times[k] - times[k - 1]), value_id)
+        f = -times[k - 1] / (times[k] - times[k - 1])
+        if cid in _LINEAR and value_id == _QUAT_VALUE:
+            q0, q1 = value_at(k - 1), value_at(k)
+            if _opposite(q0, q1):
+                return turn(_unit_quat(q0), f)
+            if _opposite(q0, q1, _NEAR_OPPOSITE):
+                self.issue(i, KEYS_INTERPOLATED)
+        elif cid in _LINEAR and value_id == _SCALE_VALUE:
+            if sum(x * y for x, y in zip(value_at(k - 1)[3:], value_at(k)[3:])) < 0.0:
+                self.issue(i, KEYS_INTERPOLATED)
+        return _interpolate(value_at(k - 1), value_at(k), f, value_id)
 
     def scalar(self, i, default):
         if i is None:
