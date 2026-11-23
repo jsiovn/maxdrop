@@ -141,6 +141,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Lights: a VRayIES whose IES file is not found because the texture search stopped in a crowded folder says where
   it stopped, and the report lists that stop also when materials are not imported. The IES, dome and material
   lookups now walk the texture folders once per scene, not once each.
+- Extrude: a closed spline whose own edges cross, touch or run over each other (a bowtie, a slit drawn over
+  itself, a knot moved without its handles, two knots on one spot between straight segments) gets no cap, morph or
+  grid, as in 3ds Max, instead of caps 3ds Max does not make; it is no longer taken as a hole in another spline's
+  cap (or as its container) and keeps its own direction. One line in the report counts them. A curve segment
+  from a knot back to the same spot gets no interpolation steps under Optimize, as in 3ds Max.
 
 ## [1.0.1] - 2026-11-22
 

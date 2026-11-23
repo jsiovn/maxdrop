@@ -16,17 +16,21 @@ IDs, 8 use shape IDs, 9 smooth); Real-World Map Size is the u32 0x0130 of the 0x
 whose 0x0120 names the Extrude class (reader.realworld; another class's entry is not this flag).
 
 Interpolation (3ds Max's, fitted to its own counts): each segment gets steps points between its knots; with
-optimize a straight segment (segment type line, or both vectors on the chord) gets none; adaptive gives a straight
-segment none and a curved one 2^d - 1, d the smallest depth up to 5 at which every piece turns by at most 2 degrees
-(the angle between the chords of its two halves). Without optimize even a straight segment gets its steps.
+optimize a straight segment (segment type line, or both vectors on the chord) or one back to the same spot gets none;
+adaptive gives a straight segment none and a curved one 2^d - 1, d the smallest depth up to 5 at which every piece
+turns by at most 2 degrees (the angle between the chords of its two halves). Without optimize even a straight segment
+gets its steps.
 
 The sides join segments + 1 copies of each polyline along the object's Z, one per level, amount * level / segments
 up; a closed polyline also gets a cap at level 0 (Cap Start) and at the last level (Cap End). Closed polylines nest
 even-odd: one inside an even number of others is a solid, inside an odd number a hole of its innermost container.
-Every solid is turned counter-clockwise and every hole clockwise seen from +Z (a turned polyline starts at its last
-point) before the sides are made, and a negative amount reverses the sides, so the normals point out whatever way the
-splines run; an open polyline keeps its own direction (its faces look to the right of it). A cap without holes is one
-n-gon, a cap with holes is ear-clipped after a bridge to each hole, which gives the triangle count 3ds Max gives.
+A closed polyline with two edges that do not follow each other and meet (cross, touch or run over each other, on XY,
+exactly) or that lost a zero-length segment between straight edges gets no cap and is left out of the nesting (no
+hole, no container, not turned), as 3ds Max 2020 does. Every solid is turned counter-clockwise and every hole
+clockwise seen from +Z (a turned polyline starts at its last point) before the sides are made, and a negative amount
+reverses the sides, so the normals point out whatever way the splines run; an open polyline keeps its own direction
+(its faces look to the right of it). A cap without holes is one n-gon, a cap with holes is ear-clipped after a bridge
+to each hole, which gives the triangle count 3ds Max gives.
 Grid caps (cap type 1) add 3ds Max's grid points inside each solid: a grid over the box of its outline, 20 divisions
 per axis, more for a small hole (floor(0.95 x size / half the hole's extent), at most 50), the points at 2.5 % from
 the box plus a thousandth of a division; the cells that lie wholly inside the solid are quads and the band between
@@ -44,7 +48,8 @@ the levels (0 to 1, or the height); the caps map the shape's XY box (0 to 1, or 
 The file comes from anywhere: a parameter that is animated or no number raises ExtrudeError; segments are clamped
 to 1 .. MAX_SEGMENTS; a mesh past MAX_VERTICES raises ExtrudeError; a holed cap past MAX_CAP_POINTS or one that
 cannot be bridged is left open, and outlines that take more than MAX_NEST_TESTS to nest get no caps (an issue
-each); the holed cap that passes the mesh's MAX_CLIP_STEPS and those after it are left open (an issue, and one
+each); closed polylines past the mesh's MAX_CROSS_TESTS edge pairs are capped without the crossing test (an issue);
+the holed cap that passes the mesh's MAX_CLIP_STEPS and those after it are left open (an issue, and one
 more that counts the rest); a grid cap past MAX_CAP_POINTS, the mesh's MAX_GRID_TESTS, its grid bands'
 MAX_GRID_CLIP_STEPS or MAX_VERTICES, or whose band does not triangulate into its area is made as a morph cap (an issue
 per reason; a holed one the morph cap's own limits leave open is named as open). docs/FORMAT.md says which fixture
@@ -74,6 +79,8 @@ MAX_CAP_POINTS = 5000  # a holed cap is ear-clipped in Python: quadratic
 MAX_CLIP_STEPS = 1 << 25  # the holed caps of one mesh: a 5000-point cap takes up to about 8 million, 3 s
 MAX_LOOPS = 4000  # closed polylines nested against each other: quadratic
 MAX_NEST_TESTS = 1 << 24  # point-edge tests telling which outline lies in which: about 2 s in Python
+MAX_CROSS_TESTS = 1 << 24  # edge pairs of one mesh tested for a self-crossing outline (numpy): about a second
+CROSS_CHUNK = 1 << 20  # edge pairs tested at once: bounds the arrays
 MAX_GRID_TESTS = 1 << 25  # point-edge and cell-edge tests of the grid caps of one mesh (numpy): about a second
 MAX_GRID_CLIP_STEPS = 1 << 23  # the grid bands of one mesh, beside MAX_CLIP_STEPS: a few seconds
 GRID_DIVISIONS, GRID_MAX_DIVISIONS = 20, 50
@@ -98,9 +105,11 @@ class Params(collections.namedtuple("Params", "amount segments cap_start cap_end
 DEFAULT = Params(0.0, 1, True, True, CAP_MORPH, OUTPUT_MESH, False, True, False, True, False)
 
 
-class Polyline(collections.namedtuple("Polyline", "points hard closed ids")):
+class Polyline(collections.namedtuple("Polyline", "points hard closed ids doubled")):
     """A spline as points (x, y, z); hard[k]: point k is a knot where the sides' smoothing changes (_hard);
-    ids[k]: the zero-based material ID of the segment the column from point k belongs to (Use Shape IDs)."""
+    ids[k]: the zero-based material ID of the segment the column from point k belongs to (Use Shape IDs); doubled:
+    a closed spline that lost a zero-length segment between two straight edges (3ds Max keeps both points and finds
+    the spline touching itself there)."""
     __slots__ = ()
 
 
@@ -217,7 +226,7 @@ def _polyline(spline, steps, optimize, adaptive):
     knots = spline.knots
     n = len(knots)
     closed = spline.closed
-    pts, hard, ids = [], [], []
+    pts, hard, ids, bare = [], [], [], []  # bare[k]: no steps follow point k (a straight edge leaves it)
     for k in range(n if closed else n - 1):
         a, b = knots[k], knots[(k + 1) % n]
         p0, p3 = a.point, b.point
@@ -226,34 +235,44 @@ def _polyline(spline, steps, optimize, adaptive):
         straight = line or _straight(p0, c1, c2, p3)
         if adaptive:
             count = 0 if straight else _adaptive_steps(p0, c1, c2, p3)
-        else:
-            count = 0 if optimize and straight else steps
+        else:  # Optimize gives a segment back to the same spot no steps whatever its vectors (3ds Max 2020)
+            count = 0 if optimize and (straight or p0 == p3) else steps
         pts.append(p0)
         hard.append(_hard(a))
+        bare.append(count == 0)
         pts.extend(_bezier(p0, c1, c2, p3, s / (count + 1.0)) for s in range(1, count + 1))
         hard.extend([False] * count)
+        bare.extend([False] * count)
         ids.extend([a.material] * (count + 1))
     if not closed and n:
         pts.append(knots[-1].point)
         hard.append(_hard(knots[-1]))
+        bare.append(True)
         ids.append(0)  # no column leaves the last point
-    out_p, out_h, out_i = [], [], []
-    for p, h, i in zip(pts, hard, ids):  # a zero-length segment would make faces of no area
+    out_p, out_h, out_i, out_b = [], [], [], []
+    doubled = False
+    for p, h, i, b in zip(pts, hard, ids, bare):  # a zero-length segment would make faces of no area
         if out_p and p == out_p[-1]:
+            # straight edges on both sides: 3ds Max, keeping both points, finds them touching (between curves its
+            # rounding decides, mostly a cap)
+            doubled = doubled or (len(out_b) > 1 and out_b[-2] and b)
             out_h[-1] = out_h[-1] or h
             out_i[-1] = i  # the column that leaves this point is the one that remains
+            out_b[-1] = b
             continue
         out_p.append(p)
         out_h.append(h)
         out_i.append(i)
+        out_b.append(b)
     if closed and len(out_p) > 1 and out_p[0] == out_p[-1]:
+        doubled = doubled or (len(out_b) > 2 and out_b[-2] and out_b[0])
         out_h[0] = out_h[0] or out_h[-1]
         out_p.pop()
         out_h.pop()
         out_i.pop()
     if closed and len(out_p) < 3:
         closed = False
-    return Polyline(out_p, out_h, closed, out_i)
+    return Polyline(out_p, out_h, closed, out_i, closed and doubled)
 
 
 def polylines(shape):
@@ -484,6 +503,70 @@ def _nest(loops, issues):
         else:
             issues.append("an outline overlaps another: its hole is left open")
     return solids
+
+
+def _crosses(numpy, xy, tests):
+    """Whether two edges of the closed polygon xy ((x, y) points) that do not follow each other meet: cross, touch
+    or run over each other, exactly, as 3ds Max finds it; adjacent edges never count. None when the edge pairs whose
+    x ranges overlap are more than the tests left (a one-item list, charged before any is tested)."""
+    n = len(xy)
+    if n < 4:  # every edge follows every other
+        return False
+    p = numpy.asarray(xy, dtype=numpy.float64)
+    q = numpy.roll(p, -1, axis=0)
+    x0, x1 = numpy.minimum(p[:, 0], q[:, 0]), numpy.maximum(p[:, 0], q[:, 0])
+    y0, y1 = numpy.minimum(p[:, 1], q[:, 1]), numpy.maximum(p[:, 1], q[:, 1])
+    order = numpy.argsort(x0, kind="stable")
+    # sweep: the edges after edge k in x order that start within its x range
+    count = numpy.searchsorted(x0[order], x1[order], side="right") - numpy.arange(n) - 1
+    total = int(count.sum())
+    tests[0] -= total
+    if tests[0] < 0:
+        return None
+    ends = numpy.cumsum(count)
+    lo = 0
+    while lo < n:
+        hi = max(int(numpy.searchsorted(ends, ends[lo] - count[lo] + CROSS_CHUNK, side="right")), lo + 1)
+        c = count[lo:hi]
+        a = numpy.repeat(numpy.arange(lo, hi), c)
+        b = a + 1 + numpy.arange(len(a)) - numpy.repeat(numpy.cumsum(c) - c, c)
+        i, j = order[a], order[b]
+        gap = numpy.abs(i - j)
+        keep = (gap != 1) & (gap != n - 1) & (y0[i] <= y1[j]) & (y0[j] <= y1[i])
+        i, j = i[keep], j[keep]
+        lo = hi
+        if not len(i):
+            continue
+        pa, pb, pc, pd = p[i], q[i], p[j], q[j]
+
+        def side(o, e, f):  # the sign of the turn o -> e -> f
+            return numpy.sign((e[:, 0] - o[:, 0]) * (f[:, 1] - o[:, 1]) - (e[:, 1] - o[:, 1]) * (f[:, 0] - o[:, 0]))
+
+        # on opposite sides or on the line, both ways; four zeros: collinear, and the boxes overlap
+        if ((side(pa, pb, pc) * side(pa, pb, pd) <= 0) & (side(pc, pd, pa) * side(pc, pd, pb) <= 0)).any():
+            return True
+    return False
+
+
+def _crossed(numpy, lines, closed, capped, issues):
+    """{j}: the closed polylines that cross, touch or run over themselves (_crosses), or lost a zero-length segment
+    between straight edges (Polyline.doubled): 3ds Max gives them no cap and leaves them out of the nesting. With
+    capped, one issue counts them and one more those past MAX_CROSS_TESTS (capped unchecked)."""
+    out, tests, unchecked = set(), [MAX_CROSS_TESTS], 0
+    for j, xy in closed.items():
+        r = True if lines[j].doubled else _crosses(numpy, xy, tests)
+        if r is None:
+            unchecked += 1
+        elif r:
+            out.add(j)
+    if capped and out:
+        issues.append("%d closed spline%s that cross%s or touch%s %s: no cap, as in 3ds Max" %
+                      ((len(out), "", "es", "es", "itself") if len(out) == 1 else
+                       (len(out), "s", "", "", "themselves")))
+    if capped and unchecked:
+        issues.append("%d closed spline%s not checked for crossings (more than %d tests): capped" %
+                      (unchecked, "" if unchecked == 1 else "s", MAX_CROSS_TESTS))
+    return out
 
 
 def _side_groups(hard, closed, columns, smooth):
@@ -832,6 +915,9 @@ def extrude(shape, params):
     if params.amount == 0:
         issues.append("an amount of 0: a flat mesh")
     closed = {j: [(p[0], p[1]) for p in pl.points] for j, pl in enumerate(lines) if pl.closed}
+    # a spline that crosses itself is no cap, no hole and no container, and keeps its own direction (3ds Max 2020)
+    for j in _crossed(numpy, lines, closed, params.cap_start or params.cap_end, issues):
+        del closed[j]
     solids, nested = {}, False
     if len(closed) > MAX_LOOPS:
         issues.append("%d closed splines, more than %d: no caps" % (len(closed), MAX_LOOPS))
@@ -846,7 +932,7 @@ def extrude(shape, params):
                 # the whole polyline turned, its last point now first, as 3ds Max turns it (arc_pie_reverse: the
                 # side U starts there); column k now runs where column n - 2 - k ran, the last where it ran
                 ids = pl.ids[::-1]
-                lines[j] = Polyline(pl.points[::-1], pl.hard[::-1], True, ids[1:] + ids[:1])
+                lines[j] = pl._replace(points=pl.points[::-1], hard=pl.hard[::-1], ids=ids[1:] + ids[:1])
                 closed[j] = [(p[0], p[1]) for p in lines[j].points]
 
     base, start = [], 0

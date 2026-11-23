@@ -619,6 +619,23 @@ What 3ds Max 2020 makes of it (`snapshotAsMesh`, probed on scratch scenes and ch
   points lie at z 0 and the levels' heights whatever the shape's z (a rectangle at z 3: its outline at 3 and 5, its
   grid at 0 and 2); their map is the cap's box mapping. Every interior edge is hidden: 3ds Max shows the cap as one
   polygon. No local scene has grid caps (443 scenes, 95 Extrudes, the corpus included, 2026-11-21).
+- **Self-crossing outlines** (maxdrop-em3.140; 3ds Max 2020 probes, `tests/unit/test_extrude.py` CROSS_PROBES holds
+  their counts): a closed spline with two edges that do not follow each other and meet (cross, touch at a knot or
+  on an edge, or run over each other: a bowtie, a pentagram, a slit whose edges overlap along the top, an edge back
+  over the one before, a Bezier rectangle whose knot moved without its vectors) gets no cap, morph or grid: the
+  sides alone (Bowtie 8 vertices, 8 faces). Adjacent edges never count (a closed outline of three points on one
+  line is capped). The test is on the interpolated points in XY (edges crossing at other heights count), exact: a
+  knot 1e-6 off an edge at x 10 is capped, 1e-6 across it is not. The other splines keep their caps; the crossing
+  one is neither a hole nor a container (a bowtie inside a square: the square capped whole, its grid as without a
+  hole; a square in a bowtie's lobe: a solid) and is not turned: its sides run from its first knot its own way, as
+  an open spline's. Crossings between two splines change nothing. Two knots on one spot one after the other (a
+  zero-length segment): 3ds Max keeps both points (a rectangle with a doubled corner: 10 vertices, MaxDrop merges
+  them: 8) and between straight edges gives no cap at any coordinates (also the last knot on the first, and a
+  rounded Rectangle whose corner radius is half a side, at steps 0); between interpolated curves its rounding
+  decides (radius half the short side, steps 6: 10 x 20 capped, 7.3 x 19.1, 3 x 4 and 100 x 250 not; the 10 x 20
+  one at steps 1 to 7 and 12 capped, 10 not), and MaxDrop caps it. Under Optimize a curve segment from a knot to
+  another on the same spot gets no steps (that pill: 32 points), without it its steps (56). The edge pairs tested
+  are bounded (`MAX_CROSS_TESTS`): past them a spline is capped unchecked, a line in the report.
 - **Smoothing**: caps group 16; the sides change group only at a corner or Bezier-corner knot (FixtureExtMirror's
   rounded Rectangle: sharp at its 8 Bezier-corner knots) or a Bezier knot with a vector on its point, the groups
   alternating 1, 2 (4 where three runs meet, 1, 3, 2 ... along a spline with no corner). A Bezier knot breaks the
