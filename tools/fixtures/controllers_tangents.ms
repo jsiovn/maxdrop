@@ -7,7 +7,12 @@
 -- tangents with handle lengths other than a third, Bezier Position and Bezier Scale custom tangents with a length
 -- per axis, Smooth Rotation (MAXScript Bezier_Rotation) over three keys, TCB Floats, TCB Position, TCB Rotation (a
 -- turn of 200 degrees between two keys) and TCB Scale with tension, continuity, bias and ease set; a Linear Rotation
--- turning 270 degrees between two keys. Saved with the time
+-- turning 270 degrees between two keys. Then (maxdrop-em3.144) free Bezier handles on Floats (steep, a free middle
+-- key, a handle longer than its segment) and on a Position, constant velocity out of a Bezier Position key whose
+-- later key has handle lengths, Bezier, TCB and Linear Scale keys whose scale axes differ, TCB Rotation turns of
+-- 450, 400 and 760 degrees with frame 0 in the first half-turn, the last one and the turn between, a TCB turn of
+-- exactly 360 degrees, a Linear Rotation turn of 360 degrees, a Scale List of two turned axes and a Rotation List of
+-- two turns about several axes. Saved with the time
 -- slider at frame 30, so the value saved for the slider's frame is not the frame-0 value the oracle reports. Values
 -- and slopes stay moderate: next to a steep Bezier key the reader and 3ds Max differed by up to 1e-3 in a probe.
 -- Authored for MaxDrop's tests (see CONTRIBUTING.md, "Test files"): it resets the scene, so run it in a 3ds Max
@@ -141,6 +146,116 @@
 	)
 	k0 = getKeyIndex c 0f
 	if k0 > 0 do deleteKey c k0
+
+	-- maxdrop-em3.144. Keys by addNewKey and value (no auto key at frame 0), turns by rotating the node after the
+	-- first key, so each key keeps the turn it was given from the previous one.
+	fn keysOn c times vals = (for k = 1 to times.count do (addNewKey c times[k]; c.keys[k].value = vals[k]))
+	fn freeOut key tangent len = (key.outTangentType = #custom; key.outTangent = tangent; key.freeHandle = true; \
+		key.outTangentLength = len)
+	fn freeIn key tangent len = (key.inTangentType = #custom; key.inTangent = tangent; key.freeHandle = true; \
+		key.inTangentLength = len)
+	fn turnKeys o c t0 q0 turns = (
+		o.rotation.controller = c
+		addNewKey c t0
+		c.keys[1].value = q0
+		with animate on for tn in turns do at time tn[1] rotate o (angleAxis tn[2] tn[3])
+	)
+	-- scale keys through the node's transform, then the position and rotation keys that made are removed
+	fn axisKeys o c times scales quats = (
+		o.scale.controller = c
+		with animate on for k = 1 to times.count do
+			at time times[k] o.transform = (inverse (quats[k] as matrix3)) * (scaleMatrix scales[k]) * (quats[k] as matrix3)
+		deleteKeys o.position.controller #allKeys
+		deleteKeys o.rotation.controller #allKeys
+		local k0 = getKeyIndex c 0f
+		if k0 > 0 and findItem times 0 == 0 do deleteKey c k0
+	)
+
+	-- free handles on Bezier Floats: X steep (lengths 0.6 and 0.15 frames), Y a free middle key between custom keys
+	-- (0.4 and 0.9 frames), Z handles longer than the segment (60 and 10 frames on 50)
+	local fh = fixtureBox "FixtureFreeHandles" [0,-40,0]
+	pc = fh.position.controller
+	pc.x_position.controller = Bezier_Float()
+	pc.y_position.controller = Bezier_Float()
+	pc.z_position.controller = Bezier_Float()
+	c = pc.x_position.controller
+	keysOn c #(-10, 40) #(-25.0, -15.0)
+	freeOut c.keys[1] 3.0 0.6; freeIn c.keys[2] -1.5 0.15
+	c = pc.y_position.controller
+	keysOn c #(-20, 10, 40) #(-45.0, -30.0, -35.0)
+	c.keys[1].outTangentType = #custom; c.keys[1].outTangent = 0.5
+	c.keys[3].inTangentType = #custom; c.keys[3].inTangent = -0.4
+	freeIn c.keys[2] 2.0 0.4; freeOut c.keys[2] 2.0 0.9
+	c = pc.z_position.controller
+	keysOn c #(-10, 40) #(5.0, 15.0)
+	freeOut c.keys[1] 0.3 60.0; freeIn c.keys[2] -0.2 10.0
+
+	-- free handles on a Bezier Position, a length per axis
+	local fp = fixtureBox "FixtureFreePosition" [0,0,0]
+	fp.position.controller = Bezier_Position()
+	c = fp.position.controller
+	keysOn c #(-10, 40) #([-10,-30,5], [5,-25,12])
+	freeOut c.keys[1] [0.3,-0.15,0.1] [0.5,0.2,0.4]; freeIn c.keys[2] [-0.1,0.2,-0.25] [0.1,0.3,0.6]
+
+	-- constant velocity out of the earlier Bezier Position key; the later key's handle lengths do not count
+	local cv = fixtureBox "FixtureConstantVelocity" [0,0,0]
+	cv.position.controller = Bezier_Position()
+	c = cv.position.controller
+	keysOn c #(-10, 40) #([-10,-60,5], [5,-65,12])
+	c.keys[1].outTangentType = #custom; c.keys[2].inTangentType = #custom
+	c.keys[1].outTangent = [0.9,-0.6,0.4]; c.keys[2].inTangent = [-0.1,0.8,-0.5]
+	c.keys[2].inTangentLength = [0.6,0.1,0.3]
+	c.keys[1].constantVelocity = true
+
+	-- scale axes that differ: Bezier and TCB over three keys, Linear over two
+	local qa = (eulerAngles 20 0 30) as quat
+	local qb = (eulerAngles -10 35 70) as quat
+	local qc = (eulerAngles 50 -20 10) as quat
+	local sab = fixtureBox "FixtureScaleAxesBezier" [0,0,0]
+	axisKeys sab (Bezier_Scale()) #(-20, 10, 40) #([2,0.5,1], [1,1.5,3], [0.7,2,1.2]) #(qa, qb, qc)
+	local sat = fixtureBox "FixtureScaleAxesTCB" [0,0,0]
+	axisKeys sat (TCB_Scale()) #(-20, 10, 40) #([2,0.5,1], [1,1.5,3], [0.7,2,1.2]) #(qa, qb, qc)
+	c = sat.scale.controller
+	c.keys[1].tension = 10; c.keys[2].continuity = 40; c.keys[2].easeTo = 30
+	local sal = fixtureBox "FixtureScaleAxesLinear" [0,0,0]
+	axisKeys sal (Linear_Scale()) #(-10, 40) #([2,0.5,1], [1,1.5,3]) #(qa, qb)
+
+	-- TCB Rotation turns of a revolution or more: 450 degrees with frame 0 in the first half-turn (tension,
+	-- continuity, bias and ease set), 400 with frame 0 in the last half-turn, 760 after 400 with frame 0 half way,
+	-- exactly 360 with frame 0 in its last half-turn
+	local sq = (eulerAngles 15 -25 60) as quat
+	local ax = normalize [1,2,3]
+	local ss = fixtureBox "FixtureTCBSpinStart" [0,0,0]
+	turnKeys ss (TCB_Rotation()) -25 sq #(#(-5, 30, [0,1,0]), #(25, 450, ax), #(55, 40, [1,0,0]))
+	c = ss.rotation.controller
+	tcb c.keys[1] 10 25 25 0 20
+	tcb c.keys[2] 25 15 30 40 10
+	tcb c.keys[3] 35 40 60 30 0
+	local se = fixtureBox "FixtureTCBSpinEnd" [0,0,0]
+	turnKeys se (TCB_Rotation()) -20 sq #(#(10, 400, ax), #(40, 60, [0,1,0]))
+	local sm = fixtureBox "FixtureTCBSpinMiddle" [0,0,0]
+	turnKeys sm (TCB_Rotation()) -45 sq #(#(-15, 400, ax), #(15, 760, [0,0,1]))
+	local tt = fixtureBox "FixtureTCBTurn" [0,0,0]
+	turnKeys tt (TCB_Rotation()) -20 sq #(#(10, 360, normalize [1,1,0]), #(40, 50, [0,0,1]))
+
+	-- Linear Rotation: a whole turn between two keys (opposite quaternions)
+	local lt = fixtureBox "FixtureLinearRotationTurn" [0,0,0]
+	turnKeys lt (Linear_Rotation()) -10 sq #(#(40, 360, normalize [1,1,0]))
+
+	-- a Scale List of two Bezier Scales along turned axes, and a Rotation List of two turns about several axes
+	local sl = fixtureBox "FixtureScaleListAxes" [0,0,0]
+	sl.transform = (inverse (qa as matrix3)) * (scaleMatrix [2,0.5,1]) * (qa as matrix3)
+	sl.scale.controller = Scale_List()
+	sl.scale.controller.Available.controller = Bezier_Scale()
+	sl.scale.controller.setActive 2
+	sl.transform = (inverse (qb as matrix3)) * (scaleMatrix [1,1.5,3]) * (qb as matrix3)
+	local rl = fixtureBox "FixtureRotListMulti" [0,0,0]
+	rl.rotation.controller = Rotation_List()
+	rl.rotation.controller.Available.controller = Euler_XYZ()
+	rl.rotation.controller[1].controller.value = (eulerAngles 30 40 50) as quat
+	rl.rotation.controller[2].controller.value = (eulerAngles -20 60 10) as quat
+	rl.rotation.controller.weight[1] = 50
+	rl.rotation.controller.weight[2] = 30
 
 	sliderTime = 30
 	makeDir @"C:\maxdrop_fixtures" all:true

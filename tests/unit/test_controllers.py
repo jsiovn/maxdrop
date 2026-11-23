@@ -1857,13 +1857,25 @@ class TestTangentsFixture(unittest.TestCase):
                 out.append((entry.name, holder, [(r[1], r[2:]) for r in recs[k - 1:k + 1]]))
         return out
 
+    # maxdrop-em3.144: free handles, constant velocity, scale axes that differ, TCB spins, a whole Linear turn
+    SPUN = {"FixtureFreeHandles": ["Bezier Float"] * 3, "FixtureFreePosition": ["Bezier Position"],
+            "FixtureConstantVelocity": ["Bezier Position"], "FixtureScaleAxesBezier": ["Bezier Scale"],
+            "FixtureScaleAxesTCB": ["TCB Scale"], "FixtureScaleAxesLinear": ["Linear Scale"],
+            "FixtureTCBSpinStart": ["TCB Rotation"], "FixtureTCBSpinEnd": ["TCB Rotation"],
+            "FixtureTCBSpinMiddle": ["TCB Rotation"], "FixtureTCBTurn": ["TCB Rotation"],
+            "FixtureLinearRotationTurn": ["Linear Rotation"]}
+
     def test_frame_0_between_two_keys(self):
-        for name, want in self.KEYED.items():
+        for name, want in {**self.KEYED, **self.SPUN}.items():
             with self.subTest(name):
                 found = self.keyed(name)  # fails where no two keys straddle frame 0
                 self.assertEqual(sorted(c for c, _h, _r in found), want)
                 for _c, holder, _r in found:
-                    self.assertEqual(holder.first(0x2500).unpack("<ii"), AT_FRAME_30)
+                    start, end = holder.first(0x2500).unpack("<ii")
+                    if name in self.KEYED:
+                        self.assertEqual((start, end), AT_FRAME_30)
+                    else:  # FixtureTCBSpinMiddle's last key is at frame 15: its interval is (2400, 2400)
+                        self.assertFalse(start <= 0 <= end, name)
 
     def test_tangents_are_not_linear(self):
         for name in self.KEYED:
@@ -1880,6 +1892,58 @@ class TestTangentsFixture(unittest.TestCase):
         self.assertGreater(b[12], math.pi)  # 200 degrees from the earlier key
         (_c, _h, ((_fa, a), (_fb, b))), = self.keyed("FixtureLinearRotationWide")
         self.assertLess(sum(x * y for x, y in zip(a[:4], b[:4])), 0.0)  # stored the long way round
+
+    def test_free_handles_and_constant_velocity(self):
+        for name in ("FixtureFreeHandles", "FixtureFreePosition"):
+            for cls, _h, ((flags_a, a), (flags_b, b)) in self.keyed(name):
+                with self.subTest(name, values=(a[0], b[0])):
+                    n = {"Bezier Float": 1, "Bezier Position": 3}[cls]
+                    self.assertTrue((flags_a | flags_b) & 0x100000)  # a free handle in the segment
+                    if flags_a & 0x100000:
+                        self.assertGreater(min(a[4 * n:5 * n]), 0.0)  # the out length, in frames
+                    if flags_b & 0x100000:
+                        self.assertGreater(min(b[3 * n:4 * n]), 0.0)
+        longest = max(a[4] for _c, _h, ((_fa, a), _b) in self.keyed("FixtureFreeHandles"))
+        self.assertGreater(longest, 50.0)  # a handle longer than its 50-frame segment
+        (_c, _h, ((flags_a, a), (flags_b, b))), = self.keyed("FixtureConstantVelocity")
+        self.assertTrue(flags_a & 0x8000)
+        self.assertFalse(flags_a & 0x100000)
+        self.assertEqual([round(v, 4) for v in b[9:12]], [0.6, 0.1, 0.3])  # in lengths that do not count
+
+    def test_scale_axes_differ(self):
+        for name in ("FixtureScaleAxesBezier", "FixtureScaleAxesTCB", "FixtureScaleAxesLinear"):
+            (_c, _h, ((_fa, a), (_fb, b))), = self.keyed(name)
+            dot = sum(x * y for x, y in zip(a[3:7], b[3:7]))
+            self.assertTrue(0.0 < dot < 0.99, (name, dot))
+
+    def test_spins_and_whole_turns(self):
+        # the eased fraction of frame 0 against the half-turn h at either end of a turn past a revolution
+        for name, piece in (("FixtureTCBSpinStart", "first"), ("FixtureTCBSpinEnd", "last"),
+                            ("FixtureTCBSpinMiddle", "middle"), ("FixtureTCBTurn", "last")):
+            with self.subTest(name):
+                (_c, holder, ((_fa, a), (_fb, b))), = self.keyed(name)
+                view = holder.first(0x2522).view()
+                times = [struct.unpack_from("<i", view, k * 92)[0] for k in range(len(view) // 92)]
+                t0 = max(t for t in times if t < 0)
+                t1 = min(t for t in times if t > 0)
+                self.assertGreaterEqual(b[12], 2 * math.pi)
+                u, h = ct.ease(-t0 / (t1 - t0), a[8], b[7]), math.pi / b[12]
+                self.assertEqual("first" if u < h else "last" if u > 1 - h else "middle", piece)
+        (_c, _h, ((_fa, a), (_fb, b))), = self.keyed("FixtureLinearRotationTurn")
+        self.assertLess(1.0 + sum(x * y for x, y in zip(a[:4], b[:4])), 5e-7)  # opposite quaternions
+
+    def test_lists_of_turned_entries(self):
+        s = self.s
+        scale_list = s.refs(s.node(self.nodes["FixtureScaleListAxes"]).tm)[2]
+        axes = [s.chunk(s.refs(scale_list)[k]).first(0x2505).unpack("<7f")[3:] for k in (0, 1)]
+        self.assertTrue(all(abs(q[3]) < 0.99 for q in axes))  # both turned
+        self.assertLess(abs(sum(x * y for x, y in zip(*axes))), 0.99)  # and not alike: the order matters
+        rot_list = s.refs(s.node(self.nodes["FixtureRotListMulti"]).tm)[1]
+        for k in (0, 1):
+            euler = s.refs(rot_list)[k]
+            angles = [s.chunk(f).first(0x7127).first(0x2501).unpack("<f")[0]
+                      for f in (s.refs(euler)[j] for j in range(3))]
+            self.assertGreaterEqual(sum(abs(v) > 0.1 for v in angles), 2, angles)  # about several axes
 
 
 if __name__ == "__main__":
