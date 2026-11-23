@@ -54,9 +54,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Materials: the maps of a VRayFastSSS2, VRayCarPaintMtl and VRayCarPaintMtl2 take their slot's multiplier as their
   amount, as VRayMtl's do (a bump at 30 % no longer arrives at full strength), and a VRayFastSSS2's specular amount
   scales its specular.
-- Materials: a VRayOverrideMtl or Double Sided sub-material whose checkbox is off is no longer used: the peel skips
-  it like an empty slot and takes the next sub-material that is on (what V-Ray or 3ds Max renders without it is not
-  checked).
+- Materials: a Double Sided whose facing material is switched off is a line in the report: MaxDrop draws that
+  material, as V-Ray 5.2 renders it (measured, as a VRayOverrideMtl's base switched off), but the 3ds Max scanline
+  renders that side black.
 - Maps: a Bitmap that tiles or mirrors in one direction and not in the other, or a placed image that tiles, no
   longer shows a thin dark line at each tile and mirror line (EEVEE and Cycles): what it clips is now cut by a mask
   instead of Blender's Clip extension, which faded the image's border toward black.
