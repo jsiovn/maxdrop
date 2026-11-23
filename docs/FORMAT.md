@@ -762,11 +762,12 @@ What 3ds Max 2020 makes, against Blender's evaluated meshes (`tests/blender/run.
   4.5 and 5.2 give 3ds Max's counts; all open edges sharp give a seam (the half box 17 regions, 38 hard edges), none
   the smooth rim (3 and 20). With the weld off the plane's open edges make a rim in both, whose corners against the
   top's are auto smooth's (a line in the report). A Symmetry above the Shell cuts the hardened rim as 3ds Max does
-  (the open box: (0, 11, 32) in both, 3ds Max leaving the seam unwelded). What stays different is a line in the report, only for a mesh with open edges:
-  auto smooth on and rim corners sharper than its angle (the rim face of open edge a -> b has the normal (pb - pa) x
-  (na + nb), n the sum of the unit face normals at a vertex, on the mesh below the modifiers: a plane keeps its 4
-  corners under 1 to 3 TurboSmooth iterations below the Shell, 6 regions; FixtureShellPlane: 4 corners; above
-  Symmetries, counted on the mesh with its welded copies), or the
+  (the open box: (0, 11, 32) in both, 3ds Max leaving the seam unwelded). What stays different is a line in the
+  report, only for a mesh with open edges: auto smooth on and rim corners sharper than its angle (the rim face of
+  open edge a -> b has the normal (pb - pa) x (na + nb), n the sum of the unit face normals at a vertex, on the
+  mesh below the modifiers: a plane keeps its 4 corners under 1 to 3 TurboSmooth iterations below the Shell, 6
+  regions; FixtureShellPlane: 4 corners; above Symmetries, counted on the mesh with its welded copies, unless that
+  mesh would pass 4M face corners), or the
   override group with auto smooth off (the group is a number, 1 .. 32: group 4 is the side of mask 8;
   FixtureShellOverride). A crease on an open edge (a smoother that separates by smoothing groups) is left out.
 - **Symmetry**: the mirror plane is in the gizmo's space, q = p * context * inverse(gizmo), as UVW Map's; without

@@ -7,8 +7,8 @@ Symmetry as Blender modifiers, no Blender. The stack_convert fixture: each node'
 the settings its script set (tools/fixtures/stack_convert.ms), the mirror frames, the mesh shading a smoother sets,
 a TurboSmooth above a Bend not converted, nothing converted with the option off, the report's counts; stack_basic's
 TurboSmooth above its applied UVW Map; stack_shell's one-sided and inside-out Shells and their rims (the open edges
-sharp, the mesh key, the report; above a Symmetry the open edges it welds shut stay smooth). Hand-made blocks: defaults, clamps, refusals, the Solidify arithmetic and the
-Shell's rim rule.
+sharp, the mesh key, the report; above a Symmetry the open edges it welds shut stay smooth). Hand-made
+blocks: defaults, clamps, refusals, the Solidify arithmetic and the Shell's rim rule.
 tests/blender/run.py checks the built modifiers against 3ds Max's evaluated meshes.
 
     python -I -m unittest discover tests
@@ -524,6 +524,14 @@ class Rim(unittest.TestCase):
         # ... and moved: the plane x = 5
         moved = ((1.0, 0.0, 0.0, 5.0), (0.0, 1.0, 0.0, 0.0), (0.0, 0.0, 1.0, 0.0), (0.0, 0.0, 0.0, 1.0))
         self.assertEqual(conv.welded(p, _mirror_md(frame=moved)).tolist(), [False, False, False, False, True])
+        # turned 45 degrees and off the plane: welds 0.04 from the plane along its X axis, not 0.06, and a point of
+        # the plane far along its Y axis (a transposed matrix would put that point 5 off its plane)
+        c = math.sqrt(0.5)
+        frame = ((c, -c, 0.0, 3.0), (c, c, 0.0, 1.0), (0.0, 0.0, 1.0, 0.0), (0.0, 0.0, 0.0, 1.0))
+        q = [(3 + 0.04 * c, 1 + 0.04 * c, 0), (3 + 0.06 * c, 1 + 0.06 * c, 0), (3 - 5 * c, 1 + 5 * c, 2)]
+        self.assertEqual(conv.welded(q, _mirror_md(frame=frame)).tolist(), [True, False, True])
+        # a negative threshold (a crafted file) welds nothing, as Blender's minimum of 0
+        self.assertEqual(conv.welded(p, _mirror_md(threshold=-0.1)).tolist(), [False] * 5)
 
     def test_rim_edges_above_a_mirror(self):
         half, closed = _description(HALF_OPEN_BOX), _description(HALF_BOX)
@@ -531,8 +539,15 @@ class Rim(unittest.TestCase):
         self.assertEqual({tuple(e) for e in conv._rim_edges(half, (_mirror_md(),)).tolist()}, top)
         self.assertEqual(len(conv._rim_edges(half, ())), 6)
         self.assertEqual(len(conv._rim_edges(half, (_mirror_md(merge=False),))), 6)  # no weld: every open edge
-        self.assertEqual(len(conv._rim_edges(half, (_mirror_md(axis=1),))), 4)  # the plane y = 0: the front's 0-4, 4-5
+        # the plane y = 0: the front's 0-4 and 4-5 weld
+        self.assertEqual(len(conv._rim_edges(half, (_mirror_md(axis=1),))), 4)
         self.assertEqual(len(conv._rim_edges(closed, (_mirror_md(),))), 0)  # all on the plane
+        # a strip from x = 0 to 5, mirrored at x = 5, then at x = 10: the second Mirror welds the first one's copy of
+        # the edge at x = 0, which would carry its sharp mark into the seam
+        strip = _description(([(0, 0, 0), (5, 0, 0), (5, 1, 0), (0, 1, 0)], [0, 1, 2, 3], [0], [4]))
+        at = [((1.0, 0.0, 0.0, x), (0.0, 1.0, 0.0, 0.0), (0.0, 0.0, 1.0, 0.0), (0.0, 0.0, 0.0, 1.0)) for x in (5, 10)]
+        got = conv._rim_edges(strip, tuple(_mirror_md(frame=f) for f in at))
+        self.assertEqual(got.tolist(), [[0, 1], [2, 3]])
 
     def test_mirrored_mesh(self):
         p, lv, starts, totals = conv._mirrored(_description(HALF_OPEN_BOX), (_mirror_md(),))
@@ -565,6 +580,16 @@ class Rim(unittest.TestCase):
             "auto smooth: 4 corners of the rim sharper than 45 degrees shade smooth (3ds Max splits the rim there)"])
         self.assertEqual(conv.rim_issues(_description(HALF_BOX), over, mirrors=(_mirror_md(),)), [])  # welded shut
         self.assertEqual(len(conv.rim_issues(_description(HALF_BOX), over)), 1)
+        self.assertEqual(conv.rim_issues(half, over, mirrors=(_mirror_md(),)), want)  # the top's rim stays
+        # the mesh with its copies past MAX_MIRRORED_CORNERS: not counted, a line instead
+        cap = conv.MAX_MIRRORED_CORNERS
+        conv.MAX_MIRRORED_CORNERS = 8
+        try:
+            got = conv.rim_issues(half, auto, mirrors=(_mirror_md(), _mirror_md(axis=1)))
+        finally:
+            conv.MAX_MIRRORED_CORNERS = cap
+        self.assertEqual(got, ["auto smooth: the rim's corners not counted: with its 3 mirrored copies the mesh would "
+                               "pass 8 face corners"])
 
 
 if __name__ == "__main__":

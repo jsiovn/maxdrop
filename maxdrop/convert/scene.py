@@ -123,9 +123,10 @@ leaves no sharp edge or flat face, CREASE keeps them and sets md.creases. A conv
 groups of its own in 3ds Max, hard against both surfaces: unless a smoother with Smooth Result is above it, the
 mesh's open edges join its sharp edges (after a SMOOTH smoother cleared them) and ("rim", True) the mesh key; with
 Mirrors below the Shell, but the open edges a Mirror welds shut (both ends within its threshold of their copies: a
-seam once welded), and the rim entry of the key holds those Mirrors; what Solidify still cannot do (auto smooth splitting the rim's sharper corners, the override group) is
-an issue, named once per Shell and mesh, only when the mesh has open edges. Viewport levels that would give an
-object more than convert.modifiers.MAX_VIEWPORT_CORNERS face corners are lowered (an issue).
+seam once welded), and the rim entry of the key holds those Mirrors; what Solidify still cannot do (auto smooth
+splitting the rim's sharper corners, the override group) is an issue, named once per Shell and mesh, only when the
+mesh has open edges. Viewport levels that would give an object more than convert.modifiers.MAX_VIEWPORT_CORNERS face
+corners are lowered (an issue).
 describe(..., convert_modifiers=False) converts nothing.
 
 Layers: each node names its layer's object index (None without one, or when the layer record cannot be read, which
@@ -159,6 +160,9 @@ MAX_EDGE_MASKS = 64  # distinct smoothing-group masks paired on one non-manifold
 # extrude.MAX_VERTICES), but a file can hold any number of them, each costing up to about a second and hundreds of
 # MB. Checked before each is made, so the last one made can pass it by up to its own cap.
 MAX_BUILT_CORNERS = 1 << 24
+# Face corners of a mesh with its copies under the Mirrors below a Shell, counted for the rim's corners (each Mirror
+# doubles them): past it the corners are not counted (a line in the report)
+MAX_MIRRORED_CORNERS = 1 << 22
 _SPENT = "the primitives and extrusions before it reach %d face corners, the budget for one scene"
 SHEAR_TOLERANCE = 1e-5  # |cos| between two rows of a local matrix
 OFFSET = "its object is offset from its pivot: the camera looks from the pivot, 3ds Max from the object"
@@ -1214,35 +1218,50 @@ def welded(positions, mirror):
     (half that to the plane)."""
     import numpy
     p = numpy.asarray(positions, dtype=numpy.float64).reshape(-1, 3)
-    if not dict(mirror.settings)["use_mirror_merge"]:
+    threshold = max(float(dict(mirror.settings)["merge_threshold"]), 0.0)  # Blender's hard minimum
+    if not dict(mirror.settings)["use_mirror_merge"] or not threshold:
         return numpy.zeros(len(p), dtype=bool)
     r = _reflection(mirror)
     d = p - (p @ r[:3, :3].T + r[:3, 3])
-    return numpy.einsum("ij,ij->i", d, d) < dict(mirror.settings)["merge_threshold"] ** 2
+    return numpy.einsum("ij,ij->i", d, d) < threshold * threshold
 
 
 def _rim_edges(md, mirrors, check=None):
     """The open edges of MeshDescription md that make a rim above the Mirrors mirrors (_mirrors): all but those
-    whose two ends a Mirror welds to their copies (the edge and its copy become one, with a face on each side)."""
+    whose two ends a Mirror welds to their copies, the edge's own or one of its copies under the Mirrors below that
+    one (the edge and its copy become one, with a face on each side; a copy carries the sharp mark). The copies
+    tested stop once they would pass MAX_MIRRORED_CORNERS positions."""
+    import numpy
     edges = open_edges(md.loop_vertices, md.loop_starts, md.loop_totals, check)
+    if not mirrors or not len(edges):
+        return edges
+    ends = numpy.unique(edges)
+    a, b = numpy.searchsorted(ends, edges[:, 0]), numpy.searchsorted(ends, edges[:, 1])
+    images = [numpy.asarray(md.positions, dtype=numpy.float64)[ends]]  # the ends' copies made so far
+    keep = numpy.ones(len(edges), dtype=bool)
     for m in mirrors:
-        if not len(edges):
-            break
-        w = welded(md.positions, m)
-        edges = edges[~(w[edges[:, 0]] & w[edges[:, 1]])]
-    return edges
+        for q in images:
+            w = welded(q, m)
+            keep &= ~(w[a] & w[b])
+        if 2 * len(images) * len(ends) <= MAX_MIRRORED_CORNERS:
+            r = _reflection(m)
+            images += [q @ r[:3, :3].T + r[:3, 3] for q in images]
+    return edges[keep]
 
 
-def _mirrored(md, mirrors):
+def _mirrored(md, mirrors, check=None):
     """(positions, loop_vertices, loop_starts, loop_totals) of MeshDescription md and its copy under each Mirror of
     mirrors (_mirrors) in turn, the vertices it welds shared, each copy's faces reversed: the mesh the Shell above
-    them meets, as far as its rim goes (no slice is made: md is taken as the part each Mirror keeps)."""
+    them meets, as far as its rim goes (no slice is made: md is taken as the part each Mirror keeps; a welded vertex
+    stays where it is, Blender moves it half its distance to the plane). check() between the Mirrors."""
     import numpy
     p = numpy.asarray(md.positions, dtype=numpy.float64)
     lv = numpy.asarray(md.loop_vertices, dtype=numpy.int64)
     starts = numpy.asarray(md.loop_starts, dtype=numpy.int64)
     totals = numpy.asarray(md.loop_totals, dtype=numpy.int64)
     for m in mirrors:
+        if check is not None:
+            check()
         n = len(p)
         r = _reflection(m)
         w = welded(p, m)
@@ -1260,16 +1279,24 @@ def rim_issues(md, rim, check=None, mirrors=()):
     edge): auto smooth splitting the rim's sharper corners (rim_corners, on the mesh below the modifiers: a
     TurboSmooth below the Shell keeps a plane's four corners, 1 to 3 iterations in 3ds Max 2020), the override group
     with auto smooth off (3ds Max merges the rim into faces along it of that group; named whatever the groups of
-    those faces). Above the Mirrors mirrors (_mirrors), on md with its copies (_mirrored): the edges they weld shut
-    make no rim. check() between the passes."""
+    those faces). Above the Mirrors mirrors (_mirrors) the open edges they weld shut make no rim (_rim_edges) and
+    the corners are counted on md with its copies (_mirrored), unless that mesh would pass MAX_MIRRORED_CORNERS face
+    corners (a line instead). check() between the passes."""
     if rim is None:
         return []
-    mesh = _mirrored(md, mirrors) if mirrors else (md.positions, md.loop_vertices, md.loop_starts, md.loop_totals)
+    if mirrors and not len(_rim_edges(md, mirrors, check)):
+        return []
     if rim.auto_smooth:
+        if mirrors and len(md.loop_vertices) << len(mirrors) > MAX_MIRRORED_CORNERS:
+            return ["auto smooth: the rim's corners not counted: with its %d mirrored copies the mesh would pass %d "
+                    "face corners" % ((1 << len(mirrors)) - 1, MAX_MIRRORED_CORNERS)]
+        mesh = _mirrored(md, mirrors, check) if mirrors else (md.positions, md.loop_vertices, md.loop_starts,
+                                                               md.loop_totals)
         n = rim_corners(*mesh, rim.angle, check)
         return ["auto smooth: %d corners of the rim sharper than %g degrees shade smooth (3ds Max splits the rim "
                 "there)" % (n, rim.angle)] if n else []
-    if rim.override is None or not len(_open_loops(*mesh[1:], check)[0]):
+    if rim.override is None or not (mirrors or len(_open_loops(md.loop_vertices, md.loop_starts, md.loop_totals,
+                                                                check)[0])):
         return []
     return ["smoothing group override (group %d) not converted: 3ds Max merges the rim into the faces along it of "
             "that group" % rim.override]
