@@ -24,7 +24,8 @@ FixtureNoCastShadow is the one that casts none.
 shapes: each shape node a curve object (3D, FREE handles) with the oracle's splines, point counts and cyclic flags,
 its points where 3ds Max has its knots, each segment's middle (mathutils.geometry.interpolate_bezier) where 3ds Max
 interpolates it (the straight segment included), the resolution from the steps, a bevel and faces only on the
-renderable FixtureLine. shapes_more: the same for its NGon corners, Ellipse outlines and Arcs; a rectangular section
+renderable FixtureLine, its open spline capped at both ends (the polygon of its sides), its closed one not.
+shapes_more: the same for its NGon corners, Ellipse outlines and Arcs; a rectangular section
 a hidden bevel object in the import's collection, its corners where 3ds Max's render mesh has them; FixtureCurveStd's
 Standard material and FixtureCurveMulti's Multi/Sub-Object entry for ID 1 in one slot on their curves,
 FixtureCurveIds' two splines (IDs 2 and 1) each on the slot of its entry, FixtureCurveMixed (IDs 2, 1, 1) on ID 2's,
@@ -1321,6 +1322,7 @@ def check_curve(label, ob, shape, meters):
         check(label + ": a bevel of the thickness", abs(cu.bevel_depth - shape["thickness"] / 2 * meters) < 1e-9 and
               cu.bevel_resolution == (shape["sides"] - 4) // 2 and cu.bevel_mode == 'ROUND',
               "%g, %d, %s" % (cu.bevel_depth, cu.bevel_resolution, cu.bevel_mode))
+        check_round_caps(label, ob, shape)
     else:
         check(label + ": no bevel", cu.bevel_depth == 0 and cu.bevel_object is None, str(cu.bevel_depth))
     for k, (sp, w) in enumerate(zip(cu.splines, want)):
@@ -1347,6 +1349,32 @@ def check_curve(label, ob, shape, meters):
     faces = len(mesh.polygons)
     evaluated.to_mesh_clear()
     check(label + ": faces exactly when it renders", (faces > 0) == shape["renderable"], str(faces))
+
+
+def check_round_caps(label, ob, shape):
+    """A round bevel's ends, as 3ds Max renders an open shape: each end of an open spline capped (faces whose every
+    vertex lies on the bevel ring around the end point, together the regular polygon of the bevel ring), a
+    closed spline uncapped. Blender caps with n - 2 triangles over a ring of their own."""
+    cu = ob.data
+    r, n = cu.bevel_depth, 4 + 2 * cu.bevel_resolution  # the ring Blender sweeps: 3ds Max's even sides
+    ngon = n / 2 * r * r * math.sin(2 * math.pi / n)
+    evaluated = ob.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    mesh = evaluated.to_mesh()
+
+    def cap_area(point):
+        return sum(f.area for f in mesh.polygons
+                   if all((mesh.vertices[i].co - point).length < r * (1 + 1e-6) for i in f.vertices))
+
+    for k, sp in enumerate(cu.splines):
+        pts = sp.bezier_points
+        if sp.use_cyclic_u:
+            area = cap_area(pts[0].co)
+            check("%s spline %d: closed, no cap" % (label, k), area == 0, str(area))
+            continue
+        areas = [cap_area(pts[0].co), cap_area(pts[-1].co)]
+        check("%s spline %d: open, capped at both ends as 3ds Max caps it (the %d-gon of its sides each)" %
+              (label, k, n), all(abs(a - ngon) < 1e-6 * ngon for a in areas), "%s vs %g" % (areas, ngon))
+    evaluated.to_mesh_clear()
 
 
 def check_section(label, ob, shape, meters):
@@ -3929,10 +3957,10 @@ def check_ies_header(max_path):
 
 
 def check_reader_defect(first, second):
-    """A TypeError or KeyError of the reading (a reader defect, never raised on purpose) reports the file as not
-    imported, its type in the reason, instead of ending the operator: in a run of two files, synchronous and with the
-    reading in the worker thread, the other file is still imported; alone, the operator reports Nothing imported;
-    the pre-flight line says it is not readable."""
+    """A TypeError, KeyError or AttributeError of the reading (a reader defect, never raised on purpose) reports the
+    file as not imported, its type in the reason, instead of ending the operator: in a run of two files, synchronous
+    and with the reading in the worker thread, the other file is still imported; alone, the operator reports Nothing
+    imported; the pre-flight line says it is not readable."""
     import contextlib
     import io
     from maxdrop import ops
@@ -3992,6 +4020,41 @@ def check_reader_defect(first, second):
         check("reader defect: the pre-flight line of a KeyError says the file is not readable",
               line == "Not readable as a .max file (a defect in MaxDrop's reader (KeyError: 'maxdrop test'), see "
                       "the console)", repr(line))
+        # An AttributeError (an attribute read on None in a chunk walker) is in the net too. Its message is given,
+        # so that the reason is the same on Python 3.11 and 3.13.
+        def attribute_scene(cls, *args, **kwargs):
+            raise AttributeError("maxdrop test: reader defect")
+
+        def attribute_first(cls, cf):
+            calls.append(cf)
+            if len(calls) == 1:
+                raise AttributeError("maxdrop test: reader defect")
+            return original_table.__func__(cls, cf)
+
+        reader_scene.Scene.from_file = classmethod(attribute_scene)
+        line = ops._preflight(first)
+        reader_scene.Scene.from_file = original_scene
+        check("reader defect: the pre-flight line of an AttributeError says the file is not readable",
+              line == "Not readable as a .max file (a defect in MaxDrop's reader (AttributeError: maxdrop test: "
+                      "reader defect), see the console)", repr(line))
+        empty_scene()
+        del calls[:]
+        assets.AssetTable.from_file = classmethod(attribute_first)
+        run = _cancel_run([first, second])
+        console = io.StringIO()
+        with contextlib.redirect_stdout(console):
+            _advance(run.steps(threaded=False), lambda: False)
+        assets.AssetTable.from_file = original_table
+        printed = console.getvalue()
+        sys.stdout.write(printed)
+        check("reader defect: an AttributeError of the read, the traceback is in the console",
+              "MaxDrop: reading %s failed, a defect in MaxDrop (please report it with this traceback):" % name
+              in printed and "AttributeError: maxdrop test: reader defect" in printed, printed[-500:])
+        attribute_reason = reason.replace("TypeError", "AttributeError")
+        check("reader defect: an AttributeError of the read, the file is not imported, the other one is",
+              ('WARNING', "Not imported: %s: %s" % (name, attribute_reason)) in run.lines
+              and len(bpy.data.objects) > 0 and len(calls) == 2,
+              "%d objects, %d calls | %s" % (len(bpy.data.objects), len(calls), run.lines[-3:]))
     finally:
         assets.AssetTable.from_file = original_table
         reader_scene.Scene.from_file = original_scene

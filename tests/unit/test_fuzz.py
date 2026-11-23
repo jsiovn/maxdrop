@@ -56,15 +56,15 @@ class CasesTest(unittest.TestCase):
                 self.assertGreater(seen.get(kind, 0), 0)
 
     def test_a_reader_defect_escapes(self):
-        """The operator reports a TypeError or KeyError of the reading as not imported (ops._DEFECTS); the
-        harness's reader path does not mirror that net: such an error raised inside the reader leaves _Reader.read
-        and is a case that escapes."""
+        """The operator reports a TypeError, KeyError or AttributeError of the reading as not imported
+        (ops._DEFECTS); the harness's reader path does not mirror that net: such an error raised inside the reader
+        leaves _Reader.read and is a case that escapes."""
         seed = fuzz.seeds("max", {"box_poly_standard.max"})[0]
         reader = fuzz._Reader()
         table = reader.assets.AssetTable
         original = table.__dict__["from_file"]  # the classmethod itself, put back as it was
         try:
-            for error in (TypeError("maxdrop test"), KeyError("maxdrop test")):
+            for error in (TypeError("maxdrop test"), KeyError("maxdrop test"), AttributeError("maxdrop test")):
                 def defective(cls, cf, error=error):
                     raise error
 
@@ -112,6 +112,7 @@ class GzipSeedTest(unittest.TestCase):
                 if name != "Scene":
                     self.assertEqual(cf.open(name).read(), plain.open(name).read(), name)
 
+    @unittest.skipIf(numpy is None, "numpy missing: the read reaches the geometry reader")
     def test_it_reads_like_its_fixture(self):
         reader = fuzz._Reader()
 

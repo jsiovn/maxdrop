@@ -363,8 +363,8 @@ reference is a ParamBlock2:
 
 | Id | Parameter (MAXScript) | Type |
 |---|---|---|
-| 0 | `weight` | float table, one per target |
-| 1 | targets (`appendTarget`) | node table, no value: the block's reference slots |
+| 0 | `weight` | float table, one per target; an animated element is a controller (tag `0x80`) in the block's next reference slot ([Parameter blocks](#parameter-blocks)), before the targets' (by the block rule; not measured on a constraint: no fixture animates a constraint weight): its value at frame 0, 1 when the slot is empty or the controller gives none |
+| 1 | targets (`appendTarget`) | node table, no value: the block's reference slots, after the weights' controllers |
 | 2 | `relative` (Keep Initial Offset) | bool |
 | 3 | `lookat_vector_length` | float (display) |
 | 4 | `set_orientation` | bool |
@@ -489,6 +489,8 @@ lies across the curve in its plane, the length along the plane's normal (a line 
 object maps profile x to the line's -Y and y to Z: the rectangle turned by +angle in the profile gives the same
 corners on FixtureSection, and FixtureSectionLoop spans what 3ds Max's does (convert.scene `rectangular_section`;
 the angle's sign is checked on that line along +X only), with the caps filled.
+A round section is capped too at the ends of an open spline (a Line, round, 4 sides: 8 vertices, 12 triangles);
+Blender's filled caps are the polygon of its sides at each end (shapes: FixtureLine's open spline).
 
 An Editable Spline keeps a BezierShape `0x1010`:
 
@@ -1328,8 +1330,9 @@ picker and Material Editor switches off).
 
 `maxdrop/reader/pblock.py` reads them; `tests/unit/test_materials.py` (RAW-PARAM PARITY) checks every stored
 parameter of every block of every material and map in every fixture against the oracle's `material_graph`, by
-parameter id, within 1e-5 (relative above 1): 193 values in vray_basic, 637 in vray_maps, 2,024 in vray_wrappers,
-295 in standard_physical. An animated parameter is checked against the oracle's `controllers`: the reader's
+parameter id, within 1e-5 (relative above 1), and holds each fixture's count of compared values at or above its
+`FLOORS` entry (as of 2026-11-22: 193 values in vray_basic, 637 in vray_maps, 2,024 in vray_wrappers, 295 in
+standard_physical). An animated parameter is checked against the oracle's `controllers`: the reader's
 controller is the block reference 3ds Max holds it at, of the same class, and its saved value is the value at frame 0
 (pblock_animated: 6 controllers). `tests/unit/test_pblock.py` covers each rule on synthetic bytes.
 
@@ -1338,8 +1341,8 @@ part whose parameters it holds):
 
 | Chunk | Content |
 |---|---|
-| `0x0009` | 16 bytes: `u32` (4 to 43 in the fixtures, unknown), `u16` block id (the descriptor's: VRayMtl 1 to 6, Bitmap 0 and 1), `u32` descriptor version (`0x55F03700` in all but one of the fixtures' 2,253 blocks), `u16` number of entries, `u32` the owner's object index (the referencing object in every fixture) |
-| `0x000B` | instead of `0x0009` (ViewportManager's block in every fixture): the descriptor's ClassID (8 bytes), then the same 16 bytes |
+| `0x0009` | 16 bytes: `u32` the owner's class index (its chunk id in the Scene stream), `u16` block id (the descriptor's: VRayMtl 1 to 6, Bitmap 0 and 1), `u32` descriptor version (`0x55F03700` in most blocks: as of 2026-11-22 in 869 of the 991 blocks of the 54 fixtures' material graphs, other values in the rest), `u16` number of entries, `u32` the owner's object index (an object that references the block). `tests/unit/test_pblock.py` checks the owner and its class index on every block of every fixture |
+| `0x000B` | instead of `0x0009`: the owner's ClassID (8 bytes, the descriptor's class), then the same 16 bytes with the owner's superclass in place of its class index (checked the same way). As of 2026-11-22 no material-graph block of the fixtures has it, and every owner is of superclass `0x1160` (ViewportManager, Properties, ParameterCollectorCA, Area Light Sampling Custom Attribute, VRayPhysCamAttributes) |
 | `0x100E` | one per stored parameter, below |
 | `0x0013` | the owner references, below |
 | `0x000F`, `0x0003` | the asset of the file-name or bitmap entry before it, below |
@@ -1703,7 +1706,7 @@ Not shown by any fixture yet, so not stated above:
 - Parameter blocks seen only elsewhere (`pblock.py` relies on them):
   - entries in `0x000E` instead of `0x100E`, same layout, in corpus scene A (saved as 3ds Max 2012); scenes A and
     B walk without an issue: 726 and 560 materials and maps, 33,543 and 41,274 stored parameters;
-  - not known: the first `u32` of `0x0009`, the fourth `u32` of an entry, the third `u16` of a `0x0013` record,
+  - not known: the fourth `u32` of an entry, the third `u16` of a `0x0013` record,
     `0x0005` and `0x0004` of the old ParamBlock, and the value layout of the types no file has shown (matrix3,
     and the others the reader keeps as raw bytes).
 - Other root container ids: `0x2014` (the 2012 format, corpus scene A) occurs in the corpus, and the 64-bit

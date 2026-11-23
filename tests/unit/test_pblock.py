@@ -476,6 +476,43 @@ class OwnerSlotsOnFixtures(unittest.TestCase):
             self.assertIn(wanted, classes)
 
 
+class HeaderOnFixtures(unittest.TestCase):
+    """docs/FORMAT.md's header rows on every ParamBlock2 of every fixture's Scene stream: the owner's object index
+    names an object that references the block; 0x0009's first u32 is the owner's class index (its chunk id); 0x000B
+    gives the owner's ClassID, then its superclass where 0x0009 has the class index (every 0x000B owner of the
+    fixtures is of superclass 0x1160, so that half is not told apart from a constant yet)."""
+
+    def test_header_names_the_owner_and_its_class(self):
+        cfb = importlib.import_module(_PKG + ".reader.cfb")
+        scene = importlib.import_module(_PKG + ".reader.scene")
+        seen = {0x0009: 0, 0x000B: 0}
+        for path in sorted(glob.glob(os.path.join(ROOT, "tests", "fixtures", "*.max"))):
+            with cfb.CompoundFile(path) as cf:
+                sc = scene.Scene.from_file(cf)
+                for i in range(len(sc)):
+                    entry = sc.entry(i)
+                    if entry is None or entry.superclass != 0x82:
+                        continue
+                    chunk = sc.chunk(i)
+                    head_, skip = chunk.first(0x0009), 0
+                    if head_ is None:
+                        head_, skip = chunk.first(0x000B), 8
+                    with self.subTest(fixture=os.path.basename(path), block=i):
+                        self.assertIsNotNone(head_)
+                        first, _block_id, _version, _count, owner = struct.unpack_from("<IHIHI", head_.view(), skip)
+                        self.assertTrue(0 <= owner < len(sc))
+                        self.assertIn(i, sc.refs(owner).values())
+                        owner_entry = sc.entry(owner)
+                        if skip:
+                            self.assertEqual(struct.unpack_from("<II", head_.view()), tuple(owner_entry.class_id))
+                            self.assertEqual(first, owner_entry.superclass)
+                        else:
+                            self.assertEqual(first, sc.chunk(owner).id)
+                        seen[head_.id] += 1
+        self.assertGreater(seen[0x0009], 0)
+        self.assertGreater(seen[0x000B], 0)
+
+
 class OldParamBlock(unittest.TestCase):
     def entry(self, index, cid, payload, controller=False):
         return container(0x0002, leaf(0x0003, struct.pack("<I", index)), *([leaf(0x0004)] if controller else []),

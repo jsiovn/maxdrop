@@ -12,15 +12,16 @@ in and out vectors (convert.scene has already put a straight segment's handles o
 the cubic 3ds Max draws. The curve is 3D and
 FULL (Blender's default for 3D) so a bevel is a closed tube; resolution_u is the description's resolution;
 bevel_depth and bevel_resolution give a renderable shape its thickness, a shape that does not render in 3ds Max
-has none (a curve without a bevel does not render in Blender either). Each spline's material_index is set from the
-material plan (convert.materials.MeshSlots.indices, one per spline) after the curve has its slots: Blender clamps a
-spline's index to the curve's materials, so a curve without slots keeps every spline at 0.
+has none (a curve without a bevel does not render in Blender either). A bevel's caps are filled, round or a
+section, as 3ds Max caps the render mesh of an open spline (a closed spline has no ends to cap). Each spline's
+material_index is set from the material plan (convert.materials.MeshSlots.indices, one per spline) after the curve
+has its slots: Blender clamps a spline's index to the curve's materials, so a curve without slots keeps every spline
+at 0.
 
 A rectangular section (cd.section) is a bevel object: a closed 2D poly curve "<name> section" through the four
 corners, no fill, its object hidden in the viewport and the render, not selectable, marked maxdrop_helper =
-"section" and linked into collection; the curve's caps are filled, as 3ds Max caps the section of an open
-spline. A bevel object is no user of its object: an unlinked one is dropped when the file is saved, and the
-import's cleanup removes what is in its collections.
+"section" and linked into collection. A bevel object is no user of its object: an unlinked one is dropped when
+the file is saved, and the import's cleanup removes what is in its collections.
 """
 import bpy
 
@@ -49,7 +50,7 @@ def make_curve(cd, collection):
     if cd.section:
         curve.bevel_mode = 'OBJECT'
         curve.bevel_object = _section(cd, collection)
-        curve.use_fill_caps = True
+    curve.use_fill_caps = bool(cd.section) or cd.bevel_depth > 0
     return curve
 
 

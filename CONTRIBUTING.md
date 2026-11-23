@@ -129,7 +129,7 @@ tools know how 3ds Max 2020 stores the two names; a file from another version th
 ## Pull requests
 
 Keep them small and say what you tested and on which Blender version. The `test` workflow runs the plain tests
-and the fixture scan on Linux and Windows, ruff on Linux, then, on Blender 4.2 LTS, 4.5 LTS and 5.2 LTS, the
+and the fixture scan on Linux, Windows and macOS, ruff on Linux, then, on Blender 4.2 LTS, 4.5 LTS and 5.2 LTS, the
 build, the register smoke test, the import smoke test, and the fixture tests (`tests/blender/run.py`).
 Dependabot proposes updates of the actions it uses once a week.
 

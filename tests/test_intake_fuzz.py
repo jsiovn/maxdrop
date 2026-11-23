@@ -9,6 +9,7 @@ the name policy (archive.refused_reason) on random names. No Blender, no network
     python -I -m unittest discover tests
     MAXDROP_FUZZ_ZIP_CASES=2000 python -I -m unittest discover tests -p test_intake_fuzz.py
 """
+import errno
 import importlib.util
 import os
 import random
@@ -131,6 +132,13 @@ class NamePolicyPropertyTest(unittest.TestCase):
                     with open(target, "xb") as f:
                         f.write(b"x")
                 except UnicodeEncodeError:  # a lone surrogate off Windows: the file system API refuses it
+                    self.assertEqual(os.listdir(folder), [])
+                    continue
+                except OSError as e:
+                    # macOS (APFS) refuses a name with an unassigned code point or bytes that are not UTF-8
+                    # (EILSEQ); nothing is created, as above.
+                    if e.errno != errno.EILSEQ or sys.platform != "darwin":
+                        raise
                     self.assertEqual(os.listdir(folder), [])
                     continue
                 listed = os.listdir(folder)

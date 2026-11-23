@@ -602,6 +602,81 @@ class Curves(unittest.TestCase):
         cd, issues = section(0, renderable=False)
         self.assertEqual((cd.section, issues), (None, []))
 
+    @staticmethod
+    def _ngon(radius, sides, corner=0.0):
+        """The splines reader.shapes draws for an NGon (inscribed, not circular)."""
+        splines = shapes._ngon(shapes._Params({0: radius, 1: sides, 2: 0, 3: corner, 4: 0}), [])
+        return shapes.Shape(shapes.classids.NGON, tuple(splines), 6, True, False, shapes.DEFAULT_RENDER, ())
+
+    def test_ngon_past_single_precision_is_refused(self):
+        """An NGon of radius 1e308: 3 sides gives inf and NaN, 6 sides finite doubles past the largest float32,
+        a corner radius of 1e308 the same; each is refused (Blender holds curve points in single precision). The
+        same NGon at radius 10 is a curve."""
+        for sides, radius, corner in ((3, 1e308, 0.0), (6, 1e308, 0.0), (6, 10.0, 1e308)):
+            with self.subTest(sides=sides, radius=radius, corner=corner):
+                with self.assertRaises(conv.CurveError) as caught:
+                    conv.curve_description("k", "n", self._ngon(radius, sides, corner), None, 1.0)
+                self.assertIn("single precision", str(caught.exception))
+        cd, issues = conv.curve_description("k", "n", self._ngon(10.0, 3), None, 1.0)
+        self.assertEqual((len(cd.splines[0].points), issues), (3, []))
+
+    def test_points_past_single_precision_after_offset_and_meters(self):
+        """The range is checked on what Blender gets: after the offset and meters, the handles too."""
+        k = shapes.Knot
+
+        def line(x, handle=0.0):
+            return self._shape([k(shapes.BEZIER, shapes.CURVE, (0, 0, 0), (0, 0, 0), (handle, 0, 0)),
+                                k(shapes.BEZIER, shapes.CURVE, (x, 0, 0), (x, 0, 0), (x, 0, 0))])
+
+        cd, _issues = conv.curve_description("k", "n", line(1e30), None, 1.0)
+        self.assertEqual(cd.splines[0].points[1], (1e30, 0, 0))
+        for shape, meters, offset in ((line(1e39), 1.0, None), (line(1e36), 1000.0, None),
+                                      (line(1.0, handle=-1e39), 1.0, None),
+                                      (line(1.0), 1.0, ((1e39, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1)))):
+            with self.subTest(meters=meters, offset=offset is not None), self.assertRaises(conv.CurveError):
+                conv.curve_description("k", "n", shape, offset, meters)
+
+    def test_refused_curve_key_is_named_once(self):
+        """Two nodes sharing a curve key that does not fit: both EMPTY, one issue (on the first), described once."""
+        desc = types.SimpleNamespace(curves={}, issues=[])
+        shape_of, unbuilt = {7: self._ngon(1e308, 6)}, set()
+        with mock.patch.object(conv, "curve_description", wraps=conv.curve_description) as described:
+            got = [conv._curve(None, desc, shape_of, unbuilt, 7, node, "n", conv.controllers.IDENTITY, 1.0)
+                   for node in (3, 4)]
+        self.assertEqual(got, [(conv.EMPTY, None)] * 2)
+        self.assertEqual((desc.curves, len(desc.issues), desc.issues[0][0], described.call_count), ({}, 1, 3, 1))
+        self.assertTrue(desc.issues[0][1].startswith("shape: not built: "))
+
+    def test_section_or_bevel_past_single_precision_is_not_drawn(self):
+        """A rectangular section of width 1e308 at a large meters factor, or a round bevel of thickness 1e308, is
+        not drawn (an issue); the curve is."""
+        k = shapes.Knot
+        knots = [k(shapes.CORNER, shapes.LINE, (0, 0, 0), (0, 0, 0), (0, 0, 0)),
+                 k(shapes.CORNER, shapes.LINE, (10, 0, 0), (10, 0, 0), (10, 0, 0))]
+        cd, issues = conv.curve_description("k", "n", self._shape(knots, renderable=True, rectangular=True,
+                                                                  width=1e308, length=1.0), None, 1000.0)
+        self.assertEqual((cd.section, cd.bevel_depth, len(issues)), (None, 0.0, 1))
+        self.assertIn("single precision", issues[0])
+        self.assertEqual(cd.splines[0].points[1], (10000.0, 0, 0))
+        cd, issues = conv.curve_description("k", "n", self._shape(knots, renderable=True, thickness=1e308), None,
+                                            1000.0)
+        self.assertEqual((cd.section, cd.bevel_depth, len(issues)), (None, 0.0, 1))
+        self.assertIn("single precision", issues[0])
+
+    @unittest.skipIf(numpy is None, "numpy missing")  # shapes.max has a box: its mesh is read with numpy
+    def test_refused_curve_is_a_placeholder_named_once(self):
+        """A curve refused for its range makes its nodes placeholders, its issue named on the first node of each
+        curve key only."""
+        path = os.path.join(ROOT, "tests", "fixtures", "shapes.max")
+        fresh = conv.read(path)
+        with mock.patch.object(conv, "curve_description", side_effect=conv.CurveError("its points do not fit")):
+            desc = conv.read(path)
+        self.assertEqual(desc.curves, {})
+        users = sum(len(cd.users) for cd in fresh.curves.values())
+        self.assertEqual(sum(desc.placeholders.values()) - sum(fresh.placeholders.values()), users)
+        refused = [reason for _i, reason in desc.issues if reason == "shape: not built: its points do not fit"]
+        self.assertEqual(len(refused), len(fresh.curves))
+
     @unittest.skipIf(numpy is None, "numpy missing")  # shapes.max has a box: its mesh is read with numpy
     def test_refused_shape_is_a_placeholder_with_an_issue(self):
         path = os.path.join(ROOT, "tests", "fixtures", "shapes.max")

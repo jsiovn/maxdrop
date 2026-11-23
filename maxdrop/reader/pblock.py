@@ -12,13 +12,14 @@ ParamBlock).
     pb.param(1)                         # Param(id, type, flags, values, raw, error)
     old = ParamBlock.from_chunk(chunk)  # old.get(6): by index
 
-A ParamBlock2 object holds a 0x0009 header (u32 unknown, u16 block id, u32 descriptor version, u16 number of
-entries, u32 the owner's object index; 0x000B is the same after the descriptor's ClassID, 8 bytes) and one 0x100E
-chunk per stored parameter (0x000E in a file saved as 3ds Max 2012): u16 id, u32 type (the SDK's ParamType2, bit
-0x800 = table), u32 the definition's flags, u32 unknown, then a scalar (u8 tag, value) or a table (u8 0, u32
-count, then a tag and a value per element). Tag 0x40 = a stored value, 0xC0 = the stored value of an animatable
-parameter, 0x80 = a controller and no value. Transient parameters are mostly not stored (an alias sometimes is,
-with a stale value); a block may store nothing at all (the header says how many entries it holds).
+A ParamBlock2 object holds a 0x0009 header (u32 the owner's class index, u16 block id, u32 descriptor version, u16
+number of entries, u32 the owner's object index; 0x000B is the owner's ClassID, 8 bytes, then the same with the
+owner's superclass for its class index) and one 0x100E chunk per stored parameter (0x000E in a file saved as 3ds Max
+2012): u16 id, u32 type (the SDK's ParamType2, bit 0x800 = table), u32 the definition's flags, u32 unknown, then a
+scalar (u8 tag, value) or a table (u8 0, u32 count, then a tag and a value per element). Tag 0x40 = a stored value,
+0xC0 = the stored value of an animatable parameter, 0x80 = a controller and no value. Transient parameters are
+mostly not stored (an alias sometimes is, with a stale value); a block may store nothing at all (the header says how
+many entries it holds).
 
 Values by type: float, angle (radians), fraction, world and color channel f32; int, bool, time, radio button and
 index i32; color, hsv and point3 3 x f32; point4 and float color with alpha 4 x f32; point2 2 x f32; string u32
@@ -67,7 +68,7 @@ _HEADER, _CLASS_HEADER, _OWNER_REFS = 0x0009, 0x000B, 0x0013
 _ENTRIES = (0x100E, 0x000E)
 _ASSET, _BITMAP_DATA, _ASSET_ID, _ASSET_HOLDER = 0x000F, 0x0003, 0x0002, 0x1260
 _ENTRY_HEAD = struct.Struct("<HIII")  # id, type, flags, unknown: 14 bytes
-_HEAD = struct.Struct("<IHIHI")  # unknown, block id, version, count, owner: 16 bytes
+_HEAD = struct.Struct("<IHIHI")  # owner class (index; superclass after 0x000B's ClassID), block id, version, count, owner
 _OLD_COUNT, _OLD_PARAM, _OLD_INDEX, _OLD_VALUE = 0x0001, 0x0002, 0x0003, 0x0100
 _NEEDS_ASSET = -2
 
@@ -222,7 +223,7 @@ class ParamBlock2:
             raise ChunkError("ParamBlock2 at %d without a 0x0009 or 0x000B header" % chunk.offset)
         if head.payload_size < skip + _HEAD.size:
             raise ChunkError("ParamBlock2 at %d: header of %d bytes" % (chunk.offset, head.payload_size))
-        _unknown, block_id, version, count, owner = _HEAD.unpack(head.view()[skip:skip + _HEAD.size])
+        _owner_class, block_id, version, count, owner = _HEAD.unpack(head.view()[skip:skip + _HEAD.size])
         issues, slots = [], {}
         table = chunk.first(_OWNER_REFS)
         if table is not None:
