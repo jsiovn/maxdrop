@@ -182,6 +182,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   holds no value or is of an unknown class, a weight that is not a number or not stored) counts as 50, the weight
   3ds Max gives a new target, instead of 1, which beside a weight of 100 almost dropped that target; a missing or
   value-less controller is now a line in the report too.
+- Maps: in a scene saved with the gamma off, a Mix or Composite on a color input is mixed on the stored colors and
+  shown decoded, as V-Ray 5.2 renders it (measured), instead of mixing decoded colors: a Mix of greys 40 and 220 at
+  50 % is 0.223 linear, not 0.369, and by a 50 % grey mask 0.225, not 0.171; a Composite layer at 50 % or in
+  Addition, Screen and the other blend modes likewise. Its images below are read as stored and its result goes
+  through a Gamma node of 2.2. A Mix between black and white by a mask stays exact as before, and its mix amount is
+  now decoded too (50 % is 0.214, not 0.5). An RGB Multiply was already within 0.005 and is unchanged.
 
 ## [1.0.1] - 2026-11-22
 

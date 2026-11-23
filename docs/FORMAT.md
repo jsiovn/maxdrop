@@ -1433,6 +1433,25 @@ picker and Material Editor switches off).
   gamma is drawn as a material's (a Gamma node in the World), but a float dome texture in a gamma-off scene keeps
   its own decode (a line in the report): the probe measured planes seen by the camera with values up to 2.0, not a
   float image lighting a scene, where decoding a sky's values far above 1 would give orders of magnitude more light.
+- Color mixes (maxdrop-em3.158), V-Ray 5.2 renders of VRayLightMtl planes, each plane's internal value; greys are
+  swatches, Bm a 128 grey 8-bit PNG (automatic gamma). With the gamma on and off the internal value is the same (a
+  Bm plane with the gamma on: the image decoded first):
+
+  | Map | internal value | shown with the gamma off (Blender linear) |
+  |---|---|---|
+  | Mix grey 40 -> 220, amount 25 / 50 / 75 % | 0.333 / 0.510 / 0.686 | 0.091 / 0.223 / 0.429 |
+  | the same by VRayColor 64 / 128 / 192, by Bm | 0.334 / 0.511 / 0.688, 0.511 | 0.091 / 0.225 / 0.432, 0.225 |
+  | Mix (200, 40, 40) -> (40, 60, 220) by VRayColor 128 | (0.469, 0.196, 0.511) | (0.187, 0.032, 0.225) |
+  | Mix Bm -> white at 50 %; black -> white by VRayColor 128 / by Bm | 0.751; 0.502 / 0.502 | 0.524; 0.216 / 0.216 |
+  | RGB Multiply 128 x 128, Bm x 128, 64 x 200 | 0.252, 0.252, 0.197 | 0.052, 0.052, 0.032 |
+  | Composite 40 under 220 at 50 % / by a VRayColor 128 mask | 0.510 / 0.511 | 0.223 / 0.225 |
+  | Composite 64 + 64 in Addition at 100 / 50 %; Multiply 128 x 128; Screen 64 64 | 0.502 / 0.376; 0.252; 0.439 | 0.216 / 0.117; 0.052; 0.162 |
+
+  So with the gamma off V-Ray computes a Mix or Composite on the stored values (the swatch as stored, an image by its
+  own decode, the mask as stored) and the display shows the result decoded; decoded sides mixed in Blender were off
+  by up to 0.27 (the colored pair), 16 of 24 planes by more than 0.02. A product commutes with a power law, so a
+  decoded RGB Multiply is within 0.005. The rule is in `maxdrop/convert/texmaps.py` (STORED, Decode); Blender 5.2
+  renders of the probe scenes agree with V-Ray within 0.0085 on every plane. Falloff and CoronaMix were not probed.
 
 ## Summary properties
 
