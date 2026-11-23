@@ -1318,16 +1318,21 @@ def _group(users, ids, materials, conv):
 
 def _mixed(cd, materials, conv):
     """The issue (node, text) of a curve whose spline mixes material IDs that some user gets different materials for
-    (conv.source_for: the IDs without a slot are not converted), named once on its first user; None without one."""
-    for n, sd in enumerate(cd.splines):
-        ids = sd.material_ids
-        if len(ids) < 2:
-            continue
-        for u in cd.users:
-            first = conv.source_for(materials.get(u), ids[0])
-            if any(conv.source_for(materials.get(u), mid) != first for mid in ids[1:]):
-                return (cd.users[0], "shape: spline %d mixes material IDs %s: drawn with ID %d's material (its first "
-                        "segment's)" % (n + 1, ", ".join(str(m + 1) for m in ids), ids[0] + 1))
+    (conv.source_for: the IDs without a slot are not converted), named once on its first user; None without one.
+    Bounded for an untrusted file: one source_for per distinct (material, ID) pair of the mixed splines (users sharing
+    a material asked once), then each spline by dict lookups. The cache lives in this call only: source_for reads the
+    peels, which later curves and meshes add to."""
+    splines = [sd.material_ids for sd in cd.splines]
+    mixed = {mid for ids in splines if len(ids) >= 2 for mid in ids}
+    if not mixed:
+        return None
+    mats = list(dict.fromkeys(materials.get(u) for u in cd.users))
+    kinds = {}  # the sources of an ID over mats -> a small int: IDs of one kind draw alike for every user
+    kind = {mid: kinds.setdefault(tuple(conv.source_for(m, mid) for m in mats), len(kinds)) for mid in mixed}
+    for n, ids in enumerate(splines):
+        if len(ids) >= 2 and any(kind[mid] != kind[ids[0]] for mid in ids[1:]):
+            return (cd.users[0], "shape: spline %d mixes material IDs %s: drawn with ID %d's material (its first "
+                    "segment's)" % (n + 1, ", ".join(str(m + 1) for m in ids), ids[0] + 1))
     return None
 
 

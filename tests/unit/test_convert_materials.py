@@ -13,10 +13,12 @@ names of the maps its script puts in each channel.
     python -I -m unittest discover tests
 """
 import ast
+import collections
 import importlib
 import json
 import math
 import os
+import random
 import sys
 import types
 import unittest
@@ -2050,6 +2052,85 @@ class Assign(unittest.TestCase):
         self.assertEqual(conv.source_for(6, 1), 5)
         self.assertEqual(conv.source_for(6, 0), 4)
         self.assertIsNone(conv.source_for(None, 0))
+
+    def test_curve_mixed_ids_bounded(self):
+        """The mixed-ID check asks source_for once per distinct (material, ID) pair, whatever the number of splines
+        and users: a curve with no mix (where the check cannot stop early) over 40 users and 120 splines."""
+        objs = (_vray(4, "Plain"), _vray(5, "Other"), _multi(6, [(k, Ref(4), 1) for k in range(12)]),
+                _multi(7, [(k, Ref(5), 1) for k in range(12)]))
+        conv = mat.MaterialConverter(FakeGraph(*objs))
+        calls, source_for = collections.Counter(), conv.source_for
+
+        def counting(index, material_id):
+            calls[(index, material_id)] += 1
+            return source_for(index, material_id)
+        conv.source_for = counting
+        rng = random.Random(147)
+        users = list(range(100, 140))
+        materials = {u: (6, 7, 4, None)[k % 4] for k, u in enumerate(users)}
+        splines = [tuple(rng.sample(range(12), rng.randint(2, 5))) for _ in range(120)]
+        desc = _desc(curves={"c": (users, splines)})
+        plan = mat.assign(desc, materials, conv)
+        self.assertEqual(len(plan.curves["c"].slots), 1)
+        self.assertEqual(desc.issues, [])
+        self.assertEqual(max(calls.values()), 1)
+        self.assertLessEqual(sum(calls.values()), 4 * 12)
+
+    def test_curve_mixed_ids_last_spline_last_user(self):
+        """Only the last spline mixes, and only for the last user: the line names that spline and the first user."""
+        objs = (_vray(4, "Plain"), _vray(5, "Other"), _multi(6, [(0, Ref(4), 1), (1, Ref(5), 1), (2, Ref(4), 1)]))
+        conv = mat.MaterialConverter(FakeGraph(*objs))
+        users = list(range(1, 31))
+        materials = dict.fromkeys(users, 4)
+        materials[30] = 6
+        splines = [(0, 2) if k % 2 else k % 3 for k in range(49)] + [(2, 1)]
+        desc = _desc(curves={"c": (users, splines)})
+        mat.assign(desc, materials, conv)
+        self.assertEqual(desc.issues, [(1, "shape: spline 50 mixes material IDs 3, 2: drawn with ID 3's material "
+                                           "(its first segment's)")])
+
+    def test_curve_mixed_ids_match_reference(self):
+        """The same result as the unbounded check (every user, every spline, every ID) on random curves: entries on,
+        off, empty, wrapped (peeled or not) and nested, users sharing a material, plain or without one."""
+        def reference(cd, materials, conv):
+            for n, sd in enumerate(cd.splines):
+                ids = sd.material_ids
+                if len(ids) < 2:
+                    continue
+                for u in cd.users:
+                    first = conv.source_for(materials.get(u), ids[0])
+                    if any(conv.source_for(materials.get(u), mid) != first for mid in ids[1:]):
+                        return (cd.users[0], "shape: spline %d mixes material IDs %s: drawn with ID %d's material "
+                                "(its first segment's)" % (n + 1, ", ".join(str(m + 1) for m in ids), ids[0] + 1))
+            return None
+
+        outcomes = set()
+        for seed in range(60):
+            rng = random.Random(seed)
+            plain = [10, 11, 12]
+            leaves = plain + [None, 30, 31, 24]
+
+            def entries(choices):
+                return [(rng.randrange(6), Ref(rng.choice(choices)), rng.random() > 0.2)
+                        for _ in range(rng.randint(1, 5))]
+            objs = [_vray(i, "P%d" % i) for i in plain]
+            objs += [_multi(i, entries(leaves)) for i in (20, 21, 22, 23)]
+            objs += [_multi(24, entries(plain + [None]))]
+            objs += [_wrapper(30, classids.VRAY_MTL_WRAPPER, {0: Ref(rng.choice(plain))}),
+                     _wrapper(31, classids.VRAY_2SIDED_MTL, {0: Ref(rng.choice(plain))})]
+            users = list(range(1, rng.randint(2, 9)))
+            materials = {u: rng.choice([None, 10, 20, 21, 22, 23, 30]) for u in users}
+            splines = [tuple(rng.sample(range(9), rng.randint(1, 4))) for _ in range(rng.randint(1, 8))]
+            cd = types.SimpleNamespace(users=users, splines=[_spline(t) for t in splines])
+            convs = [mat.MaterialConverter(FakeGraph(*objs)) for _ in range(2)]
+            for conv in convs:  # the slots' IDs peeled, as _group leaves them
+                for t in splines[::2]:
+                    for u in users:
+                        conv.material_for(materials[u], t[0])
+            want = reference(cd, materials, convs[0])
+            self.assertEqual(mat._mixed(cd, materials, convs[1]), want, seed)
+            outcomes.add(want is None)
+        self.assertEqual(outcomes, {True, False})
 
     def test_fixture_curves(self):
         """shapes_more: FixtureCurveStd has a Standard material, FixtureCurveMulti a Multi/Sub-Object (ID 1:
