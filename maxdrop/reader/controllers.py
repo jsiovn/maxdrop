@@ -649,11 +649,14 @@ class _Eval:
         self.memo = {}  # (kind, controller) -> value: a shared sub-controller is evaluated once per node
         self.world = False  # matrix() gave the node's world matrix (a look-at), not its local one
         self.look = None  # the LookAt of a Look At controller node
+        self.unknown = set()  # controllers reported as UNKNOWN_CLASS: still known when the memo answers
 
     def where(self):
         return "node %d" % self.node if self.node is not None else "the controller"
 
     def issue(self, i, reason):
+        if reason == UNKNOWN_CLASS:
+            self.unknown.add(i)
         entry = self.scene.entry(i) if i is not None else None
         self.issues.append(Issue(self.node, i, entry.superclass if entry else None,
                                  entry.class_id if entry else None, reason))
@@ -999,8 +1002,7 @@ class _Eval:
             if isinstance(w, pblock.Animated):
                 index = w.index
                 w = self.scalar(index, None)
-                if w is None and any(x.node == self.node and x.controller == index and x.reason == UNKNOWN_CLASS
-                                     for x in self.issues):  # reported once, as its class
+                if w is None and index is not None and index in self.unknown:  # reported once, as its class
                     w = _LC_WEIGHT_DEFAULT
             if not (isinstance(w, (int, float)) and math.isfinite(w)):
                 self.issue(c, CONSTRAINT_SETTING)

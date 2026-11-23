@@ -1572,6 +1572,8 @@ class TestConstraint(MatrixCase):
 
     def test_unreadable_stored_weight(self):
         """A stored weight that is not finite, and a weight table shorter than the targets: 50, reported."""
+        two = m3((0.91788, -0.393377, 0.0524503), (0.393919, 0.919145, 0), (-0.0482094, 0.0206612, 0.998624))
+        want = ct.multiply(ct.scale_matrix((1, 2, 1)), two[:3] + ((-50, 50, 0, 1),))  # weights 50 and 100
         for name, weights, positions in (("not finite", [float("nan"), 100.0], ((0, 0, 20), (100, 0, 0))),
                                          ("missing", [100.0], ((100, 0, 0), (0, 0, 20)))):
             with self.subTest(name):
@@ -1579,11 +1581,46 @@ class TestConstraint(MatrixCase):
                 targets = [b.target(p) for p in positions]
                 n = b.constrained(targets, weights, scale=(1, 2, 1))
                 t = b.transforms()
-                two = m3((0.91788, -0.393377, 0.0524503), (0.393919, 0.919145, 0),
-                         (-0.0482094, 0.0206612, 0.998624))
-                self.assertMatrix(t.world(n), ct.multiply(ct.scale_matrix((1, 2, 1)), two[:3] + ((-50, 50, 0, 1),)),
-                                  places=5)
+                self.assertMatrix(t.world(n), want, places=5)
                 self.assertEqual([i.reason for i in t.issues], [ct.CONSTRAINT_SETTING])
+
+    def test_unreadable_animated_weight_more(self):
+        """An empty Float List gives no value (50, reported); one unknown controller in two weights' slots is 50 in
+        both and reported once, also when the memo answers the second."""
+        def world(weights, controllers=None):
+            b = LookAtBuild()
+            targets = [b.target((0, 0, 20)), b.target((100, 0, 0))]
+            cs = [c(b) for c in controllers] if controllers else None
+            if cs and len(cs) == 2 and cs[1] == "same":
+                cs[1] = cs[0]
+            n = b.constrained(targets, weights, scale=(1, 2, 1), weight_controllers=cs)
+            t = b.transforms()
+            return t.world(n), [(i.controller, i.reason) for i in t.issues], cs
+
+        def empty_list(b):
+            return b.add(node(C_FLOATLIST, refs34(None, None, None, None, list_block(b)),
+                              leaf(0x1010, struct.pack("<i", 0))))
+
+        want, _issues, _cs = world([50.0, 100.0])
+        got, issues, _cs = world([Anim(7.0), 100.0], [empty_list])
+        self.assertMatrix(got, want, places=5)
+        self.assertEqual([reason for _c, reason in issues], [ct.CONSTRAINT_SETTING])
+        even, _issues, _cs = world([50.0, 50.0])
+        got, issues, cs = world([Anim(7.0), Anim(7.0)], [lambda b: b.add(node(C_UNKNOWN_M3)), lambda b: "same"])
+        self.assertMatrix(got, even, places=5)
+        self.assertEqual(issues, [(cs[0], ct.UNKNOWN_CLASS)])
+
+    def test_many_unreadable_weights_stay_linear(self):
+        """A hostile table of empty animated weight slots (one byte each) is read in linear time."""
+        n_weights = 20000
+        b = LookAtBuild()
+        targets = [b.target((0, 0, 20))] + [None] * (n_weights - 1)
+        n = b.constrained(targets, [Anim(7.0)] * n_weights, weight_controllers=[None] * n_weights)
+        t = b.transforms()
+        start = time.perf_counter()
+        t.world(n)
+        self.assertLess(time.perf_counter() - start, 5.0)
+        self.assertEqual(len(t.issues), n_weights)
 
     def test_settings_and_up_node(self):
         for (axis, flip, source, source_flip, up_axis, control), expected in MAX_CONSTRAINT.items():
