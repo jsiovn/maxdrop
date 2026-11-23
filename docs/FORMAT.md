@@ -1661,7 +1661,9 @@ the same product on linear values). MaxDrop scales the diffuse map by the level 
 since Blender decodes the map: the decoded map times the decoded level is within 0.006 linear of the decoded product
 for levels up to 100 %, where a plain x level is up to 0.29 too bright). With a Diffuse Level map the base color is
 the diffuse at level 1 times the mean (a Tint of rows 1/3) of lerp(level, the map as a mask, its amount): decoded
-with the gamma off as the level is, and mixed on decoded values, the approximation of the gamma-off mixes. A grey
+with the gamma off as the level is, and mixed on decoded values, the approximation of the gamma-off mixes (the
+slot amount's mix of a diffuse map with its swatch has it too): up to 0.29 linear off at a mid amount (level 0, a
+white map at amount 0.55: 0.55 where the decoded mix is 0.26), none at amount 0 or 100. A grey
 or constant level map at amount 100 gives the decoded level exactly (a constant mask is the decoded mean of its
 swatch); a colored image is decoded per channel before the mean, so a saturated one is too bright with the gamma
 off (pure red: 1/3, where the decoded mean is 0.09), as an image mask between two colors already is.

@@ -9,7 +9,7 @@
                                         # colors.Swatches rule (default: tex's, else read from graph's scene);
                                         # pass tex's own rule, or none: the two must agree
     ir = conv.convert(node.material)    # MaterialIR (wrappers peeled); None for no material or not a material
-    ir.base_color.value, ir.base_color.map        # linear RGB, MapRef(index, amount, invert) or None
+    ir.base_color.value, ir.base_color.map        # linear RGB, MapRef(index, amount, invert, scale) or None
     conv.material_for(index, mat_id)    # the MaterialIR a face with that zero-based material ID renders with
                                         # (Multi/Sub-Objects resolved), None for an empty slot
     slots = assign(desc, node_materials(scene, desc), conv)   # Slots {mesh key: MeshSlots}, for build/objects.py
@@ -305,8 +305,8 @@ class MaterialIR:
     emission_strength: float = 0.0
     alpha: Input = Input(1.0)
     normal: object = None  # MapRef of a normal map
-    diffuse_level: object = None  # DiffuseLevel of a Standard material with a Diffuse Level map
     bump: object = None  # MapRef of a height map
+    diffuse_level: object = None  # DiffuseLevel of a Standard material with a Diffuse Level map
     subsurface_weight: float = 0.0
     subsurface_color: tuple = (1.0, 1.0, 1.0)
     subsurface_radius: float = 0.0  # meters
