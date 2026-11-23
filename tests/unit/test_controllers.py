@@ -739,6 +739,11 @@ class TestTangents(MatrixCase):
             ("Bezier Position", CONSTANT_VELOCITY, 160, _CV_WANT),
             ("Bezier Position", CONSTANT_VELOCITY_LENGTHS, 160, _CV_WANT),
             ("Bezier Position", CONSTANT_VELOCITY_FREE, 160, _CV_WANT),
+            # constant velocity on the later key alone, or on a Bezier Scale: the plain curve (probes)
+            ("Bezier Position", (BEZIER_POSITION[0], (6400, 0x8680, BEZIER_POSITION[1][2])), 160,
+             ct.translation((26.2614, -2.11258, 4.032))),
+            ("Bezier Scale", ((-1600, 0x9480, BEZIER_SCALE[0][2]), (6400, 0x8680, BEZIER_SCALE[1][2])), 160,
+             ct.scale_matrix((1.07181, 0.919857, 1.05302))),
             ("Bezier Scale", AXES_BEZIER, 160, _AXES_ROWS),
             ("TCB Scale", AXES_TCB, 160, ((1.588367, -0.01132296, -0.007636474), (-0.01132295, 1.157975, 0.5991784),
                                           (-0.007636414, 0.5991784, 2.829143))),

@@ -1884,7 +1884,8 @@ Not shown by any fixture yet, so not stated above:
   negative length (3ds Max turns a third into frames when a handle is freed: linear, an issue); a frame rate other
   than 30 fps in a fixture (a probe at 25 fps shows it); scale keys whose axis quaternions point apart (no probe
   stored such a pair: linear, an issue); between two TCB Rotation keys a turn within 10 degrees short of a
-  revolution or a turn about no axis, between two Linear Rotation keys a pair within about 5 degrees of a
+  revolution, a turn about no axis or a negative stored angle (none stored: squad up to the gap, past it an issue),
+  between two Linear Rotation keys a pair within about 5 degrees of a
   revolution (1 + dot from 5e-7 to 1e-3), between two Smooth Rotation keys opposite quaternions or controls (3ds Max
   stored none: linear, an issue each); the bare Euler orders 1 to 5 and 100 (read as the SDK numbers
   them: 1 = XZY ... 5 = ZYX, 100 = XYZ); the Euler orders 106 to 108 (an issue).

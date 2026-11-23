@@ -62,7 +62,7 @@ import collections
 import math
 import struct
 
-from . import chunks, classids, pblock
+from . import chunks, classids, pblock, scene as scene_mod
 from .errors import MaxFileError
 
 ChunkError = chunks.ChunkError
@@ -448,7 +448,7 @@ def constant_velocity(v0, out_tangent, v1, in_tangent, dt, f):
     return points[-1] if total > 0.0 else points[0]
 
 
-def _between(cid, n, t0, a, flags_a, t1, b, flags_b, t=0, ticks_per_frame=160):
+def _between(cid, n, t0, a, flags_a, t1, b, flags_b, t=0, ticks_per_frame=scene_mod.DEFAULT_TICKS_PER_FRAME):
     """The value at time t between the Bezier, TCB or Smooth Rotation keys a (at t0) and b (at t1), each the floats
     of its record after the flags, n of them the value; a free handle's length is in frames of ticks_per_frame. None
     where 3ds Max's curve is not known (a free handle of a negative length, scale axes whose quaternions point
@@ -485,13 +485,11 @@ def _between(cid, n, t0, a, flags_a, t1, b, flags_b, t=0, ticks_per_frame=160):
         axis, angle, u = b[9:12], b[12], ease(f, a[8], b[7])
         if not (math.isfinite(angle) and all(math.isfinite(v) for v in axis)):
             return (math.nan,) * 4
-        if angle < 0.0:
-            axis, angle = _neg(axis), -angle
         if angle >= _SPIN:
             axis = _unit(axis)
             return None if axis is None else spin(a[:4], a[17:21], b[13:17], b[:4], axis, angle, u)
-        if (angle > _SPIN - _SPIN_GAP or _opposite(a[:4], b[:4], _NEAR_OPPOSITE) or
-                _opposite(a[17:21], b[13:17], _NEAR_OPPOSITE)):
+        # no probe stored a negative angle: one past the gap below a revolution is not known either
+        if abs(angle) > _SPIN - _SPIN_GAP or _opposite(a[:4], b[:4]) or _opposite(a[17:21], b[13:17]):
             return None
         return squad(a[:4], a[17:21], b[13:17], b[:4], u)
     if cid == classids.BEZIER_ROTATION:  # quaternion, the in and the out control quaternion

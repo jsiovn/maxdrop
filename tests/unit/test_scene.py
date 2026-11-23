@@ -489,6 +489,14 @@ class TestFrameRate(unittest.TestCase):
     def test_scene_default(self):
         self.assertEqual(make(node_obj("A", -1)).ticks_per_frame, 160)
 
+    @unittest.skipUnless(os.path.exists(HIERARCHY), "no hierarchy fixture")
+    def test_fixture_stores_30_fps(self):
+        # read, not the default: the chunk is there and says 30
+        with cfb.CompoundFile(HIERARCHY) as cf:
+            rate = chunks.index(cf.open("Config")).first(0x20B0).first(0x0010)
+            self.assertEqual(rate.unpack("<i")[0], 30)
+            self.assertEqual(scene.ticks_per_frame(cf), 160)
+
 
 def _scene(cf):
     return scene.Scene.from_file(cf)
