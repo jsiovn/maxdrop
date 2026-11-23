@@ -120,9 +120,10 @@ node.converted (convert.modifiers ModifierDescriptions, bottom first), built as 
 Mirror; the first other modifier, or one the rules refuse, ends the run, and each of the four above it is an issue.
 The lowest converted smoother that changes the shading sets the mesh's, which adds ("shading", SMOOTH or CREASE) to the mesh key: SMOOTH
 leaves no sharp edge or flat face, CREASE keeps them and sets md.creases. A converted Shell gives its rim smoothing
-groups of its own in 3ds Max, hard against both surfaces: unless a Mirror is below it or a smoother with Smooth
-Result above it, the mesh's open edges join its sharp edges (after a SMOOTH smoother cleared them) and ("rim", True)
-the mesh key; what Solidify still cannot do (auto smooth splitting the rim's sharper corners, the override group) is
+groups of its own in 3ds Max, hard against both surfaces: unless a smoother with Smooth Result is above it, the
+mesh's open edges join its sharp edges (after a SMOOTH smoother cleared them) and ("rim", True) the mesh key; with
+Mirrors below the Shell, but the open edges a Mirror welds shut (both ends within its threshold of their copies: a
+seam once welded), and the rim entry of the key holds those Mirrors; what Solidify still cannot do (auto smooth splitting the rim's sharper corners, the override group) is
 an issue, named once per Shell and mesh, only when the mesh has open edges. Viewport levels that would give an
 object more than convert.modifiers.MAX_VIEWPORT_CORNERS face corners are lowered (an issue).
 describe(..., convert_modifiers=False) converts nothing.
@@ -781,15 +782,17 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
                     fresh = {m.index for m in rest} - told  # named on this node only if its Extrude is made
                     conv, conv_issues = _converted(scene, rest, meters, _offset(t, i), told, convert_modifiers)
                     shell = _rim(conv)
+                    mirrors = _mirrors(conv, shell)
                     key, done = _extruded(scene, desc, shape_of, extruded, mapped, base, ext, maps, i, name,
-                                          t.offset(i), meters, built, _shading(conv), check, shell is not None)
+                                          t.offset(i), meters, built, _shading(conv), check, shell is not None,
+                                          mirrors)
                     if key is None:
                         told.difference_update(fresh)
                 if key is not None:
                     kind = MESH
                     converted, more = rules.budget(conv, len(desc.meshes[key].loop_vertices))
                     desc.issues.extend((i, x) for x in conv_issues + more)
-                    _name_rim(desc, rims, shell, key, i, check)
+                    _name_rim(desc, rims, shell, key, i, check, mirrors)
                     applied, modifiers = _split(scene, stack.modifiers, (ext,) + done, conv)
                 else:
                     kind, curve = _curve(scene, desc, shape_of, unbuilt, base, i, name, t.offset(i), meters)
@@ -834,11 +837,12 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
                     converted, conv_issues = _converted(scene, rest, meters, offset, told, convert_modifiers)
                     desc.issues.extend((i, x) for x in conv_issues)
                     shell = _rim(converted)
+                    mirrors = _mirrors(converted, shell)
                     key, done = _mapped_mesh(scene, desc, mapped, (base, offset), data, maps, i, name, offset,
-                                             meters, _shading(converted), check, shell is not None)
+                                             meters, _shading(converted), check, shell is not None, mirrors)
                     converted, more = rules.budget(converted, len(desc.meshes[key].loop_vertices))
                     desc.issues.extend((i, x) for x in more)
-                    _name_rim(desc, rims, shell, key, i, check)
+                    _name_rim(desc, rims, shell, key, i, check, mirrors)
                     if done or converted:
                         applied, modifiers = _split(scene, stack.modifiers, done, converted)
                     kind = MESH
@@ -1173,44 +1177,113 @@ def _shading(converted):
 
 def _rim(converted):
     """The lowest converted Shell (a ModifierDescription) whose rim MaxDrop hardens as 3ds Max does (the mesh's open
-    edges sharp): one without a Mirror below it (its weld would turn open edges on the plane into a seam; not
-    measured) or a smoother with Smooth Result above it (which smooths the rim too). None otherwise. A Shell above
-    another meets a closed mesh: only the lowest makes a rim."""
+    edges sharp): one without a smoother with Smooth Result above it (which smooths the rim too). None otherwise. A
+    Shell above another meets a closed mesh: only the lowest makes a rim. The Mirrors below it: _mirrors."""
     for k, m in enumerate(converted):
-        if m.kind == rules.MIRROR:
-            return None
         if m.kind == rules.SOLIDIFY:
             above = converted[k + 1:]
             return None if any(x.kind == rules.SUBSURF and x.shading == rules.SMOOTH for x in above) else m
     return None
 
 
-def rim_issues(md, rim, check=None):
+def _mirrors(converted, shell):
+    """The Mirrors (ModifierDescriptions) below Shell shell in converted, bottom first: the open edges they weld shut
+    make no rim (welded())."""
+    out = []
+    for m in converted:
+        if m is shell:
+            break
+        if m.kind == rules.MIRROR:
+            out.append(m)
+    return tuple(out)
+
+
+def _reflection(mirror):
+    """The 4x4 matrix (numpy, Blender's columns) that mirrors a point of the object's space as Mirror
+    ModifierDescription mirror does: F S inverse(F), F the mirror object's matrix (the identity without one), S the
+    flip of its axis."""
+    import numpy
+    f = numpy.identity(4) if mirror.mirror is None else numpy.asarray(mirror.mirror, dtype=numpy.float64)
+    flip = numpy.diag([-1.0 if on else 1.0 for on in dict(mirror.settings)["use_axis"]] + [1.0])
+    return f @ flip @ numpy.linalg.inv(f)
+
+
+def welded(positions, mirror):
+    """Whether each vertex (positions (V, 3), meters) merges with its copy under Mirror ModifierDescription mirror,
+    bool (V,): with its weld on, Blender's Mirror welds a vertex closer than merge_threshold to its mirror image
+    (half that to the plane)."""
+    import numpy
+    p = numpy.asarray(positions, dtype=numpy.float64).reshape(-1, 3)
+    if not dict(mirror.settings)["use_mirror_merge"]:
+        return numpy.zeros(len(p), dtype=bool)
+    r = _reflection(mirror)
+    d = p - (p @ r[:3, :3].T + r[:3, 3])
+    return numpy.einsum("ij,ij->i", d, d) < dict(mirror.settings)["merge_threshold"] ** 2
+
+
+def _rim_edges(md, mirrors, check=None):
+    """The open edges of MeshDescription md that make a rim above the Mirrors mirrors (_mirrors): all but those
+    whose two ends a Mirror welds to their copies (the edge and its copy become one, with a face on each side)."""
+    edges = open_edges(md.loop_vertices, md.loop_starts, md.loop_totals, check)
+    for m in mirrors:
+        if not len(edges):
+            break
+        w = welded(md.positions, m)
+        edges = edges[~(w[edges[:, 0]] & w[edges[:, 1]])]
+    return edges
+
+
+def _mirrored(md, mirrors):
+    """(positions, loop_vertices, loop_starts, loop_totals) of MeshDescription md and its copy under each Mirror of
+    mirrors (_mirrors) in turn, the vertices it welds shared, each copy's faces reversed: the mesh the Shell above
+    them meets, as far as its rim goes (no slice is made: md is taken as the part each Mirror keeps)."""
+    import numpy
+    p = numpy.asarray(md.positions, dtype=numpy.float64)
+    lv = numpy.asarray(md.loop_vertices, dtype=numpy.int64)
+    starts = numpy.asarray(md.loop_starts, dtype=numpy.int64)
+    totals = numpy.asarray(md.loop_totals, dtype=numpy.int64)
+    for m in mirrors:
+        n = len(p)
+        r = _reflection(m)
+        w = welded(p, m)
+        index = numpy.where(w, numpy.arange(n), n + numpy.arange(n))
+        copy = index[lv[_reversed_loops(starts, totals)]]
+        p = numpy.concatenate((p, p @ r[:3, :3].T + r[:3, 3]))
+        starts = numpy.concatenate((starts, starts + len(lv)))
+        lv = numpy.concatenate((lv, copy))
+        totals = numpy.concatenate((totals, totals))
+    return p, lv, starts, totals
+
+
+def rim_issues(md, rim, check=None, mirrors=()):
     """What Blender's Solidify does not do of a Shell's RimRule on MeshDescription md (none when md has no open
     edge): auto smooth splitting the rim's sharper corners (rim_corners, on the mesh below the modifiers: a
     TurboSmooth below the Shell keeps a plane's four corners, 1 to 3 iterations in 3ds Max 2020), the override group
     with auto smooth off (3ds Max merges the rim into faces along it of that group; named whatever the groups of
-    those faces). check() between the passes."""
+    those faces). Above the Mirrors mirrors (_mirrors), on md with its copies (_mirrored): the edges they weld shut
+    make no rim. check() between the passes."""
     if rim is None:
         return []
+    mesh = _mirrored(md, mirrors) if mirrors else (md.positions, md.loop_vertices, md.loop_starts, md.loop_totals)
     if rim.auto_smooth:
-        n = rim_corners(md.positions, md.loop_vertices, md.loop_starts, md.loop_totals, rim.angle, check)
+        n = rim_corners(*mesh, rim.angle, check)
         return ["auto smooth: %d corners of the rim sharper than %g degrees shade smooth (3ds Max splits the rim "
                 "there)" % (n, rim.angle)] if n else []
-    if rim.override is None or not len(_open_loops(md.loop_vertices, md.loop_starts, md.loop_totals, check)[0]):
+    if rim.override is None or not len(_open_loops(*mesh[1:], check)[0]):
         return []
     return ["smoothing group override (group %d) not converted: 3ds Max merges the rim into the faces along it of "
             "that group" % rim.override]
 
 
-def _name_rim(desc, rims, shell, key, node, check=None):
-    """The rim issues of Shell shell (a ModifierDescription or None) on mesh key, on node: once per Shell and mesh."""
+def _name_rim(desc, rims, shell, key, node, check=None, mirrors=()):
+    """The rim issues of Shell shell (a ModifierDescription or None) above the Mirrors mirrors (_mirrors) on mesh
+    key, on node: once per Shell and mesh."""
     if shell is None or (shell.index, key) in rims:
         return
     rims.add((shell.index, key))
     md = desc.meshes[key]
     desc.issues.extend((node, "modifiers: %s: %s" % (shell.class_name or "Shell", x))
-                       for x in rim_issues(md, shell.rim, _large(md, check)))
+                       for x in rim_issues(md, shell.rim, _large(md, check), mirrors))
 
 
 def _large(md, check):
@@ -1252,12 +1325,14 @@ def _mapping(scene, mapped, m, issues, node):
 
 
 def _mapped_mesh(scene, desc, mapped, key, data, maps, node, name, offset, meters, shading=None, check=None,
-                 rim=False):
+                 rim=False, mirrors=()):
     """(the key in desc.meshes of reader MeshData data under the UVW Maps maps, the maps applied), made on first use:
     key extended by (modifier index, context matrix) per UVW Map evaluated, then by ("shading", shading) when a
     converted smoother changes the shading (SMOOTH: no sharp edge or flat face; CREASE: the sharp edges creased),
-    then by ("rim", True) when a converted Shell's rim is hardened (_rim): the open edges join the sharp ones.
-    check goes to mesh_description."""
+    then by ("rim", True) when a converted Shell's rim is hardened (_rim): the open edges join the sharp ones. Above
+    the Mirrors mirrors (_mirrors), ("rim", their settings and mirror matrices) instead, and the open edges they
+    weld shut stay smooth (_rim_edges): marked sharp, the weld would make them a hard seam. check goes to
+    mesh_description."""
     usable = []
     for m in maps:
         found = _mapping(scene, mapped, m, desc.issues, node)
@@ -1271,7 +1346,7 @@ def _mapped_mesh(scene, desc, mapped, key, data, maps, node, name, offset, meter
     if shading is not None:
         key = key + (("shading", shading),)
     if rim:
-        key = key + (("rim", True),)
+        key = key + (("rim", tuple((m.settings, m.mirror) for m in mirrors) or True),)
     md = desc.meshes.get(key)
     if md is None:
         done = []
@@ -1287,8 +1362,7 @@ def _mapped_mesh(scene, desc, mapped, key, data, maps, node, name, offset, meter
             md.sharp_faces[:] = False
             md.sharp_edges = md.sharp_edges[:0]
         if rim:
-            md.sharp_edges = _merged_edges(md.sharp_edges, open_edges(md.loop_vertices, md.loop_starts,
-                                                                      md.loop_totals, _large(md, check)))
+            md.sharp_edges = _merged_edges(md.sharp_edges, _rim_edges(md, mirrors, _large(md, check)))
         md.creases = shading == rules.CREASE
         if md.dropped_faces:
             desc.issues.append((node, "geometry: %d faces with a repeated vertex or doubled, left out"
@@ -1298,7 +1372,7 @@ def _mapped_mesh(scene, desc, mapped, key, data, maps, node, name, offset, meter
 
 
 def _extruded(scene, desc, shape_of, extruded, mapped, base, ext, maps, node, name, offset, meters, built,
-              shading=None, check=None, rim=False):
+              shading=None, check=None, rim=False, mirrors=()):
     """(the key in desc.meshes of shape base under the Extrude ext and the UVW Maps maps, the maps applied), made on
     first use; (None, ()) when the shape or the Extrude cannot be read or the scene's MAX_BUILT_CORNERS are spent (an
     issue, once per base object and Extrude). extruded caches the MeshData per base object, built counts the face
@@ -1323,7 +1397,7 @@ def _extruded(scene, desc, shape_of, extruded, mapped, base, ext, maps, node, na
         return None, ()
     offset = None if offset == controllers.IDENTITY else offset
     return _mapped_mesh(scene, desc, mapped, (base, offset, ext.index), data, maps, node, name, offset, meters,
-                        shading, check, rim)
+                        shading, check, rim, mirrors)
 
 
 def _layer(scene, i, layers, issues, node):

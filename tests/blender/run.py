@@ -197,7 +197,10 @@ SHARP_EDGES = {"editable_mesh": 8, "modifier_pivot": {"FixtureSmooth": 0, None: 
                # boxes without their top: the 4 vertical and the 4 bottom edges, and the 4 open edges a hardened Shell
                # rim makes sharp; the plane's open edges; a TurboSmooth below the Shell clears the groups, not the
                # open edges; one above it smooths the rim too
-               "stack_shell": {"FixtureShellPlane": 4, "FixtureShellTurbo": 4, "FixtureShellSmoothed": 0, None: 12},
+               "stack_shell": {"FixtureShellPlane": 4, "FixtureShellTurbo": 4, "FixtureShellSmoothed": 0, None: 12,
+                               # half and quarter boxes below a Symmetry: the edges between their sides and the
+                               # top's open edges, not the cut's (on the mirror plane: the weld shuts them)
+                               "FixtureShellSymHalf": 10, "FixtureShellSymClosed": 10, "FixtureShellSymQuarter": 5},
                "vray_mesh_light": 0,  # Planes: open edges only
                # boxes of 3 x 2 x 2 segments: 28; the cylinder's rims 2 x 16; the sphere is smooth
                "uvwmap": {"FixtureUVWCyl": 32, "FixtureUVWSphere": 0, "FixtureUVWSharedB": 12, None: 28},
@@ -1211,6 +1214,16 @@ def _setting_ok(got, want):
     return got == want
 
 
+def _unique_names(names):
+    """names as Blender keeps them on one object, where a modifier's name is unique: a repeat gets .001, .002, ...
+    (FixtureShellSymQuarter's two Symmetries)."""
+    seen, out = collections.Counter(), []
+    for n in names:
+        out.append(n if not seen[n] else "%s.%03d" % (n, seen[n]))
+        seen[n] += 1
+    return out
+
+
 def check_converted(label, ob, node, o, meters, desc):
     """The Blender modifiers of a node (node.converted, convert.modifiers): types, order, names, settings and mirror
     objects; when MaxDrop evaluates the rest of the stack, the evaluated mesh has 3ds Max's vertex and triangle
@@ -1228,7 +1241,8 @@ def check_converted(label, ob, node, o, meters, desc):
         check(label + ": no crease", crease is None or not any(d.value for d in crease.data))
     mods = list(ob.modifiers)
     check(label + ": Blender modifiers in 3ds Max's order", [(m.type, m.name) for m in mods] ==
-          [(c.kind, c.name) for c in node.converted], str([(m.type, m.name) for m in mods]))
+          list(zip([c.kind for c in node.converted], _unique_names([c.name for c in node.converted]))),
+          str([(m.type, m.name) for m in mods]))
     if not node.converted:
         return
     for mod, c in zip(mods, node.converted):

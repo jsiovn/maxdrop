@@ -117,7 +117,10 @@ SHARP_EDGES_TALL_BOX = 24  # modifier_pivot's four height segments: 4 x 4 vertic
 SHARP_EDGES_OPEN_BOX = 12
 # stack_shell's other meshes: the plane's open edges; a TurboSmooth below the Shell clears the box's groups but its open
 # edges stay sharp; above the Shell it smooths the rim too (no sharp edge)
-SHARP_EDGES_SHELL = {"FixtureShellPlane": 4, "FixtureShellTurbo": 4, "FixtureShellSmoothed": 0}
+SHARP_EDGES_SHELL = {"FixtureShellPlane": 4, "FixtureShellTurbo": 4, "FixtureShellSmoothed": 0,
+                     # the half and quarter boxes below a Symmetry (2 x 2 segments): the edges between their sides
+                     # and the top's open edges, not those of the cut, which the Mirror welds shut
+                     "FixtureShellSymHalf": 6 + 4, "FixtureShellSymClosed": 10, "FixtureShellSymQuarter": 3 + 2}
 # extrude: the vertical edges at corner knots (one per level) and both rims of every capped outline
 SHARP_EDGES_EXTRUDE = {"FixtureExtRect": 4 * 2 + 8, "FixtureExtL": 6 + 12, "FixtureExtHole": 4 + 8 + 56,
                        "FixtureExtIsland": 12 + 24, "FixtureExtOpen": 0, "FixtureExtMirror": 8 + 64,

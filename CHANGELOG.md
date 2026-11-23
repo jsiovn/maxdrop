@@ -135,6 +135,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   (measured): the ballast factor and the number of lamps now count, type A and B files are read, and the candelas
   are integrated linearly in angle (a coarse file's flux was over a third too high); the report line about a file
   of more lamps is gone.
+- Modifiers: a Shell above a Symmetry (a half-modelled object, mirrored, then shelled) now shades its rim hard
+  against both surfaces as 3ds Max does, without a seam on the mirror plane, instead of smoothing the rim into
+  them.
 
 ## [1.0.1] - 2026-11-22
 

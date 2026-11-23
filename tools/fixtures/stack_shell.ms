@@ -18,6 +18,11 @@
 -- FixtureShellTurbo: the open box with a TurboSmooth (1 iteration, Smooth Result) below the Shell (inner 0, outer 1):
 -- the rim still hard against both smoothed surfaces.
 -- FixtureShellSmoothed: the open box with a TurboSmooth (1 iteration) above the Shell: everything smooth.
+-- FixtureShellSymHalf: half of the open box (2 segments along X and Y, the half of x < 0 deleted), a Symmetry along X
+-- (slice, weld) below the Shell (inner 0, outer 1): the cut's open edges lie on the mirror plane and weld shut, the
+-- top's make the rim, hard against both surfaces.
+-- FixtureShellSymClosed: half of the closed box, the same Symmetry and Shell: every open edge welds, no rim.
+-- FixtureShellSymQuarter: a quarter of the open box, Symmetry along X, then along Y, then the Shell.
 -- One Standard material on every node.
 -- Authored for MaxDrop's tests (see CONTRIBUTING.md, "Test files"): it resets the scene, so run it in a 3ds Max
 -- session with nothing to keep, then sanitize and check the saved file before it goes into tests/fixtures/.
@@ -58,6 +63,33 @@
 
 	local smoothed = open_box "FixtureShellSmoothed" [40, 40, 0] 0.0 1.0
 	addModifier smoothed (TurboSmooth iterations:1)
+
+	-- a box with 2 segments along X and Y, the faces whose center is on the side of x < 0 (and y < 0) deleted, its
+	-- top too unless closed: its cut edges lie on the plane x = 0 (and y = 0)
+	fn part_box name pos closed quarter =
+	(
+		local b = Box name:name length:20 width:20 height:20 widthsegs:2 lengthsegs:2 mapcoords:true
+		convertToPoly b
+		local gone = #{}
+		for f = 1 to polyop.getNumFaces b do
+		(
+			local c = polyop.getFaceCenter b f
+			if (not closed and c.z > 19.99) or c.x < -0.001 or (quarter and c.y < -0.001) do gone[f] = true
+		)
+		polyop.deleteFaces b gone
+		b.pos = pos
+		b
+	)
+	local half = part_box "FixtureShellSymHalf" [80, 40, 0] false false
+	addModifier half (Symmetry axis:0 flip:false slice:1 weld:1 threshold:0.1)
+	addModifier half (Shell innerAmount:0.0 outerAmount:1.0)
+	local closedHalf = part_box "FixtureShellSymClosed" [120, 40, 0] true false
+	addModifier closedHalf (Symmetry axis:0 flip:false slice:1 weld:1 threshold:0.1)
+	addModifier closedHalf (Shell innerAmount:0.0 outerAmount:1.0)
+	local quarter = part_box "FixtureShellSymQuarter" [160, 40, 0] false true
+	addModifier quarter (Symmetry axis:0 flip:false slice:1 weld:1 threshold:0.1)
+	addModifier quarter (Symmetry axis:1 flip:false slice:1 weld:1 threshold:0.1)
+	addModifier quarter (Shell innerAmount:0.0 outerAmount:1.0)
 
 	local mat = StandardMaterial name:"FixtureGrey" diffuse:(color 128 128 128)
 	for o in objects do o.material = mat
