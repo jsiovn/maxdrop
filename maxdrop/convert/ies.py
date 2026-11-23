@@ -31,11 +31,13 @@ isotropic file of I cd gives 4 pi I exactly (type C), 2 pi I (types A and B). Ot
 with horizontal angles from 0 included (V-Ray's own flux of it is not the table's), are not read.
 
 The file comes from anywhere: at most MAX_BYTES are read (a larger file is refused), MAX_ANGLES per axis and
-MAX_VALUES candelas, counts checked against the numbers there are before any list is made; every number finite, the
+MAX_VALUES candelas, counts checked against the numbers there are before any list is made; the numbers are read
+one at a time, none split off before its turn (numbers past the table are never read); every number finite, the
 angles in order and in range, the candelas, the multiplier and the ballast factor not negative. No bpy, no add-on
 import.
 """
 import collections
+import itertools
 import math
 import re
 
@@ -44,7 +46,7 @@ MAX_ANGLES = 4096
 MAX_VALUES = 1 << 20
 TYPE_C, TYPE_B = 1, 2
 _NUMBER = re.compile(rb"[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?\Z")
-_SEPARATORS = re.compile(rb"[\s,]+")
+_TOKEN = re.compile(rb"[^\s,]+")
 _LINES = re.compile(rb"[^\r\n]*")  # CR LF, LF or a lone CR (old Mac files) ends a line
 _SPANS = (0.0, 90.0, 180.0, 360.0)
 
@@ -78,23 +80,21 @@ def read(path):
 
 
 class _Numbers:
-    def __init__(self, tokens):
-        self.tokens, self.at = tokens, 0
+    """The numbers of data from the offset at, one token at a time: no token is split off before it is read."""
 
-    def left(self):
-        return len(self.tokens) - self.at
+    def __init__(self, data, at):
+        self.data, self.at = data, at
+
+    def has(self, n):
+        """At least n numbers are left: counted up to n, none kept."""
+        return n <= 0 or next(itertools.islice(_TOKEN.finditer(self.data, self.at), n - 1, None), None) is not None
 
     def number(self, what):
-        if self.at >= len(self.tokens):
+        m = _TOKEN.search(self.data, self.at)
+        if m is None:
             raise IesError("the file ends before its %s" % what)
-        token = self.tokens[self.at]
-        self.at += 1
-        if not _NUMBER.match(token):  # the token itself stays out of the report: the file may be any local file
-            raise IesError("its %s: not a number" % what)
-        v = float(token)
-        if not math.isfinite(v):
-            raise IesError("its %s: a number out of range" % what)
-        return v
+        self.at = m.end()
+        return _value(m.group(), what)
 
     def count(self, what, low, high):
         v = self.number(what)
@@ -103,24 +103,38 @@ class _Numbers:
         return int(v)
 
     def numbers(self, n, what):
-        if n > self.left():
+        if not self.has(n):
             raise IesError("the file ends inside its %s" % what)
-        return [self.number(what) for _ in range(n)]
+        values = []
+        for m in itertools.islice(_TOKEN.finditer(self.data, self.at), n):
+            values.append(_value(m.group(), what))
+            self.at = m.end()
+        return values
 
 
-def _tokens_after_tilt(data):
-    """(the TILT value, the tokens after its line)."""
+def _value(token, what):
+    if not _NUMBER.match(token):  # the token itself stays out of the report: the file may be any local file
+        raise IesError("its %s: not a number" % what)
+    v = float(token)
+    if not math.isfinite(v):
+        raise IesError("its %s: a number out of range" % what)
+    return v
+
+
+def _after_tilt(data):
+    """(the TILT value, the offset of the numbers after its line)."""
     for m in _LINES.finditer(data):
         line = m.group().strip()
         if line[:5].upper() == b"TILT=":
-            return line[5:].strip().upper(), [t for t in _SEPARATORS.split(data[m.end():]) if t]
+            return line[5:].strip().upper(), m.end()
     raise IesError("no TILT line")
 
 
 def parse(data):
     """The Photometry of an IES file's bytes; IesError with the reason when they cannot be read."""
-    tilt, tokens = _tokens_after_tilt(bytes(data))
-    n = _Numbers(tokens)
+    data = bytes(data)
+    tilt, at = _after_tilt(data)
+    n = _Numbers(data, at)
     if tilt == b"INCLUDE":
         n.number("lamp-to-luminaire geometry")
         pairs = n.count("number of tilt angles", 0, MAX_ANGLES)
@@ -142,7 +156,7 @@ def parse(data):
     n.numbers(2, "header")  # ballast-lamp photometric factor (V-Ray leaves it out, measured), input watts
     if nv * nh > MAX_VALUES:
         raise IesError("%d x %d candelas are more than %d" % (nv, nh, MAX_VALUES))
-    if nv + nh + nv * nh > n.left():
+    if not n.has(nv + nh + nv * nh):
         raise IesError("the file ends inside its angles or candelas")
     vertical = n.numbers(nv, "vertical angles")
     horizontal = n.numbers(nh, "horizontal angles")

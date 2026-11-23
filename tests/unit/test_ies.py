@@ -10,6 +10,7 @@ import os
 import shutil
 import sys
 import tempfile
+import tracemalloc
 import types
 import unittest
 
@@ -187,6 +188,28 @@ class Refused(unittest.TestCase):
         self.refused(data[:data.rindex(b" ")], "the file ends inside its angles or candelas")
         self.refused(b"TILT=NONE\n1 500", "the file ends before its candela multiplier")
         self.refused(b"TILT=INCLUDE\n1 4000 0 90", "the file ends inside its tilt angles and factors")
+
+    def test_tokens_are_read_lazily(self):
+        # numbers past the table are never split off: the parse costs far less memory than the file
+        data = ies_file() + b"1 " * (1 << 19)
+        tracemalloc.start()
+        try:
+            p = ies.parse(data)
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+        self.assertAlmostEqual(p.flux, ISOTROPIC, delta=1e-9)
+        self.assertLess(peak, len(data) // 4)
+        many = b"TILT=NONE\n1 500 1 1024 1024 1 2 0 0 0\n1 1 0\n" + b"1 " * (1 << 19)
+        tracemalloc.start()
+        try:
+            with self.assertRaises(ies.IesError) as cm:
+                ies.parse(many)  # half a million numbers, a million candelas counted: refused before any list
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+        self.assertEqual(str(cm.exception), "the file ends inside its angles or candelas")
+        self.assertLess(peak, len(many) // 4)
 
     def test_not_numbers(self):
         for bad in (b"nan", b"inf", b"1_0", b"0x10", b"--1"):
