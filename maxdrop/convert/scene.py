@@ -791,6 +791,7 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
     unlit = {}  # light base object index -> why it is not built
     light_params = {}  # light base object index -> its values (convert.lights.read_params)
     emitter_meshes = {}  # mesh light base -> its mesh (_emitter_mesh) or why it has none, until its last node
+    emitter_refused = {}  # (mesh light base, node offset) -> why its emitter mesh does not fit single precision
     ies_files = ies.Lookup(files) if files is not None else None
     swatches = None  # the scene's swatch rule, read for the first light
     unseen = {}  # camera base object index -> why it is not built
@@ -844,16 +845,21 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
                                ies_files)
                 kind = LIGHT if light is not None else EMPTY
                 if light is None and base in light_params and lights.is_mesh_light(light_params[base]):
-                    try:
-                        key, emitter = _emitter(scene, t, desc, emitter_meshes, light_params[base], base, i, name,
-                                                meters, swatches, built, check)
-                    except MeshError as exc:  # its mesh with the node's offset: nothing of it is written yet
-                        desc.issues.append((i, "light: not built: %s" % exc))
+                    refused = (base, _offset(t, i))
+                    if refused in emitter_refused:  # not described again for each node
+                        desc.issues.append((i, "light: not built: %s" % emitter_refused[refused]))
                     else:
-                        if key is not None:
-                            kind = MESH
-                            if desc.meshes[key].users == [i]:
-                                _name_zeroed(desc, desc.meshes[key], i)
+                        try:
+                            key, emitter = _emitter(scene, t, desc, emitter_meshes, light_params[base], base, i,
+                                                    name, meters, swatches, built, check)
+                        except MeshError as exc:  # its mesh with the node's offset: nothing of it is written yet
+                            emitter_refused[refused] = str(exc)
+                            desc.issues.append((i, "light: not built: %s" % exc))
+                        else:
+                            if key is not None:
+                                kind = MESH
+                                if desc.meshes[key].users == [i]:
+                                    _name_zeroed(desc, desc.meshes[key], i)
                 remaining[base] -= 1
                 if not remaining[base]:
                     emitter_meshes.pop(base, None)

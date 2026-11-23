@@ -1412,6 +1412,43 @@ class MeshRange(unittest.TestCase):
         self.assertEqual(len(refused), len(set(extruded.values())))
         self.assertTrue(set(refused) <= set(extruded))
 
+    def test_an_offset_past_single_precision_refuses_that_node_only(self):
+        """instances with FixtureInstance02's object offset scaled by 1e42 (its mesh key apart): that node a
+        placeholder with one issue, the others meshes as before."""
+        sc = self.scene("instances")
+        target = next(i for i in sc.node_indices if sc.node(i).name == "FixtureInstance02")
+        big = ((1e42, 0, 0, 0), (0, 1e42, 0, 0), (0, 0, 1e42, 0), (0, 0, 0, 1))
+        real = conv._offset
+        with mock.patch.object(conv, "_offset", lambda t, i: big if i == target else real(t, i)):
+            desc = conv.describe(sc, 0.001)
+        self.assertEqual([(n.name, n.kind) for n in desc.nodes],
+                         [(n, conv.EMPTY if n == "FixtureInstance02" else conv.MESH) for n in
+                          ("FixtureSource", "FixtureInstance01", "FixtureInstance02", "FixtureInstance03",
+                           "FixtureCopy")])
+        self.assertEqual([(i, r.split(":")[0]) for i, r in desc.issues], [(target, "geometry")])
+        self.assertEqual(len(desc.meshes), 2)
+
+    def test_a_refused_emitter_is_described_once_per_offset(self):
+        """A refusal raised once the light node's offset is applied is remembered per light and offset: a second
+        node of the light (FixtureEmitter walked twice) is not described again, its issue named on both."""
+        sc = self.scene("vray_mesh_light")
+        light = next(i for i in sc.node_indices if sc.node(i).name == "FixtureEmitter")
+        order = sc.walk()
+        sc.walk = lambda: list(order) + [light]
+        real, calls = conv.mesh_description, []
+
+        def refuse(key, *args, **kwargs):
+            if key[0] == conv.EMITTER:
+                calls.append(key)
+                raise conv.MeshError("its points do not fit single precision")
+            return real(key, *args, **kwargs)
+
+        with mock.patch.object(conv, "mesh_description", refuse):
+            desc = conv.describe(sc, 0.001)
+        self.assertEqual(len(calls), len(set(calls)))  # each light and offset described once
+        self.assertEqual([r for i, r in desc.issues if i == light],
+                         ["light: not built: its points do not fit single precision"] * 2)
+
 
 if __name__ == "__main__":
     unittest.main()
