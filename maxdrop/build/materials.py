@@ -84,6 +84,8 @@ rectangle (TEXTURE, out of it, for a placed image). Without a crop Blender's one
 repeat alike; otherwise the same per-axis nodes over the whole image (extension()). Where an axis repeats, what
 clips (a clipped axis, a placed image's rectangle) is a mask on the image's Color and Alpha under EXTEND, not the
 CLIP extension, which fades the border half-texel toward black at every tile and mirror line (clip_axes()).
+That black is kept under a normal map too: 3ds Max renders the area outside a clipped Bitmap under Normal Bump or
+VRayNormalMap exactly as a black normal image, skewed, not flat (V-Ray 5.2 and scanline, maxdrop-em3.137).
 Map channel 0 (the vertex color as UVW) has no UV layer: such a map is drawn on channel 1 and reported.
 A texture file that holds no image (empty, or not starting as its format does: image_has_data) is reported and
 left out as one that does not load. A material whose build raises is removed again and reported: its slot stays

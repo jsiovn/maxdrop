@@ -104,6 +104,7 @@ masks, rewiring, Adjust, Tint); a crop repeating per axis (wrap, ping-pong, clip
 3ds Max renders it (two copies per tile, the nodes evaluated at its sample points), map channel 0 drawn on
 channel 1 and reported, a texture file without image data reported, a material whose build raises removed and
 reported; a material conversion that raises leaves the scene imported without materials, the report says why.
+A normal map over a clipped image reads it black outside the image, never mixed toward flat, as 3ds Max renders it.
 Images already in the file (an earlier import's) are reused by file and color space, unless modified, packed,
 generated or linked from a library; vray_maps imported twice with its textures adds no image the second time.
 lights_photometric copied beside a self-authored fixture_web.ies (rated 500 lm, 100 cd everywhere): IesPower's energy
@@ -4073,6 +4074,61 @@ def check_builder_clip_mask():
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def check_builder_clipped_normal():
+    """MaterialBuilder on hand-made IRs (bead maxdrop-em3.137): a normal map over a clipped image reads the image
+    black outside it, as 3ds Max renders it (V-Ray 5.2 and scanline gave the pixels of a black normal image there):
+    the Normal Map node's Color comes from the image's Color through its Clip node (one axis clips, or a placed crop)
+    or straight from the image under the CLIP extension (both axes clip), never mixed toward a flat (0.5, 0.5, 1)."""
+    from maxdrop.build import materials as build_materials
+    from maxdrop.convert import materials as cm
+    from maxdrop.convert import texmaps as tx
+    from maxdrop.convert import textures as ct
+    empty_scene()
+    for img in list(bpy.data.images):
+        bpy.data.images.remove(img)
+    scratch = tempfile.mkdtemp(prefix="maxdrop-builder-clipped-normal-")
+    try:
+        png = os.path.join(scratch, "shared.png")
+        _write_png(png)
+        found = ct.Found(png, ct.SCENE)
+        builder = build_materials.MaterialBuilder()
+        cases = (("U clips, V tiles", tx.Mapping(tiling=(2.0, 2.0), tile=(False, True)), None, 'EXTEND', ["X"]),
+                 ("both axes clip", tx.Mapping(tiling=(2.0, 2.0), tile=(False, False)), None, 'CLIP', []),
+                 ("a placed crop", tx.Mapping(), tx.Crop(0.25, 0.25, 0.5, 0.5, place=True), 'EXTEND', ["X", "Y"]))
+        for i, (label, mapping, crop, ext, axes) in enumerate(cases):
+            img = tx.Image(i + 1, "shared.png", "shared.png", "", found, colorspace=tx.NON_COLOR, mapping=mapping,
+                           crop=crop)
+            ir = cm.MaterialIR(60 + i, "ClippedNormal%d" % i, "test")
+            ir.normal = cm.MapRef(1)
+            ir.textures = {"normal": tx.TextureGraphIR(tx.NormalMap(img), tx.NORMAL)}
+            m = builder.make(ir)
+            check("builder clipped normal (%s): material built" % label, m is not None)
+            if m is None:
+                continue
+            tex = next((n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage"), None)
+            nm = _from(_principled(m).inputs["Normal"])
+            src = nm.inputs["Color"].links[0] if nm is not None and nm.bl_idname == "ShaderNodeNormalMap" \
+                and nm.inputs["Color"].is_linked else None
+            if axes:
+                clip = src.from_node if src is not None else None
+                fed = clip is not None and clip.label == CLIP_LABEL and clip.inputs[0].is_linked \
+                    and clip.inputs[0].links[0].from_node == tex and clip.inputs[0].links[0].from_socket.name == "Color"
+            else:
+                fed = src is not None and src.from_node == tex and src.from_socket.name == "Color"
+            kinds = sorted({n.bl_idname for n in m.node_tree.nodes if n.bl_idname in ("ShaderNodeMix", "ShaderNodeRGB",
+                                                                                     "ShaderNodeMixRGB")})
+            check("builder clipped normal (%s): the image %s, the Normal Map reads its Color %s, black outside, "
+                  "nothing mixes toward flat" % (label, ext, "through the Clip node" if axes else "straight"),
+                  tex is not None and tex.extension == ext and _clip_axes_of(tex) == axes and fed and not kinds,
+                  "%s %s %s %s" % (getattr(tex, "extension", None), _clip_axes_of(tex) if tex else None,
+                                   getattr(getattr(src, "from_node", None), "bl_idname", None), kinds))
+    finally:
+        empty_scene()
+        for img in list(bpy.data.images):
+            bpy.data.images.remove(img)
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def check_conversion_failure(max_path):
     """The material conversion raises: the operator imports the scene without materials and the report says so."""
     import maxdrop.ops as ops
@@ -4962,6 +5018,7 @@ def main():
                                  ("builder weight", check_builder_weight),
                                  ("builder fresnel off", check_builder_fresnel_off),
                                  ("builder clip mask", check_builder_clip_mask),
+                                 ("builder clipped normal", check_builder_clipped_normal),
                                  ("curve step", check_curve_step),
                                  ("crease open edges", check_crease_open_edges),
                                  ("linear fallback", check_linear_fallback),
