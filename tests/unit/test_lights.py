@@ -671,6 +671,22 @@ class DomeTextureRules(unittest.TestCase):
         dt, issues = L.dome_texture(self.ir(png), self.vray({}), colors.GAMMA_OFF)
         self.assertEqual((dt.image, issues), (png, []), "an 8-bit file: decoded once more, as on a material")
 
+    def test_a_float_texture_lights_by_its_own_decode_measured(self):
+        """V-Ray 5.2 renders of a gamma-off scene lit only by an EXR dome (maxdrop-em3.166), against the display
+        target srgb_to_linear(V-Ray): its own decode lights a white floor 2.3 times the target under a uniform 0.5
+        sky and 0.05 times under a 2000 sun, the material rule 1.0 and 1664 times: its own decode is kept. The
+        extension's case does not matter; a CoronaBitmap keeps what the converter made of it."""
+        self.assertNotIn("not measured", L.DOME_FLOAT_OFF)
+        shown = dict(gamma=2.2, colorspace=texmaps.SRGB)
+        upper = texmaps.Image(3, "SKY.EXR", found=self.FOUND, **shown)
+        dt, issues = L.dome_texture(self.ir(upper), self.vray({}), colors.GAMMA_OFF)
+        self.assertEqual((dt.image.gamma, dt.image.colorspace, issues),
+                         (1.0, texmaps.LINEAR, [L.DOME_FLOAT_OFF % "SKY.EXR"]))
+        corona = self.image(**shown)
+        dt, issues = L.dome_texture(self.ir(corona), _Graph({3: _Map(tuple(classids.CORONA_BITMAP), {})}),
+                                    colors.GAMMA_OFF)
+        self.assertEqual((dt.image, issues), (corona, [L.DOME_CORONA % "sky.hdr"]))
+
     def test_a_bitmap_is_turned_a_quarter(self):
         graph = _Graph({3: _Map(tuple(classids.BITMAP_TEX), {})})  # no Placement part: texture mapping
         dt, issues = L.dome_texture(self.ir(self.image()), graph)

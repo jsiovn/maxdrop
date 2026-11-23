@@ -79,9 +79,10 @@ frame or, locked to the dome, in the dome node's; another root is not used (the 
 another projection is drawn as spherical (an issue), a CoronaBitmap too (V-Ray 5.2 renders it on a dome as one flat
 color, measured: an issue). Its gamma is drawn as a material's image's is (its color space, a Gamma node on a
 Linear Rec.709 image: build.world), but a float file (EXR, HDR) in a scene saved with the gamma off keeps its own
-decode (linear for automatic; an issue): the display decode V-Ray shows on a material (maxdrop-em3.123) would take a
-sky's values far above 1 to orders of magnitude more light, and a float image as a light is not measured
-(maxdrop-em3.166). The first
+decode (linear for automatic; an issue), as the dome's multiplier is: V-Ray 5.2 shows the light display-referred,
+which no decode of each texel matches; the display decode V-Ray shows on a material (maxdrop-em3.123) matches a
+uniform sky but makes a sun orders of magnitude too bright, its own decode is the nearest (measured,
+maxdrop-em3.166; docs/FORMAT.md, Scene gamma). The first
 dome that is on is the World; another one, or one that
 is off, is an issue (convert.scene).
 
@@ -288,7 +289,9 @@ DOME_PLACEMENT = "its texture %s's offset, tiling or angle is not imported"
 DOME_OUTPUT = "its texture %s's Output (invert, RGB level or offset) is not imported"
 DOME_GAMMA = "its texture %s's gamma %g is not applied"
 DOME_FLOAT_OFF = ("its texture %s is a float image in a scene saved with the gamma off: kept linear (its own decode), "
-                  "not decoded once more for the display as on a material (not measured as a light)")
+                  "as the dome's multiplier is; V-Ray 5.2 shows the light it gives display-referred, so below 1 it is "
+                  "brighter and above 1 darker than V-Ray's (measured; decoded as on a material a sun would be "
+                  "orders of magnitude too bright)")
 DOME_CROP = "its texture %s's crop or placement is not imported"
 DOME_SHADOW = "cast shadows off is not imported: the World casts shadows"
 SKY = "the environment map is a VRaySky: not imported yet (environment -> World is later work)"

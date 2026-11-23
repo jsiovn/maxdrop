@@ -129,7 +129,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   renders them, their own decode decoded once more for the display-referred scene, instead of brighter (a 128 grey
   VRayBitmap in sRGB: 0.038 linear instead of 0.216, measured). A dome light's texture gamma is now drawn (a Gamma
   node in the World) instead of a line in the report, so a gamma-off dome with an 8-bit VRayBitmap is darker; an
-  EXR or HDR dome texture stays linear there (a line in the report: not measured as a light). A CoronaBitmap and a CoronaColor's HDR color stay as before:
+  EXR or HDR dome texture stays linear there (a line in the report; measured as a light with V-Ray 5.2, the
+  nearest a decode of each texel gets: the material's decode makes a sun orders of magnitude too bright). A CoronaBitmap and a CoronaColor's HDR color stay as before:
   whether Corona shows them as V-Ray does was not measured (no Corona render here).
 - Shapes: an open shape that renders in 3ds Max with a round section (a Line, an Arc or an open Editable Spline
   with Enable In Renderer) is capped at both ends, as 3ds Max renders it, instead of a hollow tube with open ends.

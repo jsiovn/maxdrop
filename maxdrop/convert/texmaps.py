@@ -738,8 +738,9 @@ def _shown(gamma):
 
 def unshown(image):
     """A Bitmap's or VRayBitmap's color Image made in a gamma-off scene with its own decode again (_shown undone;
-    None, an image read as stored, gives linear): for a float file lighting a scene, where the display decode of
-    values far above 1 is not measured (convert.lights.dome_texture)."""
+    None, an image read as stored, gives linear): for a float file lighting a scene, where the display decode of a
+    sun's values far above 1 lights it orders of magnitude too bright (convert.lights.dome_texture; measured in
+    maxdrop-em3.166)."""
     g = image.gamma
     own = 1.0 if g is None else (None if abs(g - SRGB_TWICE) <= GAMMA_TOLERANCE else g / SRGB_GAMMA)
     return dataclasses.replace(image, gamma=own, colorspace=colorspace(COLOR, own))

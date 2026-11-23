@@ -1431,8 +1431,7 @@ picker and Material Editor switches off).
   renders of the probe scenes agree within 0.02 (2 % above 1). CoronaBitmap and CoronaColor HDR are left as they
   were: whether a Corona render shows them as V-Ray does is not known (no Corona render yet). A dome's texture
   gamma is drawn as a material's (a Gamma node in the World), but a float dome texture in a gamma-off scene keeps
-  its own decode (a line in the report): the probe measured planes seen by the camera with values up to 2.0, not a
-  float image lighting a scene, where decoding a sky's values far above 1 would give orders of magnitude more light.
+  its own decode (a line in the report): measured as a light below (maxdrop-em3.166).
 - Color mixes (maxdrop-em3.158), V-Ray 5.2 renders of VRayLightMtl planes, each plane's internal value; greys are
   swatches, Bm a 128 grey 8-bit PNG (automatic gamma). With the gamma on and off the internal value is the same (a
   Bm plane with the gamma on: the image decoded first):
@@ -1479,6 +1478,31 @@ picker and Material Editor switches off).
   in `maxdrop/convert/texmaps.py` (colorspace, `_vray_image`, `_add_gamma`). Blender 5.2 renders (EEVEE and Cycles)
   of the V-Ray probe scenes imported by MaxDrop: every normal plane within 0.32 degrees of V-Ray except those tilted
   past that limit; every height plane with V-Ray's stored or decoded slope pattern except the one above.
+- A dome texture as a light (maxdrop-em3.166), V-Ray 5.2 renders of a scene lit only by a VRayLight dome (multiplier
+  1, default units, spherical): a white floor (VRayMtl diffuse 255) and a grey plane (128) side by side, facing up, GI
+  off, and the sky seen directly; each a 32 x 32 render averaged, V-Ray's internal value. Skies: VRayBitmap Auto
+  (spherical) of self-authored EXRs, one value 0.5 or 4.0, and a sky of 0.2 with a block of 2000 at 40 to 50 degrees
+  elevation (0.0208 sr: the floor's analytic 9.551 is V-Ray's 9.551); a Bitmap of the 0.5 EXR in spherical
+  environment mapping (as the VRayBitmap); a 128 grey PNG; no texture at multiplier 0.5. With the gamma on, Blender
+  5.2 (Cycles) renders of the import agree with V-Ray within 0.007 on every floor, plane and sky (0.07 % on the sun's
+  floor). With the gamma off the target is srgb_to_linear of V-Ray's value (floor / plane / sky):
+
+  | Dome | V-Ray | target | its own decode (kept) | the material rule |
+  |---|---|---|---|---|
+  | EXR 0.5 (VRayBitmap or Bitmap) | 0.500 / 0.251 / 0.500 | 0.214 / 0.051 / 0.214 | 0.500 / 0.108 / 0.500 | 0.214 / 0.046 / 0.214 |
+  | EXR 4.0 | 3.999 / 2.008 / 4.0 | 25.30 / 5.00 / 25.31 | 3.999 / 0.863 / 3.999 | 25.31 / 5.46 / 25.31 |
+  | EXR sky 0.2, sun 2000 | 9.551 / 4.794 / 0.2 | 200.6 / 38.9 / 0.033 | 9.545 / 2.060 / 0.200 | 333 803 / 72 055 / 0.033 |
+  | no texture, multiplier 0.5 | 0.500 / 0.251 / 0.5 | 0.215 / 0.051 / 0.214 | 0.500 / 0.108 / 0.500 (as imported) | |
+  | PNG 128, VRayBitmap Auto | 0.216 / 0.108 / 0.216 | 0.038 / 0.011 / 0.038 | | 0.032 / 0.007 / 0.032 (as imported) |
+
+  V-Ray lights a gamma-off scene on its internal values and the display shows the sum: srgb_to_linear of a sum is
+  not the sum of srgb_to_linear, so no decode of each texel matches a sky that is not one value, and a decoded albedo
+  times a decoded light is not the decoded product (the grey plane). The material rule is exact for one value but
+  lights the sun's floor 1664 times the target; its own decode is 2.3 times the target at 0.5, 0.16 times at 4.0 and
+  0.05 times with the sun, as a dome's multiplier already is (the untextured row): a float dome texture keeps its own
+  decode (`convert/lights.py`, `dome_texture`; a line in the report). On an 8-bit display a value above 1 is white
+  in both. An 8-bit dome texture keeps the material rule (within 0.007 of the target). A rule that sees the sky
+  decoded only from the camera would need the World's nodes (a Light Path), not drawn.
 
 ## Summary properties
 
