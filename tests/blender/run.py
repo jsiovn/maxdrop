@@ -2247,12 +2247,32 @@ def check_cancel(textured, other):
     check("cancel: two files: both removed, the report text too, the scene camera and render size put back",
           _state() == before, "%s | %s" % (_state(), before))
 
-    run = _cancel_run([textured])
-    steps = run.steps(threaded=True)
+    import time
     from maxdrop import ops
-    waited = next(steps) is ops._WAIT
-    steps.close()
-    check("cancel: threaded, closed while the worker reads: nothing made", waited and _state() == before)
+    real_read, saw = ops._read_scene, []
+
+    def held_read(max_path, opts, dirs, cancel=None):
+        # the worker stays in the read until close() stops it: a small file read to its end before the first step
+        # would start the build, and that step would not be _WAIT
+        deadline = time.perf_counter() + 30.0
+        while not (cancel is not None and cancel()) and time.perf_counter() < deadline:
+            time.sleep(0.005)
+        saw.append(cancel is not None and cancel())
+        return real_read(max_path, opts, dirs, cancel)
+
+    run = _cancel_run([textured])
+    ops._read_scene = held_read  # _scene_steps looks it up when the read starts
+    try:
+        steps = run.steps(threaded=True)
+        waited = next(steps) is ops._WAIT
+        steps.close()
+    finally:
+        ops._read_scene = real_read
+        for worker in list(ops._WORKERS):
+            worker.join(60)
+    check("cancel: threaded, closed while the worker reads: nothing made",
+          waited and saw == [True] and ops._busy() == "" and _state() == before,
+          "waited %s, stop seen %s, busy %r" % (waited, saw, ops._busy()))
     run = _cancel_run([other, textured])
     steps = run.steps(threaded=True)
     held = _advance(steps, lambda: len(run._made) == 1 and len(bpy.data.objects) > len(before[0]["objects"]) + 1)
