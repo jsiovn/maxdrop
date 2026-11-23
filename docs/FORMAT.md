@@ -1552,7 +1552,8 @@ transform's float axis is read (keyframes, Float List), a Bezier Color (supercla
 from its saved `0x2501` color when its `0x2500` interval holds frame 0, else from its keys `0x2526`, 80 bytes each
 (`i32` time, `u32` flags, the color at byte 8, then tangents as Bezier Position's; pblock_animated: two keys, key 0
 the saved color), linearly between two keys (its curve not measured). Checked against the oracle's frame-0 values
-of pblock_animated's 6 controllers. Not measured: a float controller on an integer parameter (int, bool, radio
+of pblock_animated's 6 controllers. A Float List with an entry of another class gives no value (the default), not the
+sum of the rest. Not measured: an hsv parameter (not read); a float controller on an integer parameter (int, bool, radio
 button...; no fixture has one): a whole number is read as that integer, a fraction not (the class default); a
 percent or angle parameter takes the controller's value as stored, like its stored value.
 

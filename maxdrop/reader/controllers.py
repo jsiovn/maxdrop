@@ -1178,7 +1178,8 @@ def parameter_value(scene, i):
     """(the value of controller i at frame 0, issues) for a parameter of a material or map that a controller holds
     (reader.pblock.Animated): a float from a float controller (as a transform's: keyframes and Float List), a tuple of
     3 floats from a Bezier Color (between two keys linear, with an issue: its curve is not measured); None where it
-    cannot be evaluated (another class, no saved value or keys, a damaged controller, a non-finite value), with an
+    cannot be evaluated (another class, also as a Float List's entry, where a transform's list adds nothing: a
+    parameter keeps its default instead; no saved value or keys, a damaged controller, a non-finite value), with an
     Issue (node None) as matrix() gives."""
     issues = []
     ev = _Eval(scene, None, issues)
@@ -1200,7 +1201,7 @@ def parameter_value(scene, i):
         del issues[:]
         ev.issue(ev.failed if ev.failed is not None else i, "%s: %s" % (DAMAGED, exc))
         return None, issues
-    if value is None:
+    if value is None or any(x.reason == UNKNOWN_CLASS for x in issues):
         return None, issues
     if not all(math.isfinite(c) for c in (value if isinstance(value, tuple) else (value,))):
         ev.issue(i, NON_FINITE)

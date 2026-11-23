@@ -65,10 +65,11 @@ _CLASSES = [
     (0x2001, 0, 0x9003, "Linear Float"), (0x2002, 0, 0x900B, "Linear Position"),
     (0x2003, 0, 0x900C, "Linear Rotation"), (0x2004, 0, 0x900D, "Linear Scale"), (0x442312, 0, 0x900B, "TCB Position"),
     (0x2009, 0, 0x900C, "Smooth Rotation"), (0x4B4B1000, 0, 0x9003, "Float List"), (0x7778, 0, 0x9003, "Some Float"),
+    (0x2011, 0, 0x9005, "Bezier Color"),
 ]
 (C_NODE, C_ROOT, C_PRS, C_POSXYZ, C_EULER, C_BSCALE, C_BFLOAT, C_PB2, C_POSLIST, C_ROTLIST, C_SCALELIST,
  C_LOOKAT, C_SCALEXYZ, C_TCBROT, C_BPOS, C_TCBSCALE, C_TCBFLOAT, C_LOOKAT_CONSTRAINT, C_UNKNOWN_M3,
- C_LINFLOAT, C_LINPOS, C_LINROT, C_LINSCALE, C_TCBPOS, C_SMOOTHROT, C_FLOATLIST, C_UNKNOWN_FLOAT) = \
+ C_LINFLOAT, C_LINPOS, C_LINROT, C_LINSCALE, C_TCBPOS, C_SMOOTHROT, C_FLOATLIST, C_UNKNOWN_FLOAT, C_BCOLOR) = \
     range(len(_CLASSES))
 CLASSES = classdir.ClassDirectory.parse(b"".join(class_entry(*c) for c in _CLASSES))
 # the keyframe classes as the controllers fixture shows them: (class index, key chunk, bytes per key, value floats)
@@ -2061,6 +2062,41 @@ class ParameterValue(unittest.TestCase):
                 self.assertEqual(struct.unpack_from("<3f", view, 8), saved)
                 keyed += 1
             self.assertEqual(keyed, 2)  # the blend color and the diffuse
+
+    @staticmethod
+    def scene_of(b):
+        return scene.Scene(node(0x2025, *b.objects), CLASSES)
+
+    def test_float_list(self):
+        """A Float List sums its entries times their weights; one entry of another class (an expression, a script)
+        leaves no value: the parameter keeps its default rather than the sum of the rest."""
+        b = Build()
+        flist = b.add(node(C_FLOATLIST, refs34(b.flt(30.0), b.flt(7.0), None, None, list_block(b, 0.5, 1.0)),
+                           leaf(0x1010, struct.pack("<i", 2))))
+        odd = b.add(node(C_UNKNOWN_FLOAT, leaf(0x2501, struct.pack("<f", 9))))
+        mixed = b.add(node(C_FLOATLIST, refs34(b.flt(2.0), odd, None, None, list_block(b, 1.0, 1.0)),
+                           leaf(0x1010, struct.pack("<i", 2))))
+        s = self.scene_of(b)
+        self.assertEqual(ct.parameter_value(s, flist), (22.0, []))
+        value, issues = ct.parameter_value(s, mixed)
+        self.assertIsNone(value)
+        self.assertEqual([x.reason for x in issues], [ct.UNKNOWN_CLASS])
+
+    def test_bezier_color_from_keys(self):
+        """Without a saved value whose interval holds frame 0: the keys (80 bytes each), the first one before it, the
+        last one after it, linear between two with an issue (the curve not measured)."""
+        before, after = (0.2, 0.4, 0.6), (0.6, 0.8, 1.0)
+        for times, want, reasons in (((10, 20), before, []), ((-20, -10), after, []),
+                                     ((-10, 10), (0.4, 0.6, 0.8), [ct.KEYS_INTERPOLATED])):
+            with self.subTest(times=times):
+                b = Build()
+                keys = keys_of("Bezier Position", (times[0], before), (times[1], after))
+                i = b.add(node(C_BCOLOR, node(0x7127, leaf(0x2501, struct.pack("<3f", 9, 9, 9)),
+                                              leaf(0x2500, struct.pack("<ii", 5, 5)), keys)))
+                value, issues = ct.parameter_value(self.scene_of(b), i)
+                for x, y in zip(value, want):
+                    self.assertAlmostEqual(x, y, places=6)
+                self.assertEqual([x.reason for x in issues], reasons)
 
     def test_not_a_value(self):
         with cfb.CompoundFile(self.PATH) as cf:

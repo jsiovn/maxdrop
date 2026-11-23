@@ -14,7 +14,7 @@ so neither can hold them for the other). No bpy.
 A parameter a controller holds (reader.pblock.Animated) is read as its controller's value at frame 0
 (reader.controllers.parameter_value) when the rules' graph went through at_frame_zero, as the converters' does: a
 float parameter a float, an integer one (int, bool, time, radio button, index) a whole number only, a color a
-Bezier Color's three channels. Anything else stays the Animated, which no reader takes for a value: the rule's
+Bezier Color's three channels (an hsv parameter not: not measured). Anything else stays the Animated, which no reader takes for a value: the rule's
 default, as before. A float controller on an integer parameter is not measured (no fixture holds one): 3ds Max's
 rounding of a fraction is not known, so a fraction is not read. Percent and angle parameters take the controller's
 value as it is, like their stored values (not measured either).
@@ -23,10 +23,7 @@ import math
 
 from ..reader import controllers, pblock
 
-# ParamType2 base types (docs/FORMAT.md, Parameter blocks) by the value they hold
-_FLOATS = frozenset((0, 5, 6, 7, 11))  # float, angle, percent, world, color channel
-_INTS = frozenset((1, 4, 12, 13, 19))  # int, bool, time, radio button, index
-_COLORS = frozenset((2, 3, 10))  # color, point3, hsv
+_COLORS = frozenset((2, 3))  # ParamType2 color, point3 (an hsv one, 10, is not measured: not read)
 
 
 def finite(v):
@@ -57,9 +54,9 @@ def frame_zero(scene, block, pid, v):
         return value if kind in _COLORS else v
     if value is None:
         return v
-    if kind in _FLOATS:
+    if kind in pblock.FLOAT_TYPES:
         return value
-    if kind in _INTS and value.is_integer():
+    if kind in pblock.INT_TYPES and value.is_integer():
         return int(value)
     return v
 
