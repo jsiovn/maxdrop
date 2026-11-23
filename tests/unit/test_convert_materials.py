@@ -1676,15 +1676,14 @@ class Corona(unittest.TestCase, Close):
         t = sum(refract) / 3 * 0.75
         self.close(old.transmission.value, t, "mean refraction x level")
         self.close(old.base_color.value, tuple(d * (1 - t) + r * t for d, r in zip(_lins(90, 110, 130), refract)))
-        self.close(old.roughness.value, 0.6, "PBR mode off: 1 - glossiness all the same")
+        self.close(old.roughness.value, 0.324, "PBR mode off: glossiness 0.4 renders as PBR glossiness 0.676")
         self.close(old.specular.value, 1.0)
         self.close(old.ior, 1.33, "the refraction IOR")
         self.assertTrue(old.thin_walled)
         self.close(metal.metallic.value, 1.0, "Fresnel IOR 999 and a bright reflection")
         self.close(metal.base_color.value, _lins(250, 200, 120), "the reflection color")
         self.close(metal.roughness.value, 0.1)
-        self.assertEqual([r for _i, r in conv.stats.issues],
-                         ["CoronaLegacyMtl 'FixtureCoronaLegacyGloss': glossiness of PBR mode off read as in PBR mode"])
+        self.assertEqual(conv.stats.issues, [], "PBR mode off without a glossiness map: measured (maxdrop-em3.115)")
 
     def test_layered_mixes_its_layer_or_peels_without_a_base(self):
         cf, graph, by_name = _fixture("corona_layered")
@@ -1788,16 +1787,16 @@ class CoronaMore(unittest.TestCase, Close):
         self.assertEqual(ir.issues, ["CoronaPhysicalMtl 'FixtureCoronaPhysSheen': sheen amount map not converted"])
 
     def test_physical_named_issues(self):
-        self.assertEqual(self.ir("PhysTransl").issues,
-                         ["CoronaPhysicalMtl 'FixtureCoronaPhysTransl': translucency not converted"])
+        self.assertEqual(self.ir("PhysTransl").issues, [], "translucency without thin mode: none in Corona 12")
         absorb = self.ir("PhysAbsorb")
         self.close(absorb.transmission.value, 1.0)
         self.assertEqual(absorb.issues, ["CoronaPhysicalMtl 'FixtureCoronaPhysAbsorb': volumetric absorption and "
                                          "scattering not converted"])
         self.assertEqual(self.ir("PhysEdge").issues,
                          ["CoronaPhysicalMtl 'FixtureCoronaPhysEdge': metal edge color not converted"])
-        self.assertEqual(self.ir("PhysIorMode").issues,
-                         ["CoronaPhysicalMtl 'FixtureCoronaPhysIorMode': IOR mode 1 read as an IOR"])
+        spec = self.ir("PhysIorMode")
+        self.assertEqual(spec.issues, [], "IOR mode 1, a specular level: measured (maxdrop-em3.115)")
+        self.close((spec.ior, spec.coat_ior), (1.5, 1.5), "specular 0.5 is F0 0.04, IOR 1.5 (the stored 0.5s)")
 
     def test_physical_complex_ior(self):
         ir = self.ir("PhysComplex")
@@ -1816,10 +1815,9 @@ class CoronaMore(unittest.TestCase, Close):
 
     def test_legacy_without_pbr(self):
         ir = self.ir("LegacyNoPbr")
-        self.close(ir.roughness.value, 0.4)
+        self.close(ir.roughness.value, 0.165, "glossiness 0.6, PBR mode off: CORONA_LEGACY_GLOSS")
         self.close(ir.transmission.value, 0.5)
         self.assertEqual(ir.issues, [
-            "CoronaLegacyMtl 'FixtureCoronaLegacyNoPbr': glossiness of PBR mode off read as in PBR mode",
             "CoronaLegacyMtl 'FixtureCoronaLegacyNoPbr': translucency not converted",
             "CoronaLegacyMtl 'FixtureCoronaLegacyNoPbr': absorption not converted"])
 
@@ -1845,7 +1843,7 @@ class CoronaMore(unittest.TestCase, Close):
             conv = mat.MaterialConverter(graph, texmaps=tex)
             two = conv.convert(by_name["FixtureCoronaLayers"]).layers[1]
         root = two.graph.root
-        self.assertIsInstance(root, texmaps.Mix, "lerp(1, mask, mask amount)")
+        self.assertIsInstance(root, texmaps.Mix, "lerp(1, mask, mask amount): Corona 12 renders it (em3.115)")
         self.close(root.a.value, 1.0)
         self.close(root.b.value, _lin(64))
         self.close(root.factor, 0.5)
@@ -2039,10 +2037,32 @@ class CoronaSynthetic(unittest.TestCase, Close):
         self.assertEqual(conv.peel(0), (2, None))
         self.assertEqual(ir.source, "CoronaLegacyMtl")
 
-    def test_physical_ior_mode_is_an_issue(self):
-        conv, ir = _convert(_corona(0, classids.CORONA_PHYSICAL_MTL, p461=1, p171=2.0))
+    def test_physical_ior_mode_specular(self):
+        """iorMode 1: the base and clearcoat IORs hold a specular level, F0 = 0.08 x level, never above 0.25 (IOR 3);
+        other modes than 0 and 1 render as an IOR (2, measured) and stay named (maxdrop-em3.115)."""
+        _conv, ir = _convert(_corona(0, classids.CORONA_PHYSICAL_MTL, p461=1, p171=2.0, p221=1.0))
+        self.close(ir.ior, mat.ior_from_reflectance(0.16))
+        self.close(ir.coat_ior, mat.ior_from_reflectance(0.08))
+        self.assertEqual(ir.issues, [])
+        _conv, ir = _convert(_corona(0, classids.CORONA_PHYSICAL_MTL, p461=1, p171=4.0, p221=0.0))
+        self.close((ir.ior, ir.coat_ior), (3.0, 1.0), "F0 0.32 renders as 0.25; specular 0 reflects nothing")
+        _conv, ir = _convert(_corona(0, classids.CORONA_PHYSICAL_MTL, p461=1))
+        self.close(ir.ior, 1.5, "no value: the IOR default")
+        _conv, ir = _convert(_corona(0, classids.CORONA_PHYSICAL_MTL, p461=2, p171=2.0))
         self.close(ir.ior, 2.0)
-        self.assertIn("IOR mode 1", ir.issues[0])
+        self.assertIn("IOR mode 2", ir.issues[0])
+
+    def test_physical_translucency_needs_thin_mode(self):
+        for thin, issues in ((0, 0), (1, 1)):
+            _conv, ir = _convert(_corona(0, classids.CORONA_PHYSICAL_MTL, p203=thin, p371=0.4))
+            self.assertEqual(len(ir.issues), issues, "thin %d" % thin)
+
+    def test_legacy_pbr_off_glossiness_map_stays_named(self):
+        _conv, ir = _convert(_corona(0, classids.CORONA_LEGACY_MTL, p102=(1.0,) * 3, p122=1.0, p180=0.6, p402=0,
+                                     p143=Ref(1)), _map(1))
+        self.close(ir.roughness.value, 0.165, "the swatch through the table")
+        self.assertEqual(ir.roughness.map, mat.MapRef(1, 1.0, True))
+        self.assertIn("glossiness map of PBR mode off read as in PBR mode", ir.issues[0])
 
     def test_layered_cycle_and_a_layer_that_is_not_a_material(self):
         a = _corona(0, classids.CORONA_LAYERED_MTL, p1000=Ref(1), p1001=[Ref(2), Ref(3)])
@@ -2198,6 +2218,25 @@ class CoronaSynthetic(unittest.TestCase, Close):
 
 
 @unittest.skipIf(numpy is None, "numpy missing")  # assign() and the mesh reader need it
+class CoronaLegacyGloss(unittest.TestCase, Close):
+    """CORONA_LEGACY_GLOSS: CoronaLegacyMtl glossiness with PBR mode off as the roughness of the PBR-mode glossiness
+    whose highlight Corona 12 renders alike (maxdrop-em3.115)."""
+
+    def test_measured_points(self):
+        for g, r in ((0.0, 0.618), (0.4, 0.324), (0.6, 0.165), (0.9, 0.051), (1.0, 0.0)):
+            self.close(mat.corona_legacy_roughness(g), r, str(g))
+
+    def test_interpolates_and_clamps(self):
+        self.close(mat.corona_legacy_roughness(0.425), (0.324 + 0.272) / 2)
+        self.close(mat.corona_legacy_roughness(-1.0), 0.618)
+        self.close(mat.corona_legacy_roughness(2.0), 0.0)
+        self.close(mat.corona_legacy_roughness(float("nan")), mat.corona_legacy_roughness(1.0), "the default")
+
+    def test_monotonic(self):
+        rs = [mat.corona_legacy_roughness(i / 200.0) for i in range(201)]
+        self.assertTrue(all(a >= b for a, b in zip(rs, rs[1:])))
+
+
 class Assign(unittest.TestCase):
     def names(self, slots):
         return [[ir and ir.name for ir in s] for s in slots]

@@ -76,16 +76,18 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   color (mono_swatch) times its level; emission color at its level; clearcoat amount, IOR, roughness and absorption
   color; sheen amount, color and roughness; SSS amount, radius (world units, in meters) and scatter color (the
   per-channel radius); a metal with a complex IOR takes the F0 of its n and k as its base color; maps where on, their
-  amounts fractions. Specular 1, the IOR's own Fresnel (the material has no reflection level). Translucency, volumetric
-  absorption and scattering, a metal edge color other than the default, the IOR mode and maps in the sheen and SSS slots
-  are named issues.
+  amounts fractions. Specular 1, the IOR's own Fresnel (the material has no reflection level); in IOR mode 1 the base
+  and clearcoat IORs are specular levels (F0 = 0.08 x level, at most 0.25). Translucency in thin mode (Corona ignores it
+  otherwise), volumetric absorption and scattering, a metal edge color other than the default, an IOR mode other than 0
+  and 1 and maps in the sheen and SSS slots are named issues.
 - CoronaLegacyMtl (CoronaMtl): diffuse, reflection, refraction, opacity and self-illumination colors times their
-  levels; specular = the mean reflection; roughness = 1 - glossiness (PBR mode or not); transmission and the glass
+  levels; specular = the mean reflection; roughness = 1 - glossiness, with PBR mode off the measured
+  CORONA_LEGACY_GLOSS (corona_legacy_roughness; a glossiness map stays inverted); transmission and the glass
   base color as for VRayMtl, the IOR as well (refraction IOR when it refracts, else the Fresnel IOR); a Fresnel IOR
   of CORONA_METAL_IOR or more with a bright reflection (as METAL_REFLECTION) is a metal in the reflection color;
   beside a reflection map only the swatch's share counts, as for VRayMtl (its mean, the level included, times 1 - the
   map amount; Corona's documentation has the level multiply the color and the map alike, so the map is not judged);
-  SSS as the physical material's. PBR mode off, translucency and absorption are named issues.
+  SSS as the physical material's. A glossiness map with PBR mode off, translucency and absorption are named issues.
 - CoronaLightMtl -> emission (color, intensity, map) and its opacity map.
 - CoronaSkinMtl -> one Principled layer: skin color times level, its three SSS layers as one (weighted mean radius
   times the radius scale, weighted mean color), the first reflection as specular, roughness and IOR, opacity, bump.
@@ -99,7 +101,8 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   counted as a class without a rule.
 - CoronaLayeredMtl with a base and a layer that is on -> the base's IR with its layers (Layer: IR, amount, mask
   with its mask amount; at most MAX_LAYERS), which build/materials.py mixes over it; the weight is the amount times
-  lerp(1, mask, mask amount), Corona's map-amount convention (not measured: no Corona render here).
+  lerp(1, mask, mask amount), as Corona 12 renders it (maxdrop-em3.115: amount 0.6, mask 0.25, mask amount 0.5 gives
+  0.375), the mask taking the value the same map gives a color input.
 - Wrappers (VRay2SidedMtl, VRayBlendMtl, VRayOverrideMtl, VRayMtlWrapper, Double Sided, Shellac, CoronaLayeredMtl
   without a base or without a layer on: base, then its layers that are on; CoronaRaySwitchMtl: direct, GI, reflect,
   refract, each where switched on) -> the first set sub-material in 3ds Max's getSubMtl order (VRayOverrideMtl's and
@@ -162,6 +165,13 @@ METAL_REFLECTION = 0.25  # mean linear reflection (about sRGB 137 grey) above wh
 NEUTRAL_REFLECTION = 0.02  # VRayMtl: a Fresnel-off swatch within this channel spread is grey (the mirror, not a metal)
 CORONA_EDGE_DEFAULT = 0.75  # CoronaPhysicalMtl's edgeColor as created (grey): not reported
 CORONA_METAL_IOR = 10.0  # a CoronaLegacyMtl Fresnel IOR from which a bright reflection is a metal (made with 999)
+CORONA_SPECULAR_F0 = 0.08  # CoronaPhysicalMtl IOR mode 1: F0 = 0.08 x the specular level held by an IOR parameter
+CORONA_MAX_F0 = 0.25  # CoronaPhysicalMtl: no IOR reflects more than IOR 3 does (Corona 12 renders, both IOR modes)
+# CoronaLegacyMtl glossiness with PBR mode off (402) -> the roughness (1 - the PBR-mode glossiness) whose highlight
+# Corona 12 renders alike, at glossiness 0, 0.05 ... 1 (maxdrop-em3.115: a mirror under a small emitter, the highlight
+# profiles matched). From 0.35 up the profiles agree; below 0.3 no PBR-mode glossiness has the same lobe (the closest)
+CORONA_LEGACY_GLOSS = (0.618, 0.617, 0.612, 0.600, 0.5745, 0.525, 0.4555, 0.386, 0.324, 0.272, 0.2295, 0.1945, 0.165,
+                       0.140, 0.1185, 0.099, 0.082, 0.0665, 0.051, 0.035, 0.0)
 GREY_SRGB = 128 / 255  # the grey of a material without a rule: MaxDrop's own, not a swatch
 
 # wrapper ClassId -> its sub-material parameters (block 0) in getSubMtl order; a table parameter gives each element
@@ -338,7 +348,7 @@ class MaterialIR:
 class Layer:
     """A material mixed over the ones below it (CoronaLayeredMtl): its MaterialIR, its amount, its mask (a MapRef
     whose amount is the mask amount, or None) and the mask's TextureGraphIR (MASK) when a TexmapConverter made one.
-    Its weight is amount x the mask graph, the graph being lerp(1, mask, mask amount)."""
+    Its weight is amount x the mask graph, the graph being lerp(1, mask, mask amount) (Corona 12 renders)."""
     ir: MaterialIR
     amount: float = 1.0
     mask: object = None
@@ -386,6 +396,16 @@ def ior_from_reflectance(f0):
 
 def _roughness(gloss, use_roughness):
     return _clamp01(gloss if use_roughness else 1.0 - gloss)
+
+
+def corona_legacy_roughness(gloss):
+    """The roughness of a CoronaLegacyMtl glossiness with PBR mode off: CORONA_LEGACY_GLOSS, linear between its
+    points; a glossiness outside 0..1 clamped, one that is not a number taken as 1 (the parameter's default)."""
+    g = _clamp01(gloss) if _finite(gloss) else 1.0
+    step = len(CORONA_LEGACY_GLOSS) - 1
+    i = min(int(g * step), step - 1)
+    t = g * step - i
+    return CORONA_LEGACY_GLOSS[i] * (1.0 - t) + CORONA_LEGACY_GLOSS[i + 1] * t
 
 
 def _scene_meters(graph):
@@ -1032,8 +1052,16 @@ def corona_physical_mtl(conv, m, ir):
     every roughness is a glossiness, the sheen's too); 241 sheenAmount, 245 sheenColor, 251 sheenRoughness; 291
     sssAmount, 301 sssRadius (world units), 311 sssScatterColor; 451 useComplexIor, 452-454 n and 455-457 k per
     channel (a metal's base color is then the F0 they give). Translucency (371, 375), volumetric absorption and
-    scattering (261, 271, 281), the edge color (161) and maps in the sheen and SSS slots are named issues."""
+    scattering (261, 271, 281), the edge color (161) and maps in the sheen and SSS slots are named issues.
+    461 iorMode (Corona 12 renders, maxdrop-em3.115): 0 the IOR parameters (171, 221) are IORs; 1 they are specular
+    levels, F0 = CORONA_SPECULAR_F0 x level (MAXScript's setter converts them on a mode change); 2 renders as an IOR
+    (not a mode the UI offers): named. No IOR reflects more than F0 CORONA_MAX_F0 (IOR 3); only the specular levels are
+    capped here (an IOR above 3, or below 1, which reflects as its reciprocal, is left to Blender). Translucency only
+    works in thin mode (fraction 0.5 without it: no light through). The edge color is not Blender's Specular Tint: a
+    white edge brightens the grazing reflection above Schlick, a black one darkens it, and the default 0.75 is close
+    to Schlick; no single tint, Gulbrandsen edge tint or conductor fits the renders (FORMAT.md)."""
     gloss = m.param(421, 0) == 1
+    ior_mode = m.param(461, 0)
     level = max(0.0, _num(m, 102, 0, 1.0))
     base = tuple(min(1.0, c * level) for c in conv.rgb(m, 101, 0, (0.5, 0.5, 0.5)))
     t = _clamp01(_num(m, 191, 0, 0.0))
@@ -1045,17 +1073,17 @@ def corona_physical_mtl(conv, m, ir):
     ir.roughness = Input(1.0 - r if gloss else r, _corona_amount_map(conv, m, 132, ir, invert=gloss))
     ir.metallic = Input(1.0 if m.param(111, 0) == 1 else 0.0, conv.map_ref(m, 411, 412, None, 0, ir=ir))
     ir.transmission = Input(t, _corona_amount_map(conv, m, 192, ir))
-    ir.ior = _ior(_num(m, 171, 0, 1.5))
+    ir.ior = _corona_ior(m, 171, ior_mode)
     ir.specular = Input(1.0)  # no reflection level in the pblock: the IOR's own Fresnel
-    if m.param(461, 0) not in (None, 0):  # iorMode: only the default (baseIor is the IOR) has been measured
-        conv.issue(m.index, "CoronaPhysicalMtl %r: IOR mode %r read as an IOR" % (m.name, m.param(461, 0)), ir)
+    if ior_mode not in (None, 0, 1):
+        conv.issue(m.index, "CoronaPhysicalMtl %r: IOR mode %r read as an IOR" % (m.name, ior_mode), ir)
     ir.thin_walled = thin
     opacity = _clamp01(conv.mono_swatch(m, 121, 0, (1.0, 1.0, 1.0)) * max(0.0, _num(m, 122, 0, 1.0)))
     ir.alpha = Input(opacity, _corona_amount_map(conv, m, 123, ir))
     ir.emission_color = Input(conv.rgb(m, 331, 0, (1.0, 1.0, 1.0)), _corona_amount_map(conv, m, 333, ir))
     ir.emission_strength = max(0.0, _num(m, 332, 0, 0.0))
     ir.coat_weight = _clamp01(_num(m, 211, 0, 0.0))
-    ir.coat_ior = _ior(_num(m, 221, 0, 1.5))
+    ir.coat_ior = _corona_ior(m, 221, ior_mode)
     c = _clamp01(_num(m, 231, 0, 0.0))
     ir.coat_roughness = 1.0 - c if gloss else c
     ir.coat_color = conv.rgb(m, 391, 0, (1.0, 1.0, 1.0))
@@ -1076,11 +1104,19 @@ def corona_physical_mtl(conv, m, ir):
         edge = m.param(161, 0)
         if isinstance(edge, tuple) and any(_finite(c) and abs(c - CORONA_EDGE_DEFAULT) > 1e-4 for c in edge[:3]):
             conv.issue(m.index, "CoronaPhysicalMtl %r: metal edge color not converted" % (m.name,), ir)
-    if _num(m, 371, 0, 0.0) > 0 or conv.map_ref(m, 372, 373, None, 0, ir=ir) is not None:
+    if thin and (_num(m, 371, 0, 0.0) > 0 or conv.map_ref(m, 372, 373, None, 0, ir=ir) is not None):
         conv.issue(m.index, "CoronaPhysicalMtl %r: translucency not converted" % (m.name,), ir)
     if t > 0 and _num(m, 281, 0, 0.0) > 0:
         conv.issue(m.index, "CoronaPhysicalMtl %r: volumetric absorption and scattering not converted" % (m.name,),
                    ir)
+
+
+def _corona_ior(m, pid, ior_mode):
+    """A CoronaPhysicalMtl IOR parameter (default 1.5): an IOR, or in IOR mode 1 a specular level made an IOR."""
+    if ior_mode != 1:
+        return _ior(_num(m, pid, 0, 1.5))
+    level = max(0.0, _num(m, pid, 0, 0.5))  # mode 1's value of IOR 1.5
+    return _ior(ior_from_reflectance(min(CORONA_MAX_F0, CORONA_SPECULAR_F0 * level)))
 
 
 def corona_legacy_mtl(conv, m, ir):
@@ -1088,9 +1124,10 @@ def corona_legacy_mtl(conv, m, ir):
     selfIllum; their levels 121, 122, 123, 127, 128; maps 141 diffuse, 142 reflect, 143 reflectGlossiness,
     144 refract, 146 opacity, 147 bump, 158 selfIllum, each switched on by id + 20, with amounts (fractions) 290,
     291, 292, 293, 295, 296, 303; 180 reflectGlossiness, 182 fresnelIor,
-    183 ior, 210 thin; 410 levelSss, 411 sssRadius (world units), 412 sssScatterColor. 402 pbrMode only changes how
-    Corona curves the glossiness: 1 - glossiness either way, a named issue when it is off. Translucency (106, 126,
-    map 148), absorption (188, 190) and the SSS amount map (414) are named issues."""
+    183 ior, 210 thin; 410 levelSss, 411 sssRadius (world units), 412 sssScatterColor. 402 pbrMode off curves the
+    glossiness otherwise (Corona 12 renders, maxdrop-em3.115): its roughness is corona_legacy_roughness; a glossiness
+    map then stays 1 - the map, a named issue. Translucency (106, 126, map 148), absorption (188, 190) and the SSS
+    amount map (414) are named issues."""
     def slot(map_pid, on_pid, amount_pid, invert=False):
         return conv.map_ref(m, map_pid, on_pid, amount_pid, 0, invert=invert, ir=ir, percent=False)
     diffuse = tuple(min(1.0, c * max(0.0, _num(m, 121, 0, 1.0))) for c in conv.rgb(m, 101, 0, (0.5, 0.5, 0.5)))
@@ -1102,7 +1139,10 @@ def corona_legacy_mtl(conv, m, ir):
     fresnel_ior = _num(m, 182, 0, 1.52)
     ir.base_color = Input(_mix(diffuse, refract_color, t) if t > 0 else diffuse, slot(141, 161, 290))
     ir.specular = Input(_clamp01(mean(reflection)), reflection_map)
-    ir.roughness = Input(_roughness(_num(m, 180, 0, 1.0), False), slot(143, 163, 292, invert=True))
+    pbr = _flag(m, 402, 0, True)
+    gloss = _num(m, 180, 0, 1.0)
+    gloss_map = slot(143, 163, 292, invert=True)
+    ir.roughness = Input(_roughness(gloss, False) if pbr else corona_legacy_roughness(gloss), gloss_map)
     # the swatch's share of the slot, as vray_mtl's (the level multiplies swatch and map alike: it stays in it)
     hidden = min(1.0, reflection_map.amount) if reflection_map is not None else 0.0
     if fresnel_ior >= CORONA_METAL_IOR and mean(reflection) * (1.0 - hidden) >= METAL_REFLECTION:
@@ -1119,8 +1159,8 @@ def corona_legacy_mtl(conv, m, ir):
     _subsurface(conv, m, ir, 410, 411, 412)
     if slot(414, 417, None) is not None:
         conv.issue(m.index, "CoronaLegacyMtl %r: SSS amount map not converted" % (m.name,), ir)
-    if not _flag(m, 402, 0, True) and (mean(reflection) > 0 or reflection_map is not None):
-        conv.issue(m.index, "CoronaLegacyMtl %r: glossiness of PBR mode off read as in PBR mode" % (m.name,), ir)
+    if not pbr and gloss_map is not None and (mean(reflection) > 0 or reflection_map is not None):
+        conv.issue(m.index, "CoronaLegacyMtl %r: glossiness map of PBR mode off read as in PBR mode" % (m.name,), ir)
     if _num(m, 126, 0, 0.0) > 0 or slot(148, 168, None) is not None:
         conv.issue(m.index, "CoronaLegacyMtl %r: translucency not converted" % (m.name,), ir)
     if t > 0 and _num(m, 188, 0, 0.0) > 0:
