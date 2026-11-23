@@ -672,7 +672,9 @@ class _Tree:
     def tir_weight(self, bsdf, weight, y):
         """The weight raised to 1 where the glass reflects totally (a Fresnel node at bsdf's IOR and normal above
         TIR_FRESNEL): Cycles' Refraction BSDF is black there, where the Principled reflects everything. Math nodes
-        (TIR_LABEL): GREATER_THAN, then MAXIMUM of the weight (input 0) and that mask (input 1); its output."""
+        (TIR_LABEL): GREATER_THAN, then MAXIMUM of the weight (input 0) and that mask (input 1); its output. The
+        whole Mix factor follows, so with a Transmission Weight below 1 the mask shows bsdf alone there, not the
+        twin's share without transmission: intended, but not measured on such glass."""
         fresnel = self.nodes.new("ShaderNodeFresnel")
         greater = self.nodes.new("ShaderNodeMath")
         maximum = self.nodes.new("ShaderNodeMath")

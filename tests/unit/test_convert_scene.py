@@ -475,6 +475,10 @@ class RimCornersPeak(unittest.TestCase):
             self.assertEqual(conv.rim_corners(*mesh, 45.0, check=check), _rim_corners_whole(*mesh, 45.0))
         self.assertTrue({"slot", "oa", "ob", "faces"} <= set(seen), seen)
 
+    def test_corner_cap_fits_int32(self):
+        # rim_corners and _open_loops count face corners in int32 (ends, following), which wraps silently past 2**31
+        self.assertLess(conv.geometry.MAX_LOOPS, 2 ** 31)
+
     def test_peak_at_open_loops_level(self):
         # rim_corners calls _open_loops, so the peak is at least its own; past it, at_vertex (24 bytes per boundary
         # vertex) and one chunk's temporaries reach about 1.02 x at this size: 1.25 leaves room for numpy versions,
