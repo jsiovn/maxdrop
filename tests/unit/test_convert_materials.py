@@ -863,6 +863,88 @@ class Standard(unittest.TestCase, Close):
                 conv, ir = _convert(_standard(0, sid, shader))
                 self.close(ir.base_color.value, (0.8, 0.4, 0.2))
 
+    # Diffuse Level map channels (zero-based, docs/FORMAT.md; fixture standard_maps).
+    LEVEL_CHANNEL = {classids.ANISOTROPIC_SHADER: 3, classids.MULTI_LAYER_SHADER: 2,
+                     classids.OREN_NAYAR_BLINN_SHADER: 8, classids.TRANSLUCENT_SHADER: 8}
+
+    def test_diffuse_map_takes_the_level(self):
+        """3ds Max scales the mapped diffuse by the level too (Default Scanline, maxdrop-em3.150): the diffuse
+        MapRef's scale is the level as the swatch rule makes it (the level itself with the gamma on, its sRGB decode,
+        not clamped, with it off); 1 at level 1 (the MapRef of a material without a level) and on Blinn."""
+        for sid, pid in self.DIFFUSE_LEVEL.items():
+            ids = mat.SHADERS[sid]
+            for sw in (colors.GAMMA_ON, colors.GAMMA_OFF):
+                for level in (0.5, 1.5, 1.0):
+                    with self.subTest(sid=sid, linear=sw.linear, level=level):
+                        m = _standard(0, sid, {ids.diffuse: (0.8, 0.4, 0.2), pid: level},
+                                      maps={1: (Ref(1), 1, 0.7)})
+                        conv = mat.MaterialConverter(FakeGraph(m, _map(1)), swatches=sw)
+                        ir = conv.convert(0)
+                        want = level if sw.linear else colors.srgb_to_linear(level)
+                        self.assertEqual((ir.base_color.map.index, ir.base_color.map.invert), (1, False))
+                        self.close(ir.base_color.map.amount, 0.7)
+                        self.close(ir.base_color.map.scale, want)
+                        if level == 1.0:
+                            self.assertEqual(ir.base_color.map, mat.MapRef(1, 0.7, False))
+                        self.assertIsNone(ir.diffuse_level, "no Diffuse Level map")
+        conv, ir = _convert(_standard(0, classids.BLINN_SHADER, {1: (0.8, 0.4, 0.2), 4: 0.5, 7: 0.5, 8: 0.5},
+                                      maps={1: (Ref(1), 1, 0.7)}), _map(1))
+        self.assertEqual(ir.base_color.map, mat.MapRef(1, 0.7, False))
+
+    def test_diffuse_map_level_with_the_gamma_off(self):
+        """With the gamma off 3ds Max scales the stored value, Blender's map is decoded: the decoded map times the
+        decoded level stays within 0.006 linear of the decoded product for levels up to 100 % (a plain x level is
+        up to 0.13 too bright), so a flat diffuse map equal to the swatch imports about as the swatch does."""
+        worst = 0.0
+        for p in range(1, 101):
+            for level in range(5, 101, 5):
+                p_, l_ = p / 100.0, level / 100.0
+                worst = max(worst, abs(colors.srgb_to_linear(p_) * colors.srgb_to_linear(l_)
+                                       - colors.srgb_to_linear(p_ * l_)))
+        self.assertLess(worst, 0.006)
+        sid = classids.OREN_NAYAR_BLINN_SHADER
+        m = _standard(0, sid, {1: (0.6, 0.4, 0.2), 8: 0.5}, maps={1: (Ref(1), 1, 1.0)})
+        ir = mat.MaterialConverter(FakeGraph(m, _map(1)), swatches=colors.GAMMA_OFF).convert(0)
+        flat = tuple(colors.srgb_to_linear(c) * ir.base_color.map.scale for c in (0.6, 0.4, 0.2))
+        for a, b in zip(flat, ir.base_color.value):
+            self.assertAlmostEqual(a, b, delta=0.006)
+
+    def test_diffuse_level_map(self):
+        """A Diffuse Level map replaces the level by its amount (lerp(level, map, amount), Default Scanline,
+        maxdrop-em3.150): ir.diffuse_level holds the swatch at level 1, the level as the swatch rule makes it and the
+        map; the base color's value and its map's scale stay what they are without it (the fallback)."""
+        for sid, channel in self.LEVEL_CHANNEL.items():
+            ids = mat.SHADERS[sid]
+            pid = self.DIFFUSE_LEVEL[sid]
+            for sw in (colors.GAMMA_ON, colors.GAMMA_OFF):
+                with self.subTest(sid=sid, linear=sw.linear):
+                    m = _standard(0, sid, {ids.diffuse: (0.8, 0.4, 0.2), pid: 0.5},
+                                  maps={1: (Ref(1), 1, 0.7), channel: (Ref(2), 1, 0.6)})
+                    conv = mat.MaterialConverter(FakeGraph(m, _map(1), _map(2)), swatches=sw)
+                    ir = conv.convert(0)
+                    k = 0.5 if sw.linear else colors.srgb_to_linear(0.5)
+                    self.close(ir.base_color.value, sw.color((0.4, 0.2, 0.1)))
+                    self.close(ir.base_color.map.scale, k)
+                    lv = ir.diffuse_level
+                    self.assertIsNotNone(lv)
+                    self.close(lv.color, sw.color((0.8, 0.4, 0.2)), "the swatch at level 1")
+                    self.close(lv.level, k)
+                    self.assertEqual((lv.map.index, lv.map.invert, lv.map.scale), (2, False, 1.0))
+                    self.close(lv.map.amount, 0.6)
+                    self.assertEqual(conv.stats.issues, [])
+        sid = classids.OREN_NAYAR_BLINN_SHADER
+        for maps in ({8: (Ref(2), 0, 1.0)}, {}):  # switched off, empty: no level map, no diffuse map either
+            with self.subTest(maps=maps):
+                conv, ir = _convert(_standard(0, sid, {1: (0.8, 0.4, 0.2), 8: 0.5}, maps=maps), _map(2))
+                self.assertIsNone(ir.diffuse_level)
+                self.assertIsNone(ir.base_color.map)
+        conv, ir = _convert(_standard(0, sid, {1: (0.8, 0.4, 0.2), 8: 0.5}, maps={8: (Ref(2), 1, 1.0)}), _map(2))
+        self.assertIsNone(ir.base_color.map)
+        self.assertEqual(ir.diffuse_level.map, mat.MapRef(2, 1.0, False))  # a level map alone
+        conv, ir = _convert(_standard(0, classids.BLINN_SHADER, {1: (0.8, 0.4, 0.2)}, maps={8: (Ref(2), 1, 1.0)}),
+                            _map(2))
+        self.assertIsNone(ir.diffuse_level, "Blinn has no Diffuse Level channel: 8 is its bump")
+
     def test_shader_defaults(self):
         """A shader block without its values: each shader's own defaults, as 3ds Max 2020 creates them (diffuse
         150 / 255 or 127.5 / 255 grey, glossiness, specular level times the 0.9 specular color)."""
@@ -885,17 +967,24 @@ class Standard(unittest.TestCase, Close):
                 self.assertEqual(conv.stats.issues, [])
 
     # Each shader's map channels (zero-based, measured in 3ds Max 2020, docs/FORMAT.md): diffuse, specular color,
-    # specular level, glossiness, self-illumination, opacity, bump, reflection, metalness; None: no such channel.
+    # specular level, glossiness, self-illumination, opacity, bump, reflection, metalness, diffuse level; None: no
+    # such channel.
     CHANNELS = {
-        classids.BLINN_SHADER: (1, 2, 3, 4, 5, 6, 8, 9, None),
-        classids.PHONG_SHADER: (1, 2, 3, 4, 5, 6, 8, 9, None),
-        classids.METAL_SHADER: (1, 2, 3, 4, 5, 6, 8, 9, None),
-        classids.ANISOTROPIC_SHADER: (1, 2, 4, 5, 8, 9, 11, 12, None),
-        classids.MULTI_LAYER_SHADER: (1, 4, 5, 6, 14, 15, 17, 18, None),  # the first specular layer
-        classids.OREN_NAYAR_BLINN_SHADER: (1, 2, 4, 3, 5, 6, 10, 11, None),
-        classids.TRANSLUCENT_SHADER: (1, 2, 4, 3, 5, 6, 10, 11, None),
-        classids.STRAUSS_SHADER: (0, None, None, 1, None, 3, 5, 6, 2),
+        classids.BLINN_SHADER: (1, 2, 3, 4, 5, 6, 8, 9, None, None),
+        classids.PHONG_SHADER: (1, 2, 3, 4, 5, 6, 8, 9, None, None),
+        classids.METAL_SHADER: (1, 2, 3, 4, 5, 6, 8, 9, None, None),
+        classids.ANISOTROPIC_SHADER: (1, 2, 4, 5, 8, 9, 11, 12, None, 3),
+        classids.MULTI_LAYER_SHADER: (1, 4, 5, 6, 14, 15, 17, 18, None, 2),  # the first specular layer
+        classids.OREN_NAYAR_BLINN_SHADER: (1, 2, 4, 3, 5, 6, 10, 11, None, 8),
+        classids.TRANSLUCENT_SHADER: (1, 2, 4, 3, 5, 6, 10, 11, None, 8),
+        classids.STRAUSS_SHADER: (0, None, None, 1, None, 3, 5, 6, 2, None),
     }
+
+    def test_slot_table(self):
+        """mat.STD_SLOTS is the table above, field by field."""
+        self.assertEqual(set(mat.STD_SLOTS), set(self.CHANNELS))
+        for sid, channels in self.CHANNELS.items():
+            self.assertEqual(tuple(mat.STD_SLOTS[sid]), channels, sid)
 
     def test_map_slots(self):
         """Every shader reads its own channels: a map in each read channel (object = its field's number + 1, at
@@ -906,9 +995,9 @@ class Standard(unittest.TestCase, Close):
                 for field, k in enumerate(channels):
                     if k is not None:
                         maps[k] = (Ref(field + 1), 1, 0.5 + field / 100.0)
-                objs = [_map(i) for i in range(1, 10)] + [_map(50 + k) for k in range(21)]
+                objs = [_map(i) for i in range(1, 11)] + [_map(50 + k) for k in range(21)]
                 conv, ir = _convert(_standard(0, sid, {}, maps=maps), *objs)
-                diffuse, spec, level, gloss, emit, opacity, bump, refl, metal = channels
+                diffuse, spec, level, gloss, emit, opacity, bump, refl, metal, diffuse_level = channels
                 self.assertEqual(ir.base_color.map, mat.MapRef(1, 0.50, False))
                 self.assertEqual(ir.roughness.map, mat.MapRef(4, 0.53, True))  # a glossiness map: inverted
                 self.assertEqual(ir.specular.map, None if level is None else mat.MapRef(3, 0.52, False))
@@ -923,6 +1012,8 @@ class Standard(unittest.TestCase, Close):
                     self.close(ir.emission_strength, 1.0, "a self-illumination map drives the emission")
                 self.assertEqual(ir.bump, mat.MapRef(7, 0.56, False))
                 self.assertEqual(ir.metallic.map, None if metal is None else mat.MapRef(9, 0.58, False))
+                self.assertEqual(None if ir.diffuse_level is None else ir.diffuse_level.map,
+                                 None if diffuse_level is None else mat.MapRef(10, 0.59, False))
                 self.assertEqual(conv.stats.issues, [])
 
     def test_specular_color_map_without_a_level_map(self):
@@ -970,6 +1061,12 @@ class StandardMaps(unittest.TestCase, Close):
     FIELDS = {"diffuse": "Diffuse", "specular": "Specular", "level": "Level", "glossiness": "Glossiness",
               "self_illum": "SelfIllum", "opacity": "Opacity", "bump": "Bump", "reflection": "Reflection",
               "metalness": "Metalness"}
+    # The Diffuse Level materials (maxdrop-em3.150): shader, Diffuse Level, diffuse map amount, Diffuse Level map
+    # amount (None: none or switched off), as the script sets them.
+    LEVEL = {"LevelAnisotropic": ("ANISOTROPIC_SHADER", 0.40, 0.61, 0.62),
+             "LevelMultiLayer": ("MULTI_LAYER_SHADER", 1.50, 0.63, 1.0),
+             "LevelOrenNayarBlinn": ("OREN_NAYAR_BLINN_SHADER", 0.65, 0.65, None),  # its level map switched off
+             "LevelTranslucent": ("TRANSLUCENT_SHADER", 0.80, 0.66, None)}
 
     @classmethod
     def setUpClass(cls):
@@ -977,7 +1074,7 @@ class StandardMaps(unittest.TestCase, Close):
         with cf:
             cls.conv = mat.MaterialConverter(cls.graph)
             cls.irs = {n: cls.conv.convert(cls.by_name["FixtureMaps" + n])
-                       for n in list(cls.LABELS) + ["UnsetAmounts", "SwitchedAfter", "SwitchedOff"]}
+                       for n in list(cls.LABELS) + ["UnsetAmounts", "SwitchedAfter", "SwitchedOff"] + list(cls.LEVEL)}
 
     def map(self, label, field, amount, invert=False):
         return mat.MapRef(self.by_name["FixtureMap" + label + field], amount, invert)
@@ -1061,6 +1158,30 @@ class StandardMaps(unittest.TestCase, Close):
         ir = self.irs["SwitchedOff"]
         self.same_map(ir.emission_color.map, self.map("SwitchedOff", "SelfIllum", 1.0), "self-illumination")
         self.assertIsNone(ir.bump)
+
+    def test_diffuse_level_maps(self):
+        """The Level materials by hand (saved with the gamma off): the diffuse swatch 150 120 90 times the level
+        (clamped, then decoded), the diffuse map scaled by the decoded level, the Diffuse Level map with its amount
+        and the swatch at level 1; none where it is switched off or missing."""
+        for name, (shader, level, diffuse_amount, level_amount) in self.LEVEL.items():
+            with self.subTest(name):
+                ir = self.irs[name]
+                k = colors.srgb_to_linear(level)
+                self.close(ir.base_color.value, _srgb(*(min(255.0, c * level) for c in (150, 120, 90))))
+                self.same_map(ir.base_color.map, self.map(name, "Diffuse", diffuse_amount), "diffuse")
+                self.close(ir.base_color.map.scale, k, "the decoded level")
+                if level_amount is None:
+                    self.assertIsNone(ir.diffuse_level)
+                    continue
+                lv = ir.diffuse_level
+                self.same_map(lv.map, self.map(name, "DiffuseLevel", level_amount), "Diffuse Level map")
+                self.assertEqual(lv.map.scale, 1.0)
+                self.close(lv.level, k)
+                self.close(lv.color, _srgb(150, 120, 90), "the swatch at level 1")
+                m = self.graph.get(self.by_name["FixtureMaps" + name])
+                self.assertEqual(m.param(1, 3, tab=mat.STD_SLOTS[getattr(classids, shader)].diffuse_level).index,
+                                 self.by_name["FixtureMap" + name + "DiffuseLevel"], "the slot table's channel")
+        self.assertIn("FixtureMapLevelOrenNayarBlinnDiffuseLevel", self.by_name, "the switched-off map is saved")
 
     def test_no_issues(self):
         self.assertEqual((self.conv.stats.issues, dict(self.conv.stats.unknown)), ([], {}))

@@ -681,6 +681,55 @@ class Synthetic(Checks):
         g = tex.convert(mat.MapRef(1, 0.25), tx.BUMP)
         self.assertEqual(g.root.strength, 0.25)
 
+    def test_slot_scale(self):
+        """MapRef.scale (Standard's Diffuse Level on a diffuse map) multiplies the map before the amount mixes it with
+        the input's value; 1 leaves the graph as it was."""
+        tex = _tex(_bitmap(1))
+        g = tex.convert(mat.MapRef(1, 1.0, False, 0.5), tx.COLOR, (0.4, 0.2, 0.1))
+        self.assertEqual(g.root, tx.Multiply(g.root.a, tx.Constant((0.5, 0.5, 0.5))))
+        self.assertIsInstance(g.root.a, tx.Image)
+        g = tex.convert(mat.MapRef(1, 0.25, False, 0.5), tx.COLOR, (0.4, 0.2, 0.1))
+        self.assertEqual((g.root.a, g.root.factor), (tx.Constant((0.4, 0.2, 0.1)), 0.25))
+        self.assertEqual(g.root.b, tx.Multiply(g.root.b.a, tx.Constant((0.5, 0.5, 0.5))))
+        self.assertEqual(tex.convert(mat.MapRef(1, 0.25, False, 1.0), tx.COLOR, (0.4, 0.2, 0.1)),
+                         tex.convert(mat.MapRef(1, 0.25), tx.COLOR, (0.4, 0.2, 0.1)))
+
+    def level_ir(self, diffuse, level_map, level=0.25, color=(0.8, 0.4, 0.2)):
+        ir = mat.MaterialIR(0, "S", base_color=mat.Input(tuple(c * level for c in color), diffuse))
+        ir.diffuse_level = mat.DiffuseLevel(color, level, level_map)
+        return ir
+
+    def test_diffuse_level_map(self):
+        """A Diffuse Level map (maxdrop-em3.150): base color = the diffuse at level 1 times the mean of
+        lerp(level, the map, its amount); each side kept over its constant where its images are missing."""
+        mean = (1.0 / 3.0,) * 3
+        tex = _tex(_bitmap(1), _bitmap(2, G1))
+        ir = self.level_ir(mat.MapRef(1, 0.5, False, 0.25), mat.MapRef(2, 0.6))
+        g = tx.texture_graphs(ir, tex)["base_color"]
+        self.assertEqual(g.kind, tx.COLOR)
+        d, f = g.root.a, g.root.b
+        self.assertIsInstance(g.root, tx.Multiply)
+        self.assertEqual((d.a, d.factor), (tx.Constant((0.8, 0.4, 0.2)), 0.5), "the diffuse at level 1")
+        self.assertIsInstance(d.b, tx.Image, "no scale under the level map")
+        self.assertEqual((f.red, f.green, f.blue), (mean, mean, mean))
+        self.assertEqual((f.input.a, f.input.factor), (tx.Constant(0.25), 0.6))
+        self.assertIsInstance(f.input.b, tx.Image)
+        self.assertEqual(f.input.b.colorspace, tx.SRGB, "a mask: decoded with the gamma off")
+        # full amounts: each bare map kept over its constant by a Mix at factor 1
+        ir = self.level_ir(mat.MapRef(1, 1.0, False, 0.25), mat.MapRef(2, 1.0))
+        g = tx.texture_graphs(ir, tex)["base_color"]
+        self.assertEqual((g.root.a.a, g.root.a.factor), (tx.Constant((0.8, 0.4, 0.2)), 1.0))
+        self.assertEqual((g.root.b.input.a, g.root.b.input.factor), (tx.Constant(0.25), 1.0))
+        # no diffuse map: the swatch at level 1
+        g = tx.texture_graphs(self.level_ir(None, mat.MapRef(2, 1.0)), tex)["base_color"]
+        self.assertEqual(g.root.a, tx.Constant((0.8, 0.4, 0.2)))
+        # a level map that gives no graph: the diffuse map times the level, as without it
+        tex = _tex(_bitmap(1), FakeMap(2, (0x1234, 0), cls="Unknown"))
+        ir = self.level_ir(mat.MapRef(1, 0.5, False, 0.25), mat.MapRef(2, 1.0))
+        self.assertEqual(tx.texture_graphs(ir, tex)["base_color"], tex.convert(ir.base_color.map, tx.COLOR,
+                                                                               ir.base_color.value))
+        self.assertNotIn("base_color", tx.texture_graphs(self.level_ir(None, mat.MapRef(2, 1.0)), tex))
+
     def test_normal_map_in_a_color_input_is_its_image(self):
         n = FakeMap(1, classids.VRAY_NORMAL_MAP, {0: Ref(2), 2: 1, 3: 1.0}, [2], cls="VRayNormalMap")
         tex = _tex(n, _bitmap(2))

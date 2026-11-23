@@ -121,9 +121,13 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
   graph; an RGB Multiply and a Falloff (its sides show by the angle) are always peeled that way. A lost mask
   leaves the mix amount, a lost Composite layer is left out (both approximations); a normal map class keeps its
   other map.
-- The slot itself: a glossiness map feeding roughness (MapRef.invert) is under an Invert; a slot amount below 1 mixes
+- The slot itself: a glossiness map feeding roughness (MapRef.invert) is under an Invert; a MapRef.scale other than 1
+  (Standard's Diffuse Level) multiplies the map; a slot amount below 1 mixes
   the input's value with the map (Mix(Constant(value), map, amount)), above 1 multiplies the map; in a bump input the
-  amount is the Bump's strength, in a normal input it scales the NormalMap's strengths.
+  amount is the Bump's strength, in a normal input it scales the NormalMap's strengths. A Standard material's
+  Diffuse Level map (materials.DiffuseLevel) makes the base color graph Multiply(the diffuse at level 1, a Tint of
+  rows 1/3 (the mean) over lerp(level, the map as a MASK, its amount)), each side over its constant where its
+  images are missing (_leveled).
 
 Each map object counts at most once in stats.peeled or stats.unsupported, each issue once in stats.issues. The file
 comes from anywhere: a reference cycle, a chain deeper than MAX_DEPTH, a reference to an object that is not a map or
@@ -774,6 +778,8 @@ class TexmapConverter:
             return NormalMap(root, amount)
         if kind == COLOR and isinstance(value, (int, float)) and not isinstance(value, bool):
             value = (float(value),) * 3  # a color graph is RGB throughout, also on a float input
+        if ref.scale != 1.0:
+            root = Multiply(root, Constant((ref.scale,) * 3 if kind == COLOR else ref.scale))
         if amount < 1.0 and value is not None:
             return Mix(Constant(value), root, amount)
         if amount > 1.0:
@@ -1714,6 +1720,38 @@ SLOT_KINDS = (("base_color", COLOR), ("metallic", DATA), ("roughness", DATA), ("
               ("transmission", COLOR), ("emission_color", COLOR), ("alpha", DATA))
 
 
+MEAN_ROW = (1.0 / 3.0,) * 3  # a Tint of these rows gives the mean of the channels in each
+
+
+def _kept(root, value):
+    """root, or Constant(value) where its images are missing: a slot Mix over a constant has it already, a bare map
+    goes under a Mix at factor 1 over it (the builder draws the constant for a missing side)."""
+    if isinstance(root, Constant) or (isinstance(root, Mix) and root.mask is None and isinstance(root.a, Constant)):
+        return root
+    return Mix(Constant(value), root, 1.0)
+
+
+def _leveled(ir, tex):
+    """The base color graph of a Standard material with a Diffuse Level map (materials.DiffuseLevel): the diffuse at
+    level 1 (the swatch with the diffuse map mixed over it by its amount, without its scale) times the mean of
+    lerp(level, the map, its amount), the map a MASK (decoded with the gamma off, as the level is). None when the
+    level map gives no graph or the product is past MAX_NODES: the diffuse then takes the level alone."""
+    lv = ir.diffuse_level
+    f = tex.convert(lv.map, MASK, lv.level)
+    if f is None:
+        return None
+    color = tuple(lv.color)
+    ref = ir.base_color.map
+    d = tex.convert(dataclasses.replace(ref, scale=1.0), COLOR, color) if ref is not None else None
+    root = Multiply(Constant(color) if d is None else _kept(d.root, color),
+                    Tint(_kept(f.root, lv.level), MEAN_ROW, MEAN_ROW, MEAN_ROW))
+    if tree_size(root) > MAX_NODES:
+        return None
+    parts = [g for g in (d, f) if g is not None]
+    issues = tuple(dict.fromkeys(i for g in parts for i in g.issues))
+    return TextureGraphIR(root, COLOR, any(g.approximated for g in parts), issues)
+
+
 def texture_graphs(ir, tex):
     """{input name: TextureGraphIR} for the inputs of a MaterialIR that a usable map drives."""
     out = {}
@@ -1723,6 +1761,10 @@ def texture_graphs(ir, tex):
             g = tex.convert(inp.map, kind, inp.value)
             if g is not None:
                 out[name] = g
+    if ir.diffuse_level is not None:
+        g = _leveled(ir, tex)
+        if g is not None:
+            out["base_color"] = g
     for name, kind in (("normal", NORMAL), ("bump", BUMP)):
         ref = getattr(ir, name)
         if ref is not None:

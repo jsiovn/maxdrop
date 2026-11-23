@@ -50,7 +50,9 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   linear specular color.
 - Standard: the colors come from its shader (ids per shader class in SHADERS; Metal is a metal, Strauss has a
   metalness and no specular level: specular 1, the IOR's own Fresnel); base = diffuse (Anisotropic, Multi-Layer,
-  Oren-Nayar-Blinn, Translucent: the swatch times the Diffuse Level, before the swatch rule); roughness = 1 -
+  Oren-Nayar-Blinn, Translucent: the swatch times the Diffuse Level, before the swatch rule; a diffuse map times
+  the level as the swatch rule makes it (MapRef.scale); a Diffuse Level map replaces the level by its amount,
+  ir.diffuse_level, maxdrop-em3.150); roughness = 1 -
   glossiness; specular = specular level times the mean of the linear specular color; a missing or animated diffuse,
   glossiness or specular level takes its shader's default (SHADER_DEFAULTS); alpha = opacity; self-illumination: its
   color at strength 1, or the diffuse as set (not scaled) at the amount; two-sided flag; map slots with their
@@ -236,17 +238,19 @@ PHYSICAL_SWITCH = 50
 # Standard map slots: the channel in the Texmaps object (reader.materials.standard_maps) and the index into block 3's
 # tables (mapEnables 0, maps 1, mapAmounts 2), both following the shader's own map channels (docs/FORMAT.md;
 # fixture standard_maps); None: the shader has no such channel. A shader without a rule is read with Blinn's.
+# diffuse_level: the Diffuse Level map, on the shaders with a Diffuse Level (SHADERS).
 StdSlots = collections.namedtuple(
-    "StdSlots", "diffuse specular level glossiness self_illum opacity bump reflection metalness")
+    "StdSlots", "diffuse specular level glossiness self_illum opacity bump reflection metalness diffuse_level",
+    defaults=(None,))
 _BLINN_SLOTS = StdSlots(1, 2, 3, 4, 5, 6, 8, 9, None)
-_ONB_SLOTS = StdSlots(1, 2, 4, 3, 5, 6, 10, 11, None)  # Oren-Nayar-Blinn, Translucent Shader
+_ONB_SLOTS = StdSlots(1, 2, 4, 3, 5, 6, 10, 11, None, 8)  # Oren-Nayar-Blinn, Translucent Shader
 STD_SLOTS = {
     classids.PHONG_SHADER: _BLINN_SLOTS,
     classids.BLINN_SHADER: _BLINN_SLOTS,
     classids.METAL_SHADER: _BLINN_SLOTS,
-    classids.ANISOTROPIC_SHADER: StdSlots(1, 2, 4, 5, 8, 9, 11, 12, None),
+    classids.ANISOTROPIC_SHADER: StdSlots(1, 2, 4, 5, 8, 9, 11, 12, None, 3),
     classids.OREN_NAYAR_BLINN_SHADER: _ONB_SLOTS,
-    classids.MULTI_LAYER_SHADER: StdSlots(1, 4, 5, 6, 14, 15, 17, 18, None),  # the first specular layer
+    classids.MULTI_LAYER_SHADER: StdSlots(1, 4, 5, 6, 14, 15, 17, 18, None, 2),  # the first specular layer
     classids.TRANSLUCENT_SHADER: _ONB_SLOTS,
     classids.STRAUSS_SHADER: StdSlots(0, None, None, 1, None, 3, 5, 6, 2),
 }
@@ -255,11 +259,23 @@ STD_SPECULAR_DEFAULT = (0.9, 0.9, 0.9)
 
 @dataclasses.dataclass(frozen=True)
 class MapRef:
-    """A map object driving an input: its object index, the slot's amount (1 = full) and whether the map holds the
-    inverse of the input (a glossiness map feeding roughness)."""
+    """A map object driving an input: its object index, the slot's amount (1 = full), whether the map holds the
+    inverse of the input (a glossiness map feeding roughness) and a factor on the map before the amount mixes it
+    with the input's value (Standard's Diffuse Level on a diffuse map, linear; 1: none)."""
     index: int
     amount: float = 1.0
     invert: bool = False
+    scale: float = 1.0
+
+
+@dataclasses.dataclass(frozen=True)
+class DiffuseLevel:
+    """Standard's Diffuse Level map: 3ds Max renders the diffuse at level 1 (color: the swatch, linear, with the
+    diffuse map mixed over it by its amount) times lerp(level, the mean of the map, its amount) (maxdrop-em3.150).
+    level: the Diffuse Level as the swatch rule makes it, not clamped; map: the MapRef of the Diffuse Level map."""
+    color: tuple
+    level: float
+    map: MapRef
 
 
 @dataclasses.dataclass(frozen=True)
@@ -289,6 +305,7 @@ class MaterialIR:
     emission_strength: float = 0.0
     alpha: Input = Input(1.0)
     normal: object = None  # MapRef of a normal map
+    diffuse_level: object = None  # DiffuseLevel of a Standard material with a Diffuse Level map
     bump: object = None  # MapRef of a height map
     subsurface_weight: float = 0.0
     subsurface_color: tuple = (1.0, 1.0, 1.0)
@@ -876,7 +893,7 @@ def standard_mtl(conv, m, ir):
     emit_map = _std_map(conv, m, slots.self_illum, ir, channels=ch)
     specular, amount, emit = 0.0, 0.0, None
     d = SHADER_DEFAULTS.get(sid, _BLINN_DEFAULTS)
-    base = None
+    base, level = None, 1.0
     if sid == classids.STRAUSS_SHADER:
         diffuse, gloss = conv.rgb(s, 0, 0, d.diffuse), _num(s, 1, 0, d.glossiness)
         ir.metallic = Input(_clamp01(_num(s, 2, 0, 0.0)), _std_map(conv, m, slots.metalness, ir, channels=ch))
@@ -887,7 +904,8 @@ def standard_mtl(conv, m, ir):
         if ids.diffuse_level is not None:
             # 3ds Max shades with swatch x level (not clamped; Default Scanline, gamma off: linear in the stored
             # value), so the level applies before the swatch rule; the self-illumination keeps the swatch as set.
-            base = conv.rgb(s, ids.diffuse, 0, d.diffuse, max(0.0, _num(s, ids.diffuse_level, 0, 1.0)))
+            level = max(0.0, _num(s, ids.diffuse_level, 0, 1.0))
+            base = conv.rgb(s, ids.diffuse, 0, d.diffuse, level)
         specular = max(0.0, _num(s, ids.level, 0, d.level)) * mean(conv.rgb(s, ids.specular, 0, STD_SPECULAR_DEFAULT))
         if _flag(s, ids.use_si_color, 0, False):
             emit = conv.rgb(s, ids.si_color, 0, (0.0, 0.0, 0.0))
@@ -899,7 +917,16 @@ def standard_mtl(conv, m, ir):
         diffuse, gloss = conv.swatches.color(d.diffuse), d.glossiness
         conv.issue(m.index, "Standard: shader %s has no rule: its defaults" % (
             "missing" if sid is None else "ClassID%s" % (sid,)), ir)
-    ir.base_color = Input(diffuse if base is None else base, _std_map(conv, m, slots.diffuse, ir, channels=ch))
+    # A mapped diffuse is scaled by the level too, in the stored value: the map, decoded in Blender, takes the level
+    # as the swatch rule makes it (an approximation with the gamma off: the sRGB curve of a product is not a product).
+    diffuse_map = _std_map(conv, m, slots.diffuse, ir, channels=ch)
+    k = level if conv.swatches.linear else colors.srgb_to_linear(level)
+    if diffuse_map is not None and k != 1.0:
+        diffuse_map = dataclasses.replace(diffuse_map, scale=k)
+    ir.base_color = Input(diffuse if base is None else base, diffuse_map)
+    diffuse_level_map = _std_map(conv, m, slots.diffuse_level, ir, channels=ch)
+    if diffuse_level_map is not None:
+        ir.diffuse_level = DiffuseLevel(diffuse, k, diffuse_level_map)
     ir.roughness = Input(_roughness(gloss, False), gloss_map)
     reflection = _std_map(conv, m, slots.reflection, ir, channels=ch)
     if reflection is not None:
