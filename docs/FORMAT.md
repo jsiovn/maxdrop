@@ -1470,9 +1470,12 @@ picker and Material Editor switches off).
   So a normal or bump input takes an image as a data input does (the same rule for Bitmap and CoronaBitmap in
   Corona 12), except a VRayBitmap below a normal map, which V-Ray reads as stored. One reading MaxDrop does not
   follow: a VRayBitmap From 3ds Max directly in a VRayMtl bump slot with the gamma off is decoded (below
-  VRayNormalMap's bump input it is stored, as on a data input). V-Ray bends a decoded tilt over about 44 degrees
-  back toward the surface (the tilted map decoded: 44.2 degrees for 59.2, the decoded azimuth). The rule is in
-  `maxdrop/convert/texmaps.py` (colorspace, `_vray_image`, `_add_gamma`).
+  VRayNormalMap's bump input it is stored, as on a data input; maxdrop-6n0.6.19). V-Ray bends a normal tilted over
+  about 44 degrees back toward the surface: the tilted map decoded renders 44.2 degrees for 59.2, and so does that
+  decoded normal stored in a file read at 1.0 (V-Ray's limit, not the decode; MaxDrop draws it unbent). The rule is
+  in `maxdrop/convert/texmaps.py` (colorspace, `_vray_image`, `_add_gamma`). Blender 5.2 renders (EEVEE and Cycles)
+  of the V-Ray probe scenes imported by MaxDrop: every normal plane within 0.32 degrees of V-Ray except those tilted
+  past that limit; every height plane with V-Ray's stored or decoded slope pattern except the one above.
 
 ## Summary properties
 
