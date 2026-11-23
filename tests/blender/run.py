@@ -3177,6 +3177,82 @@ def check_builder_multiply():
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def check_builder_diffuse_level():
+    """A Standard material's Diffuse Level map (bead maxdrop-em3.150): texmaps._leveled's base color graph, drawn.
+    Images found: a color Mix MULTIPLY whose A is the diffuse (a Mix at factor 1 over the swatch, its B the diffuse
+    image) and whose B is the mean (a Tint of rows 1/3) of a Mix of the level and the level image by the amount.
+    Images missing: the swatch (unlinked A) times the level's Tint."""
+    from maxdrop.build import materials as build_materials
+    from maxdrop.convert import materials as cm
+    from maxdrop.convert import texmaps as tx
+    from maxdrop.convert import textures as ct
+    empty_scene()
+    for img in list(bpy.data.images):
+        bpy.data.images.remove(img)
+    scratch = tempfile.mkdtemp(prefix="maxdrop-level-")
+    try:
+        png = os.path.join(scratch, "level.png")
+        _write_png(png)
+        for present in (True, False):
+            found = ct.Found(png, ct.SCENE) if present else None
+            diffuse = tx.Image(1, "level.png", "level.png", "", found)
+            level_map = tx.Image(2, "level.png", "level.png", "", found, mapping=tx.Mapping(tiling=(2.0, 2.0)))
+
+            class Tex:  # what TexmapConverter.convert gives for the two slots, as its _slot makes them
+                def convert(self, ref, kind, value=None):
+                    if kind == tx.MASK:
+                        return tx.TextureGraphIR(tx.Mix(tx.Constant(value), level_map, ref.amount), kind)
+                    return tx.TextureGraphIR(diffuse, kind)
+
+            color = (0.6, 0.4, 0.2)
+            ir = cm.MaterialIR(53, "DiffuseLevel", "test",
+                               base_color=cm.Input(tuple(c * 0.25 for c in color), cm.MapRef(1, 1.0, False, 0.25)))
+            ir.diffuse_level = cm.DiffuseLevel(color, 0.25, cm.MapRef(2, 0.6))
+            ir.textures = {"base_color": tx._leveled(ir, Tex())}
+            tag = "diffuse level (%s): " % ("images" if present else "images missing")
+            m = build_materials.MaterialBuilder().make(ir)
+            check(tag + "material built", m is not None)
+            if m is None:
+                continue
+            p = _principled(m)
+            mul = _from(p.inputs["Base Color"])
+            ok = mul is not None and mul.bl_idname == "ShaderNodeMix" and mul.blend_type == 'MULTIPLY'
+            check(tag + "Base Color is a color Mix MULTIPLY", ok, getattr(mul, "bl_idname", None))
+            if not ok:
+                continue
+            a, b = _input(mul, "A_Color"), _input(mul, "B_Color")
+            check(tag + "the level side is the Tint's sum (a Vector Math ADD)",
+                  b.is_linked and _from(b).bl_idname == "ShaderNodeVectorMath" and _from(b).operation == 'ADD')
+            scales = [n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeVectorMath" and n.operation == 'SCALE']
+            check(tag + "three Tint rows of 1/3",
+                  len(scales) == 3 and all(close(list(_input(n, "Vector").default_value), [1 / 3.0] * 3, 1e-6)
+                                           for n in scales), str(len(scales)))
+            images = sorted(n.label for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage"
+                            and any(o.is_linked for o in n.outputs))
+            if present:
+                dmix = _from(a)
+                check(tag + "the diffuse side: a Mix at factor 1 over the swatch, the image on B",
+                      dmix is not None and dmix.bl_idname == "ShaderNodeMix"
+                      and close([_input(dmix, "Factor_Float").default_value], [1.0], 1e-6)
+                      and close(list(_input(dmix, "A_Color").default_value)[:3], list(color), 1e-6)
+                      and _from(_input(dmix, "B_Color")).bl_idname == "ShaderNodeTexImage")
+                check(tag + "both images feed the graph", len(images) == 2, str(images))
+            else:
+                check(tag + "the diffuse side is the swatch", not a.is_linked
+                      and close(list(a.default_value)[:3], list(color), 1e-6), str(tuple(a.default_value)))
+                check(tag + "no image feeds the graph", images == [], str(images))
+            mixed = _color_into_float(m)
+            check(tag + "no color output linked into a float input", mixed == [], str(mixed))
+            empty_scene()
+            for img in list(bpy.data.images):
+                bpy.data.images.remove(img)
+    finally:
+        empty_scene()
+        for img in list(bpy.data.images):
+            bpy.data.images.remove(img)
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def check_builder_wrapper_constants():
     """A constant below a color wrapper keeps its color (bead maxdrop-em3.128): a Tint over a color Constant on
     Roughness is drawn in color, the mean taken after it (a DOT_PRODUCT fed by the Tint's last ADD); a NormalMap over
@@ -4838,6 +4914,7 @@ def main():
                                  ("builder blend", check_builder_blend), ("builder mono", check_builder_mono),
                                  ("builder blend modes", check_builder_blend_modes),
                                  ("builder multiply", check_builder_multiply),
+                                 ("builder diffuse level", check_builder_diffuse_level),
                                  ("builder wrapper constants", check_builder_wrapper_constants),
                                  ("builder weight", check_builder_weight),
                                  ("builder fresnel off", check_builder_fresnel_off),
