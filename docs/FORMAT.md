@@ -267,7 +267,12 @@ Keyframe controllers (controllers fixture; every class read here is a 3ds Max 20
   (FixtureLinearBetween, keys at -10 and 40: position `[-56, 93, 11]`, scale rows of length 1.1, 1.0, 1.4) and the
   rotation by slerp, the way the stored signs give (controllers_tangents' FixtureLinearRotationWide: 270 degrees about
   Z between keys at -10 and 40 is 54 degrees on at frame 0, not -18; the later key is stored as `[0, 0, -0.707107,
-  -0.707107]`); between two Bezier, TCB or Smooth Rotation keys, the curve below.
+  -0.707107]`). Opposite quaternions (1 + their dot below 5e-7: a whole revolution) turn a whole turn about the
+  earlier key's local Z, whatever axis the turn was made about: `q(f) = cos(pi f) q0 + sin(pi f) (-y0, x0, -w0,
+  z0)` (FixtureLinearRotationTurn, 360 degrees about `[1, 1, 0]`; probes from the identity and from a turned key,
+  turns of 359.9 to 360 degrees); from 1 + dot of 4e-7 to 4e-5 the probes switch between that and the slerp, so a
+  pair with 1 + dot below 1e-3 (within about 5 degrees of a revolution) stays linear with an issue (359 degrees:
+  the slerp is 1.4e-4 off). Between two Bezier, TCB or Smooth Rotation keys, the curve below.
 - Between two Bezier, TCB or Smooth Rotation keys (controllers_tangents, every node within the oracle's 6 digits;
   three probes sampled every 2.5 frames, outside the repo), the record after time and flags (n = the value's
   floats; a step key's value saved at frame 30 holds for its whole segment, so its `0x2500` can hold time 0, a
@@ -280,8 +285,9 @@ Keyframe controllers (controllers fixture; every class read here is a 3ds Max 20
   | TCB Rotation | quaternion, the five TCB values, the axis and angle turned from the previous key, the in and the out control quaternion |
   | Smooth Rotation | quaternion, the in and the out control quaternion (equal), two identity quaternions |
 
-  - Bezier: tangents in value per tick (MAXScript shows them times 30, a scale's times 3000), the in tangent pointing
-    back; every tangent type (smooth, linear, fast, slow, auto, custom) stores the tangent it computed. Flags: the in
+  - Bezier: tangents in value per tick (MAXScript shows them times the frame rate, a scale's times 100 more), the in
+    tangent pointing back; every tangent type (smooth, linear, fast, slow, auto, custom) stores the tangent it
+    computed (but see the Linear tangent in [Open](#open)). Flags: the in
     tangent's type in bits 7-9, the out tangent's in bits 10-12 (0 smooth, 1 linear, 2 step, 3 fast, 4 slow, 5 custom
     and auto), `0x8000` constant velocity, `0x100000` free handle. A length is a fraction of the segment, -1 a third.
     The segment is the cubic through `(t0, v0)`, `(t0 + lo dt, v0 + out lo dt)`, `(t1 - li dt, v1 + in li dt)`,
@@ -290,6 +296,25 @@ Keyframe controllers (controllers fixture; every class read here is a 3ds Max 20
     3ds Max's differ by up to 8.5e-4 next to a steep key and by ~1e-4 between auto keys, cause not known. A step
     out of the earlier key or into the later holds the earlier key's value
     (FixtureBezierFloats' Z). Constant velocity changes nothing on a Bezier Float (a probe).
+  - A free handle (the flag on the key whose handle it is: a free middle key between custom keys fits only so)
+    has its length in frames, measured along the handle in (ticks, stored value) space: its time extent is
+    `L * ticks_per_frame / sqrt(1 + tangent^2)` (FixtureFreeHandles: steep, a free middle key, a handle of 60 frames
+    on a 50-frame segment; FixtureFreePosition, a length per axis; probes on a Bezier Scale, an Euler X in radians,
+    a ScaleXYZ factor, tangents up to 0.2 per tick, all within 2e-6, the handle longer than its segment 1.6e-5).
+    Freeing a handle turns its length into frames (a third of 50 frames: 16.6675). `ticks_per_frame` is 4800 / the
+    frames per second, an `i32` in Config `0x20B0/0x0010` (four saves of an empty scene at 24, 25, 30 and 60 fps
+    differ only there); a probe at 25 fps fits 192 ticks per frame, and 160 misses by 0.95. Every fixture is at
+    30 fps: the frame rate is shown by that probe, not by a fixture.
+  - Constant velocity counts only on a Bezier Position and only on the earlier key of a segment (on the later key
+    alone, on a Bezier Scale, on a Bezier Float: the plain curve): the cubic of values and tangents with handles of a
+    third (the stored lengths and a free handle do not count), cut into 40 chords of equal parameter; at the
+    fraction f of the segment's time the point f of the polyline's length along it, linearly between two chord ends
+    (FixtureConstantVelocity, whose later key has lengths 0.6, 0.1 and 0.3; probes within 1e-5). The three floats
+    after the lengths are 3ds Max's last length lookup (total, parameter, length there), not read.
+  - Scale keys whose axes differ (Bezier, TCB and Linear Scale): the components by the class's curve, the axis by
+    slerp at the plain fraction of the time, not the eased one (FixtureScaleAxesBezier, FixtureScaleAxesTCB with
+    tension, continuity and ease, FixtureScaleAxesLinear; the eased fraction misses by 0.35). Every axis pair the
+    probes stored has a positive dot.
   - TCB: the Hermite cubic of the stored tangents (value per segment; with two keys `(p1 - p0) (1 - tension)`) at
     the fraction of the segment eased by the earlier key's ease from and the later key's ease to (3D Studio's ease:
     both scaled to a sum of 1 when larger), per component (FixtureTCBFloats, FixtureTCBPosition, FixtureTCBScale).
@@ -298,6 +323,17 @@ Keyframe controllers (controllers fixture; every class read here is a 3ds Max 20
   - TCB Rotation: squad of the two quaternions with the earlier key's out control and the later key's in control,
     at the eased fraction (FixtureTCBRotation, a turn of 200 degrees); Smooth Rotation the same without ease
     (FixtureSmoothRotation). Their slerps keep the stored signs, unlike the shorter arc.
+  - A TCB Rotation turn of A >= 2 pi (the record's angle; a whole turn is stored as the f32 6.2831855, above 2 pi):
+    with `p(x) = q0 * AngAxis(axis, x)` (the quaternion product of the stored Max quaternions, axis in q0's frame),
+    U the eased fraction and `h = pi / A`, `U < h` gives squad(q0, q0's out control, p(pi), p(pi), U / h), `U > 1 -
+    h` squad(p(A - pi), p(A - pi), q1's in control, p(A), (U - 1 + h) / h) (the control on p(A)'s side), and the
+    turn between p(A U) (FixtureTCBSpinStart, 450 degrees, frame 0 in the first half-turn; FixtureTCBSpinEnd, 400,
+    the last; FixtureTCBSpinMiddle, 760 after 400, between; FixtureTCBTurn, exactly 360; probes of 360 to 800
+    degrees over two to four keys within 2e-6). 3ds Max stores other controls for a key past a revolution than
+    for one just short of it. Between 350 and 360 degrees neither squad nor this fits (359: squad 3.8e-4 off;
+    359.9: both miss): a turn within 10 degrees of a revolution stays linear with an issue.
+  - Smooth Rotation stores both keys of a revolution in one hemisphere and its controls carry the turn: squad as
+    above (probes of 350 to 359.999 degrees within 3e-7).
 - Linear and TCB Float hold `0x2501` directly in the object; Bezier Float in `0x7127` in every fixture.
 
 List controllers: Float List `(0x4B4B1000, 0)`, Position List `(0x4B4B1002, 0)`, Rotation List `(0x4B4B1003, 0)`,
@@ -309,9 +345,11 @@ block's reference slots where animated. Each entry weighs as the oracle shows:
 - Position and Float List: the weighted sum (FixturePosList `0.5 * [40, 40, 0] + 0.5 * [10, 20, 30]` =
   `[25, 30, 15]`; FixtureFloats `0.5 * 30 + 1.0 * 7` = 22).
 - Scale List: the product of `I + (S - I) * weight` per entry (FixtureScaleList `[1.5, 2, 0.75]` from `[2, 1, 1]`
-  and `[1, 3, 0.5]` at 50 %).
+  and `[1, 3, 0.5]` at 50 %), a later entry applied first (controllers_tangents' FixtureScaleListAxes: two scales
+  along turned axes at 100 %; the other order misses by 1.28).
 - Rotation List: each entry's rotation turned by its weight along its own axis, a later entry applied first
-  (FixtureRotList: 30 deg about X and 80 deg about Z at 50 % give Z 40 deg, then X 15 deg).
+  (FixtureRotList: 30 deg about X and 80 deg about Z at 50 % give Z 40 deg, then X 15 deg; controllers_tangents'
+  FixtureRotListMulti: two turns about all three axes at 50 % and 30 %).
 - Local = scale * rotation * position; world = local * parent world, up the whole chain. hierarchy: FixtureLeaf
   (position `[25, 5, 0]` under FixtureChild under the rotated FixtureRoot) lands on `[40.1314, 26.8301, 0]`.
 - Object offset = scale (`0x096C`, along its axis) * rotation (`0x096B`) * position (`0x096A`); the object's world
@@ -1842,14 +1880,20 @@ Not shown by any fixture yet, so not stated above:
   - Look At `(0x2006, 0)` on a camera and a light of each scene: evaluated as [Look At](#look-at) says, their
     world matrices equal the oracle's (all 662 nodes without modifiers of scene A, all 2,042 of scene B).
 - Controllers no file shows yet (`controllers.py` assumes them): a controller without `0x2500` (none in the corpus or
-  the fixtures; its value chunk is used, with an issue when several keys animate it); between two Bezier keys, a
-  free handle (`0x100000`: neither a fraction of the segment nor frames fits a probe) and constant velocity on a
-  Position or Scale, between two TCB or Bezier Scale keys scale axes that differ, between two TCB Rotation keys a
-  turn of a revolution or more (linear, an issue each); between two Linear, TCB or Smooth Rotation keys opposite
-  quaternions, a whole revolution (the earlier rotation, an issue); how Linear Scale interpolates a turned scale
-  axis (slerp; the fixture's axes are the identity); the bare Euler orders 1 to 5 and 100 (read as the SDK numbers
-  them: 1 = XZY ... 5 = ZYX, 100 = XYZ); the Euler orders 106 to 108 (an issue); the order of a Scale List's
-  entries (the fixture's two scales are both along the axes, so they commute) and the weight of a Rotation List
-  entry that turns about more than one axis (the fixture's turn about one axis each); parameter 1 of a list's
-  block (an `i32` 0 in every list: presumably Average, which would divide by the weights' sum); the out-of-range
-  types (a constant value before the first key and after the last is taken).
+  the fixtures; its value chunk is used, with an issue when several keys animate it); a free Bezier handle of a
+  negative length (3ds Max turns a third into frames when a handle is freed: linear, an issue); a frame rate other
+  than 30 fps in a fixture (a probe at 25 fps shows it); scale keys whose axis quaternions point apart (no probe
+  stored such a pair: linear, an issue); between two TCB Rotation keys a turn within 10 degrees short of a
+  revolution or a turn about no axis, between two Linear Rotation keys a pair within about 5 degrees of a
+  revolution (1 + dot from 5e-7 to 1e-3), between two Smooth Rotation keys opposite quaternions or controls (3ds Max
+  stored none: linear, an issue each); the bare Euler orders 1 to 5 and 100 (read as the SDK numbers
+  them: 1 = XZY ... 5 = ZYX, 100 = XYZ); the Euler orders 106 to 108 (an issue).
+- Shown by probes (maxdrop-em3.144, 3ds Max 2020), not read yet: parameter 1 of a list's block is Average (an `i32`,
+  1 when on): a Position and a Scale List then divide the weighted sum by the weights' sum (50 % and 100 %:
+  `[0.667, 12, 11.33]` from `[10, 20, 30]` and `[-4, 8, 2]`), a Rotation List with it gave the later entry alone
+  (30 deg about X at 50 %, 80 deg about Z at 100 %: 80 deg about Z), rule not known; a Scale List entry of a weight
+  below 1 along a turned axis is not `I + (S - I) * weight` (0.48 off at 60 % and 30 %); the out-of-range types are
+  a chunk `0x8499` of 30 bytes beside the keys, and cycle, loop, ping pong, linear and relative repeat give other
+  values than the constant one taken (keys at 10, 30, 50: 12.5, 12.5, 10, -10, 7.5 at frame 0 instead of 0); a
+  Linear tangent beside a custom key stores a tangent 3ds Max does not draw with (1.5 off; the slope to the
+  neighbouring key is 2e-2 off).

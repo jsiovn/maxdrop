@@ -23,9 +23,12 @@ with 0x2500, the interval that value holds for (forever without keys), and its k
 (_KEYFRAMED: i32 time, u32 flags, the value at byte 8, then tangents or TCB parameters). The saved value is used
 when its interval holds time 0; otherwise the keys are evaluated at time 0: the first key's value at or before it,
 the last key's after it (out-of-range types are not read), between two keys linear for a Linear controller
-(rotation by slerp the way the stored signs give), along the stored tangents for Bezier (the cubic of the handles,
-its time curve solved; a step key held) and TCB (Hermite at the eased fraction; rotations by squad), and linear with
-an issue where 3ds Max's curve is not known (_between). A saved value without an
+(rotation by slerp the way the stored signs give, opposite quaternions a whole turn about the earlier key's local Z),
+along the stored tangents for Bezier (the cubic of the handles, its time curve solved; a free handle's length in
+frames of Scene.ticks_per_frame; a step key held; constant velocity out of a Position key by length along 40
+chords) and TCB (Hermite at the eased fraction; rotations by squad, a turn of a revolution or more with a half-turn
+of squad at either end), a scale axis by slerp at the time fraction, and linear with an issue where 3ds Max's curve
+is not known (_between). A saved value without an
 interval is used as it is, with an issue when several keys animate it (it may be another frame's). Euler angles
 are radians, the axis order (0x1003) 0 for XYZ and 100 + order for the others; a Max quaternion (x, y, z, w) as
 stored is the conjugate of the usual one, so the standard column-vector formula applied to it gives the row-vector
@@ -500,8 +503,8 @@ def _between(cid, n, t0, a, flags_a, t1, b, flags_b, t=0, ticks_per_frame=160):
 
 def _interpolate(a, b, f, value_id):
     """The key value a fraction f of the way from a to b: components linearly, a rotation by slerp the way the stored
-    signs give (270 degrees between two Linear Rotation keys turn the long way round; opposite quaternions, whose turn
-    is not known, the shorter arc: the earlier rotation), a scale's axis by slerp."""
+    signs give (270 degrees between two Linear Rotation keys turn the long way round; opposite quaternions, where it
+    has no direction, the shorter arc: the earlier rotation), a scale's axis by slerp."""
     if value_id == _QUAT_VALUE:
         return slerp(a, b, f) if _opposite(a, b) else _slerp_long(a, b, f)
     lerp = tuple(x + (y - x) * f for x, y in zip(a, b))
