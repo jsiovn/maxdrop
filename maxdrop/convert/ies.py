@@ -28,11 +28,12 @@ degrees of LM-63's symmetries from 0 or 90, 90 to 270 included; a file from 0 to
 with its first plane at 360). Types A and B (vertical angles a latitude from -90, or from 0 mirrored, to 90;
 horizontal ones from -90 to 90, or for type B from 0 to 90 mirrored): I(t) cos t instead, the same trapezoid. An
 isotropic file of I cd gives 4 pi I exactly (type C), 2 pi I (types A and B). Other ranges of type A and B, type A
-from 0 included (V-Ray's own flux of it is not the table's), are not read.
+with horizontal angles from 0 included (V-Ray's own flux of it is not the table's), are not read.
 
 The file comes from anywhere: at most MAX_BYTES are read (a larger file is refused), MAX_ANGLES per axis and
 MAX_VALUES candelas, counts checked against the numbers there are before any list is made; every number finite, the
-angles in order and in range, the candelas, the multiplier and the ballast factor not negative. No bpy, no add-on import.
+angles in order and in range, the candelas, the multiplier and the ballast factor not negative. No bpy, no add-on
+import.
 """
 import collections
 import math
@@ -60,7 +61,7 @@ class Photometry(collections.namedtuple("Photometry", "lamps rated multiplier fl
     @property
     def scale(self):
         """V-Ray's power times this is the flux it renders: flux / (lamps x rated lumens), 1 when they are not
-        positive (measured, docs/FORMAT.md "VRayIES power, measured")."""
+        positive (measured, docs/FORMAT.md "VRayIES header, measured")."""
         return self.flux / (self.lamps * self.rated) if self.rated > 0 else 1.0
 
 
@@ -207,8 +208,8 @@ def _flux(vertical, horizontal, candelas):
 
 def _flux_ab(vertical, horizontal, candelas, kind):
     """Lumens of a type A or B candela table: vertical angles (latitude) from -90, or from 0 mirrored, to 90;
-    horizontal ones from -90 to 90, or (type B) from 0 to 90 mirrored, as V-Ray reads them (measured: type A from 0
-    is not, V-Ray's flux of it is not the table's)."""
+    horizontal ones from -90 to 90, or (type B) from 0 to 90 mirrored, as V-Ray reads them (measured: type A with
+    horizontal angles from 0 is not, V-Ray's flux of it is not the table's)."""
     name = "?CBA"[kind]
     if vertical[0] not in (-90, 0) or vertical[-1] != 90:
         raise IesError("its vertical angles run from %g to %g degrees: not one of type %s's"

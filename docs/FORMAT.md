@@ -1125,9 +1125,10 @@ the flux. Type B (vertical −90 to 90, horizontal −90 to 90 or 0 to 90), rate
 228.32; the zone mean × (cos a − cos b) 314.16); a cosine in 10° steps 313.99; planes of 100, 50, 100, 50, 100 cd at
 0 to 360° 942.16; type B isotropic 629.57 (2π · 100 = 628.32), the same with vertical or horizontal angles from 0
 (mirrored) and with horizontal angles from −180 to 180 (only −90 to 90 counts); type B 0, 100, 0 cd at vertical −90,
-0, 90° 400.95 (linear 400.00), the same across the horizontal angles 314.80 (314.16); type A isotropic 629.58, but
-type A with horizontal angles from 0 to 90 1.26 lm: not read. Ballast 0.5 halves that flux, 2 lamps leave it, a
-multiplier of 2 doubles it; a rated −1 file of ballast 0.5 at power 1000 renders 0.0531.
+0, 90° 400.95 (linear 400.00), the same across the horizontal angles 314.80 (314.16); type A isotropic 629.58,
+the same with vertical angles from 0 (mirrored), but type A with horizontal angles from 0 to 90 1.26 lm (also with
+vertical ones from 0): not read. Ballast 0.5 halves that flux, 2 lamps leave it, a multiplier of 2 doubles it; a
+rated −1 file of ballast 0.5 at power 1000 renders 0.0531.
 
 **IES files** (IESNA LM-63, `convert/ies.py`): after the keyword lines, `TILT=NONE`, `TILT=<file>` (nothing inline)
 or `TILT=INCLUDE` (lamp-to-luminaire geometry, the number of pairs n, n angles, n factors); then the number of lamps,
@@ -1144,7 +1145,7 @@ cos a) / (b − a)) and the same trapezoid, vertical angles from −90, or from 
 to 90, or for type B from 0 to 90 doubled. An isotropic file of I cd gives 4π I exactly (type C), 2π I (A and B).
 The flux is times the candela multiplier and the ballast factor (not the ballast-lamp factor); the rated lumens are
 the number of lamps times the lumens per lamp; rated lumens of 0 or below count as -1. Other ranges of type A and B
-(type A from 0 included), and a file larger than 4 MiB, of more than 4096 angles per axis or 2^20 candelas, or with a
+(type A with horizontal angles from 0 included), and a file larger than 4 MiB, of more than 4096 angles per axis or 2^20 candelas, or with a
 number out of range or out of order, are not read (a line in the report).
 
 **Spot cones.** Blender's spot size is the falloff; its blend is set so that full intensity ends at the hotspot, as in

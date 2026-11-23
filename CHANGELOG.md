@@ -130,7 +130,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   instead of a line in the report or a flat normal.
 - Lights: a VRayIES whose intensity is not overridden takes its IES file's header as V-Ray 5.2 renders it
   (measured): the ballast factor and the number of lamps now count, type A and B files are read, and the candelas
-  are integrated linearly in angle (a coarse file's flux was up to a third too high); the report line about a file
+  are integrated linearly in angle (a coarse file's flux was over a third too high); the report line about a file
   of more lamps is gone.
 
 ## [1.0.1] - 2026-11-22

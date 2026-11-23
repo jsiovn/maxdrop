@@ -97,7 +97,7 @@ class Parse(unittest.TestCase):
 
 
 class VRayRules(unittest.TestCase):
-    """What V-Ray 5.2 renders, measured with self-authored files (docs/FORMAT.md, "VRayIES power, measured")."""
+    """What V-Ray 5.2 renders, measured with self-authored files (docs/FORMAT.md, "VRayIES header, measured")."""
 
     def test_the_ballast_factor_scales_the_flux(self):
         p = ies.parse(ies_file(ballast=0.5))
@@ -122,7 +122,8 @@ class VRayRules(unittest.TestCase):
         vertical = list(range(0, 181, 10))
         p = ies.parse(ies_file(vertical=vertical, candelas=[100.0 * max(0.0, math.cos(math.radians(a)))
                                                             for a in vertical]))
-        self.assertAlmostEqual(p.flux, 313.99, delta=1.0)  # V-Ray 313.99, exact pi x 100 = 314.16
+        # linear in angle 313.359 (V-Ray 313.99); the zone mean x (cos a - cos b) gave exactly pi x 100 = 314.159
+        self.assertAlmostEqual(p.flux, 313.359, delta=0.01)
 
     def test_type_b_isotropic(self):
         """100 cd over the hemisphere a type B file covers: 2 pi 100, also with V or H from 0 (mirrored)."""
@@ -142,9 +143,18 @@ class VRayRules(unittest.TestCase):
                                candelas=[0, 0, 0, 100, 100, 100, 0, 0, 0]))
         self.assertAlmostEqual(p.flux, 100.0 * math.pi, delta=1e-9)
 
-    def test_type_a_full_range(self):
-        p = ies.parse(ies_file(kind=3, vertical=(-90, 0, 90), horizontal=(-90, 0, 90), multiplier=2, ballast=0.5))
-        self.assertAlmostEqual(p.flux, 2.0 * math.pi * 100.0, delta=1e-9)
+    def test_type_a(self):
+        """Read as type B (V-Ray 629.58 lm isotropic, vertical angles from 0 mirrored); horizontal from 0 refused."""
+        for v in ((-90, 0, 90), (0, 90)):
+            p = ies.parse(ies_file(kind=3, vertical=v, horizontal=(-90, 0, 90), rated=628.3, multiplier=2))
+            self.assertAlmostEqual(p.flux, 4.0 * math.pi * 100.0, delta=1e-9, msg=v)
+            self.assertAlmostEqual(p.scale, 4.0 * math.pi * 100.0 / 628.3, delta=1e-12, msg=v)
+        p = ies.parse(ies_file(kind=3, vertical=(-90, 90), horizontal=(-90, 90), ballast=0.5, lamps=2))
+        self.assertAlmostEqual(p.scale, math.pi * 100.0 / 1000.0, delta=1e-12)
+
+    def test_type_b_mirrored_both_ways(self):
+        p = ies.parse(ies_file(kind=2, vertical=(0, 90), horizontal=(0, 90), rated=500, ballast=0.5))
+        self.assertAlmostEqual(p.scale, math.pi * 100.0 / 500.0, delta=1e-12)  # V-Ray 629.57 lm before ballast
 
 
 class Refused(unittest.TestCase):
@@ -161,10 +171,12 @@ class Refused(unittest.TestCase):
         self.refused(ies_file(kind=2, vertical=(-90, 90), horizontal=(-180, 0, 180)),
                      "its horizontal angles run from -180 to 180 degrees: not one of type B's")
         self.refused(ies_file(kind=2, vertical=(-90, 90), horizontal=(0,)), "its horizontal angles run from 0 to 0")
-        self.refused(ies_file(kind=2, vertical=(-90, 90), horizontal=(-90, 0)), "its horizontal angles run from -90 to 0")
+        self.refused(ies_file(kind=2, vertical=(-90, 90), horizontal=(-90, 0)),
+                     "its horizontal angles run from -90 to 0")
         self.refused(ies_file(kind=3, vertical=(-90, 90), horizontal=(0, 90)),
                      "its horizontal angles run from 0 to 90 degrees: not one of type A's")
-        self.refused(ies_file(kind=2, vertical=(-90, 90, 0), horizontal=(0, 90)), "its vertical angles are not in order")
+        self.refused(ies_file(kind=2, vertical=(-90, 90, 0), horizontal=(0, 90)),
+                     "its vertical angles are not in order")
         self.refused(ies_file(kind=2, vertical=(-90, 90), horizontal=(90, 0)), "its horizontal angles are not in order")
 
     def test_no_tilt_line(self):
