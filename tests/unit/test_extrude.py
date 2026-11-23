@@ -548,7 +548,8 @@ _T = 10 / 3.0
 # Extrude; 3,359 segments): name, p0, c1, c2, p3, points. One probe step on either side of each boundary of its
 # straight test (at t 0.4 and 0.6 the curve turns p0 -> point -> p3 by at most 2 degrees; maxdrop-em3.142).
 STRAIGHT_PROBES = [
-    # c1 off the chord by 10^-e chords at a third (at 0.001, at the far end), c2 on the chord at two thirds
+    # c1 off the chord by 10^-e chords at a third of it (near p0: at 0.001 of it; at p3), c2 on it at two thirds; the
+    # pairs are the probe's own (its grid: 0.25 in e for other chords, 0.01 out of the plane and on the diagonal)
     ("third 1.72", (0, 0, 0), (_T, _off(1.72), 0), (2 * _T, 0, 0), (10, 0, 0), 2),
     ("third 1.70", (0, 0, 0), (_T, _off(1.70), 0), (2 * _T, 0, 0), (10, 0, 0), 8),
     ("near p0 1.82", (0, 0, 0), (0.01, _off(1.82), 0), (2 * _T, 0, 0), (10, 0, 0), 2),
@@ -646,10 +647,22 @@ class Interpolation(unittest.TestCase):
     def test_adaptive_takes_the_same_straight_test(self):
         """3ds Max 2020, Adaptive: a segment straight for Optimize gets no steps, also one whose vectors run past
         the chord's end or lie a little off it (a curved one gets steps, counted by a rule MaxDrop only
-        approximates: maxdrop-6n0.6.11)."""
+        approximates: maxdrop-6n0.6.11; only the straight half is asserted)."""
         for name, p0, c1, c2, p3, points in STRAIGHT_PROBES:
             if points == 2:
                 self.assertEqual(_points(_shape([_segment(p0, c1, c2, p3)], adaptive=True)), 2, name)
+
+    def test_a_doubled_knot_with_its_vectors_on_it(self):
+        """A zero-length curve segment whose vectors lie on its point is straight under Adaptive too (no steps from
+        rounding), so the doubled knot stays one point and the spline touches itself, as under Optimize."""
+        k = shapes.Knot
+        p = (0.1, 0.7, 0.3)
+        knots = (k(shapes.BEZIER_CORNER, shapes.CURVE, (-5, -5, 0.3), (-5, -5, 0.3), (-5, -5, 0.3)),
+                 k(shapes.BEZIER_CORNER, shapes.CURVE, p, p, p), k(shapes.BEZIER_CORNER, shapes.CURVE, p, p, p),
+                 k(shapes.BEZIER_CORNER, shapes.CURVE, (5, 5, 0.3), (5, 5, 0.3), (5, 5, 0.3)))
+        for adaptive in (False, True):
+            pl = extrude.polylines(_shape([shapes.Spline(knots, True)], adaptive=adaptive))[0]
+            self.assertEqual((len(pl.points), pl.doubled), (3, True), adaptive)
 
 
 def _ccw_area(pts, tris):

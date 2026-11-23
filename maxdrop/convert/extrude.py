@@ -188,6 +188,8 @@ def _straight(p0, c1, c2, p3):
     turns the path p0 -> S -> p3 by at most ADAPTIVE_ANGLE (3ds Max 2020, maxdrop-em3.142). A vector a little off the
     chord passes (2 degrees: about 2 % of the chord at a third), as an S whose middle is on the chord does; vectors
     on the chord's line fail once S lies past an end (the curve folds back)."""
+    if p0 == p3:  # S comes back off the point by rounding, turning 180 degrees: only vectors on it are straight
+        return c1 == p0 and c2 == p3
     for t in STRAIGHT_AT:
         s = _bezier(p0, c1, c2, p3, t)
         if _turn(_sub(s, p0), _sub(p3, s)) > ADAPTIVE_ANGLE:

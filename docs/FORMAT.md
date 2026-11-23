@@ -584,12 +584,12 @@ What 3ds Max 2020 makes of it (`snapshotAsMesh`, probed on scratch scenes and ch
 - **Interpolation**: each segment gets `steps` points between its knots; with optimize, a straight segment (type
   line, or a curve whose points at t 0.4 and 0.6 each turn the path from knot to knot by at most 2 degrees) gets
   none; without optimize even a line segment gets its steps (a sharp Rectangle, steps 2: 12 points). The straight
-  test (maxdrop-em3.142; 3,359 two-knot segments under 3dsmaxbatch, steps 1 to 12, chords 0.1 to 1000, none off
-  it): a vector off the chord by up to about 2 % of it at a third is straight (10^-1.72 chords straight, 10^-1.70
-  curved; 10^-1.82 with the vector's end next to its knot), an S with both vectors off on opposite sides up to
-  10^-1.24, vectors on the chord's line until the curve at t 0.4 or 0.6 lies past an end (out vector 1.72 chords
-  along with the in vector at two thirds, both 4.49 chords past the far ends). Adaptive: a straight segment (the
-  same test) gets none, a curved one 2^d - 1, d the smallest
+  test (maxdrop-em3.142; 3,359 two-knot segments under 3dsmaxbatch, steps 1 to 12, chords 0.1 to 1000, no
+  mismatch): a vector off the chord by up to about 2 % of it at a third is straight (10^-1.72 chords straight,
+  10^-1.70 curved; 10^-1.82 with the vector's end next to its knot), an S with both vectors off on opposite sides
+  up to 10^-1.24, vectors on the chord's line until the curve at t 0.4 or 0.6 lies past an end (out vector 1.72
+  chords along with the in vector at two thirds; both vectors 4.49 chords long, 3.49 past the far ends). Adaptive:
+  a straight segment (the same test) gets none, a curved one 2^d - 1, d the smallest
   depth up to 5 at which every piece turns by at most 2 degrees between the chords of its halves (a Circle: 31 per
   quarter, 128 points; Arcs of 30, 90, 180, 300 degrees: 13, 25, 49, 97 points). 3ds Max splits a curved segment
   at its middle piece by piece instead, each piece under the straight test: an uneven curve gets other counts
