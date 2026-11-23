@@ -671,11 +671,9 @@ class DomeTextureRules(unittest.TestCase):
         dt, issues = L.dome_texture(self.ir(png), self.vray({}), colors.GAMMA_OFF)
         self.assertEqual((dt.image, issues), (png, []), "an 8-bit file: decoded once more, as on a material")
 
-    def test_a_float_texture_lights_by_its_own_decode_measured(self):
-        """V-Ray 5.2 renders of a gamma-off scene lit only by an EXR dome (maxdrop-em3.166), against the display
-        target srgb_to_linear(V-Ray): its own decode lights a white floor 2.3 times the target under a uniform 0.5
-        sky and 0.05 times under a 2000 sun, the material rule 1.0 and 1664 times: its own decode is kept. The
-        extension's case does not matter; a CoronaBitmap keeps what the converter made of it."""
+    def test_a_float_texture_keeps_its_own_decode_whatever_the_case_not_on_a_corona_bitmap(self):
+        """Measured as a light (maxdrop-em3.166; docs/FORMAT.md, Scene gamma): the line says so. The extension's case
+        does not matter; a CoronaBitmap keeps what the converter made of it."""
         self.assertNotIn("not measured", L.DOME_FLOAT_OFF)
         shown = dict(gamma=2.2, colorspace=texmaps.SRGB)
         upper = texmaps.Image(3, "SKY.EXR", found=self.FOUND, **shown)

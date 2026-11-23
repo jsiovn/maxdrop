@@ -1492,17 +1492,19 @@ picker and Material Editor switches off).
   | EXR 0.5 (VRayBitmap or Bitmap) | 0.500 / 0.251 / 0.500 | 0.214 / 0.051 / 0.214 | 0.500 / 0.108 / 0.500 | 0.214 / 0.046 / 0.214 |
   | EXR 4.0 | 3.999 / 2.008 / 4.0 | 25.30 / 5.00 / 25.31 | 3.999 / 0.863 / 3.999 | 25.31 / 5.46 / 25.31 |
   | EXR sky 0.2, sun 2000 | 9.551 / 4.794 / 0.2 | 200.6 / 38.9 / 0.033 | 9.545 / 2.060 / 0.200 | 333 803 / 72 055 / 0.033 |
-  | no texture, multiplier 0.5 | 0.500 / 0.251 / 0.5 | 0.215 / 0.051 / 0.214 | 0.500 / 0.108 / 0.500 (as imported) | |
+  | no texture, multiplier 0.5 | 0.5005 / 0.251 / 0.5 | 0.215 / 0.051 / 0.214 | 0.500 / 0.108 / 0.500 (as imported) | |
   | PNG 128, VRayBitmap Auto | 0.216 / 0.108 / 0.216 | 0.038 / 0.011 / 0.038 | | 0.032 / 0.007 / 0.032 (as imported) |
 
   V-Ray lights a gamma-off scene on its internal values and the display shows the sum: srgb_to_linear of a sum is
   not the sum of srgb_to_linear, so no decode of each texel matches a sky that is not one value, and a decoded albedo
   times a decoded light is not the decoded product (the grey plane). The material rule is exact for one value but
   lights the sun's floor 1664 times the target; its own decode is 2.3 times the target at 0.5, 0.16 times at 4.0 and
-  0.05 times with the sun, as a dome's multiplier already is (the untextured row): a float dome texture keeps its own
-  decode (`convert/lights.py`, `dome_texture`; a line in the report). On an 8-bit display a value above 1 is white
+  0.05 times with the sun, as a dome's multiplier already is (the untextured row). Neither is within a factor 2 of
+  the target on every float row (the plan's gate); a float dome texture keeps its own decode, the smaller worst case
+  (about 21 times against 1664; `convert/lights.py`, `dome_texture`; a line in the report), and the display-referred
+  light is maxdrop-6n0.6.20. On an 8-bit display a value above 1 is white
   in both. An 8-bit dome texture keeps the material rule (within 0.007 of the target). A rule that sees the sky
-  decoded only from the camera would need the World's nodes (a Light Path), not drawn.
+  decoded only from the camera would need the World's nodes (a Light Path), not drawn (maxdrop-6n0.6.21).
 
 ## Summary properties
 
