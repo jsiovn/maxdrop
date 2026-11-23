@@ -715,7 +715,7 @@ class TexmapConverter:
     colors.Swatches rule of the scene (None: read from graph's scene)."""
 
     def __init__(self, graph, assets=None, textures=None, swatches=None):
-        self.graph, self.assets, self.textures = graph, assets, textures
+        self.graph, self.assets, self.textures = params.at_frame_zero(graph), assets, textures
         self.swatches = swatches if swatches is not None else colors.of_graph(graph)
         self.stats = TexmapStats()
         self._counted, self._done, self._reported = set(), {}, set()

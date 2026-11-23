@@ -2285,5 +2285,84 @@ class Assign(unittest.TestCase):
                                  "segment's)"])
 
 
+class FrameZeroParams(unittest.TestCase, Close):
+    """pblock_animated: a parameter a controller holds converts to the controller's value at frame 0 (the oracle's
+    controllers), not to the class default (maxdrop-em3.152)."""
+
+    def setUp(self):
+        self.cf, self.graph, self.by_name = _fixture("pblock_animated")
+        self.addCleanup(self.cf.close)
+        assets = importlib.import_module(_PKG + ".reader.assets")
+        self.tex = texmaps.TexmapConverter(self.graph, assets.AssetTable.from_file(self.cf))
+        self.conv = mat.MaterialConverter(self.graph, texmaps=self.tex)
+        with open(os.path.join(FIXTURE_DIR, "pblock_animated.oracle.json"), encoding="utf-8") as f:
+            oracle = {m["name"]: m for m in json.load(f)["material_graph"]}
+        self.oracle = {(name, b["block_id"], c["id"], c["tab"]): c["value"]
+                       for name, m in oracle.items() for b in m["blocks"] for c in b.get("controllers", ())}
+
+    def want(self, name, block, pid, tab=0):
+        v = self.oracle[(name, block, pid, tab)]
+        return tuple(v) if isinstance(v, list) else float(v)
+
+    def test_vray_mtl(self):
+        """FixtureAnimVRay: diffuse (block 1, 1) and reflection_glossiness (block 1, 3) animated."""
+        ir = self.conv.convert(self.by_name["FixtureAnimVRay"])
+        self.close(ir.base_color.value, self.conv.swatches.color(self.want("FixtureAnimVRay", 1, 1)))
+        self.close(ir.roughness.value, 1.0 - self.want("FixtureAnimVRay", 1, 3))  # brdf_useRoughness off
+        self.assertNotAlmostEqual(ir.roughness.value, 0.0)  # the default glossiness 1.0 would give 0
+
+    def test_vray_blend_mtl(self):
+        """FixtureAnimBlend, block 0: blend (2) element 1 and texmap_blend_multiplier (4) element 0 animated; element 0
+        of blend is stored."""
+        m = self.conv.graph.get(self.by_name["FixtureAnimBlend"])
+        self.close(m.param(2, 0, tab=1), self.want("FixtureAnimBlend", 0, 2, 1))
+        self.close(m.param(2, 0, tab=0), (40 / 255, 50 / 255, 60 / 255))
+        self.close(mat._num_tab(m, 4, 0, 100.0), self.want("FixtureAnimBlend", 0, 4, 0))
+        self.close(mat._num_tab(m, 4, 1, -1.0), 100.0)  # stored
+
+    def test_normal_map_multipliers(self):
+        """FixtureAnimNormal: normal_map_multiplier and bump_map_multiplier animated, read as the normal map rule reads
+        them (its Checker and Noise convert to nothing, so no NormalMap node is drawn here)."""
+        ids = texmaps.NORMAL_MAPS[classids.VRAY_NORMAL_MAP]
+        m = self.tex.graph.get(self.by_name["FixtureAnimNormal"])
+        self.close(texmaps._num(m, ids.strength, 1.0), self.want("FixtureAnimNormal", 0, ids.strength))
+        self.close(texmaps._num(m, ids.bump_strength, 1.0), self.want("FixtureAnimNormal", 0, ids.bump_strength))
+
+    def test_part_params(self):
+        """A part's block (a Standard shader's) resolves through the scene too: VRayMtl's block 1 stands in."""
+        m = self.graph.get(self.by_name["FixtureAnimVRay"])
+        part = reader_materials.Part(m.index, m.class_id, m.superclass, {0: m.block(1)}, {})
+        self.assertIsInstance(mat._PartParams(part).param(1, 1), pblock.Animated)  # no scene: as stored
+        self.close(mat._PartParams(part, self.graph.scene).param(1, 1), self.want("FixtureAnimVRay", 1, 1))
+
+    def test_frame_zero_shapes(self):
+        """A value of another shape than the parameter's type, or a fraction for an integer, stays the Animated."""
+        params = importlib.import_module(_PKG + ".convert.params")
+        s = self.graph.scene
+        blend = self.graph.get(self.by_name["FixtureAnimBlend"]).block(0)
+        color, mult = blend.get(2, 1), blend.get(4, 0)  # a Bezier Color, a Bezier Float (37.0)
+
+        class Typed:
+            def __init__(self, base_type):
+                self.base_type = base_type
+
+        class Block:
+            def __init__(self, base_type):
+                self._type = base_type
+
+            def param(self, pid):
+                return Typed(self._type)
+
+        self.assertEqual(params.frame_zero(s, Block(13), 0, mult), 37)  # a radio button: a whole number
+        self.assertIsInstance(params.frame_zero(s, Block(13), 0, mult), int)
+        gloss = self.graph.get(self.by_name["FixtureAnimVRay"]).block(1).get(3)  # a Bezier Float at 0.41
+        self.assertEqual(params.frame_zero(s, Block(13), 0, gloss), gloss)  # a fraction for an integer
+        self.assertEqual(params.frame_zero(s, Block(2), 0, mult), mult)  # a float for a color
+        self.assertEqual(params.frame_zero(s, Block(0), 0, color), color)  # a color for a float
+        self.assertEqual(params.frame_zero(s, Block(22), 0, mult), mult)  # point4: not read
+        self.assertEqual(params.frame_zero(None, Block(0), 0, mult), mult)  # no scene
+        self.assertEqual(params.frame_zero(s, Block(0), 0, 0.5), 0.5)  # a stored value as it is
+
+
 if __name__ == "__main__":
     unittest.main()

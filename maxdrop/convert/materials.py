@@ -144,7 +144,7 @@ from ..reader import materials as reader_materials
 from ..reader import scene as reader_scene
 from ..reader.classdir import ClassId
 from ..reader.errors import MaxFileError
-from . import colors
+from . import colors, params
 from . import texmaps as _texmaps
 from .params import finite as _finite, flag as _flag, num as _num
 
@@ -397,7 +397,7 @@ class MaterialConverter:
     """Converts the materials of one MaterialGraph, each object once."""
 
     def __init__(self, graph, texmaps=None, swatches=None, meters=None):
-        self.graph, self.texmaps = graph, texmaps
+        self.graph, self.texmaps = params.at_frame_zero(graph), texmaps
         if swatches is None:
             swatches = texmaps.swatches if texmaps is not None else colors.of_graph(graph)
         self.swatches = swatches
@@ -837,15 +837,17 @@ def vray_car_paint_mtl2(conv, m, ir):
 
 
 class _PartParams:
-    """The parameters of a material's part (its blocks), read like a MtlBase's: param(pid, block_id)."""
+    """The parameters of a material's part (its blocks), read like a MtlBase's: param(pid, block_id); with the
+    scene, an animated one at frame 0 (params.frame_zero)."""
 
-    def __init__(self, part):
+    def __init__(self, part, scene=None):
         self._blocks = [b for _slot, b in sorted(part.blocks.items())] if part is not None else []
+        self._scene = scene
 
     def param(self, pid, block_id=None, tab=0, default=None):
         for b in self._blocks:
             if (block_id is None or b.block_id == block_id) and pid in b:
-                return b.get(pid, tab, default)
+                return params.frame_zero(self._scene, b, pid, b.get(pid, tab, default))
         return default
 
 
@@ -884,7 +886,7 @@ def standard_mtl(conv, m, ir):
     ir.ior = _ior(_num(m, 6, 1, 1.5))
     shader = next((p for _slot, p in sorted(m.parts.items()) if p.superclass == classids.SC_SHADER), None)
     sid = ClassId(*shader.class_id) if shader is not None else None
-    s = _PartParams(shader)
+    s = _PartParams(shader, getattr(conv.graph, "scene", None))
     slots = STD_SLOTS.get(sid, _BLINN_SLOTS)
     ch = _std_channels(conv, m)
     ir.alpha = Input(_clamp01(_num(m, 1, 1, 1.0)), _std_map(conv, m, slots.opacity, ir, channels=ch))
