@@ -2797,5 +2797,71 @@ class FalloffCurve(Checks):
         self.assertEqual(jump, ((0, 0), (0.5, 0.2), (0.5, 0.9), (1, 1)))
 
 
+class _Typed(collections.namedtuple("_Typed", "base_type")):
+    pass
+
+
+class _TypedBlock(FakeBlock):
+    """A block whose parameters answer a ParamType2 (param(pid).base_type), as a ParamBlock2's do."""
+
+    def __init__(self, block_id, params, types_):
+        super().__init__(block_id, params)
+        self._types = types_
+
+    def param(self, pid):
+        return _Typed(self._types[pid]) if pid in self._types else None
+
+
+class _ControllerEntry(collections.namedtuple("_ControllerEntry", "superclass class_id name")):
+    pass
+
+
+class _ControllerScene(FakeScene):
+    """A FakeScene that also holds Bezier Float controllers: {object index: value saved at frame 0}."""
+
+    def __init__(self, objects, values):
+        super().__init__(objects, {i: self._bezier(v) for i, v in values.items()})
+        self.values = values
+
+    @staticmethod
+    def _bezier(value):
+        return FakeChunk(0x9003, children=[FakeChunk(0x7127, children=[
+            FakeChunk(0x2501, struct.pack("<f", value)), FakeChunk(0x2500, struct.pack("<ii", 0, 0))])])
+
+    def entry(self, i):
+        if i in self.values:
+            return _ControllerEntry(classids.SC_CTRL_FLOAT, classids.BEZIER_FLOAT, "Bezier Float")
+        return super().entry(i)
+
+
+class AnimatedRewiring(Checks):
+    """A Color Correction whose custom rewiring (rewireMode 3, channels 3 to 5, radio buttons) a controller holds
+    converts its rewiring at frame 0 (maxdrop-em3.152); a fraction (3ds Max's rounding not measured) keeps the
+    issue."""
+
+    def convert(self, values):
+        channels = {pid: pblock.Animated(10 + k) for k, pid in enumerate(tx.CC_REWIRE)}
+        cc = FakeMap(1, tx.COLOR_CORRECTION, {1: Ref(2), 2: pblock.Animated(20), **channels}, [2],
+                     cls="Color Correction", name="cc")
+        cc.blocks = {0: _TypedBlock(0, cc.blocks[0]._params, {2: 13, 3: 13, 4: 13, 5: 13})}
+        graph = FakeGraph(cc, _bitmap(2))
+        graph.scene = _ControllerScene(graph.objects, values)
+        return tx.TexmapConverter(graph, _table()).convert(mat.MapRef(1), tx.COLOR)
+
+    def test_rewiring_held_by_controllers(self):
+        g = self.convert({20: 3.0, 10: 2.0, 11: 1.0, 12: 0.0})
+        self.assertEqual(g.root.rewire, (2, 1, 0))
+        self.assertEqual((g.approximated, g.issues), (False, ()))
+
+    def test_mode_held_by_a_controller(self):
+        self.assertEqual(self.convert({20: 1.0}).root.rewire, tx.REWIRE_MONO)
+
+    def test_fraction_keeps_the_issue(self):
+        g = self.convert({20: 3.0, 10: 2.5, 11: 1.0, 12: 0.0})
+        self.assertEqual(g.root.rewire, tx.REWIRE_NONE)
+        self.assertTrue(g.approximated)
+        self.assertTrue(any("rewiring" in r for r in g.issues), g.issues)
+
+
 if __name__ == "__main__":
     unittest.main()
