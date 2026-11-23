@@ -2095,6 +2095,35 @@ class WrapperConstants(Checks):
                 tex = tx.TexmapConverter(FakeGraph(_bitmap(2)), _table(), swatches=rule)
                 self.assertEqual(g.root.input, tex.convert(mat.MapRef(2), tx.DATA).root, "the same Image")
 
+    def test_linear_color_below_a_tint(self):
+        # CoronaColor's HDR color is linear already: its channels below a Tint in DATA and in a normal input
+        hdr = _ccolor(2, p50=1, p58=(2.0, 0.5, 0.0))
+        g = self.convert(colors.GAMMA_OFF, tx.DATA, _wtint(1, 2), hdr)[1]
+        self.assertEqual(g.root.input, tx.Constant((2.0, 0.5, 0.0)))
+        self.assertEqual(self.convert(colors.GAMMA_OFF, tx.DATA, _ccolor(1, p50=1, p58=(2.0, 0.5, 0.0)))[1].root,
+                         tx.Constant(2.5 / 3.0), "bare: the mean")
+        g = self.convert(colors.GAMMA_OFF, tx.NORMAL, _vnormal(1, 2), _ccolor(2, p50=1, p58=(0.5, 0.5, 1.0)))[1]
+        self.assertEqual(g.root.input, tx.Constant((0.5, 0.5, 1.0)))
+
+    def test_imageless_normal_slot_is_no_image(self):
+        """A normal map class in a color or data input gives its image; an empty wrapper in its normal slot (a Tint
+        of white, an Output with levels) has none, so the bump image stands for it, or nothing."""
+        out = FakeMap(2, tx.OUTPUT, {0: Ref(None)}, cls="Output", name="out")
+        part = FakeMap(5, (0x100, 0), superclass=classids.SC_TEXOUTPUT)
+        part.legacy = {0: {0: 0.8, 1: 0.1, 2: 0.5}}
+        out.parts = {2: part}
+        for empty in (_wtint(2), out):
+            for kind in (tx.COLOR, tx.DATA):
+                with self.subTest(empty=empty.cls, kind=kind):
+                    nm = FakeMap(1, classids.VRAY_NORMAL_MAP, {0: Ref(2), 2: 1, 3: 1.0, 4: Ref(3), 5: 1, 6: 1.0},
+                                 [2, 3], cls="VRayNormalMap")
+                    g = self.convert(colors.GAMMA_OFF, kind, nm, empty, _bitmap(3))[1]
+                    self.assertEqual(g.root.name, "a.png", "the bump image")
+                    nm = FakeMap(1, classids.VRAY_NORMAL_MAP, {0: Ref(2), 2: 1, 3: 1.0}, [2], cls="VRayNormalMap")
+                    tex, g = self.convert(colors.GAMMA_OFF, kind, nm, empty)
+                    self.assertIsNone(g, "no image: unsupported")
+                    self.assertEqual(tex.stats.unsupported, collections.Counter({"VRayNormalMap": 1}))
+
     def test_normal_constant_is_rgb(self):
         for rule in RULES:
             with self.subTest(linear=rule.linear):

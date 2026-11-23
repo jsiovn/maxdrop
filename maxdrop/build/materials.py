@@ -66,7 +66,7 @@ Invert, the mean or Separate / Combine Color, then Hue/Saturation/Value, Bright/
 Geometry node's Normal . Incoming), Remap (Float Curve, its points straight between them, not clipped; the Mix it
 drives does not clamp its factor), Smoothstep (Map Range SMOOTHSTEP, or a step: 1 - LESS_THAN), Adjust (a map's
 Output, as an image's), Tint (Separate Color, three scales, two adds), NormalMap (Normal Map node, flips through
-Separate / Combine Color; a constant color through an RGB node), Bump (Bump node). A texture file that was not found (or does not load) keeps its Image
+Separate / Combine Color), Bump (Bump node). A texture file that was not found (or does not load) keeps its Image
 Texture node, without an image and not connected. The texture lookup (convert.textures) reports a file not found by
 name; the builder reports a file that does not load. The graph above the node carries on without it (a Mix gives its
 other side, a normal map without its image nothing) and an input left without a map keeps the IR's value. An empty
@@ -694,11 +694,12 @@ class _Tree:
         return _out(b, "Normal")
 
     def normal_map(self, n, depth):
-        """A Normal Map node, None when its image is missing. A constant color is drawn through an RGB node: V-Ray
-        tilts the normal by it as by an image of that color ((0.5, 0.5, 1) is flat; maxdrop-em3.76, em3.128)."""
+        """A Normal Map node, None when its image is missing. A normal input without an image, a constant color, is
+        drawn through an RGB node: V-Ray tilts the normal by it as by an image of that color ((0.5, 0.5, 1) is flat;
+        maxdrop-em3.76, em3.128). One whose image is missing and left a constant (a Mix's other side) stays None."""
         flips = n.flip_red or n.flip_green or n.swap
         color = self.graph(n.input, COLOR, depth + (3 if flips else 1))
-        if color is MISSING:
+        if color is MISSING or (not isinstance(color, bpy.types.NodeSocket) and tx.first_image(n.input) is not None):
             return None
         color = self.socket(color, COLOR, depth + (3 if flips else 1))
         nm = self.node("ShaderNodeNormalMap", depth)

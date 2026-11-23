@@ -39,12 +39,13 @@ gamma; TexmapConverter._swatch); in a DATA or BUMP graph the mean of the swatch 
 (CoronaColor's HDR color; its temperature with the gamma on). In a NORMAL graph, and below a wrapper that works on
 color (an RGB Tint other than the identity, an Output part that changes anything, a Color Correction) in a DATA or
 BUMP graph (the kinds DATA_RGB and BUMP_RGB, rgb_kind), a swatch keeps its three channels as stored, and so do the
-Tint's rows: V-Ray tints the color and takes the mean after (an empty RGB Tint of rows 128 / 64 / 32 renders 0.293
-on opacity with the gamma off, the mean of the stored rows; maxdrop-em3.76, em3.128), the builder takes it at the
-float input. Images and masks below such a wrapper are as in DATA / BUMP (base_kind; which output the wrapper asks
-an image for is not measured); a MASK graph keeps its rule of the mean below a wrapper too. With the gamma off V-Ray mixes display values, so a
-mask between two colors is approximated (a 0.502 mask between grey 40 and 220 renders 0.511, shown from 0.225
-linear; MaxDrop's decoded mask gives 0.171).
+Tint's rows, the mean taken at the float input by the builder (maxdrop-em3.128). Measured: an empty RGB Tint of rows
+128 / 64 / 32 renders 0.293 on opacity with the gamma off, the mean of the tinted white with the rows as stored
+(maxdrop-em3.76); that a colored constant keeps its color below the wrapper, Color Correction, and the rows in a
+normal input are assumed by the same rule. Images and masks below such a wrapper are as in DATA / BUMP (base_kind;
+which output the wrapper asks an image for is not measured); a MASK graph keeps its rule of the mean below a wrapper
+too (maxdrop-6n0.6.2). With the gamma off V-Ray mixes display values, so a mask between two colors is approximated
+(a 0.502 mask between grey 40 and 220 renders 0.511, shown from 0.225 linear; MaxDrop's decoded mask gives 0.171).
 
 The graph's nodes (frozen dataclasses): Image (an image map: the file as the scene stores it, the one the texture lookup
 found, Mapping, Crop, TexOutput, color space, gamma, alpha), Constant, Invert, Mix(a, b, factor, mask), Multiply,
@@ -104,9 +105,8 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
   the constant (0.5, 0.5, 1); neither is counted (3ds Max 2020 renderMap and V-Ray 5.2 renders with the gamma off,
   maxdrop-em3.76; with it on assumed the same swatch, Corona not measured). In a normal map's normal slot that color
   as stored, drawn: V-Ray tilts the normal by the white as by a white map, (0.5, 0.5, 1) is flat (maxdrop-em3.128).
-  Any other map class with maps below gives the
-  first image below it (depth first, in reference order), counted the same way; one without is unsupported
-  (counted, no graph).
+  Any other map class with maps below gives the first image below it (depth first, in reference order), counted the
+  same way; one without is unsupported (counted, no graph).
 - Normal maps (VRayNormalMap, Normal Bump, CoronaNormal) in a normal or bump input -> NormalMap: the normal image
   with the class's multiplier as its strength, flip red / green and swap, and the additional bump map as a Bump with
   its multiplier; a normal map class with only its bump map is that Bump. In any other input it is peeled to its
@@ -929,7 +929,7 @@ class TexmapConverter:
 
     def _image(self, m, kind, walk):
         """The Image of a Bitmap, CoronaBitmap or VRayBitmap, None (an issue) without a file."""
-        kind = base_kind(kind)  # below a color wrapper in a data graph: a data image (which output it gives: unmeasured)
+        kind = base_kind(kind)  # below a color wrapper in a data graph: a data image (its output not measured)
         key = ClassId(*m.class_id)
         cls, pid = _IMAGE_FILES.get(key, ("Bitmap", BM_FILE))
         entry = self.assets.entry(m.param(pid, 0)) if self.assets is not None else None
@@ -1113,9 +1113,10 @@ class TexmapConverter:
         bump = self._sub(m, ids.bump, ids.bump_on, BUMP, walk, depth, chain)
         kind = base_kind(kind)
         if kind not in (NORMAL, BUMP):  # a normal map in a color or data input: its image only
-            # a constant (an empty Output in its bump slot) is no image to stand for the normal map's color
+            # a graph without an image (an empty Output or RGB Tint, a constant) is no image to stand for the normal
+            # map's color
             image = next((n for n in (_peeled_image(normal), _peeled_image(bump))
-                          if n is not None and not isinstance(n, Constant)), None)
+                          if n is not None and first_image(n) is not None), None)
             if image is None:
                 self._count(self.stats.unsupported, m)
                 return None

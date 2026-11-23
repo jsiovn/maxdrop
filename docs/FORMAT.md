@@ -1571,7 +1571,8 @@ The 0.293 is the mean of the tint rows as stored (128 / 255, 64 / 255, 32 / 255)
 swatch rule (0.094): in a data, bump or normal input MaxDrop takes a wrapper's rows and a swatch below a wrapper
 that works on color (RGB Tint, an Output part, Color Correction) as stored, keeps its three channels, and takes the
 mean at the float input (maxdrop-em3.128); a constant color in a normal map's normal slot is drawn as that color.
-
+That a colored constant keeps its color below the wrapper, Color Correction, and the rows in a normal input
+follow the same rule by assumption, not by measurement.
 
 ### The Falloff mix curve
 

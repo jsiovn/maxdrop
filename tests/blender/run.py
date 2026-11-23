@@ -3164,7 +3164,8 @@ def check_builder_multiply():
 def check_builder_wrapper_constants():
     """A constant below a color wrapper keeps its color (bead maxdrop-em3.128): a Tint over a color Constant on
     Roughness is drawn in color, the mean taken after it (a DOT_PRODUCT fed by the Tint's last ADD); a NormalMap over
-    a constant color is a Normal Map node fed by an RGB node of that color, not flat (V-Ray tilts the normal by it)."""
+    a constant color is a Normal Map node fed by an RGB node of that color, not flat (V-Ray tilts the normal by it),
+    also through the flips; one whose image is missing (a Mix left with its constant side) stays flat."""
     from maxdrop.build import materials as build_materials
     from maxdrop.convert import materials as cm
     from maxdrop.convert import texmaps as tx
@@ -3177,7 +3178,25 @@ def check_builder_wrapper_constants():
         ir.textures = {"roughness": tx.TextureGraphIR(tint, tx.DATA),
                        "normal": tx.TextureGraphIR(tx.NormalMap(tx.Constant(normal)), tx.NORMAL)}
         built[label] = build_materials.MaterialBuilder().make(ir)
+    lost = tx.Image(9, "nothere.png", "nothere.png", "", None, colorspace=tx.NON_COLOR)
+    extra = {}
+    for label, normal in (("flipped", tx.NormalMap(tx.Constant((1.0, 0.5, 1.0)), flip_green=True)),
+                          ("lost", tx.NormalMap(tx.Mix(lost, tx.Constant((0.0, 0.0, 0.0)), 0.5)))):
+        ir = cm.MaterialIR(54, "WrapperConstant_" + label, "test")
+        ir.normal = cm.MapRef(2)
+        ir.textures = {"normal": tx.TextureGraphIR(normal, tx.NORMAL)}
+        extra[label] = build_materials.MaterialBuilder().make(ir)
     try:
+        m = extra["flipped"]
+        sep = next((n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeSeparateColor"), None) if m else None
+        nm = _from(_principled(m).inputs["Normal"]) if m else None
+        check("wrapper constants: a flipped constant normal goes RGB -> Separate / Combine Color -> Normal Map",
+              getattr(nm, "bl_idname", None) == "ShaderNodeNormalMap" and sep is not None
+              and getattr(_from(sep.inputs["Color"]), "bl_idname", None) == "ShaderNodeRGB")
+        m = extra["lost"]
+        check("wrapper constants: a normal whose image is missing stays flat (no Normal Map node)",
+              m is not None and not any(n.bl_idname == "ShaderNodeNormalMap" for n in m.node_tree.nodes)
+              and not _principled(m).inputs["Normal"].is_linked)
         for label, normal in (("white", (1.0, 1.0, 1.0)), ("flat", (0.5, 0.5, 1.0))):
             m = built[label]
             check("wrapper constants (%s): material built" % label, m is not None)
