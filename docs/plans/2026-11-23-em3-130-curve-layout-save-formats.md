@@ -42,6 +42,15 @@ edits the file too.
 - [ ] `python -I -m unittest discover tests` -> OK, `python -I tools/lint.py` -> clean.
 - [ ] Commit `Record the curve layout in older save formats` (Bead: maxdrop-em3.130).
 
+## Verification
+
+Docs only (build-and-test's table: block 1). No fixture, no code: no Blender run, no red check (nothing fixed).
+
+```powershell
+python -I -m unittest discover tests   # OK
+python -I tools/lint.py                 # All checks passed!
+```
+
 ### Task 2: bead notes
 
 - [ ] Append the results above (scene A / scene B only, no file names or paths of the corpus) to the bead notes.

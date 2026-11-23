@@ -1715,6 +1715,8 @@ A Falloff references a Custom Curve Control `(0x14585773, 0x483A7DCF)`, supercla
 | `0x1030` | one per point, in x order: a container holding `0x1000`, 28 bytes: `f32` x, y of the point, x, y of its in handle, x, y of its out handle (each handle as a position: the point plus the offset MAXScript and the SDK give), `u32` flags (seen: `0x102` the first point, `0x100` the last, `2` and `4` for points set as Bezier and corner) |
 | `0x1020`, `0x1040` | not decoded (a `u32` 0; 28 bytes, the same in every falloff_curve curve) |
 
+The same layout in files saved in older formats is under [Open](#open) (the Falloff mix curve in other formats).
+
 The default curve is (0, 0) to (1, 1), its handles on its points: linear. How 3ds Max 2020 evaluates it
 (`ICurve.GetValue` through .NET, matched to 1e-6; falloff_curve's `.curves.jsonl`): segment i is the cubic Bezier
 of point i, its out handle, the in handle of point i + 1 and point i + 1, taken at its x. The flags do not change
@@ -1926,3 +1928,12 @@ Not shown by any fixture yet, so not stated above:
   values than the constant one taken (keys at 10, 30, 50: 12.5, 12.5, 10, -10, 7.5 at frame 0 instead of 0); a
   Linear tangent beside a custom key stores a tangent 3ds Max does not draw with (1.5 off; the slope to the
   neighbouring key is 2e-2 off).
+- The Falloff mix curve in other formats ([The Falloff mix curve](#the-falloff-mix-curve); maxdrop-em3.130), seen
+  only in files not committed: falloff_curve's script saved by 3ds Max 2020 as 2017, 2018 and 2019 (formats 19000,
+  20000, 21000) stores every curve as its 3ds Max 2020 file does (`0x2035`, `0x204B`, `0x1000`, one `0x1030` per
+  point holding a 28-byte `0x1000`, `0x1020`, `0x1040`), the same points, handles and flags; loaded again in 3ds
+  Max, `ICurve.GetValue` gives the same values in all four. Corpus scene A (3ds Max 2015 saving in the 2012 format,
+  60 Falloffs, 34 with an edited curve of up to 5 points) and scene B (3ds Max 2020 saving as 2018, 23) read with
+  the same layout, every curve; scene A saved again by 3ds Max 2020 gives the same points. Point flags seen there
+  besides the fixture's: `0x1`, `0x11`, `0x103`, `0x110`, `0x113` (MaxDrop does not read the flags). Not known:
+  the layout written by a 3ds Max newer than 2020.
