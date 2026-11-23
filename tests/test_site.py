@@ -168,7 +168,8 @@ class Page(unittest.TestCase):
         for needle in ("Phiên bản 1.2.3", "không liên kết với Autodesk hay Chaos", "Cài đặt", "Khắc phục sự cố",
                        "MaxDrop (.max, .zip, .rar, .7z)", "MaxDrop (.max, .rar, .7z)",
                        "kể cả Slice và bán cầu", "đèn dome của V-Ray thành World",
-                       "đèn mesh của V-Ray thành lưới phát sáng", "CoronaSkinMtl (đơn giản hóa)"):
+                       "đèn mesh của V-Ray thành lưới phát sáng", "CoronaSkinMtl (đơn giản hóa)",
+                       "<strong>Teapot</strong>: được nhập thành empty"):
             self.assertIn(needle, vietnamese)
         for gone in ("đèn mesh và dome của V-Ray", "primitive bị cắt lát (slice) và bán cầu"):
             self.assertNotIn(gone, vietnamese)
