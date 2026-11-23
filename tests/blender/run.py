@@ -369,6 +369,7 @@ VALUE_TOLERANCE = 1e-4
 SPECULAR_LEVEL = 0.5  # the IR's specular is a reflection weight: 1 is Blender's Specular IOR Level 0.5
 TWIN_LABEL, WEIGHT_LABEL = "Without reflection", "Reflection weight"  # a weight between 0 and 1 (maxdrop-em3.119)
 MIRROR_LABEL = "Mirror reflection"  # the white metal of a weight without Fresnel (maxdrop-em3.120)
+MIRROR_INPUTS = {"Metallic": 1.0, "Base Color": (1.0, 1.0, 1.0, 1.0), "Specular IOR Level": SPECULAR_LEVEL}
 REFRACTION_LABEL = "Refraction without reflection"  # refracting glass's twin (maxdrop-em3.135)
 TIR_LABEL = "Total internal reflection"  # the weight's mask where glass reflects totally (maxdrop-em3.135)
 DEG = math.pi / 180.0
@@ -1571,10 +1572,24 @@ def _principled(material):
 
 
 def _weight_mix(p):
-    """The reflection weight's Mix Shader over Principled p, None when p's Specular IOR Level alone draws it."""
+    """The reflection weight's Mix Shader over Principled p, None when p's Specular IOR Level alone draws it. A
+    mirror on refracting glass (bead maxdrop-6n0.7.2) leaves p unlinked: then the weight Mix Shader whose second
+    shader is a mirror copy and whose first is not a Principled BSDF, of several the one whose copy repeats p."""
     out = next(s for s in p.outputs if s.identifier == "BSDF")
-    return next((link.to_node for link in out.links if link.to_node.bl_idname == "ShaderNodeMixShader"
-                 and link.to_node.label == WEIGHT_LABEL), None)
+    mix = next((link.to_node for link in out.links if link.to_node.bl_idname == "ShaderNodeMixShader"
+                and link.to_node.label == WEIGHT_LABEL), None)
+    if mix is not None or out.is_linked:
+        return mix
+    found = []
+    for n in p.id_data.nodes:
+        copy = _from(n.inputs[2]) if n.bl_idname == "ShaderNodeMixShader" and n.label == WEIGHT_LABEL else None
+        below = _from(n.inputs[1]) if copy is not None else None
+        if getattr(copy, "label", "") == MIRROR_LABEL and below is not None \
+                and below.bl_idname != "ShaderNodeBsdfPrincipled":
+            found.append((copy, n))
+    if len(found) > 1:
+        found = [(copy, n) for copy, n in found if _same_inputs(p, copy, MIRROR_INPUTS) == []] or found
+    return found[0][1] if found else None
 
 
 def _weight_factor(mix):
@@ -1600,12 +1615,13 @@ def _constant_one(p, name):
 def check_specular(label, p, ir, present):
     """Specular IOR Level from the IR's reflection weight w: a weight map or a constant between 0 and 1 is a Mix
     Shader by w over a twin without reflection (Specular IOR Level 0.5 on p), else 0.5 x w (w taken at most 1) on p
-    alone; a constant metal, or full transmission with Fresnel off, is 0.5 x w alone; a constant 0 on a transmitting
-    p is a weight of 0 over the twin (bead maxdrop-em3.135: Specular IOR Level 0 leaves glass its reflection)."""
+    alone; a constant metal is 0.5 x w alone; a constant 0 on a transmitting p is a weight of 0 over the twin (bead
+    maxdrop-em3.135: Specular IOR Level 0 leaves glass its reflection). With Fresnel off, refracting glass takes the
+    mirror too (bead maxdrop-6n0.7.2)."""
     folded = _fold(ir.textures["specular"].root, present) if "specular" in ir.textures else LOST
     linked = folded is MAP
     w = None if linked else _mean(ir.specular.value if folded is LOST else folded)
-    metal_glass = _constant_one(p, "Metallic") or (not ir.fresnel and _constant_one(p, "Transmission Weight"))
+    metal_glass = _constant_one(p, "Metallic")
     black_glass = not metal_glass and not linked and w <= 0 and _on(p, "Transmission Weight")
     lone = metal_glass or (not linked and not 0 < w < 1 and not black_glass)
     s, mix = p.inputs["Specular IOR Level"], _weight_mix(p)
@@ -1653,13 +1669,16 @@ def _same_inputs(p, copy, own):
 
 def check_mirror(label, p, mix):
     """A weight without Fresnel: the Mix Shader's first shader is p (Specular IOR Level 0), its second p's copy as
-    a white metal: p's links and values but Metallic 1, Base Color white (both unlinked), Specular IOR Level 0.5."""
+    a white metal: p's links and values but Metallic 1, Base Color white (both unlinked), Specular IOR Level 0.5.
+    On refracting glass (bead maxdrop-6n0.7.2) the first shader is the refraction twin (check_refraction_twin)."""
     copy = _from(mix.inputs[2])
+    refracts = _refracting(p)
     ok = copy is not None and copy.bl_idname == "ShaderNodeBsdfPrincipled" and copy.label == MIRROR_LABEL \
-        and _from(mix.inputs[1]) == p
-    bad = _same_inputs(p, copy, {"Metallic": 1.0, "Base Color": (1.0, 1.0, 1.0, 1.0),
-                                 "Specular IOR Level": SPECULAR_LEVEL}) if ok else []
+        and (refracts or _from(mix.inputs[1]) == p)
+    bad = _same_inputs(p, copy, MIRROR_INPUTS) if ok else []
     check(label + ": the mirror is the Principled BSDF as a white metal", ok and bad == [], str(bad))
+    if ok and refracts:
+        check_refraction_twin(label, p, mix, copy)
 
 
 def check_twin(label, p, mix):
@@ -1702,12 +1721,13 @@ def _same_source(a, b):
                                 else abs(float(va) - float(vb)) <= 1e-6)
 
 
-def check_refraction_twin(label, p, mix):
+def check_refraction_twin(label, p, mix, above=None):
     """Refracting glass (bead maxdrop-em3.135): the weight's first shader refracts without reflecting: a Refraction
     BSDF (its color the square root of p's Base Color, a constant's or a Gamma 0.5 on its link; a thin wall: the Base
     Color and IOR 1; p's Roughness, IOR and Normal), alone for a constant transmission of at least 1, else under p's
     twin (Specular IOR Level 0, Transmission Weight 0) by a Mix Shader whose factor is p's transmission. On a solid
-    the weight is raised to 1 where a Fresnel node at p's IOR and normal is above 0.9999."""
+    the weight is raised to 1 where a Fresnel node at p's IOR and normal is above 0.9999. The weight's second shader
+    is above: p, or under a mirror its white-metal copy."""
     top, thin = _from(mix.inputs[1]), _thin(p)
     full = _constant_one(p, "Transmission Weight")
     if full:
@@ -1721,7 +1741,7 @@ def check_refraction_twin(label, p, mix):
         bad = _same_inputs(p, twin, {"Specular IOR Level": 0.0, "Transmission Weight": 0.0}) if ok else ["structure"]
         check(label + ": the refracting twin's Principled is the BSDF without reflection or transmission",
               ok and bad == [], str(bad))
-    ok = ok and _from(mix.inputs[2]) == p and refr is not None and refr.bl_idname == "ShaderNodeBsdfRefraction" \
+    ok = ok and _from(mix.inputs[2]) == (p if above is None else above) and refr is not None and refr.bl_idname == "ShaderNodeBsdfRefraction" \
         and refr.label == REFRACTION_LABEL
     check(label + ": the twin refracts through a Refraction BSDF%s" % ("" if full else " by the transmission"), ok)
     if not ok:
@@ -3044,7 +3064,7 @@ def check_builder_weight():
     twin without reflection; 0, 1 and a metal keep the lone Principled at 0.5 x the weight; a layer gets a twin of
     its own. Refracting glass (bead maxdrop-em3.135): the twin refracts without reflecting (a Refraction BSDF, under
     the Principled twin by a partial transmission), unless an alpha, an emission, a coat or a sheen keep the
-    Principled twin; full glass with Fresnel off keeps the lone Principled."""
+    Principled twin; glass with Fresnel off: check_builder_fresnel_off."""
     from maxdrop.build import materials as build_materials
     from maxdrop.convert import materials as cm
     from maxdrop.convert import texmaps as tx
@@ -3079,7 +3099,6 @@ def check_builder_weight():
             ("GlassEmission", dict(glass, emission_color=cm.Input((1.0, 0.5, 0.2)), emission_strength=2.0), None,
              True, 0.5, False),
             ("GlassCoat", dict(glass, coat_weight=0.5), None, True, 0.5, False),
-            ("GlassOff", dict(glass, fresnel=False), None, False, 0.2, False),
             ("GlassBlack", dict(glass, specular=cm.Input(0.0)), None, True, 0.5, True),
             ("HalfGlassBlack", dict(glass, specular=cm.Input(0.0), transmission=cm.Input(0.5)), None, True, 0.5,
              True),
@@ -3157,7 +3176,9 @@ def check_builder_fresnel_off():
     """A weight without Fresnel (bead maxdrop-em3.120, VRayMtl Fresnel off): between 0 and 1, or a converted map, a
     Mix Shader by the weight from the BSDF at Specular IOR Level 0 to its copy as a white metal; 0, a metal and a
     reflection map that did not convert or whose image is not found (no node: its swatch) keep em3.119's drawing;
-    Fresnel on keeps the twin."""
+    Fresnel on keeps the twin. Refracting glass (bead maxdrop-6n0.7.2): the mirror's first shader refracts without
+    reflecting (em3.135's refraction twin, the weight 1 under total internal reflection) and the filled BSDF feeds
+    nothing; a black reflection is the twin at 0, a white one the lone BSDF; a coat keeps the mirror over the BSDF."""
     from maxdrop.build import materials as build_materials
     from maxdrop.convert import materials as cm
     from maxdrop.convert import texmaps as tx
@@ -3165,7 +3186,16 @@ def check_builder_fresnel_off():
     builder = build_materials.MaterialBuilder()
     facing = tx.TextureGraphIR(tx.Mix(tx.Constant((0.0,) * 3), tx.Constant((1.0,) * 3), 0.0,
                                       tx.Facing(tx.PERPENDICULAR)), tx.COLOR)
+    glass = dict(specular=cm.Input(0.2), transmission=cm.Input(1.0))
     for name, kw, textures, drawing, level in (
+            ("GlassOff", dict(glass, roughness=cm.Input(0.2)), {}, "mirror", 0.0),
+            ("GlassOffGrey", dict(glass, base_color=cm.Input((0.25, 0.25, 0.25))), {}, "mirror", 0.0),
+            ("HalfGlassOff", dict(glass, transmission=cm.Input(0.5)), {}, "mirror", 0.0),
+            ("GlassOffMap", dict(glass, specular=cm.Input(0.0, cm.MapRef(1))), {"specular": facing}, "mirror", 0.0),
+            ("ThinGlassOff", dict(glass, thin_walled=True), {}, "mirror", 0.0),
+            ("GlassOffCoat", dict(glass, coat_weight=0.5), {}, "mirror", 0.0),
+            ("GlassOffBlack", dict(glass, specular=cm.Input(0.0)), {}, "twin", 0.5),
+            ("GlassOffWhite", dict(glass, specular=cm.Input(1.0)), {}, "lone", 0.5),
             ("Dim", dict(specular=cm.Input(0.2), roughness=cm.Input(0.3)), {}, "mirror", 0.0),
             ("DimRed", dict(specular=cm.Input(0.2), base_color=cm.Input((1.0, 0.0, 0.0), cm.MapRef(1)),
                             metallic=cm.Input(0.2, cm.MapRef(1))),
@@ -3197,6 +3227,26 @@ def check_builder_fresnel_off():
             check_specular("fresnel off: " + name, p, ir, name != "LostImage")
             out = next(n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeOutputMaterial")
             check("fresnel off: %s: the surface is the Mix Shader" % name, _from(out.inputs["Surface"]) == mix)
+        if name.startswith(("Glass", "HalfGlass", "ThinGlass")) and drawing == "mirror" and p is not None:
+            refracts = name != "GlassOffCoat"
+            check("fresnel off: %s: %s" % (name, "the BSDF feeds nothing, the refraction twin is below the mirror"
+                                           if refracts else "the mirror is over the BSDF (a coat: no twin)"),
+                  _refracting(p) == refracts and p.outputs["BSDF"].is_linked != refracts)
+        if name == "ThinGlassOff" and p is not None:
+            check("fresnel off: ThinGlassOff: drawn as a thin wall where Blender has one",
+                  _thin(p) == ("Thin Wall" in p.inputs))
+    base = cm.MaterialIR(81, "OffBase", "test", specular=cm.Input(1.0))
+    base.layers = [cm.Layer(cm.MaterialIR(82, "OffGlassTop", "test", fresnel=False, **glass), 0.5)]
+    m = builder.make(base)
+    bsdfs, shaders = _bsdfs(m), _shaders(m)
+    under = _weight_mix(bsdfs[1]) if len(bsdfs) == 2 else None
+    layer_mix = shaders[0] if len(shaders) == 1 else None
+    check("fresnel off: a glass layer over a base: the layer's mirror into the layer's Mix Shader",
+          under is not None and layer_mix is not None and _weight_mix(bsdfs[0]) is None
+          and _from(layer_mix.inputs[1]) == bsdfs[0] and _from(layer_mix.inputs[2]) == under,
+          "%d BSDFs, %d shaders" % (len(bsdfs), len(shaders)))
+    if under is not None:
+        check_specular("fresnel off: the glass layer", bsdfs[1], base.layers[0].ir, True)
     empty_scene()
 
 

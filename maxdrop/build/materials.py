@@ -53,9 +53,16 @@ filled BSDF at Specular IOR Level 0 first and a copy of it second (MIRROR_LABEL:
 unlinked), a white metal reflecting 1 at every angle, so w + (1 - w) diffuse. Measured on V-Ray 5.2 (bead
 maxdrop-em3.120, the same scene): a 0.2 swatch reflects 0.200 facing the camera, where Specular IOR Level 0.1 gave
 0.011. A reflection map that did not convert, or whose image is not found, keeps the twin (its swatch is a weight with
-Fresnel), so a bright swatch it hid never becomes a mirror. With fresnel off, full refraction (a constant Transmission
-Weight of 1) keeps the lone BSDF with Fresnel, and a partly refracting one keeps its refracting share's Fresnel
-reflection under the mirror (not measured).
+Fresnel), so a bright swatch it hid never becomes a mirror. On refracting glass (refracting() above, full or partial)
+the mirror's first shader is the refraction twin, its factor raised to 1 under total internal reflection on a solid
+(the filled BSDF, whose glass still reflects, then feeds nothing): w + (1 - w) T, V-Ray's split. Measured in Blender
+4.2, 4.5 and 5.2 (bead maxdrop-6n0.7.2, a smooth sphere, IOR 1.6, white environment, w 0.2): a black base reflects
+0.200 in every band in Cycles (the lone glass gave 0.053 facing the camera to 0.166 at 0.9-0.95 of the radius), a
+base 0.25 0.400 (0.2 + 0.8 x 0.25), a thin wall and half transmission 0.200; a rotated cube of white glass keeps 1.0
+of the white environment in Cycles; EEVEE 0.198-0.199 on the black base and 0.356-0.358 on the 0.25 one, flat.
+Glass that refracting() refuses keeps the filled BSDF under the mirror, its glass Fresnel still reflecting; a
+constant w of at least 1 keeps the lone BSDF (a VRayMtl's bright Fresnel-off reflection is a metal before it gets
+here). Not measured against V-Ray.
 
 Data maps (a map on roughness, metallic or alpha, a mask, a bump height: a graph drawn as a float) take the mean of
 their channels too: wherever a float graph comes out as a color socket (an image's Color, a Color Correction, a
@@ -510,8 +517,7 @@ class _Tree:
         if s is None:
             return None
         graph = ir.textures.get("specular")
-        if self.constant_at_least("Metallic", 1.0) or (not ir.fresnel
-                                                       and self.constant_at_least("Transmission Weight", 1.0)):
+        if self.constant_at_least("Metallic", 1.0):
             self.float_input("Specular IOR Level", ir.specular, graph, SPECULAR_LEVEL)
             return None
         w = self.float_value(ir.specular, graph)
@@ -533,24 +539,30 @@ class _Tree:
         """bsdf (at the IOR's full Fresnel) mixed by weight over a twin without reflection: the Mix Shader's
         output. The twin has bsdf's links and values, but Specular IOR Level 0; on refracting glass it refracts
         without reflecting (refraction_twin), and the weight is 1 where the glass reflects totally (tir_weight).
-        mirror: bsdf (without reflection) is the first shader and its copy the second, a white metal (MIRROR_LABEL:
-        MIRROR_INPUTS, Specular IOR Level 0.5 only for an edit that lowers Metallic)."""
+        mirror: the second shader is bsdf's copy as a white metal (MIRROR_LABEL: MIRROR_INPUTS, Specular IOR Level
+        0.5 only for an edit that lowers Metallic), the first bsdf (without reflection), or on refracting glass the
+        refraction twin (bsdf, whose glass still reflects, then feeds nothing)."""
         self.start_row()
         y = self.row - Y_STEP
         self.columns[-1] = self.row - 2 * Y_STEP
+        above = _out(bsdf, "BSDF")
         if mirror:
-            twin = self.copy_principled(bsdf, MIRROR_LABEL, MIRROR_INPUTS, y)
-        elif self.refracting(bsdf):
-            twin = self.refraction_twin(bsdf, y)
+            above = self.copy_principled(bsdf, MIRROR_LABEL, MIRROR_INPUTS, y)
+        if self.refracting(bsdf):
+            if mirror:
+                y -= Y_STEP
+                self.columns[-1] = y - Y_STEP
+            below = self.refraction_twin(bsdf, y)
             if not self.thin_wall(bsdf):
                 weight = self.tir_weight(bsdf, weight, y)
+        elif mirror:
+            below = _out(bsdf, "BSDF")
         else:
-            twin = self.copy_principled(bsdf, TWIN_LABEL, {"Specular IOR Level": 0.0}, y)
+            below = self.copy_principled(bsdf, TWIN_LABEL, {"Specular IOR Level": 0.0}, y)
         mix = self.nodes.new("ShaderNodeMixShader")
         mix.label = WEIGHT_LABEL
         mix.location = (bsdf.location[0] + X_STEP * 0.5, y)
         self.feed(mix.inputs[0], weight)
-        below, above = (_out(bsdf, "BSDF"), twin) if mirror else (twin, _out(bsdf, "BSDF"))
         self.links.new(below, mix.inputs[1])
         self.links.new(above, mix.inputs[2])
         return mix.outputs[0]
