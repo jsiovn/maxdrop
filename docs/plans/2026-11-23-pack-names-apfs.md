@@ -30,11 +30,14 @@ Bead: maxdrop-em3.157
   (a little more than APFS: safe).
 - "Unassigned" follows the interpreter's Unicode tables (14.0 on Python 3.11 = Blender 4.2/4.5, 15.1 on 3.13 =
   Blender 5.2): a character assigned in 15.0/15.1 is accepted on 5.2 and refused on 4.x. Deterministic per
-  Blender, written in the comment. A character newer than APFS's own tables could still fail there (clean failure,
-  as today); unmeasured.
+  Blender, written in the comment. APFS's tables are newer than Python 3.13's: the same macOS run stored names
+  holding U+1ADA, U+1AE7, U+1B4E, U+1B7F and U+FBCB (Unicode 16/17, unassigned for Python 3.13), which explains
+  34 refused against 30 failed. The 300 names the new test creates hold no code point newer than Unicode 14.0.
 - Lost by the rule: a name that was not valid in the archive's encoding (surrogateescape) now is skipped on Linux
-  too, where it used to be written as raw bytes. Such a name can never equal a texture reference of the `.max`
-  (valid Unicode), so no map the scene uses is lost; a `.max` with such a name is no longer offered as a scene.
+  too, where it used to be written as raw bytes; such a name can never equal a texture reference of the `.max`
+  (valid Unicode). A map named with a character newer than the interpreter's tables (Unicode 15+ on Blender 4.x,
+  16+ on 5.2) is skipped and reported on every OS, also where it could be stored: rare, and reported. A `.max`
+  with such a name is no longer offered as a scene.
 
 ## Other callers of refused_reason (checked, none blocks)
 

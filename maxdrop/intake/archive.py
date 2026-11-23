@@ -93,9 +93,9 @@ _NAME_UNITS_MAX = 255
 # flat write never fails half-way on one system and works on another.
 _FORBIDDEN = frozenset(':<>"|?*')
 # Likewise refused everywhere: APFS refuses a name with an unassigned code point (noncharacters included) or bytes
-# that are not UTF-8 (EILSEQ), and off Windows a lone surrogate outside surrogateescape's range has no bytes. Such
-# a name never matches a map name of a .max. "Unassigned" follows this Python's Unicode tables (14.0 on 3.11, 15.1
-# on 3.13).
+# that are not UTF-8 (EILSEQ), and off Windows a lone surrogate outside surrogateescape's range has no bytes.
+# "Unassigned" follows this Python's Unicode tables (14.0 on 3.11, 15.1 on 3.13), older than APFS's: a map named
+# with a newer character is skipped and reported, also where it could be stored.
 _UNSTORABLE = frozenset(("Cn", "Cs"))
 
 # Names of zip entries without the UTF-8 flag that are not valid UTF-8: the first of these that decodes strictly

@@ -42,7 +42,7 @@ SEPARATORS = ("/", "\\")
 # the end, control characters, look-alike slashes and dots, bidi overrides, lone surrogates, unassigned code points
 # and noncharacters (APFS refuses them), characters Windows cannot store, very long runs.
 TOKENS = ("/", "\\", ":", ".", "..", " ", "\x00", "\x1f", "\x7f", "con", "CON", "aux", "nul", "PRN", "com1", "LPT9",
-          "COM¹", "lpt³", "／", "＼", "∕", "․", "‮", "​", "\ud800", "\udfff", "\udcff", "͸", "￿",
+          "COM¹", "lpt³", "／", "＼", "∕", "․", "‮", "​", "\ud800", "\udfff", "\udcff", "\u0378", "\uffff",
           "<", ">", '"', "|", "?", "*", ".jpg", ".max", ".ies", "a", "Z", "é", "文", "~1", "$", "x" * 120)
 
 
@@ -123,7 +123,7 @@ class NamePolicyPropertyTest(unittest.TestCase):
         rng = random.Random(fuzz.SEED + 1)
         names = [n for _, n in _bases(rng) if archive.refused_reason(n) is None]
         rng.shuffle(names)
-        created = 0
+        self.assertGreaterEqual(len(names), CREATED)
         for i, name in enumerate(names[:CREATED]):
             folder = os.path.join(self.folder, "n%d" % i)
             os.mkdir(folder)
@@ -136,8 +136,6 @@ class NamePolicyPropertyTest(unittest.TestCase):
                 self.assertEqual(len(listed), 1)
                 self.assertEqual(archive.name_key(listed[0]), archive.name_key(name))
                 self.assertEqual(os.listdir(self.folder).count("n%d" % i), 1)
-            created += 1
-        self.assertEqual(created, CREATED)
         self.assertEqual(sorted(os.listdir(self.folder)), sorted("n%d" % i for i in range(CREATED)))
 
 
@@ -154,25 +152,25 @@ class UnstorableNameTest(unittest.TestCase):
 
     def test_unassigned_and_unpaired_code_points_are_refused(self):
         # Noncharacters are never assigned; U+0378 has been unassigned in every Unicode version.
-        for base in ("wood￿.jpg", "wood\U000efffe.jpg", "͸.jpg", "wood\ud800.jpg", "wood\udcff.jpg",
+        for base in ("wood\uffff.jpg", "wood\U000efffe.jpg", "\u0378.jpg", "wood\ud800.jpg", "wood\udcff.jpg",
                      "\udfff"):
             self.assertEqual(archive.refused_reason(base), UNSTORABLE, ascii(base))
 
     def test_private_use_and_format_characters_stay_accepted(self):
-        for base in (".jpg", "\U000f0000.png", "a​b.jpg", "‮ab.jpg", "中文.png",
+        for base in ("\ue000.jpg", "\U000f0000.png", "a\u200bb.jpg", "\u202eab.jpg", "\u4e2d\u6587.png",
                      "\U0001f600.jpg"):
             self.assertIsNone(archive.refused_reason(base), ascii(base))
 
     def test_a_pack_with_such_a_map_unpacks_without_it(self):
         path = os.path.join(self.folder, "pack.zip")
         with zipfile.ZipFile(path, "w") as z:
-            for name, data in (("room.max", b"MAX"), ("wood￿.jpg", b"BAD"), ("ok.jpg", b"OK")):
+            for name, data in (("room.max", b"MAX"), ("wood\uffff.jpg", b"BAD"), ("ok.jpg", b"OK")):
                 z.writestr(zipfile.ZipInfo(name, date_time=(2020, 1, 1, 0, 0, 0)), data)
         out = os.path.join(self.folder, "out")
         os.mkdir(out)
         r = archive.unpack(path, dest_parent=out)
         self.assertEqual(r.mode, "unpacked")
-        self.assertEqual(r.refused, [("wood￿.jpg", UNSTORABLE)])
+        self.assertEqual(r.refused, [("wood\uffff.jpg", UNSTORABLE)])
         self.assertEqual(sorted(os.listdir(r.folder)), sorted([archive.MARKER, "room.max", "ok.jpg"]))
 
 
