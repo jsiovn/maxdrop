@@ -664,14 +664,36 @@ class MaterialConverter:
 
     def source_for(self, index, material_id):
         """The material object index material_for(index, material_id) converts, None where it gives none, found
-        without converting or counting anything: Multi/Sub-Objects looked up by the ID (through the wrappers peel()
-        has already walked; a wrapper not yet peeled is its own answer). To compare IDs that get no slot."""
+        without converting, counting or caching anything: Multi/Sub-Objects looked up by the ID, wrappers through
+        peel()'s result or, for one peel() has not walked yet, its walk over _sub again (from the same object, so the
+        same base); a wrapper whose peel fails is its own answer (its grey IR is its own). To compare IDs that get no
+        slot."""
+        def base_of(j):
+            if j in self._peels:
+                return self._peels[j][0]
+            chain = []
+            while True:
+                try:
+                    m = self.graph.get(j)
+                except ChunkError:
+                    return None
+                key = ClassId(*m.class_id)
+                if m.superclass != classids.SC_MATERIAL or not (key in WRAPPERS or key == classids.SHELL_MTL) or (
+                        key == classids.CORONA_LAYERED_MTL and self._mixes_layers(m)):
+                    return j
+                if len(chain) == MAX_PEEL:
+                    return None
+                chain.append(j)
+                j = self._sub(m, key)[0]
+                if j is None or j in chain:
+                    return None
+
         seen, i = [], index
         while isinstance(i, int) and not isinstance(i, bool) and i not in seen and len(seen) <= MAX_PEEL:
             if self.graph.superclass(i) != classids.SC_MATERIAL:
                 return None
             seen.append(i)
-            base = self._peels.get(i, (i, None))[0]
+            base = base_of(i)
             if base is None or not self.is_class(base, classids.SC_MATERIAL, classids.MULTI_SUB_MTL):
                 return i if base is None else base
             i = self._entry(base, material_id)
