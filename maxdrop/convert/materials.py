@@ -95,8 +95,9 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
 - Wrappers (VRay2SidedMtl, VRayBlendMtl, VRayOverrideMtl, VRayMtlWrapper, Double Sided, Shellac, CoronaLayeredMtl
   without a base or without a layer on: base, then its layers that are on; CoronaRaySwitchMtl: direct, GI, reflect,
   refract, each where switched on) -> the first set sub-material in 3ds Max's getSubMtl order (VRayOverrideMtl's and
-  Double Sided's: those switched on; a slot switched off is read as empty, MaxDrop's choice: V-Ray's and 3ds Max's
-  documentation say only that the switch turns the material on or off, not what renders without it);
+  Double Sided's whatever their switches say: V-Ray 5.2 renders the base and the facing material switched off all the
+  same, measured in maxdrop-em3.136; the scanline renders a Double Sided side switched off black: an issue for the
+  facing one);
   CoronaSelectMtl -> its selected material (zero-based: the default is 0); Shell Material -> its render sub-material.
   Peeling stops at any other class (a Multi/Sub-Object included), at most MAX_PEEL wrappers deep; each wrapper object
   peeled counts once.
@@ -163,12 +164,12 @@ WRAPPERS = {
     classids.CORONA_RAY_SWITCH_MTL: (1603, 1600, 1601, 1602),  # directMtl, giMtl, reflectMtl, refractMtl
     classids.CORONA_SELECT_MTL: (312,),  # materials (table): the one at selected (313, zero-based)
 }
-# wrapper ClassId -> {sub-material parameter: its on switch}; a slot switched off is read as empty
+# wrapper ClassId -> {sub-material parameter: its on switch}; a slot switched off is read as empty. VRayOverrideMtl's
+# (1, 3, 5, 7, 9) and Double Sided's (2, 3) are not here: V-Ray 5.2 renders their sub-materials switched off all the same
 WRAPPER_SWITCHES = {
     classids.CORONA_RAY_SWITCH_MTL: {1603: 1613, 1600: 1610, 1601: 1611, 1602: 1612},
-    classids.VRAY_OVERRIDE_MTL: {0: 1, 2: 3, 4: 5, 6: 7, 8: 9},  # baseMtl_on ... shadowMtl_on
-    classids.DOUBLE_SIDED_MTL: {0: 2, 1: 3},  # map1Enabled, map2Enabled
 }
+DOUBLE_SIDED_FACING_ON = 2  # map1Enabled
 CORONA_SELECT_LIST, CORONA_SELECT_INDEX = 312, 313
 SHELL_RENDER_INDEX, SHELL_SUBS = 1, (2, 3)  # renderMtlIndex; originalMaterial, bakedMaterial
 # CoronaLayeredMtl, block 0: 1000 baseMtl, 1001 layers, 1002 amounts, 1003 mixmaps (masks), 1004 layersOn, 1005 masksOn,
@@ -464,6 +465,9 @@ class MaterialConverter:
             pids = WRAPPERS[key]
         block = m.block(0)
         switches = WRAPPER_SWITCHES.get(key, {})
+        if key == classids.DOUBLE_SIDED_MTL and not _flag(m, DOUBLE_SIDED_FACING_ON, 0, True):
+            self._issue_once(m.index, "%s: facing material switched off: drawn all the same, as V-Ray renders it (the "
+                                      "scanline renders it black)" % (m.name or "Double Sided"))
         for pid in pids:
             if pid in switches and not _flag(m, switches[pid], 0, True):
                 continue
@@ -791,7 +795,8 @@ def _car_paint(conv, m, ir, base_gloss, bump_pid):
     ir.specular = Input(_clamp01(_num(m, 4, 0, 0.5)))
     ir.coat_color = conv.rgb(m, 27, 0, (1.0, 1.0, 1.0))
     ir.coat_roughness = _roughness(_num(m, 39, 0, 1.0), False)
-    # a missing multiplier is read as 100: the car paints' as-created value is not recorded (FastSSS2's bump: 30)
+    # a missing multiplier is read as 100; both car paints are created with 30 (docs/FORMAT.md), but what V-Ray does
+    # with a file that lacks the parameter is not measured
     conv.bump_slot(ir, conv.map_ref(m, bump_pid, bump_pid + 1, bump_pid + 2, 0, ir=ir))
 
 

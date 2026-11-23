@@ -451,32 +451,34 @@ class Wrappers(unittest.TestCase):
                 self.assertEqual(ir.name, "AB"[want - 1])
                 self.assertEqual(sum(conv.stats.peeled.values()), 1)
 
-    def test_a_sub_material_switched_off_is_an_empty_slot(self):
+    def test_a_sub_material_switched_off_is_still_used(self):
+        """V-Ray 5.2 renders a VRayOverrideMtl's base and a Double Sided's facing material whatever their switches say
+        (maxdrop-em3.136); the scanline renders a Double Sided side switched off black: an issue when it is the
+        facing one, reported once per wrapper object."""
         OV, DS = classids.VRAY_OVERRIDE_MTL, classids.DOUBLE_SIDED_MTL
         override = {0: Ref(1), 2: Ref(2), 4: Ref(3), 6: Ref(4), 8: Ref(5)}
+        off = "Wrap: facing material switched off: drawn all the same, as V-Ray renders it (the scanline renders it black)"
         cases = [
-            (OV, override, 1),  # no switches stored: on
-            (OV, {**override, 1: 1, 3: 1}, 1),
-            (OV, {**override, 1: 0}, 2),  # baseMtl_on off: the GI material
-            (OV, {**override, 1: 0, 3: 0}, 3),  # and giMtl_on: the reflect material
-            (OV, {**override, 1: 0, 3: 0, 5: 0, 7: 0}, 5),
-            (OV, {**override, 1: 0, 3: 0, 5: 0, 7: 0, 9: 0}, None),
-            (DS, {0: Ref(1), 1: Ref(2)}, 1),
-            (DS, {0: Ref(1), 1: Ref(2), 2: 0}, 2),  # map1Enabled off: the back material
-            (DS, {0: Ref(1), 1: Ref(2), 2: 1, 3: 0}, 1),
-            (DS, {0: Ref(1), 1: Ref(2), 2: 0, 3: 0}, None),
+            (OV, override, False),  # no switches stored: on
+            (OV, {**override, 1: 1, 3: 1}, False),
+            (OV, {**override, 1: 0}, False),  # baseMtl_on off
+            (OV, {**override, 1: 0, 3: 0}, False),  # and giMtl_on
+            (OV, {**override, 1: 0, 3: 0, 5: 0, 7: 0, 9: 0}, False),
+            (OV, {0: Ref(1), 1: 0, 2: Ref(None), 4: Ref(3)}, False),
+            (DS, {0: Ref(1), 1: Ref(2)}, False),
+            (DS, {0: Ref(1), 1: Ref(2), 2: 0}, True),  # map1Enabled off
+            (DS, {0: Ref(1), 1: Ref(2), 2: 1, 3: 0}, False),  # map2Enabled off: the back is not drawn anyway
+            (DS, {0: Ref(1), 1: Ref(2), 2: 0, 3: 0}, True),
         ]
-        for class_id, params, want in cases:
+        for class_id, params, issue in cases:
             with self.subTest((class_id, params)):
                 subs = [_vray(i, "V%d" % i) for i in range(1, 6)]
-                conv = mat.MaterialConverter(FakeGraph(_wrapper(0, class_id, params, "Wrap"), *subs))
-                base, reason = conv.peel(0)
-                self.assertEqual(base, want)
-                if want is None:
-                    self.assertEqual(reason, "Wrap: no sub-material")
-                    self.assertTrue(conv.convert(0).unknown)
-                else:
-                    self.assertIsNone(reason)
+                outer = _wrapper(6, classids.VRAY_MTL_WRAPPER, {0: Ref(0)}, "Outer")
+                conv = mat.MaterialConverter(FakeGraph(_wrapper(0, class_id, params, "Wrap"), outer, *subs))
+                self.assertEqual(conv.peel(6), (1, None))
+                self.assertEqual(conv.peel(0), (1, None))  # _sub runs again on the same wrapper
+                self.assertEqual(conv.convert(0).name, "V1")
+                self.assertEqual(conv.stats.issues, [(0, off)] if issue else [])
 
     def test_nested_wrappers_count_each_once(self):
         objs = (_wrapper(0, classids.VRAY_MTL_WRAPPER, {0: Ref(1)}), _wrapper(1, classids.VRAY_2SIDED_MTL, {0: Ref(2)}),
