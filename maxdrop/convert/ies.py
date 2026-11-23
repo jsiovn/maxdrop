@@ -9,6 +9,7 @@
     p.scale                             # what V-Ray's power is multiplied by to give the flux it renders
     lookup = Lookup(index)              # index: a convert.textures.TextureIndex; one per scene description
     p, why = lookup.photometry(path, resolved)   # (Photometry, None), (None, why it is not read), (None, None)
+                                        # why also when it is not found and the texture search stopped short
 
 A VRayIES with its intensity override off scales the file's candelas by its power over the file's rated lumens
 (measured, docs/FORMAT.md "VRayIES power, measured"), so it renders power x flux / rated lumens; rated lumens of 0 or
@@ -245,11 +246,13 @@ class Lookup:
         self._read = {}
 
     def photometry(self, path, resolved=""):
-        """(Photometry, None) of the file a stored path names; (None, why) when it is found but not read; (None,
-        None) when it is not found."""
+        """(Photometry, None) of the file a stored path names; (None, why) when it is found but not read, or not
+        found where the walk of the texture folders stopped short (it may be past that); (None, None) when it is not
+        found."""
         found = self.index.find(path, resolved)
         if found is None:
-            return None, None
+            stopped = self.index.report.stopped()  # each rule was walked for this name: any stop may hide it
+            return (None, "not found: " + "; ".join(stopped)) if stopped else (None, None)
         if found.path not in self._read:
             try:
                 self._read[found.path] = read(found.path), None

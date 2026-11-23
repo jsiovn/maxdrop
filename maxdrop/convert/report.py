@@ -370,6 +370,11 @@ def gather(desc, source="", objects_built=None, meshes_built=None, dropped_uv_la
     return rep
 
 
+def search_stopped(lookup):
+    """The report's lines of where the walk of a convert.textures.TextureReport stopped (its truncated)."""
+    return [line[:1].upper() + line[1:] for line in lookup.stopped()]
+
+
 def add_materials(rep, materials_built, classes=(), conv_stats=None, tex_stats=None, lookup=None, sockets=(),
                   blender="", swatches=None, build_issues=()):
     """Add what the material import did to rep: materials_built (Blender materials made), classes {class name:
@@ -397,8 +402,6 @@ def add_materials(rep, materials_built, classes=(), conv_stats=None, tex_stats=N
     if lookup is not None:
         rep.textures_found = [(textures.RULE_NAMES[r], lookup.found.get(r, 0)) for r in textures.RULES]
         rep.textures_missing = list(lookup.missing)
-        rep.texture_search_stopped = [
-            "Texture search of %s stopped after %d files and folders, in %s" % (textures.RULE_NAMES[r], n, folder)
-            for r, folder, n in lookup.truncated]
+        rep.texture_search_stopped = search_stopped(lookup)
     rep.material_issues.extend(build_issues)
     return rep

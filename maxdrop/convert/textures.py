@@ -9,6 +9,7 @@ to a place the file should not reach.
     found = index.find(entry.path, entry.resolved)    # Found(path, rule) or None (reader/assets.AssetEntry)
     lights = index.share()                            # the same walk, counts of its own
     index.report.found[SCENE], index.report.missing, index.report.truncated   # worded by convert.report
+    index.report.stopped()                            # where the walk stopped, in words
 
 A scene stores a path for each file, written on another computer. Only its file name is looked up, compared
 without regard to case, in this order:
@@ -211,6 +212,12 @@ class TextureReport:
     def missing(self):
         """The file names not found, sorted, each once."""
         return [self._missing[k] for k in sorted(self._missing)]
+
+    def stopped(self):
+        """Where the walk stopped, a line each: "texture search of <rule> stopped after <n> files and folders, in
+        <folder>"."""
+        return ["texture search of %s stopped after %d files and folders, in %s" % (RULE_NAMES[r], n, folder)
+                for r, folder, n in self.truncated]
 
 
 class TextureIndex:

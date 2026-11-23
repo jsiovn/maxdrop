@@ -80,6 +80,9 @@
 # Modified for MaxDrop, 2026-11-22 (jsiovn). The scene description gets a texture lookup of its own: a VRayIES whose
 # intensity is not overridden finds its IES file, whose rated lumens and flux give its power.
 # Modified for MaxDrop, 2026-11-22 (jsiovn). An AttributeError of the reading is a reader defect too (_DEFECTS).
+# Modified for MaxDrop, 2026-11-23 (jsiovn). The IES, dome and material lookups share one walk of the texture folders
+# (convert.textures.TextureIndex.share), each with its own counts; a walk that stopped short is in the report also
+# without materials, and an IES file not found then says so.
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -483,20 +486,18 @@ def _preflight_of(path):
         return None
 
 
-def _material_slots(sc, desc, table, max_path, dirs, image_search, meters=None):
+def _material_slots(sc, desc, table, index, meters=None):
     """(the material slots of desc's meshes and curves (convert.materials.Slots), (the material converter's, the
     texture-map converter's and the texture lookup's counters, the scene's swatch rule) for the import report): every
     material converted, its texture files looked up. sc: the reader Scene, which the converters read; table: the
-    file's reader.assets.AssetTable (the one the scene description got); dirs: the texture search folders
-    (prefs.texture_dirs); meters: per file unit, as the geometry is scaled (lengths such as an SSS radius; None:
+    file's reader.assets.AssetTable (the one the scene description got); index: the texture lookup
+    (convert.textures.TextureIndex, a share of the import's: its counts are the materials'); meters: per file unit, as the geometry is scaled (lengths such as an SSS radius; None:
     the file's own unit); the counters hold no reference to either. Touches no Blender data."""
     from .convert import colors as convert_colors
     from .convert import materials as convert_materials
     from .convert import texmaps as convert_texmaps
-    from .convert import textures as convert_textures
     from .reader import materials as reader_materials
     graph = reader_materials.MaterialGraph(sc)
-    index = convert_textures.TextureIndex(max_path, dirs, scene_subfolders=image_search)
     swatches = convert_colors.of_scene(sc)
     tex = convert_texmaps.TexmapConverter(graph, table, textures=index, swatches=swatches)
     conv = convert_materials.MaterialConverter(graph, texmaps=tex, swatches=swatches, meters=meters)
@@ -504,17 +505,16 @@ def _material_slots(sc, desc, table, max_path, dirs, image_search, meters=None):
     return slots, (conv.stats, tex.stats, index.report, swatches)
 
 
-def _dome_texture(sc, dd, table, max_path, dirs, image_search):
+def _dome_texture(sc, dd, table, index):
     """(convert.lights DomeTexture of the dome dd's texture map, or None, issues): the map converted as a color input
-    with a converter of its own (the materials' counters stay theirs), its file looked up as the textures are."""
+    with a converter of its own (the materials' counters stay theirs), its file looked up by index (a share of the
+    import's convert.textures.TextureIndex: its counts are its own)."""
     from .convert import colors as convert_colors
     from .convert import lights as convert_lights
     from .convert import materials as convert_materials
     from .convert import texmaps as convert_texmaps
-    from .convert import textures as convert_textures
     from .reader import materials as reader_materials
     graph = reader_materials.MaterialGraph(sc)
-    index = convert_textures.TextureIndex(max_path, dirs, scene_subfolders=image_search)
     tex = convert_texmaps.TexmapConverter(graph, table, textures=index, swatches=convert_colors.of_scene(sc))
     graph_ir = tex.convert(convert_materials.MapRef(dd.texmap), convert_texmaps.COLOR, dd.color)
     return convert_lights.dome_texture(graph_ir, graph)
@@ -675,8 +675,9 @@ def _in_thread(fn, *args, stop=None, wait=_STOP_WAIT, **kwargs):
 
 class _Read:
     """What _read_scene() read of a .max: desc, the unit note, the material slots and counters, the conversion
-    failures, the light colors' swatch note."""
-    __slots__ = ("desc", "note", "slots", "counts", "failed", "light_note")
+    failures, the light colors' swatch note, the texture walk's report (convert.textures.TextureReport: where it
+    stopped, whichever lookup walked)."""
+    __slots__ = ("desc", "note", "slots", "counts", "failed", "light_note", "walk")
 
 
 def _read_scene(max_path, opts, dirs, cancel=None):
@@ -705,14 +706,16 @@ def _read_file(max_path, opts, dirs, cancel):
         unit = units.system_unit(sc)
         meters, read.note = _meters(opts.units, unit, opts.scale_objects)
         table = assets.AssetTable.from_file(cf)
-        # a lookup of its own (walked only for an IES file): the materials' one counts textures for the report
+        # one walk of the texture folders, a share per lookup: the materials' counts are their textures only
         files = convert_textures.TextureIndex(max_path, dirs, scene_subfolders=opts.use_image_search)
+        read.walk = files.report
         desc = convert_scene.describe(sc, meters, unit, convert_modifiers=opts.modifiers == 'KEEP',
-                                      assets=table, views=cameras.saved_views(cf), cancel=cancel, files=files)
+                                      assets=table, views=cameras.saved_views(cf), cancel=cancel,
+                                      files=files.share())
         read.slots, read.counts, read.failed = None, None, []
         if desc.dome is not None and desc.dome.texmap is not None:
             try:
-                desc.dome.texture, issues = _dome_texture(sc, desc.dome, table, max_path, dirs, opts.use_image_search)
+                desc.dome.texture, issues = _dome_texture(sc, desc.dome, table, files.share())
             except Exception as e:  # a texture rule's bug costs the World its texture, never the scene
                 print("MaxDrop: dome texture of %s not converted:\n%s" % (name, traceback.format_exc()), end="")
                 issues = ["its texture is not converted (%s: %s): the World has its color" % (type(e).__name__, e)]
@@ -722,8 +725,7 @@ def _read_file(max_path, opts, dirs, cancel):
             if cancel is not None and cancel():
                 raise convert_scene.Cancelled()
             try:
-                read.slots, read.counts = _material_slots(sc, desc, table, max_path, dirs, opts.use_image_search,
-                                                          meters)
+                read.slots, read.counts = _material_slots(sc, desc, table, files.share(), meters)
             except Exception as e:  # a material rule's bug costs the materials, never the scene
                 print("MaxDrop: materials of %s not converted:\n%s" % (name, traceback.format_exc()), end="")
                 read.failed.append(("materials", "not converted (%s: %s): the scene is imported without materials"
@@ -861,6 +863,8 @@ def _scene_steps(opts, scene, view_layer, max_path, pack=None, pack_name="", dir
                                      tex_stats=tex_stats, lookup=lookup, sockets=builder.sockets_skipped,
                                      blender=bpy.app.version_string, swatches=swatches,
                                      build_issues=failed + builder.issues())
+    if not rep.texture_search_stopped:  # no materials, or their conversion failed: the IES or dome walk's stop
+        rep.texture_search_stopped = convert_report.search_stopped(read.walk)
     del desc
     if axis != Matrix.Identity(4):
         for ob in built.roots():
