@@ -148,8 +148,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   from a knot back to the same spot gets no interpolation steps under Optimize, as in 3ds Max.
 - Extrude: a curve segment drawn almost straight (a vector a little off the line between its knots, up to about 2 %
   of its length) gets no interpolation steps under Optimize, as in 3ds Max, instead of its steps; one whose vectors
-  run far past its ends on that line gets steps under Optimize and Adaptive, as in 3ds Max (a rounded Rectangle
-  with very short sides: no cap), instead of none.
+  run far past its ends on that line gets its steps under Optimize, as in 3ds Max (a rounded Rectangle with very
+  short sides: no cap), instead of none.
 
 ## [1.0.1] - 2026-11-22
 

@@ -634,7 +634,8 @@ class Interpolation(unittest.TestCase):
     def test_a_vector_just_off_the_chord(self):
         """maxdrop-em3.111's probe: a 20 x 20 square of corner knots with a Bezier knot at (10, -4) whose in vector
         lies d off the chord from the corner at the origin; 3ds Max makes 11 points for d = 1e-3 .. 1e-6 (only the
-        segment out of the Bezier knot gets its 6 steps); the vectors are the ones 3ds Max stored."""
+        segment out of the Bezier knot gets its 6 steps). The vectors of the origin and the Bezier knot are the ones
+        3ds Max stored; the other corners' lie on their straight sides."""
         k = shapes.Knot
         for d in (1e-3, 1e-4, 1e-5, 1e-6):
             knots = (k(shapes.CORNER, shapes.CURVE, (0, 0, 0), (0, 20 / 3.0, 0), ((10 - d) / 2, -2, 0)),
