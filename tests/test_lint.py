@@ -117,7 +117,8 @@ class Case(unittest.TestCase):
 
 class UnreachableTest(unittest.TestCase):
     """The check ruff has no rule for at the pin: a statement after return, raise, continue or break in the same
-    block (maxdrop-em3.111 lost two tests that way). No ruff needed."""
+    block, or after a with, if/else, try or match no path through falls out of (maxdrop-em3.111 lost two tests
+    that way). No ruff needed."""
 
     def findings(self, source):
         with tempfile.TemporaryDirectory() as tmp:
@@ -207,6 +208,17 @@ class UnreachableTest(unittest.TestCase):
         self.assertEqual(self.lines("def f(x):\n    if x:\n        return 1\n    else:\n        x = 0\n"
                                     "    return x\n"), [])
         self.assertEqual(self.lines("def f(x):\n    with x:\n        pass\n    return x\n"), [])
+
+    def test_not_after_with_that_raises(self):
+        # __exit__ may swallow the exception (assertRaises, contextlib.suppress): the next statement runs.
+        self.assertEqual(self.lines("def f(cm):\n    with cm:\n        raise ValueError\n    return 1\n"), [])
+        self.assertEqual(self.lines("def f(self, staging, dest):\n    with self.assertRaises(RuntimeError):\n"
+                                    "        with staging(dest):\n            raise RuntimeError('boom')\n"
+                                    "    self.assertFalse(dest)\n"), [])
+        self.assertEqual(self.lines("def f(cm, x):\n    with cm:\n        if x:\n            raise KeyError\n"
+                                    "        else:\n            raise ValueError\n    return 1\n"), [])
+        # A raise inside the with still makes what follows it inside the body dead.
+        self.assertEqual(self.lines("def f(cm):\n    with cm:\n        raise ValueError\n        g()\n"), [4])
 
     def test_nested_compound_inside_loop(self):
         source = ("def f(xs):\n"

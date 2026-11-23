@@ -32,9 +32,10 @@ the add-on has another name): import within them relatively. The code is linted 
 the `test` workflow too. `python -I tools/lint.py` runs `ruff check .` with that version: `ruff` on PATH when it
 is that version, otherwise uv's cached copy (`uvx ruff@<version> --version` fetches it once), then a check ruff has
 no rule for at that version: a statement after `return`, `raise`, `continue` or `break` in the same block, or after
-a `with`, `if`/`else`, `try` or `match` no path through falls out of (a test method left nested after a return
-drops out of its suite without failing). It exits 3 and says how to get ruff when it finds neither. Without uv,
-install it in a virtual environment of its own and put that on PATH for the session:
+a `with` (returning, continuing or breaking), `if`/`else`, `try` or `match` no path through falls out of (a test
+method left nested after a return drops out of its suite without failing). It exits 3 and says how to get ruff
+when it finds neither. Without uv, install it in a virtual environment of its own and put that on PATH for the
+session:
 
 ```powershell
 python -m venv $env:TEMP\maxdrop-ruff

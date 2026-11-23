@@ -11,9 +11,10 @@ unreachable-code check ruff has no rule for at that version.
 The ruff used is `ruff` on PATH when it is that version, otherwise `uvx --offline ruff@<version>` when uv has it
 cached (`--offline`: never a download). The unreachable-code check reads the files ruff checks (`ruff check <the
 arguments> --show-files`) and reports a statement that follows `return`, `raise`, `continue` or `break` in the same
-block, or a compound statement no path through falls out of (a `with` whose body exits, an `if`/`else` exiting on
-both branches, a `try` whose `finally` exits or whose body and handlers do, a `match` ending in an irrefutable
-case with every case exiting): a test method left nested after a return drops out of its suite without a failure.
+block, or a compound statement no path through falls out of (a `with` whose body returns, continues or breaks: its
+`__exit__` may swallow a raise; an `if`/`else` exiting on both branches; a `try` whose `finally` exits or whose
+body and handlers do; a `match` ending in an irrefutable case with every case exiting): a test method left nested
+after a return drops out of its suite without a failure.
 Loops are never followed (a `break` leaves them, `while True` included) and there is no suppression comment
 (`return` then `yield`, the empty generator, is flagged too); a file this Python cannot parse is noted on stderr
 and not checked; the check is skipped with an argument ruff refuses beside --show-files (--statistics,
@@ -81,9 +82,9 @@ _MATCH = getattr(ast, "Match", None)  # 3.10
 _NAMES = {"AsyncWith": "async with", "TryStar": "try"}
 
 
-def _block_exits(block):
+def _block_exits(block, raises):
     # Control never passes a statement that exits, so a block exits when any statement in it does.
-    return any(_exits(stmt) for stmt in block)
+    return any(_exits(stmt, raises) for stmt in block)
 
 
 def _irrefutable(pattern):
@@ -92,24 +93,25 @@ def _irrefutable(pattern):
     return isinstance(pattern, ast.MatchAs) and pattern.pattern is None  # `case _:` / `case name:`
 
 
-def _exits(stmt):
+def _exits(stmt, raises=True):
     """True when no path through `stmt` falls through to the next statement. Loops never exit (a break leaves
-    them, `while True` included), nor do definitions."""
+    them, `while True` included), nor do definitions. `raises` False: a raise does not count (under a with)."""
     if isinstance(stmt, _TERMINAL):
-        return True
+        return raises or not isinstance(stmt, ast.Raise)
     if isinstance(stmt, (ast.With, ast.AsyncWith)):
-        return _block_exits(stmt.body)
+        # __exit__ may swallow an exception (assertRaises, suppress): only return, continue and break leave it.
+        return _block_exits(stmt.body, False)
     if isinstance(stmt, ast.If):  # elif: an If in orelse
-        return bool(stmt.orelse) and _block_exits(stmt.body) and _block_exits(stmt.orelse)
+        return bool(stmt.orelse) and _block_exits(stmt.body, raises) and _block_exits(stmt.orelse, raises)
     if isinstance(stmt, _TRY):
         # The else runs only after the body completes: either one exiting covers the path without an exception.
-        return _block_exits(stmt.finalbody) or (
-            all(_block_exits(handler.body) for handler in stmt.handlers)
-            and (_block_exits(stmt.body) or _block_exits(stmt.orelse)))
+        return _block_exits(stmt.finalbody, raises) or (
+            all(_block_exits(handler.body, raises) for handler in stmt.handlers)
+            and (_block_exits(stmt.body, raises) or _block_exits(stmt.orelse, raises)))
     if _MATCH is not None and isinstance(stmt, _MATCH):
         last = stmt.cases[-1]
         return (last.guard is None and _irrefutable(last.pattern)
-                and all(_block_exits(case.body) for case in stmt.cases))
+                and all(_block_exits(case.body, raises) for case in stmt.cases))
     return False
 
 
