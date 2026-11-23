@@ -300,7 +300,7 @@ Keyframe controllers (controllers fixture; every class read here is a 3ds Max 20
     has its length in frames, measured along the handle in (ticks, stored value) space: its time extent is
     `L * ticks_per_frame / sqrt(1 + tangent^2)` (FixtureFreeHandles: steep, a free middle key, a handle of 60 frames
     on a 50-frame segment; FixtureFreePosition, a length per axis; probes on a Bezier Scale, an Euler X in radians,
-    a ScaleXYZ factor, tangents up to 0.2 per tick, all within 2e-6, the handle longer than its segment 1.6e-5).
+    a ScaleXYZ factor, tangents up to 0.2 per tick, all within 5e-6, the handle longer than its segment 1.6e-5).
     Freeing a handle turns its length into frames (a third of 50 frames: 16.6675). `ticks_per_frame` is 4800 / the
     frames per second, an `i32` in Config `0x20B0/0x0010` (four saves of an empty scene at 24, 25, 30 and 60 fps
     differ only there); a probe at 25 fps fits 192 ticks per frame, and 160 misses by 0.95. Every fixture is at
@@ -1882,7 +1882,8 @@ Not shown by any fixture yet, so not stated above:
 - Controllers no file shows yet (`controllers.py` assumes them): a controller without `0x2500` (none in the corpus or
   the fixtures; its value chunk is used, with an issue when several keys animate it); a free Bezier handle of a
   negative length (3ds Max turns a third into frames when a handle is freed: linear, an issue); a frame rate other
-  than 30 fps in a fixture (a probe at 25 fps shows it); scale keys whose axis quaternions point apart (no probe
+  than 30 fps in a fixture (a probe at 25 fps shows it) and one that does not divide 4800 (seen: 24, 25, 30 and 60;
+  ticks per frame taken as 4800 // fps); scale keys whose axis quaternions point apart (no probe
   stored such a pair: linear, an issue); between two TCB Rotation keys a turn within 10 degrees short of a
   revolution, a turn about no axis or a negative stored angle (none stored: squad up to the gap, past it an issue),
   between two Linear Rotation keys a pair within about 5 degrees of a
