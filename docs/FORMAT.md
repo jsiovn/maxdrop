@@ -1726,6 +1726,12 @@ alike (within 8-bit rounding of the renders without the curve put through it). M
 as `mixCurve.Curve_1` without its points; the fixture's script sets them through the .NET `ICurve` (`Insert`,
 `SetPoint`; `GetPoint`'s point fails to cast in 3ds Max 2020, its handles and flags read).
 
+Two points at one x (falloff_curve's FixtureCurveJump, maxdrop-em3.129): `ICurve.Insert` keeps both, in the order
+inserted, also after the file is saved and loaded again, and `0x1030` stores them in that order. `GetValue`
+gives the first point's y at that x itself and the second's just past it: a vertical jump (corner points from 0.8
+to 0.3 at x = 32.5 / 64: 0.79998 at 0.5078, 0.300011 at 0.50782). MaxDrop draws it as two Float Curve points at one x,
+kept in that order (Blender's table of 256 steps over 0..1 draws the jump across one step).
+
 A Mix's Use Curve has no curve control: renderMap of a Mix of black and white gives, by the mix amount and by a mask
 alike, 0 below lower, 1 from upper on and smoothstep of (x - lower) / (upper - lower) between (lower 0.3, upper 0.7:
 0.04295 at 0.35, 0.15624 at 0.4); with lower at or above upper it is a step at lower.

@@ -1948,12 +1948,18 @@ def check_fixture_materials(name, plan, desc, obs):
 def check_falloff_curve(textured):
     """falloff_curve imported: each edited Falloff curve is a Float Curve on the Falloff's ratio that evaluates as 3ds
     Max 2020 does (tests/fixtures/falloff_curve.curves.jsonl, x = k / 64) and drives an unclamped Mix; the default
-    curve makes none. Each Mix's Use Curve: textured, a Map Range SMOOTHSTEP (lower < upper) or a step
-    (1 - LESS_THAN) over its mask; without the mask's file, the mix amount through the curve."""
+    curve makes none. FixtureCurveJump's two points at one x (a falling jump) stay in their order and the curve
+    evaluates as that polyline on either side of the jump. Each Mix's Use Curve: textured, a Map Range SMOOTHSTEP
+    (lower < upper) or a step (1 - LESS_THAN) over its mask; without the mask's file, the mix amount through the
+    curve (mix_factor; 3ds Max's own factor at that amount, the jsonl's "amount")."""
+    from maxdrop.convert import texmaps as tx
+
     with open(os.path.join(ROOT, "tests", "fixtures", "falloff_curve.curves.jsonl"), encoding="ascii") as f:
-        rows = {r["name"]: r["y"] for r in map(json.loads, f)}
+        records = {r["name"]: r for r in map(json.loads, f)}
+    rows = {name: r["y"] for name, r in records.items()}
     ratios = {"FixtureCurveBezier": "ShaderNodeLayerWeight", "FixtureCurveCorner": "ShaderNodeMath",
-              "FixtureCurveOvershoot": "ShaderNodeFresnel", "FixtureCurveClamped": "ShaderNodeLayerWeight"}
+              "FixtureCurveOvershoot": "ShaderNodeFresnel", "FixtureCurveClamped": "ShaderNodeLayerWeight",
+              "FixtureCurveJump": "ShaderNodeLayerWeight"}
     for name, ratio in ratios.items():
         mix = _from(_principled(bpy.data.materials[name]).inputs["Base Color"])
         fc = _from(_input(mix, "Factor_Float"))
@@ -1968,6 +1974,8 @@ def check_falloff_curve(textured):
             err = max(abs(mapping.evaluate(mapping.curves[0], k / 64.0) - y) for k, y in enumerate(rows[name]))
             check("falloff_curve/%s: the Float Curve evaluates as 3ds Max's curve, within 0.001" % name, err < 1e-3,
                   str(err))
+            if name == "FixtureCurveJump":
+                check_falloff_jump(mapping, 32.5 / 64)
     linear = bpy.data.materials["FixtureCurveLinear"]
     check("falloff_curve: the default curve makes no Float Curve",
           not any(n.bl_idname == "ShaderNodeFloatCurve" for n in linear.node_tree.nodes)
@@ -1977,12 +1985,17 @@ def check_falloff_curve(textured):
     check("falloff_curve: a Mix's Use Curve folded into its amount (0.4 -> 0.15625)",
           amount.bl_idname == "ShaderNodeMix" and _from(_input(amount, "Factor_Float")) is None
           and abs(_input(amount, "Factor_Float").default_value - 0.15625) < 1e-4)
+    # mix amount, lower, upper of each masked Mix (tools/fixtures/falloff_curve.ms)
+    masked = {"FixtureMixCurve": (0.5, 0.2, 0.9), "FixtureMixCurveStep": (0.7, 0.6, 0.4)}
     for name, kind in (("FixtureMixCurve", "SMOOTHSTEP"), ("FixtureMixCurveStep", "STEP")):
         mix = _from(_principled(bpy.data.materials[name]).inputs["Base Color"])
         factor = _from(_input(mix, "Factor_Float"))
         if not textured:
-            check("falloff_curve/%s: without its mask's file, the mix amount through the curve (0)" % name,
-                  factor is None and abs(_input(mix, "Factor_Float").default_value) < 1e-6)
+            want = tx.mix_factor(*masked[name])
+            got = _input(mix, "Factor_Float").default_value
+            check("falloff_curve/%s: without its mask's file, the mix amount through the curve (%.5f)" % (name, want),
+                  factor is None and want > 0.0 and abs(got - want) < 1e-4
+                  and abs(got - records[name]["amount"]) < 1e-3, "%s %s" % (getattr(factor, "bl_idname", None), got))
             continue
         if kind == "SMOOTHSTEP":
             ok = factor is not None and factor.bl_idname == "ShaderNodeMapRange" and \
@@ -1998,6 +2011,34 @@ def check_falloff_curve(textured):
         check("falloff_curve/%s: Use Curve as a %s over its mask image" % (name, kind),
               ok and image is not None and image.bl_idname in ("ShaderNodeTexImage", "ShaderNodeVectorMath"),
               "%s %s" % (getattr(factor, "bl_idname", None), getattr(image, "bl_idname", None)))
+
+
+def check_falloff_jump(mapping, x):
+    """falloff_curve's FixtureCurveJump as a Float Curve: the convert side's Remap points (two at x, (x, 0.8) then
+    (x, 0.3)), kept in that order, and the curve evaluates as that polyline 0.005 and 0.01 away from the jump (nearer,
+    Blender's table of 256 steps over 0..1 draws the jump across one step, as check_curve_step skips 0.005 there)."""
+    _desc, plan = _irs(os.path.join(ROOT, "tests", "fixtures", "falloff_curve.max"))
+    ir = next(ir for p in plan.values() for irs in p.slots for ir in irs
+              if ir is not None and ir.name == "FixtureCurveJump")
+    pts = list(ir.textures["base_color"].root.mask.points)
+    stored = [tuple(p.location) for p in mapping.curves[0].points]
+    at = [p for p in pts if abs(p[0] - x) < 1e-6]
+    check("falloff_curve/FixtureCurveJump: the convert side's points, the two at the jump in their order (0.8, 0.3)",
+          len(at) == 2 and abs(at[0][1] - 0.8) < 1e-6 and abs(at[1][1] - 0.3) < 1e-6 and len(stored) == len(pts)
+          and all(close(a, b, 1e-6) for a, b in zip(stored, pts)),
+          "%s, at the jump %s" % (len(stored), [p for p in stored if abs(p[0] - x) < 1e-6]))
+
+    def polyline(u):
+        if u <= pts[0][0]:
+            return pts[0][1]
+        for (xa, ya), (xb, yb) in zip(pts, pts[1:]):
+            if xa <= u < xb:
+                return ya + (yb - ya) * (u - xa) / (xb - xa)
+        return pts[-1][1]
+
+    err = max(abs(mapping.evaluate(mapping.curves[0], x + d) - polyline(x + d)) for d in (-0.01, -0.005, 0.005, 0.01))
+    check("falloff_curve/FixtureCurveJump: evaluates as the convert polyline on either side of the jump, within 0.001",
+          err < 1e-3, str(err))
 
 
 def check_curve_step():

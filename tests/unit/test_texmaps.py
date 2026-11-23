@@ -2699,7 +2699,8 @@ class FalloffCurve(Checks):
     def setUpClass(cls):
         cls.f = Fixture("falloff_curve")
         with open(os.path.join(FIXTURE_DIR, "falloff_curve.curves.jsonl"), encoding="ascii") as f:
-            cls.rows = {r["name"]: r["y"] for r in map(json.loads, f)}
+            cls.records = {r["name"]: r for r in map(json.loads, f)}
+        cls.rows = {name: r["y"] for name, r in cls.records.items()}
 
     @classmethod
     def tearDownClass(cls):
@@ -2716,7 +2717,8 @@ class FalloffCurve(Checks):
 
     def test_falloff_curves_match_3ds_max(self):
         modes = {"FixtureCurveBezier": tx.PERPENDICULAR, "FixtureCurveCorner": tx.TOWARDS,
-                 "FixtureCurveOvershoot": tx.FRESNEL, "FixtureCurveClamped": tx.PERPENDICULAR}
+                 "FixtureCurveOvershoot": tx.FRESNEL, "FixtureCurveClamped": tx.PERPENDICULAR,
+                 "FixtureCurveJump": tx.PERPENDICULAR}
         for name, mode in modes.items():
             with self.subTest(name):
                 root = self.root(name)
@@ -2724,12 +2726,26 @@ class FalloffCurve(Checks):
                 self.assertIsInstance(root.mask, tx.Remap)
                 self.assertEqual(root.mask.input.mode, mode)
                 points = root.mask.points
-                self.assertEqual(list(points), sorted(points))
+                self.assertEqual([x for x, _y in points], sorted(x for x, _y in points))
                 for k, y in enumerate(self.rows[name]):
                     self.assertAlmostEqual(_polyline_at(points, k / 64.0), y, delta=1e-3, msg=(name, k))
         self.assertEqual(len(self.root("FixtureCurveCorner").mask.points), 4, "corner points: straight segments")
         self.assertGreater(max(self.rows["FixtureCurveOvershoot"]), 1.19, "3ds Max does not clamp the curve")
         self.assertGreater(max(y for _x, y in self.root("FixtureCurveOvershoot").mask.points), 1.19)
+
+    def test_jump(self):
+        """FixtureCurveJump: two points at x = 32.5 / 64 (a falling jump) stay in 3ds Max's order, one beside the
+        other, and 3ds Max's curve is on either side of the jump at the samples next to it."""
+        x = 32.5 / 64
+        points = list(self.root("FixtureCurveJump").mask.points)
+        at = [k for k, p in enumerate(points) if p[0] == x]
+        self.assertEqual(len(at), 2, points)
+        self.assertEqual(at[1], at[0] + 1)
+        self.assertAlmostEqual(points[at[0]][1], 0.8, places=6)
+        self.assertAlmostEqual(points[at[1]][1], 0.3, places=6)
+        y = self.rows["FixtureCurveJump"]
+        self.assertGreater(y[32], 0.7)
+        self.assertLess(y[33], 0.4)
 
     def test_linear_curve_makes_no_node(self):
         self.assertEqual(self.root("FixtureCurveLinear").mask, tx.Facing(tx.PERPENDICULAR, 1.6))
@@ -2744,6 +2760,11 @@ class FalloffCurve(Checks):
                 for k, y in enumerate(self.rows[name]):
                     self.assertAlmostEqual(tx.mix_factor(k / 64.0, mask.lower, mask.upper), y, delta=1e-4,
                                            msg=(name, k))
+                # without the mask's image the builder mixes by the factor: the mix amount through the curve,
+                # as 3ds Max mixes a Mix without a mask at that amount ("amount")
+                factor = self.root(name).factor
+                self.assertGreater(factor, 0.0)
+                self.assertAlmostEqual(factor, self.records[name]["amount"], delta=1e-4)
         root = self.root("FixtureMixCurveAmount")
         self.assertIsNone(root.mask)
         self.assertAlmostEqual(root.factor, self.rows["FixtureMixCurveAmount"][0], delta=1e-4)

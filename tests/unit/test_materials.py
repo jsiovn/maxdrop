@@ -36,7 +36,7 @@ FLOORS = {"vray_lights": 0, "vray_dome": 0, "lights_standard": 0, "lights_photom
           "corona_mix_blends": 2710,
           "corona_classes": 470,
           "corona_more": 3270,
-          "corona_maps": 950, "corona_physical": 500, "editable_mesh": 380, "extrude": 120, "falloff_curve": 1240, "gamma_swatches": 540,
+          "corona_maps": 950, "corona_physical": 500, "editable_mesh": 380, "extrude": 120, "falloff_curve": 1830, "gamma_swatches": 540,
           "hierarchy": 120, "instances": 120, "layers_flags": 120,
           "layers_more": 120, "lookat": 120, "modifier_pivot": 120,
           "layers_nested": 120,
@@ -640,7 +640,7 @@ class MixCurve(unittest.TestCase):
             counts = {name: len(materials.mix_curve(s, m)) for name, m in maps.items()
                       if m.class_id == classids.FALLOFF}
             self.assertEqual(counts, {"FixtureCurveBezier": 3, "FixtureCurveCorner": 4, "FixtureCurveOvershoot": 3,
-                                      "FixtureCurveClamped": 4, "FixtureCurveLinear": 2})
+                                      "FixtureCurveClamped": 4, "FixtureCurveLinear": 2, "FixtureCurveJump": 4})
             for name in ("FixtureMixCurve", "FixtureMixCurveAmount", "FixtureMixCurveStep"):
                 self.assertIsNone(materials.mix_curve(s, maps[name]), name)  # a Mix has no curve control
             # the head of the curve's 0x2035 is its point count (docs/FORMAT.md, References)
