@@ -37,6 +37,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ### Fixed
 
+- Materials: a VRayMtl with reflection Fresnel off and a grey reflection color (mid grey up to just below white,
+  no reflection map) keeps its diffuse under the reflection, as V-Ray renders it, instead of becoming a metal in
+  the reflection color that dropped the diffuse (checked against V-Ray 5.2 in Cycles: a 0.5 grey over a red
+  diffuse within 0.2 % facing the camera). A colored or white reflection is still a metal.
 - Materials: a material or map parameter animated in 3ds Max (a color, a glossiness, a multiplier, a Color
   Correction's custom rewiring held by a Bezier, Linear or TCB Float, a Float List or a Bezier Color controller)
   takes its value at frame 0 instead of the class's default, and that rewiring is no longer a line in the report.
