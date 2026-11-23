@@ -93,8 +93,96 @@ class FindTest(unittest.TestCase):
         self.assertIn("no required-version", out)
 
 
+DEAD_TEST = '''import unittest
+
+
+def helper():
+    return 1
+
+
+class Case(unittest.TestCase):
+    def test_a(self):
+        self.assertEqual(helper(), 1)
+
+    def other(self):
+        return 2
+
+        def test_b(self):
+            self.assertTrue(True)
+'''
+
+
+class UnreachableTest(unittest.TestCase):
+    """The check ruff has no rule for at the pin: a statement after return, raise, continue or break in the same
+    block (maxdrop-em3.111 lost two tests that way). No ruff needed."""
+
+    def findings(self, source):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "probe.py")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(source)
+            return lint.unreachable(path)
+
+    def test_def_after_return_inside_a_class(self):
+        found = self.findings(DEAD_TEST)
+        self.assertEqual([(line, col) for line, col, _ in found], [(15, 9)])
+        self.assertIn("return", found[0][2])
+
+    def test_bom_and_decorated_def(self):
+        source = "\ufeffclass C:\n    def f(self):\n        return 1\n\n        @staticmethod\n        def g():\n            pass\n"
+        self.assertEqual([line for line, _, _ in self.findings(source)], [6])
+
+    def test_clean_file(self):
+        self.assertEqual(self.findings("def f(x):\n    if x:\n        return 1\n    return 2\n"), [])
+
+    def test_every_terminal_and_block(self):
+        source = (
+            "def f(xs):\n"
+            "    for x in xs:\n"
+            "        if x:\n"
+            "            continue\n"
+            "            x += 1\n"            # 5: after continue in an if body
+            "        else:\n"
+            "            break\n"
+            "            x -= 1\n"            # 8: after break in an else
+            "    try:\n"
+            "        pass\n"
+            "    except ValueError:\n"
+            "        raise\n"
+            "        pass\n"              # 13: after raise in an except
+            "    finally:\n"
+            "        return 0\n"
+            "        f(xs)\n"             # 16: after return in a finally
+        )
+        self.assertEqual([line for line, _, _ in self.findings(source)], [5, 8, 13, 16])
+
+    def test_one_finding_per_block(self):
+        self.assertEqual(len(self.findings("def f():\n    return 1\n    a = 1\n    b = 2\n")), 1)
+
+    def test_syntax_error_is_raised_for_main_to_note(self):
+        # Ruff's E9 reports it; main() prints a note and goes on with the other files.
+        with self.assertRaises(SyntaxError):
+            self.findings("def f(:\n    return\n")
+
+    def test_syntax_error_does_not_stop_main(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = os.path.join(tmp, "bad.py")
+            with open(bad, "w", encoding="utf-8") as f:
+                f.write("def f(:\n")
+            dead = os.path.join(tmp, "dead.py")
+            with open(dead, "w", encoding="utf-8") as f:
+                f.write(DEAD_TEST)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+                count = lint.report_unreachable([bad, dead], tmp, github=False)
+        self.assertEqual(count, 1)
+        self.assertIn("dead.py:15:9:", out.getvalue())
+        self.assertIn("bad.py", out.getvalue())
+
+
 class LintTest(unittest.TestCase):
-    """ruff check passes on the tree and fails on a module-level import below a statement (E402)."""
+    """ruff check passes on the tree and fails on a module-level import below a statement (E402); the
+    unreachable-code check of tools/lint.py runs on the files ruff checks."""
 
     @classmethod
     def setUpClass(cls):
@@ -116,6 +204,25 @@ class LintTest(unittest.TestCase):
             code, out = run_main(["--no-cache", "."], cwd=tmp)
         self.assertEqual(code, 1, out)
         self.assertIn("E402", out)
+
+    def test_unreachable_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            shutil.copy(os.path.join(ROOT, "pyproject.toml"), tmp)
+            with open(os.path.join(tmp, "probe.py"), "w", encoding="utf-8") as f:
+                f.write(DEAD_TEST)
+            code, out = run_main(["--no-cache", "."], cwd=tmp)
+        self.assertEqual(code, 1, out)
+        self.assertIn("probe.py:15:9:", out)
+
+    def test_unreachable_as_github_annotation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            shutil.copy(os.path.join(ROOT, "pyproject.toml"), tmp)
+            with open(os.path.join(tmp, "probe.py"), "w", encoding="utf-8") as f:
+                f.write(DEAD_TEST)
+            code, out = run_main(["--no-cache", "--output-format=github", "."], cwd=tmp)
+        self.assertEqual(code, 1, out)
+        self.assertIn("::error ", out)
+        self.assertIn("line=15,col=9", out)
 
     def test_non_ascii_finding_reaches_a_cp1252_stdout(self):
         # A redirected stdout on Windows is cp1252; ruff quotes the source line of a finding.

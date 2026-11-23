@@ -154,7 +154,8 @@ jobs:
       - name: Fixture scan (user names, computer names, user paths)
         run: python -I tools/check_fixture.py "tests/fixtures/**/*"
       # Once: ruff does not depend on numpy. Its version is `required-version` in pyproject.toml, the one place
-      # it is written; tools/lint.py is the command block 1 of build-and-test runs locally.
+      # it is written; tools/lint.py is the command block 1 of build-and-test runs locally, and it adds the
+      # unreachable-code check ruff has no rule for.
       - name: Ruff
         if: runner.os == 'Linux' && startsWith(matrix.numpy, '2.')
         run: |

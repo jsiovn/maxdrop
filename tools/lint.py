@@ -2,16 +2,20 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Run ruff on the tree at the version CI runs, the one `required-version` in pyproject.toml names.
+"""Run ruff on the tree at the version CI runs, the one `required-version` in pyproject.toml names, then the
+unreachable-code check ruff has no rule for at that version.
 
     python -I tools/lint.py                              # ruff check .
     python -I tools/lint.py --output-format=github .     # the arguments go to `ruff check`
 
 The ruff used is `ruff` on PATH when it is that version, otherwise `uvx --offline ruff@<version>` when uv has it
-cached (`--offline`: never a download). Exit: ruff's own (0 clean, 1 findings, 2 a ruff error such as a bad
-argument), 3 when no ruff of that version is found or pyproject.toml has no pin. Standard library only, Python 3.9
-and later (no tomllib).
+cached (`--offline`: never a download). The unreachable-code check reads the files ruff checks (`ruff check <the
+arguments> --show-files`) and reports a statement that follows `return`, `raise`, `continue` or `break` in the same
+block: a test method left nested after a return drops out of its suite without a failure. Exit: ruff's own (0
+clean, 1 findings, 2 a ruff error such as a bad argument; an unreachable statement turns 0 into 1), 3 when no ruff
+of that version is found or pyproject.toml has no pin. Standard library only, Python 3.9 and later (no tomllib).
 """
+import ast
 import os
 import re
 import shutil
@@ -65,6 +69,69 @@ def _echo(data, stream):
         buffer.flush()
 
 
+_TERMINAL = (ast.Return, ast.Raise, ast.Continue, ast.Break)
+
+
+def _blocks(node):
+    # An except handler and a match case are nodes of their own with a body: ast.walk reaches them.
+    for field in ("body", "orelse", "finalbody"):
+        block = getattr(node, field, None)
+        if isinstance(block, list) and block and isinstance(block[0], ast.stmt):
+            yield block
+
+
+def unreachable(path):
+    """[(line, column, message)] of the first statement after a terminal one, once per block; columns from 1.
+    Raises SyntaxError when this Python cannot parse the file (ruff's E9 reports a real one)."""
+    with open(path, "rb") as f:
+        tree = ast.parse(f.read(), path)
+    found = []
+    for node in ast.walk(tree):
+        for block in _blocks(node):
+            for before, dead in zip(block, block[1:]):
+                if isinstance(before, _TERMINAL):
+                    found.append((dead.lineno, dead.col_offset + 1,
+                                  "unreachable code after `%s`" % type(before).__name__.lower()))
+                    break
+    return sorted(found)
+
+
+def _shown(path, cwd):
+    try:
+        return os.path.relpath(path, cwd)
+    except ValueError:  # another drive
+        return path
+
+
+def report_unreachable(paths, cwd, github):
+    """Print the unreachable statements of `paths` (ruff's concise form, or GitHub annotations); their count."""
+    count = 0
+    for path in paths:
+        try:
+            found = unreachable(path)
+        except (SyntaxError, ValueError) as error:
+            sys.stderr.write("MaxDrop lint: %s not parsed by Python %d.%d, unreachable-code check skipped: %s\n"
+                             % (_shown(path, cwd), sys.version_info[0], sys.version_info[1], error))
+            continue
+        for line, col, message in found:
+            where = "%s:%d:%d: %s" % (_shown(path, cwd), line, col, message)
+            if github:
+                sys.stdout.write("::error title=MaxDrop lint (unreachable),file=%s,line=%d,col=%d::%s\n"
+                                 % (_shown(path, cwd).replace(os.sep, "/"), line, col, where))
+            else:
+                sys.stdout.write(where + "\n")
+            count += 1
+    if count:
+        sys.stdout.write("Found %d unreachable statement%s.\n" % (count, "" if count == 1 else "s"))
+    sys.stdout.flush()
+    return count
+
+
+def _github(args):
+    return "--output-format=github" in args or any(
+        a == "--output-format" and b == "github" for a, b in zip(args, args[1:]))
+
+
 def main(args, cwd=ROOT):
     try:
         version = pin()
@@ -78,9 +145,20 @@ def main(args, cwd=ROOT):
             "Get it once with `uvx ruff@%s --version` (uv fetches it), or pip-install `ruff==%s` into a virtual\n"
             "environment of its own and put it on PATH (CONTRIBUTING.md).\n" % (version, version, version))
         return NOT_FOUND
-    done = subprocess.run(ruff + ["check"] + (args or ["."]), cwd=cwd, capture_output=True)
+    args = args or ["."]
+    done = subprocess.run(ruff + ["check"] + args, cwd=cwd, capture_output=True)
     _echo(done.stdout, sys.stdout)
     _echo(done.stderr, sys.stderr)
+    if done.returncode not in (0, 1):
+        return done.returncode
+    shown = subprocess.run(ruff + ["check"] + args + ["--show-files"], cwd=cwd, capture_output=True)
+    if shown.returncode != 0:
+        _echo(shown.stderr, sys.stderr)
+        return shown.returncode
+    paths = [os.path.join(cwd, line.strip()) for line in shown.stdout.decode("utf-8", "replace").splitlines()
+             if line.strip().endswith(".py")]
+    if report_unreachable(paths, cwd, _github(args)):
+        return 1
     return done.returncode
 
 

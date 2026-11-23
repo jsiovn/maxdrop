@@ -3,6 +3,7 @@
 # Modified for MaxDrop, 2026-11-15 (jsiovn). Adds the ruff configuration; the autopep8 block is unchanged.
 # Modified for MaxDrop, 2026-11-16 (jsiovn). The upstream engine is deleted: ruff excludes nothing.
 # Modified for MaxDrop, 2026-11-19 (jsiovn). Pins the ruff version CI and tools/lint.py run.
+# Modified for MaxDrop, 2026-11-23 (jsiovn). Says where the unreachable-code check lives.
 
 [tool.autopep8]
 # Configuration for `autopep8`, allowing the command: autopep8 .
@@ -36,7 +37,7 @@ ignore = [
 aggressive = 2
 
 [tool.ruff]
-# Linter of MaxDrop's own code: python -I tools/lint.py (ruff check .)
+# Linter of MaxDrop's own code: python -I tools/lint.py (ruff check ., then the unreachable-code check)
 # The one place the ruff version is written: CI installs it, tools/lint.py looks for it, ruff refuses another.
 required-version = "==0.17.5"
 line-length = 120
@@ -44,4 +45,5 @@ target-version = "py311"
 
 [tool.ruff.lint]
 # Errors only, named explicitly so that a newer ruff does not widen the set on its own.
+# No rule of this ruff flags code after a return (PLW0101 is gone): tools/lint.py checks that itself.
 select = ["E4", "E7", "E9", "F"]
