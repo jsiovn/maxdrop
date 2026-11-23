@@ -1545,28 +1545,45 @@ class TestConstraint(MatrixCase):
         self.assertNotAlmostEqual(world[2][2], MAX_CONSTRAINT[(0, False, 2, False, 2, 0)][2][2], places=3)
 
         def fallback(controller):
-            """The world of [Anim(50), 100] whose weight controller is made by controller(b), the issues and the
-            controller's index."""
+            """The world of [Anim(7), 100] whose weight controller is made by controller(b), the issues, the
+            controller's index and the constraint's (7 only marks the slot: a weight read gives no 50)."""
             b = LookAtBuild()
             targets = [b.target((0, 0, 20)), b.target((100, 0, 0))]
             c = controller(b)
-            n = b.constrained(targets, [Anim(50.0), 100.0], scale=(1, 2, 1), weight_controllers=[c])
+            lc = len(b.objects) + 1  # constrained adds the block, then the constraint
+            n = b.constrained(targets, [Anim(7.0), 100.0], scale=(1, 2, 1), weight_controllers=[c])
             t = b.transforms()
-            return t.world(n), [(i.controller, i.reason) for i in t.issues], c
+            return t.world(n), [(i.controller, i.reason) for i in t.issues], c, lc
 
-        b = LookAtBuild()  # the weight a controller cannot give is 1
+        b = LookAtBuild()  # a weight of 1 (the old fallback) aims elsewhere: the cases below tell the two apart
         n = b.constrained([b.target((0, 0, 20)), b.target((100, 0, 0))], [1.0, 100.0], scale=(1, 2, 1))
         one = b.transforms().world(n)
         self.assertFalse(all(abs(one[r][c] - want[r][c]) < 1e-3 for r in range(3) for c in range(3)))
+        # a weight the reader cannot read is 50 (appendTarget's default on the 0-100 scale): want's weights
         for name, controller in (("Bezier Float without a value or keys", lambda b: b.flt()),
                                  ("empty slot", lambda b: None)):
             with self.subTest(name):
-                world, issues, _c = fallback(controller)
-                self.assertMatrix(world, one)
-                self.assertEqual(issues, [])
-        world, issues, c = fallback(lambda b: b.add(node(C_UNKNOWN_M3)))
-        self.assertMatrix(world, one)
+                world, issues, _c, lc = fallback(controller)
+                self.assertMatrix(world, want, places=5)
+                self.assertEqual(issues, [(lc, ct.CONSTRAINT_SETTING)])
+        world, issues, c, _lc = fallback(lambda b: b.add(node(C_UNKNOWN_M3)))  # reported once, as its class
+        self.assertMatrix(world, want, places=5)
         self.assertEqual(issues, [(c, ct.UNKNOWN_CLASS)])
+
+    def test_unreadable_stored_weight(self):
+        """A stored weight that is not finite, and a weight table shorter than the targets: 50, reported."""
+        for name, weights, positions in (("not finite", [float("nan"), 100.0], ((0, 0, 20), (100, 0, 0))),
+                                         ("missing", [100.0], ((100, 0, 0), (0, 0, 20)))):
+            with self.subTest(name):
+                b = LookAtBuild()
+                targets = [b.target(p) for p in positions]
+                n = b.constrained(targets, weights, scale=(1, 2, 1))
+                t = b.transforms()
+                two = m3((0.91788, -0.393377, 0.0524503), (0.393919, 0.919145, 0),
+                         (-0.0482094, 0.0206612, 0.998624))
+                self.assertMatrix(t.world(n), ct.multiply(ct.scale_matrix((1, 2, 1)), two[:3] + ((-50, 50, 0, 1),)),
+                                  places=5)
+                self.assertEqual([i.reason for i in t.issues], [ct.CONSTRAINT_SETTING])
 
     def test_settings_and_up_node(self):
         for (axis, flip, source, source_flip, up_axis, control), expected in MAX_CONSTRAINT.items():

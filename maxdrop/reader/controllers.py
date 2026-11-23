@@ -159,6 +159,7 @@ _LOOK_AXIS, _LOOK_FLIP, _LOOK_TARGET_UP = 0x0100, 0x0110, 0x0201
 # frame at its first evaluation, the Set Orientation rotation (0x1001 the world rotation at assignment and 0x1005 a
 # u32: not read)
 _LC_INITIAL_LOCAL, _LC_INITIAL_FRAME, _LC_USER = 0x1002, 0x1003, 0x1004
+_LC_WEIGHT_DEFAULT = 50.0  # a weight not read: appendTarget's, on the constraint's 0-100 scale
 _TINY = 1e-12
 
 
@@ -996,10 +997,14 @@ class _Eval:
         for k, ref in enumerate(targets):
             w = weights[k] if k < len(weights) else None
             if isinstance(w, pblock.Animated):
-                w = self.scalar(w.index, 1.0)
+                index = w.index
+                w = self.scalar(index, None)
+                if w is None and any(x.node == self.node and x.controller == index and x.reason == UNKNOWN_CLASS
+                                     for x in self.issues):  # reported once, as its class
+                    w = _LC_WEIGHT_DEFAULT
             if not (isinstance(w, (int, float)) and math.isfinite(w)):
                 self.issue(c, CONSTRAINT_SETTING)
-                w = 1.0
+                w = _LC_WEIGHT_DEFAULT
             tw = self._node_world(c, ref.index if isinstance(ref, pblock.Reference) else None)
             if tw is None or w == 0.0:
                 continue

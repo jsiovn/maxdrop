@@ -178,6 +178,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   map takes its Diffuse Level on the map too, as 3ds Max renders it (a map at a Diffuse Level of 40 % no longer
   arrives at full brightness), and its Diffuse Level map is imported: it replaces the level by its amount, the mean
   of its colors, as 3ds Max does.
+- Objects: a LookAt Constraint target weight MaxDrop cannot read (an animated weight whose controller is missing,
+  holds no value or is of an unknown class, a weight that is not a number or not stored) counts as 50, the weight
+  3ds Max gives a new target, instead of 1, which beside a weight of 100 almost dropped that target; a missing or
+  value-less controller is now a line in the report too.
 
 ## [1.0.1] - 2026-11-22
 
