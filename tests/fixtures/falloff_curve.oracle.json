@@ -1115,7 +1115,7 @@
         "controllers": [],
         "kind": "pb2",
         "params": [
-          {"id": 0, "name": "mixAmount", "transient": false, "type": 6, "value": 0},
+          {"id": 0, "name": "mixAmount", "transient": false, "type": 6, "value": 0.5},
           {"id": 1, "name": "lower", "transient": false, "type": 0, "value": 0.2},
           {"id": 2, "name": "upper", "transient": false, "type": 0, "value": 0.9},
           {"id": 3, "name": "useCurve", "transient": false, "type": 4, "value": 1},
@@ -1579,7 +1579,7 @@
         "controllers": [],
         "kind": "pb2",
         "params": [
-          {"id": 0, "name": "mixAmount", "transient": false, "type": 6, "value": 0},
+          {"id": 0, "name": "mixAmount", "transient": false, "type": 6, "value": 0.7},
           {"id": 1, "name": "lower", "transient": false, "type": 0, "value": 0.6},
           {"id": 2, "name": "upper", "transient": false, "type": 0, "value": 0.4},
           {"id": 3, "name": "useCurve", "transient": false, "type": 4, "value": 1},
@@ -1718,6 +1718,200 @@
     ],
       "subs": [],
       "superclass": 3088
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "shaderType", "transient": false, "type": 1, "value": 1},
+          {"id": 1, "name": "wire", "transient": false, "type": 4, "value": 0},
+          {"id": 2, "name": "twoSided", "transient": false, "type": 4, "value": 0},
+          {"id": 3, "name": "faceMap", "transient": false, "type": 4, "value": 0},
+          {"id": 4, "name": "faceted", "transient": false, "type": 4, "value": 0},
+          {"id": 5, "name": "shaderByName", "transient": false, "type": 8, "value": "Blinn"}
+        ],
+        "ref": 3
+      },
+      {
+        "block_id": 1,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "opacityType", "transient": false, "type": 1, "value": 0},
+          {"id": 1, "name": "opacity", "transient": false, "type": 6, "value": 1},
+          {"id": 2, "name": "filterColor", "transient": false, "type": 2, "value": [0.5, 0.5, 0.5]},
+          {"id": 3, "name": "filterMap", "transient": false, "type": 15, "value": null},
+          {"id": 4, "name": "opacityFallOffType", "transient": false, "type": 1, "value": 0},
+          {"id": 5, "name": "opacityFallOff", "transient": false, "type": 6, "value": 0},
+          {"id": 6, "name": "ior", "transient": false, "type": 0, "value": 1.5},
+          {"id": 7, "name": "wireSize", "transient": false, "type": 0, "value": 1},
+          {"id": 8, "name": "wireUnits", "transient": false, "type": 1, "value": 0},
+          {"id": 9, "name": "applyReflectionDimming", "transient": false, "type": 4, "value": 0},
+          {"id": 10, "name": "dimLevel", "transient": false, "type": 0, "value": 0},
+          {"id": 11, "name": "reflectionLevel", "transient": false, "type": 0, "value": 3}
+        ],
+        "ref": 4
+      },
+      {
+        "block_id": 2,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "sampler", "transient": false, "type": 1, "value": 3},
+          {"id": 1, "name": "samplerQuality", "transient": false, "type": 0, "value": 0.5},
+          {"id": 2, "name": "samplerEnable", "transient": false, "type": 4, "value": 0},
+          {"id": 4, "name": "samplerAdaptThreshold", "transient": false, "type": 0, "value": 0.1},
+          {"id": 3, "name": "samplerAdaptOn", "transient": false, "type": 4, "value": 1},
+          {"id": 6, "name": "subSampleTextureOn", "transient": false, "type": 4, "value": 1},
+          {"id": 5, "name": "samplerAdvancedOptions", "transient": false, "type": 4, "value": 1},
+          {"id": 7, "name": "samplerByName", "transient": false, "type": 8, "value": "Max 2.5 Star"},
+          {"id": 8, "name": "UserParam0", "transient": false, "type": 0, "value": 0},
+          {"id": 9, "name": "UserParam1", "transient": false, "type": 0, "value": 0},
+          {"id": 10, "name": "samplerUseGlobal", "transient": false, "type": 4, "value": 1}
+        ],
+        "ref": 5
+      },
+      {
+        "block_id": 3,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "mapEnables", "transient": false, "type": 2052, "value": [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]},
+          {"id": 1, "name": "maps", "transient": false, "type": 2063, "value": [null, 19, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null]},
+          {"id": 2, "name": "mapAmounts", "transient": false, "type": 2054, "value": [1, 1, 1, 1, 1, 1, 1, 1, 0.3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]},
+          {"id": 3, "name": "adTextureLock", "transient": false, "type": 4, "value": 1}
+        ],
+        "ref": 6
+      },
+      {
+        "block_id": 4,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "bounce", "transient": false, "type": 0, "value": 1},
+          {"id": 1, "name": "staticFriction", "transient": false, "type": 0, "value": 0},
+          {"id": 2, "name": "slidingFriction", "transient": false, "type": 0, "value": 0}
+        ],
+        "ref": 7
+      }
+    ],
+      "class_id": ["0x00000002", "0x00000000"],
+      "class_name": "Standardmaterial",
+      "index": 18,
+      "name": "FixtureCurveJump",
+      "parts": [
+      {
+        "blocks": [
+        {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "ambient", "transient": false, "type": 2, "value": [0.588, 0.588, 0.588]},
+          {"id": 1, "name": "diffuse", "transient": false, "type": 2, "value": [0.501961, 0.501961, 0.501961]},
+          {"id": 2, "name": "specular", "transient": false, "type": 2, "value": [0.9, 0.9, 0.9]},
+          {"id": 3, "name": "adTextureLock", "transient": false, "type": 4, "value": 1},
+          {"id": 4, "name": "adLock", "transient": false, "type": 4, "value": 1},
+          {"id": 5, "name": "dsLock", "transient": false, "type": 4, "value": 0},
+          {"id": 6, "name": "useSelfIllumColor", "transient": false, "type": 4, "value": 0},
+          {"id": 7, "name": "selfIllumAmount", "transient": false, "type": 6, "value": 0},
+          {"id": 8, "name": "selfIllumColor", "transient": false, "type": 2, "value": [0, 0, 0]},
+          {"id": 9, "name": "specularLevel", "transient": false, "type": 6, "value": 0},
+          {"id": 10, "name": "glossiness", "transient": false, "type": 6, "value": 0.1},
+          {"id": 11, "name": "soften", "transient": false, "type": 0, "value": 0.1}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000038", "0x00000000"],
+        "ref": 2
+      },
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 0, "value": 0.5},
+          {"index": 1, "type": 4, "value": 0},
+          {"index": 2, "type": 4, "value": 1}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x25773211", "0x00000000"],
+        "ref": 8
+      }
+    ],
+      "subs": [
+      {"kind": "map", "slot": 1, "target": 19}
+    ],
+      "superclass": 3072
+    },
+    {
+      "blocks": [
+      {
+        "block_id": 0,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [
+          {"id": 0, "name": "color1", "transient": false, "type": 2, "value": [0, 0, 0]},
+          {"id": 1, "name": "map1Amount", "transient": false, "type": 0, "value": 100},
+          {"id": 2, "name": "map1", "transient": false, "type": 15, "value": null},
+          {"id": 3, "name": "map1On", "transient": false, "type": 4, "value": 1},
+          {"id": 4, "name": "color2", "transient": false, "type": 2, "value": [1, 1, 1]},
+          {"id": 5, "name": "map2Amount", "transient": false, "type": 0, "value": 100},
+          {"id": 6, "name": "map2", "transient": false, "type": 15, "value": null},
+          {"id": 7, "name": "map2On", "transient": false, "type": 4, "value": 1},
+          {"id": 8, "name": "type", "transient": false, "type": 1, "value": 1},
+          {"id": 9, "name": "direction", "transient": false, "type": 1, "value": 0},
+          {"id": 10, "name": "node", "transient": false, "type": 17, "value": null},
+          {"id": 11, "name": "mtlIOROverride", "transient": false, "type": 4, "value": 1},
+          {"id": 12, "name": "ior", "transient": false, "type": 0, "value": 1.6},
+          {"id": 13, "name": "extrapolateOn", "transient": false, "type": 4, "value": 0},
+          {"id": 14, "name": "nearDistance", "transient": false, "type": 0, "value": 0},
+          {"id": 15, "name": "farDistance", "transient": false, "type": 0, "value": 100}
+        ],
+        "ref": 0
+      },
+      {
+        "block_id": 1,
+        "controllers": [],
+        "kind": "pb2",
+        "params": [],
+        "ref": 1
+      }
+    ],
+      "class_id": ["0x6ec3730c", "0x00000000"],
+      "class_name": "falloff",
+      "index": 19,
+      "name": "FixtureCurveJump",
+      "parts": [
+      {
+        "blocks": [
+        {
+        "block_id": null,
+        "controllers": [],
+        "kind": "pb1",
+        "params": [
+          {"index": 0, "type": 0, "value": 1},
+          {"index": 1, "type": 0, "value": 0},
+          {"index": 2, "type": 0, "value": 1},
+          {"index": 3, "type": 0, "value": 1}
+        ],
+        "ref": 0
+      }
+      ],
+        "class_id": ["0x00000100", "0x00000000"],
+        "ref": 2
+      }
+    ],
+      "subs": [],
+      "superclass": 3088
     }
   ],
   "materials": [
@@ -1728,10 +1922,11 @@
     {"class_id": ["0x00000002", "0x00000000"], "class_name": "Standardmaterial", "index": 4, "name": "FixtureCurveLinear", "sub_count": 0},
     {"class_id": ["0x00000002", "0x00000000"], "class_name": "Standardmaterial", "index": 5, "name": "FixtureMixCurve", "sub_count": 0},
     {"class_id": ["0x00000002", "0x00000000"], "class_name": "Standardmaterial", "index": 6, "name": "FixtureMixCurveAmount", "sub_count": 0},
-    {"class_id": ["0x00000002", "0x00000000"], "class_name": "Standardmaterial", "index": 7, "name": "FixtureMixCurveStep", "sub_count": 0}
+    {"class_id": ["0x00000002", "0x00000000"], "class_name": "Standardmaterial", "index": 7, "name": "FixtureMixCurveStep", "sub_count": 0},
+    {"class_id": ["0x00000002", "0x00000000"], "class_name": "Standardmaterial", "index": 8, "name": "FixtureCurveJump", "sub_count": 0}
   ],
   "max_version": [22000, 2020],
-  "node_count": 8,
+  "node_count": 9,
   "nodes": [
     {
       "base_class_id": ["0x1bf8338d", "0x192f6098"],
@@ -1996,6 +2191,39 @@
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 140, 0, 0]
+    },
+    {
+      "base_class_id": ["0x1bf8338d", "0x192f6098"],
+      "base_class_name": "Editable_Poly",
+      "base_faces": 6,
+      "base_superclass": 16,
+      "base_verts": 8,
+      "bbox_max": [165, 5, 10],
+      "bbox_min": [155, -5, 0],
+      "camera": null,
+      "cast_shadows": true,
+      "eval_faces": 12,
+      "eval_maps": null,
+      "eval_mesh": null,
+      "eval_verts": 8,
+      "frozen": false,
+      "handle": 9,
+      "hidden": false,
+      "index": 8,
+      "instances": [9],
+      "layer": "0",
+      "material": 8,
+      "modifiers": [],
+      "name": "FixtureCurveJumpBox",
+      "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 160, 0, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "receive_shadows": true,
+      "renderable": true,
+      "shape": null,
+      "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 160, 0, 0]
     }
   ],
   "oracle_version": 13,
