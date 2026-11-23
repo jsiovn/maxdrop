@@ -1108,20 +1108,43 @@ black, override on or off, with every file. So the power is the light's flux wit
 when the file's rated lumens are its flux (an absolute file's -1, or a relative one of a luminaire without losses).
 MaxDrop reads the file when the texture lookup finds it (`convert/ies.py`) and gives the light power x the file's
 flux / its rated lumens (the power for rated lumens of -1); a file not found or not read keeps the power as the flux,
-a line in the report. A file V-Ray cannot find renders otherwise (power 1000 lm, override off: 1.689): not modeled.
+a line in the report. A file V-Ray cannot find renders the power as an isotropic flux, override on or off (power
+1000 lm 0.0531, 500 lm 0.0265; targeted or not, no file at all, a saved scene reopened without its file): what
+MaxDrop does with a file it does not find. The 1.689 an earlier note gave for it shows only after a targeted light's
+loaded file is switched to a missing path in the same session (stale state, not modeled).
+
+**VRayIES header, measured** (the same scene in millimeters: in meters it renders brighter by (1 / 0.8)², the shadow
+bias of 0.2 world units moving the shaded point toward the light; isotropic 100 cd files, type C, one plane, rated
+1256.6, one lamp, ballast factors 1, power 1000, override off, one field changed at a time; the power loading the file
+sets in brackets): the base file 0.0531 (1256.6); candela multiplier 2 0.1061 (1256.6): applied; ballast factor 0.5
+0.0265 (1256.6): applied; ballast-lamp photometric factor 0.5 0.0531: not applied; 2 lamps of 500 lm 0.0667 (1000):
+the rated lumens are lamps × lumens per lamp; rated 0 0.0531 (1256.64) and rated −1 0.0531 (1256.64): the power is
+the flux. Type B (vertical −90 to 90, horizontal −90 to 90 or 0 to 90), rated 628.3, 0.1061 (628.3), rated 1256.6
+0.0531; type A (horizontal −90 to 90), rated 628.3, 0.1061: read, the same power / rated lumens. V-Ray's own flux
+(the power loading a file rated −1 sets): type C 100, 0, 0 cd at 0, 90, 180° 228.96 lm (the candelas linear in angle:
+228.32; the zone mean × (cos a − cos b) 314.16); a cosine in 10° steps 313.99; planes of 100, 50, 100, 50, 100 cd at
+0 to 360° 942.16; type B isotropic 629.57 (2π · 100 = 628.32), the same with vertical or horizontal angles from 0
+(mirrored) and with horizontal angles from −180 to 180 (only −90 to 90 counts); type B 0, 100, 0 cd at vertical −90,
+0, 90° 400.95 (linear 400.00), the same across the horizontal angles 314.80 (314.16); type A isotropic 629.58, but
+type A with horizontal angles from 0 to 90 1.26 lm: not read. Ballast 0.5 halves that flux, 2 lamps leave it, a
+multiplier of 2 doubles it; a rated −1 file of ballast 0.5 at power 1000 renders 0.0531.
 
 **IES files** (IESNA LM-63, `convert/ies.py`): after the keyword lines, `TILT=NONE`, `TILT=<file>` (nothing inline)
 or `TILT=INCLUDE` (lamp-to-luminaire geometry, the number of pairs n, n angles, n factors); then the number of lamps,
 lumens per lamp (-1: absolute photometry), candela multiplier, the numbers of vertical and horizontal angles,
 photometric type (1 C, 2 B, 3 A), units type, width, length, height; ballast factor, ballast-lamp photometric
 factor, input watts; the vertical angles, the horizontal angles, then one run of vertical candelas per horizontal
-angle, separated by white space or commas. The flux of a type C file: per horizontal plane the sum over the zones
-between two vertical angles of their mean intensity times (cos a − cos b), the trapezoid over the planes in radians,
-times 360 / their span (one plane 2π; the spans 90, 180 and 360 of LM-63's symmetries from 0 or 90, 90 to 270
-included; planes from 0 to past 180 but short of 360 closed with the first plane at 360); an isotropic file of I cd
-gives 4π I exactly. Not measured in V-Ray, so chosen from LM-63: the candela multiplier applies; the ballast factors
-do not (as Blender's own IES reader does); the rated lumens are taken per file, the number of lamps left out (a file
-of more lamps, rated above 0 lm, is a line in the report); rated lumens of 0 or below count as -1. Type A and B files, and a file larger than 4 MiB, of more than 4096 angles per axis or 2^20 candelas, or with a
+angle, separated by white space or commas. As V-Ray renders it (measured, "VRayIES header, measured"): the candelas
+interpolated linearly in angle; the flux of a type C file per horizontal plane the integral of I(θ) sin θ over the
+vertical angles (a zone [a, b]: Ia cos a − Ib cos b + (Ib − Ia)(sin b − sin a) / (b − a)), the trapezoid over the
+planes in radians, times 360 / their span (one plane 2π; the spans 90, 180 and 360 of LM-63's symmetries from 0 or
+90, 90 to 270 included; planes from 0 to past 180 but short of 360 closed with the first plane at 360); of a type A or
+B file, whose vertical angles are a latitude, the integral of I(θ) cos θ (Ib sin b − Ia sin a + (Ib − Ia)(cos b −
+cos a) / (b − a)) and the same trapezoid, vertical angles from −90, or from 0 doubled, to 90, horizontal ones from −90
+to 90, or for type B from 0 to 90 doubled. An isotropic file of I cd gives 4π I exactly (type C), 2π I (A and B).
+The flux is times the candela multiplier and the ballast factor (not the ballast-lamp factor); the rated lumens are
+the number of lamps times the lumens per lamp; rated lumens of 0 or below count as -1. Other ranges of type A and B
+(type A from 0 included), and a file larger than 4 MiB, of more than 4096 angles per axis or 2^20 candelas, or with a
 number out of range or out of order, are not read (a line in the report).
 
 **Spot cones.** Blender's spot size is the falloff; its blend is set so that full intensity ends at the hotspot, as in

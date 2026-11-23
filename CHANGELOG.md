@@ -128,6 +128,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   gives V-Ray's measured 0.293 in a scene saved with the gamma off, not 0.094. A constant color in a normal map's
   normal slot (an empty Output or RGB Tint, a VRayColor) now tilts the normal as V-Ray renders a white map there,
   instead of a line in the report or a flat normal.
+- Lights: a VRayIES whose intensity is not overridden takes its IES file's header as V-Ray 5.2 renders it
+  (measured): the ballast factor and the number of lamps now count, type A and B files are read, and the candelas
+  are integrated linearly in angle (a coarse file's flux was up to a third too high); the report line about a file
+  of more lamps is gone.
 
 ## [1.0.1] - 2026-11-22
 
