@@ -1660,6 +1660,18 @@ class Corona(unittest.TestCase, Close):
         self.close(glass.roughness.value, 0.05)
         self.assertEqual((conv.stats.issues, dict(conv.stats.unknown)), ([], {}))
 
+    def test_physical_ior_mode_and_thin_translucency(self):
+        """Corona 12 renders (maxdrop-em3.115): IOR mode 1 holds specular levels, F0 = 0.08 x level, in the base and
+        clearcoat IORs; translucency renders only in thin mode."""
+        conv, (spec, thin) = self.convert("corona_physical", "FixtureCoronaPhysSpec", "FixtureCoronaPhysTranslThin")
+        self.close(spec.ior, mat.ior_from_reflectance(0.08 * 1.2), "specular 1.2")
+        self.close(spec.coat_ior, mat.ior_from_reflectance(0.08 * 0.8), "specular 0.8")
+        self.close(spec.coat_weight, 0.5)
+        self.assertEqual(spec.issues, [])
+        self.close(thin.ior, 1.5, "IOR mode 0")
+        self.assertTrue(thin.thin_walled)
+        self.assertEqual(thin.issues, ["CoronaPhysicalMtl 'FixtureCoronaPhysTranslThin': translucency not converted"])
+
     def test_legacy(self):
         conv, (pbr, old, metal) = self.convert("corona_legacy", "FixtureCoronaLegacyPbr", "FixtureCoronaLegacyGloss",
                                                "FixtureCoronaLegacyMetal")
