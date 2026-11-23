@@ -37,6 +37,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ### Fixed
 
+- Materials: a material or map parameter animated in 3ds Max (a color, a glossiness, a multiplier, a Color
+  Correction's custom rewiring held by a Bezier, Linear or TCB Float, a Float List or a Bezier Color controller)
+  takes its value at frame 0 instead of the class's default, and that rewiring is no longer a line in the report.
 - Layers: a layer that does not render no longer turns rendering off for every object on it and on the layers below
   it (Disable in Renders on its collection): 3ds Max renders those objects unless they are set By Layer, and then
   only their own layer counts.

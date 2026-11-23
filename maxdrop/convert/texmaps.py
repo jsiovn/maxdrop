@@ -1468,7 +1468,8 @@ def _color_correction(conv, m, kind, walk, depth, chain):
 def _rewire(conv, m, walk):
     """The rewiring of a Color Correction (rewireMode 2; channels 3 to 5 in custom mode, 3). An alpha source is
     drawn as one (alpha) or zero (its inverse): the map's alpha is not carried; an unreadable channel or mode
-    leaves the color unchanged. Both are issues."""
+    leaves the color unchanged. Both are issues. A channel or mode a controller holds is its whole value at frame 0
+    (params.frame_zero); a fraction is unreadable."""
     mode = m.param(CC_REWIRE_MODE, 0)
     if mode in (None, 0):
         return REWIRE_NONE

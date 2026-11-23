@@ -93,7 +93,8 @@ shapes_more's FixtureCurveStd and FixtureCurveMulti made to share one curve get 
 object with its own material, and FixtureBox given FixtureCurveRed shares that Blender material with the curve.
 Materials (build.materials through the operator): each face on its material's slot, each slot's material named after
 the 3ds Max material, its Principled inputs equal to the MaterialIR the same file converts to (values, or linked when
-a texture graph drives them), the render method, one Image Texture node per file; vray_maps' Mapping values by hand
+a texture graph drives them), the render method, one Image Texture node per file; pblock_animated's animated diffuse
+and glossiness at their frame-0 values (not the class defaults); vray_maps' Mapping values by hand
 from its authoring script, texture nodes without an image and each missing file listed once by name; vray_maps,
 texmap_rules, corona_maps, corona_light, vray_texmaps, texmap_wrappers and falloff_curve copied beside generated
 PNGs load every image in its color space, one datablock per file and color space, the report counts every file as
@@ -1938,6 +1939,19 @@ def check_fixture_materials(name, plan, desc, obs):
         catchers = sorted(ob.name for ob in obs if ob.is_shadow_catcher)
         check("corona_classes: the shadow-catcher boxes are shadow catchers, the mixed box and the others not",
               catchers == ["FixtureCoronaShadowCatcherBox", "FixtureCoronaShadowCatcherReflBox"], str(catchers))
+    if name == "pblock_animated":  # absolute: the controllers' frame-0 values (the oracle's), not the defaults
+        animated = bpy.data.materials.get("FixtureAnimVRay")
+        bsdf = _bsdfs(animated)[0] if animated is not None and _bsdfs(animated) else None
+
+        def decoded(c):  # the fixture is saved with the gamma off: a swatch is decoded from sRGB
+            return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+        want = [decoded(c / 255.0) for c in (10, 20, 30)]
+        got = list(bsdf.inputs["Base Color"].default_value)[:3] if bsdf is not None else None
+        check("pblock_animated: FixtureAnimVRay's animated diffuse at its frame-0 color (10, 20, 30)",
+              got is not None and all(abs(a - b) < 1e-4 for a, b in zip(got, want)), "%s vs %s" % (got, want))
+        rough = bsdf.inputs["Roughness"].default_value if bsdf is not None else None
+        check("pblock_animated: FixtureAnimVRay's animated glossiness at its frame-0 0.41 (roughness 0.59)",
+              rough is not None and abs(rough - 0.59) < 1e-4, str(rough))
     if name == "falloff_curve":
         check_falloff_curve(textured=False)
     if name == "vray_maps":

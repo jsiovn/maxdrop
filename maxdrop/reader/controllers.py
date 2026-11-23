@@ -22,8 +22,8 @@ Controllers are dispatched on (superclass, ClassId). A keyframe controller (Line
 Rotation or Scale) saves its value at the time slider of the save in 0x2501 (float), 0x2503 (point), 0x2504
 (quaternion) or 0x2505 (3 x f32 scale, then the scale axis as a 4 x f32 quaternion) (a Bezier Color, the Point3
 controller of an animated color parameter: 0x2501 with 3 x f32, its keys laid out as Bezier Position's), directly or
-inside 0x7127, with 0x2500, the interval that value holds for (forever without keys), and its keys in a chunk of its class
-(_KEYFRAMED: i32 time, u32 flags, the value at byte 8, then tangents or TCB parameters). The saved value is used
+inside 0x7127, with 0x2500, the interval that value holds for (forever without keys), and its keys in a chunk of its
+class (_KEYFRAMED: i32 time, u32 flags, the value at byte 8, then tangents or TCB parameters). The saved value is used
 when its interval holds time 0; otherwise the keys are evaluated at time 0: the first key's value at or before it,
 the last key's after it (out-of-range types are not read), between two keys linear for a Linear controller
 (rotation by slerp the way the stored signs give, opposite quaternions a whole turn about the earlier key's local Z),

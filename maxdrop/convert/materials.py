@@ -53,7 +53,7 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   Oren-Nayar-Blinn, Translucent: the swatch times the Diffuse Level, before the swatch rule; a diffuse map times
   the level as the swatch rule makes it (MapRef.scale); a Diffuse Level map replaces the level by its amount,
   ir.diffuse_level, maxdrop-em3.150); roughness = 1 -
-  glossiness; specular = specular level times the mean of the linear specular color; a missing or animated diffuse,
+  glossiness; specular = specular level times the mean of the linear specular color; a missing or unread diffuse,
   glossiness or specular level takes its shader's default (SHADER_DEFAULTS); alpha = opacity; self-illumination: its
   color at strength 1, or the diffuse as set (not scaled) at the amount; two-sided flag; map slots with their
   amounts where switched on, at the shader's own map channels (STD_SLOTS; Strauss: its metalness map drives the
@@ -126,7 +126,9 @@ Colors are 3ds Max swatches, clamped to 0..1 and made linear by the scene's swat
 value itself when the scene was saved with the gamma on (or does not say), the sRGB curve when it was off. A color
 that stands for a number (the Corona opacity colors) is the mean of the swatch as stored, whatever the gamma, as V-Ray
 5.2 renders a swatch on a data input (maxdrop-em3.122; Corona assumed to follow it: no Corona render here).
-A missing, animated or non-finite parameter takes the class's default; an IOR is clamped to 1..100. The SSS radius is
+A missing or non-finite parameter takes the class's default; an animated one its controller's value at frame 0
+(convert/params.py: the converter's graph reads it so), the default where that cannot be had; an IOR is clamped to
+1..100. The SSS radius is
 in meters: VRayFastSSS2's scatter_radius is in centimeters whatever the system unit, multiplied by its scale (V-Ray's
 documentation says both). VRayCarPaintMtl's coat_strength is, in V-Ray's documentation, the strength of the coat
 reflections seen from the front; that Fresnel gives the other angles is this rule's reading.
@@ -208,8 +210,9 @@ SHADERS = {
     classids.MULTI_LAYER_SHADER: ShaderIds(1, 6, 7, 8, 3, 2, 19, 4),  # the first specular layer
     classids.TRANSLUCENT_SHADER: ShaderIds(1, 2, 6, 5, 4, 3, 14, 7),
 }
-# What a shader holds as created (3ds Max 2020), read where its parameter is missing or animated: diffuse swatch,
-# glossiness and specular level (fractions). A shader without a rule takes Blinn's.
+# What a shader holds as created (3ds Max 2020), read where its parameter is missing or unread (a controller not
+# evaluated at frame 0): diffuse swatch, glossiness and specular level (fractions). A shader without a rule takes
+# Blinn's.
 ShaderDefaults = collections.namedtuple("ShaderDefaults", "diffuse glossiness level")
 _BLINN_DEFAULTS = ShaderDefaults((150 / 255,) * 3, 0.1, 0.0)
 _GREY = (0.5, 0.5, 0.5)  # 127.5

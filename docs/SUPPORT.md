@@ -129,6 +129,9 @@ between black and white; between two colors with the gamma off only close, as V-
 With the gamma off V-Ray 5.2 renders a CoronaColor's HDR color as stored, which MaxDrop keeps linear (whether Corona
 shows it decoded is not measured). A Corona render was not
 measured.
+A material or map parameter that is animated (held by a controller: a Bezier, Linear or TCB Float, a Float List, a
+Bezier Color) takes its value at frame 0, as 3ds Max shows it there; another controller (an expression, a script, a
+Boolean Controller…) leaves the class's default.
 Turn materials off with **Object Filter**.
 
 | Material | This version |
