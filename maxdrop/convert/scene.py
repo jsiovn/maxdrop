@@ -38,6 +38,10 @@ group, never on a boundary; on an edge with more than two faces any such pair de
 distinct masks the edge is sharp (a file can put any number of faces on one edge). Faces Blender cannot hold (a
 vertex used twice, the vertex set of an earlier face) are left out and reported. UV layers: every map channel >= 1, ascending; channel 1 is "UVMap", channel n
 "UVChannel_<n>"; the w coordinate is dropped.
+Blender holds mesh positions in single precision: a mesh whose positions (offset and meters applied) are past the
+largest float32, inf or NaN is an EMPTY placeholder (an issue, on the first node of its key), as a curve or a
+primitive; a mesh light's emitter is then not built. A U or V coordinate that is not a number (inf, NaN) becomes 0
+(an issue): stored UVs do not depend on the positions, so the mesh is kept, as a UVW Map's refused UVs keep it.
 
 A shape (reader.shapes: Line, Editable Spline, Rectangle, Circle, Ellipse, Arc, NGon) becomes a CURVE, keyed and
 shared like a mesh, its offset baked into the knots: one Bezier spline per spline, Max's in and out vectors as the
@@ -177,6 +181,10 @@ class CurveError(ValueError):
     """A shape's curve cannot be built: its points or handles do not fit single precision (Blender's)."""
 
 
+class MeshError(ValueError):
+    """A mesh cannot be built: its positions (offset and meters applied) do not fit single precision (Blender's)."""
+
+
 class Cancelled(Exception):
     """describe() stopped because its cancel check held (an import cancelled while reading). Not a ValueError: the
     file is not damaged."""
@@ -257,9 +265,11 @@ class MeshDescription:
     (E, 2), sorted vertex pairs; uv_layers [(name, float32 (L, 2))]; users the object indices of the nodes that
     share it, in walk order; dropped_faces the faces left out (a repeated vertex, doubled); applied the UVW Maps
     (reader.modifiers Modifiers) evaluated into it; creases whether its sharp edges are to be creased (a converted
-    smoother separates by smoothing groups)."""
+    smoother separates by smoothing groups); zeroed_uvs the U and V coordinates that were not numbers (inf, NaN),
+    set to 0."""
     __slots__ = ("key", "name", "positions", "loop_vertices", "loop_starts", "loop_totals", "material_indices",
-                 "sharp_faces", "sharp_edges", "uv_layers", "users", "dropped_faces", "applied", "creases")
+                 "sharp_faces", "sharp_edges", "uv_layers", "users", "dropped_faces", "applied", "creases",
+                 "zeroed_uvs")
 
     def __init__(self, key, name, positions, loop_vertices, loop_starts, loop_totals, material_indices,
                  sharp_faces, sharp_edges, uv_layers, dropped_faces=0):
@@ -270,6 +280,7 @@ class MeshDescription:
         self.users = []
         self.applied = ()
         self.creases = False
+        self.zeroed_uvs = 0
 
     def __repr__(self):
         return "MeshDescription(%r, %d vertices, %d faces, %d UV layers)" % (
@@ -566,18 +577,32 @@ def _reversed_loops(loop_starts, loop_totals):
     return 2 * starts[face] + totals[face] - 1 - numpy.arange(int(totals.sum()))
 
 
+def _positions(data, offset, meters):
+    """The float64 positions (V, 3) of reader MeshData data, the offset (a reader matrix, or None) applied, then
+    meters; MeshError when one is not a number Blender's single precision holds (inf, NaN, past the largest
+    float32)."""
+    import numpy
+    with numpy.errstate(over="ignore", invalid="ignore"):  # inf and NaN are refused below
+        p = numpy.asarray(data.positions, dtype=numpy.float64)
+        if offset is not None:
+            m = numpy.asarray(offset, dtype=numpy.float64)
+            p = p @ m[:3, :3] + m[3, :3]
+        p = p * meters
+    if not (numpy.abs(p) < lights.MAX_FLOAT).all():  # False for NaN too
+        raise MeshError("its points do not fit single precision (Blender's meshes hold no larger value)")
+    return p
+
+
 def mesh_description(key, name, data, offset, meters, check=None):
     """A MeshDescription of reader MeshData: faces Blender cannot hold left out (counted in dropped_faces), the
-    offset (a reader matrix) applied, then meters. check() between the numpy passes of a mesh of more than
-    reader.geometry.CHECK_EVERY face corners; what it raises passes unchanged."""
+    offset (a reader matrix) applied, then meters; MeshError when a position does not fit single precision
+    (_positions). U and V coordinates that are not numbers become 0 (counted in zeroed_uvs). check() between the
+    numpy passes of a mesh of more than reader.geometry.CHECK_EVERY face corners; what it raises passes
+    unchanged."""
     import numpy
     if check is not None and len(data.loop_vertices) <= geometry.CHECK_EVERY:
         check = None  # one pass of a small mesh is quick: the call counts stay once per node
-    p = numpy.asarray(data.positions, dtype=numpy.float64)
-    if offset is not None:
-        m = numpy.asarray(offset, dtype=numpy.float64)
-        p = p @ m[:3, :3] + m[3, :3]
-    positions = (p * meters).astype(numpy.float32)
+    positions = _positions(data, offset, meters).astype(numpy.float32)
     starts = numpy.asarray(data.loop_starts, dtype=numpy.int64)
     totals = numpy.asarray(data.loop_totals, dtype=numpy.int64)
     lv = numpy.asarray(data.loop_vertices, dtype=numpy.int32)
@@ -599,18 +624,25 @@ def mesh_description(key, name, data, offset, meters, check=None):
     if loops is not None:
         lv = lv[loops]
     uv_layers = []
+    zeroed = 0
     for channel in sorted(c for c in data.maps if c >= 1):
         if check is not None:
             check()
         mc = data.maps[channel]
         indices = mc.indices if loops is None else mc.indices[loops]
-        uv = numpy.ascontiguousarray(mc.uvw[indices][:, :2], dtype=numpy.float32)
+        uv = numpy.ascontiguousarray(mc.uvw[indices][:, :2], dtype=numpy.float32)  # a copy: mc.uvw is the reader's
+        bad = ~numpy.isfinite(uv)
+        if bad.any():
+            zeroed += int(bad.sum())
+            uv[bad] = 0.0
         uv_layers.append((UV_FIRST if channel == 1 else UV_NAME % channel, uv))
     if check is not None:
         check()
     sharp = sharp_edges(lv, starts, totals, groups)
-    return MeshDescription(key, name, positions, lv, starts.astype(numpy.int32), totals.astype(numpy.int32),
-                           materials.astype(numpy.int32), groups == 0, sharp, uv_layers, dropped)
+    md = MeshDescription(key, name, positions, lv, starts.astype(numpy.int32), totals.astype(numpy.int32),
+                         materials.astype(numpy.int32), groups == 0, sharp, uv_layers, dropped)
+    md.zeroed_uvs = zeroed
+    return md
 
 
 def _straight(knots, closed):
@@ -755,6 +787,7 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
     mapped = {}  # UVW Map modifier index -> (Params, gizmo matrix), or None when it is not evaluated
     told = set()  # modifier indices whose conversion issues were named (on the first node only)
     rims = set()  # (Shell modifier index, mesh key) whose rim issues were named
+    ranges = {}  # mesh key before its maps -> None when its positions fit single precision, else the MeshError
     layers = {}  # layer object index -> reader Layer, or None when its record cannot be read
     unlit = {}  # light base object index -> why it is not built
     light_params = {}  # light base object index -> its values (convert.lights.read_params)
@@ -790,7 +823,7 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
                     mirrors = _mirrors(conv, shell)
                     key, done = _extruded(scene, desc, shape_of, extruded, mapped, base, ext, maps, i, name,
                                           t.offset(i), meters, built, _shading(conv), check, shell is not None,
-                                          mirrors)
+                                          mirrors, ranges)
                     if key is None:
                         told.difference_update(fresh)
                 if key is not None:
@@ -812,10 +845,16 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
                                ies_files)
                 kind = LIGHT if light is not None else EMPTY
                 if light is None and base in light_params and lights.is_mesh_light(light_params[base]):
-                    key, emitter = _emitter(scene, t, desc, emitter_meshes, light_params[base], base, i, name,
-                                            meters, swatches, built, check)
-                    if key is not None:
-                        kind = MESH
+                    try:
+                        key, emitter = _emitter(scene, t, desc, emitter_meshes, light_params[base], base, i, name,
+                                                meters, swatches, built, check)
+                    except MeshError as exc:  # its mesh with the node's offset: nothing of it is written yet
+                        desc.issues.append((i, "light: not built: %s" % exc))
+                    else:
+                        if key is not None:
+                            kind = MESH
+                            if desc.meshes[key].users == [i]:
+                                _name_zeroed(desc, desc.meshes[key], i)
                 remaining[base] -= 1
                 if not remaining[base]:
                     emitter_meshes.pop(base, None)
@@ -839,18 +878,23 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
                     _ext, maps, rest = _evaluated(scene, stacks, node, desc.issues, i, False) if stack.modifiers \
                         else (None, (), ())
                     offset = _offset(t, i)
+                    fresh = {m.index for m in rest} - told  # named on this node only if its mesh is made
                     converted, conv_issues = _converted(scene, rest, meters, offset, told, convert_modifiers)
-                    desc.issues.extend((i, x) for x in conv_issues)
                     shell = _rim(converted)
                     mirrors = _mirrors(converted, shell)
                     key, done = _mapped_mesh(scene, desc, mapped, (base, offset), data, maps, i, name, offset,
-                                             meters, _shading(converted), check, shell is not None, mirrors)
-                    converted, more = rules.budget(converted, len(desc.meshes[key].loop_vertices))
-                    desc.issues.extend((i, x) for x in more)
-                    _name_rim(desc, rims, shell, key, i, check, mirrors)
-                    if done or converted:
-                        applied, modifiers = _split(scene, stack.modifiers, done, converted)
-                    kind = MESH
+                                             meters, _shading(converted), check, shell is not None, mirrors, ranges)
+                    if key is None:  # its positions do not fit single precision: a placeholder
+                        told.difference_update(fresh)
+                        converted = ()
+                    else:
+                        desc.issues.extend((i, x) for x in conv_issues)
+                        converted, more = rules.budget(converted, len(desc.meshes[key].loop_vertices))
+                        desc.issues.extend((i, x) for x in more)
+                        _name_rim(desc, rims, shell, key, i, check, mirrors)
+                        if done or converted:
+                            applied, modifiers = _split(scene, stack.modifiers, done, converted)
+                        kind = MESH
                 remaining[base] -= 1
                 if not remaining[base]:
                     del data_of[base]
@@ -993,7 +1037,8 @@ def _source_object(scene, source):
 
 
 def _mesh_of(scene, desc, obj, node, built, check=None):
-    """(base object index, reader MeshData, reader Stack) of object obj's base mesh, or why there is none."""
+    """(base object index, reader MeshData, reader Stack) of object obj's base mesh, or why there is none (also a
+    mesh whose positions in meters do not fit single precision)."""
     try:
         stack = scene.object_stack(obj)
     except ChunkError as exc:
@@ -1011,6 +1056,10 @@ def _mesh_of(scene, desc, obj, node, built, check=None):
             data = _primitive(scene, mesh_base, desc.issues, node, built)
     if data is None:
         return lights.EMITTER_CLASS % (_class_name(scene, mesh_base) or "an unknown class")
+    try:
+        _positions(data, None, desc.meters)  # the light node's offset is applied later (_emitter, describe)
+    except MeshError as exc:
+        return lights.EMITTER_UNREAD % exc
     return mesh_base, data, stack
 
 
@@ -1354,14 +1403,29 @@ def _mapping(scene, mapped, m, issues, node):
 
 
 def _mapped_mesh(scene, desc, mapped, key, data, maps, node, name, offset, meters, shading=None, check=None,
-                 rim=False, mirrors=()):
+                 rim=False, mirrors=(), ranges=None):
     """(the key in desc.meshes of reader MeshData data under the UVW Maps maps, the maps applied), made on first use:
     key extended by (modifier index, context matrix) per UVW Map evaluated, then by ("shading", shading) when a
     converted smoother changes the shading (SMOOTH: no sharp edge or flat face; CREASE: the sharp edges creased),
     then by ("rim", True) when a converted Shell's rim is hardened (_rim): the open edges join the sharp ones. Above
     the Mirrors mirrors (_mirrors), ("rim", their settings and mirror matrices) instead, and the open edges they
     weld shut stay smooth (_rim_edges): marked sharp, the weld would make them a hard seam. check goes to
-    mesh_description."""
+    mesh_description. (None, ()) when its positions do not fit single precision (MeshError: an issue), found before
+    any UVW Map is read (the maps, the shading and the rim leave the positions as they are); ranges caches per key
+    as given whether they fit (None) or the refusal, which is then named on the first node only."""
+    if ranges is not None and key in ranges:
+        if ranges[key] is not None:
+            return None, ()
+    else:
+        try:
+            _positions(data, offset, meters)
+        except MeshError as exc:
+            desc.issues.append((node, "geometry: not built: %s" % exc))
+            if ranges is not None:
+                ranges[key] = exc
+            return None, ()
+        if ranges is not None:
+            ranges[key] = None
     usable = []
     for m in maps:
         found = _mapping(scene, mapped, m, desc.issues, node)
@@ -1396,16 +1460,24 @@ def _mapped_mesh(scene, desc, mapped, key, data, maps, node, name, offset, meter
         if md.dropped_faces:
             desc.issues.append((node, "geometry: %d faces with a repeated vertex or doubled, left out"
                                 % md.dropped_faces))
+        _name_zeroed(desc, md, node)
     md.users.append(node)
     return key, md.applied
 
 
+def _name_zeroed(desc, md, node):
+    """The issue of the UV coordinates of MeshDescription md that were not numbers, on node (none when there were
+    none)."""
+    if md.zeroed_uvs:
+        desc.issues.append((node, "geometry: %d UV coordinates that are not numbers set to 0" % md.zeroed_uvs))
+
+
 def _extruded(scene, desc, shape_of, extruded, mapped, base, ext, maps, node, name, offset, meters, built,
-              shading=None, check=None, rim=False, mirrors=()):
+              shading=None, check=None, rim=False, mirrors=(), ranges=None):
     """(the key in desc.meshes of shape base under the Extrude ext and the UVW Maps maps, the maps applied), made on
     first use; (None, ()) when the shape or the Extrude cannot be read or the scene's MAX_BUILT_CORNERS are spent (an
-    issue, once per base object and Extrude). extruded caches the MeshData per base object, built counts the face
-    corners made."""
+    issue, once per base object and Extrude), or when its positions do not fit single precision (_mapped_mesh, which
+    gets ranges). extruded caches the MeshData per base object, built counts the face corners made."""
     cache = extruded.setdefault(base, {})
     if ext.index not in cache:
         cache[ext.index] = None
@@ -1426,7 +1498,7 @@ def _extruded(scene, desc, shape_of, extruded, mapped, base, ext, maps, node, na
         return None, ()
     offset = None if offset == controllers.IDENTITY else offset
     return _mapped_mesh(scene, desc, mapped, (base, offset, ext.index), data, maps, node, name, offset, meters,
-                        shading, check, rim, mirrors)
+                        shading, check, rim, mirrors, ranges)
 
 
 def _layer(scene, i, layers, issues, node):

@@ -1266,5 +1266,110 @@ class Fixtures(unittest.TestCase):
         self.assertEqual(md.material_indices.dtype, numpy.int32)
 
 
+@unittest.skipIf(numpy is None, "numpy missing")
+class MeshRange(unittest.TestCase):
+    """Stored mesh positions past single precision (offset and meters applied), inf or NaN: the mesh is refused,
+    its nodes placeholders with an issue, as a curve or a primitive; UVs that are not numbers become 0."""
+
+    @staticmethod
+    def data(corner=(1.0, 0.0, 0.0), uv=None):
+        """A MeshData of one triangle, its second vertex at corner (float32, as reader.geometry stores it)."""
+        positions = numpy.asarray([(0.0, 0.0, 0.0), corner, (0.0, 1.0, 0.0)], dtype=numpy.float32)
+        uvw = numpy.zeros((3, 3), dtype=numpy.float32) if uv is None else numpy.asarray(uv, dtype=numpy.float32)
+        maps = {1: geometry.MapChannel(1, uvw, numpy.arange(3, dtype=numpy.int32))}
+        return geometry.MeshData(positions, numpy.arange(3, dtype=numpy.int32), numpy.zeros(1, dtype=numpy.int32),
+                                 numpy.ones(1, dtype=numpy.uint32), numpy.zeros(1, dtype=numpy.uint16), maps)
+
+    def test_positions_that_do_not_fit_are_refused(self):
+        big = ((1e39, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1))
+        for corner, offset, meters in (((float("nan"), 0.0, 0.0), None, 1.0), ((float("inf"), 0.0, 0.0), None, 1.0),
+                                       ((1e36, 0.0, 0.0), None, 1000.0), ((1.0, 0.0, 0.0), big, 1.0)):
+            with self.subTest(corner=corner, meters=meters, offset=offset is not None):
+                with self.assertRaises(conv.MeshError) as caught:
+                    conv.mesh_description((0, offset), "m", self.data(corner), offset, meters)
+                self.assertIn("single precision", str(caught.exception))
+        md = conv.mesh_description((0, None), "m", self.data((1e30, 0.0, 0.0)), None, 1.0)
+        self.assertEqual(md.positions[1, 0], numpy.float32(1e30))
+        self.assertTrue(numpy.isfinite(md.positions).all())
+
+    def test_uvs_that_are_not_numbers_become_zero(self):
+        uv = [(0.25, float("nan"), 7.0), (float("inf"), 0.5, float("nan")), (1.0, 1.0, 0.0)]
+        data = self.data(uv=uv)
+        md = conv.mesh_description((0, None), "m", data, None, 1.0)
+        self.assertEqual(md.uv_layers[0][1].tolist(), [[0.25, 0.0], [0.0, 0.5], [1.0, 1.0]])
+        self.assertEqual(md.zeroed_uvs, 2)  # the w coordinate is dropped, not counted
+        self.assertTrue(numpy.isnan(data.maps[1].uvw[0, 1]))  # the reader's array is not written
+        self.assertEqual(conv.mesh_description((0, None), "m", self.data(), None, 1.0).zeroed_uvs, 0)
+
+    def scene(self, name):
+        cf = cfb.CompoundFile(os.path.join(ROOT, "tests", "fixtures", name + ".max"))
+        self.addCleanup(cf.close)
+        return reader_scene.Scene.from_file(cf)
+
+    def described(self, name, meters, corner, uv=None):
+        """The fixture described with every stored mesh replaced by self.data(corner, uv)."""
+        sc = self.scene(name)
+        with mock.patch.object(conv.geometry, "read_mesh", lambda scene, i, check=None: self.data(corner, uv)):
+            return conv.describe(sc, meters)
+
+    def test_a_refused_mesh_is_a_placeholder_named_once_per_key(self):
+        """instances: four nodes share one base object, a copy has its own; every node an EMPTY placeholder, one
+        issue per mesh key (the shared one and the copy's), no mesh, no modifier or UV issue."""
+        for corner, meters in (((float("nan"), 0.0, 0.0), 1.0), ((1e36, 0.0, 0.0), 1000.0)):
+            with self.subTest(corner=corner, meters=meters):
+                desc = self.described("instances", meters, corner)
+                self.assertEqual([n.kind for n in desc.nodes], [conv.EMPTY] * 5)
+                self.assertEqual(sum(desc.placeholders.values()), 5)
+                self.assertEqual(desc.meshes, {})
+                self.assertEqual(len(desc.issues), 2)
+                self.assertTrue(all(r.startswith("geometry: not built: ") and "single precision" in r
+                                    for _n, r in desc.issues), desc.issues)
+        desc = self.described("instances", 1.0, (1e30, 0.0, 0.0))
+        self.assertEqual([n.kind for n in desc.nodes], [conv.MESH] * 5)
+        self.assertEqual(desc.issues, [])
+
+    def test_zeroed_uvs_are_named_once_per_key(self):
+        desc = self.described("instances", 1.0, (1.0, 0.0, 0.0), uv=[(float("nan"), 0, 0), (0, 0, 0), (0, 0, 0)])
+        self.assertEqual([n.kind for n in desc.nodes], [conv.MESH] * 5)
+        self.assertEqual([r for _n, r in desc.issues], ["geometry: 1 UV coordinates that are not numbers set to 0"]
+                         * 2)
+        desc = self.described("vray_mesh_light", 0.001, (1.0, 0.0, 0.0), uv=[(float("nan"), 0, 0), (0, 0, 0),
+                                                                             (0, 0, 0)])
+        zeroed = [i for i, r in desc.issues if r == "geometry: 1 UV coordinates that are not numbers set to 0"]
+        self.assertEqual(len(zeroed), len(desc.meshes))  # the mesh and the three emitters, once each
+        self.assertEqual(sorted(zeroed), sorted(md.users[0] for md in desc.meshes.values()))
+
+    def test_a_mesh_light_whose_mesh_does_not_fit_is_not_built(self):
+        """vray_mesh_light at meters 1000 with every mesh at 1e36: the mesh light's mesh objects are refused
+        (_mesh_of), the emitters not built, an issue on each; describe does not raise."""
+        desc = self.described("vray_mesh_light", 1000.0, (1e36, 0.0, 0.0))
+        self.assertEqual(desc.meshes, {})
+        self.assertEqual(desc.emitters, {})
+        self.assertNotIn(conv.MESH, [n.kind for n in desc.nodes])
+        unbuilt = [r for _n, r in desc.issues if r.startswith("light: not built: its mesh cannot be read: ")]
+        self.assertEqual(len(unbuilt), 3)
+        self.assertTrue(all("single precision" in r for r in unbuilt), unbuilt)
+
+    def test_a_mesh_light_refused_after_its_offset_is_not_built(self):
+        """A refusal raised once the light node's offset is applied (in _emitter) costs the emitter, not the
+        import: no mesh or emitter written, a light issue on each of its nodes."""
+        sc = self.scene("vray_mesh_light")
+        real = conv.mesh_description
+
+        def refuse(key, *args, **kwargs):
+            if key[0] == conv.EMITTER:
+                raise conv.MeshError("its points do not fit single precision")
+            return real(key, *args, **kwargs)
+
+        with mock.patch.object(conv, "mesh_description", refuse):
+            desc = conv.describe(sc, 0.001)
+        self.assertEqual(desc.emitters, {})
+        self.assertFalse(any(k[0] == conv.EMITTER for k in desc.meshes if isinstance(k, tuple)))
+        emitters = [n for n in desc.nodes if n.name.startswith("FixtureEmitter") and n.name != "FixtureEmitterSource"]
+        self.assertEqual([n.kind for n in emitters], [conv.EMPTY] * 4)
+        refused = [r for _n, r in desc.issues if r == "light: not built: its points do not fit single precision"]
+        self.assertEqual(len(refused), 3)
+
+
 if __name__ == "__main__":
     unittest.main()

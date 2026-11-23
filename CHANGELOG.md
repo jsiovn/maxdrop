@@ -156,6 +156,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   Position key, scale keys along turned axes that differ, a TCB rotation of a whole revolution or more between two
   keys, and a whole turn between two Linear rotation keys. A turn just short of a whole revolution stays a line in
   the report.
+- Objects: a damaged or hostile file whose Editable Mesh or Editable Poly stores points that are not numbers, or
+  points past Blender's single precision once the object offset and the unit scale are applied, imports that
+  object as an empty with a line in the report, instead of a mesh with infinite or NaN points (a V-Ray mesh light
+  with such a mesh stays an empty, a line in the report). Stored UV coordinates that are not numbers become 0, a
+  line in the report; the mesh is kept.
 
 ## [1.0.1] - 2026-11-22
 
