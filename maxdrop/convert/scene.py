@@ -56,8 +56,8 @@ issue, on the first node of its key), as a primitive whose sizes leave the float
 that does not fit is not drawn (an issue).
 
 A standard primitive (Box, Plane, Pyramid, Sphere, GeoSphere, Cylinder, Cone, Tube, Torus) becomes the mesh 3ds Max
-builds from its parameters (convert.primitives) and from there on is a mesh like any other; one with an option that is
-not built (Slice, a hemisphere) is a placeholder (an issue).
+builds from its parameters (convert.primitives) and from there on is a mesh like any other, Slice and hemispheres
+included; one convert.primitives refuses (a PrimitiveError) is a placeholder (an issue).
 
 A node becomes an EMPTY placeholder when its base object is not an Editable Mesh, Editable Poly, a primitive built
 here or a shape read here, when it has no object, or when the reader refuses its geometry or its record; placeholders

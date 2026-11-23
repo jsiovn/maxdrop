@@ -256,23 +256,23 @@ footer p { margin: 0; }
           <h3>Vào được Blender</h3>
           <ul class="marks yes">
             <li><strong>Editable Mesh và Editable Poly</strong>: đỉnh, mặt, material ID, kênh UV, nhóm làm mịn (smoothing group), và các instance thành lưới dùng chung.</li>
-            <li><strong>Primitive</strong> (Box, Plane, Pyramid, Sphere, GeoSphere, Cylinder, Cone, Tube, Torus) thành đúng lưới mà 3ds Max dựng từ tham số của chúng.</li>
+            <li><strong>Primitive</strong> (Box, Plane, Pyramid, Sphere, GeoSphere, Cylinder, Cone, Tube, Torus) thành đúng lưới mà 3ds Max dựng từ tham số của chúng, kể cả Slice và bán cầu.</li>
             <li><strong>Shape</strong> (Line, Editable Spline, Rectangle, Circle…) thành curve, và <strong>Extrude</strong> trên shape thành lưới của nó: tường, sàn và trần vẽ dạng đường viền được nhập vào ở dạng khép kín.</li>
             <li><strong>UVW Map</strong> (planar, box, cylindrical, spherical) áp vào kênh map của nó; <strong>TurboSmooth, MeshSmooth, Shell và Symmetry</strong> được giữ lại thành modifier của Blender.</li>
             <li><strong>Vị trí, góc xoay, tỉ lệ và toàn bộ phân cấp</strong> của các đối tượng; group và helper Dummy thành empty.</li>
             <li><strong>Đơn vị cảnh</strong>: cảnh lưu bằng milimét, centimét, inch hay feet được nhập đúng kích thước thật.</li>
             <li><strong>Layer</strong> thành collection, kèm các cờ ẩn, đóng băng (frozen) và không render.</li>
-            <li><strong>Vật liệu</strong>, dưới dạng Principled BSDF với các map thành node (lặp, dịch, xoay, cắt, Mix, Color Correction, Falloff, Composite, normal map và bump map): VRayMtl cùng các vật liệu và wrapper V-Ray khác, Standard, Physical, Multi/Sub-Object, CoronaPhysicalMtl, CoronaMtl, CoronaLightMtl và CoronaLayeredMtl.</li>
+            <li><strong>Vật liệu</strong>, dưới dạng Principled BSDF với các map thành node (lặp, dịch, xoay, cắt, Mix, Color Correction, Falloff, Composite, normal map và bump map): VRayMtl cùng các vật liệu và wrapper V-Ray khác, Standard, Physical, Multi/Sub-Object, CoronaPhysicalMtl, CoronaMtl, CoronaLightMtl, CoronaLayeredMtl và CoronaSkinMtl (đơn giản hóa).</li>
             <li><strong>Texture</strong> là tệp ảnh thường, nằm cạnh tệp <code>.max</code>, trong thư mục <code>maps</code> hay <code>textures</code> bên cạnh, hoặc trong các thư mục bạn thêm ở phần preferences.</li>
-            <li><strong>Đèn và camera</strong>: đèn V-Ray dạng plane, disc và sphere, đèn standard và photometric, VRaySun và VRayIES, sáng đúng như V-Ray render; camera Free, Target, Physical và VRayPhysicalCamera với khung hình của 3ds Max, và camera mà tệp dùng để render trở thành camera của cảnh.</li>
+            <li><strong>Đèn và camera</strong>: đèn V-Ray dạng plane, disc và sphere, đèn mesh của V-Ray thành lưới phát sáng, đèn dome của V-Ray thành World, đèn standard và photometric, VRaySun và VRayIES, sáng đúng như V-Ray render; camera Free, Target, Physical và VRayPhysicalCamera với khung hình của 3ds Max, và camera mà tệp dùng để render trở thành camera của cảnh.</li>
           </ul>
         </div>
         <div class="card">
           <h3>Chưa nhập được</h3>
           <ul class="marks no">
-            <li><strong>Một số đèn</strong>: đèn Corona, đèn mesh và dome của V-Ray, sky và Skylight, phân bố IES (thành một đèn spot rộng).</li>
+            <li><strong>Một số đèn</strong>: đèn Corona, sky và Skylight, phân bố IES (thành một đèn spot rộng).</li>
             <li><strong>Các modifier khác</strong> (Edit Poly, Edit Mesh, FFD, Noise…): đối tượng được nhập ở trạng thái trước các modifier đó.</li>
-            <li><strong>Teapot</strong>, primitive bị cắt lát (slice) và bán cầu: được nhập thành empty cho đến một phiên bản sau.</li>
+            <li><strong>Teapot</strong>: được nhập thành empty cho đến một phiên bản sau.</li>
             <li><strong>Star, Text, Helix, Donut</strong> và curve NURBS.</li>
             <li><strong>Hoạt ảnh</strong>: đối tượng được nhập như ở khung hình 0.</li>
             <li><strong>Map thủ tục</strong> (Noise, Gradient, VRayDirt…): đơn giản hóa thành ảnh bên dưới, hoặc kênh giữ màu đơn sắc.</li>

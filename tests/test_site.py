@@ -166,8 +166,12 @@ class Page(unittest.TestCase):
         self.assertIn('<a href="index.html" hreflang="en" lang="en">English</a>', vietnamese)
         self.assertIn('<meta property="og:url" content="https://jsiovn.github.io/maxdrop/vi.html">', vietnamese)
         for needle in ("Phiên bản 1.2.3", "không liên kết với Autodesk hay Chaos", "Cài đặt", "Khắc phục sự cố",
-                       "MaxDrop (.max, .zip, .rar, .7z)", "MaxDrop (.max, .rar, .7z)"):
+                       "MaxDrop (.max, .zip, .rar, .7z)", "MaxDrop (.max, .rar, .7z)",
+                       "kể cả Slice và bán cầu", "đèn dome của V-Ray thành World",
+                       "đèn mesh của V-Ray thành lưới phát sáng", "CoronaSkinMtl (đơn giản hóa)"):
             self.assertIn(needle, vietnamese)
+        for gone in ("đèn mesh và dome của V-Ray", "primitive bị cắt lát (slice) và bán cầu"):
+            self.assertNotIn(gone, vietnamese)
 
     def test_the_page_says_what_this_release_is(self):
         page = self.page()
@@ -184,7 +188,10 @@ class Page(unittest.TestCase):
                 "<strong>Other modifiers</strong>",
                 "<strong>Lights and cameras</strong>: V-Ray plane, disc and sphere lights",
                 "<strong>Light Strength</strong> scales every light",
-                "<strong>Text Encoding</strong> picks the code page"):
+                "<strong>Text Encoding</strong> picks the code page",
+                "Slice and hemispheres included", "V-Ray mesh lights as glowing meshes",
+                "the V-Ray dome light as the World", "CoronaSkinMtl (simplified)",
+                "<strong>Teapot</strong>: it arrives as an empty"):
             self.assertTrue(needle in page, needle)
 
     def test_the_page_names_no_option_the_importer_lost(self):
@@ -194,7 +201,8 @@ class Page(unittest.TestCase):
                      "one 3ds Max unit becomes one meter",
                      "imports exactly what that importer imports",
                      "Lights and cameras are not read yet", "early release", "Lights and cameras are not imported yet",
-                     "Falloff and other procedural maps", "<strong>Lights and cameras</strong>, V-Ray lights included"):
+                     "Falloff and other procedural maps", "<strong>Lights and cameras</strong>, V-Ray lights included",
+                     "sliced primitives and hemispheres", "V-Ray mesh and dome lights"):
             self.assertFalse(gone in page, gone)
 
     def test_the_page_says_how_scene_packs_are_imported(self):
