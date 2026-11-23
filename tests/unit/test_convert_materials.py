@@ -2063,7 +2063,7 @@ class Assign(unittest.TestCase):
                     _wrapper(31, classids.VRAY_2SIDED_MTL, {0: Ref(4)}),
                     _wrapper(32, classids.VRAY_MTL_WRAPPER, {0: Ref(None)}),
                     _multi(6, [(0, Ref(30), 1), (1, Ref(31), 1), (2, Ref(4), 1), (3, Ref(5), 1), (4, Ref(32), 1)]))
-        cd =types.SimpleNamespace(users=[1], splines=[_spline(t) for t in [(1, 0), (2, 0), (0, 2, 1)]])
+        cd = types.SimpleNamespace(users=[1], splines=[_spline(t) for t in [(1, 0), (2, 0), (0, 2, 1)]])
         conv = mat.MaterialConverter(FakeGraph(*objs()))
         self.assertIsNone(mat._mixed(cd, {1: 6}, conv))
         self.assertEqual(dict(conv.stats.peeled), {})
@@ -2126,6 +2126,44 @@ class Assign(unittest.TestCase):
                 conv = mat.MaterialConverter(FakeGraph(*objs))
                 self.assertEqual(conv.source_for(0, 0), 0 if peeled is None else peeled)
                 self.assertEqual((dict(conv.stats.peeled), conv._peels), ({}, {}))
+
+    def test_source_for_walks_each_wrapper_once(self):
+        """An unpeeled wrapper many IDs wrap onto is walked once, not once per ID: a curve of 1000 IDs, half on a
+        CoronaLayeredMtl without a base and a long layers table (every layer off but the last), no line."""
+        layers = [Ref(4)] * 500
+        objs = (_vray(4, "Base"), _corona(30, classids.CORONA_LAYERED_MTL, p1000=Ref(None), p1001=layers,
+                                          p1004=[0] * 499 + [1]),
+                _multi(6, [(0, Ref(4), 1), (1, Ref(30), 1)]))
+        conv = mat.MaterialConverter(FakeGraph(*objs))
+        calls, sub = collections.Counter(), conv._sub
+
+        def counting(m, key):
+            calls[m.index] += 1
+            return sub(m, key)
+        conv._sub = counting
+        desc = _desc(curves={"c": ([1], [(0, k) for k in range(1, 1000)])})
+        mat.assign(desc, {1: 6}, conv)
+        self.assertEqual(desc.issues, [])
+        self.assertEqual(dict(calls), {30: 1})
+
+    def test_source_for_wrapper_around_multi(self):
+        """A wrapper not yet peeled around a Multi/Sub-Object is looked up by the ID below it, as material_for
+        converts it; a wrapper and a Multi/Sub-Object around each other give nothing, as material_for does."""
+        objs = (_vray(4, "A"), _vray(5, "B"), _multi(6, [(0, Ref(4), 1), (1, Ref(5), 1)]),
+                _wrapper(50, classids.VRAY_MTL_WRAPPER, {0: Ref(6)}),
+                _wrapper(51, classids.VRAY_2SIDED_MTL, {0: Ref(50)}),
+                _multi(7, [(0, Ref(52), 1), (1, Ref(51), 1)]),
+                _wrapper(52, classids.VRAY_MTL_WRAPPER, {0: Ref(7)}))
+        for top in (50, 51, 7, 52):
+            for mid in range(4):
+                with self.subTest((top, mid)):
+                    conv = mat.MaterialConverter(FakeGraph(*objs))
+                    ir = mat.MaterialConverter(FakeGraph(*objs)).material_for(top, mid)
+                    self.assertEqual(conv.source_for(top, mid), ir and ir.index)
+                    self.assertEqual((dict(conv.stats.peeled), conv._peels, conv._done), ({}, {}, {}))
+        conv = mat.MaterialConverter(FakeGraph(*objs))
+        self.assertEqual([conv.source_for(51, mid) for mid in range(3)], [4, 5, 4])
+        self.assertIsNone(conv.source_for(52, 0))
 
     def test_curve_mixed_ids_bounded(self):
         """The mixed-ID check asks source_for once per distinct (material, ID) pair, whatever the number of splines

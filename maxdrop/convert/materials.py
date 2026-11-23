@@ -383,6 +383,7 @@ class MaterialConverter:
         self._multis, self._for, self._reported = {}, {}, set()
         self._active = []  # the materials whose rule is running: a layer that comes back to one is a cycle
         self._bsdfs = {}  # id(MaterialIR) -> (the IR, the Principled BSDFs it draws): bsdf_count
+        self._bases = {}  # object index -> peel()'s base found without peeling (None: the peel fails): source_for
 
     def rgb(self, m, pid, block, default, scale=1.0):
         """A swatch parameter as linear RGB by the scene's rule; default is the swatch value (0..1) used when the
@@ -664,13 +665,18 @@ class MaterialConverter:
 
     def source_for(self, index, material_id):
         """The material object index material_for(index, material_id) converts, None where it gives none, found
-        without converting, counting or caching anything: Multi/Sub-Objects looked up by the ID, wrappers through
-        peel()'s result or, for one peel() has not walked yet, its walk over _sub again (from the same object, so the
-        same base); a wrapper whose peel fails is its own answer (its grey IR is its own). To compare IDs that get no
-        slot."""
+        without converting or counting anything (no peel kept): Multi/Sub-Objects looked up by the ID, wrappers
+        through peel()'s result or, for one peel() has not walked yet, its walk over _sub again (from the same object,
+        so the same base; kept in _bases, one walk per object as peel() pays); a wrapper whose peel fails is its own
+        answer (its grey IR is its own). To compare IDs that get no slot."""
         def base_of(j):
             if j in self._peels:
                 return self._peels[j][0]
+            if j not in self._bases:
+                self._bases[j] = walk(j)
+            return self._bases[j]
+
+        def walk(j):
             chain = []
             while True:
                 try:
