@@ -36,11 +36,15 @@ the result under Open (the header rule: the main sections hold only what a commi
 **Files:** Modify: `docs/FORMAT.md` (Open; a pointer line under The Falloff mix curve). Add lines only: part F
 edits the file too.
 
-- [ ] Add an Open item: the curve layout and points read the same in 3ds Max 2020's saves as 2017 / 2018 / 2019
+- [x] Add an Open item: the curve layout and points read the same in 3ds Max 2020's saves as 2017 / 2018 / 2019
   (probe, not committed) and in corpus scenes A and B; the extra flag values; a newer 3ds Max not known.
-- [ ] Add one pointer sentence at the end of The Falloff mix curve's layout paragraph to that Open item.
-- [ ] `python -I -m unittest discover tests` -> OK, `python -I tools/lint.py` -> clean.
-- [ ] Commit `Record the curve layout in older save formats` (Bead: maxdrop-em3.130).
+- [x] Add one pointer sentence at the end of The Falloff mix curve's layout paragraph to that Open item.
+- [x] `python -I -m unittest discover tests` -> OK, `python -I tools/lint.py` -> clean.
+- [x] Commit `Record the curve layout in older save formats` (Bead: maxdrop-em3.130).
+
+### Task 2: bead notes
+
+- [x] Append the results above (scene A / scene B only, no file names or paths of the corpus) to the bead notes.
 
 ## Verification
 
@@ -50,7 +54,3 @@ Docs only (build-and-test's table: block 1). No fixture, no code: no Blender run
 python -I -m unittest discover tests   # OK
 python -I tools/lint.py                 # All checks passed!
 ```
-
-### Task 2: bead notes
-
-- [ ] Append the results above (scene A / scene B only, no file names or paths of the corpus) to the bead notes.

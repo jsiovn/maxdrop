@@ -1930,10 +1930,10 @@ Not shown by any fixture yet, so not stated above:
   neighbouring key is 2e-2 off).
 - The Falloff mix curve in other formats ([The Falloff mix curve](#the-falloff-mix-curve); maxdrop-em3.130), seen
   only in files not committed: falloff_curve's script saved by 3ds Max 2020 as 2017, 2018 and 2019 (formats 19000,
-  20000, 21000) stores every curve as its 3ds Max 2020 file does (`0x2035`, `0x204B`, `0x1000`, one `0x1030` per
-  point holding a 28-byte `0x1000`, `0x1020`, `0x1040`), the same points, handles and flags; loaded again in 3ds
-  Max, `ICurve.GetValue` gives the same values in all four. Corpus scene A (3ds Max 2015 saving in the 2012 format,
-  60 Falloffs, 34 with an edited curve of up to 5 points) and scene B (3ds Max 2020 saving as 2018, 23) read with
-  the same layout, every curve; scene A saved again by 3ds Max 2020 gives the same points. Point flags seen there
-  besides the fixture's: `0x1`, `0x11`, `0x103`, `0x110`, `0x113` (MaxDrop does not read the flags). Not known:
-  the layout written by a 3ds Max newer than 2020.
+  20000, 21000) stores every curve as its 3ds Max 2020 file does (`0x2035`, `0x204B` (not decoded), `0x1000`, one
+  `0x1030` per point holding a 28-byte `0x1000`, `0x1020`, `0x1040`), the same points, handles and flags; loaded
+  again in 3ds Max, `ICurve.GetValue` gives the same values in all four. Corpus scene A (3ds Max 2015 saving in the
+  2012 format, 60 Falloffs, 34 with an edited curve of up to 5 points) and scene B (3ds Max 2020 saving as 2018, 23
+  Falloffs) read with the same layout, every curve; scene A saved again by 3ds Max 2020 gives the same points.
+  Point flags seen there besides the fixture's: `0x1`, `0x11`, `0x103`, `0x110`, `0x113` (MaxDrop does not use the
+  flags). Not known: the layout written by a 3ds Max newer than 2020.
