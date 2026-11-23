@@ -165,7 +165,8 @@ WRAPPERS = {
     classids.CORONA_SELECT_MTL: (312,),  # materials (table): the one at selected (313, zero-based)
 }
 # wrapper ClassId -> {sub-material parameter: its on switch}; a slot switched off is read as empty. VRayOverrideMtl's
-# (1, 3, 5, 7, 9) and Double Sided's (2, 3) are not here: V-Ray 5.2 renders their sub-materials switched off all the same
+# (1, 3, 5, 7, 9) and Double Sided's (2, 3) are not here: V-Ray 5.2 renders their sub-materials switched off all the
+# same
 WRAPPER_SWITCHES = {
     classids.CORONA_RAY_SWITCH_MTL: {1603: 1613, 1600: 1610, 1601: 1611, 1602: 1612},
 }
@@ -465,9 +466,6 @@ class MaterialConverter:
             pids = WRAPPERS[key]
         block = m.block(0)
         switches = WRAPPER_SWITCHES.get(key, {})
-        if key == classids.DOUBLE_SIDED_MTL and not _flag(m, DOUBLE_SIDED_FACING_ON, 0, True):
-            self._issue_once(m.index, "%s: facing material switched off: drawn all the same, as V-Ray renders it (the "
-                                      "scanline renders it black)" % (m.name or "Double Sided"))
         for pid in pids:
             if pid in switches and not _flag(m, switches[pid], 0, True):
                 continue
@@ -480,6 +478,9 @@ class MaterialConverter:
                 if isinstance(v, pblock.Reference) and v.index is not None:
                     if self.graph.superclass(v.index) != classids.SC_MATERIAL:
                         return None, "%s: sub-material %d is not a material" % (m.name or "wrapper", v.index)
+                    if key == classids.DOUBLE_SIDED_MTL and pid == 0 and not _flag(m, DOUBLE_SIDED_FACING_ON, 0, True):
+                        self._issue_once(m.index, "%s: facing material switched off: drawn all the same, as V-Ray "
+                                         "renders it (the scanline renders it black)" % (m.name or "Double Sided"))
                     return v.index, None
         return None, "%s: no sub-material" % (m.name or "wrapper")
 

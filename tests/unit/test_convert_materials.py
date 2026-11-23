@@ -457,7 +457,8 @@ class Wrappers(unittest.TestCase):
         facing one, reported once per wrapper object."""
         OV, DS = classids.VRAY_OVERRIDE_MTL, classids.DOUBLE_SIDED_MTL
         override = {0: Ref(1), 2: Ref(2), 4: Ref(3), 6: Ref(4), 8: Ref(5)}
-        off = "Wrap: facing material switched off: drawn all the same, as V-Ray renders it (the scanline renders it black)"
+        off = ("Wrap: facing material switched off: drawn all the same, as V-Ray renders it (the scanline renders it "
+               "black)")
         cases = [
             (OV, override, False),  # no switches stored: on
             (OV, {**override, 1: 1, 3: 1}, False),
@@ -479,6 +480,17 @@ class Wrappers(unittest.TestCase):
                 self.assertEqual(conv.peel(0), (1, None))  # _sub runs again on the same wrapper
                 self.assertEqual(conv.convert(0).name, "V1")
                 self.assertEqual(conv.stats.issues, [(0, off)] if issue else [])
+
+    def test_a_facing_slot_switched_off_and_unused_is_no_issue(self):
+        """The facing-material line names only a facing material that is drawn: an empty one (the back is drawn) or
+        one that is not a material (the peel fails) gives none."""
+        DS = classids.DOUBLE_SIDED_MTL
+        for params, want in [({0: Ref(None), 1: Ref(2), 2: 0}, (2, None)),
+                             ({0: Ref(7), 1: Ref(2), 2: 0}, (None, "Wrap: sub-material 7 is not a material"))]:
+            with self.subTest(params):
+                conv = mat.MaterialConverter(FakeGraph(_wrapper(0, DS, params, "Wrap"), _vray(2, "V2"), _map(7)))
+                self.assertEqual(conv.peel(0), want)
+                self.assertEqual(conv.stats.issues, [])
 
     def test_nested_wrappers_count_each_once(self):
         objs = (_wrapper(0, classids.VRAY_MTL_WRAPPER, {0: Ref(1)}), _wrapper(1, classids.VRAY_2SIDED_MTL, {0: Ref(2)}),
