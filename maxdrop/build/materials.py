@@ -74,9 +74,9 @@ glass 0.990-0.994 (a sphere), but applies c once, so tinted glass gets too light
 default 0.356-0.358; hand-wired, 4.2 to 5.2); left out, for white glass too: it changes the view through a curved
 solid. Measured in Blender 4.2, 4.5 and 5.2 (bead maxdrop-6n0.7.6, white glass w 0.2 drawn here, Thickness linked
 to 0 by hand, orthographic camera, a checker world of 0.1 / 0.9): a sphere's mean |EEVEE - Cycles| rises from
-0.111-0.121 to 0.273-0.278 (one refraction's magnified view in place of the ball lens' small inverted one; a
-rotated cube 0.196-0.217 against 0.206-0.221, both far off), and on a white world half transmission moves away from
-Cycles' 0.851-0.853 (0.975-0.983, the default 0.896-0.905).
+0.111-0.121 to 0.273-0.278 (one refraction's magnified view in place of the ball lens's small inverted one; a
+rotated cube's from 0.206-0.221 to 0.196-0.217, both far off), and on a white world half transmission (sphere and
+cube) moves away from Cycles' 0.851-0.853 (0.975-0.983, the default 0.896-0.905).
 Glass that refracting() refuses keeps the filled BSDF under the mirror, its glass Fresnel still reflecting; a
 constant w of at least 1 keeps the lone BSDF (a VRayMtl's bright Fresnel-off reflection is a metal before it gets
 here). Not measured against V-Ray.
