@@ -66,6 +66,7 @@ fixture.
 | `0x0962` | node name | every fixture; hierarchy has two nodes named `FixtureTwin` |
 | `0x0960` | `i32` parent object index, `u32` flags | every fixture; a top-level node's parent is the RootNode |
 | `0x099C` | `u32`, bit `0x8000` = renderable, `0x200` = Cast Shadows, `0x400` = Receive Shadows | layers_flags, below |
+| `0x0A28` | 2 x `u32` By Layer masks: the first of the display flags, the second of the `0x099C` bits taken from the node's layer | layers_render: `0x3040C600` in the second on its By Layer nodes; `0` and `0` on every other node of every fixture, below |
 | `0x096A` | 3 x `f32` object offset position | hierarchy: `[5, 5, 0]` for FixtureRoot and FixtureChild = oracle `offset_pos` |
 | `0x096B` | 4 x `f32` object offset rotation | modifier_pivot: FixtureBent `[0, 0, 0.258819, 0.965926]` = oracle `offset_rot` (stored as MAXScript prints it); every other node `[0, 0, 0, 1]` |
 | `0x096C` | 7 x `f32`: object offset scale (3), then a scale axis rotation (4) | every fixture: `[1, 1, 1]`, `[0, 0, 0, 1]` |
@@ -103,7 +104,7 @@ layers_flags, layers_more and lookat:
 
 `0x800` is not decoded. Renderable is not in `0x0960` (FixtureNoRender has `0x800`) but in `0x099C`, a `u32` on
 every node of every fixture: `0x0F00D600` on each node, `0x0F005600` on FixtureNoRender (and the two shadow
-values below), so bit `0x8000` is
+values below, and layers_render's FixtureByLayerOwnOff, `0x0F005000`, set By Layer), so bit `0x8000` is
 renderable. A layer's flags stay on the layer: the nodes of layers_more's hidden, frozen and non-rendering layers
 have `0x800` and `0x0F00D600`, no `0x0975` or `0x0976` (MAXScript's `isHidden` and `isFrozen` still answer true
 for them; the oracle writes the node's own flags, see [ORACLE.md](ORACLE.md)). `test_scene.py` checks every node's
@@ -113,7 +114,22 @@ with one change each (maxdiff) give `0x0F00D400` with Cast Shadows off, `0x0F00D
 `0x0F00D000` with both (layers_flags: FixtureNoCastShadow, FixtureNoReceiveShadow; `test_scene.py` checks both
 flags of every node against the oracle). On a light node the bit `0x200` is the node's `castShadows` in MAXScript,
 not the light's shadow switch `baseObject.castShadows` (Lights, below). A layer's `0x1050` has the same two bits, used only by a node set to By
-Layer, which is not read.
+Layer.
+Rendering Control By Layer (Object Properties) is the second `u32` of the node's `0x0A28`, a mask over the bits of
+its `0x099C` that come from its layer's `0x1050` instead (maxdrop-em3.145, saves of one change each with maxdiff):
+`renderByLayer` sets `0x3040C600` there (the three bits read, `0x8000`, `0x400` and `0x200`, among others) and
+leaves `0x099C` as it was; `displayByLayer` sets `0xF9F80000` in the first `u32` and `0x00030000` in the second,
+`motionByLayer` `0x00040800` in the second (neither read). Setting a render flag of the node after `renderByLayer`
+turns By Layer off again (the save keeps the mask `0`). The reader merges the masked bits from the node's own
+layer (`reader.scene.render_flags`), which is what MAXScript answers for such a node and so what the oracle writes
+(layers_render). Scanline renders of probe scenes (3ds Max 2020) show what the mask does: a By Layer box on a
+layer with Renderable off is not rendered, on a layer with Cast Shadows off casts no shadow, and a By Layer ground
+on a layer with Receive Shadows off shows none; with its own flag off on a layer that has it on, it renders,
+casts and receives. A By Object node keeps its own flags whatever its layer says, rendered on a layer with
+Renderable off too, and a parent layer's flags reach no node below it (a By Layer box on a rendering, casting
+child layer of a parent with both off renders and casts). Every fixture's node has `0x0A28`, 8 bytes; in scene A
+23 of 746 nodes are By Layer (the second `u32` `0xB044CE00` or `0xB047CE00`, the three bits always together), on
+layers with all three on; scene B has none.
 
 ## Modifiers
 
@@ -177,14 +193,15 @@ A layer is an object of class Base Layer `(0x7E9858FE, 0x1DBA1DF0)`, superclass 
 to it. layers_flags has three (`0`, FixtureLayerA, FixtureLayerB), layers_more seven (`0`, FixtureHiddenLayer,
 FixtureFrozenLayer, FixtureNoRenderLayer, FixtureParentLayer, FixtureChildLayer, `FixtureLäyer中`), layers_nested
 eight (`0`, FixtureHiddenParentLayer, FixtureHiddenChildLayer, FixtureFrozenParentLayer, FixtureFrozenChildLayer,
-FixtureTopLayer, FixtureMiddleLayer, FixtureBottomLayer), the saved_as
+FixtureTopLayer, FixtureMiddleLayer, FixtureBottomLayer), layers_render seven (`0`, FixtureNoCastLayer,
+FixtureNoReceiveLayer, FixtureNoRenderLayer, FixtureOnLayer, FixtureNoRenderParent, FixtureChildLayer), the saved_as
 fixtures two (`0`, `FixtureLäyer中`), the other fixtures one (`0`):
 
 | Chunk | Content | Shown by |
 |---|---|---|
 | `0x1010` | the layer name, no terminator: UTF-8 in every file 3ds Max 2020 saves (saved_as included), unlike the UTF-16 node names | layers_flags: `46 69 78 ...` (`FixtureLayerA`), `30` (`0`); layers_more: `46 69 78 74 75 72 65 4c c3 a4 79 65 72 e4 b8 ad` (`FixtureLäyer中`) |
 | `0x1020` | `u32` flags: `0x100000` hidden, `0x200000` frozen (the node's bits) | layers_more: `0x100000` on FixtureHiddenLayer, `0x200000` on FixtureFrozenLayer; layers_nested: `0x100000` on FixtureHiddenParentLayer and FixtureTopLayer, `0x200000` on FixtureFrozenParentLayer, `0` on the layers below them; `0` on every other layer of every fixture |
-| `0x1050` | `u32`, bit `0x8000` = renderable: the layout of a node's `0x099C` | `0x0B00D600` on every layer but layers_more's FixtureNoRenderLayer, `0x0B005600` |
+| `0x1050` | `u32`, bit `0x8000` = renderable, `0x200` = Cast Shadows, `0x400` = Receive Shadows: the layout of a node's `0x099C`, read for its By Layer nodes (all on without the chunk) | `0x0B00D600` on every layer but layers_more's FixtureNoRenderLayer, `0x0B005600`, and layers_render's FixtureNoCastLayer `0x0B00D400`, FixtureNoReceiveLayer `0x0B00D200`, FixtureNoRenderLayer `0x0B005600`, FixtureNoRenderParent `0x0B005000` |
 | `0x1090` | `u8`, not `0` = the layer has a parent layer | layers_more: `1` on FixtureChildLayer; layers_nested: `1` on FixtureHiddenChildLayer, FixtureFrozenChildLayer, FixtureMiddleLayer and FixtureBottomLayer; `0` on every other layer of every fixture |
 | `0x10A0` | the parent layer's name, UTF-16LE (not read: `0x10B0` names it) | layers_more: `FixtureParentLayer` on FixtureChildLayer; layers_nested: `FixtureMiddleLayer` on FixtureBottomLayer, `FixtureTopLayer` on FixtureMiddleLayer |
 | `0x10B0` | `i32` the parent layer's object index | layers_more: FixtureChildLayer's is FixtureParentLayer's (`0x236`), a higher index than its own; layers_nested: FixtureBottomLayer's is FixtureMiddleLayer's, whose is FixtureTopLayer's |
@@ -1881,11 +1898,10 @@ Not shown by any fixture yet, so not stated above:
   gizmo controller combines with the context matrix; a modifier without `0x39BF` (4 of 74 modifier objects in scene
   A, 3 of 46 in scene B: read with every switch on and the class name).
 - The meaning of bit `0x800` and the other flag bits in `0x0960`.
+- Of a node's `0x0A28`: the display mask (its first `u32`) and the bits of the render mask other than `0x8000`,
+  `0x400` and `0x200`.
 - Layers: the layer name's encoding in a version other than 3ds Max 2020 (the reader replaces bytes that are not
-  UTF-8); a non-rendering parent layer: a probe saved `0x0B005600` on the parent only, and MAXScript's
-  `renderable` of the child layer and of its node stayed true, but whether 3ds Max renders that node is not shown
-  (a node made by script does not render By Layer, maxdrop-em3.145), while Blender's `hide_render` on the
-  parent's collection reaches the collections below.
+  UTF-8).
 - System unit types 1, 2, 5, 6 (feet, miles, meters, kilometers) and a scale other than 1: taken from the 3ds Max
   SDK, no fixture has them. A `Compressed` part in General (instead of `Uncompressed`) is assumed for a compressed
   file.

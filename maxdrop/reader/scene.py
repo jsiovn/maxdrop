@@ -13,9 +13,10 @@
         scene.walk()                    # every node, pre-order from the top level
         scene.object_stack(node.object) # Stack(base, modifiers top first, derived objects)
         node.hidden, node.frozen, node.renderable, node.group_head, node.group_member
-        node.cast_shadows, node.receive_shadows
+        node.cast_shadows, node.receive_shadows, node.render_by_layer
+        render_flags(node, scene.layer(node.layer))  # the 0x099C bits 3ds Max renders the node with
         scene.layers()                  # Layer records in the Layer Manager's order
-        scene.layer(node.layer)         # name, hidden, frozen, renderable, parent (a layer's object index)
+        scene.layer(node.layer)         # name, hidden, frozen, renderable, cast_shadows, receive_shadows, parent
         scene.ticks_per_frame           # 4800 / the frame rate of the file's Config stream (160 at 30 fps)
 
 The Scene stream holds one root container (0x2014, 0x2022, 0x2023 or 0x2025 so far); its children are the objects. The
@@ -25,12 +26,15 @@ pairs. A Node (class (1, 0), superclass 1) has 0x0962 name, 0x0960 i32 parent + 
 offset position, rotation and scale (+ scale axis), and reference slots 0 = transform controller, 1 = object,
 3 = material, 6 = layer. The 0x0960 flags hold hidden (0x100000), frozen (0x200000), group head (0x40) and group
 member (0x100); in the u32 of 0x099C bit 0x8000 is renderable, 0x200 Cast Shadows and 0x400 Receive Shadows
-(without the chunk all three are on). A layer is a Base Layer: 0x1010 its name (UTF-8), 0x1020 the same hidden
-and frozen bits, bit 0x8000 of 0x1050 renderable and, when the byte 0x1090 is not 0, 0x10B0 the i32 object index
-of its parent layer. The Layer Manager references the layers in its order (slot 0 = layer "0"). A derived object
-(special id 0x2032) references [modifier, ..., base object], the top of the stack first; its base can be another
-derived object. A world-space modifier sits in a derived object of its own (special id 0x2033), [world-space
-modifiers, the object's 0x2032 derived object or its base object], read the same way. docs/FORMAT.md says which
+(without the chunk all three are on). The second u32 of the node's 0x0A28 is its By Layer mask: the 0x099C bits
+taken from its layer instead (Rendering Control By Layer sets 0x8000, 0x400 and 0x200 in it; render_flags merges
+them, only from the node's own layer, never a parent layer). A layer is a Base Layer: 0x1010 its name (UTF-8),
+0x1020 the same hidden and frozen bits, 0x1050 the node's three render bits (all on without it) and, when the
+byte 0x1090 is not 0, 0x10B0 the i32 object index of its parent layer. The Layer Manager references the layers
+in its order (slot 0 = layer "0"). A derived object (special id 0x2032) references [modifier, ..., base object],
+the top of the stack first; its base can be another derived object. A world-space modifier sits in a derived
+object of its own (special id 0x2033), [world-space modifiers, the object's 0x2032 derived object or its base
+object], read the same way. docs/FORMAT.md says which
 fixture shows what. The frame rate is not in the Scene stream: Config `0x20B0/0x0010` is an i32 of frames per
 second, read by from_file (ticks_per_frame(cf)); without it, or with a value outside 1 to 4800, 30 fps.
 
@@ -60,8 +64,8 @@ MAX_NODES = 1 << 20  # scene B, the largest corpus scene, has 2 251; Blender is 
 SLOT_TM, SLOT_OBJECT, SLOT_MATERIAL, SLOT_LAYER = 0, 1, 3, 6
 GROUP_HEAD, GROUP_MEMBER, HIDDEN, FROZEN = 0x40, 0x100, 0x100000, 0x200000  # node 0x0960, layer 0x1020
 RENDERABLE = 0x8000  # node 0x099C, layer 0x1050
-CAST_SHADOWS, RECEIVE_SHADOWS = 0x200, 0x400  # node 0x099C
-NODE_RENDER_DEFAULT = RENDERABLE | CAST_SHADOWS | RECEIVE_SHADOWS  # a node without 0x099C
+CAST_SHADOWS, RECEIVE_SHADOWS = 0x200, 0x400  # node 0x099C, layer 0x1050
+NODE_RENDER_DEFAULT = RENDERABLE | CAST_SHADOWS | RECEIVE_SHADOWS  # a node without 0x099C, a layer without 0x1050
 TICKS_PER_SECOND = 4800
 DEFAULT_TICKS_PER_FRAME = 160  # 30 fps, 3ds Max's default
 MAX_CONFIG = 1 << 24  # bytes: a Config stream is tens of kilobytes
@@ -69,7 +73,7 @@ MAX_CONFIG = 1 << 24  # bytes: a Config stream is tens of kilobytes
 _REFS, _REF_PAIRS = 0x2034, 0x2035
 _NODE_PARENT, _NODE_NAME = 0x0960, 0x0962
 _PIVOT_POSITION, _PIVOT_ROTATION, _PIVOT_SCALE = 0x096A, 0x096B, 0x096C
-_NODE_RENDER = 0x099C
+_NODE_RENDER, _NODE_BY_LAYER = 0x099C, 0x0A28
 _LAYER_NAME, _LAYER_FLAGS, _LAYER_RENDER, _LAYER_HAS_PARENT, _LAYER_PARENT = 0x1010, 0x1020, 0x1050, 0x1090, 0x10B0
 _PAIR = struct.Struct("<Ii")
 _TIME_CONFIG, _FRAME_RATE = 0x20B0, 0x0010  # Config: the time configuration, its i32 frames per second
@@ -84,16 +88,18 @@ class Stack(collections.namedtuple("Stack", "base modifiers derived")):
 
 class Node:
     """One node. parent is the parent node's object index after cycle cutting (None = top level); parent_index is
-    the index as stored."""
+    the index as stored. render_flags is its own 0x099C, render_by_layer the mask of the bits its layer gives (0
+    when By Object); renderable, cast_shadows and receive_shadows are its own bits, render_flags() the merged
+    ones."""
     __slots__ = ("index", "name", "parent", "parent_index", "flags", "pivot_position", "pivot_rotation",
-                 "pivot_scale", "pivot_scale_axis", "refs", "render_flags")
+                 "pivot_scale", "pivot_scale_axis", "refs", "render_flags", "render_by_layer")
 
     def __init__(self, index, name, parent, parent_index, flags, pivot_position, pivot_rotation, pivot_scale,
-                 pivot_scale_axis, refs, render_flags=NODE_RENDER_DEFAULT):
+                 pivot_scale_axis, refs, render_flags=NODE_RENDER_DEFAULT, render_by_layer=0):
         self.index, self.name, self.parent, self.parent_index, self.flags = index, name, parent, parent_index, flags
         self.pivot_position, self.pivot_rotation = pivot_position, pivot_rotation
         self.pivot_scale, self.pivot_scale_axis, self.refs = pivot_scale, pivot_scale_axis, refs
-        self.render_flags = render_flags
+        self.render_flags, self.render_by_layer = render_flags, render_by_layer
 
     def __repr__(self):
         return "Node(%d, %r, parent=%r)" % (self.index, self.name, self.parent)
@@ -165,6 +171,23 @@ class Layer:
     def renderable(self):
         return bool(self.render_flags & RENDERABLE)
 
+    @property
+    def cast_shadows(self):
+        return bool(self.render_flags & CAST_SHADOWS)
+
+    @property
+    def receive_shadows(self):
+        return bool(self.render_flags & RECEIVE_SHADOWS)
+
+
+def render_flags(node, layer):
+    """The 0x099C bits 3ds Max renders node with: its own, but those of NODE_RENDER_DEFAULT its By Layer mask names
+    taken from layer (its own Layer record; None, as for a node without a layer, keeps its own)."""
+    if layer is None:
+        return node.render_flags
+    mask = node.render_by_layer & NODE_RENDER_DEFAULT
+    return (node.render_flags & ~mask) | (layer.render_flags & mask)
+
 
 def _u32(chunk, default, what):
     if chunk is None:
@@ -189,6 +212,15 @@ def ticks_per_frame(cf):
     except (MaxFileError, OSError):
         return DEFAULT_TICKS_PER_FRAME
     return TICKS_PER_SECOND // fps if 1 <= fps <= TICKS_PER_SECOND else DEFAULT_TICKS_PER_FRAME
+
+
+def _by_layer(chunk, what):
+    """The node's By Layer render mask: the second u32 of 0x0A28 (its first is the display mask), 0 without it."""
+    if chunk is None:
+        return 0
+    if chunk.payload_size < 8:
+        raise ChunkError("%s: %04X of %d bytes" % (what, chunk.id, chunk.payload_size))
+    return chunk.unpack("<2I")[1]
 
 
 def _floats(chunk, count, default):
@@ -434,7 +466,8 @@ class Scene:
         node = Node(i, name.text() if name is not None else "", self.parent(i), parent_index, flags,
                     _floats(chunk.first(_PIVOT_POSITION), 3, (0.0, 0.0, 0.0)),
                     _floats(chunk.first(_PIVOT_ROTATION), 4, (0.0, 0.0, 0.0, 1.0)), scale[:3], scale[3:],
-                    self.refs(i), _u32(chunk.first(_NODE_RENDER), NODE_RENDER_DEFAULT, "node %d" % i))
+                    self.refs(i), _u32(chunk.first(_NODE_RENDER), NODE_RENDER_DEFAULT, "node %d" % i),
+                    _by_layer(chunk.first(_NODE_BY_LAYER), "node %d" % i))
         self._nodes[i] = node
         return node
 
@@ -500,7 +533,7 @@ class Scene:
             name = name.text()
         what = "layer %d" % i
         layer = Layer(i, name, _u32(chunk.first(_LAYER_FLAGS), 0, what),
-                      _u32(chunk.first(_LAYER_RENDER), RENDERABLE, what), self._layer_hierarchy()[i])
+                      _u32(chunk.first(_LAYER_RENDER), NODE_RENDER_DEFAULT, what), self._layer_hierarchy()[i])
         self._layers[i] = layer
         return layer
 

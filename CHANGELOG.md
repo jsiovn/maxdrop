@@ -15,6 +15,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   report.
 - Objects: a mesh or curve with Cast Shadows off in 3ds Max (Object Properties) casts no shadows in Blender. Receive
   Shadows off, which Blender cannot set per object, is a line in the report.
+- Objects: Rendering Control By Layer (Object Properties) is read: such an object renders, casts and receives
+  shadows as its own layer says, as 3ds Max renders it, instead of by its own flags.
 - Lights: a V-Ray light (plane, disc, sphere) whose own Cast shadows is off in 3ds Max casts no shadow in Blender;
   a dome light with it off is a line in the report (Blender's World has no such switch).
 - CoronaMix: the Screen, Overlay, Color Dodge, Color Burn, Linear Burn, Linear Light, Hard Light and Exclusion
@@ -35,6 +37,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ### Fixed
 
+- Layers: a layer that does not render no longer turns rendering off for every object on it and on the layers below
+  it (Disable in Renders on its collection): 3ds Max renders those objects unless they are set By Layer, and then
+  only their own layer counts.
 - Materials: a Standard material whose shader was switched from Blinn after it was created (3ds Max creates every
   Standard material as Blinn) takes each map, its on switch and its amount where 3ds Max keeps them: a bump map whose
   amount was never set afterwards imports at 30 % instead of 100 %, a self-illumination map at 100 % instead of 30 %,

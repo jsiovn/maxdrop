@@ -43,9 +43,12 @@ and world box, its UV layer (none without Generate Mapping Coords), sharp edges,
 outward but for the Planes (up, or down for the one of negative width) and the Box of negative width (in, as 3ds Max
 makes it); the instance shares FixtureBox's mesh; the TurboSmooth over a Box evaluates to 3ds Max's counts.
 layers_flags: two layer collections, one hidden object, one with hide_render, the group head as the parent of its two
-members. layers_more: the hidden layer's collection excluded, hide_select on the frozen layer's, hide_render on the
-non-rendering layer's, the child layer's collection below its parent's (which holds no node), the non-ASCII layer
-name, only the nodes' own flags on objects, the hidden parent's child visible. modifier_pivot: a node with modifiers gets its base mesh (no bounding box check, the oracle's is after the
+members. layers_more: the hidden layer's collection excluded, hide_select on the frozen layer's, no hide_render on the
+non-rendering layer's (its By Object node renders, as in 3ds Max), the child layer's collection below its parent's
+(which holds no node), the non-ASCII layer name, only the nodes' own flags on objects, the hidden parent's child
+visible. layers_render: no collection with hide_render; the By Layer nodes render and cast shadows as their own
+layers say (FixtureByLayerNoRender hide_render, FixtureByLayerNoCast no shadow), the By Object nodes on those layers
+as their own. modifier_pivot: a node with modifiers gets its base mesh (no bounding box check, the oracle's is after the
 modifiers), the report names the modifiers not applied, and the node whose pivot alone is rotated keeps its object
 in place. lookat: the nodes aimed by a Look At controller or a LookAt Constraint have 3ds Max's world matrices (above),
 the Target objects are empties; imported again with Keep Targets, each Look At a Track To can follow gets one aimed at
@@ -154,6 +157,7 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1; kept literal: tes
     "layers_flags": [],
     "layers_more": [],
     "layers_nested": [],
+    "layers_render": [],
     "lookat": [],  # boxes without Generate Mapping Coords
     "modifier_pivot": ["UVMap"],  # FixtureBent's UVW Map writes channel 1 (applied, the Bend above it is not)
     "multi_uv": ["UVMap", "UVChannel_2", "UVChannel_3"],
@@ -666,6 +670,8 @@ def run_fixture(path, modules):
         check_layers_more(root, obs, view_layer)
     if name == "layers_nested":
         check_layers_nested(root, obs, view_layer, oracle)
+    if name == "layers_render":
+        check_layers_render(root, obs)
     bare = sorted(ob.name for ob in obs if ob.type == 'MESH' and not any(sl.material for sl in ob.material_slots)
                   and ob.name not in BARE_MESHES)
     check("%s: a material on every mesh" % name, bare == [], str(bare))
@@ -4671,9 +4677,9 @@ def check_wrapper_wiring(builder, cm, tx, srgb, data):
 
 
 def check_layers_more(root, obs, view_layer):
-    """layers_more as 3ds Max saved it: the flags of a hidden, a frozen and a non-rendering layer go on their
-    collections, not on their objects; the child layer sits below its parent (which holds no node); a hidden parent
-    leaves its child visible."""
+    """layers_more as 3ds Max saved it: the flags of a hidden and a frozen layer go on their collections, not on their
+    objects; a non-rendering layer's collection renders (its node is By Object, which 3ds Max renders); the child
+    layer sits below its parent (which holds no node); a hidden parent leaves its child visible."""
     text = "FixtureLäyer中"
     check("layers_more: the layer collections, the child layer below its parent",
           [c.name for c in root.children] == ["0", "FixtureHiddenLayer", "FixtureFrozenLayer", "FixtureNoRenderLayer",
@@ -4684,8 +4690,8 @@ def check_layers_more(root, obs, view_layer):
     excluded = [lc.name for lc in lcs if lc.exclude]
     check("layers_more: the hidden layer excluded in the view layer", excluded == ["FixtureHiddenLayer"], str(excluded))
     flags = {c.name: (c.hide_select, c.hide_render) for c in root.children_recursive}
-    want = {c: (c == "FixtureFrozenLayer", c == "FixtureNoRenderLayer") for c in flags}
-    check("layers_more: hide_select on the frozen layer's collection, hide_render on the non-rendering one's",
+    want = {c: (c == "FixtureFrozenLayer", False) for c in flags}
+    check("layers_more: hide_select on the frozen layer's collection, no hide_render on the non-rendering one's",
           flags == want, str(flags))
     visible = {ob.name for ob in view_layer.objects}
     check("layers_more: only the hidden layer's object is out of the view layer",
@@ -4698,6 +4704,20 @@ def check_layers_more(root, obs, view_layer):
     child = bpy.data.objects["FixtureVisibleChild"]
     check("layers_more: the hidden parent's child is visible, its child in Blender",
           child.parent is bpy.data.objects["FixtureHiddenParent"] and child.visible_get(view_layer=view_layer))
+
+
+def check_layers_render(root, obs):
+    """layers_render: Rendering Control By Layer. A By Layer node takes Renderable and Cast Shadows from its own layer
+    (not from a parent layer, FixtureByLayerChild), a By Object node on the same layer keeps its own; no layer's
+    collection gets hide_render."""
+    check("layers_render: no collection with hide_render", not any(c.hide_render for c in root.children_recursive),
+          str([c.name for c in root.children_recursive if c.hide_render]))
+    no_render = sorted(ob.name for ob in obs if ob.hide_render)
+    check("layers_render: only FixtureByLayerNoRender has hide_render", no_render == ["FixtureByLayerNoRender"],
+          str(no_render))
+    no_shadow = sorted(ob.name for ob in obs if not ob.visible_shadow)
+    check("layers_render: only FixtureByLayerNoCast casts no shadows", no_shadow == ["FixtureByLayerNoCast"],
+          str(no_shadow))
 
 
 def check_layers_nested(root, obs, view_layer, oracle):

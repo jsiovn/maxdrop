@@ -11,9 +11,10 @@ layers.
 
 cols.of(node) is the collection of a node's object: its layer's, or the file's collection when the node has no
 layer. A layer hidden in 3ds Max is excluded in the view layer (LayerCollection.exclude), which also leaves out
-the layers below it, as 3ds Max hides them; a layer that does not render gets hide_render, a frozen one
-hide_select. finish() comes after the objects are linked: an object of an excluded collection is not in the view
-layer, and hiding it there (Object.hide_set) would fail.
+the layers below it, as 3ds Max hides them; a frozen one gets hide_select. A layer that does not render gets no
+hide_render: in 3ds Max it hides only its own By Layer nodes, which carry that in their own flag. finish() comes
+after the objects are linked: an object of an excluded collection is not in the view layer, and hiding it there
+(Object.hide_set) would fail.
 """
 import bpy
 
@@ -42,7 +43,6 @@ def make(desc, parent, name):
             made.append(col)
             cols.layers.get(layer.parent, root).children.link(col)
             cols.layers[layer.index] = col
-            col.hide_render = not layer.renderable
             col.hide_select = layer.frozen
             if layer.hidden:
                 cols.hidden.append(col)

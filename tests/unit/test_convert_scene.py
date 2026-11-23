@@ -68,6 +68,7 @@ UV_LAYERS = {
     "layers_flags": [],
     "layers_more": [],
     "layers_nested": [],
+    "layers_render": [],
     "lookat": [],  # boxes without Generate Mapping Coords
     "modifier_pivot": ["UVMap"],  # FixtureBent's UVW Map writes channel 1 (applied, the Bend above it is not)
     "multi_uv": ["UVMap", "UVChannel_2", "UVChannel_3"],
@@ -178,6 +179,9 @@ ISSUES = {"uvwmap": ["uvw map: a UVW Map above Bend is not evaluated",
           # FixtureNoReceiveShadow (FixtureNoCastShadow is an object flag, no issue)
           "layers_flags": ["shadows: Receive Shadows is off: Blender has no such switch per object, it receives "
                            "shadows"],
+          # FixtureByLayerNoReceive, By Layer on a layer with Receive Shadows off
+          "layers_render": ["shadows: Receive Shadows is off: Blender has no such switch per object, it receives "
+                            "shadows"],
           # the plane's rim corners (auto smooth), the open box's override group (auto smooth off)
           "stack_shell": ["modifiers: Shell: auto smooth: 4 corners of the rim sharper than 45 degrees shade smooth "
                           "(3ds Max splits the rim there)",
@@ -1185,6 +1189,22 @@ class Fixtures(unittest.TestCase):
         self.assertTrue(all(n.renderable for n in desc.nodes))
         self.assertEqual(by_name["FixtureVisibleChild"].parent, by_name["FixtureHiddenParent"].index)
         self.assertEqual(names[by_name["FixtureNested"].layer], "FixtureChildLayer")
+
+    def test_layers_render_organisation(self):
+        """Rendering Control By Layer: a By Layer node renders, casts and receives as its own layer says (its own
+        flags off on FixtureByLayerOwnOff, a parent layer with all three off above FixtureByLayerChild); a By Object
+        node on the same layer keeps its own."""
+        desc = dict((n, d) for n, d, _o in self.cases)["layers_render"]
+        by_name = {n.name: n for n in desc.nodes}
+        got = {k: (n.renderable, n.cast_shadows, n.receive_shadows) for k, n in by_name.items()}
+        self.assertEqual(got, {"FixtureByLayerNoCast": (True, False, True),
+                               "FixtureByObjectOnNoCast": (True, True, True),
+                               "FixtureByLayerNoReceive": (True, True, False),
+                               "FixtureByLayerNoRender": (False, True, True),
+                               "FixtureByObjectOnNoRender": (True, True, True),
+                               "FixtureByLayerOwnOff": (True, True, True),
+                               "FixtureByLayerChild": (True, True, True)})
+        self.assertEqual(desc.issues, [(by_name["FixtureByLayerNoReceive"].index, conv.NO_RECEIVE)])
 
     def test_curves_equal_the_oracle(self):
         """Every shape node's curve: splines, points and cyclic flags as 3ds Max converts the shape, each segment's

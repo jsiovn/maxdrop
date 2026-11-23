@@ -378,9 +378,12 @@ def layer_obj(name, flags=0, render=0x0B00D600, parent=None, raw_name=None):
     return node(L_LAYER, *parts)
 
 
-def layer_node(name, layer, flags=0x800, render=0x0F00D600):
-    return node(L_NODE, refs35((6, layer)), leaf(0x0960, struct.pack("<iI", -1, flags)), leaf(0x0962, utf16(name)),
-                leaf(0x099C, struct.pack("<I", render)))
+def layer_node(name, layer, flags=0x800, render=0x0F00D600, by_layer=None):
+    parts = [refs35((6, layer)), leaf(0x0960, struct.pack("<iI", -1, flags)), leaf(0x0962, utf16(name)),
+             leaf(0x099C, struct.pack("<I", render))]
+    if by_layer is not None:
+        parts.append(leaf(0x0A28, by_layer if isinstance(by_layer, bytes) else struct.pack("<II", 0, by_layer)))
+    return node(L_NODE, *parts)
 
 
 class TestLayers(unittest.TestCase):
@@ -423,9 +426,12 @@ class TestLayers(unittest.TestCase):
                       node(L_NODE, leaf(0x0960, struct.pack("<iI", -1, 0)), leaf(0x0962, utf16("n"))))
         la = s.layer(0)
         self.assertEqual((la.name, la.hidden, la.frozen, la.renderable, la.parent), ("", False, False, True, None))
+        self.assertEqual((la.cast_shadows, la.receive_shadows), (True, True))  # a By Layer node keeps its shadows
         n = s.node(1)
         self.assertEqual((n.renderable, n.hidden, n.layer), (True, False, None))
         self.assertEqual((n.cast_shadows, n.receive_shadows), (True, True))  # a new node's state
+        self.assertEqual(n.render_by_layer, 0)  # no 0x0A28: By Object
+        self.assertEqual(scene.render_flags(n, la), n.render_flags)
 
     def test_shadow_flags(self):
         """0x099C as 3ds Max 2020 saved a Box with one change each (maxdiff): Receive Shadows off clears 0x400,
@@ -435,6 +441,36 @@ class TestLayers(unittest.TestCase):
                              (0x0F005600, (False, True, True))):
             n = self.make(layer_obj("0"), layer_node("n", 0, render=render)).node(1)
             self.assertEqual((n.renderable, n.cast_shadows, n.receive_shadows), want, hex(render))
+
+    def test_layer_shadow_flags(self):
+        """0x1050 as 3ds Max 2020 saved a layer with one change each (maxdiff): Cast Shadows off clears 0x200,
+        Receive Shadows off 0x400, Renderable off 0x8000, as in a node's 0x099C."""
+        for render, want in ((0x0B00D600, (True, True, True)), (0x0B00D400, (True, False, True)),
+                             (0x0B00D200, (True, True, False)), (0x0B005600, (False, True, True))):
+            la = self.make(layer_obj("L", render=render)).layer(0)
+            self.assertEqual((la.renderable, la.cast_shadows, la.receive_shadows), want, hex(render))
+
+    def test_render_by_layer(self):
+        """Rendering Control By Layer: 0x0A28's second u32 0x3040C600 (maxdiff of renderByLayer), its first the
+        display mask. The masked 0x099C bits come from the node's own layer, the others stay the node's."""
+        s = self.make(layer_obj("L", render=0x0B005000), layer_node("bl", 0, render=0x0F00D600, by_layer=0x3040C600),
+                      layer_node("bo", 0, render=0x0F00D600, by_layer=0),
+                      layer_node("display", 0, by_layer=struct.pack("<II", 0xF9F80000, 0x00030000)),
+                      layer_node("cast", 0, render=0x0F00D600, by_layer=0x200))
+        la = s.layer(0)
+        bl, bo, display, cast = (s.node(i) for i in (1, 2, 3, 4))
+        self.assertEqual((bl.render_by_layer, bo.render_by_layer, display.render_by_layer), (0x3040C600, 0, 0x30000))
+        self.assertEqual((bl.renderable, bl.cast_shadows, bl.receive_shadows), (True, True, True))  # its own bits
+        self.assertEqual(scene.render_flags(bl, la), 0x0F005000)
+        self.assertEqual(scene.render_flags(bo, la), 0x0F00D600)
+        self.assertEqual(scene.render_flags(display, la), display.render_flags)
+        self.assertEqual(scene.render_flags(cast, la), 0x0F00D400)  # only the bit the mask names
+        self.assertEqual(scene.render_flags(bl, None), 0x0F00D600)  # no layer record: its own
+        own_off = self.make(layer_obj("L"), layer_node("n", 0, render=0x0F005000, by_layer=0x3040C600))
+        self.assertEqual(scene.render_flags(own_off.node(1), own_off.layer(0)), 0x0F00D600)
+        short = self.make(layer_obj("L"), layer_node("n", 0, by_layer=b"\0\0\0\0"))
+        with self.assertRaises(ChunkError):
+            short.node(1)
 
     def test_damaged_records(self):
         s = self.make(node(L_LAYER, leaf(0x1020, b"\1")), node(L_LAYER, leaf(0x1050, b"")), leaf(L_LAYER),
@@ -556,16 +592,20 @@ class TestFixtures(unittest.TestCase):
                     self.assertEqual(s.entry(n.layer).superclass, classids.SC_LAYER)
                     self.assertTrue(s.is_a(n.tm, classids.SC_CTRL_MATRIX3, classids.PRS) or
                                     s.is_a(n.tm, classids.SC_CTRL_MATRIX3, classids.LOOK_AT), e["name"])
-                    flags = (n.hidden, n.frozen, n.renderable, s.layer(n.layer).name)
+                    # MAXScript answers a By Layer node's render flags from its layer (layers_render)
+                    render = scene.render_flags(n, s.layer(n.layer))
+                    flags = (n.hidden, n.frozen, bool(render & scene.RENDERABLE), s.layer(n.layer).name)
                     self.assertEqual(flags, (e["hidden"], e["frozen"], e["renderable"], e["layer"]), e["name"])
-                    self.assertEqual((n.cast_shadows, n.receive_shadows), (e["cast_shadows"], e["receive_shadows"]),
-                                     e["name"])
+                    self.assertEqual((bool(render & scene.CAST_SHADOWS), bool(render & scene.RECEIVE_SHADOWS)),
+                                     (e["cast_shadows"], e["receive_shadows"]), e["name"])
+                    self.assertEqual(bool(n.render_by_layer & scene.RENDERABLE), e["render_by_layer"], e["name"])
                 # the file keeps hidden and frozen on the layer they were set on; MAXScript, and so the oracle,
                 # answers them for the layers below too (layers_nested)
                 layers = [(la.name, _inherited(s, la, "hidden"), _inherited(s, la, "frozen"), la.renderable,
-                           None if la.parent is None else s.layer(la.parent).name) for la in s.layers()]
-                self.assertEqual(layers, [(e["name"], e["hidden"], e["frozen"], e["renderable"], e["parent"])
-                                          for e in oracle["layers"]])
+                           la.cast_shadows, la.receive_shadows, None if la.parent is None else s.layer(la.parent).name)
+                          for la in s.layers()]
+                self.assertEqual(layers, [(e["name"], e["hidden"], e["frozen"], e["renderable"], e["cast_shadows"],
+                                           e["receive_shadows"], e["parent"]) for e in oracle["layers"]])
                 del nodes
 
     def test_layers_more_records(self):
