@@ -1838,19 +1838,19 @@ class CoronaSynthetic(unittest.TestCase, Close):
         def metal(color, level, **slot):
             return _convert(_corona(0, classids.CORONA_LEGACY_MTL, p101=(1.0, 0.0, 0.0), p102=color, p122=level,
                                     p182=999.0, p142=Ref(1), **slot), _map(1))[1]
-        ir = metal((0.8,) * 3, 1.0, p291=0.75)  # 0.8 x 0.25 = 0.2 shown
-        self.close(ir.metallic.value, 0.0)
-        self.close(ir.base_color.value, (1.0, 0.0, 0.0))
-        ir = metal((1.0,) * 3, 1.0, p291=0.75)  # 1 x 0.25: the threshold
-        self.close(ir.metallic.value, 1.0)
-        self.close(ir.base_color.value, (1.0,) * 3)
+        ir = metal((0.8,) * 3, 1.0, p291=0.75)
+        self.close(ir.metallic.value, 0.0, "0.8 x 0.25 = 0.2 shown")
+        self.close(ir.base_color.value, (1.0, 0.0, 0.0), "0.8 x 0.25 = 0.2 shown")
+        ir = metal((1.0,) * 3, 1.0, p291=0.75)
+        self.close(ir.metallic.value, 1.0, "1 x 0.25: the threshold")
+        self.close(ir.base_color.value, (1.0,) * 3, "1 x 0.25: the threshold")
         self.assertEqual(ir.base_color.map, mat.MapRef(1, 0.75, False))
-        ir = metal((1.0,) * 3, 0.5, p291=0.5)  # 0.5 x 0.5 = 0.25 shown
-        self.close(ir.metallic.value, 1.0)
-        ir = metal((1.0,) * 3, 0.5, p291=0.6)  # 0.5 x 0.4 = 0.2 shown
-        self.close(ir.metallic.value, 0.0)
-        ir = metal((0.8,) * 3, 1.0, p162=0, p291=1.0)  # the map switched off: the whole swatch
-        self.close(ir.metallic.value, 1.0)
+        ir = metal((1.0,) * 3, 0.5, p291=0.5)
+        self.close(ir.metallic.value, 1.0, "level 0.5 x 0.5 = 0.25 shown")
+        ir = metal((1.0,) * 3, 0.5, p291=0.6)
+        self.close(ir.metallic.value, 0.0, "level 0.5 x 0.4 = 0.2 shown")
+        ir = metal((0.8,) * 3, 1.0, p162=0, p291=1.0)
+        self.close(ir.metallic.value, 1.0, "the map switched off: the whole swatch")
         self.assertIsNone(ir.base_color.map)
 
     def test_legacy_defaults_reflect_nothing(self):

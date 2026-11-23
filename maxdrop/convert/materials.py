@@ -77,8 +77,8 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   levels; specular = the mean reflection; roughness = 1 - glossiness (PBR mode or not); transmission and the glass
   base color as for VRayMtl, the IOR as well (refraction IOR when it refracts, else the Fresnel IOR); a Fresnel IOR
   of CORONA_METAL_IOR or more with a bright reflection (as METAL_REFLECTION) is a metal in the reflection color;
-  beside a reflection map only the swatch's share counts, as for VRayMtl (its mean, the level included: Corona's
-  documentation has the level multiply the color and the map alike, times 1 - the map amount; the map is not judged);
+  beside a reflection map only the swatch's share counts, as for VRayMtl (its mean, the level included, times 1 - the
+  map amount; Corona's documentation has the level multiply the color and the map alike, so the map is not judged);
   SSS as the physical material's. PBR mode off, translucency and absorption are named issues.
 - CoronaLightMtl -> emission (color, intensity, map) and its opacity map.
 - CoronaSkinMtl -> one Principled layer: skin color times level, its three SSS layers as one (weighted mean radius
