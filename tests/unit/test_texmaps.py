@@ -455,10 +455,12 @@ class Synthetic(Checks):
         self.assertEqual(tx.colorspace(tx.COLOR, 1.0), tx.LINEAR)  # linear: the builder applies no gamma
         self.assertEqual(tx.colorspace(tx.COLOR, 1.8), tx.LINEAR)  # the builder applies 1.8
         self.assertEqual(tx.LINEAR, "Linear Rec.709")  # a Blender color space name: the builder sets it
-        for kind in (tx.NORMAL, tx.BUMP):
-            for stored in (False, True):
-                self.assertEqual(tx.colorspace(kind, None, stored), tx.NON_COLOR)
-                self.assertEqual(tx.colorspace(kind, 2.2, stored), tx.NON_COLOR)
+        for kind in (tx.NORMAL, tx.BUMP):  # as a data input (maxdrop-em3.159)
+            for gamma in (None, 2.2, 1.0, 1.8):
+                self.assertEqual(tx.colorspace(kind, gamma, True), tx.NON_COLOR)
+                self.assertEqual(tx.colorspace(kind, gamma), tx.colorspace(tx.DATA, gamma))
+            self.assertEqual(tx.colorspace(kind, None), tx.SRGB)
+            self.assertEqual(tx.colorspace(kind, 1.0), tx.NON_COLOR)
         for kind in (tx.DATA, tx.MASK):  # decoded by its gamma, as a color; read as linear: Non-Color
             for gamma in (None, 2.2, 1.8):
                 self.assertEqual(tx.colorspace(kind, gamma), tx.colorspace(tx.COLOR, gamma))
@@ -761,7 +763,7 @@ class Synthetic(Checks):
         tex = _tex(n, _bitmap(2))
         g = tex.convert(mat.MapRef(1), tx.COLOR)
         self.assertIsInstance(g.root, tx.Image)
-        self.assertEqual(g.root.colorspace, tx.NON_COLOR)  # read as a normal image below its class
+        self.assertEqual(g.root.colorspace, tx.SRGB)  # read as a normal image below its class: decoded, gamma on
         self.assertTrue(g.approximated)
 
     def test_normal_map_with_only_a_bump_map(self):
@@ -786,7 +788,7 @@ class Synthetic(Checks):
         graphs = tx.texture_graphs(ir, tex)
         self.assertEqual(sorted(graphs), ["base_color", "bump"])
         self.assertEqual(graphs["base_color"].root.colorspace, tx.SRGB)
-        self.assertEqual(graphs["bump"].root.input.colorspace, tx.NON_COLOR)
+        self.assertEqual(graphs["bump"].root.input.colorspace, tx.SRGB)  # gamma on: decoded (maxdrop-em3.159)
 
 
 UVGEN_OBJECT, INFO_BLOCK = 50, 60
@@ -865,9 +867,9 @@ class CoronaMaps(Checks):
         self.assertIsInstance(n, tx.NormalMap)
         self.close(n.strength, 0.8 * 0.9)
         self.assertTrue(n.flip_green)
-        self.image(n.input, "fixture_c_normal.png", tx.NON_COLOR)
+        self.image(n.input, "fixture_c_normal.png", tx.SRGB)  # CoronaBitmap auto: its own 2.2 (maxdrop-em3.159)
         self.close(n.bump.strength, 0.3 * 0.9)
-        self.image(n.bump.input, "fixture_c_normal_bump.png", tx.NON_COLOR)
+        self.image(n.bump.input, "fixture_c_normal_bump.png", tx.SRGB)
 
     def test_corona_color_is_a_constant(self):
         root = self.f.irs["FixtureCoronaMaps"].textures["metallic"].root
@@ -1471,7 +1473,7 @@ class VRayTexmaps(Checks):
         b = self.f.irs["FixtureVBBump"].textures["bump"].root
         self.assertIsInstance(b, tx.Bump)
         self.close(b.strength, 0.5)
-        self.image(b.input, "vtx_bump.png", tx.NON_COLOR)
+        self.image(b.input, "vtx_bump.png", tx.SRGB)  # a height by V-Ray's own curve (maxdrop-em3.159)
         n = self.f.irs["FixtureVBNormal"].textures["normal"].root
         self.assertIsInstance(n, tx.NormalMap)
         self.close(n.strength, 0.9)
@@ -2517,12 +2519,110 @@ class DataAndMaskRule(Checks):
                 self.assertEqual(self._root(colors.GAMMA_OFF, m, kind=tx.DATA).colorspace, off)
                 self.assertEqual(self._root(colors.GAMMA_ON, m, kind=tx.DATA).colorspace, on)
 
-    def test_normal_and_bump_images_stay_non_color(self):
-        for rule in self.RULES:
-            for kind in (tx.NORMAL, tx.BUMP):
-                with self.subTest(rule=rule, kind=kind):
-                    self.assertEqual(tx.first_image(self._root(rule, _bitmap(1), kind=kind)).colorspace,
-                                     tx.NON_COLOR)
+class NormalAndBumpImages(Checks):
+    """maxdrop-em3.159, V-Ray 5.2 and Corona 12 renders of 8-bit normal and height PNGs (docs/FORMAT.md, Scene
+    gamma): a normal or bump input takes an image as a data input does (em3.122). A Bitmap is decoded by its gamma
+    with the gamma on (a flat (128, 128, 255) under auto or 2.2 renders (-0.44, -0.44, 0.78)) and as stored with 1.0
+    or with the gamma off; a CoronaBitmap by its own gamma in both modes; a VRayBitmap under a normal map as stored
+    whatever its transfer function, as a height by it (From 3ds Max as stored with the gamma off). CoronaNormal's add
+    gamma re-encodes its input by 1 / 2.2 with the gamma on and does nothing with it off."""
+
+    ON_18 = colors.Swatches(True, file_in=1.8)
+    NORMAL_MAPS = (lambda n: _vnormal(1, n),
+                   lambda n: FakeMap(1, tx.NORMAL_BUMP, {2: Ref(n), 4: 1, 0: 1.0}, [n], cls="Normal Bump"))
+
+    def _convert(self, rule, *objects, kind=tx.NORMAL, chunk_map=None):
+        tex = tx.TexmapConverter(FakeGraph(*objects, chunk_map=chunk_map), _table(), swatches=rule)
+        return tex.convert(mat.MapRef(objects[0].index), kind)
+
+    def _image(self, rule, *objects, kind=tx.NORMAL, chunk_map=None):
+        return tx.first_image(self._convert(rule, *objects, kind=kind, chunk_map=chunk_map).root)
+
+    def test_bitmap_takes_the_data_rule(self):
+        cases = ((colors.GAMMA_ON, None, None, tx.SRGB), (colors.UNKNOWN, None, None, tx.SRGB),
+                 (colors.GAMMA_ON, _info(2.2, 5), 2.2, tx.SRGB), (colors.GAMMA_ON, _info(1.0, 5), 1.0, tx.NON_COLOR),
+                 (self.ON_18, None, 1.8, tx.LINEAR),
+                 (colors.GAMMA_OFF, None, None, tx.NON_COLOR), (colors.GAMMA_OFF, _info(2.2, 5), None, tx.NON_COLOR),
+                 (colors.GAMMA_OFF, _info(1.0, 5), None, tx.NON_COLOR))
+        for rule, info, gamma, space in cases:
+            for kind in (tx.BUMP, tx.NORMAL):
+                for wrap in self.NORMAL_MAPS if kind == tx.NORMAL else (None,):
+                    with self.subTest(rule=rule, info=info, kind=kind, wrap=wrap):
+                        b, chunk_map = _placed(index=2 if wrap else 1, info=info)
+                        objects = (wrap(2), b) if wrap else (b,)
+                        image = self._image(rule, *objects, kind=kind, chunk_map=chunk_map)
+                        self.assertEqual(image.colorspace, space)
+                        self.assertEqual(image.gamma is None, gamma is None)
+                        if gamma is not None:
+                            self.close(image.gamma, gamma)
+
+    def test_bitmap_below_a_normal_map_in_a_bump_input(self):
+        b, chunk_map = _placed(index=2)
+        vn = FakeMap(1, classids.VRAY_NORMAL_MAP, {4: Ref(2), 5: 1, 6: 1.0}, [2], cls="VRayNormalMap")
+        for rule, space in ((colors.GAMMA_ON, tx.SRGB), (colors.GAMMA_OFF, tx.NON_COLOR)):
+            with self.subTest(rule=rule):
+                self.assertEqual(self._image(rule, vn, b, chunk_map=chunk_map).colorspace, space)
+
+    def test_corona_bitmap_by_its_own_gamma(self):
+        for rule in (colors.GAMMA_ON, colors.GAMMA_OFF):
+            for params, space in (({}, tx.SRGB), ({"p125": 2.2}, tx.SRGB), ({"p125": 1.0}, tx.NON_COLOR)):
+                for kind in (tx.NORMAL, tx.BUMP):
+                    with self.subTest(rule=rule, params=params, kind=kind):
+                        image = _cbitmap(2 if kind == tx.NORMAL else 1, **params)
+                        objects = (_vnormal(1, 2), image) if kind == tx.NORMAL else (image,)
+                        self.assertEqual(self._image(rule, *objects, kind=kind).colorspace, space)
+
+    def test_vray_bitmap_under_a_normal_map_as_stored(self):
+        for rule in (colors.GAMMA_ON, colors.GAMMA_OFF):
+            for space in (0, 1, 2, 3, 4):
+                for wrap in self.NORMAL_MAPS:
+                    with self.subTest(rule=rule, space=space, wrap=wrap):
+                        g = self._convert(rule, wrap(2), _vbitmap(2, p25=space, p8=0.5))
+                        image = tx.first_image(g.root)
+                        self.assertEqual(image.colorspace, tx.NON_COLOR)
+                        self.assertEqual(image.gamma, 1.0)
+                        self.assertEqual(g.issues, (), "its transfer function is not used: no issue")
+
+    def test_vray_bitmap_height_by_its_transfer_function(self):
+        cases = ((2, tx.SRGB, tx.SRGB), (3, tx.NON_COLOR, tx.SRGB), (0, tx.NON_COLOR, tx.NON_COLOR))
+        for space, off, on in cases:
+            with self.subTest(space=space):
+                self.assertEqual(self._image(colors.GAMMA_OFF, _vbitmap(1, p25=space), kind=tx.BUMP).colorspace, off)
+                self.assertEqual(self._image(colors.GAMMA_ON, _vbitmap(1, p25=space), kind=tx.BUMP).colorspace, on)
+
+    def _cnormal(self, add, child=2):
+        return FakeMap(1, tx.CORONA_NORMAL, {500: Ref(child), 501: 1.0, 502: int(add)}, [child], cls="CoronaNormal")
+
+    def test_corona_normal_add_gamma_with_the_gamma_on(self):
+        b, chunk_map = _placed(index=2)
+        cases = (((b,), chunk_map, tx.NON_COLOR, 1.0), ((_cbitmap(2),), None, tx.NON_COLOR, 1.0),
+                 ((_cbitmap(2, p125=1.0),), None, tx.LINEAR, 1 / 2.2),
+                 ((_cbitmap(2, p125=2.2),), None, tx.NON_COLOR, 1.0))
+        for objects, cm, space, gamma in cases:
+            with self.subTest(cls=objects[0].cls, params=objects[0].blocks[0]._params):
+                g = self._convert(colors.GAMMA_ON, self._cnormal(True), *objects, chunk_map=cm)
+                self.assertEqual(g.root.input.colorspace, space)
+                self.close(g.root.input.gamma, gamma)
+                self.assertEqual(g.issues, ())
+                self.assertIs(tx.drawn_gamma(g.root.input) is not None, space == tx.LINEAR)
+        b1, cm1 = _placed(index=2, info=_info(1.0, 5))
+        g = self._convert(colors.GAMMA_ON, self._cnormal(True), b1, chunk_map=cm1)
+        self.assertEqual((g.root.input.colorspace, g.root.input.gamma), (tx.LINEAR, 1 / 2.2), "1.0: brighter")
+        g = self._convert(colors.GAMMA_ON, self._cnormal(False), _cbitmap(2))
+        self.assertEqual(g.root.input.colorspace, tx.SRGB, "add gamma off: decoded")
+
+    def test_corona_normal_add_gamma_with_the_gamma_off_does_nothing(self):
+        b, chunk_map = _placed(index=2)
+        for objects, cm, space in (((b,), chunk_map, tx.NON_COLOR), ((_cbitmap(2),), None, tx.SRGB)):
+            with self.subTest(cls=objects[0].cls):
+                g = self._convert(colors.GAMMA_OFF, self._cnormal(True), *objects, chunk_map=cm)
+                self.assertEqual(g.root.input.colorspace, space)
+                self.assertEqual(g.issues, ())
+
+    def test_corona_normal_add_gamma_over_a_graph_is_reported(self):
+        mix = FakeMap(2, tx.MIX, {6: Ref(3)}, [3], cls="Mix")
+        g = self._convert(colors.GAMMA_ON, self._cnormal(True), mix, _cbitmap(3))
+        self.assertTrue(any("add gamma" in r for r in g.issues), g.issues)
 
 
 _dec = colors.srgb_to_linear

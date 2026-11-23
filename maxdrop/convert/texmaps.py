@@ -24,11 +24,15 @@ A VRayBitmap's own decode on a color input or a mask is shown decoded once more 
 maxdrop-em3.123; CoronaBitmap's is not: a Corona render is not measured, maxdrop-em3.165).
 The color space (colorspace): a gamma of 2.2 is sRGB, any other Linear Rec.709 (sRGB
 primaries: Blender converts them into the scene's working space; the builder falls back to Non-Color where the color
-space is missing) and the builder applies the gamma (1.0: none), on a COLOR, DATA or MASK input alike; on a DATA or
-MASK input an image read as linear (1.0) is Non-Color, and so is a DATA image whose pixels are read as stored in
-this scene (a Bitmap, a VRayBitmap From 3ds Max, with the gamma off). NORMAL and BUMP images are always Non-Color
-(not measured). A 128 grey PNG as glossiness, opacity or a mask renders 0.2195 with the gamma on (Bitmap auto or 2.2,
-CoronaBitmap auto, VRayBitmap From 3ds Max), 0.502 with it off (Bitmap whatever its override; CoronaBitmap and
+space is missing) and the builder applies the gamma (1.0: none), on every input alike; on any but a COLOR input an
+image read as linear (1.0) is Non-Color, and so is a DATA, NORMAL or BUMP image whose pixels are read as stored in
+this scene (a Bitmap, a VRayBitmap From 3ds Max, with the gamma off). A NORMAL or BUMP input takes an image as a DATA
+input does (V-Ray 5.2 and Corona 12 renders, maxdrop-em3.159: a flat (128, 128, 255) normal PNG under a Bitmap auto
+or 2.2 tilts 38.5 degrees with the gamma on, none with it off or with 1.0; a CoronaBitmap auto decodes in both modes),
+except that V-Ray reads a VRayBitmap below a normal map as stored whatever its transfer function (Non-Color, gamma
+1.0). CoronaNormal's 'add gamma to input' raises an image input to 1 / 2.2 with the gamma on (_add_gamma) and does
+nothing with it off. A 128 grey PNG as glossiness, opacity or a mask renders 0.2195 with the gamma on (Bitmap auto or
+2.2, CoronaBitmap auto, VRayBitmap From 3ds Max), 0.502 with it off (Bitmap whatever its override; CoronaBitmap and
 VRayBitmap sRGB keep their curve: 0.2195, 0.2159).
 Constants are linear, a swatch made so by the scene's swatch rule (convert/colors.py: linear with the gamma on, the
 sRGB curve with it off): in a COLOR graph always linear RGB (also when the input itself is a float, as specular and
@@ -172,6 +176,7 @@ _BASE_KINDS = {v: k for k, v in _RGB_KINDS.items()}
 # display-referred scene shows decoded (the Decode above it).
 STORED = "stored"
 STORED_RGB = (DATA_RGB, BUMP_RGB, NORMAL, STORED)  # the kinds whose swatch is its three channels as stored
+_AS_STORED = (DATA, NORMAL, BUMP, STORED)  # the kinds that take an image read as stored as it is (colorspace)
 SRGB, NON_COLOR, LINEAR = "sRGB", "Non-Color", "Linear Rec.709"  # Blender color space names
 EXPLICIT, OBJECT_XYZ, VERTEX_COLOR, WORLD_XYZ = (  # Placement coordinate source
     reader_materials.UV_EXPLICIT, reader_materials.UV_OBJECT_XYZ, reader_materials.UV_VERTEX_COLOR,
@@ -360,7 +365,9 @@ class Image:
     found; gamma: the gamma 3ds Max reads it with in this scene (linear = pixel ^ gamma: its override, or the file
     input gamma), None for automatic (sRGB; 1.0 for an EXR or HDR file); with the gamma off on a color input or a
     mask the one the display-referred scene shows it with (None, sRGB, for an image read as stored; _shown; a
-    CoronaBitmap keeps its own, Corona not measured); alpha: the image's alpha is used, not its color."""
+    CoronaBitmap keeps its own, Corona not measured); 1.0 for a VRayBitmap below a normal map (read as stored), its
+    decode over 2.2 below a CoronaNormal that adds gamma (_add_gamma); alpha: the image's alpha is used, not its
+    color."""
     index: int
     name: str
     path: str = ""
@@ -704,12 +711,12 @@ def _linear(rgb, kind):
 def colorspace(kind, gamma, stored=False):
     """The color space of an image in an input of that kind read with that gamma (None: automatic, sRGB); stored:
     the map reads its pixels as stored in this scene (a Bitmap, or a VRayBitmap From 3ds Max, with the gamma off),
-    which a data input takes as they are. A normal or bump image is always data (unmeasured). A float input's image
-    read as linear (gamma 1.0) is Non-Color too: the same numbers, and one Blender image with the normal and bump
-    uses of the file."""
-    if kind in (NORMAL, BUMP) or (kind in (DATA, STORED) and stored):
+    which a data, normal or bump input takes as they are. A normal or bump input takes an image as a data input does
+    (V-Ray 5.2 and Corona 12 renders, maxdrop-em3.159). An image read as linear (gamma 1.0) on any but a color input
+    is Non-Color too: the same numbers, and one Blender image for the file's data, normal and bump uses."""
+    if kind in _AS_STORED and stored:
         return NON_COLOR
-    if kind in FLOATS + (STORED,) and gamma is not None and abs(gamma - 1.0) <= GAMMA_TOLERANCE:
+    if kind in _AS_STORED + (MASK,) and gamma is not None and abs(gamma - 1.0) <= GAMMA_TOLERANCE:
         return NON_COLOR
     if gamma is None or abs(gamma - SRGB_GAMMA) <= GAMMA_TOLERANCE:
         return SRGB
@@ -1043,9 +1050,13 @@ class TexmapConverter:
             self._placement_issues(m, walk, "VRayBitmap", mapping)
         if _flag(m, VB_SOURCE_ON, True) and _ref(m, VB_SOURCE) is not None:
             self._issue(walk, m.index, "VRayBitmap %r: the placement of its map source not converted" % (m.name,))
-        gamma = self._vray_gamma(m, walk, entry.name)
-        if m.param(VB_RGB_SPACE, VB_RGB_SPACE_BLOCK) == VB_ACESCG:
-            self._issue(walk, m.index, "VRayBitmap %r: ACEScg primaries drawn as sRGB" % (m.name,))
+        if kind == NORMAL:  # below a normal map V-Ray 5.2 reads it as stored, whatever its transfer function
+            gamma, stored = 1.0, True
+        else:
+            gamma = self._vray_gamma(m, walk, entry.name)
+            stored = m.param(VB_COLOR_SPACE, 0) == VB_FROM_MAX and not self.swatches.linear
+            if m.param(VB_RGB_SPACE, VB_RGB_SPACE_BLOCK) == VB_ACESCG:
+                self._issue(walk, m.index, "VRayBitmap %r: ACEScg primaries drawn as sRGB" % (m.name,))
         if kind not in FLOATS and m.param(VB_RGB, 0) == VB_INTENSITY:
             self._issue(walk, m.index, "VRayBitmap %r: RGB output intensity as gray drawn as its color" % (m.name,))
         crop = None
@@ -1060,7 +1071,6 @@ class TexmapConverter:
         output = self._output(out) or TexOutput()
         output = dataclasses.replace(output, amount=output.amount * mult)
         alpha = m.param(VB_MONO if kind in FLOATS else VB_RGB, 0) == 1
-        stored = m.param(VB_COLOR_SPACE, 0) == VB_FROM_MAX and not self.swatches.linear
         if not self.swatches.linear and kind in (COLOR, MASK):
             # gamma off: From 3ds Max reads any file as stored, which the scene shows decoded (a Bitmap's rule);
             # every other transfer function is V-Ray's own decode, shown decoded once more
@@ -1193,8 +1203,12 @@ class TexmapConverter:
         if key == NORMAL_BUMP and m.param(NORMAL_BUMP_METHOD, 0) not in (None, 0):
             self._issue(walk, m.index, "Normal Bump %r: method %r drawn as tangent space" % (
                 m.name, m.param(NORMAL_BUMP_METHOD, 0)))
-        if key == CORONA_NORMAL and _flag(m, CORONA_ADD_GAMMA, False):
-            self._issue(walk, m.index, "CoronaNormal %r: 'add gamma to input' not converted" % (m.name,))
+        if key == CORONA_NORMAL and _flag(m, CORONA_ADD_GAMMA, False) and self.swatches.linear:
+            # Corona 12 raises the input to 1 / 2.2 with the gamma on, and does nothing with it off (maxdrop-em3.159)
+            if isinstance(normal, Image):
+                normal = _add_gamma(normal)
+            elif normal is not None:
+                self._issue(walk, m.index, "CoronaNormal %r: 'add gamma to input' not converted" % (m.name,))
         bump = Bump(_bump_input(bump), max(0.0, _num(m, ids.bump_strength, 1.0))) if bump is not None else None
         if normal is None:
             return bump
@@ -1202,6 +1216,15 @@ class TexmapConverter:
         channel = channel if isinstance(channel, int) and not isinstance(channel, bool) and 0 <= channel <= 99 else 1
         return NormalMap(normal, max(0.0, _num(m, ids.strength, 1.0)), _flag(m, ids.flip_red, False),
                          _flag(m, ids.flip_green, False), _flag(m, ids.swap, False), bump, channel)
+
+
+def _add_gamma(image):
+    """A normal image below a CoronaNormal that adds gamma to its input in a gamma-on scene: its decode divided by
+    2.2 (Non-Color counts as 1.0, sRGB as 2.2; Corona 12 renders a Bitmap or CoronaBitmap auto as stored, a 1.0 one
+    raised to 1 / 2.2)."""
+    own = 1.0 if image.colorspace == NON_COLOR else SRGB_GAMMA if image.gamma is None else image.gamma
+    gamma = own / SRGB_GAMMA
+    return dataclasses.replace(image, gamma=gamma, colorspace=colorspace(NORMAL, gamma))
 
 
 def _bump_input(node):
