@@ -190,6 +190,7 @@ BEZIER_FLOAT = ClassId(0x00002007, 0)
 BEZIER_POSITION = ClassId(0x00002008, 0)
 BEZIER_ROTATION = ClassId(0x00002009, 0)  # "Smooth Rotation" in the class directory (MAXScript: Bezier_Rotation)
 BEZIER_SCALE = ClassId(0x00002010, 0)
+BEZIER_COLOR = ClassId(0x00002011, 0)  # a Point3 controller: an animated color parameter (pblock_animated)
 EULER_XYZ = ClassId(0x00002012, 0)
 TCB_FLOAT = ClassId(0x00442311, 0)
 TCB_POSITION = ClassId(0x00442312, 0)
@@ -335,6 +336,7 @@ CLASSES = {
     (SC_CTRL_POSITION, BEZIER_POSITION): "Bezier Position",
     (SC_CTRL_ROTATION, BEZIER_ROTATION): "Smooth Rotation",
     (SC_CTRL_SCALE, BEZIER_SCALE): "Bezier Scale",
+    (SC_CTRL_POINT3, BEZIER_COLOR): "Bezier Color",
     (SC_CTRL_ROTATION, EULER_XYZ): "Euler XYZ",
     (SC_CTRL_FLOAT, TCB_FLOAT): "TCB Float",
     (SC_CTRL_POSITION, TCB_POSITION): "TCB Position",

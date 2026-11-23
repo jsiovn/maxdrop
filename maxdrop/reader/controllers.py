@@ -10,6 +10,8 @@
     t.object_world(i)   # offset * world (node.objectTransform): object-space vertices times this = world
     t.issues            # Issue(node, controller, superclass, class_id, reason), in the order met
     m, issues = matrix(scene, i)        # Matrix3 controller i alone (a modifier's gizmo); Issue.node is None
+    v, issues = parameter_value(scene, i)   # the float or color controller of a material or map parameter
+                                        # (pblock.Animated) at frame 0; None where it cannot be evaluated
 
 Matrices are 4x4 tuples of row tuples of floats (float64) in Max's row-vector convention: a point p becomes
 p * M, row 4 holds the translation, and A * B applies A first. That is the layout of the oracle's `transform`.
@@ -18,8 +20,9 @@ Negative scale is kept as it is (a mirrored node has a negative determinant).
 
 Controllers are dispatched on (superclass, ClassId). A keyframe controller (Linear, Bezier or TCB Float, Position,
 Rotation or Scale) saves its value at the time slider of the save in 0x2501 (float), 0x2503 (point), 0x2504
-(quaternion) or 0x2505 (3 x f32 scale, then the scale axis as a 4 x f32 quaternion), directly or inside 0x7127,
-with 0x2500, the interval that value holds for (forever without keys), and its keys in a chunk of its class
+(quaternion) or 0x2505 (3 x f32 scale, then the scale axis as a 4 x f32 quaternion) (a Bezier Color, the Point3
+controller of an animated color parameter: 0x2501 with 3 x f32, its keys laid out as Bezier Position's), directly or
+inside 0x7127, with 0x2500, the interval that value holds for (forever without keys), and its keys in a chunk of its class
 (_KEYFRAMED: i32 time, u32 flags, the value at byte 8, then tangents or TCB parameters). The saved value is used
 when its interval holds time 0; otherwise the keys are evaluated at time 0: the first key's value at or before it,
 the last key's after it (out-of-range types are not read), between two keys linear for a Linear controller
@@ -130,6 +133,8 @@ _KEYFRAMED = {
     (classids.SC_CTRL_SCALE, classids.LINEAR_SCALE): (_SCALE_VALUE, 7, 0x2515, 36),
     (classids.SC_CTRL_SCALE, classids.TCB_SCALE): (_SCALE_VALUE, 7, 0x2523, 112),
     (classids.SC_CTRL_SCALE, classids.BEZIER_SCALE): (_SCALE_VALUE, 7, 0x2528, 148),
+    # a color parameter's (parameter_value): the saved color in 0x2501, its keys laid out as Bezier Position's
+    (classids.SC_CTRL_POINT3, classids.BEZIER_COLOR): (_FLOAT_VALUE, 3, 0x2526, 80),
 }
 _LINEAR = frozenset((classids.LINEAR_FLOAT, classids.LINEAR_POSITION, classids.LINEAR_ROTATION,
                      classids.LINEAR_SCALE))
@@ -1167,6 +1172,40 @@ class Transforms:
     def object_world(self, i):
         """offset * world: where node i's object-space vertices land in the world."""
         return multiply(self.offset(i), self.world(i))
+
+
+def parameter_value(scene, i):
+    """(the value of controller i at frame 0, issues) for a parameter of a material or map that a controller holds
+    (reader.pblock.Animated): a float from a float controller (as a transform's: keyframes and Float List), a tuple of
+    3 floats from a Bezier Color (between two keys linear, with an issue: its curve is not measured); None where it
+    cannot be evaluated (another class, no saved value or keys, a damaged controller, a non-finite value), with an
+    Issue (node None) as matrix() gives."""
+    issues = []
+    ev = _Eval(scene, None, issues)
+    if not 0 <= i < len(scene):
+        issues.append(Issue(None, None, None, None, "%s: object %d past the scene" % (DAMAGED, i)))
+        return None, issues
+    try:
+        sc, cid = ev.kind(i)
+        if sc == classids.SC_CTRL_FLOAT:
+            value = ev.scalar(i, None)
+        elif sc == classids.SC_CTRL_POINT3 and (sc, cid) in _KEYFRAMED:
+            with ev.at(i):
+                v = ev._keyframe(i)
+            value = None if v is None else tuple(float(c) for c in v)
+        else:
+            ev.issue(i, UNKNOWN_CLASS)
+            return None, issues
+    except (MaxFileError, OverflowError) as exc:
+        del issues[:]
+        ev.issue(ev.failed if ev.failed is not None else i, "%s: %s" % (DAMAGED, exc))
+        return None, issues
+    if value is None:
+        return None, issues
+    if not all(math.isfinite(c) for c in (value if isinstance(value, tuple) else (value,))):
+        ev.issue(i, NON_FINITE)
+        return None, issues
+    return value, issues
 
 
 def matrix(scene, i):

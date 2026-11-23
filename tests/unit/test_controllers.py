@@ -2003,5 +2003,77 @@ class TestLookAtWeightFixture(unittest.TestCase):
                     self.assertAlmostEqual(got, want, places=4)
 
 
+class ParameterValue(unittest.TestCase):
+    """parameter_value: a material or map parameter's controller at frame 0 (maxdrop-em3.152). pblock_animated holds
+    Bezier Float and Bezier Color controllers in a VRayBlendMtl, a VRayMtl and a VRayNormalMap; the oracle gives
+    each one's frame-0 value."""
+
+    PATH = os.path.join(ROOT, "tests", "fixtures", "pblock_animated.max")
+
+    def test_fixture_controllers(self):
+        materials = importlib.import_module(_PKG + ".reader.materials")
+        with open(os.path.join(ROOT, "tests", "fixtures", "pblock_animated.oracle.json"), encoding="utf-8") as f:
+            oracle = {m["name"]: m for m in json.load(f)["material_graph"]}
+        with cfb.CompoundFile(self.PATH) as cf:
+            s = scene.Scene.from_file(cf)
+            g = materials.MaterialGraph(s)
+            seen = 0
+            for i in g.walk(s.node(n).material for n in s.walk()):
+                m = g.get(i)
+                for b in oracle[m.name]["blocks"]:
+                    for c in b.get("controllers", ()):
+                        with self.subTest(material=m.name, param=c["id"], tab=c["tab"]):
+                            a = m.block(b["block_id"]).get(c["id"], c["tab"])
+                            self.assertIsInstance(a, pblock.Animated)
+                            value, issues = ct.parameter_value(s, a.index)
+                            self.assertEqual(issues, [])
+                            want = c["value"]
+                            if isinstance(want, list):
+                                self.assertIsInstance(value, tuple)
+                                self.assertEqual(len(value), len(want))
+                                for x, y in zip(value, want):
+                                    self.assertAlmostEqual(x, y, delta=1e-5)
+                            else:
+                                self.assertIsInstance(value, float)
+                                self.assertAlmostEqual(value, want, delta=1e-5)
+                            seen += 1
+            self.assertEqual(seen, 6)
+
+    def test_bezier_color_keys(self):
+        """A Bezier Color's keys (0x2526): 80 bytes each, time, flags, then the color: key 0 (frame 0) holds the saved
+        value, key 1 the color at frame 50."""
+        with cfb.CompoundFile(self.PATH) as cf:
+            s = scene.Scene.from_file(cf)
+            colors = [i for i in range(len(s)) if s.entry(i) is not None
+                      and (s.entry(i).superclass, s.entry(i).class_id) == (classids.SC_CTRL_POINT3,
+                                                                           classids.BEZIER_COLOR)]
+            keyed = 0
+            for i in colors:
+                holder = s.chunk(i).first(0x7127)
+                keys = holder.first(0x2526)
+                if keys is None:
+                    continue
+                self.assertEqual(keys.payload_size, 2 * 80)
+                view = keys.view()
+                saved = holder.first(0x2501).unpack("<3f")
+                self.assertEqual(struct.unpack_from("<i", view, 0)[0], 0)
+                self.assertEqual(struct.unpack_from("<i", view, 80)[0], 50 * 160)
+                self.assertEqual(struct.unpack_from("<3f", view, 8), saved)
+                keyed += 1
+            self.assertEqual(keyed, 2)  # the blend color and the diffuse
+
+    def test_not_a_value(self):
+        with cfb.CompoundFile(self.PATH) as cf:
+            s = scene.Scene.from_file(cf)
+            value, issues = ct.parameter_value(s, len(s))
+            self.assertIsNone(value)
+            self.assertEqual(len(issues), 1)
+            self.assertTrue(issues[0].reason.startswith(ct.DAMAGED), issues)
+            node = s.walk()[0]
+            value, issues = ct.parameter_value(s, node)  # a node, not a controller
+            self.assertIsNone(value)
+            self.assertEqual([x.reason for x in issues], [ct.UNKNOWN_CLASS])
+
+
 if __name__ == "__main__":
     unittest.main()
