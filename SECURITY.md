@@ -32,9 +32,9 @@ unless you prefer otherwise.
 - **What is written, and where.** Only the `.max` you import and the pack's image and `.ies` files it names (all of
   them when its asset list cannot be read), into one new folder named after the archive: next to the archive, or
   inside the folder set under *Unpack Scene Packs Into* in the preferences. The folder is flat: a path stored in
-  the archive never decides where a file goes, only its file name is used, and names that Windows cannot store,
-  reserved device names and over-long names are refused. Files are written into a temporary folder beside the
-  destination and renamed when complete; on any error that folder is removed. A folder without MaxDrop's marker
+  the archive never decides where a file goes, only its file name is used, and names that Windows or macOS cannot
+  store, reserved device names and over-long names are refused. Files are written into a temporary folder beside
+  the destination and renamed when complete; on any error that folder is removed. A folder without MaxDrop's marker
   file (`.maxdrop-pack.json`) is never written into, and MaxDrop removes only folders it created itself.
 - **What is never unpacked or run.** Everything else in a pack: scripts, programs, documents, other files. Links
   and other special files are refused. Nothing from a pack is executed or loaded as code. Limits on the number of

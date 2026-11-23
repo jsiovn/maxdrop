@@ -77,7 +77,7 @@ Bead: maxdrop-em3.157
 - [ ] `CHANGELOG.md` `## [Unreleased]`: one added line (no neighbours touched).
 - [ ] `SECURITY.md`: the refused names list names this class too.
 
-## Verify
+## Verification
 
 - `python -I -m unittest discover tests` (system Python and both Blender Pythons), `python -I tools/lint.py`.
 - build.ps1 + smoke on 4.2 / 4.5 / 5.2 (build-and-test skill).
