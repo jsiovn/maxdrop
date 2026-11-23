@@ -1642,11 +1642,26 @@ self-illumination the lit part is scaled and the self-lit part is the swatch as 
 at level 50 and 100); a diffuse map (amount 100 or 50) is scaled too. So the shader's diffuse is swatch times level
 in the stored value, and MaxDrop applies the level before the swatch rule, which clamps to 0..1 (standard_shaders
 FixtureMultiLayerLevel: green 200 at 150 % is white), the opposite order of CoronaLegacyMtl's levels and Physical's
-base weight; the emission keeps the unscaled diffuse; a diffuse map is not scaled and the Diffuse Level map channel
-is not read (maxdrop-em3.150). A missing or animated diffuse, glossiness or specular level takes the shader's value
+base weight; the emission keeps the unscaled diffuse; a diffuse map is scaled too (the next paragraph). A missing or
+animated diffuse, glossiness or specular level takes the shader's value
 as created (3ds Max 2020): diffuse 149.94 grey (Blinn, Phong, Metal; MaxDrop 150) or 127.5 (the others, Strauss included);
 glossiness 10 % (Blinn, Phong, Metal), Anisotropic 25, Multi-Layer 50, Oren-Nayar-Blinn 25, Translucent 30,
 Strauss 20; specular level 5 % (Anisotropic, Multi-Layer), 0 the others (`SHADER_DEFAULTS`).
+
+The Diffuse Level map (channels: Anisotropic 3, Multi-Layer 2, Oren-Nayar-Blinn and Translucent 8;
+`StdSlots.diffuse_level`), measured the same way with flat Checker maps (swatch 100 60 30, maxdrop-em3.150), the same
+numbers on the four shaders: a grey 128 map at amount 100 renders 0.502 of the level-100 pixel at level 50, 100 and
+150 (it replaces the level), grey 255 1.0, grey 64 0.25, black 0; at amount 50 grey 128 at level 50 0.5006 and grey
+255 at level 150 1.25; switched off, the level alone; a pure red, green or blue map 1/3, yellow 2/3 (the mean of its
+channels). A flat diffuse map with it: grey 128 at level 50 renders 64; at amount 50 lerp(swatch, 128, 0.5) x 0.5,
+and with the level map lerp(0.5, map, its amount) in place of 0.5. So the diffuse is lerp(swatch, diffuse map,
+amount) x lerp(level, mean(level map), amount), on stored values with the gamma off (gamma on not rendered: assumed
+the same product on linear values). MaxDrop scales the diffuse map by the level as the swatch rule makes it
+(`MapRef.scale`, before the amount mixes it with the swatch times the level; gamma off: the sRGB curve, not clamped,
+since Blender decodes the map: the decoded map times the decoded level is within 0.006 linear of the decoded product
+for levels up to 100 %, where a plain x level is up to 0.29 too bright). With a Diffuse Level map the base color is
+the diffuse at level 1 times the mean (a Tint of rows 1/3) of lerp(level, the map as a mask, its amount): decoded
+with the gamma off as the level is, and mixed on decoded values, the approximation of the gamma-off mixes.
 
 The maps of texmap_rules (block 0 each; `convert/texmaps.py`):
 

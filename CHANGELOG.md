@@ -161,6 +161,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   object as an empty with a line in the report, instead of a mesh with infinite or NaN points (a V-Ray mesh light
   with such a mesh stays an empty, a line in the report). Stored UV coordinates that are not numbers become 0, a
   line in the report; the mesh is kept.
+- Materials: a Standard material of Anisotropic, Multi-Layer, Oren-Nayar-Blinn or Translucent Shader with a diffuse
+  map takes its Diffuse Level on the map too, as 3ds Max renders it (a map at a Diffuse Level of 40 % no longer
+  arrives at full brightness), and its Diffuse Level map is imported: it replaces the level by its amount, the mean
+  of its colors, as 3ds Max does.
 
 ## [1.0.1] - 2026-11-22
 

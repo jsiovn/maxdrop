@@ -894,7 +894,7 @@ class Standard(unittest.TestCase, Close):
     def test_diffuse_map_level_with_the_gamma_off(self):
         """With the gamma off 3ds Max scales the stored value, Blender's map is decoded: the decoded map times the
         decoded level stays within 0.006 linear of the decoded product for levels up to 100 % (a plain x level is
-        up to 0.13 too bright), so a flat diffuse map equal to the swatch imports about as the swatch does."""
+        up to 0.29 too bright), so a flat diffuse map equal to the swatch imports about as the swatch does."""
         worst = 0.0
         for p in range(1, 101):
             for level in range(5, 101, 5):
