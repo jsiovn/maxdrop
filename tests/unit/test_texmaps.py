@@ -2764,6 +2764,8 @@ class FalloffCurve(Checks):
                 # as 3ds Max mixes a Mix without a mask at that amount ("amount")
                 factor = self.root(name).factor
                 self.assertGreater(factor, 0.0)
+                amount = {"FixtureMixCurve": 0.5, "FixtureMixCurveStep": 0.7}[name]  # tools/fixtures/falloff_curve.ms
+                self.assertAlmostEqual(factor, tx.mix_factor(amount, mask.lower, mask.upper), places=6)
                 self.assertAlmostEqual(factor, self.records[name]["amount"], delta=1e-4)
         root = self.root("FixtureMixCurveAmount")
         self.assertIsNone(root.mask)

@@ -95,7 +95,9 @@ from its authoring script, texture nodes without an image and each missing file 
 texmap_rules, corona_maps, corona_light, vray_texmaps, texmap_wrappers and falloff_curve copied beside generated
 PNGs load every image in its color space, one datablock per file and color space, the report counts every file as
 found (and texmap_wrappers draws each wrapper with its nodes: Layer Weight, Fresnel, blend types, Separate / Combine
-Color; falloff_curve each Falloff curve as a Float Curve that evaluates as 3ds Max's, each Mix's Use Curve);
+Color; falloff_curve each Falloff curve as a Float Curve that evaluates as 3ds Max's, each Mix's Use Curve;
+untextured, FixtureCurveJump's two points at one x in the convert side's order, a masked Mix at its amount
+through the curve);
 hand-made IRs check shared images, a missing file, the materials counted by class, Thin Wall (set on 5.x, counted on
 4.x), a name clash, BLENDED / DITHERED and every node kind, the wrappers' links and values (Facing, blend modes and
 masks, rewiring, Adjust, Tint); a crop repeating per axis (wrap, ping-pong, clip), a mirrored axis drawn as
@@ -1974,7 +1976,7 @@ def check_falloff_curve(textured):
             err = max(abs(mapping.evaluate(mapping.curves[0], k / 64.0) - y) for k, y in enumerate(rows[name]))
             check("falloff_curve/%s: the Float Curve evaluates as 3ds Max's curve, within 0.001" % name, err < 1e-3,
                   str(err))
-            if name == "FixtureCurveJump":
+            if name == "FixtureCurveJump" and not textured:  # the same curve in both runs: checked once
                 check_falloff_jump(mapping, 32.5 / 64)
     linear = bpy.data.materials["FixtureCurveLinear"]
     check("falloff_curve: the default curve makes no Float Curve",
