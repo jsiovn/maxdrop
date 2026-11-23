@@ -45,6 +45,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Materials: a VRayMtl with reflection Fresnel off and a reflection map at full amount (the usual black to white
   Falloff) keeps its diffuse instead of becoming a dark metal colored by the map: the bright reflection swatch the
   map hides no longer makes it a metal; below full amount the swatch counts in proportion.
+- Materials: a CoronaMtl (CoronaLegacyMtl) with a Fresnel IOR of 10 or more and a reflection map at full amount
+  keeps its diffuse instead of becoming a metal colored by the map: as for VRayMtl, only the share of the reflection
+  color the map leaves (times the reflection level) can make it a metal.
 - Materials: a grey reflection (a VRayMtl's reflection color, a Standard, Physical or Corona reflection level below
   full) or a reflection map no longer brightens toward the silhouette: the whole Fresnel curve is scaled by it, as
   V-Ray does, through a Mix Shader over a copy of the Principled BSDF without reflection (a grey 128 sphere at IOR

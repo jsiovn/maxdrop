@@ -1821,6 +1821,38 @@ class CoronaSynthetic(unittest.TestCase, Close):
             _conv, ir = _convert(_corona(0, classids.CORONA_LEGACY_MTL, **params))
             self.close(ir.metallic.value, metal, str(params))
 
+    def test_legacy_reflection_map_at_full_amount_keeps_diffuse(self):
+        """A reflection map at full amount hides the swatch (maxdrop-em3.133, as VRayMtl's): no metal however high
+        the Fresnel IOR and bright the swatch; the specular follows the map, the base color is the diffuse."""
+        for amount in (1.0, 1.5):
+            _conv, ir = _convert(_corona(0, classids.CORONA_LEGACY_MTL, p101=(1.0, 0.0, 0.0), p102=(1.0, 1.0, 1.0),
+                                         p122=1.0, p182=999.0, p142=Ref(1), p291=amount), _map(1))
+            self.close(ir.metallic.value, 0.0, str(amount))
+            self.close(ir.base_color.value, (1.0, 0.0, 0.0), str(amount))
+            self.assertIsNone(ir.base_color.map)
+            self.assertEqual(ir.specular.map, mat.MapRef(1, amount, False))
+
+    def test_legacy_swatch_shows_in_proportion_below_full_amount(self):
+        """Below full amount the swatch counts by its share, mean x (1 - amount); the level is in that mean (Corona's
+        documentation: the level multiplies the color and the map alike)."""
+        def metal(color, level, **slot):
+            return _convert(_corona(0, classids.CORONA_LEGACY_MTL, p101=(1.0, 0.0, 0.0), p102=color, p122=level,
+                                    p182=999.0, p142=Ref(1), **slot), _map(1))[1]
+        ir = metal((0.8,) * 3, 1.0, p291=0.75)  # 0.8 x 0.25 = 0.2 shown
+        self.close(ir.metallic.value, 0.0)
+        self.close(ir.base_color.value, (1.0, 0.0, 0.0))
+        ir = metal((1.0,) * 3, 1.0, p291=0.75)  # 1 x 0.25: the threshold
+        self.close(ir.metallic.value, 1.0)
+        self.close(ir.base_color.value, (1.0,) * 3)
+        self.assertEqual(ir.base_color.map, mat.MapRef(1, 0.75, False))
+        ir = metal((1.0,) * 3, 0.5, p291=0.5)  # 0.5 x 0.5 = 0.25 shown
+        self.close(ir.metallic.value, 1.0)
+        ir = metal((1.0,) * 3, 0.5, p291=0.6)  # 0.5 x 0.4 = 0.2 shown
+        self.close(ir.metallic.value, 0.0)
+        ir = metal((0.8,) * 3, 1.0, p162=0, p291=1.0)  # the map switched off: the whole swatch
+        self.close(ir.metallic.value, 1.0)
+        self.assertIsNone(ir.base_color.map)
+
     def test_legacy_defaults_reflect_nothing(self):
         _conv, ir = _convert(_corona(0, classids.CORONA_LEGACY_MTL))
         self.close(ir.specular.value, 0.0, "levelReflect 0")

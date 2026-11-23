@@ -77,6 +77,8 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   levels; specular = the mean reflection; roughness = 1 - glossiness (PBR mode or not); transmission and the glass
   base color as for VRayMtl, the IOR as well (refraction IOR when it refracts, else the Fresnel IOR); a Fresnel IOR
   of CORONA_METAL_IOR or more with a bright reflection (as METAL_REFLECTION) is a metal in the reflection color;
+  beside a reflection map only the swatch's share counts, as for VRayMtl (its mean, the level included: Corona's
+  documentation has the level multiply the color and the map alike, times 1 - the map amount; the map is not judged);
   SSS as the physical material's. PBR mode off, translucency and absorption are named issues.
 - CoronaLightMtl -> emission (color, intensity, map) and its opacity map.
 - CoronaSkinMtl -> one Principled layer: skin color times level, its three SSS layers as one (weighted mean radius
@@ -1059,7 +1061,9 @@ def corona_legacy_mtl(conv, m, ir):
     ir.base_color = Input(_mix(diffuse, refract_color, t) if t > 0 else diffuse, slot(141, 161, 290))
     ir.specular = Input(_clamp01(mean(reflection)), reflection_map)
     ir.roughness = Input(_roughness(_num(m, 180, 0, 1.0), False), slot(143, 163, 292, invert=True))
-    if fresnel_ior >= CORONA_METAL_IOR and mean(reflection) >= METAL_REFLECTION:
+    # the swatch's share of the slot, as vray_mtl's (the level multiplies swatch and map alike: it stays in it)
+    hidden = min(1.0, reflection_map.amount) if reflection_map is not None else 0.0
+    if fresnel_ior >= CORONA_METAL_IOR and mean(reflection) * (1.0 - hidden) >= METAL_REFLECTION:
         ir.metallic = Input(1.0)
         ir.base_color = Input(reflection, reflection_map)
     ir.transmission = Input(t, slot(144, 164, 293))
