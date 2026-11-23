@@ -233,11 +233,19 @@ class UnreachableTest(unittest.TestCase):
     def test_after_match_with_wildcard(self):
         head = "def f(x):\n    match x:\n        case 1:\n            return 1\n"
         self.assertEqual(self.lines(head + "        case _:\n            return 2\n    x = 3\n"), [7])
-        self.assertEqual(self.lines(head + "        case 2 | other:\n            return 2\n    x = 3\n"), [7])
+        self.assertEqual(self.lines(head + "        case 2 | _:\n            return 2\n    x = 3\n"), [7])
+        self.assertEqual(self.lines(head + "        case (_ as y):\n            return y\n    x = 3\n"), [7])
         self.assertEqual(self.lines(head + "        case 2:\n            return 2\n    x = 3\n"), [])
         self.assertEqual(self.lines(head + "        case _ if x:\n            return 2\n    x = 3\n"), [])
         self.assertEqual(self.lines(head + "        case _:\n            pass\n    x = 3\n"), [])
 
+    def test_with_is_taken_not_to_swallow(self):
+        # The known limit: a with whose body returns is terminal even when __exit__ swallows what the body's own
+        # calls raise, so the fallback after `with suppress(...): return ...` is flagged; write it as try/except.
+        self.assertEqual(self.lines("def get(d, k):\n    with suppress(KeyError):\n        return d[k]\n"
+                                    "    return None\n"), [4])
+
+    def test_syntax_error_is_raised_for_main_to_note(self):
         # Ruff's E9 reports it; main() prints a note and goes on with the other files.
         with self.assertRaises(SyntaxError):
             self.findings("def f(:\n    return\n")

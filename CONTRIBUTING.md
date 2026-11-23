@@ -33,7 +33,8 @@ the `test` workflow too. `python -I tools/lint.py` runs `ruff check .` with that
 is that version, otherwise uv's cached copy (`uvx ruff@<version> --version` fetches it once), then a check ruff has
 no rule for at that version: a statement after `return`, `raise`, `continue` or `break` in the same block, or after
 a `with` (returning, continuing or breaking), `if`/`else`, `try` or `match` no path through falls out of (a test
-method left nested after a return drops out of its suite without failing). It exits 3 and says how to get ruff
+method left nested after a return drops out of its suite without failing; the fallback after `with
+suppress(...): return ...` counts as unreachable too: write it as try/except). It exits 3 and says how to get ruff
 when it finds neither. Without uv, install it in a virtual environment of its own and put that on PATH for the
 session:
 

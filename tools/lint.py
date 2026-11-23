@@ -14,13 +14,14 @@ arguments> --show-files`) and reports a statement that follows `return`, `raise`
 block, or a compound statement no path through falls out of (a `with` whose body returns, continues or breaks: its
 `__exit__` may swallow a raise; an `if`/`else` exiting on both branches; a `try` whose `finally` exits or whose
 body and handlers do; a `match` ending in an irrefutable case with every case exiting): a test method left nested
-after a return drops out of its suite without a failure.
-Loops are never followed (a `break` leaves them, `while True` included) and there is no suppression comment
-(`return` then `yield`, the empty generator, is flagged too); a file this Python cannot parse is noted on stderr
-and not checked; the check is skipped with an argument ruff refuses beside --show-files (--statistics,
+after a return drops out of its suite without a failure. The `with` rule takes `__exit__` not to swallow what the
+body's own calls raise: the fallback after `with suppress(KeyError): return d[k]` is flagged (write it as
+try/except). Loops are never followed (a `break` leaves them, `while True` included) and there is no suppression
+comment (`return` then `yield`, the empty generator, is flagged too); a file this Python cannot parse is noted on
+stderr and not checked; the check is skipped with an argument ruff refuses beside --show-files (--statistics,
 --add-noqa, ...). Exit: ruff's own (0 clean, 1 findings, 2 a ruff error such as a bad argument; an unreachable
-statement turns 0 into 1 unless --exit-zero), 3 when no ruff of that version is found or pyproject.toml has no
-pin. Standard library only, Python 3.9 and later (no tomllib).
+statement turns 0 into 1 unless --exit-zero), 3 when no ruff of that version is found or pyproject.toml has no pin.
+Standard library only, Python 3.9 and later (no tomllib).
 """
 import ast
 import os
@@ -90,7 +91,8 @@ def _block_exits(block, raises):
 def _irrefutable(pattern):
     if isinstance(pattern, ast.MatchOr):
         return any(_irrefutable(p) for p in pattern.patterns)
-    return isinstance(pattern, ast.MatchAs) and pattern.pattern is None  # `case _:` / `case name:`
+    # `case _:` / `case name:`, or `case (_ as name):`
+    return isinstance(pattern, ast.MatchAs) and (pattern.pattern is None or _irrefutable(pattern.pattern))
 
 
 def _exits(stmt, raises=True):
