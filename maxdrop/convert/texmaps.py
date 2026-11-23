@@ -722,11 +722,15 @@ class TexmapConverter:
         self._nodes, self._firsts = {}, {}  # keyed (object, kind, depth)
 
     def _issue(self, walk, index, reason):
+        self.note(index, reason)
+        if reason not in walk.issues:
+            walk.issues.append(reason)
+
+    def note(self, index, reason):
+        """An issue of map object index in stats.issues, once."""
         if (index, reason) not in self._reported:
             self._reported.add((index, reason))
             self.stats.issues.append((index, reason))
-        if reason not in walk.issues:
-            walk.issues.append(reason)
 
     def _class_name(self, m):
         entry = self.graph.scene.entry(m.index)  # m came from graph.get: an object of the scene
@@ -1731,22 +1735,26 @@ def _kept(root, value):
     return Mix(Constant(value), root, 1.0)
 
 
-def _leveled(ir, tex):
+def _leveled(ir, tex, plain):
     """The base color graph of a Standard material with a Diffuse Level map (materials.DiffuseLevel): the diffuse at
     level 1 (the swatch with the diffuse map mixed over it by its amount, without its scale) times the mean of
-    lerp(level, the map, its amount), the map a MASK (decoded with the gamma off, as the level is). None when the
-    level map gives no graph or the product is past MAX_NODES: the diffuse then takes the level alone."""
+    lerp(level, the map, its amount), the map a MASK (decoded with the gamma off, as the level is). plain: the base
+    color graph without the level map (None: none), which stays when the level map gives no graph, and also, with
+    an issue, when the product is past MAX_NODES: the diffuse then takes the level alone."""
     lv = ir.diffuse_level
     f = tex.convert(lv.map, MASK, lv.level)
     if f is None:
-        return None
+        return plain
     color = tuple(lv.color)
     ref = ir.base_color.map
     d = tex.convert(dataclasses.replace(ref, scale=1.0), COLOR, color) if ref is not None else None
     root = Multiply(Constant(color) if d is None else _kept(d.root, color),
                     Tint(_kept(f.root, lv.level), MEAN_ROW, MEAN_ROW, MEAN_ROW))
     if tree_size(root) > MAX_NODES:
-        return None
+        reason = "map %d: Diffuse Level map left out: the base color graph would be past %d nodes" % (
+            lv.map.index, MAX_NODES)
+        tex.note(lv.map.index, reason)
+        return None if plain is None else dataclasses.replace(plain, issues=plain.issues + (reason,))
     parts = [g for g in (d, f) if g is not None]
     issues = tuple(dict.fromkeys(i for g in parts for i in g.issues))
     return TextureGraphIR(root, COLOR, any(g.approximated for g in parts), issues)
@@ -1762,7 +1770,7 @@ def texture_graphs(ir, tex):
             if g is not None:
                 out[name] = g
     if ir.diffuse_level is not None:
-        g = _leveled(ir, tex)
+        g = _leveled(ir, tex, out.get("base_color"))
         if g is not None:
             out["base_color"] = g
     for name, kind in (("normal", NORMAL), ("bump", BUMP)):

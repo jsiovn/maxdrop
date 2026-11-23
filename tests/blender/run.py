@@ -3208,7 +3208,7 @@ def check_builder_diffuse_level():
             ir = cm.MaterialIR(53, "DiffuseLevel", "test",
                                base_color=cm.Input(tuple(c * 0.25 for c in color), cm.MapRef(1, 1.0, False, 0.25)))
             ir.diffuse_level = cm.DiffuseLevel(color, 0.25, cm.MapRef(2, 0.6))
-            ir.textures = {"base_color": tx._leveled(ir, Tex())}
+            ir.textures = {"base_color": tx._leveled(ir, Tex(), None)}
             tag = "diffuse level (%s): " % ("images" if present else "images missing")
             m = build_materials.MaterialBuilder().make(ir)
             check(tag + "material built", m is not None)

@@ -730,6 +730,28 @@ class Synthetic(Checks):
                                                                                ir.base_color.value))
         self.assertNotIn("base_color", tx.texture_graphs(self.level_ir(None, mat.MapRef(2, 1.0)), tex))
 
+    def test_diffuse_level_map_past_max_nodes(self):
+        """A product past MAX_NODES keeps the diffuse graph without the level map, with an issue (on the graph and
+        once in stats)."""
+        tex = _tex(_bitmap(1), _bitmap(2))
+        big = tx.Image(1, "a.png")
+        for _ in range(tx.MAX_NODES - 2):
+            big = tx.Invert(big)
+        plain = tx.TextureGraphIR(big, tx.COLOR)
+        real = tex.convert
+
+        def convert(ref, kind, value=None):
+            return plain if kind == tx.COLOR else real(ref, kind, value)
+
+        tex.convert = convert
+        ir = self.level_ir(mat.MapRef(1, 1.0), mat.MapRef(2, 1.0))
+        g = tx.texture_graphs(ir, tex)["base_color"]
+        self.assertIs(g.root, big, "the diffuse alone")
+        reason = "map 2: Diffuse Level map left out: the base color graph would be past %d nodes" % tx.MAX_NODES
+        self.assertEqual(g.issues, (reason,))
+        tx.texture_graphs(ir, tex)
+        self.assertEqual(tex.stats.issues.count((2, reason)), 1)
+
     def test_normal_map_in_a_color_input_is_its_image(self):
         n = FakeMap(1, classids.VRAY_NORMAL_MAP, {0: Ref(2), 2: 1, 3: 1.0}, [2], cls="VRayNormalMap")
         tex = _tex(n, _bitmap(2))

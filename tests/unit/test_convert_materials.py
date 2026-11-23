@@ -1170,6 +1170,14 @@ class StandardMaps(unittest.TestCase, Close):
                 self.close(ir.base_color.value, _srgb(*(min(255.0, c * level) for c in (150, 120, 90))))
                 self.same_map(ir.base_color.map, self.map(name, "Diffuse", diffuse_amount), "diffuse")
                 self.close(ir.base_color.map.scale, k, "the decoded level")
+                level_map = self.by_name.get("FixtureMap" + name + "DiffuseLevel")
+                if level_map is not None:  # the channel 3ds Max put it into, in the table and the Texmaps object
+                    m = self.graph.get(self.by_name["FixtureMaps" + name])
+                    slot = mat.STD_SLOTS[getattr(classids, shader)].diffuse_level
+                    self.assertEqual(m.param(1, 3, tab=slot).index, level_map, "the slot table's channel")
+                    index, on, amount = reader_materials.standard_maps(self.graph.scene, m).channel(slot)
+                    self.assertEqual((index, on), (level_map, level_amount is not None), "the Texmaps channel")
+                    self.close(amount, 0.64 if level_amount is None else level_amount)
                 if level_amount is None:
                     self.assertIsNone(ir.diffuse_level)
                     continue
@@ -1178,10 +1186,8 @@ class StandardMaps(unittest.TestCase, Close):
                 self.assertEqual(lv.map.scale, 1.0)
                 self.close(lv.level, k)
                 self.close(lv.color, _srgb(150, 120, 90), "the swatch at level 1")
-                m = self.graph.get(self.by_name["FixtureMaps" + name])
-                self.assertEqual(m.param(1, 3, tab=mat.STD_SLOTS[getattr(classids, shader)].diffuse_level).index,
-                                 self.by_name["FixtureMap" + name + "DiffuseLevel"], "the slot table's channel")
         self.assertIn("FixtureMapLevelOrenNayarBlinnDiffuseLevel", self.by_name, "the switched-off map is saved")
+        self.assertNotIn("FixtureMapLevelTranslucentDiffuseLevel", self.by_name)
 
     def test_no_issues(self):
         self.assertEqual((self.conv.stats.issues, dict(self.conv.stats.unknown)), ([], {}))
