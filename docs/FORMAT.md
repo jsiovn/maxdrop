@@ -1110,11 +1110,12 @@ MaxDrop reads the file when the texture lookup finds it (`convert/ies.py`) and g
 flux / its rated lumens (the power for rated lumens of -1); a file not found or not read keeps the power as the flux,
 a line in the report. A file V-Ray cannot find renders the power as an isotropic flux, override on or off (power
 1000 lm 0.0531, 500 lm 0.0265; targeted or not, no file at all, a saved scene reopened without its file): what
-MaxDrop does with a file it does not find. The 1.689 an earlier note gave for it shows only after a targeted light's
-loaded file is switched to a missing path in the same session (stale state, not modeled).
+MaxDrop does with a file it does not find. The 1.689 an earlier note gave for it shows when a light, targeted or
+not, has rendered with its file and is then switched to a missing path in the same session (not modeled); switched
+before any render, it renders 0.0531.
 
-**VRayIES header, measured** (the same scene in millimeters: in meters it renders brighter by (1 / 0.8)², the shadow
-bias of 0.2 world units moving the shaded point toward the light; isotropic 100 cd files, type C, one plane, rated
+**VRayIES header, measured** (the same scene in millimeters: in meters it renders 0.0829 for 0.0531, the light's shadow
+bias of 0.2 world units moving the shaded point toward it; with the bias 0, 0.0530; isotropic 100 cd files, type C, one plane, rated
 1256.6, one lamp, ballast factors 1, power 1000, override off, one field changed at a time; the power loading the file
 sets in brackets): the base file 0.0531 (1256.6); candela multiplier 2 0.1061 (1256.6): applied; ballast factor 0.5
 0.0265 (1256.6): applied; ballast-lamp photometric factor 0.5 0.0531: not applied; 2 lamps of 500 lm 0.0667 (1000):
