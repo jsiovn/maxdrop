@@ -317,7 +317,7 @@ def bitmap_gamma(scene, m):
 def standard_maps(scene, m):
     """The StdMaps of Standard material m, read from the first Texmaps object (superclass 0x1080, STD_TEXMAPS) it
     references: its leaves _STD_ON (u32) and _STD_AMOUNT + channel (f32, as stored), channel k's map at its reference
-    2k + 1 (a reference that is not a map is none), channels below STD_CHANNELS. None when m references no Texmaps
+    2k + 1 (as stored: convert checks it is a map), channels below STD_CHANNELS. None when m references no Texmaps
     object or it cannot be read: no on mask, a leaf not of 4 bytes, damaged references."""
     for _slot, target in sorted(m.refs.items()):
         if not 0 <= target < len(scene):
@@ -344,9 +344,8 @@ def standard_maps(scene, m):
                 return None
             maps = {}
             for slot, ref in scene.refs(target).items():  # raises for a reference past the objects
-                k, held = (slot - 1) // 2, scene.entry(ref)
-                if slot % 2 == 1 and k < STD_CHANNELS and held is not None and held.superclass == classids.SC_TEXMAP:
-                    maps[k] = ref
+                if slot % 2 == 1 and (slot - 1) // 2 < STD_CHANNELS:
+                    maps[(slot - 1) // 2] = ref
         except MaxFileError:
             return None
         return StdMaps(maps, enabled, amounts)

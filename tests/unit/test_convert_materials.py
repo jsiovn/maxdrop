@@ -929,6 +929,19 @@ class Standard(unittest.TestCase, Close):
         self.assertIsNone(ir.bump)
         self.assertIn("map slot 8: object 9 is not a map", ir.issues[0])
 
+    def test_texmaps_channels(self):
+        """_std_map from a Texmaps object's channels (reader.materials.StdMaps): its map, switch and amount, a
+        channel that holds something else than a map named as the table's."""
+        conv = mat.MaterialConverter(FakeGraph(_map(1), _vray(9)))
+        m, ir = _standard(0, classids.BLINN_SHADER, {}), mat.MaterialIR(0, "S")
+        std = reader_materials.StdMaps({1: 1, 2: 1, 8: 9, 9: 1}, 0b100001110, {1: 0.4})
+        self.assertEqual(mat._std_map(conv, m, 1, ir, channels=std), mat.MapRef(1, 0.4, False))
+        self.assertIsNone(mat._std_map(conv, m, 3, ir, channels=std))  # on, no map
+        self.assertEqual(mat._std_map(conv, m, 2, ir, invert=True, channels=std), mat.MapRef(1, 1.0, True))
+        self.assertIsNone(mat._std_map(conv, m, 8, ir, channels=std))
+        self.assertIn("map channel 8: object 9 is not a map", ir.issues[0])
+        self.assertIsNone(mat._std_map(conv, m, 9, ir, channels=std))  # a map, switched off
+
 
 class StandardMaps(unittest.TestCase, Close):
     """tools/fixtures/standard_maps.ms: a Standard material per shader with a Checker in every channel the rule

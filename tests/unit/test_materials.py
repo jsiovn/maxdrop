@@ -713,7 +713,7 @@ class StandardMaps(unittest.TestCase):
 
     def test_channels(self):
         std = self.std(std_scene(u32(0x5003, 0b1010), f32(0x5101, 0.25), f32(0x5108, 0.3)))
-        self.assertEqual(std.maps, {1: 3})  # reference 5 holds no map: channel 2 has none
+        self.assertEqual(std.maps, {1: 3, 2: 4})  # as stored: object 4, not a map, is convert's to refuse
         self.assertEqual(std.channel(1), (3, True, 0.25))
         self.assertEqual(std.channel(3), (None, True, 1.0))  # switched on without a map
         index, on, amount = std.channel(8)

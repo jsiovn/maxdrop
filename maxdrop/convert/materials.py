@@ -842,7 +842,8 @@ def _std_map(conv, m, slot, ir, invert=False, channels=None):
         index, on, amount = channels.channel(slot)
         if index is None or not on:
             return None
-        return MapRef(index, max(0.0, float(amount)) if _finite(amount) else 1.0, invert)
+        amount = max(0.0, float(amount)) if _finite(amount) else 1.0
+        return conv.to_map(m, pblock.Reference(index), "map channel %d" % slot, amount, invert, ir)
     on = m.param(0, 3, tab=slot)
     if _finite(on) and not on:
         return None
