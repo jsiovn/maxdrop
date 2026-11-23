@@ -2118,15 +2118,15 @@ class Assign(unittest.TestCase):
             objs += [_multi(24, entries(plain + [None]))]
             objs += [_wrapper(30, classids.VRAY_MTL_WRAPPER, {0: Ref(rng.choice(plain))}),
                      _wrapper(31, classids.VRAY_2SIDED_MTL, {0: Ref(rng.choice(plain))})]
-            users = list(range(1, rng.randint(2, 9)))
-            materials = {u: rng.choice([None, 10, 20, 21, 22, 23, 30]) for u in users}
+            users = list(range(1, rng.randint(1, 9)))  # none at times
+            materials = {u: rng.choice([None, 10, 20, 21, 22, 23, 30]) for u in users if rng.random() > 0.1}
             splines = [tuple(rng.sample(range(9), rng.randint(1, 4))) for _ in range(rng.randint(1, 8))]
             cd = types.SimpleNamespace(users=users, splines=[_spline(t) for t in splines])
             convs = [mat.MaterialConverter(FakeGraph(*objs)) for _ in range(2)]
             for conv in convs:  # the slots' IDs peeled, as _group leaves them
                 for t in splines[::2]:
                     for u in users:
-                        conv.material_for(materials[u], t[0])
+                        conv.material_for(materials.get(u), t[0])
             want = reference(cd, materials, convs[0])
             self.assertEqual(mat._mixed(cd, materials, convs[1]), want, seed)
             outcomes.add(want is None)
