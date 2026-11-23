@@ -476,9 +476,12 @@ def rim_corners(positions, loop_vertices, loop_starts, loop_totals, angle, check
         check()
     parts = []
     for a in range(0, len(lv), chunk):
-        touching = numpy.flatnonzero(slot[lv[a:a + chunk]] >= 0) + a
+        # int32 like starts: searchsorted would copy starts to int64 on every chunk
+        touching = (numpy.flatnonzero(slot[lv[a:a + chunk]] >= 0) + a).astype(numpy.int32)
         parts.append(numpy.unique(numpy.searchsorted(starts, touching, side="right") - 1).astype(numpy.int32))
-    faces = numpy.unique(numpy.concatenate(parts))  # the faces with a corner on the boundary, int32
+        if check is not None:
+            check()
+    faces = numpy.unique(numpy.concatenate(parts))
     del parts
     sizes = totals[faces]
     ends = numpy.cumsum(sizes, dtype=numpy.int32)  # those faces' corners one after the other: where each ends
@@ -486,7 +489,7 @@ def rim_corners(positions, loop_vertices, loop_starts, loop_totals, angle, check
     def corners(a):
         """(own, fl, fn) of the corners a to a + chunk of the boundary faces: the face among them, the loop and the
         next loop of its face."""
-        k = numpy.arange(a, min(a + chunk, int(ends[-1])), dtype=numpy.int64)
+        k = numpy.arange(a, min(a + chunk, int(ends[-1])), dtype=numpy.int32)  # as ends, for searchsorted
         own = numpy.searchsorted(ends, k, side="right")
         first = starts[faces[own]].astype(numpy.int64)
         fl = first + (k - (ends[own] - sizes[own]))

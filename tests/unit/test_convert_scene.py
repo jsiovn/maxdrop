@@ -464,8 +464,10 @@ class RimCornersPeak(unittest.TestCase):
                 if name in given or not isinstance(value, numpy.ndarray):
                     continue
                 seen.append(name)
-                if value.dtype.kind in "iub" and value.size > chunk:
+                if value.dtype.kind in "iu" and value.size > chunk:
                     self.assertEqual(value.dtype, numpy.int32, name)
+                elif value.dtype.kind == "b":
+                    self.assertLessEqual(value.size, chunk, name)
                 elif value.dtype.kind == "f" and value.size > 3 * chunk:
                     self.assertIn(name, ("p", "normals", "at_vertex"), name)
 
@@ -474,6 +476,9 @@ class RimCornersPeak(unittest.TestCase):
         self.assertTrue({"slot", "oa", "ob", "faces"} <= set(seen), seen)
 
     def test_peak_at_open_loops_level(self):
+        # rim_corners calls _open_loops, so the peak is at least its own; past it, at_vertex (24 bytes per boundary
+        # vertex) and one chunk's temporaries reach about 1.02 x at this size: 1.25 leaves room for numpy versions,
+        # the old body was 3.5 to 4.7 x
         import tracemalloc
         for mesh in (_rim_strip(200000), _rim_soup(200000)):
             lv, starts, totals = mesh[1:]
