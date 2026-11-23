@@ -2229,7 +2229,6 @@ class CoronaSynthetic(unittest.TestCase, Close):
         self.assertEqual(mat.shadow_catcher_users(mat.MeshSlots([10], [], None)), [], "no slot, no catcher")
 
 
-@unittest.skipIf(numpy is None, "numpy missing")  # assign() and the mesh reader need it
 class CoronaLegacyGloss(unittest.TestCase, Close):
     """CORONA_LEGACY_GLOSS: CoronaLegacyMtl glossiness with PBR mode off as the roughness of the PBR-mode glossiness
     whose highlight Corona 12 renders alike (maxdrop-em3.115)."""
@@ -2249,6 +2248,7 @@ class CoronaLegacyGloss(unittest.TestCase, Close):
         self.assertTrue(all(a >= b for a, b in zip(rs, rs[1:])))
 
 
+@unittest.skipIf(numpy is None, "numpy missing")  # assign() and the mesh reader need it
 class Assign(unittest.TestCase):
     def names(self, slots):
         return [[ir and ir.name for ir in s] for s in slots]

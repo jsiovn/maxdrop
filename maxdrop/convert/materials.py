@@ -1056,10 +1056,10 @@ def corona_physical_mtl(conv, m, ir):
     461 iorMode (Corona 12 renders, maxdrop-em3.115): 0 the IOR parameters (171, 221) are IORs; 1 they are specular
     levels, F0 = CORONA_SPECULAR_F0 x level (MAXScript's setter converts them on a mode change); 2 renders as an IOR
     (not a mode the UI offers): named. No IOR reflects more than F0 CORONA_MAX_F0 (IOR 3); only the specular levels are
-    capped here (an IOR above 3, or below 1, which reflects as its reciprocal, is left to Blender). Translucency only
-    works in thin mode (fraction 0.5 without it: no light through). The edge color is not Blender's Specular Tint: a
-    white edge brightens the grazing reflection above Schlick, a black one darkens it, and the default 0.75 is close
-    to Schlick; no single tint, Gulbrandsen edge tint or conductor fits the renders (FORMAT.md)."""
+    capped here (an IOR above 3 is left to Blender; one below 1, which reflects as its reciprocal, is clamped to 1).
+    Translucency only works in thin mode (fraction 0.5 without it: no light through). The edge color is not Blender's
+    Specular Tint: a white edge brightens the grazing reflection above Schlick, a black one darkens it, and the default
+    0.75 is close to Schlick; no single tint, Gulbrandsen edge tint or conductor fits the renders (FORMAT.md)."""
     gloss = m.param(421, 0) == 1
     ior_mode = m.param(461, 0)
     level = max(0.0, _num(m, 102, 0, 1.0))
@@ -1076,7 +1076,7 @@ def corona_physical_mtl(conv, m, ir):
     ir.ior = _corona_ior(m, 171, ior_mode)
     ir.specular = Input(1.0)  # no reflection level in the pblock: the IOR's own Fresnel
     if ior_mode not in (None, 0, 1):
-        conv.issue(m.index, "CoronaPhysicalMtl %r: IOR mode %r read as an IOR" % (m.name, ior_mode), ir)
+        conv.issue(m.index, "CoronaPhysicalMtl %r: unknown IOR mode %r read as an IOR" % (m.name, ior_mode), ir)
     ir.thin_walled = thin
     opacity = _clamp01(conv.mono_swatch(m, 121, 0, (1.0, 1.0, 1.0)) * max(0.0, _num(m, 122, 0, 1.0)))
     ir.alpha = Input(opacity, _corona_amount_map(conv, m, 123, ir))

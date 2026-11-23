@@ -2,7 +2,7 @@
 --
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
--- Three Editable Poly boxes with a CoronaPhysicalMtl each. FixtureCoronaPhysRough: roughness mode, a dielectric
+-- Five Editable Poly boxes with a CoronaPhysicalMtl each. FixtureCoronaPhysRough: roughness mode, a dielectric
 -- with base level, IOR, clearcoat (amount, IOR, roughness, absorption color), self-illumination and opacity.
 -- FixtureCoronaPhysGloss: glossiness mode, metal, a clearcoat. FixtureCoronaPhysGlass: refraction in thin mode
 -- with a thin absorption color. FixtureCoronaPhysSpec: IOR mode 1 (specular levels in the base and clearcoat IORs).

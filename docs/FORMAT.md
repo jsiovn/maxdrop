@@ -1906,8 +1906,8 @@ pass and a time limit, read with `getPixels ... linear:true` (a CoronaLightMtl p
   specular level, F0 = 0.08 x level (0.5 is F0 0.04, IOR 1.5), and the file stores the level (MAXScript's setter
   converts both on a mode change: set the mode before the values); 2 renders as an IOR (not a mode the UI offers).
   No base IOR reflects more than F0 0.25 (IOR 3: an IOR of 4 or 10 and a specular of 4 all give 0.25), and an IOR
-  below 1 reflects as its reciprocal (0.5 as 2); MaxDrop caps only the specular levels. The renderer's defautIorMode
-  only picks a new material's mode.
+  below 1 reflects as its reciprocal (0.5 as 2); MaxDrop caps only the specular levels (an IOR below 1 is clamped
+  to 1). The renderer's `defautIorMode` (Corona's spelling) only picks a new material's mode.
 - CoronaPhysicalMtl edgeColor (161) on a metal (spheres under a white background, roughness 0, read along a row):
   per channel, a white edge brightens the grazing reflection above Schlick's and a black one darkens it (base 230 /
   153 / 77 at 82 degrees: Schlick 0.947 / 0.785 / 0.625; edge black 0.741 / 0.513 / 0.521, the default 0.75 0.938 /
