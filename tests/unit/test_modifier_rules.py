@@ -17,6 +17,7 @@ import importlib
 import math
 import os
 import sys
+import time
 import types
 import unittest
 
@@ -588,8 +589,17 @@ class Rim(unittest.TestCase):
             got = conv.rim_issues(half, auto, mirrors=(_mirror_md(), _mirror_md(axis=1)))
         finally:
             conv.MAX_MIRRORED_CORNERS = cap
-        self.assertEqual(got, ["auto smooth: the rim's corners not counted: with its 3 mirrored copies the mesh would "
-                               "pass 8 face corners"])
+        self.assertEqual(got, ["auto smooth: the rim's corners not counted: with its copies under 2 Symmetries the "
+                               "mesh would pass 8 face corners"])
+        # forty Symmetries at distinct planes: the copies tested stop doubling (MAX_MIRROR_IMAGES), quickly
+        many = tuple(_mirror_md(frame=((1.0, 0.0, 0.0, 7.0 + k), (0.0, 1.0, 0.0, 0.0), (0.0, 0.0, 1.0, 0.0),
+                                       (0.0, 0.0, 0.0, 1.0))) for k in range(40))
+        start = time.perf_counter()
+        got = conv._rim_edges(plane, many)  # copies of the quad's sides land on later planes: some weld
+        calls = []
+        self.assertEqual(conv._rim_edges(plane, many, check=lambda: calls.append(1)).tolist(), got.tolist())
+        self.assertGreaterEqual(len(calls), 40)
+        self.assertLess(time.perf_counter() - start, 5.0)
 
 
 if __name__ == "__main__":

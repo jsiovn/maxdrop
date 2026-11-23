@@ -759,8 +759,8 @@ What 3ds Max 2020 makes, against Blender's evaluated meshes (`tests/blender/run.
   the plane: 0.049 off the plane welds at 0.1, 0.051 does not). Measured on half and quarter boxes (FixtureShellSymHalf
   (0, 11, 40), FixtureShellSymClosed (0, 12, 40), FixtureShellSymQuarter with two Symmetries (0, 11, 40); also a
   TurboSmooth between the Symmetry and the Shell, the cut 0.04 off the plane, the rim crossing the plane) Blender 4.2,
-  4.5 and 5.2 give 3ds Max's counts; all open edges sharp give a seam (the half box 17 regions, 38 hard edges), none
-  the smooth rim (3 and 20). With the weld off the plane's open edges make a rim in both, whose corners against the
+  4.5 and 5.2 give 3ds Max's counts; all open edges sharp give a seam (FixtureShellSymHalf 17 regions, 48 hard edges), none
+  the smooth rim (the probe's half box of 2 segments along X: 3 and 20, 3ds Max 11 and 32). With the weld off the plane's open edges make a rim in both, whose corners against the
   top's are auto smooth's (a line in the report). A Symmetry above the Shell cuts the hardened rim as 3ds Max does
   (the open box: (0, 11, 32) in both, 3ds Max leaving the seam unwelded). What stays different is a line in the
   report, only for a mesh with open edges: auto smooth on and rim corners sharper than its angle (the rim face of

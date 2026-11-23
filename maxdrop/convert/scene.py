@@ -163,6 +163,7 @@ MAX_BUILT_CORNERS = 1 << 24
 # Face corners of a mesh with its copies under the Mirrors below a Shell, counted for the rim's corners (each Mirror
 # doubles them): past it the corners are not counted (a line in the report)
 MAX_MIRRORED_CORNERS = 1 << 22
+MAX_MIRROR_IMAGES = 64  # copies of the open edges tested against the next Mirror below a Shell (_rim_edges)
 _SPENT = "the primitives and extrusions before it reach %d face corners, the budget for one scene"
 SHEAR_TOLERANCE = 1e-5  # |cos| between two rows of a local matrix
 OFFSET = "its object is offset from its pivot: the camera looks from the pivot, 3ds Max from the object"
@@ -1230,22 +1231,23 @@ def _rim_edges(md, mirrors, check=None):
     """The open edges of MeshDescription md that make a rim above the Mirrors mirrors (_mirrors): all but those
     whose two ends a Mirror welds to their copies, the edge's own or one of its copies under the Mirrors below that
     one (the edge and its copy become one, with a face on each side; a copy carries the sharp mark). The copies
-    tested stop once they would pass MAX_MIRRORED_CORNERS positions."""
+    tested stop doubling past MAX_MIRROR_IMAGES, or MAX_MIRRORED_CORNERS positions; check() between the Mirrors."""
     import numpy
     edges = open_edges(md.loop_vertices, md.loop_starts, md.loop_totals, check)
     if not mirrors or not len(edges):
         return edges
     ends = numpy.unique(edges)
     a, b = numpy.searchsorted(ends, edges[:, 0]), numpy.searchsorted(ends, edges[:, 1])
-    images = [numpy.asarray(md.positions, dtype=numpy.float64)[ends]]  # the ends' copies made so far
+    images = numpy.asarray(md.positions, dtype=numpy.float64)[ends][None]  # (copies, ends, 3) made so far
     keep = numpy.ones(len(edges), dtype=bool)
     for m in mirrors:
-        for q in images:
-            w = welded(q, m)
-            keep &= ~(w[a] & w[b])
-        if 2 * len(images) * len(ends) <= MAX_MIRRORED_CORNERS:
+        if check is not None:
+            check()
+        w = welded(images.reshape(-1, 3), m).reshape(len(images), len(ends))
+        keep &= ~(w[:, a] & w[:, b]).any(axis=0)
+        if 2 * len(images) <= MAX_MIRROR_IMAGES and 2 * images.size <= 3 * MAX_MIRRORED_CORNERS:
             r = _reflection(m)
-            images += [q @ r[:3, :3].T + r[:3, 3] for q in images]
+            images = numpy.concatenate((images, images @ r[:3, :3].T + r[:3, 3]))
     return edges[keep]
 
 
@@ -1288,8 +1290,8 @@ def rim_issues(md, rim, check=None, mirrors=()):
         return []
     if rim.auto_smooth:
         if mirrors and len(md.loop_vertices) << len(mirrors) > MAX_MIRRORED_CORNERS:
-            return ["auto smooth: the rim's corners not counted: with its %d mirrored copies the mesh would pass %d "
-                    "face corners" % ((1 << len(mirrors)) - 1, MAX_MIRRORED_CORNERS)]
+            return ["auto smooth: the rim's corners not counted: with its copies under %d Symmetries the mesh would "
+                    "pass %d face corners" % (len(mirrors), MAX_MIRRORED_CORNERS)]
         mesh = _mirrored(md, mirrors, check) if mirrors else (md.positions, md.loop_vertices, md.loop_starts,
                                                                md.loop_totals)
         n = rim_corners(*mesh, rim.angle, check)
