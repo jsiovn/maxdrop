@@ -34,9 +34,15 @@ Constants are linear, a swatch made so by the scene's swatch rule (convert/color
 sRGB curve with it off): in a COLOR graph always linear RGB (also when the input itself is a float, as specular and
 transmission are: the builder takes the mean of the graph's color there, the measure materials.py uses); in a MASK
 graph a float, the scene's rule applied to the mean of the swatch (V-Ray 5.2 renders a red mask as 1 / 3 before any
-gamma; TexmapConverter._swatch); in a DATA, BUMP or NORMAL graph the mean of the swatch as stored, whatever the
-gamma (a grey 64 VRayColor renders glossiness 0.251 in both modes); the mean of the color for one that is linear already
-(CoronaColor's HDR color; its temperature with the gamma on). With the gamma off V-Ray mixes display values, so a
+gamma; TexmapConverter._swatch); in a DATA or BUMP graph the mean of the swatch as stored, whatever the gamma (a grey
+64 VRayColor renders glossiness 0.251 in both modes); the mean of the color for one that is linear already
+(CoronaColor's HDR color; its temperature with the gamma on). In a NORMAL graph, and below a wrapper that works on
+color (an RGB Tint other than the identity, an Output part that changes anything, a Color Correction) in a DATA or
+BUMP graph (the kinds DATA_RGB and BUMP_RGB, rgb_kind), a swatch keeps its three channels as stored, and so do the
+Tint's rows: V-Ray tints the color and takes the mean after (an empty RGB Tint of rows 128 / 64 / 32 renders 0.293
+on opacity with the gamma off, the mean of the stored rows; maxdrop-em3.76, em3.128), the builder takes it at the
+float input. Images and masks below such a wrapper are as in DATA / BUMP (base_kind; which output the wrapper asks
+an image for is not measured); a MASK graph keeps its rule of the mean below a wrapper too. With the gamma off V-Ray mixes display values, so a
 mask between two colors is approximated (a 0.502 mask between grey 40 and 220 renders 0.511, shown from 0.225
 linear; MaxDrop's decoded mask gives 0.171).
 
@@ -96,8 +102,9 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
   else the unoccluded color), VRayColor2Bump (its map). An Output or RGB Tint without a map (or with it off) is
   drawn as over a white map, its own Output or tint applied; a VRayColor2Bump without a map (it has no switch) is
   the constant (0.5, 0.5, 1); neither is counted (3ds Max 2020 renderMap and V-Ray 5.2 renders with the gamma off,
-  maxdrop-em3.76; with it on assumed the same swatch, Corona not measured). In a normal map's normal slot none of
-  them gives a graph (an issue): V-Ray tilts the normal by that white. Any other map class with maps below gives the
+  maxdrop-em3.76; with it on assumed the same swatch, Corona not measured). In a normal map's normal slot that color
+  as stored, drawn: V-Ray tilts the normal by the white as by a white map, (0.5, 0.5, 1) is flat (maxdrop-em3.128).
+  Any other map class with maps below gives the
   first image below it (depth first, in reference order), counted the same way; one without is unsupported
   (counted, no graph).
 - Normal maps (VRayNormalMap, Normal Bump, CoronaNormal) in a normal or bump input -> NormalMap: the normal image
@@ -140,6 +147,12 @@ ChunkError = chunks.ChunkError
 
 COLOR, DATA, MASK, NORMAL, BUMP = "color", "data", "mask", "normal", "bump"
 FLOATS = (DATA, MASK)  # the kinds a map gives one number to: its mono output
+# The input of a wrapper that works on color (RGB Tint, an Output part, Color Correction) in a data or bump graph:
+# a swatch keeps its channels as stored, images and masks below are as in DATA / BUMP (rgb_kind, base_kind).
+DATA_RGB, BUMP_RGB = "data rgb", "bump rgb"
+_RGB_KINDS = {DATA: DATA_RGB, BUMP: BUMP_RGB}
+_BASE_KINDS = {v: k for k, v in _RGB_KINDS.items()}
+STORED_RGB = (DATA_RGB, BUMP_RGB, NORMAL)  # the kinds whose swatch is its three channels as stored
 SRGB, NON_COLOR, LINEAR = "sRGB", "Non-Color", "Linear Rec.709"  # Blender color space names
 EXPLICIT, OBJECT_XYZ, VERTEX_COLOR, WORLD_XYZ = (  # Placement coordinate source
     reader_materials.UV_EXPLICIT, reader_materials.UV_OBJECT_XYZ, reader_materials.UV_VERTEX_COLOR,
@@ -629,6 +642,23 @@ def _old(part, index, default):
     return float(v) if _finite(v) else default
 
 
+def rgb_kind(kind):
+    """The kind of a color wrapper's input below a map of that kind: DATA_RGB in a data graph, BUMP_RGB in a height,
+    the kind itself elsewhere (a color, a normal; a mask keeps its rule of the mean)."""
+    return _RGB_KINDS.get(kind, kind)
+
+
+def base_kind(kind):
+    """The kind an image or a normal map class below takes: DATA for DATA_RGB, BUMP for BUMP_RGB."""
+    return _BASE_KINDS.get(kind, kind)
+
+
+def _linear(rgb, kind):
+    """A linear color (not a swatch) as a Constant of the input's kind: its channels in a color input and where a
+    swatch keeps its channels (STORED_RGB), else their mean."""
+    return Constant(tuple(rgb) if kind == COLOR or kind in STORED_RGB else sum(rgb) / 3.0)
+
+
 def colorspace(kind, gamma, stored=False):
     """The color space of an image in an input of that kind read with that gamma (None: automatic, sRGB); stored:
     the map reads its pixels as stored in this scene (a Bitmap, or a VRayBitmap From 3ds Max, with the gamma off),
@@ -857,13 +887,18 @@ class TexmapConverter:
     def _swatch(self, rgb, kind):
         """A swatch (0..1 per channel) as a Constant of the input's kind: on a color input the linear color; on a mask
         in a color graph the scene's rule applied to the mean of the swatch (maxdrop-em3.36); on a data input (and a
-        height or normal) the mean as stored, whatever the gamma (maxdrop-em3.122). Each channel clamped to 0..1 first.
+        height) the mean as stored, whatever the gamma (maxdrop-em3.122); in a normal input and below a wrapper that
+        works on color in a data graph or a height (STORED_RGB) its channels as stored: the wrapper acts on the color
+        and the mean comes after it, at the float input (maxdrop-em3.128). Each channel clamped to 0..1 first.
         V-Ray 5.2 renders a grey 64 / red VRayColor as glossiness or opacity 0.251 / 0.333 in both modes; as a mask
         between black and white with the gamma off it renders byte 64 / 85, which Blender shows from the decoded number.
         Between two colors V-Ray mixes the display values, so the decoded mask is only close there."""
         if kind == COLOR:
             return Constant(self.swatches.color(rgb))
-        mean = sum(min(1.0, max(0.0, c)) for c in rgb[:3]) / 3.0
+        stored = tuple(min(1.0, max(0.0, c)) for c in rgb[:3])
+        if kind in STORED_RGB:
+            return Constant(stored)
+        mean = sum(stored) / 3.0
         return Constant(self.swatches.channel(mean) if kind == MASK else mean)
 
     def _on(self, m, map_pid, on_pid, tab=0):
@@ -894,6 +929,7 @@ class TexmapConverter:
 
     def _image(self, m, kind, walk):
         """The Image of a Bitmap, CoronaBitmap or VRayBitmap, None (an issue) without a file."""
+        kind = base_kind(kind)  # below a color wrapper in a data graph: a data image (which output it gives: unmeasured)
         key = ClassId(*m.class_id)
         cls, pid = _IMAGE_FILES.get(key, ("Bitmap", BM_FILE))
         entry = self.assets.entry(m.param(pid, 0)) if self.assets is not None else None
@@ -1075,6 +1111,7 @@ class TexmapConverter:
     def _normal(self, m, ids, kind, walk, depth, chain):
         normal = self._sub(m, ids.normal, ids.normal_on, NORMAL, walk, depth, chain)
         bump = self._sub(m, ids.bump, ids.bump_on, BUMP, walk, depth, chain)
+        kind = base_kind(kind)
         if kind not in (NORMAL, BUMP):  # a normal map in a color or data input: its image only
             # a constant (an empty Output in its bump slot) is no image to stand for the normal map's color
             image = next((n for n in (_peeled_image(normal), _peeled_image(bump))
@@ -1213,10 +1250,14 @@ def _mix_curve(conv, m, walk):
     return curve_samples(points) if points is not None else None
 
 
+def _own_part(conv, m):
+    """The TexOutput of the map's own Output part, None when it changes nothing."""
+    return conv._output(next((p for _s, p in sorted(m.parts.items()) if p.superclass == classids.SC_TEXOUTPUT), None))
+
+
 def _own_output(conv, m, node):
     """node under the map's own Output part (Adjust) when that changes anything."""
-    part = next((p for _s, p in sorted(m.parts.items()) if p.superclass == classids.SC_TEXOUTPUT), None)
-    out = conv._output(part)
+    out = _own_part(conv, m)
     return node if node is None or out is None else Adjust(node, out)
 
 
@@ -1271,37 +1312,38 @@ C2B_EMPTY = (0.5, 0.5, 1.0)  # what a VRayColor2Bump without a map renders: a fl
 
 
 def _wrapped(conv, m, map_pid, on_pid, kind, walk, depth, chain, empty=WHITE):
-    """The map of a wrapper that has no color of its own (Output, RGB Tint, VRayColor2Bump); without a used map the
-    swatch empty: an Output or RGB Tint renders as over a white map, a VRayColor2Bump the color C2B_EMPTY (3ds Max
-    2020 renderMap and V-Ray 5.2 renders with the gamma off, maxdrop-em3.76; with it on assumed, Corona not
-    measured). In a normal input (a normal map's normal slot) no graph and an issue: V-Ray tilts the normal by an
-    Output's or RGB Tint's white, and a constant there is a float (the mean), so no color would stand for it; a
-    VRayColor2Bump (flat either way) is reported the same, one rule for all three."""
+    """The map of a wrapper that has no color of its own (Output, RGB Tint, VRayColor2Bump), in kind (the caller's
+    rgb_kind when the wrapper changes the color); without a used map the swatch empty: an Output or RGB Tint renders
+    as over a white map, a VRayColor2Bump the color C2B_EMPTY (3ds Max 2020 renderMap and V-Ray 5.2 renders with the
+    gamma off, maxdrop-em3.76; with it on assumed, Corona not measured). In a normal input (a normal map's normal
+    slot) that color as stored: V-Ray tilts the normal by an Output's or RGB Tint's white as by a white map, and
+    leaves it flat for C2B_EMPTY, which the builder draws the same (maxdrop-em3.128)."""
     if conv._on(m, map_pid, on_pid) is None:
-        if kind == NORMAL:
-            conv._issue(walk, m.index, "%s %r: %s in a normal input, not drawn" % (
-                conv._class_name(m), m.name, "no map" if on_pid is None else "no map (or its map off)"))
-            return None
         return conv._swatch(empty, kind)
     return conv._sub(m, map_pid, on_pid, kind, walk, depth, chain)
 
 
 def _output_map(conv, m, kind, walk, depth, chain):
-    """0 map1, 1 map1Enabled; its Output part as an Adjust (its clamp and color map curve are not read)."""
-    return _own_output(conv, m, _wrapped(conv, m, 0, 1, kind, walk, depth, chain))
+    """0 map1, 1 map1Enabled; its Output part as an Adjust (its clamp and color map curve are not read) over its map
+    as a color (rgb_kind); an Output part that changes nothing leaves the map in its own kind, as with no wrapper."""
+    out = _own_part(conv, m)
+    node = _wrapped(conv, m, 0, 1, kind if out is None else rgb_kind(kind), walk, depth, chain)
+    return node if node is None or out is None else Adjust(node, out)
 
 
 def _rgb_tint(conv, m, kind, walk, depth, chain):
-    """0 / 1 / 2 red / green / blue (swatches, made linear), 3 map1, 4 map1Enabled: a Tint unless the identity."""
-    node = _wrapped(conv, m, 3, 4, kind, walk, depth, chain)
-    if node is None:
-        return None
-    tint = tuple(conv._constant(m, pid, COLOR, d).value
+    """0 / 1 / 2 red / green / blue (swatches: made linear in a color graph and a mask, as stored in a data graph, a
+    height or a normal, as every swatch there; em3.76 measured 0.293 on opacity for rows 128 / 64 / 32 over white,
+    gamma off), 3 map1, 4 map1Enabled: a Tint over its map as a color (rgb_kind) unless the identity, which leaves
+    the map in its own kind."""
+    rows = COLOR if kind in (COLOR, MASK) else rgb_kind(kind)
+    tint = tuple(conv._constant(m, pid, rows, d).value
                  for pid, d in ((TINT_RED, (1.0, 0.0, 0.0)), (TINT_GREEN, (0.0, 1.0, 0.0)),
                                 (TINT_BLUE, (0.0, 0.0, 1.0))))
     if all(abs(c - (1.0 if i == j else 0.0)) <= 1e-6 for j, row in enumerate(tint) for i, c in enumerate(row)):
-        return node
-    return Tint(node, *tint)
+        return _wrapped(conv, m, 3, 4, kind, walk, depth, chain)
+    node = _wrapped(conv, m, 3, 4, rgb_kind(kind), walk, depth, chain)
+    return None if node is None else Tint(node, *tint)
 
 
 def _color2bump(conv, m, kind, walk, depth, chain):
@@ -1391,12 +1433,13 @@ def _rgb_multiply(conv, m, kind, walk, depth, chain):
 def _color_correction(conv, m, kind, walk, depth, chain):
     """0 color, 1 map, 2 rewireMode, 7 hueShift (degrees), 8 saturation (%), 10 tintStrength, 11 lightnessMode
     (0 standard: 12 brightness, 13 contrast; 1 advanced: 18 gainRGB (%), 22 gammaRGB, 26 pivotRGB, 30 liftRGB).
-    Its color only without a map (3ds Max's rule): a map that converts to nothing leaves the input its own value."""
-    node = conv._sub(m, 1, None, kind, walk, depth, chain)
+    Its color only without a map (3ds Max's rule): a map that converts to nothing leaves the input its own value.
+    The map and the color are a color (rgb_kind): the correction acts on it, a float input takes the mean after."""
+    node = conv._sub(m, 1, None, rgb_kind(kind), walk, depth, chain)
     if node is None:
         if conv._on(m, 1, None) is not None:
             return None
-        node = conv._constant(m, 0, kind, (0.0, 0.0, 0.0))
+        node = conv._constant(m, 0, rgb_kind(kind), (0.0, 0.0, 0.0))
     if _num(m, 10, 0.0) != 0.0:
         walk.approximated = True
         conv._issue(walk, m.index, "Color Correction %r: tint not converted" % (m.name,))
@@ -1503,13 +1546,13 @@ def _corona_color(conv, m, kind, walk, depth, chain):
     method, mult = m.param(CC_METHOD, 0), max(0.0, _num(m, CC_MULTIPLIER, 1.0))
     if method == 1:
         rgb = tuple(max(0.0, c) * mult for c in _vec(m, CC_HDR, (1.0, 1.0, 1.0)))
-        return Constant(rgb if kind == COLOR else sum(rgb) / 3.0)
+        return _linear(rgb, kind)
     swatch = None
     if method == 2:
         lin = tuple(c * mult for c in corona_kelvin(_num(m, CC_TEMPERATURE, 6500.0)))
         if not conv.swatches.linear:
             return conv._swatch(lin, kind)
-        return Constant(lin if kind == COLOR else sum(lin) / 3.0)
+        return _linear(lin, kind)
     if method == 3:
         swatch = _hex_rgb(m.param(CC_HEX, 0))
         if swatch is None:

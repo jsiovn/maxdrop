@@ -1865,30 +1865,29 @@ class LostMaps(Checks):
         self.assertEqual(g.root, tx.Tint(tx.Constant((1.0, 1.0, 1.0)), (0.5, 0.0, 0.0), (0.0, 0.25, 0.0),
                                          (0.0, 0.0, 0.125)))
         self.assertEqual(tex.stats.issues, [])
-        g = tex.convert(mat.MapRef(1), tx.DATA)  # the builder takes the mean of the Tint's color
-        self.assertEqual(g.root, tx.Tint(tx.Constant(1.0), (0.5, 0.0, 0.0), (0.0, 0.25, 0.0), (0.0, 0.0, 0.125)))
+        g = tex.convert(mat.MapRef(1), tx.DATA)  # the builder takes the mean of the Tint's color (maxdrop-em3.128)
+        self.assertEqual(g.root, tx.Tint(tx.Constant((1.0, 1.0, 1.0)), (0.5, 0.0, 0.0), (0.0, 0.25, 0.0),
+                                         (0.0, 0.0, 0.125)))
 
-    def test_empty_wrapper_in_a_normal_input(self):
-        """In a normal map's normal slot V-Ray tilts the normal by the white, and a constant there is a float: no
-        graph and an issue, also below another wrapper (which loses its map)."""
-        for class_id, cls, pid, _on, _rgb in self.EMPTY_WRAPPERS:
-            with self.subTest(cls=cls):
-                tex = _tex(FakeMap(1, class_id, {pid: Ref(None)}, cls=cls, name="w"))
-                self.assertIsNone(tex.convert(mat.MapRef(1), tx.NORMAL))
-                self.assertEqual([r for _i, r in tex.stats.issues],
-                                 ["%s 'w': %s in a normal input, not drawn" % (
-                                     cls, "no map" if class_id == tx.VRAY_COLOR2BUMP else "no map (or its map off)")])
-                tex.convert(mat.MapRef(1), tx.COLOR)
-                self.assertEqual(len(tex.stats.issues), 1, "in a color input: none")
+    def test_empty_wrapper_in_a_normal_input_is_drawn(self):
+        """In a normal map's normal slot V-Ray tilts the normal by an empty Output's or RGB Tint's white (as by a white
+        map) and leaves it flat for VRayColor2Bump's (0.5, 0.5, 1): the color as stored, drawn by the builder
+        (maxdrop-em3.128), also below another wrapper."""
+        for class_id, cls, pid, _on, rgb in self.EMPTY_WRAPPERS:
+            for swatches in (colors.GAMMA_OFF, colors.GAMMA_ON):
+                with self.subTest(cls=cls, linear=swatches.linear):
+                    tex = tx.TexmapConverter(FakeGraph(FakeMap(1, class_id, {pid: Ref(None)}, cls=cls, name="w")),
+                                             _table(), swatches=swatches)
+                    self.assertEqual(tex.convert(mat.MapRef(1), tx.NORMAL).root, tx.NormalMap(tx.Constant(rgb)))
+                    self.assertEqual(tex.stats.issues, [])
         out = FakeMap(1, tx.OUTPUT, {0: Ref(2)}, [2], cls="Output", name="out")
         part = FakeMap(5, (0x100, 0), superclass=classids.SC_TEXOUTPUT)
         part.legacy = {0: {0: 0.8, 1: 0.1, 2: 0.5}}
         out.parts = {2: part}
         tex = _tex(out, FakeMap(2, tx.VRAY_COLOR2BUMP, {0: Ref(None)}, cls="VRayColor2Bump", name="c2b"))
-        self.assertIsNone(tex.convert(mat.MapRef(1), tx.NORMAL))
-        issues = [r for _i, r in tex.stats.issues]
-        self.assertIn("VRayColor2Bump 'c2b': no map in a normal input, not drawn", issues)
-        self.assertIn("Output 'out': its map VRayColor2Bump 'c2b' converts to nothing", issues)
+        g = tex.convert(mat.MapRef(1), tx.NORMAL)
+        self.assertEqual(g.root.input, tx.Adjust(tx.Constant((0.5, 0.5, 1.0)), tx.TexOutput(False, 0.5, 0.8, 0.1)))
+        self.assertEqual(tex.stats.issues, [])
 
     def test_empty_wrapper_in_a_normal_map_class(self):
         empty = FakeMap(2, tx.OUTPUT, {0: Ref(None)}, cls="Output", name="out")
@@ -1897,7 +1896,9 @@ class LostMaps(Checks):
         g = _tex(nm, empty, _bitmap(3)).convert(mat.MapRef(1), tx.COLOR)
         self.assertEqual(g.root.name, "a.png", "in a color input: the bump image, not the empty normal slot")
         g = _tex(nm, empty, _bitmap(3)).convert(mat.MapRef(1), tx.NORMAL)
-        self.assertIsInstance(g.root, tx.Bump, "the normal slot not drawn: the bump map alone")
+        self.assertIsInstance(g.root, tx.NormalMap, "the normal slot drawn: its white, with the bump map")
+        self.assertEqual(g.root.input, tx.Constant((1.0, 1.0, 1.0)))
+        self.assertEqual(g.root.bump.input.name, "a.png")
         nm = FakeMap(1, classids.VRAY_NORMAL_MAP, {0: Ref(None), 4: Ref(2), 5: 1, 6: 1.0}, [2], cls="VRayNormalMap")
         tex = _tex(nm, empty)
         self.assertIsNone(tex.convert(mat.MapRef(1), tx.COLOR), "an empty Output in its bump slot is no image")
@@ -1963,6 +1964,144 @@ class LostMaps(Checks):
         reasons = [r for _i, r in tex.stats.issues]
         self.assertTrue(any("object 7 is not a map" in r for r in reasons), reasons)
         self.assertFalse(any("converts to nothing" in r for r in reasons), "named once, by the reference")
+
+
+def _rgb(value):
+    return tuple(value) if isinstance(value, tuple) else (value,) * 3
+
+
+def _tinted_mean(tint):
+    """What V-Ray gives a data input from a Tint over a Constant (maxdrop-em3.76): the tint of its color, then the
+    mean; what the builder draws (tint() in color, the mean on the float input)."""
+    r, g, b = _rgb(tint.input.value)
+    return sum(r * tint.red[k] + g * tint.green[k] + b * tint.blue[k] for k in range(3)) / 3.0
+
+
+# rows 128 / 64 / 32 of em3.76's measured RGB Tint, as stored
+ROWS = {0: (128 / 255, 0.0, 0.0), 1: (0.0, 64 / 255, 0.0), 2: (0.0, 0.0, 32 / 255)}
+STORED_ROWS = ((128 / 255, 0.0, 0.0), (0.0, 64 / 255, 0.0), (0.0, 0.0, 32 / 255))
+RULES = (colors.GAMMA_OFF, colors.GAMMA_ON)
+
+
+def _wtint(index, map_ref=None, rows=ROWS):
+    params = dict(rows)
+    params[3] = Ref(map_ref)
+    return FakeMap(index, tx.RGB_TINT, params, [map_ref] if map_ref is not None else [], cls="RGB Tint", name="t")
+
+
+def _vcolor(index, rgb):
+    return FakeMap(index, classids.VRAY_COLOR, {tx.VC_COLOR: rgb}, cls="VRayColor", name="vc")
+
+
+def _vnormal(index, normal):
+    return FakeMap(index, classids.VRAY_NORMAL_MAP, {0: Ref(normal), 2: 1, 3: 1.0}, [normal], cls="VRayNormalMap")
+
+
+class WrapperConstants(Checks):
+    """A constant below a wrapper that works on color (RGB Tint, Output, Color Correction) in a data, bump or normal
+    input keeps its channels as stored, and so do the Tint's rows (maxdrop-em3.128): V-Ray tints the color and takes
+    the mean after (em3.76: 0.293 for the rows 128 / 64 / 32 over white, gamma off), and a data input takes swatches
+    as stored in both modes (em3.122). Every case runs under GAMMA_OFF, where stored and decoded differ."""
+
+    def convert(self, swatches, kind, *objects):
+        tex = tx.TexmapConverter(FakeGraph(*objects), _table(), swatches=swatches)
+        return tex, tex.convert(mat.MapRef(1), kind)
+
+    def test_tint_rows_stored_in_data(self):
+        for rule in RULES:
+            with self.subTest(linear=rule.linear):
+                tex, g = self.convert(rule, tx.DATA, _wtint(1))
+                self.assertEqual(g.root.input, tx.Constant((1.0, 1.0, 1.0)))
+                self.close((g.root.red, g.root.green, g.root.blue), STORED_ROWS)
+                self.close(_tinted_mean(g.root), 224 / 3 / 255, "em3.76: 0.293 measured on opacity")
+                self.assertAlmostEqual(_tinted_mean(g.root), 0.293, delta=0.001)
+                self.assertEqual(tex.stats.issues, [])
+                _t, g = self.convert(rule, tx.COLOR, _wtint(1))
+                self.close(g.root.red, rule.color(STORED_ROWS[0]), "a color input: the rows decoded by the rule")
+                _t, g = self.convert(rule, tx.BUMP, _wtint(1))
+                self.close(g.root.input.input.value, (1.0, 1.0, 1.0), "a height: the same rule")
+
+    def test_tint_over_a_color_constant(self):
+        for rule in RULES:
+            for below, rgb in ((FakeMap(2, tx.VRAY_COLOR2BUMP, {0: Ref(None)}, cls="VRayColor2Bump"),
+                                (0.5, 0.5, 1.0)), (_vcolor(2, (1.0, 0.0, 0.0)), (1.0, 0.0, 0.0))):
+                with self.subTest(linear=rule.linear, below=below.cls):
+                    tex, g = self.convert(rule, tx.DATA, _wtint(1, 2), below)
+                    self.assertEqual(g.root.input, tx.Constant(rgb), "the color below the Tint, as stored")
+                    want = sum(rgb[0] * STORED_ROWS[0][k] + rgb[1] * STORED_ROWS[1][k] + rgb[2] * STORED_ROWS[2][k]
+                               for k in range(3)) / 3.0
+                    self.close(_tinted_mean(g.root), want, "tinted, then the mean")
+                    grey = sum(rgb) / 3.0 * sum(map(sum, STORED_ROWS)) / 3.0
+                    self.assertGreater(abs(want - grey), 0.01, "not the tint of the grey")
+                    self.assertEqual(tex.stats.issues, [])
+                    _t, g = self.convert(rule, tx.NORMAL, _vnormal(1, 3), _wtint(3, 2), below)
+                    self.assertIsInstance(g.root, tx.NormalMap)
+                    self.assertEqual(g.root.input.input, tx.Constant(rgb), "a normal input: the color as stored")
+                    self.close((g.root.input.red, g.root.input.green, g.root.input.blue), STORED_ROWS)
+
+    def test_identity_wrapper_keeps_the_bare_rule(self):
+        identity = {0: (1.0, 0.0, 0.0), 1: (0.0, 1.0, 0.0), 2: (0.0, 0.0, 1.0)}
+        for rule in RULES:
+            for kind in (tx.DATA, tx.BUMP):
+                with self.subTest(linear=rule.linear, kind=kind):
+                    bare = self.convert(rule, kind, _vcolor(1, (0.25, 0.5, 1.0)))[1].root
+                    tint = self.convert(rule, kind, _wtint(1, 2, identity), _vcolor(2, (0.25, 0.5, 1.0)))[1].root
+                    out = self.convert(rule, kind, FakeMap(1, tx.OUTPUT, {0: Ref(2)}, [2], cls="Output"),
+                                       _vcolor(2, (0.25, 0.5, 1.0)))[1].root
+                    self.assertEqual(tint, bare, "an identity Tint is no wrapper between")
+                    self.assertEqual(out, bare, "an Output that changes nothing is no wrapper between")
+                    want = tx.Bump(tx.Constant(1.75 / 3.0)) if kind == tx.BUMP else tx.Constant(1.75 / 3.0)
+                    self.assertEqual(bare, want)
+        for rule in RULES:
+            with self.subTest(linear=rule.linear, output="levels"):
+                out = FakeMap(1, tx.OUTPUT, {0: Ref(2)}, [2], cls="Output")
+                part = FakeMap(5, (0x100, 0), superclass=classids.SC_TEXOUTPUT)
+                part.legacy = {0: {0: 0.8, 1: 0.1, 2: 0.5}}
+                out.parts = {2: part}
+                g = self.convert(rule, tx.DATA, out, _vcolor(2, (0.25, 0.5, 1.0)))[1]
+                self.assertEqual(g.root, tx.Adjust(tx.Constant((0.25, 0.5, 1.0)), tx.TexOutput(False, 0.5, 0.8, 0.1)))
+
+    def test_color_correction_constant_keeps_color(self):
+        for rule in RULES:
+            with self.subTest(linear=rule.linear):
+                cc = FakeMap(1, tx.COLOR_CORRECTION, {0: (1.0, 0.0, 0.0), 8: -100.0}, cls="Color Correction")
+                g = self.convert(rule, tx.DATA, cc)[1]
+                self.assertEqual(g.root, tx.ColorCorrect(tx.Constant((1.0, 0.0, 0.0)), saturation=0.0))
+                cc = FakeMap(1, tx.COLOR_CORRECTION, {1: Ref(2), 8: -100.0}, [2], cls="Color Correction")
+                g = self.convert(rule, tx.DATA, cc, _vcolor(2, (1.0, 0.0, 0.0)))[1]
+                self.assertEqual(g.root.input, tx.Constant((1.0, 0.0, 0.0)))
+                g = self.convert(rule, tx.COLOR, cc, _vcolor(2, (1.0, 0.0, 0.0)))[1]
+                self.assertEqual(g.root.input, tx.Constant(rule.color((1.0, 0.0, 0.0))), "a color input: unchanged")
+
+    def test_nested_maps_below_a_tint(self):
+        # a Mix of two colors below the Tint: both sides colors, the mask a mono value (DATA)
+        mix = FakeMap(2, tx.MIX, {0: 0.5, 4: (1.0, 0.0, 0.0), 5: (0.0, 0.0, 1.0), 8: Ref(3)}, [3], cls="Mix")
+        tex, g = self.convert(colors.GAMMA_OFF, tx.DATA, _wtint(1, 2), mix, _vcolor(3, (64 / 255,) * 3))
+        self.assertEqual((g.root.input.a, g.root.input.b), (tx.Constant((1.0, 0.0, 0.0)), tx.Constant((0.0, 0.0, 1.0))))
+        self.assertEqual(g.root.input.mask, tx.Constant(64 / 255), "a mask: the mean as stored (DATA)")
+
+    def test_shared_map_bare_and_tinted(self):
+        # one VRayColor on a Mix side at the data root and below a Tint on the other side
+        mix = FakeMap(1, tx.MIX, {0: 0.5, 6: Ref(2), 7: Ref(3)}, [2, 3], cls="Mix")
+        tex, g = self.convert(colors.GAMMA_OFF, tx.DATA, mix, _vcolor(2, (1.0, 0.0, 0.0)), _wtint(3, 2))
+        self.assertEqual(g.root.a, tx.Constant(1.0 / 3.0), "bare: the mean")
+        self.assertEqual(g.root.b.input, tx.Constant((1.0, 0.0, 0.0)), "below the Tint: the color")
+
+    def test_image_below_a_tint_in_data(self):
+        for rule, space in ((colors.GAMMA_OFF, tx.NON_COLOR), (colors.GAMMA_ON, tx.SRGB)):
+            with self.subTest(linear=rule.linear):
+                g = self.convert(rule, tx.DATA, _wtint(1, 2), _bitmap(2))[1]
+                self.image(g.root.input, "a.png", space)  # as a bare data image (em3.122)
+                tex = tx.TexmapConverter(FakeGraph(_bitmap(2)), _table(), swatches=rule)
+                self.assertEqual(g.root.input, tex.convert(mat.MapRef(2), tx.DATA).root, "the same Image")
+
+    def test_normal_constant_is_rgb(self):
+        for rule in RULES:
+            with self.subTest(linear=rule.linear):
+                g = self.convert(rule, tx.NORMAL, _vnormal(1, 2), _vcolor(2, (0.75, 0.5, 1.0)))[1]
+                self.assertEqual(g.root, tx.NormalMap(tx.Constant((0.75, 0.5, 1.0))), "drawn: V-Ray tilts by it")
+                g = self.convert(rule, tx.NORMAL, _vnormal(1, 2), _wtint(2, None))[1]
+                self.assertEqual(g.root.input.input, tx.Constant((1.0, 1.0, 1.0)))
 
 
 class SwatchRule(Checks):
