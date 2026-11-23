@@ -4119,7 +4119,8 @@ def check_builder_clipped_normal():
                                                                                      "ShaderNodeMixRGB")})
             check("builder clipped normal (%s): the image %s, the Normal Map reads its Color %s, black outside, "
                   "nothing mixes toward flat" % (label, ext, "through the Clip node" if axes else "straight"),
-                  tex is not None and tex.extension == ext and _clip_axes_of(tex) == axes and fed and not kinds,
+                  tex is not None and tex.extension == ext and _clip_axes_of(tex) == axes and fed and not kinds
+                  and not nm.inputs["Strength"].is_linked,
                   "%s %s %s %s" % (getattr(tex, "extension", None), _clip_axes_of(tex) if tex else None,
                                    getattr(getattr(src, "from_node", None), "bl_idname", None), kinds))
     finally:
