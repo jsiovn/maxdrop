@@ -2268,7 +2268,7 @@ def check_cancel(textured, other):
         steps.close()
     finally:
         ops._read_scene = real_read
-        for worker in list(ops._WORKERS):
+        for worker in list(ops._WORKERS):  # close() waits only _READ_WAIT: here until the read has ended
             worker.join(60)
     check("cancel: threaded, closed while the worker reads: nothing made",
           waited and saw == [True] and ops._busy() == "" and _state() == before,
