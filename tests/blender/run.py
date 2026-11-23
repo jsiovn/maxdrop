@@ -4057,7 +4057,7 @@ def check_ies_search_stopped(max_path):
         with open(os.path.join(scratch, "fixture_web.ies"), "wb") as f:
             f.write(b"IESNA:LM-63-2002\n[TEST] MaxDrop test\nTILT=NONE\n1 500 1 3 1 1 2 0 0 0\n1 1 0\n0 90 180\n0\n"
                     b"100 100 100\n")
-        stop ="Texture search of the scene's folder stopped after 2 files and folders, in " + scratch
+        stop = "Texture search of the scene's folder stopped after 2 files and folders, in " + scratch
         textures.TextureIndex = Small
         try:
             for label, kwargs in (("without materials", {"object_filter": {'UV'}}), ("with materials", {})):

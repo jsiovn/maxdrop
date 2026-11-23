@@ -491,8 +491,8 @@ def _material_slots(sc, desc, table, index, meters=None):
     texture-map converter's and the texture lookup's counters, the scene's swatch rule) for the import report): every
     material converted, its texture files looked up. sc: the reader Scene, which the converters read; table: the
     file's reader.assets.AssetTable (the one the scene description got); index: the texture lookup
-    (convert.textures.TextureIndex, a share of the import's: its counts are the materials'); meters: per file unit, as the geometry is scaled (lengths such as an SSS radius; None:
-    the file's own unit); the counters hold no reference to either. Touches no Blender data."""
+    (convert.textures.TextureIndex, a share of the import's: its counts are the materials'); meters: per file unit,
+    as the geometry is scaled (lengths such as an SSS radius; None: the file's own unit); the counters hold no reference to either. Touches no Blender data."""
     from .convert import colors as convert_colors
     from .convert import materials as convert_materials
     from .convert import texmaps as convert_texmaps
@@ -863,8 +863,8 @@ def _scene_steps(opts, scene, view_layer, max_path, pack=None, pack_name="", dir
                                      tex_stats=tex_stats, lookup=lookup, sockets=builder.sockets_skipped,
                                      blender=bpy.app.version_string, swatches=swatches,
                                      build_issues=failed + builder.issues())
-    if not rep.texture_search_stopped:  # no materials, or their conversion failed: the IES or dome walk's stop
-        rep.texture_search_stopped = convert_report.search_stopped(read.walk)
+    # the walk every lookup shared (the materials' lookup has the same stops): also without materials
+    rep.texture_search_stopped = convert_report.search_stopped(read.walk)
     del desc
     if axis != Matrix.Identity(4):
         for ob in built.roots():

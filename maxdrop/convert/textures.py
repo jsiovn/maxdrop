@@ -244,6 +244,12 @@ class TextureIndex:
         other.report.truncated = self.report.truncated
         return other
 
+    def stopped_for(self, path, resolved=""):
+        """report.stopped() when the name of a stored path is looked up in the folders (a refused name is not),
+        [] otherwise: where a search for it stopped short, it may be past that."""
+        name = pathnames.base_name(path or "") or pathnames.base_name(resolved or "")
+        return self.report.stopped() if name_refused(name) is None else []
+
     def _roots(self, rule, budget):
         """The folders rule walks, in order, as (folder, whether its subfolders too); (folder, None) when the budget
         ran out while listing folder to find them."""

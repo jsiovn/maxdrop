@@ -277,7 +277,8 @@ class Read(unittest.TestCase):
         asked = []
 
         class Index:
-            report = types.SimpleNamespace(stopped=list)
+            def stopped_for(self, path, resolved=""):
+                return []
 
             def find(self, path, resolved=""):
                 asked.append(path)
@@ -307,6 +308,7 @@ class Read(unittest.TestCase):
                                                          "stopped after 2 files and folders, in {0}; texture search of "
                                                          "maps or textures folders stopped after 2 files and folders, "
                                                          "in {0}".format(os.path.abspath(self.dir))))
+        self.assertEqual(lookup.photometry("a:b.ies"), (None, None))  # a refused name is not searched
         roomy = ies.Lookup(textures.TextureIndex(scene, is_local_drive=lambda path: False))
         self.assertAlmostEqual(roomy.photometry("lamp.ies")[0].flux, ISOTROPIC, delta=1e-9)
         self.assertEqual(roomy.photometry("gone.ies"), (None, None))

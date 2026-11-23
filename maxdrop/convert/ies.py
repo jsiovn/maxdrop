@@ -103,8 +103,9 @@ class _Numbers:
             raise IesError("its %s %g is not a whole number from %d to %d" % (what, v, low, high))
         return int(v)
 
-    def numbers(self, n, what):
-        if not self.has(n):
+    def numbers(self, n, what, counted=False):
+        """The next n numbers; counted: has(n) is known to hold (checked for several lists at once)."""
+        if not counted and not self.has(n):
             raise IesError("the file ends inside its %s" % what)
         values = []
         for m in itertools.islice(_TOKEN.finditer(self.data, self.at), n):
@@ -159,9 +160,9 @@ def parse(data):
         raise IesError("%d x %d candelas are more than %d" % (nv, nh, MAX_VALUES))
     if not n.has(nv + nh + nv * nh):
         raise IesError("the file ends inside its angles or candelas")
-    vertical = n.numbers(nv, "vertical angles")
-    horizontal = n.numbers(nh, "horizontal angles")
-    candelas = n.numbers(nv * nh, "candelas")
+    vertical = n.numbers(nv, "vertical angles", counted=True)
+    horizontal = n.numbers(nh, "horizontal angles", counted=True)
+    candelas = n.numbers(nv * nh, "candelas", counted=True)
     if any(b < a for a, b in zip(vertical, vertical[1:])):
         raise IesError("its vertical angles are not in order" + (" from 0 to 180 degrees" if kind == TYPE_C else ""))
     if any(b < a for a, b in zip(horizontal, horizontal[1:])):
@@ -251,7 +252,7 @@ class Lookup:
         found."""
         found = self.index.find(path, resolved)
         if found is None:
-            stopped = self.index.report.stopped()  # each rule was walked for this name: any stop may hide it
+            stopped = self.index.stopped_for(path, resolved)  # each rule was walked for this name
             return (None, "not found: " + "; ".join(stopped)) if stopped else (None, None)
         if found.path not in self._read:
             try:

@@ -204,6 +204,9 @@ class BoundsTest(Tree):
             self.assertEqual(idx.report.truncated, [(USER, lib, 3)])
         self.assertIsNone(one.find("f4.png"))
         self.assertEqual(one.report.truncated, [(USER, lib, 3)])  # reported once: the rule was walked once
+        self.assertEqual(one.stopped_for("f4.png"), ["texture search of texture search folders stopped after 3 "
+                                                     "files and folders, in " + lib])
+        self.assertEqual(one.stopped_for("a:b.png"), [])  # a refused name is never looked up in the folders
 
     def test_folders_count_against_the_budget(self):
         lib = os.path.join(self.root, "lib")
