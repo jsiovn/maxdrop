@@ -1951,5 +1951,55 @@ class TestTangentsFixture(unittest.TestCase):
             self.assertGreaterEqual(sum(abs(v) > 0.1 for v in angles), 2, angles)  # about several axes
 
 
+LOOKAT = os.path.join(ROOT, "tests", "fixtures", "lookat.max")
+
+
+@unittest.skipUnless(os.path.exists(LOOKAT), "no lookat fixture")
+class TestLookAtWeightFixture(unittest.TestCase):
+    """lookat's two LookAt Constraints with an animated weight keep the slots 3ds Max 2020 gave them
+    (GetControllerByID): the weight's controller is the block's reference slot 0, the targets and the up node after
+    it. TestFixtures checks their matrices; this checks a regenerated fixture still holds the controller there."""
+
+    # node: (weights as stored, the slots after the controller's by node name, up node or None, frame-0 value)
+    WEIGHTED = {"FixtureWeightAnimated": ([50.0, "animated"], ["FixtureAim", "FixtureCam.Target"], None, 20.0),
+                "FixtureWeightUp": (["animated"], ["FixtureAim"], "FixtureRig", 60.0)}
+
+    @classmethod
+    def setUpClass(cls):
+        cls.cf = cfb.CompoundFile(LOOKAT)
+        cls.s = scene.Scene.from_file(cls.cf)
+        cls.nodes = {cls.s.node(i).name: i for i in cls.s.walk()}
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.cf.close()
+
+    def test_weight_controller_takes_slot_0(self):
+        s = self.s
+        for name, (weights, targets, up, value) in self.WEIGHTED.items():
+            with self.subTest(name):
+                c = s.refs(s.node(self.nodes[name]).tm)[1]
+                self.assertEqual(s.entry(c).class_id, classids.LOOKAT_CONSTRAINT)
+                block = s.refs(c)[0]
+                refs = s.refs(block)
+                ctrl = refs[0]
+                self.assertEqual(s.entry(ctrl).class_id, classids.BEZIER_FLOAT)
+                named = targets + ([up] if up else [])
+                self.assertEqual({k: s.node(v).name for k, v in refs.items() if k}, dict(enumerate(named, 1)))
+                pb = pblock.ParamBlock2.from_chunk(s.chunk(block), refs, s.refs(c), len(s),
+                                                   (s.entry(c).superclass, s.entry(c).class_id))
+                self.assertFalse(pb.issues)
+                want = [pblock.Animated(ctrl) if w == "animated" else w for w in weights]
+                self.assertEqual(pb.value(0), want)
+                self.assertEqual(pb.value(1), [pblock.Reference(self.nodes[t]) for t in targets])
+                if up:
+                    self.assertEqual(pb.get(9), pblock.Reference(self.nodes[up]))
+                holder = s.chunk(ctrl).first(0x7127)
+                self.assertAlmostEqual(holder.first(0x2501).unpack("<f")[0], value, places=4)
+                keys = holder.first(0x2525).view()  # Bezier Float key records, 28 bytes, the time first
+                self.assertEqual([struct.unpack_from("<i", keys, k * 28)[0] for k in range(len(keys) // 28)],
+                                 [0, 50 * 160])  # frames 0 and 50, in ticks
+
+
 if __name__ == "__main__":
     unittest.main()

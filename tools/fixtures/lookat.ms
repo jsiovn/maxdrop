@@ -7,6 +7,8 @@
 -- controller of another axis, flipped, rolled, scaled, with the target as up node; boxes with a Look At
 -- constraint: two weighted targets, the axis options, an up node it looks at or aligns with, one under the Dummy;
 -- the constraint's offsets: Keep Initial Offset under the Dummy, Set Orientation, both, Set Orientation turned off.
+-- An animated target weight (keys at 0 and 50, a frame-0 value of its own): the second of two, and the one of a
+-- constraint with an up node it looks at.
 -- Positions 3ds Max computes (the children of the Dummy) stay below 100: the oracle keeps 6 significant digits.
 -- Authored for MaxDrop's tests (see CONTRIBUTING.md, "Test files"): it resets the scene, so run it in a 3ds Max
 -- session with nothing to keep, then sanitize and check the saved file before it goes into tests/fixtures/.
@@ -106,8 +108,24 @@
 	in coordsys local rotate orientOff (eulerAngles 25 10 0)
 	lc.set_orientation = false
 	offsetAim.pos = [-10,50,30]
+	-- an animated weight: its controller is the block's first reference, before the targets and the up node
+	local weighted = Box name:"FixtureWeightAnimated" length:10 width:10 height:10 pos:[40,-90,10]
+	lc = LookAt_Constraint()
+	weighted.rotation.controller = lc
+	lc.appendTarget aim 50
+	lc.appendTarget cam.target 20
+	with animate on at time 50 lc.weight[2] = 90
+	local weightedUp = Box name:"FixtureWeightUp" length:10 width:10 height:10 pos:[-90,-20,40]
+	lc = LookAt_Constraint()
+	weightedUp.rotation.controller = lc
+	lc.appendTarget aim 60
+	lc.upnode_world = false
+	lc.pickUpNode = rig
+	lc.upnode_ctrl = 0
+	with animate on at time 50 lc.weight[1] = 10
+	sliderTime = 0
 	local grey = StandardMaterial name:"FixtureGrey" diffuse:(color 128 128 128)
-	for b in #(looker, lookerY, both, upLook, upAxis, keep, orient, offsets, orientOff) do b.material = grey
+	for b in #(looker, lookerY, both, upLook, upAxis, keep, orient, offsets, orientOff, weighted, weightedUp) do b.material = grey
 	makeDir @"C:\maxdrop_fixtures" all:true
 	saveMaxFile @"C:\maxdrop_fixtures\lookat.max" quiet:true
 	"lookat: " + (objects.count as string) + " objects"

@@ -365,7 +365,8 @@ lookat (`tools/fixtures/lookat.ms`): target cameras (one rolled 30°, one straig
 Dummy turned 40° and scaled 1.5), a target spot, boxes with a Look At controller (X axis flipped with the target as
 up node and a scale of its own; Y axis rolled 15°) and boxes with a LookAt Constraint (two weighted targets and the
 Y axis flipped with a scale of its own; an up node looked at; an up node's X axis aligned with, under the Dummy;
-Keep Initial Offset under the Dummy, Set Orientation, both, Set Orientation turned off after the box was turned).
+Keep Initial Offset under the Dummy, Set Orientation, both, Set Orientation turned off after the box was turned;
+an animated weight, the second of two and the one of a constraint with an up node).
 Every node's world and object transform equals the oracle within 1e-4 (`test_controllers.py`). The frames were
 found on scratch files saved by 3ds Max 2020 (one setting changed per file, compared with `tools/maxdiff.py`, and
 `node.transform` read in MAXScript); `look_frame` and `constraint_frame` are tested against those numbers.
@@ -401,7 +402,7 @@ reference is a ParamBlock2:
 
 | Id | Parameter (MAXScript) | Type |
 |---|---|---|
-| 0 | `weight` | float table, one per target; an animated element is a controller (tag `0x80`) in the block's next reference slot ([Parameter blocks](#parameter-blocks)), before the targets' (by the block rule; not measured on a constraint: no fixture animates a constraint weight): its value at frame 0, 1 when the slot is empty or the controller gives none |
+| 0 | `weight` | float table, one per target; an animated element is a controller (tag `0x80`) in the block's next reference slot ([Parameter blocks](#parameter-blocks)), before the targets' (lookat: FixtureWeightAnimated's second weight, a Bezier Float, at slot 0, its targets at 1 and 2; FixtureWeightUp's one weight at 0, the up node at 2): its value at frame 0, 1 when the slot is empty or the controller gives none |
 | 1 | targets (`appendTarget`) | node table, no value: the block's reference slots, after the weights' controllers |
 | 2 | `relative` (Keep Initial Offset) | bool |
 | 3 | `lookat_vector_length` | float (display) |
