@@ -58,7 +58,8 @@ product is within 0.005 of V-Ray's (128 x 128: 0.047 against 0.052). Falloff, Co
 amount at a color root, and a Mix inside a mask, keep decoded values (not measured).
 
 The graph's nodes (frozen dataclasses): Image (an image map: the file as the scene stores it, the one the texture lookup
-found, Mapping, Crop, TexOutput, color space, gamma, alpha), Constant, Invert, Mix(a, b, factor, mask), Multiply,
+found, Mapping, Crop, TexOutput, color space, gamma, alpha), Constant, Invert, Decode (a gamma-off color mixed on
+stored values, shown decoded), Mix(a, b, factor, mask), Multiply,
 Blend (an arithmetic operation, optionally in a gamma space),
 ColorCorrect (with its rewiring), Composite (CompositeLayers bottom first: node, opacity, blend mode, mask), Facing
 (a Falloff's ratio), Remap (a float through a polyline: a Falloff's mix curve), Smoothstep (a Mix's curve on its
@@ -559,6 +560,19 @@ def _children(node):
     return ()
 
 
+def _has_decode(node):
+    """Whether a graph has a Decode node (a DAG walked once per node)."""
+    seen, stack = set(), [node]
+    while stack:
+        n = stack.pop()
+        if id(n) not in seen:
+            seen.add(id(n))
+            if isinstance(n, Decode):
+                return True
+            stack.extend(_children(n))
+    return False
+
+
 def tree_size(node):
     """The number of nodes of a graph drawn as a tree (a shared node counted at each use), in linear time."""
     sizes = {}
@@ -779,7 +793,7 @@ class TexmapConverter:
             root = self._slot(root, ref, kind, value, walk)
             if tree_size(root) > MAX_NODES:
                 image = first_image(root)
-                if image is not None:  # below a Decode it is in STORED: its map again in the root's kind
+                if image is not None and _has_decode(root):  # it may be in STORED: its map again as a color
                     image = self._node(image.index, kind, walk, 0, ()) or image
                 self._issue(walk, ref.index, "map %d: graph of more than %d nodes cut down to its first image"
                             % (ref.index, MAX_NODES))
@@ -1461,7 +1475,7 @@ def _constant_value(node):
     if not (isinstance(node, Mix) and isinstance(node.a, Constant) and isinstance(node.b, Constant)
             and (node.mask is None or isinstance(node.mask, Constant))):
         return None
-    f = node.factor if node.mask is None else sum(_rgb3(node.mask.value)) / 3.0
+    f = min(1.0, max(0.0, node.factor if node.mask is None else sum(_rgb3(node.mask.value)) / 3.0))  # as a Mix node
     return tuple(a + (b - a) * f for a, b in zip(_rgb3(node.a.value), _rgb3(node.b.value)))
 
 
@@ -1496,7 +1510,7 @@ def _mix(conv, m, kind, walk, depth, chain):
             return _other_side(conv, m, (a, b), walk)
     a = a or conv._constant(m, 4, kind, (0.0, 0.0, 0.0))
     b = b or conv._constant(m, 5, kind, (1.0, 1.0, 1.0))
-    if kind == COLOR and not conv.swatches.linear:  # black to white (_black_white): the amount shown decoded
+    if kind == COLOR and not conv.swatches.linear:  # only black to white: _convert_node sends the rest to STORED
         factor = conv.swatches.channel(factor)
     return Mix(a, b, factor, mask)
 

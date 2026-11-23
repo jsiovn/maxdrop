@@ -2525,8 +2525,7 @@ class DataAndMaskRule(Checks):
                                      tx.NON_COLOR)
 
 
-def _dec(c):
-    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+_dec = colors.srgb_to_linear
 
 
 def _drawn(n, pixel=128 / 255):
@@ -2692,6 +2691,22 @@ class GammaOffMixes(Checks):
         self.assertEqual(layers[1].blend, tx.ADDITION)
         self.close(layers[1].opacity, 0.5)
         self.assertEqual(layers[1].mask.colorspace, tx.NON_COLOR)
+
+    def test_hdr_mask_is_clamped_when_folded(self):
+        hdr = _ccolor(2, p50=1, p58=(2.0, 2.0, 2.0))  # a data mask above 1: a Mix node clamps its factor
+        mix = self._mix(p4=self.G40, p5=self.G220, p8=Ref(2))
+        self.close(self._root(colors.GAMMA_OFF, mix, hdr).value, (_lin(220),) * 3)
+
+    def test_maps_below_a_gamma_off_mix_compute_on_stored_values(self):
+        # not measured (maxdrop-6n0.6.18): pinned so a change is deliberate
+        g = (128 / 255,) * 3
+        falloff = _falloff(2, color1=g)
+        cmix = _cmix(3, p200=0, p208=g, p209=g)  # an add in sRGB mode of two greys 128
+        mix = self._mix(p0=0.5, p6=Ref(2), p7=Ref(3))
+        root = self._root(colors.GAMMA_OFF, mix, falloff, cmix)
+        self.assertIsInstance(root, tx.Decode)
+        self.close(root.input.a.a.value, g, "the Falloff's color 1 as stored")
+        self.close(root.input.b.value, tx.blend_value(tx.BLEND_ADD, g, g, tx.CM_SRGB_GAMMA), "Corona's add, as stored")
 
     def test_cut_graph_takes_its_image_as_a_color(self):
         layers, depth = 10, tx.MAX_DEPTH
