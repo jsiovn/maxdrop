@@ -146,6 +146,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   grid, as in 3ds Max, instead of caps 3ds Max does not make; it is no longer taken as a hole in another spline's
   cap (or as its container) and keeps its own direction. One line in the report counts them. A curve segment
   from a knot back to the same spot gets no interpolation steps under Optimize, as in 3ds Max.
+- Extrude: a curve segment drawn almost straight (a vector a little off the line between its knots, up to about 2 %
+  of its length) gets no interpolation steps under Optimize or Adaptive, as in 3ds Max, instead of its steps; one
+  whose vectors run far past its ends on that line gets its steps, as in 3ds Max (a rounded Rectangle with very
+  short sides: no cap), instead of none.
 
 ## [1.0.1] - 2026-11-22
 

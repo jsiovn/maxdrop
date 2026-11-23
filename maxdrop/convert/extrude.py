@@ -16,7 +16,8 @@ IDs, 8 use shape IDs, 9 smooth); Real-World Map Size is the u32 0x0130 of the 0x
 whose 0x0120 names the Extrude class (reader.realworld; another class's entry is not this flag).
 
 Interpolation (3ds Max's, fitted to its own counts): each segment gets steps points between its knots; with
-optimize a straight segment (segment type line, or both vectors on the chord) or one back to the same spot gets none;
+optimize a straight segment (segment type line, or a curve whose points at t 0.4 and 0.6 turn the path from knot to
+knot by at most 2 degrees) or one back to the same spot gets none;
 adaptive gives a straight segment none and a curved one 2^d - 1, d the smallest depth up to 5 at which every piece
 turns by at most 2 degrees (the angle between the chords of its two halves). Without optimize even a straight segment
 gets its steps.
@@ -86,7 +87,7 @@ MAX_GRID_CLIP_STEPS = 1 << 23  # the grid bands of one mesh, beside MAX_CLIP_STE
 GRID_DIVISIONS, GRID_MAX_DIVISIONS = 20, 50
 GRID_MARGIN, GRID_SPAN, GRID_SHIFT = 0.025, 0.95, 0.001  # of the box; of a division
 GRID = -1  # the polyline of a grid point's key (GRID, i): point i of the mesh's grid points
-_STRAIGHT = 1e-6  # relative distance of a vector from the chord
+STRAIGHT_AT = (0.4, 0.6)  # where _straight looks at the curve
 
 
 class ExtrudeError(ChunkError):
@@ -174,33 +175,24 @@ def _norm(v):
     return math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
 
 
-def _straight(p0, c1, c2, p3):
-    """Whether both vectors lie on the chord (a Bezier segment drawn straight)."""
-    chord = _sub(p3, p0)
-    length = _norm(chord)
-    scale = max(length, _norm(_sub(c1, p0)), _norm(_sub(c2, p3)))
-    if scale == 0:
-        return True
-    tolerance = _STRAIGHT * scale
-    for c in (c1, c2):
-        v = _sub(c, p0)
-        if length == 0:
-            if _norm(v) > tolerance:
-                return False
-            continue
-        cross = (v[1] * chord[2] - v[2] * chord[1], v[2] * chord[0] - v[0] * chord[2],
-                 v[0] * chord[1] - v[1] * chord[0])
-        if _norm(cross) / length > tolerance:
-            return False
-    return True
-
-
 def _turn(a, b):
     na, nb = _norm(a), _norm(b)
     if na == 0 or nb == 0:
         return 0.0
     c = (a[0] * b[0] + a[1] * b[1] + a[2] * b[2]) / (na * nb)
     return math.acos(max(-1.0, min(1.0, c)))
+
+
+def _straight(p0, c1, c2, p3):
+    """Whether 3ds Max's Optimize and Adaptive call a curve segment straight: at t 0.4 and at 0.6 the curve's point S
+    turns the path p0 -> S -> p3 by at most ADAPTIVE_ANGLE (3ds Max 2020, maxdrop-em3.142). A vector a little off the
+    chord passes (2 degrees: about 2 % of the chord at a third), as an S whose middle is on the chord does; vectors
+    on the chord's line fail once S lies past an end (the curve folds back)."""
+    for t in STRAIGHT_AT:
+        s = _bezier(p0, c1, c2, p3, t)
+        if _turn(_sub(s, p0), _sub(p3, s)) > ADAPTIVE_ANGLE:
+            return False
+    return True
 
 
 def _adaptive_steps(p0, c1, c2, p3):

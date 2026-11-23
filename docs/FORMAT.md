@@ -582,10 +582,18 @@ What 3ds Max 2020 makes of it (`snapshotAsMesh`, probed on scratch scenes and ch
 `eval_verts`, `eval_faces` and `bbox_*`; `tests/unit/test_extrude.py` holds the counts):
 
 - **Interpolation**: each segment gets `steps` points between its knots; with optimize, a straight segment (type
-  line, or both vectors on the chord) gets none; without optimize even a line segment gets its steps (a sharp
-  Rectangle, steps 2: 12 points). Adaptive: a straight segment gets none, a curved one 2^d - 1, d the smallest
+  line, or a curve whose points at t 0.4 and 0.6 each turn the path from knot to knot by at most 2 degrees) gets
+  none; without optimize even a line segment gets its steps (a sharp Rectangle, steps 2: 12 points). The straight
+  test (maxdrop-em3.142; 3,359 two-knot segments under 3dsmaxbatch, steps 1 to 12, chords 0.1 to 1000, none off
+  it): a vector off the chord by up to about 2 % of it at a third is straight (10^-1.72 chords straight, 10^-1.70
+  curved; 10^-1.82 with the vector's end next to its knot), an S with both vectors off on opposite sides up to
+  10^-1.24, vectors on the chord's line until the curve at t 0.4 or 0.6 lies past an end (out vector 1.72 chords
+  along with the in vector at two thirds, both 4.49 chords past the far ends). Adaptive: a straight segment (the
+  same test) gets none, a curved one 2^d - 1, d the smallest
   depth up to 5 at which every piece turns by at most 2 degrees between the chords of its halves (a Circle: 31 per
-  quarter, 128 points; Arcs of 30, 90, 180, 300 degrees: 13, 25, 49, 97 points).
+  quarter, 128 points; Arcs of 30, 90, 180, 300 degrees: 13, 25, 49, 97 points). 3ds Max splits a curved segment
+  at its middle piece by piece instead, each piece under the straight test: an uneven curve gets other counts
+  (maxdrop-6n0.6.11).
 - **Vertices**: per spline, one copy of its points per level (segments + 1), nothing more: the caps reuse them.
 - **Faces**: the sides two triangles per segment and level; a cap of n points with h holes n + 2h - 2 triangles,
   without extra vertices (FixtureExtHole: 32 + 2 - 2 = 32 per cap). Nested closed splines alternate solid / hole
@@ -642,9 +650,10 @@ What 3ds Max 2020 makes of it (`snapshotAsMesh`, probed on scratch scenes and ch
   crossing), a segment from a knot back to itself with its handles pulled out (MaxDrop: no steps under Optimize), two
   points on one XY spot at different heights (MaxDrop: a touch on XY, no cap).
   Rounded Rectangles with short straight sides (10 x 20, corner radius 4.8, 4.9, 4.99; 13 x 12.5, radius 6 and
-  6.25): 3ds Max gives the short sides their 6 steps (Optimize does not call a segment whose handles run far past
-  its ends straight: 44 points, MaxDrop 32) and no cap (the steps fold back over the side); radius 3, 4, 4.5: 32
-  points and a cap, as MaxDrop. That is the straightness rule (`_straight`), not the crossing test.
+  6.25): 3ds Max gives the short sides their 6 steps (their handles run so far past the ends that the curve folds
+  back: not straight, 44 points) and no cap (the steps fold back over the side); radius 3, 4, 4.5: 32 points and a
+  cap. MaxDrop the same since maxdrop-em3.142 (the straight test above; radius 6.25 with its zero-length sides
+  merged, 42 points).
 - **Smoothing**: caps group 16; the sides change group only at a corner or Bezier-corner knot (FixtureExtMirror's
   rounded Rectangle: sharp at its 8 Bezier-corner knots) or a Bezier knot with a vector on its point, the groups
   alternating 1, 2 (4 where three runs meet, 1, 3, 2 ... along a spline with no corner). A Bezier knot breaks the

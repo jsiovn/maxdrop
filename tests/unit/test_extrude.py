@@ -531,6 +531,61 @@ def _points(shape):
     return sum(len(pl.points) for pl in extrude.polylines(shape))
 
 
+def _segment(p0, c1, c2, p3):
+    """An open spline of one curve segment between two Bezier-corner knots: c1 the out vector, c2 the in vector."""
+    k = shapes.Knot
+    return shapes.Spline((k(shapes.BEZIER_CORNER, shapes.CURVE, p0, p0, c1),
+                          k(shapes.BEZIER_CORNER, shapes.CURVE, p3, c2, p3)), False)
+
+
+def _off(e, chord=10.0):
+    return chord * 10 ** -e
+
+
+_T = 10 / 3.0
+
+# One curve segment probed in 3ds Max 2020 (open SplineShape of two Bezier-corner knots, steps 6, optimize, under an
+# Extrude; 3,359 segments): name, p0, c1, c2, p3, points. One probe step on either side of each boundary of its
+# straight test (at t 0.4 and 0.6 the curve turns p0 -> point -> p3 by at most 2 degrees; maxdrop-em3.142).
+STRAIGHT_PROBES = [
+    # c1 off the chord by 10^-e chords at a third (at 0.001, at the far end), c2 on the chord at two thirds
+    ("third 1.72", (0, 0, 0), (_T, _off(1.72), 0), (2 * _T, 0, 0), (10, 0, 0), 2),
+    ("third 1.70", (0, 0, 0), (_T, _off(1.70), 0), (2 * _T, 0, 0), (10, 0, 0), 8),
+    ("near p0 1.82", (0, 0, 0), (0.01, _off(1.82), 0), (2 * _T, 0, 0), (10, 0, 0), 2),
+    ("near p0 1.80", (0, 0, 0), (0.01, _off(1.80), 0), (2 * _T, 0, 0), (10, 0, 0), 8),
+    ("at p3 1.78", (0, 0, 0), (10, _off(1.78), 0), (2 * _T, 0, 0), (10, 0, 0), 2),
+    ("at p3 1.76", (0, 0, 0), (10, _off(1.76), 0), (2 * _T, 0, 0), (10, 0, 0), 8),
+    ("in z 1.72", (0, 0, 0), (_T, 0, _off(1.72)), (2 * _T, 0, 0), (10, 0, 0), 2),
+    ("in z 1.71", (0, 0, 0), (_T, 0, _off(1.71)), (2 * _T, 0, 0), (10, 0, 0), 8),
+    ("chord 1000 1.75", (0, 0, 0), (1000 / 3.0, _off(1.75, 1000), 0), (2000 / 3.0, 0, 0), (1000, 0, 0), 2),
+    ("chord 1000 1.5", (0, 0, 0), (1000 / 3.0, _off(1.5, 1000), 0), (2000 / 3.0, 0, 0), (1000, 0, 0), 8),
+    ("chord 0.1 1.75", (0, 0, 0), (0.1 / 3, _off(1.75, 0.1), 0), (0.2 / 3, 0, 0), (0.1, 0, 0), 2),
+    ("chord 0.1 1.5", (0, 0, 0), (0.1 / 3, _off(1.5, 0.1), 0), (0.2 / 3, 0, 0), (0.1, 0, 0), 8),
+    ("diagonal 1.54", (5, -3, 1), (8 - 0.8 * _off(1.54), 1 + 0.6 * _off(1.54), 1), (11, 5, 1), (14, 9, 1), 2),
+    ("diagonal 1.53", (5, -3, 1), (8 - 0.8 * _off(1.53), 1 + 0.6 * _off(1.53), 1), (11, 5, 1), (14, 9, 1), 8),
+    # both vectors off: on one side, on opposite sides (an S, its middle on the chord)
+    ("same side 1.94", (0, 0, 0), (_T, _off(1.94), 0), (2 * _T, _off(1.94), 0), (10, 0, 0), 2),
+    ("same side 1.92", (0, 0, 0), (_T, _off(1.92), 0), (2 * _T, _off(1.92), 0), (10, 0, 0), 8),
+    ("S 1.24", (0, 0, 0), (_T, _off(1.24), 0), (2 * _T, -_off(1.24), 0), (10, 0, 0), 2),
+    ("S 1.23", (0, 0, 0), (_T, _off(1.23), 0), (2 * _T, -_off(1.23), 0), (10, 0, 0), 8),
+    # on the chord's line: straight until the curve folds back past an end at t 0.4 or 0.6
+    ("past p3 1.72", (0, 0, 0), (17.2, 0, 0), (2 * _T, 0, 0), (10, 0, 0), 2),
+    ("past p3 1.74", (0, 0, 0), (17.4, 0, 0), (2 * _T, 0, 0), (10, 0, 0), 8),
+    ("both past 4.49", (0, 0, 0), (44.9, 0, 0), (-34.9, 0, 0), (10, 0, 0), 2),
+    ("both past 4.51", (0, 0, 0), (45.1, 0, 0), (-35.1, 0, 0), (10, 0, 0), 8),
+    ("behind p0 -0.59", (0, 0, 0), (-5.9, 0, 0), (2 * _T, 0, 0), (10, 0, 0), 2),
+    ("behind p0 -0.60", (0, 0, 0), (-6.0, 0, 0), (2 * _T, 0, 0), (10, 0, 0), 8),
+    ("in vector 0 1.2", (0, 0, 0), (12, 0, 0), (10, 0, 0), (10, 0, 0), 2),
+    ("in vector 0 1.25", (0, 0, 0), (12.5, 0, 0), (10, 0, 0), (10, 0, 0), 8),
+    ("in vector on p0 2.1", (0, 0, 0), (21, 0, 0), (0, 0, 0), (10, 0, 0), 2),
+    ("in vector on p0 2.2", (0, 0, 0), (22, 0, 0), (0, 0, 0), (10, 0, 0), 8),
+    ("in vector behind 0.7", (0, 0, 0), (7, 0, 0), (-10, 0, 0), (10, 0, 0), 8),
+    ("in vector behind 0.8", (0, 0, 0), (8, 0, 0), (-10, 0, 0), (10, 0, 0), 2),
+    ("in vector behind 2.8", (0, 0, 0), (28, 0, 0), (-10, 0, 0), (10, 0, 0), 2),
+    ("in vector behind 2.9", (0, 0, 0), (29, 0, 0), (-10, 0, 0), (10, 0, 0), 8),
+]
+
+
 class Interpolation(unittest.TestCase):
     """Point counts 3ds Max 2020's Extrude makes (half its vertex count on one segment)."""
 
@@ -569,6 +624,32 @@ class Interpolation(unittest.TestCase):
         self.assertEqual(len(pl.points), 3)
         two = extrude.polylines(_shape([shapes.Spline(_knots([(0, 0, 0), (5, 0, 0)]), True)]))[0]
         self.assertFalse(two.closed)  # a closed spline of two points has no inside
+
+    def test_straight_equals_3ds_max(self):
+        for name, p0, c1, c2, p3, points in STRAIGHT_PROBES:
+            self.assertEqual(_points(_shape([_segment(p0, c1, c2, p3)])), points, name)
+            self.assertEqual(_points(_shape([_segment(p0, c1, c2, p3)], optimize=False)), 8, name)
+
+    def test_a_vector_just_off_the_chord(self):
+        """maxdrop-em3.111's probe: a 20 x 20 square of corner knots with a Bezier knot at (10, -4) whose in vector
+        lies d off the chord from the corner at the origin; 3ds Max makes 11 points for d = 1e-3 .. 1e-6 (only the
+        segment out of the Bezier knot gets its 6 steps); the vectors are the ones 3ds Max stored."""
+        k = shapes.Knot
+        for d in (1e-3, 1e-4, 1e-5, 1e-6):
+            knots = (k(shapes.CORNER, shapes.CURVE, (0, 0, 0), (0, 20 / 3.0, 0), ((10 - d) / 2, -2, 0)),
+                     k(shapes.BEZIER, shapes.CURVE, (10, -4, 0), (10 - d, -4, 0), (14, -4, 0)),
+                     k(shapes.CORNER, shapes.CURVE, (20, 0, 0), (17, -2, 0), (20, 20 / 3.0, 0)),
+                     k(shapes.CORNER, shapes.CURVE, (20, 20, 0), (20, 40 / 3.0, 0), (40 / 3.0, 20, 0)),
+                     k(shapes.CORNER, shapes.CURVE, (0, 20, 0), (20 / 3.0, 20, 0), (0, 40 / 3.0, 0)))
+            self.assertEqual(_points(_shape([shapes.Spline(knots, True)])), 11, d)
+
+    def test_adaptive_takes_the_same_straight_test(self):
+        """3ds Max 2020, Adaptive: a segment straight for Optimize gets no steps, also one whose vectors run past
+        the chord's end or lie a little off it (a curved one gets steps, counted by a rule MaxDrop only
+        approximates: maxdrop-6n0.6.11)."""
+        for name, p0, c1, c2, p3, points in STRAIGHT_PROBES:
+            if points == 2:
+                self.assertEqual(_points(_shape([_segment(p0, c1, c2, p3)], adaptive=True)), 2, name)
 
 
 def _ccw_area(pts, tris):
@@ -1500,6 +1581,19 @@ class SelfCrossing(unittest.TestCase):
         self.assertEqual(len(data.positions), 112)
         self.assertTrue((data.loop_totals == 4).all())
         self.assertEqual(len(issues), 1, issues)
+
+    def test_short_sides_whose_vectors_run_far_past_them(self):
+        """Rounded Rectangles in 3ds Max 2020 (em3.140's probe): a short straight side whose corner vectors run far
+        past its ends is curved for Optimize (6 steps folding back over the side: no cap); radius 3, 4, 4.5 keep
+        their straight sides and their caps. 12.5 x 13 radius 6.25: 3ds Max 88 / 88, keeping both points of its two
+        zero-length sides, which MaxDrop merges."""
+        for length, width, radius, want in ((10, 20, 4.8, (88, 88)), (10, 20, 4.9, (88, 88)),
+                                            (10, 20, 4.99, (88, 88)), (12.5, 13, 6, (88, 88)),
+                                            (12.5, 13, 6.25, (84, 84)), (10, 20, 4.5, (64, 124)),
+                                            (10, 20, 4.0, (64, 124)), (10, 20, 3.0, (64, 124))):
+            data, issues = self.make([_pill(length, width, radius)])
+            got = (len(data.positions), int((data.loop_totals - 2).sum()))
+            self.assertEqual(got, want, (length, width, radius, issues))
 
     def test_the_sweep_finds_crossings_in_any_chunk(self):
         n = 2000
