@@ -2,12 +2,12 @@ name: Test
 
 # The plain job, on Ubuntu and Windows, each with the Python and numpy of the oldest and of the newest supported
 # Blender, and on macOS once, with those of the newest (no Blender; the tests themselves use no network, only apt
-# installs bsdtar, pip installs numpy and ruff, and on Linux UnRAR and 7-Zip come from their vendors): the unit
-# tests with the no-bpy guard, the tools, the landing page, the license files and the scene packs; the native
-# rename once more, verbose (Linux and macOS); the scan of every file under tests/fixtures/ for user names,
-# computer names and user paths; ruff. Then on each Blender of the matrix: build, validate, the license
-# text in the zip, the register smoke test, the import smoke test on tests/fixtures/*.max and the fixture tests
-# (tests/blender/run.py).
+# installs bsdtar, pip installs numpy and ruff, and on Linux UnRAR and 7-Zip come from their vendors): once, on
+# Linux before numpy is installed, the plain suite without numpy; the unit tests with the no-bpy guard, the
+# tools, the landing page, the license files and the scene packs; the native rename once more, verbose (Linux and
+# macOS); the scan of every file under tests/fixtures/ for user names, computer names and user paths; ruff. Then
+# on each Blender of the matrix: build, validate, the license text in the zip, the register smoke test, the import
+# smoke test on tests/fixtures/*.max and the fixture tests (tests/blender/run.py).
 #
 # Runs on pull requests and by hand. On a push to main it runs as the first job of the Publish workflow, which
 # calls this file: nothing is published unless it passes, and the tests do not run twice.
@@ -31,7 +31,8 @@ jobs:
         # the last entry of include, once).
         os: [ubuntu-latest, windows-latest]
         # The numpy of Blender 4.2 (1.24.3) and of 5.2 (2.3.4); 4.5 ships 1.26.4, between the two. The geometry
-        # readers return numpy arrays: without numpy their tests skip.
+        # readers return numpy arrays: without numpy their tests skip (step "The plain suite without numpy" checks
+        # those skips once).
         numpy: ["1.24.3", "2.3.4"]
         # Each numpy on the Python of the same Blender: 4.2 and 4.5 ship 3.11, 5.2 ships 3.13 (a stdlib call 3.13
         # removed or changed fails here, not only in the Blender job's smoke tests).
@@ -112,6 +113,16 @@ jobs:
           banner=$(/usr/local/bin/unrar </dev/null 2>&1 || true)
           printf '%s\n' "$banner" | sed -n 1,4p
           grep -q '^UNRAR 7\.23 ' <<<"$banner"
+      # Once, before numpy is installed (the order is the point): the suite on the bare interpreter, so a test
+      # that reaches numpy without its skip fails here instead of on a contributor's Python without numpy. The
+      # interpreter itself, not a block in a wrapper: the fuzz slices run their cases in child processes. The
+      # first command refuses an interpreter that already has numpy: the run would prove nothing.
+      - name: The plain suite without numpy (once)
+        if: runner.os == 'Linux' && !startsWith(matrix.numpy, '2.')
+        run: |
+          set -euo pipefail
+          python -I -c 'import importlib.util as u, sys; sys.exit("numpy is importable" if u.find_spec("numpy") else 0)'
+          python -I -m unittest discover tests
       # Exactly the pinned Python and numpy, imported the way the tests run (-I): a failed install fails here
       # instead of turning the numpy tests into skips.
       - name: numpy
