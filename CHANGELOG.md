@@ -35,8 +35,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ### Fixed
 
-- Glass: a grey reflection (or a reflection map) on refracting glass reflects that share of a white one and refracts the
-  rest, as V-Ray does, instead of reflecting as much as a white reflection.
+- Glass: a grey or black reflection (or a reflection map) on refracting glass reflects that share of a white one
+  and refracts the rest, as V-Ray does, instead of reflecting as much as a white reflection.
 - Materials: a CoronaPhysicalMtl, a Standard material with the Strauss shader and the grey material of an
   unsupported class reflect their IOR's full Fresnel (Specular IOR Level 0.5, Blender's default) instead of half of
   it (0.25), which made every non-metal CoronaPhysicalMtl reflect too little.

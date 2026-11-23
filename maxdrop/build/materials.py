@@ -31,7 +31,8 @@ diffuse, V-Ray's split. Measured on V-Ray 5.2 (bead maxdrop-em3.119, the maxdrop
 IOR 1.6, black diffuse, white environment): 0.0415 / 0.0789 at 0.8-0.88 / 0.9-0.95 of the sphere's radius, Cycles
 the same, EEVEE about 7 % lower (as for a white reflection); the Specular IOR Level 0.25 drawn before gave 0.053 /
 0.121. The lone BSDF (Specular IOR Level SPECULAR_LEVEL x w) stays where the twin would change nothing: a constant
-w of 0 or at least 1 (above 1 counted as 1, as a map is by the Mix Shader's factor), a constant Metallic of 1. Every
+w of 0 (but on glass, below) or at least 1 (above 1 counted as 1, as a map is by the Mix Shader's factor), a constant
+Metallic of 1. Every
 material class follows: the rule reads the IR's weight, whatever made it (Standard, Physical, CoronaLegacyMtl: not
 measured against their renderers).
 Refracting glass (Transmission Weight linked or above 0): Specular IOR Level does not change a transmissive
@@ -40,14 +41,13 @@ Principled's reflection (measured in Cycles), so there the twin's part without r
 Principled tints each of the two passes through a solid; a thin wall: the Base Color at IOR 1, as Cycles tints each
 wall, where EEVEE tints a closed thin-walled object once), below em3.119's twin with Transmission Weight 0 by a Mix
 Shader (TWIN_LABEL) whose factor is the transmission, unless that is a constant of at least 1: w F + (1 - w F) T,
-V-Ray's split. The weight is 1 where the Fresnel at the IOR is 1 (TIR_LABEL: a Fresnel node, GREATER_THAN
+V-Ray's split; a constant w of 0 too (a black reflection on glass reflects nothing, as in V-Ray). The weight is 1 where the Fresnel at the IOR is 1 (TIR_LABEL: a Fresnel node, GREATER_THAN
 TIR_FRESNEL, MAXIMUM with w; not on a thin wall): there the glass reflects totally, and Cycles' Refraction BSDF is
-black. Measured in Blender 4.2 and 5.2 (bead maxdrop-em3.135, a smooth sphere, IOR 1.6, black base, white
+black. Measured in Blender 4.2, 4.5 and 5.2 (bead maxdrop-em3.135, a smooth sphere, IOR 1.6, black base, white
 environment): w 0.502 reflects 0.502 times the white reflection in every band, Cycles and EEVEE; a rotated cube of
 white glass keeps 0.999 of the white environment in Cycles (0.83 without the mask). A rough twin is GGX (a Refraction
-BSDF has no multiscatter GGX), a partly metallic glass's twin keeps its metal share whole, and a Principled with an
-alpha below 1 or a map, an emission, a coat or a sheen (none of which a Refraction BSDF has) keeps em3.119's twin,
-whose glass still reflects in full. Not measured against V-Ray (no V-Ray render of a glass with a grey reflection).
+BSDF has no multiscatter GGX), and a Principled with a metallic, an alpha below 1 or a map, an emission, a coat or a
+sheen (none of which a Refraction BSDF has) keeps em3.119's twin, whose glass still reflects in full. Not measured against V-Ray (no V-Ray render of a glass with a grey reflection).
 An IR whose fresnel is off (VRayMtl Fresnel off) reflects its weight at every angle: the same Mix Shader then has the
 filled BSDF at Specular IOR Level 0 first and a copy of it second (MIRROR_LABEL: Metallic 1, Base Color white, both
 unlinked), a white metal reflecting 1 at every angle, so w + (1 - w) diffuse. Measured on V-Ray 5.2 (bead
@@ -248,6 +248,15 @@ def uv_layer_name(channel):
 
 def _mean(v):
     return sum(v[:3]) / 3.0 if isinstance(v, (tuple, list)) else float(v)
+
+
+def _on(node, name):
+    """node's input of that name is linked, or above 0 (a color: in any channel); False when it lacks one."""
+    s = node.inputs.get(name)
+    if s is None:
+        return False
+    v = s.default_value
+    return s.is_linked or max(tuple(v)[:3] if hasattr(v, "__len__") else (v,)) > 0.0
 
 
 def _as(value, space):
@@ -507,6 +516,9 @@ class _Tree:
             return None
         w = self.float_value(ir.specular, graph)
         if not isinstance(w, bpy.types.NodeSocket) and not 0.0 < w < 1.0:
+            if w <= 0.0 and self.transmits(self.bsdf):  # level 0 leaves glass its reflection: the twin removes it
+                _default(s, SPECULAR_LEVEL)
+                return 0.0, False
             _default(s, max(0.0, min(1.0, w)) * SPECULAR_LEVEL)
             return None
         mirror = not ir.fresnel and (isinstance(w, bpy.types.NodeSocket) or ir.specular.map is None)
@@ -564,21 +576,20 @@ class _Tree:
         elif hasattr(src, "default_value"):
             dst.default_value = src.default_value
 
+    def transmits(self, bsdf):
+        """Principled bsdf's Transmission Weight is linked or above 0."""
+        return _on(bsdf, "Transmission Weight")
+
     def refracting(self, bsdf):
-        """True for a Principled that refracts (Transmission Weight linked or above 0) and has nothing a Refraction
-        BSDF lacks: an alpha below 1 or linked, an emission, a coat or a sheen keep em3.119's twin (its glass still
+        """True for a Principled that refracts (transmits) and has nothing a Refraction BSDF lacks: a metallic, an
+        alpha below 1, an emission, a coat or a sheen (linked or above 0) keep em3.119's twin (its glass still
         reflects in full)."""
-        def on(name):
-            s = bsdf.inputs.get(name)
-            if s is None:
-                return False
-            v = s.default_value
-            return s.is_linked or max(tuple(v)[:3] if hasattr(v, "__len__") else (v,)) > 0.0
         alpha = bsdf.inputs.get("Alpha")
         if alpha is not None and (alpha.is_linked or alpha.default_value < 1.0):
             return False
-        emission = on("Emission Strength") and on("Emission Color")
-        return on("Transmission Weight") and not (emission or on("Coat Weight") or on("Sheen Weight"))
+        emission = _on(bsdf, "Emission Strength") and _on(bsdf, "Emission Color")
+        return self.transmits(bsdf) and not (emission or any(_on(bsdf, name) for name in (
+            "Metallic", "Coat Weight", "Sheen Weight")))
 
     def thin_wall(self, bsdf):
         """The Principled's Thin Wall is on (an input of Blender 5.0 and later)."""
@@ -615,7 +626,8 @@ class _Tree:
             _in(refr, "IOR").default_value = 1.0
         else:
             self.copy_input(bsdf.inputs["IOR"], _in(refr, "IOR"))
-        if self.constant_at_least("Transmission Weight", 1.0):
+        full = bsdf.inputs["Transmission Weight"]
+        if not full.is_linked and full.default_value >= 1.0:
             return _out(refr, "BSDF")
         twin = self.copy_principled(bsdf, TWIN_LABEL, {"Specular IOR Level": 0.0, "Transmission Weight": 0.0},
                                     y - Y_STEP)
