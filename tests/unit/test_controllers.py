@@ -1589,7 +1589,7 @@ class TestConstraint(MatrixCase):
         both and reported once, also when the memo answers the second."""
         def world(weights, controllers=None):
             b = LookAtBuild()
-            targets = [b.target((0, 0, 20)), b.target((100, 0, 0))]
+            targets = [b.target(p) for p in ((0, 0, 20), (100, 0, 0), (0, 80, 0))[:len(weights)]]
             cs = [c(b) for c in controllers] if controllers else None
             if cs and len(cs) == 2 and cs[1] == "same":
                 cs[1] = cs[0]
@@ -1605,9 +1605,10 @@ class TestConstraint(MatrixCase):
         got, issues, _cs = world([Anim(7.0), 100.0], [empty_list])
         self.assertMatrix(got, want, places=5)
         self.assertEqual([reason for _c, reason in issues], [ct.CONSTRAINT_SETTING])
-        even, _issues, _cs = world([50.0, 50.0])
-        got, issues, cs = world([Anim(7.0), Anim(7.0)], [lambda b: b.add(node(C_UNKNOWN_M3)), lambda b: "same"])
-        self.assertMatrix(got, even, places=5)
+        third, _issues, _cs = world([50.0, 50.0, 100.0])  # beside a stored 100, so 50 and 1 aim apart
+        got, issues, cs = world([Anim(7.0), Anim(7.0), 100.0],
+                                [lambda b: b.add(node(C_UNKNOWN_M3)), lambda b: "same"])
+        self.assertMatrix(got, third, places=5)
         self.assertEqual(issues, [(cs[0], ct.UNKNOWN_CLASS)])
 
     def test_many_unreadable_weights_stay_linear(self):
