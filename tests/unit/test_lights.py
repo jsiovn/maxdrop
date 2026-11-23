@@ -690,6 +690,8 @@ class DomeTextureRules(unittest.TestCase):
         self.assertEqual(L.dome_texture(None, None), (None, [L.DOME_NO_TEXTURE]))
         self.assertEqual(L.dome_texture(self.ir(texmaps.Constant((1.0, 0.0, 0.0)), ["x"]), None),
                          (None, ["x", L.DOME_ROOT % "Constant"]))
+        mix = texmaps.Decode(texmaps.Mix(texmaps.Constant((0.0,) * 3), texmaps.Image(3, "sky.hdr")))
+        self.assertEqual(L.dome_texture(self.ir(mix), None), (None, [L.DOME_ROOT % "Mix"]), "gamma off: the Mix named")
         lost = texmaps.Image(3, "gone.png")
         self.assertEqual(L.dome_texture(self.ir(lost), None), (None, [L.DOME_NOT_FOUND % "gone.png"]))
         env = "VRayBitmap 'sky': environment mapping (type 2), drawn with the UVs"  # the root's: not named

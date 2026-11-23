@@ -1750,6 +1750,12 @@ def _fold(n, present):
         if v in (MAP, LOST):
             return v
         return tuple(1.0 - c for c in v) if isinstance(v, tuple) else 1.0 - v
+    if isinstance(n, tx.Decode):  # a Gamma node over its input, a constant through the sRGB curve
+        from maxdrop.convert import colors
+        v = _fold(n.input, present)
+        if v in (MAP, LOST):
+            return v
+        return tuple(colors.srgb_to_linear(c) for c in (v if isinstance(v, tuple) else (v,) * 3))
     if isinstance(n, tx.Mix):
         a, b = _fold(n.a, present), _fold(n.b, present)
         return (b if a is LOST else a) if LOST in (a, b) else MAP
@@ -1968,6 +1974,14 @@ def check_fixture_materials(name, plan, desc, obs):
         check("vray_maps: texture nodes without an image when the files are missing", empty == [], str(empty))
 
 
+def _decoded(node):
+    """The node a Decode's Gamma node of 2.2 is drawn over (a gamma-off color Mix or Composite, maxdrop-em3.158), None
+    when node is not such a Gamma node."""
+    if node is None or node.bl_idname != "ShaderNodeGamma" or abs(_input(node, "Gamma").default_value - 2.2) > 1e-6:
+        return None
+    return _from(_input(node, "Color"))
+
+
 def check_falloff_curve(textured):
     """falloff_curve imported: each edited Falloff curve is a Float Curve on the Falloff's ratio that evaluates as 3ds
     Max 2020 does (tests/fixtures/falloff_curve.curves.jsonl, x = k / 64) and drives an unclamped Mix; the default
@@ -2004,14 +2018,20 @@ def check_falloff_curve(textured):
           not any(n.bl_idname == "ShaderNodeFloatCurve" for n in linear.node_tree.nodes)
           and _from(_input(_from(_principled(linear).inputs["Base Color"]), "Factor_Float")).bl_idname
           == "ShaderNodeLayerWeight")
-    amount = _from(_principled(bpy.data.materials["FixtureMixCurveAmount"]).inputs["Base Color"])
-    check("falloff_curve: a Mix's Use Curve folded into its amount (0.4 -> 0.15625)",
-          amount.bl_idname == "ShaderNodeMix" and _from(_input(amount, "Factor_Float")) is None
-          and abs(_input(amount, "Factor_Float").default_value - 0.15625) < 1e-4)
+    from maxdrop.convert import colors
+    amount = _principled(bpy.data.materials["FixtureMixCurveAmount"]).inputs["Base Color"]
+    want = colors.srgb_to_linear(0.15625)  # black to white, gamma off: mixed as stored, shown decoded (em3.158)
+    check("falloff_curve: a Mix's Use Curve folded into its amount (0.4 -> 0.15625), shown decoded",
+          not amount.is_linked and close(list(amount.default_value)[:3], [want] * 3, 1e-4),
+          "%s %s" % (amount.is_linked, list(amount.default_value)))
     # mix amount, lower, upper of each masked Mix (tools/fixtures/falloff_curve.ms)
     masked = {"FixtureMixCurve": (0.5, 0.2, 0.9), "FixtureMixCurveStep": (0.7, 0.6, 0.4)}
     for name, kind in (("FixtureMixCurve", "SMOOTHSTEP"), ("FixtureMixCurveStep", "STEP")):
-        mix = _from(_principled(bpy.data.materials[name]).inputs["Base Color"])
+        mix = _decoded(_from(_principled(bpy.data.materials[name]).inputs["Base Color"]))
+        check("falloff_curve/%s: the gamma-off color Mix under a Gamma node of 2.2 (maxdrop-em3.158)" % name,
+              mix is not None and mix.bl_idname == "ShaderNodeMix")
+        if mix is None:
+            continue
         factor = _from(_input(mix, "Factor_Float"))
         if not textured:
             want = tx.mix_factor(*masked[name])
@@ -4577,10 +4597,12 @@ def check_wrapper_nodes():
           and abs(_input(side, "Factor_Float").default_value - 0.6) < 1e-6
           and _from(_input(side, "B_Color")).bl_idname == "ShaderNodeTexImage")
     p = _principled(bpy.data.materials["FixtureWrapComposite"])
-    top = _from(p.inputs["Base Color"])
-    screen = _from(_input(top, "B_Color"))
+    top = _decoded(_from(p.inputs["Base Color"]))
+    check("texmap_wrappers: the gamma-off Composite composited as stored, under a Gamma node of 2.2 (maxdrop-em3.158)",
+          top is not None and top.bl_idname == "ShaderNodeMix")
+    screen = _from(_input(top, "B_Color")) if top is not None else None
     check("texmap_wrappers: the Composite's top layer: Screen, then a clamped Mix by 0.7 times its image's alpha",
-          screen.blend_type == 'SCREEN' and top.clamp_result
+          screen is not None and screen.blend_type == 'SCREEN' and top.clamp_result
           and _from(_input(top, "Factor_Float")).operation == 'MULTIPLY'
           and abs(_from(_input(top, "Factor_Float")).inputs[1].default_value - 0.7) < 1e-6)
 

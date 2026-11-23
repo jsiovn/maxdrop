@@ -60,8 +60,9 @@ a CoronaMix Multiply as a Mix mask), red x green gives 1/9 (not 0) and yellow x 
 Texture graphs (convert/texmaps.py) become nodes, a node of the IR shared by several inputs once per material: Image
 -> Image Texture (its image datablock reused per file and color space: one file used in two color spaces is two
 datablocks; see Images below), with its placement as a Mapping node and a UV Map node for a map channel other than
-1; Invert, Mix, Multiply, Blend (Gamma nodes around a Mix node of its operation), ColorCorrect (its rewiring as
-Invert, the mean or Separate / Combine Color, then Hue/Saturation/Value, Bright/Contrast, gain, Gamma), Composite
+1; Invert, Decode (a Gamma node of 2.2, a constant through the sRGB curve), Mix, Multiply, Blend (Gamma nodes around a
+Mix node of its operation), ColorCorrect (its rewiring as Invert, the mean or Separate / Combine Color, then
+Hue/Saturation/Value, Bright/Contrast, gain, Gamma), Composite
 (per layer its blend at factor 1, then a Mix by opacity x mask), Facing (Layer Weight Facing, Fresnel, or the
 Geometry node's Normal . Incoming), Remap (Float Curve, its points straight between them, not clipped; the Mix it
 drives does not clamp its factor), Smoothstep (Map Range SMOOTHSTEP, or a step: 1 - LESS_THAN), Adjust (a map's
@@ -109,6 +110,7 @@ import bpy
 from mathutils import Euler, Matrix, Vector
 
 from .. import compat
+from ..convert import colors
 from ..convert import scene as convert_scene
 from ..convert import texmaps as tx
 
@@ -645,6 +647,8 @@ class _Tree:
             return self.image(n, space, depth)
         if isinstance(n, tx.Invert):
             return self.invert(self.graph(n.input, space, depth + 1), space, depth)
+        if isinstance(n, tx.Decode):
+            return self.decode(n, space, depth)
         if isinstance(n, tx.Mix):
             return self.mix(n, space, depth)
         if isinstance(n, tx.Multiply):
@@ -926,6 +930,14 @@ class _Tree:
         n.inputs[0].default_value = 1.0
         self.links.new(v, n.inputs[1])
         return n.outputs[0]
+
+    def decode(self, n, space, depth):
+        """A gamma-off scene's display-referred color as linear: its input in color, a constant through the sRGB
+        curve, a socket through a Gamma node of 2.2 (texmaps.Decode); MISSING stays."""
+        v = self.graph(n.input, COLOR, depth + 1)
+        if v is MISSING or isinstance(v, bpy.types.NodeSocket):
+            return v if v is MISSING else self.gamma(v, tx.SRGB_GAMMA, depth)
+        return _as(tuple(colors.srgb_to_linear(c) for c in _as(v, COLOR)), space)
 
     def mix_node(self, space, depth, blend='MIX'):
         """A Mix node of the space's data type: (node, A, B, Result)."""

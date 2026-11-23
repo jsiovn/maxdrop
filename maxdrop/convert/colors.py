@@ -42,6 +42,11 @@ def srgb_to_linear(c):
     return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
 
 
+def linear_to_srgb(c):
+    """srgb_to_linear undone: one linear channel sRGB-encoded (above 1 on the same curve)."""
+    return c * 12.92 if c <= 0.0031308 else 1.055 * c ** (1.0 / 2.4) - 0.055
+
+
 @dataclasses.dataclass(frozen=True)
 class Swatches:
     """The swatch rule of one scene: linear (the value is linear) or not (the sRGB curve); note: the issue to report
