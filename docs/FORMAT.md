@@ -636,6 +636,15 @@ What 3ds Max 2020 makes of it (`snapshotAsMesh`, probed on scratch scenes and ch
   one at steps 1 to 7 and 12 capped, 10 not), and MaxDrop caps it. Under Optimize a curve segment from a knot to
   another on the same spot gets no steps (that pill: 32 points), without it its steps (56). The edge pairs tested
   are bounded (`MAX_CROSS_TESTS`): past them a spline is capped unchecked, a line in the report.
+  Wherever the spline starts: a doubled first knot (DupFirst), a doubled pair before the last (DupSecondLast), the
+  last on the first, all without a cap. Not probed, assumed as above: an Extrude with both caps off (MaxDrop leaves
+  a crossing spline unturned there too), a doubled knot without Optimize (MaxDrop: its steps run out and back, a
+  crossing), a segment from a knot back to itself with its handles pulled out (MaxDrop: no steps under Optimize), two
+  points on one XY spot at different heights (MaxDrop: a touch on XY, no cap).
+  Rounded Rectangles with short straight sides (10 x 20, corner radius 4.8, 4.9, 4.99; 13 x 12.5, radius 6 and
+  6.25): 3ds Max gives the short sides their 6 steps (Optimize does not call a segment whose handles run far past
+  its ends straight: 44 points, MaxDrop 32) and no cap (the steps fold back over the side); radius 3, 4, 4.5: 32
+  points and a cap, as MaxDrop. That is the straightness rule (`_straight`), not the crossing test.
 - **Smoothing**: caps group 16; the sides change group only at a corner or Bezier-corner knot (FixtureExtMirror's
   rounded Rectangle: sharp at its 8 Bezier-corner knots) or a Bezier knot with a vector on its point, the groups
   alternating 1, 2 (4 where three runs meet, 1, 3, 2 ... along a spline with no corner). A Bezier knot breaks the

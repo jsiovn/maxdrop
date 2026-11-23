@@ -25,8 +25,8 @@ The sides join segments + 1 copies of each polyline along the object's Z, one pe
 up; a closed polyline also gets a cap at level 0 (Cap Start) and at the last level (Cap End). Closed polylines nest
 even-odd: one inside an even number of others is a solid, inside an odd number a hole of its innermost container.
 A closed polyline with two edges that do not follow each other and meet (cross, touch or run over each other, on XY,
-exactly) or that lost a zero-length segment between straight edges gets no cap and is left out of the nesting (no
-hole, no container, not turned), as 3ds Max 2020 does. Every solid is turned counter-clockwise and every hole
+without a tolerance) or that lost a zero-length segment between straight edges gets no cap and is left out of the
+nesting (no hole, no container, not turned), as 3ds Max 2020 does. Every solid is turned counter-clockwise and every hole
 clockwise seen from +Z (a turned polyline starts at its last point) before the sides are made, and a negative amount
 reverses the sides, so the normals point out whatever way the splines run; an open polyline keeps its own direction
 (its faces look to the right of it). A cap without holes is one n-gon, a cap with holes is ear-clipped after a bridge
@@ -250,12 +250,15 @@ def _polyline(spline, steps, optimize, adaptive):
         bare.append(True)
         ids.append(0)  # no column leaves the last point
     out_p, out_h, out_i, out_b = [], [], [], []
-    doubled = False
+    doubled = at_first = False
     for p, h, i, b in zip(pts, hard, ids, bare):  # a zero-length segment would make faces of no area
         if out_p and p == out_p[-1]:
             # straight edges on both sides: 3ds Max, keeping both points, finds them touching (between curves its
-            # rounding decides, mostly a cap)
-            doubled = doubled or (len(out_b) > 1 and out_b[-2] and b)
+            # rounding decides, mostly a cap); on the first point the edge into it is the closing one, known below
+            if len(out_b) > 1:
+                doubled = doubled or (out_b[-2] and b)
+            else:
+                at_first = True
             out_h[-1] = out_h[-1] or h
             out_i[-1] = i  # the column that leaves this point is the one that remains
             out_b[-1] = b
@@ -270,6 +273,9 @@ def _polyline(spline, steps, optimize, adaptive):
         out_p.pop()
         out_h.pop()
         out_i.pop()
+        out_b.pop()
+    if at_first and len(out_b) > 2:
+        doubled = doubled or (out_b[-1] and out_b[0])
     if closed and len(out_p) < 3:
         closed = False
     return Polyline(out_p, out_h, closed, out_i, closed and doubled)
@@ -505,10 +511,15 @@ def _nest(loops, issues):
     return solids
 
 
+def _turn_sign(numpy, o, e, f):
+    """The sign of the turn o -> e -> f, row by row of (x, y) arrays."""
+    return numpy.sign((e[:, 0] - o[:, 0]) * (f[:, 1] - o[:, 1]) - (e[:, 1] - o[:, 1]) * (f[:, 0] - o[:, 0]))
+
+
 def _crosses(numpy, xy, tests):
     """Whether two edges of the closed polygon xy ((x, y) points) that do not follow each other meet: cross, touch
-    or run over each other, exactly, as 3ds Max finds it; adjacent edges never count. None when the edge pairs whose
-    x ranges overlap are more than the tests left (a one-item list, charged before any is tested)."""
+    or run over each other, without a tolerance, as 3ds Max finds it; adjacent edges never count. None when the edge
+    pairs whose x ranges overlap are more than the tests left (a one-item list, charged before any is tested)."""
     n = len(xy)
     if n < 4:  # every edge follows every other
         return False
@@ -538,12 +549,10 @@ def _crosses(numpy, xy, tests):
         if not len(i):
             continue
         pa, pb, pc, pd = p[i], q[i], p[j], q[j]
-
-        def side(o, e, f):  # the sign of the turn o -> e -> f
-            return numpy.sign((e[:, 0] - o[:, 0]) * (f[:, 1] - o[:, 1]) - (e[:, 1] - o[:, 1]) * (f[:, 0] - o[:, 0]))
-
         # on opposite sides or on the line, both ways; four zeros: collinear, and the boxes overlap
-        if ((side(pa, pb, pc) * side(pa, pb, pd) <= 0) & (side(pc, pd, pa) * side(pc, pd, pb) <= 0)).any():
+        ab = _turn_sign(numpy, pa, pb, pc) * _turn_sign(numpy, pa, pb, pd)
+        cd = _turn_sign(numpy, pc, pd, pa) * _turn_sign(numpy, pc, pd, pb)
+        if ((ab <= 0) & (cd <= 0)).any():
             return True
     return False
 
