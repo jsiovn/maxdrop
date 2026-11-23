@@ -784,6 +784,12 @@ within 1e-4 for planar and box, 1e-3 for the round types):
   MaxDrop's float64 point of the same vertex is a residue of about 2e-16 radii: below 1e-9 radii it is the center.
   Under a turned gizmo, a vertex 1e-7 to 1e-5 radii off the center gets an angle from 3ds Max's own
   single-precision noise, which MaxDrop does not match.
+  Not matched on purpose: that close to the center the rounding of a single-precision point is of the order of its
+  distance from the center, so 3ds Max's angle there comes from its own rounding, not from the scene; matching it
+  would need a second, single-precision gizmo transform in 3ds Max's operation order, which the probes did not
+  determine, and could move the pole and center cases uvwmap_pole pins. What it costs: a few corners of the fan
+  around such a vertex (U off by up to about 0.1, V by up to about 0.15), rare. MaxDrop keeps the float64 angle
+  (test_uvwmap: a corner 1e-7 radii off has the angle).
 
 Evaluated: the UVW Maps that render right above the base object or above an applied Extrude (FixtureUVWExtrude;
 FixtureUVWTwo, two in a row). One above another modifier (FixtureUVWAboveBend), a switched-off one (FixtureUVWOff)
