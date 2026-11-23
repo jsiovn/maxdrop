@@ -125,7 +125,8 @@
 	with animate on at time 50 lc.weight[1] = 10
 	sliderTime = 0
 	local grey = StandardMaterial name:"FixtureGrey" diffuse:(color 128 128 128)
-	for b in #(looker, lookerY, both, upLook, upAxis, keep, orient, offsets, orientOff, weighted, weightedUp) do b.material = grey
+	for b in #(looker, lookerY, both, upLook, upAxis, keep, orient, offsets, orientOff, weighted, weightedUp) do
+		b.material = grey
 	makeDir @"C:\maxdrop_fixtures" all:true
 	saveMaxFile @"C:\maxdrop_fixtures\lookat.max" quiet:true
 	"lookat: " + (objects.count as string) + " objects"
