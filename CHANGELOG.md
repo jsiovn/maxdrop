@@ -138,6 +138,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Modifiers: a Shell above a Symmetry (a half-modelled object, mirrored, then shelled) now shades its rim hard
   against both surfaces as 3ds Max does, without a seam on the mirror plane, instead of smoothing the rim into
   them.
+- Lights: a VRayIES whose IES file is not found because the texture search stopped in a crowded folder says where
+  it stopped, and the report lists that stop also when materials are not imported. The IES, dome and material
+  lookups now walk the texture folders once per scene, not once each.
 
 ## [1.0.1] - 2026-11-22
 

@@ -106,6 +106,8 @@ Images already in the file (an earlier import's) are reused by file and color sp
 generated or linked from a library; vray_maps imported twice with its textures adds no image the second time.
 lights_photometric copied beside a self-authored fixture_web.ies (rated 500 lm, 100 cd everywhere): IesPower's energy
 is 1500 x 400 pi / 500 / 683 W x Light Strength, IesOverride's stays 300 / 683 W, no rated-lumens line in the report.
+The same beside filler files with a texture walk of 2 entries: IesPower takes its power as its flux and its line says
+where the search stopped, as the report does once, with materials and without.
 The performance budget of one big mesh (tests/blender/bench.py) runs last, without file arguments.
 Prints `FIXTURES PASSED` (exit 0) or `FIXTURES FAILED` (exit 1).
 """
@@ -4030,6 +4032,57 @@ def check_ies_header(max_path):
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def check_ies_search_stopped(max_path):
+    """max_path (lights_photometric) copied beside fixture_web.ies and filler files that come first, the texture walk
+    cut to 2 entries per rule: the IES file is not found, so IesPower (1500, override off) takes its power as its
+    flux and its line says the search stopped; the report's stop line is there once, with materials and without
+    (only the IES lookup walks then)."""
+    from maxdrop import ops
+    from maxdrop.convert import lights, textures
+    original = textures.TextureIndex
+
+    class Small(original):
+        def __init__(self, *args, **kwargs):
+            kwargs["max_entries"] = 2
+            super().__init__(*args, **kwargs)
+
+    empty_scene()
+    scratch = tempfile.mkdtemp(prefix="maxdrop-ies-stop-")
+    try:
+        dst = os.path.join(scratch, os.path.basename(max_path))
+        shutil.copy(max_path, dst)
+        for n in range(3):
+            with open(os.path.join(scratch, "a%d.txt" % n), "wb") as f:
+                f.write(b"x")
+        with open(os.path.join(scratch, "fixture_web.ies"), "wb") as f:
+            f.write(b"IESNA:LM-63-2002\n[TEST] MaxDrop test\nTILT=NONE\n1 500 1 3 1 1 2 0 0 0\n1 1 0\n0 90 180\n0\n"
+                    b"100 100 100\n")
+        stop ="Texture search of the scene's folder stopped after 2 files and folders, in " + scratch
+        textures.TextureIndex = Small
+        try:
+            for label, kwargs in (("without materials", {"object_filter": {'UV'}}), ("with materials", {})):
+                result = bpy.ops.import_scene.maxdrop(filepath=dst, **kwargs)
+                ob = bpy.data.objects.get("IesPower")
+                energy = ob.data.energy if ob is not None else None
+                want = 1500.0 / 683.0 * ops.LIGHT_STRENGTH
+                text = bpy.data.texts.get("MaxDrop Report")
+                body = text.as_string() if text is not None else ""
+                line = next((x for x in body.splitlines() if "IesPower" in x and "rated lumens" in x), "")
+                check("ies search stopped, %s: IesPower takes its power as its flux, its line says where the search "
+                      "stopped, the report's stop line once" % label,
+                      result == {'FINISHED'} and energy is not None and abs(energy - want) <= want * 1e-5
+                      and lights.IES_UNREAD.split(", and ")[0] in line
+                      and "(not found: texture search of the scene's folder stopped after 2 files and folders" in line
+                      and body.count(stop) == 1 and lights.IES_RATED not in body,
+                      "%s %s vs %s | %s" % (result, energy, want, body[-900:]))
+                empty_scene()
+        finally:
+            textures.TextureIndex = original
+    finally:
+        empty_scene()
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def check_reader_defect(first, second):
     """A TypeError, KeyError or AttributeError of the reading (a reader defect, never raised on purpose) reports the
     file as not imported, its type in the reason, instead of ending the operator: in a run of two files, synchronous
@@ -4812,6 +4865,8 @@ def main():
                                  ("asset table once", lambda: check_asset_table_once(
                                      os.path.join(ROOT, "tests", "fixtures", "vray_lights.max"))),
                                  ("ies header", lambda: check_ies_header(
+                                     os.path.join(ROOT, "tests", "fixtures", "lights_photometric.max"))),
+                                 ("ies search stopped", lambda: check_ies_search_stopped(
                                      os.path.join(ROOT, "tests", "fixtures", "lights_photometric.max"))),
                                  ("benchmark", lambda: _bench().run(check))):
             try:
