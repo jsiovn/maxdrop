@@ -175,7 +175,7 @@ too.
 
 ```powershell
 python -I -m unittest discover tests                  # the tools, the landing page, the license files: no Blender
-python -I tools/lint.py                               # ruff, at the version CI runs (CONTRIBUTING.md)
+python -I tools/lint.py                               # ruff at the version CI runs + unreachable code (CONTRIBUTING.md)
 powershell -ExecutionPolicy Bypass -File build.ps1    # dist\: the zip, index.json and the landing page
 
 # Inside Blender, headless, with a profile of its own so your preferences are never touched:

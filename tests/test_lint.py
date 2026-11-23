@@ -3,8 +3,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """Ruff, locally as in CI: one version, written in pyproject.toml (`required-version`), and tools/lint.py running
-it on the tree. The pin checks need no ruff; the lint checks run when tools/lint.py finds a ruff of that version
-and skip with the reason otherwise.
+it on the tree, then its own unreachable-code check. The pin checks, the unreachable-code check and main() with a
+stand-in ruff need no ruff (CI installs ruff only after the plain tests); the lint checks run when tools/lint.py
+finds a ruff of that version and skip with the reason otherwise.
 
     python -I -m unittest discover tests
 """
@@ -14,6 +15,7 @@ import io
 import os
 import re
 import shutil
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -129,7 +131,8 @@ class UnreachableTest(unittest.TestCase):
         self.assertIn("return", found[0][2])
 
     def test_bom_and_decorated_def(self):
-        source = "\ufeffclass C:\n    def f(self):\n        return 1\n\n        @staticmethod\n        def g():\n            pass\n"
+        source = ("\ufeffclass C:\n    def f(self):\n        return 1\n\n"
+                  "        @staticmethod\n        def g():\n            pass\n")
         self.assertEqual([line for line, _, _ in self.findings(source)], [6])
 
     def test_clean_file(self):
@@ -164,7 +167,7 @@ class UnreachableTest(unittest.TestCase):
         with self.assertRaises(SyntaxError):
             self.findings("def f(:\n    return\n")
 
-    def test_syntax_error_does_not_stop_main(self):
+    def test_syntax_error_does_not_stop_the_report(self):
         with tempfile.TemporaryDirectory() as tmp:
             bad = os.path.join(tmp, "bad.py")
             with open(bad, "w", encoding="utf-8") as f:
@@ -174,10 +177,82 @@ class UnreachableTest(unittest.TestCase):
                 f.write(DEAD_TEST)
             out = io.StringIO()
             with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
-                count = lint.report_unreachable([bad, dead], tmp, github=False)
+                count = lint.report_unreachable([bad, dead], tmp)
         self.assertEqual(count, 1)
         self.assertIn("dead.py:15:9:", out.getvalue())
         self.assertIn("bad.py", out.getvalue())
+
+
+class MainWiringTest(unittest.TestCase):
+    """main() runs the unreachable-code check on the files ruff lists, with a stand-in ruff: no ruff needed."""
+
+    def run_fake(self, args, check_code=0, listed=("dead.py", "notes.txt")):
+        calls = []
+
+        def run(argv, cwd, capture_output):
+            calls.append(argv)
+            if argv[-1] == "--show-files":
+                listing = "".join(os.path.join(cwd, name) + "\n" for name in listed)
+                return subprocess.CompletedProcess(argv, 0, listing.encode("utf-8"), b"")
+            return subprocess.CompletedProcess(argv, check_code, b"All checks passed!\n", b"")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with open(os.path.join(tmp, "dead.py"), "w", encoding="utf-8") as f:
+                f.write(DEAD_TEST)
+            with open(os.path.join(tmp, "notes.txt"), "w", encoding="utf-8") as f:
+                f.write("return\nx\n")
+            with mock.patch.object(lint, "find_ruff", lambda version: ["ruff"]), \
+                    mock.patch.object(lint.subprocess, "run", run):
+                code, out = run_main(args, cwd=tmp)
+        return code, out, calls
+
+    def test_finding_turns_a_clean_check_into_1(self):
+        code, out, calls = self.run_fake(["."])
+        self.assertEqual(code, 1, out)
+        self.assertIn("dead.py:15:9: unreachable code after `return`", out)
+        self.assertNotIn("notes.txt", out)
+        self.assertEqual(calls, [["ruff", "check", "."], ["ruff", "check", ".", "--show-files"]])
+
+    def test_no_arguments_check_the_tree(self):
+        _, _, calls = self.run_fake([])
+        self.assertEqual(calls[0], ["ruff", "check", "."])
+
+    def test_clean_listing_keeps_ruffs_code(self):
+        self.assertEqual(self.run_fake(["."], listed=())[0], 0)
+        self.assertEqual(self.run_fake(["."], check_code=1, listed=())[0], 1)
+
+    def test_ruff_error_is_returned_before_the_check(self):
+        code, _, calls = self.run_fake(["."], check_code=2)
+        self.assertEqual(code, 2)
+        self.assertEqual(len(calls), 1)
+
+    def test_exit_zero(self):
+        code, out, _ = self.run_fake(["--exit-zero", "."])
+        self.assertEqual(code, 0)
+        self.assertIn("dead.py:15:9:", out)
+
+    def test_flags_ruff_refuses_beside_show_files_skip_the_check(self):
+        for flag in ("--statistics", "--add-noqa"):
+            code, out, calls = self.run_fake([flag, "."])
+            self.assertEqual(code, 0, flag)
+            self.assertEqual(len(calls), 1, flag)
+            self.assertIn("skipped with " + flag, out)
+
+    def test_machine_format_keeps_stdout_its_own(self):
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp:
+            dead = os.path.join(tmp, "dead.py")
+            with open(dead, "w", encoding="utf-8") as f:
+                f.write(DEAD_TEST)
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                count = lint.report_unreachable([dead], tmp, "json")
+        self.assertEqual((count, out.getvalue()), (1, ""))
+        self.assertIn("dead.py:15:9:", err.getvalue())
+
+    def test_output_format_forms(self):
+        self.assertEqual(lint._output_format(["--output-format=github", "."]), "github")
+        self.assertEqual(lint._output_format(["--output-format", "json", "."]), "json")
+        self.assertIsNone(lint._output_format(["."]))
 
 
 class LintTest(unittest.TestCase):

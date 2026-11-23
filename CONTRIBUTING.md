@@ -21,7 +21,7 @@ You need Blender 4.2 or newer and any Python 3 for the plain tests. There is not
 
 ```powershell
 python -I -m unittest discover tests                  # the unit tests, the tools, the landing page: no Blender
-python -I tools/lint.py                               # ruff, at the version CI runs (see below)
+python -I tools/lint.py                               # ruff at the version CI runs + unreachable code (see below)
 powershell -ExecutionPolicy Bypass -File build.ps1    # dist\: the zip, index.json and the landing page
 ```
 
