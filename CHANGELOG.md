@@ -35,6 +35,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ### Fixed
 
+- Materials: a Standard material whose shader was switched from Blinn after it was created (3ds Max creates every
+  Standard material as Blinn) takes each map, its on switch and its amount where 3ds Max keeps them: a bump map whose
+  amount was never set afterwards imports at 30 % instead of 100 %, a self-illumination map at 100 % instead of 30 %,
+  and a map set before the switch (an Anisotropic bump map, for one) lands in its own input instead of another one.
 - Materials: a CoronaPhysicalMtl, a Standard material with the Strauss shader and the grey material of an
   unsupported class reflect their IOR's full Fresnel (Specular IOR Level 0.5, Blender's default) instead of half of
   it (0.25), which made every non-metal CoronaPhysicalMtl reflect too little.

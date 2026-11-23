@@ -62,15 +62,6 @@ scene = importlib.import_module(_PKG + ".reader.scene")
 pblock = importlib.import_module(_PKG + ".reader.pblock")
 materials = importlib.import_module(_PKG + ".reader.materials")
 owner_slots = importlib.import_module(_PKG + ".reader.owner_slots")
-STANDARD_SHADER_SLOT = 2  # a Standard material's reference to its shader
-TEXMAPS = (0x1200, 0)  # a Standard material's Texmaps object
-
-
-def BLINN_AMOUNT(k):  # noqa: N802 - a table: a Standard material's map amounts as created (Blinn's channels)
-    return 0.3 if k == 8 else 1.0
-
-
-BLINN_LAYOUT = {classids.PHONG_SHADER, classids.BLINN_SHADER, classids.METAL_SHADER}  # map channels as created
 ChunkError = chunks.ChunkError
 
 
@@ -150,26 +141,35 @@ class Parity:
         else:  # file names are asset ids in the file (resolved by a later reader); nodes, bitmaps: oracle null
             self.skipped += 1
 
-    def texmaps_amounts(self, owner):
-        """{slot: amount} a Standard material's Texmaps object (class (0x1200, 0)) keeps in its chunks 0x5100 +
-        slot."""
-        for target in self.scene.refs(owner).values():
-            entry = self.scene.entry(target)
-            if entry is not None and tuple(entry.class_id) == TEXMAPS:
-                holder = self.scene.chunk(target)
-                holder = holder.first(0x0003) or holder
-                return {c.id - 0x5100: c.unpack("<f")[0] for c in holder.children if 0x5100 <= c.id < 0x5200}
-        self.case.fail("Standard material %d without a Texmaps object" % owner)
+    def channels(self, owner, oracle_block):
+        """A Standard material's block 3 against its Texmaps object (reader.materials.standard_maps): 3ds Max answers
+        mapEnables (0), maps (1) and mapAmounts (2) from it: maps and switches compared at every channel, amounts at
+        those holding a map (an empty channel's amount is never used: 3ds Max 2020 answers the table's for an empty
+        Multi-Layer bump, 17, while the Texmaps object keeps 0.3 there). Returns those answers, {pid: list}, for
+        stale()."""
+        params = {p["id"]: p["value"] for p in oracle_block["params"]}
+        std = materials.standard_maps(self.scene, self.graph.get(owner))
+        self.case.assertIsNotNone(std, "Standard material %d: its Texmaps object" % owner)
+        for k, (on, ref, amount) in enumerate(zip(params[0], params[1], params[2])):
+            what = "Standard material %d channel %d" % (owner, k)
+            index, ours_on, ours_amount = std.channel(k)
+            want = None if ref is None else self.by_key[_key(self.oracle_graph[ref])]
+            self.case.assertEqual(index, want, what + " map")
+            self.case.assertEqual(ours_on, bool(on), what + " on")
+            self.compared += 2
+            if ref is not None:
+                self.number(ours_amount, amount, what + " amount")
+        return params
 
     def stale(self, owner, oracle_block):
         """skip(pid, k, ours): whether a value of this block is one the file keeps stale while 3ds Max computes its
         own (standard_shaders, standard_maps):
-        - a Standard material whose shader is not Blinn, Phong or Metal, block 3 mapAmounts: the file keeps the
-          amounts of the material as created (Blinn's map channels, bump 0.3 at slot 8) where they were not set
-          after the shader switch, 3ds Max answers those of its shader's channels (Anisotropic: 0.3 at slot 11).
-          Every amount without a map is skipped (none is used); one with a map that differs only where the file
-          holds the created layout's value (BLINN_AMOUNT) and its Texmaps object 3ds Max's (chunk 0x5100 + slot,
-          1.0 when absent; standard_maps FixtureMapsUnsetAmounts).
+        - a Standard material's block 3 mapEnables, maps and mapAmounts: the tables keep the channel layout the
+          material was created with (Blinn's: bump 0.3 at slot 8) where nothing was set after the shader switch,
+          and a map set before it at its Blinn channel, while 3ds Max answers its shader's (Anisotropic: 0.3 at
+          slot 11) from the Texmaps object. A table value that differs from 3ds Max's is skipped once channels()
+          has found the Texmaps object's value equal to 3ds Max's (standard_maps FixtureMapsUnsetAmounts,
+          FixtureMapsSwitchedAfter).
         - a Physical Material's mapM0 ... mapM20 (block 0, 250-270): saved empty, 3ds Max answers the map of
           parameter id - 150 (mapM1 = base_color_map)."""
         entry = self.scene.entry(owner)
@@ -177,13 +177,15 @@ class Parity:
         if entry is None or entry.superclass != classids.SC_MATERIAL:
             return lambda pid, k, ours: False
         if entry.class_id == classids.STANDARD_MTL and oracle_block["block_id"] == 3:
-            slot = self.scene.refs(owner).get(STANDARD_SHADER_SLOT)
-            shader = self.scene.entry(slot) if slot is not None else None
-            if shader is not None and shader.class_id not in BLINN_LAYOUT:
-                kept = self.texmaps_amounts(owner)
-                return lambda pid, k, ours: pid == 2 and (params[1][k] is None or (
-                    abs(ours - params[2][k]) > TOLERANCE and abs(ours - BLINN_AMOUNT(k)) <= TOLERANCE
-                    and abs(kept.get(k, 1.0) - params[2][k]) <= TOLERANCE))
+            answers = self.channels(owner, oracle_block)
+
+            def differs(pid, k, ours):
+                want = answers[pid][k]
+                if pid == 1:
+                    return getattr(ours, "index", None) != (None if want is None else
+                                                            self.by_key[_key(self.oracle_graph[want])])
+                return abs(float(ours) - float(want)) > TOLERANCE
+            return lambda pid, k, ours: pid in (0, 1, 2) and differs(pid, k, ours)
         if entry.class_id == classids.PHYSICAL_MTL and oracle_block["block_id"] == 0:
             return lambda pid, k, ours: (250 <= pid <= 270 and isinstance(ours, pblock.Reference)
                                          and ours.index is None and params.get(pid) is not None
@@ -585,7 +587,7 @@ class MapParts(unittest.TestCase):
         self.assertIsNone(materials.bitmap_gamma(s, _Map({0: _Block(0)}, {0: 9})))
 
     def test_no_chunk_ids_in_convert(self):
-        ids = ("0x9002", "0x9003", "0x9005", "0x9006", "0x900b", "0x1201")
+        ids = ("0x9002", "0x9003", "0x9005", "0x9006", "0x900b", "0x1201", "0x5003", "0x5100")
         for path in glob.glob(os.path.join(ROOT, "maxdrop", "convert", "*.py")):
             with open(path, encoding="utf-8") as f:
                 text = f.read().lower()
@@ -681,6 +683,59 @@ class MixCurve(unittest.TestCase):
         s = scene.Scene(container(0x2025, container(CURVE_MAP, refs(-1, 1)), container(CURVE_CONTROL)), CURVE_CLASSES)
         with self.assertRaises(materials.ChunkError):  # a curve control without its curve
             materials.mix_curve(s, materials.MaterialGraph(s).get(0))
+
+
+STD_MTL, STD_TEXMAPS, STD_MAP, STD_OTHER = 0, 1, 2, 3
+STD_CLASSES = classdir.ClassDirectory([
+    classdir.ClassEntry(STD_MTL, classids.STANDARD_MTL, classids.SC_MATERIAL, "Standard", -1, None),
+    classdir.ClassEntry(STD_TEXMAPS, classids.STD_TEXMAPS, classids.SC_TEXMAP_CONTAINER, "Texmaps", -1, None),
+    classdir.ClassEntry(STD_MAP, classdir.ClassId(0x20, 0), classids.SC_TEXMAP, "t", -1, None),
+    classdir.ClassEntry(STD_OTHER, classdir.ClassId(0x30, 0), classids.SC_REF_TARGET, "o", -1, None)])
+
+
+def f32(cid, v):
+    return leaf(cid, struct.pack("<f", v))
+
+
+def std_scene(*texmaps_children, texmaps_refs=(-1, -1, -1, 3, -1, 4), texmaps_class=STD_TEXMAPS):
+    """A Standard material (object 0) whose reference 1 is its Texmaps object (1); objects 2.. after it: a map at 3
+    (channel 1), something that is not a map at 4 (channel 2)."""
+    return scene.Scene(container(0x2025, container(STD_MTL, refs(-1, 1)),
+                                 container(texmaps_class, refs(*texmaps_refs), *texmaps_children),
+                                 container(STD_OTHER), container(STD_MAP), container(STD_OTHER)), STD_CLASSES)
+
+
+class StandardMaps(unittest.TestCase):
+    """standard_maps: a Standard material's channels from its Texmaps object (standard_maps fixture: Parity)."""
+
+    def std(self, s):
+        return materials.standard_maps(s, materials.MaterialGraph(s).get(0))
+
+    def test_channels(self):
+        std = self.std(std_scene(u32(0x5003, 0b1010), f32(0x5101, 0.25), f32(0x5108, 0.3)))
+        self.assertEqual(std.maps, {1: 3})  # reference 5 holds no map: channel 2 has none
+        self.assertEqual(std.channel(1), (3, True, 0.25))
+        self.assertEqual(std.channel(3), (None, True, 1.0))  # switched on without a map
+        index, on, amount = std.channel(8)
+        self.assertEqual((index, on), (None, False))
+        self.assertAlmostEqual(amount, 0.3, places=6)
+
+    def test_unreadable_gives_none(self):
+        cases = {
+            "no on mask": std_scene(f32(0x5101, 0.5)),
+            "a short on mask": std_scene(leaf(0x5003, b"\x01\x00")),
+            "a long amount": std_scene(u32(0x5003, 2), leaf(0x5101, bytes(8))),
+            "an amount container": std_scene(u32(0x5003, 2), container(0x5101, f32(0x0001, 0.5))),
+            "not the Texmaps class": std_scene(u32(0x5003, 2), texmaps_class=STD_OTHER),
+            "a reference past the objects": std_scene(u32(0x5003, 2), texmaps_refs=(-1, 99)),
+        }
+        for what, s in cases.items():
+            with self.subTest(what):
+                self.assertIsNone(self.std(s))
+
+    def test_no_texmaps_object(self):
+        s = scene.Scene(container(0x2025, container(STD_MTL, refs(-1, 1)), container(STD_OTHER)), STD_CLASSES)
+        self.assertIsNone(self.std(s))
 
 
 if __name__ == "__main__":

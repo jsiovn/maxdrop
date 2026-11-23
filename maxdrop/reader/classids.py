@@ -120,6 +120,7 @@ SYMMETRY = ClassId(0x2D7E702B, 0x0BE41A6E)
 
 # Materials, maps and their parts.
 STANDARD_MTL = ClassId(0x00000002, 0)
+STD_TEXMAPS = ClassId(0x00001200, 0)  # a Standard material's map channels (superclass 0x1080)
 MULTI_SUB_MTL = ClassId(0x00000200, 0)
 SHELL_MTL = ClassId(0x00000255, 0)
 PHYSICAL_MTL = ClassId(0x3D6B1CEC, 0xDEADC001)
@@ -266,6 +267,7 @@ CLASSES = {
     (SC_OSMODIFIER, SHELL): "Shell",
     (SC_OSMODIFIER, SYMMETRY): "Symmetry",
     (SC_MATERIAL, STANDARD_MTL): "Standard",
+    (SC_TEXMAP_CONTAINER, STD_TEXMAPS): "Texmaps",
     (SC_MATERIAL, MULTI_SUB_MTL): "Multi/Sub-Object",
     (SC_MATERIAL, SHELL_MTL): "Shell Material",
     (SC_MATERIAL, PHYSICAL_MTL): "Physical Material",

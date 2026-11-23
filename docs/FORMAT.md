@@ -1511,15 +1511,21 @@ layer, 9-13 of the second, 14 self-illumination, 15 opacity, 16 filter color, 17
 7 refraction, 8 displacement. MaxDrop reads each shader's own channels (`STD_SLOTS` in `convert/materials.py`; a
 shader without a rule with Blinn's); on Strauss the metalness map drives the metallic input.
 
-The amounts in the table keep the layout the material was created with (Blinn's: bump 0.3 at 8) at every channel
-whose amount was not set after the shader switch, with or without a map, while 3ds Max answers its shader's
-(standard_maps FixtureMapsUnsetAmounts, Anisotropic created as Blinn, maps set without touching their amounts:
-self-illumination at 8 stored 0.3, bump at 11 stored 1.0; 3ds Max answers 1.0 and 0.3). 3ds Max takes them from the
-material's Texmaps object (class `(0x1200, 0)`, the Standard material's reference 1): inside its `0x0003`
-container, chunk `0x5100 + channel` holds a channel's amount (`f32`) where it is not 1.0 (absent: 1.0), and `0x5003`
-a `u32` bit mask over the channels (bit k = channel k; set exactly at the channels holding a map in every fixture so
-far: whether it is the on switch or the occupancy is not measured). MaxDrop still reads the table's amounts
-(maxdrop-em3.148).
+The tables (maps, mapEnables, mapAmounts) can keep the layout the material was created with (Blinn's: bump 0.3 at 8)
+while 3ds Max answers its shader's: an amount not set after the shader switch, with or without a map (standard_maps
+FixtureMapsUnsetAmounts, Anisotropic created as Blinn, maps set without touching their amounts: self-illumination at
+8 stored 0.3, bump at 11 stored 1.0; 3ds Max answers 1.0 and 0.3), and a map set before the switch, with its switch
+(FixtureMapsSwitchedAfter: a Blinn bump map moved by 3ds Max to Anisotropic's bump at 11, stored at 8, Anisotropic's
+self-illumination). A channel read before the save (MAXScript `mapAmounts[i]`) is written back into the table, the
+others stay as they were (3ds Max 2020). 3ds Max answers from the material's Texmaps object (class `(0x1200, 0)`,
+superclass `0x1080`, the Standard material's reference 1), whose leaves sit directly in its chunk: `0x5100 +
+channel` a channel's amount (`f32`) where it is not 1.0 (absent: 1.0), `0x5003` a `u32` mask of the switches (bit k
+= channel k: the on switch, not the occupancy; a map switched off clears its bit, a channel switched on without a
+map sets it), and its reference `2k + 1` the map of channel k (`2k`: a Bezier Float holding the amount). On every
+channel of the six shaders with a map in each, the Texmaps object holds what 3ds Max answers; an empty channel's
+amount can differ (an empty Multi-Layer bump, 17: 0.3 stored, 1.0 answered), which nothing uses. MaxDrop reads map,
+switch and amount from the Texmaps object (`reader.materials.standard_maps`) and the tables only for a material
+without a readable one (maxdrop-em3.148).
 
 Diffuse Level (Anisotropic, Multi-Layer, Oren-Nayar-Blinn, Translucent Shader; a fraction, 1 = 100 %), measured
 with Default Scanline renders of a plane lit head-on, gamma off, swatch (200, 100, 50): the pixel is linear in the

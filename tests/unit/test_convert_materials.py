@@ -933,7 +933,9 @@ class Standard(unittest.TestCase, Close):
 class StandardMaps(unittest.TestCase, Close):
     """tools/fixtures/standard_maps.ms: a Standard material per shader with a Checker in every channel the rule
     reads, named after the input it drives ("FixtureMap" + shader + field) and put into the channel 3ds Max names
-    that way on that shader; amounts 0.51 (diffuse) to 0.59 (metalness)."""
+    that way on that shader; amounts 0.51 (diffuse) to 0.59 (metalness). Three Anisotropic materials whose block 3
+    tables are stale (created as Blinn, docs/FORMAT.md): FixtureMapsUnsetAmounts, FixtureMapsSwitchedAfter,
+    FixtureMapsSwitchedOff."""
 
     LABELS = {"Blinn": "BLINN_SHADER", "Anisotropic": "ANISOTROPIC_SHADER", "MultiLayer": "MULTI_LAYER_SHADER",
               "OrenNayarBlinn": "OREN_NAYAR_BLINN_SHADER", "Translucent": "TRANSLUCENT_SHADER",
@@ -948,7 +950,7 @@ class StandardMaps(unittest.TestCase, Close):
         with cf:
             cls.conv = mat.MaterialConverter(cls.graph)
             cls.irs = {n: cls.conv.convert(cls.by_name["FixtureMaps" + n])
-                       for n in list(cls.LABELS) + ["UnsetAmounts"]}
+                       for n in list(cls.LABELS) + ["UnsetAmounts", "SwitchedAfter", "SwitchedOff"]}
 
     def map(self, label, field, amount, invert=False):
         return mat.MapRef(self.by_name["FixtureMap" + label + field], amount, invert)
@@ -998,14 +1000,40 @@ class StandardMaps(unittest.TestCase, Close):
                         self.assertEqual(m.param(1, 3, tab=k).index, want, field)
         self.assertEqual(set(mat.STD_SLOTS), set(mat.SHADERS) | {classids.STRAUSS_SHADER})
 
+    def table(self, label, pid):
+        """Block 3's table pid (0 mapEnables, 1 maps, 2 mapAmounts) of FixtureMaps + label, a map as its index."""
+        values = self.graph.get(self.by_name["FixtureMaps" + label]).block(3).param(pid).values
+        return [getattr(v, "index", v) for v in values]
+
     def test_amounts_never_set_after_the_shader_switch(self):
-        """FixtureMapsUnsetAmounts (Anisotropic, created as Blinn): the maps land in their inputs, at the amounts
-        the map table keeps from the material as created (self-illumination 0.3, bump 1.0), not 3ds Max's (1.0
-        and 0.3, kept in the Texmaps object), docs/FORMAT.md: maxdrop-em3.148 makes these 1.0 and 0.3."""
+        """FixtureMapsUnsetAmounts (Anisotropic, created as Blinn, maps set after the switch without touching their
+        amounts): the table keeps Blinn's amounts (0.3 at 8, 1.0 at 11), 3ds Max answers its shader's from the
+        Texmaps object: self-illumination (8) 1.0, bump (11) 0.3 (maxdrop-em3.148)."""
+        amounts = self.table("UnsetAmounts", 2)
+        self.close((amounts[8], amounts[11]), (0.3, 1.0), "the table is still stale")
         ir = self.irs["UnsetAmounts"]
-        self.same_map(ir.emission_color.map, self.map("UnsetAmounts", "SelfIllum", 0.3), "self-illumination")
-        self.same_map(ir.bump, self.map("UnsetAmounts", "Bump", 1.0), "bump")
+        self.same_map(ir.emission_color.map, self.map("UnsetAmounts", "SelfIllum", 1.0), "self-illumination")
+        self.same_map(ir.bump, self.map("UnsetAmounts", "Bump", 0.3), "bump")
         self.assertIsNone(ir.base_color.map)
+
+    def test_maps_set_before_the_shader_switch(self):
+        """FixtureMapsSwitchedAfter (Blinn with diffuse and bump maps, then switched to Anisotropic): 3ds Max moves
+        the bump map to Anisotropic's channel 11 at 0.3, the table keeps it and its switch at Blinn's 8, which is
+        Anisotropic's self-illumination."""
+        bump = self.by_name["FixtureMapSwitchedAfterBump"]
+        self.assertEqual((self.table("SwitchedAfter", 1)[8], self.table("SwitchedAfter", 0)[8]), (bump, 1),
+                         "the table is still stale")
+        ir = self.irs["SwitchedAfter"]
+        self.same_map(ir.base_color.map, self.map("SwitchedAfter", "Diffuse", 1.0), "diffuse")
+        self.same_map(ir.bump, self.map("SwitchedAfter", "Bump", 0.3), "bump")
+        self.assertIsNone(ir.emission_color.map)
+        self.close(ir.emission_strength, 0.0)
+
+    def test_a_map_switched_off(self):
+        """FixtureMapsSwitchedOff (Anisotropic, self-illumination and bump maps, the bump switched off): no bump."""
+        ir = self.irs["SwitchedOff"]
+        self.same_map(ir.emission_color.map, self.map("SwitchedOff", "SelfIllum", 1.0), "self-illumination")
+        self.assertIsNone(ir.bump)
 
     def test_no_issues(self):
         self.assertEqual((self.conv.stats.issues, dict(self.conv.stats.unknown)), ([], {}))

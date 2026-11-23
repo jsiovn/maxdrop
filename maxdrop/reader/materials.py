@@ -37,6 +37,8 @@ Some parts keep settings in chunks of their own, read into values here (3ds Max 
     bitmap_gamma(scene, m)              # a Bitmap's gamma override as stored, None for automatic
     mix_curve(scene, m)                 # the CurvePoints of the Custom Curve Control m references (a Falloff's
                                         # mix curve), None without one
+    standard_maps(scene, m)             # a Standard material's map channels (map, on, amount) from its Texmaps
+                                        # object, as 3ds Max answers them; None without a readable one
 
 An unreadable flags chunk gives 3ds Max's defaults (both axes tiled, nothing mirrored, not inverted); a Placement's
 axis, source and channel are None without their chunk, for convert to default. No bpy.
@@ -69,6 +71,9 @@ _BITMAP_DATA, _BITMAP_INFO, _BI_TAIL, _BI_GAMMA_OVERRIDE = 0x0003, 0x1201, 14, 0
 _CURVE_COUNT, _CURVE_POINT, _POINT_DATA = 0x1000, 0x1030, 0x1000
 _POINT = struct.Struct("<6fI")
 MAX_CURVE_POINTS = 1000  # a curve drawn by hand has a handful; the cap keeps a hostile count from costing time
+# A Standard material's Texmaps object: u32 leaf, its on mask; f32 leaves at _STD_AMOUNT + channel; channel k's map at
+# its reference 2k + 1 (2k: the amount's controller)
+_STD_ON, _STD_AMOUNT, STD_CHANNELS = 0x5003, 0x5100, 32
 
 
 class CurvePoint(collections.namedtuple("CurvePoint", "point in_handle out_handle flags")):
@@ -95,6 +100,16 @@ class Placement(collections.namedtuple("Placement", "tile mirror real_world axis
 
 
 Placement.__new__.__defaults__ = (None,)
+
+
+class StdMaps(collections.namedtuple("StdMaps", "maps enabled amounts")):
+    """A Standard material's map channels as 3ds Max answers them (its Texmaps object): maps {channel: object index of
+    the map}, enabled the on mask (bit k = channel k), amounts {channel: amount as stored, 1 = full} where not 1."""
+    __slots__ = ()
+
+    def channel(self, k):
+        """(map object index or None, switched on, amount) of channel k."""
+        return self.maps.get(k), bool(self.enabled >> k & 1), self.amounts.get(k, 1.0)
 
 
 class MtlBase:
@@ -296,6 +311,45 @@ def bitmap_gamma(scene, m):
             return None
         gamma, flags = struct.unpack_from("<fI", data, len(data) - _BI_TAIL)
         return gamma if flags & _BI_GAMMA_OVERRIDE else None
+    return None
+
+
+def standard_maps(scene, m):
+    """The StdMaps of Standard material m, read from the first Texmaps object (superclass 0x1080, STD_TEXMAPS) it
+    references: its leaves _STD_ON (u32) and _STD_AMOUNT + channel (f32, as stored), channel k's map at its reference
+    2k + 1 (a reference that is not a map is none), channels below STD_CHANNELS. None when m references no Texmaps
+    object or it cannot be read: no on mask, a leaf not of 4 bytes, damaged references."""
+    for _slot, target in sorted(m.refs.items()):
+        if not 0 <= target < len(scene):
+            continue
+        entry = scene.entry(target)
+        if entry is None or entry.superclass != classids.SC_TEXMAP_CONTAINER or \
+                entry.class_id != classids.STD_TEXMAPS:
+            continue
+        try:
+            chunk = scene.chunk(target)
+            if not chunk.container:
+                return None
+            enabled, amounts = None, {}
+            for c in chunk.children:
+                k = c.id - _STD_AMOUNT
+                if c.id == _STD_ON or 0 <= k < STD_CHANNELS:
+                    if c.container or c.payload_size != 4:
+                        return None
+                    if c.id == _STD_ON:
+                        enabled = c.unpack("<I")[0]
+                    else:
+                        amounts.setdefault(k, c.unpack("<f")[0])
+            if enabled is None:
+                return None
+            maps = {}
+            for slot, ref in scene.refs(target).items():  # raises for a reference past the objects
+                k, held = (slot - 1) // 2, scene.entry(ref)
+                if slot % 2 == 1 and k < STD_CHANNELS and held is not None and held.superclass == classids.SC_TEXMAP:
+                    maps[k] = ref
+        except MaxFileError:
+            return None
+        return StdMaps(maps, enabled, amounts)
     return None
 
 
