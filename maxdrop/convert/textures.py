@@ -7,6 +7,7 @@ to a place the file should not reach.
 
     index = TextureIndex(max_path, prefs.texture_dirs(), scene_subfolders=image_search)   # once per import
     found = index.find(entry.path, entry.resolved)    # Found(path, rule) or None (reader/assets.AssetEntry)
+    lights = index.share()                            # the same walk, counts of its own
     index.report.found[SCENE], index.report.missing, index.report.truncated   # worded by convert.report
 
 A scene stores a path for each file, written on another computer. Only its file name is looked up, compared
@@ -37,6 +38,7 @@ placeholders, deduplicated files) are ordinary files and folders. Unreadable fol
 import: this takes the stored strings.
 """
 import collections
+import copy
 import itertools
 import os
 import stat
@@ -224,6 +226,16 @@ class TextureIndex:
         self._tiers = {}
         self._cache = {}
         self.report = TextureReport()
+
+    def share(self):
+        """A lookup over this one's walk: the same folders and bounds, each rule's folders walked once for both
+        (and every other share), a stopped walk in the report of each; its own cache and its own found and missing
+        counts (the materials' report counts their textures, not an IES file or the dome's image)."""
+        other = copy.copy(self)
+        other._cache = {}
+        other.report = TextureReport()
+        other.report.truncated = self.report.truncated
+        return other
 
     def _roots(self, rule, budget):
         """The folders rule walks, in order, as (folder, whether its subfolders too); (folder, None) when the budget

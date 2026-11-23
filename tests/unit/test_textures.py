@@ -173,6 +173,38 @@ class BoundsTest(Tree):
         self.assertIsNone(idx.find("g.png"))  # the budget is per rule
         self.assertEqual(idx.report.truncated, [(USER, lib, 3)])
 
+    def test_shares_walk_once_and_count_apart(self):
+        self.touch("proj", "scene", "a.jpg")
+        lib = os.path.join(self.root, "lib")
+        self.touch("lib", "u.jpg")
+        real = os.scandir
+        with mock.patch.object(textures.os, "scandir", side_effect=real) as scandir:
+            base = self.index(user_dirs=[lib])
+            one, two = base.share(), base.share()
+            self.assertEqual(one.find("u.jpg"), Found(os.path.join(lib, "u.jpg"), USER))
+            self.assertIsNone(one.find("gone.jpg"))
+            walked = scandir.call_count
+            self.assertEqual(two.find("u.jpg"), Found(os.path.join(lib, "u.jpg"), USER))
+            self.assertEqual(two.find("a.jpg"), Found(os.path.join(self.scene_dir, "a.jpg"), SCENE))
+            self.assertIsNone(two.find("gone2.jpg"))
+            self.assertEqual(scandir.call_count, walked)  # the second share walks nothing again
+        self.assertEqual((one.report.found[USER], one.report.found[SCENE], one.report.missing), (1, 0, ["gone.jpg"]))
+        self.assertEqual((two.report.found[USER], two.report.found[SCENE], two.report.missing),
+                         (1, 1, ["gone2.jpg"]))
+        self.assertEqual((base.report.found[USER], base.report.missing), (0, []))
+
+    def test_a_stopped_walk_is_in_every_share(self):
+        lib = os.path.join(self.root, "lib")
+        for n in range(5):
+            self.touch("lib", "f%d.png" % n)
+        base = self.index(user_dirs=[lib], max_entries=3)
+        one, two = base.share(), base.share()
+        self.assertIsNone(two.find("f4.png"))
+        for idx in (base, one, two):
+            self.assertEqual(idx.report.truncated, [(USER, lib, 3)])
+        self.assertIsNone(one.find("f4.png"))
+        self.assertEqual(one.report.truncated, [(USER, lib, 3)])  # reported once: the rule was walked once
+
     def test_folders_count_against_the_budget(self):
         lib = os.path.join(self.root, "lib")
         for n in range(6):
