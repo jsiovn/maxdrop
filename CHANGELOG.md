@@ -122,6 +122,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   infinite or NaN points; a rectangular section or round thickness that large is left out, a line in the report.
 - Import: an AttributeError while reading a file (a defect in MaxDrop's reader) reports the file as not imported,
   with the traceback in the console, as a TypeError or KeyError already did, instead of ending the import.
+- Materials: an RGB Tint, Output or Color Correction on a roughness, metallic, opacity or bump input works on the
+  color below it, as V-Ray does, instead of on its grey mean (a tint over a colored VRayColor or over an empty
+  VRayColor2Bump), and an RGB Tint's colors there are taken as stored, so a tint of (128, 0, 0), (0, 64, 0),
+  (0, 0, 32) on opacity gives V-Ray's 0.293 in a scene saved with the gamma off, not 0.094. A constant color in a
+  normal map's normal slot (an empty Output or RGB Tint, a VRayColor) now tilts the normal as V-Ray renders it,
+  instead of a line in the report or a flat normal.
 
 ## [1.0.1] - 2026-11-22
 

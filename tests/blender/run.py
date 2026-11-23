@@ -3161,6 +3161,47 @@ def check_builder_multiply():
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def check_builder_wrapper_constants():
+    """A constant below a color wrapper keeps its color (bead maxdrop-em3.128): a Tint over a color Constant on
+    Roughness is drawn in color, the mean taken after it (a DOT_PRODUCT fed by the Tint's last ADD); a NormalMap over
+    a constant color is a Normal Map node fed by an RGB node of that color, not flat (V-Ray tilts the normal by it)."""
+    from maxdrop.build import materials as build_materials
+    from maxdrop.convert import materials as cm
+    from maxdrop.convert import texmaps as tx
+    empty_scene()
+    tint = tx.Tint(tx.Constant((0.5, 0.5, 1.0)), (0.502, 0.0, 0.0), (0.0, 0.251, 0.0), (0.0, 0.0, 0.125))
+    built = {}
+    for label, normal in (("white", (1.0, 1.0, 1.0)), ("flat", (0.5, 0.5, 1.0))):
+        ir = cm.MaterialIR(53, "WrapperConstant_" + label, "test", roughness=cm.Input(0.5, cm.MapRef(1)))
+        ir.normal = cm.MapRef(2)
+        ir.textures = {"roughness": tx.TextureGraphIR(tint, tx.DATA),
+                       "normal": tx.TextureGraphIR(tx.NormalMap(tx.Constant(normal)), tx.NORMAL)}
+        built[label] = build_materials.MaterialBuilder().make(ir)
+    try:
+        for label, normal in (("white", (1.0, 1.0, 1.0)), ("flat", (0.5, 0.5, 1.0))):
+            m = built[label]
+            check("wrapper constants (%s): material built" % label, m is not None)
+            if m is None:
+                continue
+            mixed = _color_into_float(m)
+            check("wrapper constants (%s): no color output linked into a float input" % label, mixed == [], str(mixed))
+            p = _principled(m)
+            add = _meaned(p.inputs["Roughness"])
+            sep = next((n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeSeparateColor"), None)
+            rgb = _from(sep.inputs["Color"]) if sep is not None else None
+            check("wrapper constants (%s): roughness is the mean of the Tint of the color (0.5, 0.5, 1)" % label,
+                  getattr(add, "bl_idname", None) == "ShaderNodeVectorMath" and add.operation == 'ADD'
+                  and getattr(rgb, "bl_idname", None) == "ShaderNodeRGB"
+                  and close(list(rgb.outputs[0].default_value)[:3], [0.5, 0.5, 1.0], 1e-6))
+            nm = _from(p.inputs["Normal"])
+            src = _from(nm.inputs["Color"]) if nm is not None and nm.bl_idname == "ShaderNodeNormalMap" else None
+            check("wrapper constants (%s): the normal is a Normal Map node fed by an RGB node of %s" % (label, normal),
+                  getattr(src, "bl_idname", None) == "ShaderNodeRGB"
+                  and close(list(src.outputs[0].default_value)[:3], list(normal), 1e-6))
+    finally:
+        empty_scene()
+
+
 def check_linear_fallback():
     """A color management config without Linear Rec.709 (a custom OCIO config; the stock one of every supported
     version has it): a linear color image falls back to Non-Color, shares the datablock of the same file as data,
@@ -4711,6 +4752,7 @@ def main():
                                  ("builder blend", check_builder_blend), ("builder mono", check_builder_mono),
                                  ("builder blend modes", check_builder_blend_modes),
                                  ("builder multiply", check_builder_multiply),
+                                 ("builder wrapper constants", check_builder_wrapper_constants),
                                  ("builder weight", check_builder_weight),
                                  ("builder fresnel off", check_builder_fresnel_off),
                                  ("builder clip mask", check_builder_clip_mask),

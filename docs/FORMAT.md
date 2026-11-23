@@ -1567,6 +1567,11 @@ switch. On an opacity input V-Ray takes the mean (1, 0.293, 0.667). In a VRayMtl
 a VRayNormalMap's normal slot the white of an empty Output or RGB Tint tilts the normal as a white map does, the
 VRayColor2Bump's color is flat. Corona renders do not run on the machine of the measurement: not measured. MAXScript
 `copy` of an Output map loses map1Enabled (the copy renders its map).
+The 0.293 is the mean of the tint rows as stored (128 / 255, 64 / 255, 32 / 255), not decoded by the gamma-off
+swatch rule (0.094): in a data, bump or normal input MaxDrop takes a wrapper's rows and a swatch below a wrapper
+that works on color (RGB Tint, an Output part, Color Correction) as stored, keeps its three channels, and takes the
+mean at the float input (maxdrop-em3.128); a constant color in a normal map's normal slot is drawn as that color.
+
 
 ### The Falloff mix curve
 
