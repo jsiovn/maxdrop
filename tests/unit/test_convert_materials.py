@@ -243,6 +243,32 @@ class VRayMtlRules(unittest.TestCase, Close):
         self.assertEqual(ir.base_color.map, mat.MapRef(1, 0.5, False))
         self.assertEqual(ir.specular.map, mat.MapRef(1, 0.5, False))
 
+    def test_fresnel_off_grey_reflection_keeps_diffuse(self):
+        """A grey swatch below 1 without a reflection map is the mirror drawing, not a metal: V-Ray 5.2 renders R +
+        (1 - R) x the diffuse (maxdrop-em3.153, 128 grey over 200 40 40: 0.8925 0.5801 0.5801 facing the camera);
+        within NEUTRAL_REFLECTION of grey the mean is the weight."""
+        for swatch in ((0.5, 0.5, 0.5), (0.99, 0.99, 0.99), (0.25, 0.25, 0.25), (0.509, 0.5, 0.491)):
+            b1 = {1: (1.0, 0.0, 0.0), 2: swatch, 8: 0, 91: 0.2}
+            conv, ir = _convert(_vray(0, b1=b1))
+            self.assertFalse(ir.fresnel, str(swatch))
+            self.close(ir.metallic.value, 0.2, str(swatch))
+            self.close(ir.base_color.value, (1.0, 0.0, 0.0), str(swatch))
+            self.close(ir.specular.value, sum(swatch) / 3.0, str(swatch))
+            self.assertIsNone(ir.specular.map)
+
+    def test_fresnel_off_full_or_colored_reflection_is_metal(self):
+        """A full reflection (mean 1 or more) and a colored one (channel spread above NEUTRAL_REFLECTION) keep the
+        metal in the reflection color: the white mirror copy would drop the tint."""
+        for swatch in ((1.0, 1.0, 1.0), (0.55, 0.5, 0.45), (0.9, 0.5, 0.1), (0.3, 0.2, 0.25)):
+            b1 = {1: (1.0, 0.0, 0.0), 2: swatch, 8: 0, 91: 0.2}
+            conv, ir = _convert(_vray(0, b1=b1))
+            self.close(ir.metallic.value, 1.0, str(swatch))
+            self.close(ir.base_color.value, swatch, str(swatch))
+        b1 = {1: (1.0, 0.0, 0.0), 2: (0.2, 0.1, 0.05), 8: 0, 91: 0.2}  # colored, below METAL_REFLECTION
+        conv, ir = _convert(_vray(0, b1=b1))
+        self.close(ir.metallic.value, 0.2)
+        self.close(ir.base_color.value, (1.0, 0.0, 0.0))
+
     def test_fresnel_off_reflection_map_at_full_amount_keeps_diffuse(self):
         """A reflection map at full amount hides the swatch in V-Ray: no metal however bright the swatch; the
         specular follows the map, the base color is the diffuse."""
@@ -260,8 +286,12 @@ class VRayMtlRules(unittest.TestCase, Close):
         self.close(ir.metallic.value, 0.2)
         self.close(ir.base_color.value, (1.0, 0.0, 0.0))
         conv, ir = _convert(_vray(0, b1=b1, b4={101: Ref(1), 151: 0, 201: 100.0}), _map(1))  # map switched off
+        self.close(ir.metallic.value, 0.2, "a grey swatch alone: the mirror drawing")
+        self.close(ir.base_color.value, (1.0, 0.0, 0.0))
+        tinted = {**b1, 2: (0.85, 0.8, 0.75)}
+        conv, ir = _convert(_vray(0, b1=tinted, b4={101: Ref(1), 151: 0, 201: 100.0}), _map(1))
         self.close(ir.metallic.value, 1.0)
-        self.close(ir.base_color.value, (0.8,) * 3)
+        self.close(ir.base_color.value, (0.85, 0.8, 0.75))
         self.assertIsNone(ir.base_color.map)
         white = {**b1, 2: (1.0, 1.0, 1.0)}
         conv, ir = _convert(_vray(0, b1=white, b4={101: Ref(1), 201: 75.0}), _map(1))  # 1 x 0.25: the threshold
@@ -277,7 +307,7 @@ class VRayMtlRules(unittest.TestCase, Close):
         self.close(ir.base_color.value, (1.0, 0.0, 0.0))
         conv, ir = _convert(_vray(0, b1={2: (0.2, 0.2, 0.2), 8: 1}))
         self.assertTrue(ir.fresnel)
-        conv, ir = _convert(_vray(0, b1={2: (0.8, 0.8, 0.8), 8: 0}))  # the metal rule: Metallic 1 wins in build
+        conv, ir = _convert(_vray(0, b1={2: (0.9, 0.8, 0.7), 8: 0}))  # the metal rule: Metallic 1 wins in build
         self.assertFalse(ir.fresnel)
         self.close(ir.metallic.value, 1.0)
         self.assertTrue(mat.MaterialIR(0, "x").fresnel, "every other rule: the IOR's Fresnel")

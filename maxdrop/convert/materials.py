@@ -37,11 +37,15 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   amount; a normal map (VRayNormalMap, Normal Bump, CoronaNormal) in a bump slot is the normal input, any other
   map the bump input. Added here: a refracting material takes its base color from the refraction color (mixed by
   the transmission), and with Fresnel off a bright reflection (mean >= METAL_REFLECTION) makes the material a metal
-  in the reflection color; beside a reflection map only the swatch's share counts (its mean times 1 - the map
-  amount): a map at full amount hides the swatch, so it never makes a metal (the map itself is not judged).
-  Fresnel off sets fresnel False; below that rule the weight (a dim swatch, or a reflection map such as the black to
-  white Falloff) is then reflected as it is at every angle, which build/materials.py draws as a white metal mixed by it
-  over the material without reflection (V-Ray 5.2: a 0.2 swatch reflects 0.200 facing the camera, maxdrop-em3.120).
+  in the reflection color, unless it is grey (channels within NEUTRAL_REFLECTION), below 1 and without a reflection
+  map: that one keeps the diffuse, as V-Ray renders R + (1 - R) x the diffuse per channel (maxdrop-em3.153: 128 grey
+  over 200 40 40 gives 0.8925 0.5801 0.5801 facing the camera, the metal 0.502); beside a reflection map only the
+  swatch's share counts (its mean times 1 - the map amount): a map at full amount hides the swatch, so it never
+  makes a metal (the map itself is not judged).
+  Fresnel off sets fresnel False; outside that rule the weight (a dim or grey swatch, or a reflection map such as the
+  black to white Falloff) is then reflected as it is at every angle, which build/materials.py draws as a white metal
+  mixed by it over the material without reflection (V-Ray 5.2: a 0.2 swatch reflects 0.200 facing the camera,
+  maxdrop-em3.120).
   The Fresnel IOR is the refraction IOR when the material refracts or locks the IOR, else the reflection IOR.
 - VRayLightMtl -> emission only; VRayFastSSS2 -> base + subsurface; VRayCarPaintMtl / VRayCarPaintMtl2 -> a metal
   base + coat (VRayCarPaintMtl's coat_strength is the coat's reflectance at normal incidence: a full coat whose
@@ -154,6 +158,7 @@ ChunkError = chunks.ChunkError
 
 MAX_PEEL = 8
 METAL_REFLECTION = 0.25  # mean linear reflection (about sRGB 137 grey) above which Fresnel off means metal
+NEUTRAL_REFLECTION = 0.02  # VRayMtl: a Fresnel-off swatch within this channel spread is grey (the mirror, not a metal)
 CORONA_EDGE_DEFAULT = 0.75  # CoronaPhysicalMtl's edgeColor as created (grey): not reported
 CORONA_METAL_IOR = 10.0  # a CoronaLegacyMtl Fresnel IOR from which a bright reflection is a metal (made with 999)
 GREY_SRGB = 128 / 255  # the grey of a material without a rule: MaxDrop's own, not a swatch
@@ -761,7 +766,11 @@ def vray_mtl(conv, m, ir):
     hidden = min(1.0, reflection_map.amount) if reflection_map is not None else 0.0
     shown = mean(reflection) * (1.0 - hidden)
     ir.fresnel = _flag(m, 8, 1, True)  # reflection_fresnel
-    if not ir.fresnel and shown >= METAL_REFLECTION:
+    # a grey swatch below 1 without a map is the mirror drawing (w + (1 - w) diffuse, V-Ray's split); the copy is
+    # white, so a colored or full one stays a metal in its color
+    grey = (reflection_map is None and mean(reflection) < 1.0
+            and max(reflection) - min(reflection) <= NEUTRAL_REFLECTION)
+    if not ir.fresnel and shown >= METAL_REFLECTION and not grey:
         ir.metallic = Input(1.0)
         ir.base_color = Input(reflection, reflection_map)
 
