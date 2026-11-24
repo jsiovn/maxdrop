@@ -1158,7 +1158,7 @@ def corona_physical_mtl(conv, m, ir):
     if thin and (_num(m, 371, 0, 0.0) > 0 or conv.map_ref(m, 372, 373, None, 0, ir=ir) is not None):
         conv.issue(m.index, "CoronaPhysicalMtl %r: translucency not converted" % (m.name,), ir)
     if t > 0 and not thin:
-        _corona_volume(conv, m, ir, (281, 261, 271, 282), (262, 263, 272, 273, 283))
+        _corona_volume(conv, m, ir, 281, 261, 271, 282, ((262, 263, "absorption"), (272, 273, "scattering")), 283)
 
 
 def _corona_ior(m, pid, ior_mode):
@@ -1217,11 +1217,12 @@ def corona_legacy_mtl(conv, m, ir):
     if _num(m, 126, 0, 0.0) > 0 or slot(148, 168, None) is not None:
         conv.issue(m.index, "CoronaLegacyMtl %r: translucency not converted" % (m.name,), ir)
     if t > 0 and not ir.thin_walled:
-        mode = m.param(427, 0)
-        if mode is None or mode == 1:
-            _corona_volume(conv, m, ir, (188, 190, 215, 216), (305, 306, 308, 309, 315))
+        mode = _num(m, 427, 0, 1.0)
+        if mode == 1:
+            _corona_volume(conv, m, ir, 188, 190, 215, 216, ((305, 306, "absorption"), (308, 309, "scattering")), 315)
         elif _num(m, 188, 0, 0.0) > 0:
-            conv.issue(m.index, "CoronaLegacyMtl %r: media mode %r not converted" % (m.name, mode), ir)
+            conv.issue(m.index, "CoronaLegacyMtl %r: media mode %g not converted (Corona 12 renders it black)"
+                       % (m.name, mode), ir)
 
 
 def corona_light_mtl(conv, m, ir):
@@ -1258,11 +1259,11 @@ def corona_layered_mtl(conv, m, ir):
             conv.issue(m.index, "%s: layer %d is not a material" % (out.name, index), out)
             continue
         total += conv.bsdf_count(layer)
-        if layer.medium is not None:
-            conv.issue(m.index, "%s: layer %d's medium not converted" % (out.name, index), out)
         if total > MAX_LAYER_BSDFS:
             conv.issue(m.index, "%s: layers past %d Principled BSDFs not mixed" % (out.name, MAX_LAYER_BSDFS), out)
             break
+        if layer.medium is not None:
+            conv.issue(m.index, "%s: layer %d's medium not converted" % (out.name, index), out)
         amount = max(0.0, _num_tab(m, CORONA_AMOUNTS, k, 1.0))
         mask = None
         if _flag_tab(m, CORONA_MASKS_ON, k, True):
@@ -1400,7 +1401,7 @@ def corona_medium(conv, color, distance, albedo, directionality, emission=(0.0, 
     def per_meter(d):
         return d * conv.meters if _finite(d) and d > 0 else 0.0
     d = per_meter(distance)
-    t = tuple(min(MAX_MEDIUM_DENSITY, -math.log(max(c, 1e-300)) / d) if d > 0 else 0.0
+    t = tuple(min(MAX_MEDIUM_DENSITY, max(0.0, -math.log(max(c, 1e-300)) / d)) if d > 0 else 0.0
               for c in (_clamp01(c) for c in color))
     a = tuple(_clamp01(c) for c in albedo)
     scattering = tuple(x * y for x, y in zip(a, t))
@@ -1413,28 +1414,25 @@ def corona_medium(conv, color, distance, albedo, directionality, emission=(0.0, 
     return Medium(scattering, absorption, max(-MAX_ANISOTROPY, min(MAX_ANISOTROPY, g)), emitted)
 
 
-def _corona_volume(conv, m, ir, pids, named):
-    """The medium of a Corona surface material (corona_medium) into ir: pids (distance, absorption color, scattering
-    color, directionality), named (absorption map and its switch, scattering map and its switch, single bounce)
-    named in the report where on, when there is a medium."""
-    distance, color, albedo, g = pids
-    ir.medium = corona_medium(conv, conv.rgb(m, color, 0, (0.5, 0.5, 0.5)), _num(m, distance, 0, 0.0),
-                              conv.rgb(m, albedo, 0, (0.0, 0.0, 0.0)), _num(m, g, 0, 0.0))
-    if ir.medium is not None:
-        _medium_issues(conv, m, ir, named[:4], named[4])
+def _corona_volume(conv, m, ir, distance, color, albedo, g, slots, single):
+    """The medium of a Corona surface material (corona_medium) into ir from the parameter ids of its distance,
+    absorption color (Corona's default 0.5 grey), scattering color and directionality; slots and single as
+    _medium_issues', named where the distance is on, also when a map alone would make the medium."""
+    d = _num(m, distance, 0, 0.0)
+    ir.medium = corona_medium(conv, conv.rgb(m, color, 0, (0.5, 0.5, 0.5)), d, conv.rgb(m, albedo, 0, (0.0, 0.0, 0.0)),
+                              _num(m, g, 0, 0.0))
+    if _finite(d) and d > 0:
+        _medium_issues(conv, m, ir, slots, single)
 
 
-def _medium_issues(conv, m, ir, maps, single, emission_map=None):
-    """The issues of a medium: its absorption and scattering maps (map, switch, map, switch), an emission map (map,
-    switch) where on, its single bounce."""
+def _medium_issues(conv, m, ir, slots, single=None):
+    """The issues of a medium: each map slot (map id, switch id, what) where a map is on, and single bounce (its id;
+    None: not asked) where on."""
     what = class_name(m.superclass, m.class_id)
-    slots = [(maps[0], maps[1], "absorption"), (maps[2], maps[3], "scattering")]
-    if emission_map is not None:
-        slots.append((emission_map[0], emission_map[1], "emission"))
     for map_pid, on_pid, name in slots:
         if conv.map_ref(m, map_pid, on_pid, None, 0, ir=ir) is not None:
             conv.issue(m.index, "%s %r: %s map not converted" % (what, m.name, name), ir)
-    if _flag(m, single, 0, False):
+    if single is not None and _flag(m, single, 0, False):
         conv.issue(m.index, "%s %r: single bounce not converted" % (what, m.name), ir)
 
 
@@ -1444,11 +1442,13 @@ def corona_volume_mtl(conv, m, ir):
     emissionColor (corona_medium); its maps (absorption 206 / 208, scattering 205 / 207, emission 210 / 211) and 209
     singleBounce are named."""
     ir.alpha = Input(0.0)
-    ir.medium = corona_medium(conv, conv.rgb(m, 102, 0, (0.5, 0.5, 0.5)), _num(m, 101, 0, 0.0),
-                              conv.rgb(m, 203, 0, (0.0, 0.0, 0.0)), _num(m, 204, 0, 0.0),
-                              conv.rgb(m, 202, 0, (1.0, 1.0, 1.0)), _num(m, 201, 0, 0.0))
-    if ir.medium is not None:
-        _medium_issues(conv, m, ir, (206, 208, 205, 207), 209, (210, 211))
+    d, e = _num(m, 101, 0, 0.0), _num(m, 201, 0, 0.0)
+    ir.medium = corona_medium(conv, conv.rgb(m, 102, 0, (0.5, 0.5, 0.5)), d, conv.rgb(m, 203, 0, (0.0, 0.0, 0.0)),
+                              _num(m, 204, 0, 0.0), conv.rgb(m, 202, 0, (1.0, 1.0, 1.0)), e)
+    if _finite(d) and d > 0:
+        _medium_issues(conv, m, ir, ((206, 208, "absorption"), (205, 207, "scattering")), 209)
+    if _finite(e) and e > 0:
+        _medium_issues(conv, m, ir, ((210, 211, "emission"),))
 
 
 # Corona material classes without a Principled equivalent: grey, with what is not converted named

@@ -1981,10 +1981,11 @@ furnace:
   CoronaLegacyMtl in mediaMode 0 renders the slab black. A CoronaPhysicalMtl at refraction 0.5 lets about 0.25 x the
   absorbed color through (0.2205 / 0.1288 / 0.0497): the medium whatever the amount.
 
-Cycles (Blender 5.2) with the same slabs, the coefficients per meter on a Volume Scatter (density the largest
-sigma_s, color each channel's share), a Volume Absorption (density the largest sigma_a, color 1 - the share) and an
-Emission (strength 1 / distance) on the Volume socket: absorption and emission exact; scattering white 0.681, 128
-grey 0.566, directionality 0.6 / -0.6 0.868 / 0.603; furnace 0.992, 0.677, 0.692. An unlinked Surface with nothing
+Cycles (Blender 5.2, 256 samples, Volume Bounces and Max Bounces 64) with the same slabs, the coefficients per meter on
+a Volume Scatter (density the largest sigma_s, color each channel's share), a Volume Absorption (density the largest
+sigma_a, color 1 - the share) and an Emission (strength 1 / distance) on the Volume socket: absorption and emission
+exact; scattering white 0.681, 128 grey 0.566, directionality 0.6 / -0.6 0.868 / 0.603; furnace 0.992, 0.677, 0.692.
+Blender's default Volume Bounces of 0 scatters once (as Corona's single bounce): MaxDrop does not change it. An unlinked Surface with nothing
 on the Volume socket renders black there: a volume-only material keeps its Principled BSDF at Alpha 0.
 
 VRayBitmap `(0x6769144B, 0x02C1017D)` (vray_texmaps, 3ds Max 2020 + V-Ray 5.2; the V-Ray SDK's

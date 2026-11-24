@@ -2315,14 +2315,31 @@ class CoronaMedia(unittest.TestCase, Close):
 
     def test_volume_named(self):
         _conv, ir = self.volume(p101=10.0, p102=(0.5, 0.5, 0.5), p205=Ref(1), p207=1, p206=Ref(2), p208=1,
-                                p210=Ref(3), p211=1, p209=1)
+                                p201=5.0, p210=Ref(3), p211=1, p209=1)
         self.assertIsNotNone(ir.medium)
         self.assertEqual(ir.issues, ["CoronaVolumeMtl 'C': absorption map not converted",
                                      "CoronaVolumeMtl 'C': scattering map not converted",
-                                     "CoronaVolumeMtl 'C': emission map not converted",
-                                     "CoronaVolumeMtl 'C': single bounce not converted"])
+                                     "CoronaVolumeMtl 'C': single bounce not converted",
+                                     "CoronaVolumeMtl 'C': emission map not converted"])
         _conv, off = self.volume(p101=10.0, p102=(0.5, 0.5, 0.5), p205=Ref(1), p207=0, p206=Ref(2), p208=0)
         self.assertEqual(off.issues, [], "maps switched off")
+
+    def test_map_alone_is_named(self):
+        """A white swatch under a map that is on: no medium from the swatch, the map named all the same (Corona
+        renders the mapped absorption)."""
+        _conv, ir = _convert(_corona(0, classids.CORONA_PHYSICAL_MTL, p191=1.0, p261=(1.0, 1.0, 1.0), p281=4.0,
+                                     p262=Ref(1), p263=1), _map(1))
+        self.assertIsNone(ir.medium)
+        self.assertEqual(ir.issues, ["CoronaPhysicalMtl 'C': absorption map not converted"])
+        _conv, vol = self.volume(p201=5.0, p202=(0.0, 0.0, 0.0), p210=Ref(3), p211=1)
+        self.assertIsNone(vol.medium)
+        self.assertEqual(vol.issues, ["CoronaVolumeMtl 'C': emission map not converted"])
+        _conv, off = self.volume(p101=0.0, p205=Ref(1), p207=1, p209=1)
+        self.assertEqual(off.issues, [], "absorption distance 0: the medium is off, its maps with it")
+
+    def test_white_channel_is_zero_not_negative(self):
+        _conv, ir = self.volume(p101=10.0, p102=(0.5, 1.0, 1.0))
+        self.assertEqual([math.copysign(1.0, v) for v in ir.medium.absorption], [1.0, 1.0, 1.0])
 
     def test_physical(self):
         conv, ir = _convert(_corona(0, classids.CORONA_PHYSICAL_MTL, p191=1.0, p261=(0.5, 0.5, 0.5), p281=4.0,
@@ -2360,7 +2377,7 @@ class CoronaMedia(unittest.TestCase, Close):
         self.assertIsNotNone(missing.medium)
         _conv, zero = _convert(_corona(0, classids.CORONA_LEGACY_MTL, p427=0, **base))
         self.assertIsNone(zero.medium)
-        self.assertEqual(zero.issues, ["CoronaLegacyMtl 'C': media mode 0 not converted"])
+        self.assertEqual(zero.issues, ["CoronaLegacyMtl 'C': media mode 0 not converted (Corona 12 renders it black)"])
 
     def test_legacy_needs_refraction_and_solid(self):
         for params in (dict(p123=0.0), dict(p123=1.0, p210=1)):

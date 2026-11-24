@@ -2163,9 +2163,12 @@ def check_builder_volume():
            "none": cm.MaterialIR(73, "MediumNone", "test", alpha=cm.Input(0.0))}
     built = {k: build_materials.MaterialBuilder().make(ir) for k, ir in irs.items()}
     scene = bpy.context.scene
-    settings = ("engine", "resolution_x", "resolution_y", "resolution_percentage", "filepath")
-    saved = (scene.camera, scene.world, [getattr(scene.render, a) for a in settings])
-    path = os.path.join(tempfile.mkdtemp(prefix="maxdrop-volume-"), "slabs.exr")
+    settings = ((scene.render, ("engine", "resolution_x", "resolution_y", "resolution_percentage", "filepath")),
+                (scene.render.image_settings, ("file_format",)), (scene.view_settings, ("view_transform",)),
+                (scene.cycles, ("samples", "use_denoising")))
+    saved = (scene.camera, scene.world, [(o, a, getattr(o, a)) for o, names in settings for a in names])
+    scratch = tempfile.mkdtemp(prefix="maxdrop-volume-")
+    path = os.path.join(scratch, "slabs.exr")
     try:
         for k, ir in irs.items():
             check("volume (%s): material built" % k, built[k] is not None)
@@ -2173,17 +2176,16 @@ def check_builder_volume():
                 check_medium("volume (%s)" % k, built[k], ir)
         if any(m is None for m in built.values()):
             return
+        from maxdrop import compat
         world = bpy.data.worlds.new("MediumWorld")
-        world.use_nodes = True
-        world.node_tree.nodes["Background"].inputs[0].default_value = (0.0, 0.0, 0.0, 1.0)
+        compat.node_tree(world).nodes["Background"].inputs[0].default_value = (0.0, 0.0, 0.0, 1.0)
         scene.world = world
         light = bpy.data.materials.new("MediumEmitter")
-        light.use_nodes = True
-        nodes = light.node_tree.nodes
-        nodes.clear()
-        e = nodes.new("ShaderNodeEmission")
+        tree = compat.node_tree(light)
+        tree.nodes.clear()
+        e = tree.nodes.new("ShaderNodeEmission")
         e.inputs["Strength"].default_value = 1.0
-        light.node_tree.links.new(e.outputs[0], nodes.new("ShaderNodeOutputMaterial").inputs["Surface"])
+        tree.links.new(e.outputs[0], tree.nodes.new("ShaderNodeOutputMaterial").inputs["Surface"])
         mesh = bpy.data.meshes.new("MediumEmitter")
         mesh.from_pydata([(-200, -100, -50), (200, -100, -50), (200, 100, -50), (-200, 100, -50)], [], [(0, 1, 2, 3)])
         mesh.materials.append(light)
@@ -2226,8 +2228,9 @@ def check_builder_volume():
             check("volume Cycles render: " + what, close(list(got), want, 0.01), "%s vs %s" % (list(got), want))
     finally:
         scene.camera, scene.world = saved[:2]
-        for a, v in zip(settings, saved[2]):
-            setattr(scene.render, a, v)
+        for o, a, v in saved[2]:
+            setattr(o, a, v)
+        shutil.rmtree(scratch, ignore_errors=True)
         empty_scene()
 
 
