@@ -121,7 +121,11 @@ SHARP_EDGES_OPEN_BOX = 12
 SHARP_EDGES_SHELL = {"FixtureShellPlane": 4, "FixtureShellTurbo": 4, "FixtureShellSmoothed": 0,
                      # the half and quarter boxes below a Symmetry (2 x 2 segments): the edges between their sides
                      # and the top's open edges, not those of the cut, which the Mirror welds shut
-                     "FixtureShellSymHalf": 6 + 4, "FixtureShellSymClosed": 10, "FixtureShellSymQuarter": 3 + 2}
+                     "FixtureShellSymHalf": 6 + 4, "FixtureShellSymClosed": 10, "FixtureShellSymQuarter": 3 + 2,
+                     # Shells below a Symmetry whose plane holds their cut: the Mirror moved below them welds it; a
+                     # TurboSmooth (Smooth Result) above smooths everything; weld off: the cut's open edges sharp too
+                     "FixtureShellUnderSym": 6 + 4, "FixtureShellUnderSymTurbo": 0, "FixtureShellBetweenSym": 3 + 2,
+                     "FixtureShellUnderSymNoWeld": 6 + 8}
 # extrude: the vertical edges at corner knots (one per level) and both rims of every capped outline
 SHARP_EDGES_EXTRUDE = {"FixtureExtRect": 4 * 2 + 8, "FixtureExtL": 6 + 12, "FixtureExtHole": 4 + 8 + 56,
                        "FixtureExtIsland": 12 + 24, "FixtureExtOpen": 0, "FixtureExtMirror": 8 + 64,
@@ -186,7 +190,11 @@ ISSUES = {"uvwmap": ["uvw map: a UVW Map above Bend is not evaluated",
           "stack_shell": ["modifiers: Shell: auto smooth: 4 corners of the rim sharper than 45 degrees shade smooth "
                           "(3ds Max splits the rim there)",
                           "modifiers: Shell: smoothing group override (group 4) not converted: 3ds Max merges the rim "
-                          "into the faces along it of that group"],
+                          "into the faces along it of that group",
+                          # FixtureShellUnderSymNoWeld: a Symmetry with its weld off above the Shell
+                          "modifiers: Symmetry: the rim of the Shell below it along the mirror plane differs from 3ds "
+                          "Max's: the Mirror is moved below the Solidify only for a rim lying on the plane, with slice "
+                          "and weld on"],
           "lookat": [NO_DECAY],  # its target spot (its Perspective viewport is a note of the report, no issue)
           "cameras": ["camera: depth of field is not imported"] * 2 + [
               "camera: its exposure is not imported: Blender renders as if the camera had none"] * 3 + [

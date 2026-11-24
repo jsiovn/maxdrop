@@ -256,6 +256,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   horizontal angles from -180 to 180 are read (only -90 to 90 lights), vertical angles from 0 go on below 0 as
   V-Ray extends them instead of being mirrored (4 or more such angles that vary are not read, a line in the
   report), and a type A file with horizontal angles from 0 to 90 is dark, as is a file without light rated -1.
+- Modifiers: a Shell below a Symmetry that cuts it where its rim lies on the slice plane (a half model shelled before
+  its mirror) is now one closed shell as in 3ds Max, instead of keeping the rim's faces inside the seam and a false
+  line about auto smooth corners: its Mirror goes below the Solidify (an open half box: 64 triangles, was 72). With
+  the weld or slice off, or a rim that leaves the plane, the order stays and the report says so.
 
 ## [1.0.1] - 2026-11-22
 

@@ -23,6 +23,12 @@
 -- top's make the rim, hard against both surfaces.
 -- FixtureShellSymClosed: half of the closed box, the same Symmetry and Shell: every open edge welds, no rim.
 -- FixtureShellSymQuarter: a quarter of the open box, Symmetry along X, then along Y, then the Shell.
+-- FixtureShellUnderSym: the half open box, the Shell (inner 0, outer 1) below the Symmetry along X (slice, weld): the
+-- Shell's rim along the cut lies on the mirror plane, the slice drops it and the weld shuts the cut.
+-- FixtureShellUnderSymTurbo: the same with a TurboSmooth (1 iteration, Smooth Result) above the Symmetry.
+-- FixtureShellBetweenSym: the quarter open box, Symmetry along X, the Shell, then Symmetry along Y.
+-- FixtureShellUnderSymNoWeld: the half open box, the Shell below the Symmetry with its weld off: the slice drops the
+-- rim on the plane and leaves the cut open.
 -- One Standard material on every node.
 -- Authored for MaxDrop's tests (see CONTRIBUTING.md, "Test files"): it resets the scene, so run it in a 3ds Max
 -- session with nothing to keep, then sanitize and check the saved file before it goes into tests/fixtures/.
@@ -90,6 +96,20 @@
 	addModifier quarter (Symmetry axis:0 flip:false slice:1 weld:1 threshold:0.1)
 	addModifier quarter (Symmetry axis:1 flip:false slice:1 weld:1 threshold:0.1)
 	addModifier quarter (Shell innerAmount:0.0 outerAmount:1.0)
+	local under = part_box "FixtureShellUnderSym" [200, 40, 0] false false
+	addModifier under (Shell innerAmount:0.0 outerAmount:1.0)
+	addModifier under (Symmetry axis:0 flip:false slice:1 weld:1 threshold:0.1)
+	local underTurbo = part_box "FixtureShellUnderSymTurbo" [240, 40, 0] false false
+	addModifier underTurbo (Shell innerAmount:0.0 outerAmount:1.0)
+	addModifier underTurbo (Symmetry axis:0 flip:false slice:1 weld:1 threshold:0.1)
+	addModifier underTurbo (TurboSmooth iterations:1)
+	local between = part_box "FixtureShellBetweenSym" [280, 40, 0] false true
+	addModifier between (Symmetry axis:0 flip:false slice:1 weld:1 threshold:0.1)
+	addModifier between (Shell innerAmount:0.0 outerAmount:1.0)
+	addModifier between (Symmetry axis:1 flip:false slice:1 weld:1 threshold:0.1)
+	local noWeld = part_box "FixtureShellUnderSymNoWeld" [320, 40, 0] false false
+	addModifier noWeld (Shell innerAmount:0.0 outerAmount:1.0)
+	addModifier noWeld (Symmetry axis:0 flip:false slice:1 weld:0 threshold:0.1)
 
 	local mat = StandardMaterial name:"FixtureGrey" diffuse:(color 128 128 128)
 	for o in objects do o.material = mat

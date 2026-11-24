@@ -6,9 +6,10 @@
 
     add(desc, built)                    # after build.objects.build(desc, ...): every node.converted on its object
 
-Each node's converted modifiers are added in their order (3ds Max's, bottom first), named as in 3ds Max, with their
-settings; a setting this Blender lacks is skipped and counted in the result. A Mirror whose plane is not the
-object's own gets an empty as its mirror object: a child of the object (identity parent inverse, so it follows the
+Each node's converted modifiers are added in their order (3ds Max's, bottom first, but a Symmetry convert.scene moves
+below a Shell whose rim lies on its plane), named as in 3ds Max, with their settings; a setting this Blender lacks
+is skipped and counted in the result. A Mirror whose plane is not the object's own gets an empty as its mirror
+object: a child of the object (identity parent inverse, so it follows the
 object), placed at the description's frame (a shear kept in its parent inverse, as build.objects keeps a node's),
 in the object's collection, hidden and frozen with the object, not rendered. It is no node and no root: not in
 built.objects or built.helpers. A mesh whose description asks for creases (a converted smoother separates by

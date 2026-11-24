@@ -74,7 +74,7 @@ FIXTURE = {"modifiers": 0, "issues": 0, "placeholders": 0, "lights_only": False}
 NOT_EVALUATED = {"FixtureUVWShrink"}
 FIXTURE_ISSUES = {"uvwmap.max": 2, "stack_convert.max": 1, "vray_lights.max": 3, "vray_dome.max": 1, "lookat.max": 1,
                   "lights_standard.max": 17, "lights_photometric.max": 11, "cameras.max": 6,
-                  "stack_shell.max": 2,  # stack_shell: two Shell rims Blender cannot match
+                  "stack_shell.max": 3,  # stack_shell: three Shell rims Blender cannot match
                   "shapes_more.max": 1,  # shapes_more: FixtureCurveMixed's spline mixes material IDs
                   "layers_flags.max": 1,  # layers_flags: FixtureNoReceiveShadow (no such switch in Blender)
                   "layers_render.max": 1,  # layers_render: FixtureByLayerNoReceive (its layer)

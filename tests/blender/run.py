@@ -30,13 +30,14 @@ a hidden bevel object in the import's collection, its corners where 3ds Max's re
 Standard material and FixtureCurveMulti's Multi/Sub-Object entry for ID 1 in one slot on their curves,
 FixtureCurveIds' two splines (IDs 2 and 1) each on the slot of its entry, FixtureCurveMixed (IDs 2, 1, 1) on ID 2's,
 no slot on the other curves; on every fixture each spline's material index is its slot.
-Converted modifiers (TurboSmooth, MeshSmooth, Shell, Symmetry): each object's Blender modifiers in 3ds Max's order with
-the description's settings and mirror empties, creases where a smoother separates by smoothing groups (none on open
+Converted modifiers (TurboSmooth, MeshSmooth, Shell, Symmetry): each object's Blender modifiers in the converted order
+(3ds Max's, but a Symmetry moved below the Shell whose rim lies on its plane) with the description's settings and mirror empties, creases where a smoother separates by smoothing groups (none on open
 edges), and the evaluated mesh with 3ds Max's vertex and triangle counts, world box and shading (flat faces, smooth
 regions and hard edges, the oracle's eval_mesh.smoothing; SMOOTHING_DIFFERS pins Blender's where it differs: two
 Shell rims, a weld); under a Solidify its triangles facing up, down and sideways in object space as 3ds Max's
 (stack_shell: Shells on one side of the original and inside out, their rims) (stack_convert, stack_shell,
-stack_basic, modifier_pivot; not FixtureOrder, whose seam 3ds Max leaves unwelded: EVAL_COUNT_DIFFERS); stack_convert
+stack_basic, modifier_pivot; not FixtureOrder, whose seam 3ds Max leaves unwelded, nor FixtureShellUnderSymNoWeld,
+whose cut it leaves open: EVAL_COUNT_DIFFERS); stack_convert
 imported with Modifiers: Ignore gets none.
 primitives (convert/primitives.py): each node a mesh with 3ds Max's vertex and triangle counts (eval_verts, eval_faces)
 and world box, its UV layer (none without Generate Mapping Coords), sharp edges, the unsmoothed GeoSphere flat, normals
@@ -213,7 +214,11 @@ SHARP_EDGES = {"editable_mesh": 8, "modifier_pivot": {"FixtureSmooth": 0, None: 
                "stack_shell": {"FixtureShellPlane": 4, "FixtureShellTurbo": 4, "FixtureShellSmoothed": 0, None: 12,
                                # half and quarter boxes below a Symmetry: the edges between their sides and the
                                # top's open edges, not the cut's (on the mirror plane: the weld shuts them)
-                               "FixtureShellSymHalf": 10, "FixtureShellSymClosed": 10, "FixtureShellSymQuarter": 5},
+                               "FixtureShellSymHalf": 10, "FixtureShellSymClosed": 10, "FixtureShellSymQuarter": 5,
+                               # below a Symmetry whose plane holds their cut: the Mirror moved below the Shell welds
+                               # it; a TurboSmooth with Smooth Result above clears them; weld off: the cut's sharp too
+                               "FixtureShellUnderSym": 10, "FixtureShellUnderSymTurbo": 0,
+                               "FixtureShellBetweenSym": 5, "FixtureShellUnderSymNoWeld": 14},
                "vray_mesh_light": 0,  # Planes: open edges only
                # boxes of 3 x 2 x 2 segments: 28; the cylinder's rims 2 x 16; the sphere is smooth
                "uvwmap": {"FixtureUVWCyl": 32, "FixtureUVWSphere": 0, "FixtureUVWSharedB": 12, None: 28},
@@ -1238,7 +1243,9 @@ def check_extruded(label, ob, node, o, meters, plan):
 
 # 3ds Max leaves the seam of FixtureOrder's shelled boxes unwelded (32 vertices before the TurboSmooth, 100 after);
 # Blender's Mirror welds it (84): the same surface, so only the box is compared there
-EVAL_COUNT_DIFFERS = {"FixtureOrder"}
+# FixtureShellUnderSymNoWeld: 3ds Max's slice drops the Shell's rim on the plane and leaves the cut open (44 vertices,
+# 64 triangles), Blender's Mirror without its weld keeps both copies of that rim (80 triangles): the report names it
+EVAL_COUNT_DIFFERS = {"FixtureOrder", "FixtureShellUnderSymNoWeld"}
 # Blender's evaluated (flat, regions, hard edges) where it is not 3ds Max's, pinned so that a change shows. 3ds Max
 # gives a Shell's rim smoothing groups of its own, hard against both surfaces, which the open edges marked sharp give
 # Blender too, but for two cases the report names: auto smooth also splits the rim where its faces turn by more than
@@ -1340,7 +1347,7 @@ def check_converted(label, ob, node, o, meters, desc):
     else:
         check(label + ": no crease", crease is None or not any(d.value for d in crease.data))
     mods = list(ob.modifiers)
-    check(label + ": Blender modifiers in 3ds Max's order", [(m.type, m.name) for m in mods] ==
+    check(label + ": Blender modifiers in the converted order", [(m.type, m.name) for m in mods] ==
           list(zip([c.kind for c in node.converted], _unique_names([c.name for c in node.converted]))),
           str([(m.type, m.name) for m in mods]))
     if not node.converted:
