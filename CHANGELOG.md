@@ -119,6 +119,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Extrude: the sides of an extruded pie Arc shade sharp at its corners (the arc's ends and the center), as in
   3ds Max, instead of round across the arc and both straight sides: the smoothing also breaks at a Bezier knot with
   a handle on its point.
+- Extrude: a curved segment of a shape interpolated Adaptive gets its points where 3ds Max puts them, split at its
+  middle piece by piece until each piece is nearly straight, so an uneven curve (an S, a hook, a tight bend) gets
+  3ds Max's vertex and face counts instead of more or fewer, and a clearly curved segment no longer becomes its
+  chord. Curves next to a cusp or far from their object's origin can still differ (3ds Max rounds in float32).
 - Modifiers: the rim a Shell builds on an open mesh (a panel, a wall, a box without its top) shades hard against both
   surfaces, as in 3ds Max, instead of smooth into them: the mesh's open edges are marked sharp before the Solidify.
   Where Blender still differs, the report says so: auto smooth splitting the rim's sharper corners (a plane's), or

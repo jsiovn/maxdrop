@@ -18,8 +18,9 @@ whose 0x0120 names the Extrude class (reader.realworld; another class's entry is
 Interpolation (3ds Max's, fitted to its own counts): each segment gets steps points between its knots; with
 optimize a straight segment (segment type line, or a curve whose points at t 0.4 and 0.6 turn the path from knot to
 knot by at most 2 degrees) or one back to the same spot gets none;
-adaptive gives a straight segment none and a curved one 2^d - 1, d the smallest depth up to 5 at which every piece
-turns by at most 2 degrees (the angle between the chords of its two halves). Without optimize even a straight segment
+adaptive gives a straight segment none and splits a curved one at its middle, again and again, each piece while it
+fails the same test and is wider than 1/2048 of the segment: a point at every split (3ds Max computes in float32, which
+next to a cusp or far from the origin splits pieces this double test keeps). Without optimize even a straight segment
 gets its steps.
 
 The sides join segments + 1 copies of each polyline along the object's Z, one per level, amount * level / segments
@@ -72,7 +73,7 @@ OUTPUT_PATCH, OUTPUT_MESH, OUTPUT_NURBS = 0, 1, 2
 SLOT_PARAMS = 0
 
 ADAPTIVE_ANGLE = math.radians(2.0)
-ADAPTIVE_DEPTH = 5
+ADAPTIVE_DEPTH = 11  # a piece of 1/2048 of its segment is never split: at most 2047 steps a segment
 TOP_ID, BOTTOM_ID, SIDE_ID = 0, 1, 2  # zero-based: 3ds Max shows 1, 2, 3
 CAP_GROUP = 1 << 4
 MAX_SEGMENTS = 10000
@@ -184,6 +185,15 @@ def _turn(a, b):
     return math.acos(max(-1.0, min(1.0, c)))
 
 
+def _bent(p0, c1, c2, p3, a, b, pa, pb):
+    """Whether the piece [a, b] of the curve, from pa to pb, fails _straight's test."""
+    for f in STRAIGHT_AT:
+        s = _bezier(p0, c1, c2, p3, a + f * (b - a))
+        if _turn(_sub(s, pa), _sub(pb, s)) > ADAPTIVE_ANGLE:
+            return True
+    return False
+
+
 def _straight(p0, c1, c2, p3):
     """Whether 3ds Max's Optimize and Adaptive call a curve segment straight: at t 0.4 and at 0.6 the curve's point S
     turns the path p0 -> S -> p3 by at most ADAPTIVE_ANGLE (3ds Max 2020, maxdrop-em3.142). A vector a little off the
@@ -191,21 +201,28 @@ def _straight(p0, c1, c2, p3):
     on the chord's line fail once S lies past an end (the curve folds back)."""
     if p0 == p3:  # S comes back off the point by rounding, turning 180 degrees: only vectors on it are straight
         return c1 == p0 and c2 == p3
-    for t in STRAIGHT_AT:
-        s = _bezier(p0, c1, c2, p3, t)
-        if _turn(_sub(s, p0), _sub(p3, s)) > ADAPTIVE_ANGLE:
-            return False
-    return True
+    return not _bent(p0, c1, c2, p3, 0.0, 1.0, p0, p3)
 
 
-def _adaptive_steps(p0, c1, c2, p3):
-    for depth in range(ADAPTIVE_DEPTH):
-        n = 1 << depth
-        pts = [_bezier(p0, c1, c2, p3, k / n) for k in range(n + 1)]
-        if all(_turn(_sub(m, pts[k]), _sub(pts[k + 1], m)) <= ADAPTIVE_ANGLE
-               for k, m in enumerate(_bezier(p0, c1, c2, p3, (k + 0.5) / n) for k in range(n))):
-            return n - 1
-    return (1 << ADAPTIVE_DEPTH) - 1
+def _adaptive(p0, c1, c2, p3, room):
+    """[(t, point)] of Adaptive's steps on a curved segment, in order: 3ds Max 2020 splits it at its middle and each
+    piece again while the piece fails the straight test and is wider than 2^-ADAPTIVE_DEPTH (maxdrop-6n0.6.11). The
+    whole segment is split without a test (it failed it). Stops once it has more than room steps."""
+    out = []
+    todo = [(0.0, 1.0, p0, p3, 0)]  # pieces left to right: the last one is the next
+    while todo:
+        a, b, pa, pb, depth = todo.pop()
+        if depth >= ADAPTIVE_DEPTH or (depth and not _bent(p0, c1, c2, p3, a, b, pa, pb)):
+            continue
+        m = (a + b) / 2
+        pm = _bezier(p0, c1, c2, p3, m)
+        todo.append((m, b, pm, pb, depth + 1))
+        todo.append((a, m, pa, pm, depth + 1))
+        out.append((m, pm))
+        if len(out) > room:
+            break
+    out.sort()
+    return out
 
 
 def _hard(knot):
@@ -217,7 +234,8 @@ def _hard(knot):
     return knot.kind == shapes.BEZIER and (knot.in_vec == knot.point or knot.out_vec == knot.point)
 
 
-def _polyline(spline, steps, optimize, adaptive):
+def _polyline(spline, steps, optimize, adaptive, room):
+    """The Polyline of a spline, or None when it has more than room points before equal ones are merged."""
     knots = spline.knots
     n = len(knots)
     closed = spline.closed
@@ -229,21 +247,27 @@ def _polyline(spline, steps, optimize, adaptive):
         line = a.segment == shapes.LINE
         c1, c2 = (_lerp(p0, p3, 1 / 3.0), _lerp(p0, p3, 2 / 3.0)) if line else (a.out_vec, b.in_vec)
         straight = line or _straight(p0, c1, c2, p3)
+        pts.append(p0)
         if adaptive:
-            count = 0 if straight else _adaptive_steps(p0, c1, c2, p3)
+            made = [] if straight else _adaptive(p0, c1, c2, p3, room - len(pts))
+            count = len(made)
+            pts.extend(pm for _t, pm in made)
         else:  # Optimize gives a segment back to the same spot no steps whatever its vectors (3ds Max 2020)
             count = 0 if optimize and (straight or p0 == p3) else steps
-        pts.append(p0)
+            if straight and p0 == p3:  # its steps on its point exactly: the Bezier sum can round them off it
+                pts.extend([p0] * count)
+            else:
+                pts.extend(_bezier(p0, c1, c2, p3, s / (count + 1.0)) for s in range(1, count + 1))
+        if len(pts) > room:
+            return None
         hard.append(_hard(a))
-        if straight and p0 == p3:  # its steps on its point exactly: the Bezier sum can round them off it
-            pts.extend([p0] * count)
-        else:
-            pts.extend(_bezier(p0, c1, c2, p3, s / (count + 1.0)) for s in range(1, count + 1))
         hard.extend([False] * count)
         flat.append(straight or count == 0)  # no steps: one chord, straight whatever the curve
         flat.extend([straight] * count)
         ids.extend([a.material] * (count + 1))
     if not closed and n:
+        if len(pts) >= room:
+            return None
         pts.append(knots[-1].point)
         hard.append(_hard(knots[-1]))
         flat.append(True)
@@ -276,11 +300,16 @@ def _polyline(spline, steps, optimize, adaptive):
     return Polyline(out_p, out_h, closed, out_i, doubled)
 
 
-def polylines(shape):
-    """[Polyline] of a reader Shape, one per spline of two points or more."""
+def polylines(shape, most=None):
+    """[Polyline] of a reader Shape, one per spline of two points or more; ExtrudeError when its splines make more
+    than most points (Adaptive's are known only once made)."""
     out = []
+    room = math.inf if most is None else most
     for sp in shape.splines:
-        pl = _polyline(sp, shape.steps, shape.optimize, shape.adaptive)
+        pl = _polyline(sp, shape.steps, shape.optimize, shape.adaptive, room)
+        if pl is None:
+            raise ExtrudeError("more than %d points to interpolate" % most)
+        room -= len(pl.points)
         if len(pl.points) >= 2:
             out.append(pl)
     return out
@@ -602,8 +631,9 @@ def _side_groups(hard, closed, columns, smooth):
 
 
 def _estimate(shape):
-    """The most points the polylines of shape can have: known before any is interpolated."""
-    per = (1 << ADAPTIVE_DEPTH) if shape.adaptive else shape.steps + 1
+    """The most points the polylines of shape can have, known before any is interpolated; Adaptive's steps are not
+    known (up to 2047 a segment): they are counted as they are made (polylines)."""
+    per = 1 if shape.adaptive else shape.steps + 1
     return sum(len(sp.knots) * per + 1 for sp in shape.splines)
 
 
@@ -920,7 +950,7 @@ def extrude(shape, params):
     most = _estimate(shape) * levels
     if most > MAX_VERTICES:  # before any point is made: a small file can ask for hundreds of millions
         raise ExtrudeError("up to %d vertices, more than %d" % (most, MAX_VERTICES))
-    lines = polylines(shape)
+    lines = polylines(shape, MAX_VERTICES // levels)
     if params.amount == 0:
         issues.append("an amount of 0: a flat mesh")
     closed = {j: [(p[0], p[1]) for p in pl.points] for j, pl in enumerate(lines) if pl.closed}

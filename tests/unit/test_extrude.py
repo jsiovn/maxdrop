@@ -589,6 +589,39 @@ STRAIGHT_PROBES = [
 ]
 
 
+_F3, _F6 = 3.33299994, 6.66699982  # 3.333 and 6.667 as float32, the vectors 3ds Max stored
+
+# One curve segment probed in 3ds Max 2020 under Adaptive (an open SplineShape of two Bezier-corner knots under an
+# Extrude; maxdrop-6n0.6.11): name, p0, c1, c2, p3, steps between the knots. Every point sits where a recursive split
+# at the middle puts it, each piece split while its points at 0.4 and 0.6 of it turn the path by more than 2 degrees
+# and it is wider than 1/2048 of the segment (cusp13: a cusp at t 1/3, kept in a piece of that width).
+ADAPTIVE_PROBES = [
+    ("collinear 1.75", (0, 0, 0), (17.5, 0, 0), (_F6, 0, 0), (10, 0, 0), 5),
+    ("collinear 2", (0, 0, 0), (20, 0, 0), (_F6, 0, 0), (10, 0, 0), 3),
+    ("collinear -0.7", (0, 0, 0), (-7, 0, 0), (_F6, 0, 0), (10, 0, 0), 4),
+    ("both past", (0, 0, 0), (46, 0, 0), (-36, 0, 0), (10, 0, 0), 3),
+    ("off 0.2", (0, 0, 0), (_F3, 0.200000003, 0), (_F6, 0, 0), (10, 0, 0), 2),
+    ("off 1", (0, 0, 0), (_F3, 1, 0), (_F6, 0, 0), (10, 0, 0), 9),
+    ("S 1", (0, 0, 0), (_F3, 1, 0), (_F6, -1, 0), (10, 0, 0), 19),
+    ("S 2", (0, 0, 0), (_F3, 2, 0), (_F6, -2, 0), (10, 0, 0), 35),
+    ("loop", (0, 0, 0), (10, 30, 0), (0, 30, 0), (10, 0, 0), 15),
+    ("xloop", (0, 0, 0), (30, 30, 0), (-20, 30, 0), (10, 0, 0), 97),
+    ("cusp", (0, 0, 0), (10, 10, 0), (0, 10, 0), (10, 0, 0), 29),
+    ("hook", (0, 0, 0), (0, 40, 0), (10, 0, 0), (10, 0, 0), 60),
+    ("big", (0, 0, 0), (100, 100, 0), (-90, 100, 0), (10, 0, 0), 103),
+    ("knee", (0, 0, 0), (5, 0, 0), (10, 10, 0), (10, 0, 0), 55),
+    ("cusp13", (0, 0, 0), (4, 6, 0), (-3, 0, 0), (9, 0, 0), 49),
+    ("cusp13 x1000", (0, 0, 0), (4000, 6000, 0), (-3000, 0, 0), (9000, 0, 0), 49),
+]
+# 3ds Max computes in float32: next to a cusp, or far from the origin, its rounding splits pieces the test keeps
+# (and the other way round by a hair at 2 degrees); MaxDrop computes in double. These two got 129 and 73 steps in 3ds
+# Max; the double rule's own counts are pinned (cusp13 x1000 got 50 there, one piece next to the cusp).
+ADAPTIVE_FLOAT32 = [
+    ("zz", (0, 0, 0), (40, 20, 0), (-30, -20, 0), (10, 0, 0), 131),
+    ("tight", (0, 0, 0), (10, 1, 0), (0, 1, 0), (10, 0, 0), 63),
+]
+
+
 class Interpolation(unittest.TestCase):
     """Point counts 3ds Max 2020's Extrude makes (half its vertex count on one segment)."""
 
@@ -649,11 +682,43 @@ class Interpolation(unittest.TestCase):
 
     def test_adaptive_takes_the_same_straight_test(self):
         """3ds Max 2020, Adaptive: a segment straight for Optimize gets no steps, also one whose vectors run past
-        the chord's end or lie a little off it (a curved one gets steps, counted by a rule MaxDrop only
-        approximates: maxdrop-6n0.6.11; only the straight half is asserted)."""
+        the chord's end or lie a little off it; a curved one gets at least one."""
         for name, p0, c1, c2, p3, points in STRAIGHT_PROBES:
+            got = _points(_shape([_segment(p0, c1, c2, p3)], adaptive=True))
             if points == 2:
-                self.assertEqual(_points(_shape([_segment(p0, c1, c2, p3)], adaptive=True)), 2, name)
+                self.assertEqual(got, 2, name)
+            else:
+                self.assertGreater(got, 2, name)
+
+    def test_adaptive_equals_3ds_max(self):
+        for name, p0, c1, c2, p3, steps in ADAPTIVE_PROBES + ADAPTIVE_FLOAT32:
+            for optimize in (True, False):  # Adaptive ignores Optimize (3ds Max: the same counts)
+                got = _points(_shape([_segment(p0, c1, c2, p3)], optimize=optimize, adaptive=True))
+                self.assertEqual(got, steps + 2, (name, optimize))
+
+    def test_adaptive_puts_the_points_where_3ds_max_does(self):
+        """The parameters of 3ds Max's points on the segment (read back from its vertices): not uniform steps."""
+        cases = (("off 1", [1, 2, 3, 4, 5, 6, 8, 12, 14], 16),
+                 ("S 1", [1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 22, 24, 26, 27, 28, 29, 30, 31], 32))
+        probes = {c[0]: c for c in ADAPTIVE_PROBES}
+        for name, numerators, denominator in cases:
+            _n, p0, c1, c2, p3, _steps = probes[name]
+            want = [extrude._bezier(p0, c1, c2, p3, k / float(denominator)) for k in numerators]
+            pl = extrude.polylines(_shape([_segment(p0, c1, c2, p3)], adaptive=True))[0]
+            self.assertEqual(pl.points[1:-1], want, name)
+
+    def test_adaptive_is_counted_against_a_budget(self):
+        """2047 steps a segment at most: an adaptive shape is counted as it is made, not refused up front by that
+        bound (1,000 straight knots), and one whose points pass the budget is refused."""
+        many = _shape([shapes.Spline(_knots([(k, k % 2, 0) for k in range(1000)]), False)], adaptive=True)
+        self.assertEqual(sum(len(pl.points) for pl in extrude.polylines(many, 1000)), 1000)
+        if numpy is not None:  # the mesh needs it
+            data, _issues = extrude.extrude(many, extrude.DEFAULT._replace(amount=1.0))
+            self.assertEqual(len(data.positions), 2000)
+        loop = _shape([_segment((0, 0, 0), (10, 30, 0), (0, 30, 0), (10, 0, 0))], adaptive=True)
+        with self.assertRaises(extrude.ExtrudeError):
+            extrude.polylines(loop, 16)
+        self.assertEqual(sum(len(pl.points) for pl in extrude.polylines(loop, 17)), 17)
 
     def test_a_doubled_knot_with_its_vectors_on_it(self):
         """A zero-length curve segment whose vectors lie on its point is straight under Adaptive too (no steps from

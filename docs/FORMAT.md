@@ -647,11 +647,16 @@ What 3ds Max 2020 makes of it (`snapshotAsMesh`, probed on scratch scenes and ch
   10^-1.70 curved; 10^-1.82 with the vector's end next to its knot), an S with both vectors off on opposite sides
   up to 10^-1.24, vectors on the chord's line until the curve at t 0.4 or 0.6 lies past an end (out vector 1.72
   chords along with the in vector at two thirds; both vectors 4.49 chords long, 3.49 past the far ends). Adaptive:
-  a straight segment (the same test) gets none, a curved one 2^d - 1, d the smallest
-  depth up to 5 at which every piece turns by at most 2 degrees between the chords of its halves (a Circle: 31 per
-  quarter, 128 points; Arcs of 30, 90, 180, 300 degrees: 13, 25, 49, 97 points). 3ds Max splits a curved segment
-  at its middle piece by piece instead, each piece under the straight test: an uneven curve gets other counts
-  (maxdrop-6n0.6.11).
+  a straight segment (the same test) gets none; a curved one is split at its middle, and each piece again while
+  its own points at 0.4 and 0.6 of it turn the path from its start to its end by more than 2 degrees and it is wider
+  than 1/2048 of the segment, a point at every split (a Circle: 31 per quarter, 128 points; Arcs of 30, 90, 180, 300
+  degrees: 13, 25, 49, 97 points). The probe (maxdrop-6n0.6.11; two-knot segments under 3dsmaxbatch, every point
+  read back to its parameter): each point sits at a dyadic t, the split tree of 14 of 16 curves (an S, a hook, loops,
+  collinear vectors past the ends) is exactly this rule, and a cusp at t 1/3 is kept in a piece of 1/2048 (49 steps
+  at any scale), so 2047 steps a segment at most. 3ds Max computes in float32: next to a cusp, or far from the
+  object's origin, its rounding splits pieces the test keeps (a cusp at t 0.5, chord 10: 73 steps, the rule 63; a
+  zigzag 129, the rule 131; an S: 19 steps at the origin and 1000 units off, 81 at 10000). MaxDrop
+  computes in double. Adaptive's points are counted as they are made against the mesh's MAX_VERTICES.
 - **Vertices**: per spline, one copy of its points per level (segments + 1), nothing more: the caps reuse them.
 - **Faces**: the sides two triangles per segment and level; a cap of n points with h holes n + 2h - 2 triangles,
   without extra vertices (FixtureExtHole: 32 + 2 - 2 = 32 per cap). Nested closed splines alternate solid / hole
