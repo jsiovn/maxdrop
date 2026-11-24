@@ -99,6 +99,25 @@ def property_stream(code_page, entries, vector=None):
         "<I", 48) + section
 
 
+SUMMARY = "\x05SummaryInformation"
+
+
+def _lpstr(raw):
+    raw += b"\0"
+    return struct.pack("<I", len(raw)) + raw + b"\0" * (-len(raw) % 4)
+
+
+def summary_stream(props):
+    """A SummaryInformation stream: one FMTID_SUMMARY section holding (property id, typed value) pairs."""
+    offset, table, values = 8 + 8 * len(props), b"", b""
+    for pid, value in props:
+        table += struct.pack("<II", pid, offset + len(values))
+        values += value + b"\0" * (-len(value) % 4)
+    section = struct.pack("<II", 8 + len(table) + len(values), len(props)) + table + values
+    return struct.pack("<HHI", 0xFFFE, 0, 0x2000A) + b"\0" * 16 + struct.pack("<I", 1) + \
+        sanitize_fixture.FMTID_SUMMARY + struct.pack("<I", 48) + section
+
+
 def dirty(data, filler=b"Jdoe7Qmz"):
     """The fixture with every identity value set to fake text of the same length, as Max would save it."""
     c = cfb.Compound(data)
@@ -245,7 +264,7 @@ class Check(unittest.TestCase):
         with open(BOX, "rb") as f:
             data = bytearray(f.read())
         raw = text.encode(encoding)
-        at = len(data) // 2 if at is None else at
+        at = 100000 if at is None else at  # before the thumbnail, whose picture is not scanned for paths
         data[at:at + len(raw)] = raw
         return bytes(data)
 
@@ -298,6 +317,45 @@ class Check(unittest.TestCase):
         self.assertNotIn(b"U\0s\0e\0r\0s", data)
         found = check_fixture.problems(data, {})
         self.assertIn(("user folder", "UTF-16LE", "Big"), found)
+
+    RUN = "\\\\fileserver\\share".encode("ascii")  # a network path, as a thumbnail's pixels can spell one
+
+    def test_a_path_in_the_thumbnail_picture_is_skipped(self):
+        # maxdrop-6n0.6.13: the picture of PIDSI_THUMBNAIL (VT_CF) is pixels, never a name; a string property is not
+        def stream(title, picture):
+            return summary_stream([(2, struct.pack("<I", 0x1E) + _lpstr(title)),
+                                   (17, struct.pack("<II", 0x47, 4 + len(picture)) + b"\xff" * 4 + picture)])
+        picture = b"\0" * 40 + self.RUN + b"\0" * 40
+        clean = build_cfb(b"\0" * 5120, stream(b"plain", picture), small_name=SUMMARY)
+        self.assertIsNotNone(check_fixture.thumbnail(cfb.Compound(clean).read(SUMMARY)))
+        self.assertNotIn("network path", {k for k, _e in self.kinds(clean, {})})
+        named = build_cfb(b"\0" * 5120, stream(self.RUN, b"\0" * 64), small_name=SUMMARY)
+        self.assertIn(("network path", "ASCII", SUMMARY), check_fixture.problems(named, {}))
+        self.assertIn(("network path", "ASCII", None), check_fixture.problems(named, {}), "the file view too")
+        # a picture that runs past its section: nothing skipped
+        bad = bytearray(stream(b"plain", picture))
+        at = bad.index(struct.pack("<I", 0x47))
+        bad[at + 4:at + 8] = struct.pack("<I", 1 << 20)
+        broken = build_cfb(b"\0" * 5120, bytes(bad), small_name=SUMMARY)
+        self.assertIsNone(check_fixture.thumbnail(cfb.Compound(broken).read(SUMMARY)))
+        self.assertIn("network path", {k for k, _e in self.kinds(broken, {})})
+
+    def test_the_thumbnail_of_a_saved_file(self):
+        # box_poly_standard's thumbnail fills its SummaryInformation stream from byte 260, in the FAT
+        with open(BOX, "rb") as f:
+            data = f.read()
+        c = cfb.Compound(data)
+        start, stop = check_fixture.thumbnail(c.read(SUMMARY))
+        self.assertLess(start, stop)
+
+        def at(offset, text):
+            out = bytearray(data)
+            sanitize_fixture._write(out, c.runs(SUMMARY), offset, text)
+            return bytes(out)
+        self.assertEqual(check_fixture.problems(at(start + 1000, self.RUN)), [], "in the picture: skipped")
+        self.assertIn(("network path", "ASCII"), self.kinds(at(start - 60, self.RUN), {}), "before it: found")
+        self.assertIn(("user name", "UTF-16LE"), self.kinds(at(start + 1000, "jdoe7".encode("utf-16-le")),
+                                                            {"user name": ["jdoe7"]}), "a name: still found")
 
     def test_cli_names_the_kind_not_the_string(self):
         with tempfile.TemporaryDirectory() as tmp:

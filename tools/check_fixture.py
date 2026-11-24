@@ -19,6 +19,9 @@ put back together (gzip streams unpacked), hold in ASCII, UTF-8 or UTF-16LE, ign
 - `drive path`: a drive letter path (`X:\\` or `X:/` and two more path characters);
 - `network path`: `\\\\server\\` and a share name;
 
+the three paths not in the picture of the SummaryInformation thumbnail (property 17, a clipboard value: pixels,
+never a name, whose bytes can read as a path; maxdrop-6n0.6.13), the names there too;
+
 or when a value tools/sanitize_fixture.py blanks is not blank (`identity property not blank`), which catches a
 file saved under another account, or when the file has no `User Name=` slot (`identity slots not found`): its
 3ds Max version stores the names in a way the tools do not know. Only the kind of string is printed, never the
@@ -41,6 +44,8 @@ _spec.loader.exec_module(sanitize_fixture)
 cfb = sanitize_fixture.cfb
 
 MIN_NAME = 3  # shorter names would match by chance anywhere in binary data
+SUMMARY = sanitize_fixture.SUMMARY
+PIDSI_THUMBNAIL, VT_CF = 17, 0x47  # the summary section's thumbnail: a clipboard value (its size, format, picture)
 GZIP_CAP = 64 << 20
 _PATH_CHAR = r'[^\x00-\x1f\\/:*?"<>|\ufffd]'
 PATTERNS = (
@@ -80,19 +85,69 @@ def _views(data):
         yield "UTF-16LE", chunk.decode("utf-16-le", "replace").casefold()
 
 
+def thumbnail(stream):
+    """(start, stop) of the picture in a SummaryInformation stream: the bytes of PIDSI_THUMBNAIL (VT_CF) after its
+    size field, in the summary section (FMTID_SUMMARY). None without one, or when its property set cannot be walked,
+    the value is not after the section's property table or runs past the section: then nothing is skipped."""
+    u32 = sanitize_fixture._u32
+    try:
+        if len(stream) < 28 or stream[:2] != b"\xfe\xff":
+            return None
+        total = len(stream)
+        for k in range(u32(stream, 24, total)):
+            head = 28 + 20 * k
+            if head + 20 > total:
+                return None
+            if stream[head:head + 16] != sanitize_fixture.FMTID_SUMMARY:
+                continue
+            base = u32(stream, head + 16, total)
+            end = min(total, base + u32(stream, base, total))
+            count = u32(stream, base + 4, end)
+            for j in range(count):
+                if u32(stream, base + 8 + 8 * j, end) != PIDSI_THUMBNAIL:
+                    continue
+                at = base + u32(stream, base + 12 + 8 * j, end)
+                if at < base + 8 + 8 * count or u32(stream, at, end) & 0xFFFF != VT_CF:
+                    return None
+                start = at + 8
+                stop = start + u32(stream, at + 4, end)
+                return (start, stop) if stop <= end else None
+    except ValueError:
+        return None
+    return None
+
+
+def _masked(stream):
+    """A SummaryInformation stream with its thumbnail's picture zeroed (thumbnail), else the stream itself."""
+    span = thumbnail(stream)
+    if span is None:
+        return stream
+    return stream[:span[0]] + bytes(span[1] - span[0]) + stream[span[1]:]
+
+
 def _haystacks(data):
-    """(where, bytes): the whole file, then every stream put back together, gzip streams unpacked. The sectors of
-    a stream need not follow each other in the file, so a string can be whole only in the stream."""
-    yield None, data
+    """(where, bytes, the bytes for the path patterns): the whole file, then every stream put back together, gzip
+    streams unpacked. The sectors of a stream need not follow each other in the file, so a string can be whole only
+    in the stream. The thumbnail's picture is zeroed for the patterns, in the file through its stream's runs."""
     if not cfb.is_cfb(data):
+        yield None, data, data
         return
-    for name, stream in cfb.Compound(data).streams():
+    c = cfb.Compound(data)
+    file_view = data
+    if SUMMARY in c.names():
+        span = thumbnail(c.read(SUMMARY))
+        if span is not None:
+            buf = bytearray(data)
+            sanitize_fixture._write(buf, c.runs(SUMMARY), span[0], bytes(span[1] - span[0]))
+            file_view = bytes(buf)
+    yield None, data, file_view
+    for name, stream in c.streams():
         if stream[:2] == b"\x1f\x8b":
             d = zlib.decompressobj(16 + zlib.MAX_WBITS)
             stream = d.decompress(stream, GZIP_CAP)
             if d.unconsumed_tail:
                 raise cfb.CfbError("compressed stream %r is too large to scan" % name)
-        yield name, stream
+        yield name, stream, _masked(stream) if name == SUMMARY else stream
 
 
 def problems(data, names=None):
@@ -103,14 +158,16 @@ def problems(data, names=None):
         stacks = list(_haystacks(data))
     except (ValueError, zlib.error) as e:
         found.add(("unreadable: %s" % e, "-", None))
-        stacks = [(None, data)]
-    for where, blob in stacks:
-        for enc, text in _views(blob):
+        stacks = [(None, data, data)]
+    for where, blob, for_paths in stacks:
+        views = list(_views(blob))
+        for enc, text in views:
             utf8 = enc == "UTF-8"  # adds only what the byte view cannot see: names with non-ASCII letters
             for kind, values in names.items():
                 if any(v in text for v in values if not utf8 or not v.isascii()):
                     found.add((kind, enc, where))
-            for kind, pattern in () if utf8 else PATTERNS:
+        for enc, text in views if for_paths is blob else _views(for_paths):
+            for kind, pattern in () if enc == "UTF-8" else PATTERNS:
                 if pattern.search(text):
                     found.add((kind, enc, where))
     if cfb.is_cfb(data):
