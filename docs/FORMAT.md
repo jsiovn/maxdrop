@@ -1590,8 +1590,8 @@ picker and Material Editor switches off).
   own decode, the mask as stored) and the display shows the result decoded; decoded sides mixed in Blender were off
   by up to 0.27 (the colored pair), 16 of 24 planes by more than 0.02. A product commutes with a power law, so a
   decoded RGB Multiply is within 0.005. The rule is in `maxdrop/convert/texmaps.py` (STORED, Decode); Blender 5.2
-  renders of the probe scenes agree with V-Ray within 0.0085 on every plane. Falloff was not probed; CoronaMix in
-  Corona 12: below (maxdrop-em3.165).
+  renders of the probe scenes agree with V-Ray within 0.0085 on every plane. Falloff and the wrappers: below
+  (maxdrop-6n0.6.18); CoronaMix in Corona 12: below (maxdrop-em3.165).
 - Corona maps with the gamma off (maxdrop-em3.165), Corona 12 renders of CoronaLightMtl planes (color white,
   intensity 1, the map as texmap), tone mapping off, a pass and a time limit, an orthographic camera over a grid,
   each plane's internal value (`getPixels ... linear:true` of an HDR bitmap, a 9 x 9 pixel mean); the em3.123 greys
@@ -1672,6 +1672,39 @@ picker and Material Editor switches off).
   light is maxdrop-6n0.6.20. On an 8-bit display a value above 1 is white
   in both. An 8-bit dome texture keeps the material rule (within 0.007 of the target). A rule that sees the sky
   decoded only from the camera would need the World's nodes (a Light Path), not drawn (maxdrop-6n0.6.21).
+- Maps at a color root and in a mask (maxdrop-6n0.6.18), V-Ray 5.2 renders of VRayLightMtl planes (a VRayMtl's
+  self-illumination for the slot amounts) under an orthographic camera (a Falloff plane tilted 60 degrees: facing
+  ratio 0.5), each plane's internal value, a 9 x 9 pixel mean; greys and colors are swatches (VRayColor), Bm a 128
+  grey 8-bit PNG and CBm a (200, 100, 50) PNG (Bitmaps, automatic gamma). With the gamma on and off the internal value
+  is the same on every swatch row (a Bm row with the gamma on: the image decoded first):
+
+  | Map | internal value | shown with the gamma off (Blender linear) |
+  |---|---|---|
+  | Falloff 40 -> 220, Towards / Away, Perpendicular / Parallel; (200, 40, 40) -> (40, 60, 220) | 0.333 / 0.510; (0.471, 0.196, 0.510) | 0.091 / 0.223; (0.188, 0.032, 0.223) |
+  | Falloff of map 1 Bm and color 2 220 | off 0.682, on 0.541 | 0.423 |
+  | Color Correction: brightness 20 over 128; contrast 30 over 100; gamma 2.0 over 128; gain 50 % over 200 | 0.702; 0.360; 0.708; 0.392 | 0.451; 0.106; 0.460; 0.127 |
+  | Color Correction over (200, 100, 50): saturation -50 %; hue 120 | (0.637, 0.441, 0.343); (0.196, 0.784, 0.392) | (0.364, 0.164, 0.096); (0.032, 0.578, 0.127) |
+  | Output: level 0.5 over 200; offset 0.2 over 100; level 0.5 over Bm | 0.392; 0.592; off 0.251, on 0.110 | 0.127; 0.310; 0.051 |
+  | RGB Tint (200, 50, 0) / (0, 150, 100) / (30, 0, 255) over (200, 100, 50) | (0.638, 0.384, 0.350) | (0.365, 0.122, 0.100) |
+  | self-illumination 40, its map VRayColor 220 / Bm at 50 %; (200, 40, 40), its map (40, 60, 220) at 25 % | 0.510 / off 0.329, on 0.188; (0.627, 0.176, 0.333) | 0.223 / 0.089; (0.351, 0.026, 0.091) |
+  | Mix black -> white by a Mix 40 -> 220 at 50 % / by VRayColor 128 / by Bm; by a Composite 40 under 220 at 50 %; by the Falloff | 0.510 / 0.511 / off 0.511, on 0.312; 0.510; 0.510 | 0.223 / 0.225 / 0.225; 0.223; 0.223 |
+  | Mix black -> white by a Color Correction: brightness 20 over 128; monochrome / invert / red to all over (200, 100, 50) or CBm | 0.702; 0.458 / 0.542 / 0.784 | 0.451; 0.177 / 0.256 / 0.578 |
+
+  So with the gamma off V-Ray computes each of them on the values it holds (a swatch and a Bitmap as stored) and the
+  display shows the result decoded, as em3.158's Mix: at a color root converted in STORED under one Decode (a Tint or
+  an Output over a constant folded exactly), a slot's amount below 1 mixing the input's own value as stored with its
+  map (a scale, a Standard's Diffuse Level, keeps the decoded mix: not measured with an amount); in a mask the mean
+  of it decoded (a Mix, Composite, CoronaMix or Falloff: Decode mean; a Color Correction, Tint or Output: the mean
+  after the color, `_mask_mean`). Corona 12 renders (CoronaLightMtl planes, a pass and a time limit) give the same
+  internal values for a Mix, Composite, Falloff, Color Correction, Output, Tint, CoronaMix and a Mix in a mask, gamma
+  on and off. Two gamma-on differences the probe showed are fixed with it: a Color Correction's saturation is HSL
+  (towards (max + min) / 2, which the builder draws in Math nodes; the Hue / Saturation / Value node's HSV gave
+  (0.784, 0.588, 0.490)), and a custom rewiring in a mask picks its channel (red to all 0.784; the mask rule's grey
+  gave 0.457). Before, 26 of the 36 gamma-off planes were off by more than 0.02 (worst 0.327); Blender 5.2 renders of
+  the probe scenes now agree with V-Ray within 0.0084 on every plane, gamma on and off, and with the Corona renders
+  within 0.0082. A first Corona pass in a 3dsmaxbatch session whose earlier scripts had failed rendered a Bitmap
+  automatic decoded with the gamma off (0.2195, both modes alike): run again in a session of its own it gave 0.502.
+  Such a pass is caught by a control row (a Bitmap automatic) rendered in both modes.
 
 ## Summary properties
 

@@ -2524,8 +2524,8 @@ def check_fixture_materials(name, plan, desc, obs):
 
 
 def _decoded(node):
-    """The node a Decode's Gamma node of 2.2 is drawn over (a gamma-off color Mix or Composite, maxdrop-em3.158), None
-    when node is not such a Gamma node."""
+    """The node a Decode's Gamma node of 2.2 is drawn over (a gamma-off color Mix or Composite, maxdrop-em3.158; a
+    Falloff, Color Correction, Output or Tint, maxdrop-6n0.6.18), None when node is not such a Gamma node."""
     if node is None or node.bl_idname != "ShaderNodeGamma" or abs(_input(node, "Gamma").default_value - 2.2) > 1e-6:
         return None
     return _from(_input(node, "Color"))
@@ -2547,7 +2547,11 @@ def check_falloff_curve(textured):
               "FixtureCurveOvershoot": "ShaderNodeFresnel", "FixtureCurveClamped": "ShaderNodeLayerWeight",
               "FixtureCurveJump": "ShaderNodeLayerWeight"}
     for name, ratio in ratios.items():
-        mix = _from(_principled(bpy.data.materials[name]).inputs["Base Color"])
+        # the gamma-off fixture: the Falloff mixed as stored under a Gamma node of 2.2 (maxdrop-6n0.6.18)
+        mix = _decoded(_from(_principled(bpy.data.materials[name]).inputs["Base Color"]))
+        check("falloff_curve/%s: under a Gamma node of 2.2" % name, mix is not None and mix.bl_idname == "ShaderNodeMix")
+        if mix is None:
+            continue
         fc = _from(_input(mix, "Factor_Float"))
         ok = fc is not None and fc.bl_idname == "ShaderNodeFloatCurve"
         check("falloff_curve/%s: a Float Curve drives the Mix, unclamped" % name,
@@ -2565,7 +2569,7 @@ def check_falloff_curve(textured):
     linear = bpy.data.materials["FixtureCurveLinear"]
     check("falloff_curve: the default curve makes no Float Curve",
           not any(n.bl_idname == "ShaderNodeFloatCurve" for n in linear.node_tree.nodes)
-          and _from(_input(_from(_principled(linear).inputs["Base Color"]), "Factor_Float")).bl_idname
+          and _from(_input(_decoded(_from(_principled(linear).inputs["Base Color"])), "Factor_Float")).bl_idname
           == "ShaderNodeLayerWeight")
     from maxdrop.convert import colors
     amount = _principled(bpy.data.materials["FixtureMixCurveAmount"]).inputs["Base Color"]
@@ -2612,7 +2616,7 @@ def check_falloff_jump(mapping, x):
     _desc, plan = _irs(os.path.join(ROOT, "tests", "fixtures", "falloff_curve.max"))
     ir = next(ir for p in plan.values() for irs in p.slots for ir in irs
               if ir is not None and ir.name == "FixtureCurveJump")
-    pts = list(ir.textures["base_color"].root.mask.points)
+    pts = list(ir.textures["base_color"].root.input.mask.points)  # the gamma-off Falloff under its Decode
     stored = [tuple(p.location) for p in mapping.curves[0].points]
     at = [p for p in pts if abs(p[0] - x) < 1e-6]
     check("falloff_curve/FixtureCurveJump: the convert side's points, the two at the jump in their order (0.8, 0.3)",
@@ -4126,6 +4130,64 @@ def check_builder_mask_mean():
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def _evaluate_color(socket):
+    """The RGB a color or vector socket gives, from the nodes' own constants (RGB, Separate Color, Math MAXIMUM /
+    MINIMUM / ADD / MULTIPLY, Vector Math MULTIPLY_ADD, Gamma); a float is returned as three equal channels."""
+    if not socket.is_linked:
+        v = socket.default_value
+        return tuple(v[:3]) if hasattr(v, "__len__") else (float(v),) * 3
+    link = socket.links[0]
+    n, out = link.from_node, link.from_socket
+    if n.bl_idname == "ShaderNodeRGB":
+        return tuple(n.outputs[0].default_value[:3])
+    if n.bl_idname == "ShaderNodeSeparateColor":
+        c = _evaluate_color(n.inputs["Color"])
+        return (c[("Red", "Green", "Blue").index(out.name)],) * 3
+    if n.bl_idname == "ShaderNodeMath":
+        a, b = (_evaluate_color(i)[0] for i in n.inputs[:2])
+        f = {'MAXIMUM': max, 'MINIMUM': min, 'ADD': lambda x, y: x + y, 'MULTIPLY': lambda x, y: x * y}[n.operation]
+        return (f(a, b),) * 3
+    if n.bl_idname == "ShaderNodeVectorMath" and n.operation == 'MULTIPLY_ADD':
+        v, s, add = (_evaluate_color(_input(n, k)) for k in ("Vector", "Vector_001", "Vector_002"))
+        return tuple(x * y + z for x, y, z in zip(v, s, add))
+    if n.bl_idname == "ShaderNodeGamma":
+        c, g = _evaluate_color(n.inputs["Color"]), n.inputs["Gamma"].default_value
+        return tuple(x ** g if x > 0 else x for x in c)
+    raise ValueError(n.bl_idname)
+
+
+def check_builder_saturation():
+    """A Color Correction's saturation drawn as 3ds Max's (HSL: each channel towards (max + min) / 2; V-Ray 5.2
+    renders, bead maxdrop-6n0.6.18: -50 % over (200, 100, 50) gives (0.637, 0.441, 0.343)), evaluated from the nodes'
+    constants; the hue shift alone on the Hue/Saturation/Value node, its saturation 1."""
+    from maxdrop.build import materials as build_materials
+    from maxdrop.convert import materials as cm
+    from maxdrop.convert import texmaps as tx
+    empty_scene()
+    color = (200 / 255, 100 / 255, 50 / 255)
+    builder = build_materials.MaterialBuilder()
+    for label, hue in (("saturation", 0.0), ("hue and saturation", 0.5)):
+        ir = cm.MaterialIR(86, "Saturation", "test", emission_color=cm.Input((0.0,) * 3, cm.MapRef(1)),
+                           emission_strength=1.0)
+        ir.textures = {"emission_color": tx.TextureGraphIR(tx.ColorCorrect(tx.Constant(color), hue=hue,
+                                                                           saturation=0.5), tx.COLOR)}
+        m = builder.make(ir)
+        socket = _principled(m).inputs["Emission Color"]
+        sat = _from(socket)
+        ok = sat is not None and sat.bl_idname == "ShaderNodeVectorMath" and sat.operation == 'MULTIPLY_ADD'
+        got = _evaluate_color(socket) if ok and hue == 0.0 else None
+        hues = [n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeHueSaturation"]
+        if hue == 0.0:
+            check("builder saturation: HSL, (0.637, 0.441, 0.343) as V-Ray renders it, no HSV node",
+                  ok and not hues and close(got, [0.6373, 0.4412, 0.3431], 0.0005), str(got))
+        else:
+            source = _from(_input(sat, "Vector")) if ok else None
+            check("builder saturation: the hue on a Hue/Saturation/Value node of saturation 1, before the HSL step",
+                  len(hues) == 1 and source == hues[0] and abs(hues[0].inputs["Saturation"].default_value - 1.0) < 1e-6
+                  and abs(hues[0].inputs["Hue"].default_value - 0.0) < 1e-6, str(hues))
+        bpy.data.materials.remove(m)
+
+
 def check_builder_multiply():
     """A Multiply of two maps in a float graph (bead maxdrop-em3.124): V-Ray 5.2 takes the product of the two maps'
     means (red x green 1/9, measured on an RGB Multiply as a Mix mask and a glossiness map, a CoronaMix Multiply as
@@ -5394,16 +5456,19 @@ def check_builder_wiring(ma, mb, builder, cm, tx, srgb, data, lost, gamma):
     gam = _from(pb.inputs["Emission Color"])
     gain = _from(gam.inputs["Color"])
     bc = _from(gain.inputs[0])
-    hue = _from(bc.inputs["Color"])
+    sat = _from(bc.inputs["Color"])
+    hue = _from(_input(sat, "Vector")) if sat.bl_idname == "ShaderNodeVectorMath" else sat
     comp = _from(hue.inputs["Color"])
-    check("wiring: Color Correction: Hue 0.75, Saturation 1.5, Bright 0.1, Contrast 0.2, gain 1.2, Gamma 1 / 1.1",
+    check("wiring: Color Correction: Hue 0.75, HSL Saturation 1.5 (maxdrop-6n0.6.18), Bright 0.1, Contrast 0.2, "
+          "gain 1.2, Gamma 1 / 1.1", sat.bl_idname == "ShaderNodeVectorMath" and sat.operation == 'MULTIPLY_ADD'
+          and close(list(_input(sat, "Vector_001").default_value), [1.5] * 3, 1e-6) and
           gam.bl_idname == "ShaderNodeGamma" and abs(gam.inputs["Gamma"].default_value - 1 / 1.1) < 1e-6
           and gain.bl_idname == "ShaderNodeVectorMath" and gain.operation == 'SCALE'
           and abs(_input(gain, "Scale").default_value - 1.2) < 1e-6
           and bc.bl_idname == "ShaderNodeBrightContrast" and abs(_input(bc, "Bright").default_value - 0.1) < 1e-6
           and abs(_input(bc, "Contrast").default_value - 0.2) < 1e-6
           and hue.bl_idname == "ShaderNodeHueSaturation" and abs(hue.inputs["Hue"].default_value - 0.75) < 1e-6
-          and abs(hue.inputs["Saturation"].default_value - 1.5) < 1e-6)
+          and abs(hue.inputs["Saturation"].default_value - 1.0) < 1e-6)
     factor = _from(_input(comp, "Factor_Float"))
     top = _from(_input(comp, "B_Color"))
     check("wiring: Composite: the top layer over the bottom by its alpha times 0.5, its gamma override 1.8 applied",
@@ -5536,7 +5601,11 @@ def check_wrapper_nodes():
         kinds = _node_kinds(m) if m is not None else set()
         check("texmap_wrappers/%s: its wrappers' nodes" % name, want <= kinds, str(sorted(want - kinds)))
     p = _principled(bpy.data.materials["FixtureWrapFalloff"])
-    mix = _from(p.inputs["Base Color"])
+    mix = _decoded(_from(p.inputs["Base Color"]))
+    check("texmap_wrappers: the gamma-off Falloff mixed as stored, under a Gamma node of 2.2 (maxdrop-6n0.6.18)",
+          mix is not None and mix.bl_idname == "ShaderNodeMix")
+    if mix is None:
+        return
     side = _from(_input(mix, "A_Color"))
     check("texmap_wrappers: the Falloff's side 1 is lerp(color 1, its map, 0.6), by Layer Weight Facing",
           _from(_input(mix, "Factor_Float")).bl_idname == "ShaderNodeLayerWeight" and side.bl_idname == "ShaderNodeMix"
@@ -6025,6 +6094,7 @@ def main():
                                  ("builder clip mask", check_builder_clip_mask),
                                  ("builder clipped normal", check_builder_clipped_normal),
                                  ("builder mask mean", check_builder_mask_mean),
+                                 ("builder saturation", check_builder_saturation),
                                  ("curve step", check_curve_step),
                                  ("crease open edges", check_crease_open_edges),
                                  ("linear fallback", check_linear_fallback),

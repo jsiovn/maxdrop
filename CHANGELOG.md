@@ -61,6 +61,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Corona media: a CoronaVolumeMtl box has no surface at all, so more than four stacked or nested boxes render in
   Cycles (an invisible surface would spend two of its 8 transparent bounces per box), and a room-sized fog box is
   see-through in Solid view.
+- Gamma-off scenes: a Falloff, Color Correction, Output or RGB Tint on a color map, a map's amount below 1 on a color
+  input, and a Mix, Composite, CoronaMix, Falloff or Color Correction inside a mask are computed on the stored colors
+  and shown decoded, as V-Ray 5.2 and Corona 12 render them (measured), instead of mixing decoded colors (a Falloff
+  of greys 40 and 220 was 0.37 for V-Ray's 0.22).
 
 ### Fixed
 
@@ -314,6 +318,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   Correction that rewires channels there picks them from the stored color and masks by the mean of the result.
 - CoronaMix: Gamma whose top is a map that is a color (CoronaColor, VRayColor) is imported as with a top color, and
   a colored top over a bottom map that is a color is folded per channel, instead of the first bitmap below.
+- Color Correction: its saturation is drawn as 3ds Max and V-Ray 5.2 compute it (in HSL, towards the mean of the
+  brightest and darkest channel), instead of Blender's HSV saturation, which kept a saturated color too bright; a
+  custom rewiring in a mask picks its channel instead of the mean.
 
 ## [1.0.1] - 2026-11-22
 

@@ -113,7 +113,8 @@ Texture graphs (convert/texmaps.py) become nodes, a node of the IR shared by sev
 datablocks; see Images below), with its placement as a Mapping node and a UV Map node for a map channel other than
 1; Invert, Decode (a Gamma node of 2.2, a constant through the sRGB curve; a mean: the sRGB curve in Math nodes), Mix,
 Multiply, Blend (Gamma nodes around a Mix node of its operation or Vector Math nodes), ColorCorrect (its rewiring as
-Invert, the mean or Separate / Combine Color, then Hue/Saturation/Value, Bright/Contrast, gain, Gamma), Composite
+Invert, the mean or Separate / Combine Color, then Hue/Saturation/Value for the hue, the saturation in HSL (Math
+and Vector Math nodes), Bright/Contrast, gain, Gamma), Composite
 (per layer its blend at factor 1, then a Mix by opacity x mask), Facing (Layer Weight Facing, Fresnel, or the
 Geometry node's Normal . Incoming), Remap (Float Curve, its points straight between them, not clipped; the Mix it
 drives does not clamp its factor), Smoothstep (Map Range SMOOTHSTEP, or a step: 1 - LESS_THAN), Adjust (a map's
@@ -1359,7 +1360,7 @@ class _Tree:
         return _out(g, "Color")
 
     def color_correct(self, n, space, depth):
-        steps = [tuple(n.rewire) != tx.REWIRE_NONE, n.hue % 1.0 != 0.0 or n.saturation != 1.0,
+        steps = [tuple(n.rewire) != tx.REWIRE_NONE, n.hue % 1.0 != 0.0, n.saturation != 1.0,
                  n.brightness != 0.0 or n.contrast != 0.0, n.gain != 1.0, n.gamma != 1.0]
         d = depth + sum(steps) - 1  # the first step's column; the input one further left
         v = self.graph(n.input, COLOR, d + 1)
@@ -1374,9 +1375,11 @@ class _Tree:
         if steps[0]:
             h = self.node("ShaderNodeHueSaturation", d)
             _in(h, "Hue").default_value = (0.5 + n.hue) % 1.0
-            _in(h, "Saturation").default_value = max(0.0, n.saturation)
             self.links.new(v, _in(h, "Color"))
             v, d = _out(h, "Color"), d - 1
+        steps = steps[1:]
+        if steps[0]:
+            v, d = self.saturate(v, max(0.0, n.saturation), d), d - 1
         if steps[1]:
             bc = self.node("ShaderNodeBrightContrast", d)
             _in(bc, "Bright").default_value = n.brightness
@@ -1391,6 +1394,34 @@ class _Tree:
             self.links.new(v, _in(g, "Color"))
             v = _out(g, "Color")
         return v
+
+    def saturate(self, v, s, depth):
+        """Color socket v with its saturation scaled by s as 3ds Max's Color Correction does, in HSL: each channel
+        lerp(L, c, s), L = (max + min) / 2 (V-Ray 5.2 renders, maxdrop-6n0.6.18: -50 % over (0.784, 0.392, 0.196)
+        gives (0.637, 0.441, 0.343); the Hue/Saturation/Value node's HSV keeps the max, 0.784 / 0.588 / 0.490).
+        Exact while the HSL saturation stays within 0..1 (above 0 % not measured)."""
+        sep = self.node("ShaderNodeSeparateColor", depth)
+        self.links.new(v, _in(sep, "Color"))
+
+        def math(operation, a, b):
+            m = self.node("ShaderNodeMath", depth)
+            m.operation = operation
+            for k, x in enumerate((a, b)):
+                if isinstance(x, bpy.types.NodeSocket):
+                    self.links.new(x, m.inputs[k])
+                else:
+                    m.inputs[k].default_value = x
+            return m.outputs[0]
+        r, g, b = (_out(sep, c) for c in ("Red", "Green", "Blue"))
+        top = math('MAXIMUM', math('MAXIMUM', r, g), b)
+        low = math('MINIMUM', math('MINIMUM', r, g), b)
+        rest = math('MULTIPLY', math('ADD', top, low), 0.5 * (1.0 - s))
+        vm = self.node("ShaderNodeVectorMath", depth)
+        vm.operation = 'MULTIPLY_ADD'
+        self.links.new(v, _in(vm, "Vector"))
+        _in(vm, "Vector_001").default_value = (s, s, s)
+        self.links.new(rest, _in(vm, "Vector_002"))
+        return _out(vm, "Vector")
 
     def rewire(self, v, channels, depth):
         """A Color Correction's rewiring of color socket v: Invert, the mean of the channels, or Separate /
