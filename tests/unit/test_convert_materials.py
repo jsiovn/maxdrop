@@ -2784,6 +2784,19 @@ class Assign(unittest.TestCase):
                 self.assertEqual(conv.source_for(0, 0), 0 if peeled is None else peeled)
                 self.assertEqual((dict(conv.stats.peeled), conv._peels), ({}, {}))
 
+    def test_peel_and_source_for_share_the_wrapper_test(self):
+        """peel() and source_for's walk stop on one predicate (_is_wrapper), so a wrapper class added there reaches
+        both (maxdrop-6n0.7.5): each asks it of every object it walks."""
+        objs = (_wrapper(0, classids.VRAY_MTL_WRAPPER, {0: Ref(1)}), _vray(1, "A"),
+                _wrapper(2, classids.VRAY_MTL_WRAPPER, {0: Ref(1)}))
+        for walk in ("peel", "source_for"):
+            conv = mat.MaterialConverter(FakeGraph(*objs))
+            asked, real = [], conv._is_wrapper
+            conv._is_wrapper = lambda m, key: asked.append(m.index) or real(m, key)
+            self.assertEqual(conv.peel(0) if walk == "peel" else conv.source_for(2, 0), (1, None) if walk == "peel"
+                             else 1)
+            self.assertEqual(asked, [0, 1] if walk == "peel" else [2, 1], walk)
+
     def test_source_for_walks_each_wrapper_once(self):
         """An unpeeled wrapper many IDs wrap onto is walked once, not once per ID: a curve of 1000 IDs, half on a
         CoronaLayeredMtl without a base and a long layers table (every layer off but the last), no line."""

@@ -618,6 +618,12 @@ class MaterialConverter:
         base = m.param(CORONA_BASE, 0)
         return isinstance(base, pblock.Reference) and base.index is not None and bool(self.corona_layers(m))
 
+    def _is_wrapper(self, m, key):
+        """Material object m (ClassId key) stands for another one: peel() and source_for walk through it, stopping on
+        anything else (not a material, not in WRAPPERS or the Shell, a CoronaLayeredMtl that mixes its layers)."""
+        return m.superclass == classids.SC_MATERIAL and (key in WRAPPERS or key == classids.SHELL_MTL) and not (
+            key == classids.CORONA_LAYERED_MTL and self._mixes_layers(m))
+
     def peel(self, index):
         """(object index of the material a wrapper stands for, None), the index itself for an object that is no
         wrapper; (None, reason) when the peel ends without a material. The depth guard counts from index, so the
@@ -633,8 +639,7 @@ class MaterialConverter:
                 out = (None, "object %d: %s" % (i, e))
                 break
             key = ClassId(*m.class_id)
-            if m.superclass != classids.SC_MATERIAL or not (key in WRAPPERS or key == classids.SHELL_MTL) or (
-                    key == classids.CORONA_LAYERED_MTL and self._mixes_layers(m)):
+            if not self._is_wrapper(m, key):
                 out = (i, None)
                 break
             if len(chain) == MAX_PEEL:
@@ -767,8 +772,8 @@ class MaterialConverter:
     def source_for(self, index, material_id):
         """The material object index material_for(index, material_id) converts, None where it gives none, found
         without converting or counting anything (no peel kept): Multi/Sub-Objects looked up by the ID, wrappers
-        through peel()'s result or, for one peel() has not walked yet, its walk over _sub again (from the same object,
-        so the same base; kept in _bases, one walk per object as peel() pays); a wrapper whose peel fails is its own
+        through peel()'s result or, for one peel() has not walked yet, its walk over _sub again (the same stop test,
+        _is_wrapper, from the same object, so the same base; kept in _bases, one walk per object as peel() pays); a wrapper whose peel fails is its own
         answer (its grey IR is its own). To compare IDs that get no slot."""
         def base_of(j):
             if j in self._peels:
@@ -785,8 +790,7 @@ class MaterialConverter:
                 except ChunkError:
                     return None
                 key = ClassId(*m.class_id)
-                if m.superclass != classids.SC_MATERIAL or not (key in WRAPPERS or key == classids.SHELL_MTL) or (
-                        key == classids.CORONA_LAYERED_MTL and self._mixes_layers(m)):
+                if not self._is_wrapper(m, key):
                     return j
                 if len(chain) == MAX_PEEL:
                     return None
@@ -1617,8 +1621,8 @@ def _mixed(cd, materials, conv):
     """The issue (node, text) of a curve whose spline mixes material IDs that some user gets different materials for
     (conv.source_for: the IDs without a slot are not converted), named once on its first user; None without one.
     Bounded for an untrusted file: one source_for per distinct (material, ID) pair of the mixed splines (users sharing
-    a material asked once), then each spline by dict lookups. The cache lives in this call only: source_for reads the
-    peels, which later curves and meshes add to."""
+    a material asked once), then each spline by dict lookups. The cache lives in this call only (source_for answers
+    the same whether a wrapper was peeled yet or not: its own walk shares peel()'s stop test)."""
     splines = [sd.material_ids for sd in cd.splines]
     mixed = {mid for ids in splines if len(ids) >= 2 for mid in ids}
     if not mixed:
