@@ -6,7 +6,7 @@
 
     material = make_material(ed, strength)  # an Emission material: ed.radiance x strength, one side or both
     set_object(ob, ed)                      # the flags of one object of it: off, camera, shadow, ray visibility
-    spread(desc, built, collection, view_layer, strength)  # after build.modifiers.add: over the evaluated area
+    for done, total in spread(desc, built, collection, view_layer, strength):  # after build.modifiers.add: steps
 
 One Material per EmitterDescription; build.objects gives it to every face of the emitter's mesh. Its Emission
 strength is the radiance in W/m^2/sr times strength, the import's Light Strength (Cycles renders an Emission of
@@ -24,7 +24,8 @@ throwaway copy of the emitter's object, in the scene's own collection and shown 
 node's, is evaluated too), its modifiers on in the viewport and a Subdivision Surface at its render levels as far as
 convert.modifiers' viewport budget allows (V-Ray emits the render mesh); the area the description holds (object
 space) times the evaluated mesh's over the unmodified mesh's (both of the object: the baked object offset stays out
-of it, as in convert.scene), then lights.spread and the Emission strength again.
+of it, as in convert.scene), then lights.spread and the Emission strength again. It runs as import steps: every copy
+linked first, one update of the view layer for all of them, one emitter measured per step.
 """
 import bpy
 
@@ -105,52 +106,90 @@ def _render_levels(converted, corners):
     return [dict(m.settings)["levels"] if m.kind == rules.SUBSURF else None for m in out]
 
 
-def evaluated_area(ob, converted, collection, view_layer):
-    """(the area of object ob's mesh, of that mesh under ob's modifiers) in Blender units squared, measured on a copy
-    of ob linked to collection (one of view_layer's that is never excluded: the scene's own) and removed again: shown,
-    its modifiers on in the viewport, each Subdivision Surface at its render levels within the viewport budget
-    (_render_levels; converted: the ModifierDescriptions ob's modifiers were made from, in their order)."""
+def _shown_copy(ob, converted, collection, copies):
+    """A copy of object ob, added to copies (the caller removes them) and linked to collection (one of the view
+    layer's that is never excluded: the scene's own): shown, its modifiers on in the viewport, each Subdivision Surface
+    at its render levels within the viewport budget (_render_levels; converted: the ModifierDescriptions ob's
+    modifiers were made from, in their order)."""
     copy = ob.copy()
+    copies.append(copy)
+    collection.objects.link(copy)
+    copy.hide_viewport = False
+    for mod, levels in zip(copy.modifiers, _render_levels(converted, len(ob.data.loops))):
+        mod.show_viewport = True
+        if levels is not None:
+            mod.levels = levels
+    return copy
+
+
+def _evaluated(copy, view_layer):
+    """The area of object copy's evaluated mesh, view_layer updated since copy was changed."""
+    ev = copy.evaluated_get(view_layer.depsgraph)
+    mesh = ev.to_mesh()
     try:
-        collection.objects.link(copy)
-        copy.hide_viewport = False
-        for mod, levels in zip(copy.modifiers, _render_levels(converted, len(ob.data.loops))):
-            mod.show_viewport = True
-            if levels is not None:
-                mod.levels = levels
-        view_layer.update()
-        ev = copy.evaluated_get(view_layer.depsgraph)
-        mesh = ev.to_mesh()
-        try:
-            under = _area(mesh)
-        finally:
-            ev.to_mesh_clear()
+        return _area(mesh)
     finally:
-        bpy.data.objects.remove(copy)
+        ev.to_mesh_clear()
+
+
+def evaluated_area(ob, converted, collection, view_layer):
+    """(the area of object ob's mesh, of that mesh under ob's modifiers) in Blender units squared, measured on a shown
+    copy of ob in collection (_shown_copy) and removed again: one emitter measured as spread measures it (the tests'
+    reference)."""
+    copies = []
+    try:
+        copy = _shown_copy(ob, converted, collection, copies)
+        view_layer.update()
+        under = _evaluated(copy, view_layer)
+    finally:
+        for copy in copies:
+            bpy.data.objects.remove(copy)
     return _area(ob.data), under
 
 
 def spread(desc, built, collection, view_layer, strength=1.0):
-    """After build.modifiers.add: each emitter in built (a build.objects.Built) of a units mode that spreads its flux
-    (lights.SPREAD_UNITS) whose first node with an object has converted modifiers gets the evaluated area of that
-    object's mesh (evaluated_area) through lights.spread, and its Emission material the new strength (radiance x
-    strength). Its strength issues are those of the new area, on its first node, where describe_emitter named the
-    others. The others stay as they are."""
+    """Step generator, after build.modifiers.add: each emitter in built (a build.objects.Built) of a units mode that
+    spreads its flux (lights.SPREAD_UNITS) whose first node with an object has converted modifiers gets the evaluated
+    area of that object's mesh (as evaluated_area measures it) through lights.spread, and its Emission material the
+    new strength (radiance x strength). Its strength issues are those of the new area, on its first node, where
+    describe_emitter named the others. The others stay as they are. Yields (done, total) emitters: (0, total) once
+    their copies are linked, before the one view_layer.update() that evaluates them all (and the import with them,
+    which nothing interrupts), then after each one measured; nothing when none is to measure. Closed early, the
+    copies are removed and the emitters measured so far keep their new strength."""
     nodes = {n.index: n for n in desc.nodes if n.emitter is not None}
+    todo = []  # (emitter key, EmitterDescription, its object, the converted modifiers it was made with)
     for key, ed in desc.emitters.items():
         if ed.units not in lights.SPREAD_UNITS:
             continue
         node = next((nodes[i] for i in ed.users if i in nodes and built.objects.get(i) is not None), None)
-        if node is None or not node.converted:
-            continue
-        base, under = evaluated_area(built.objects[node.index], node.converted, collection, view_layer)
-        gone, added = lights.spread(ed, ed.area * under / base if base > 0 else under)
-        first = ed.users[0]
-        for x in gone:
-            line = (first, "light: %s" % x)
-            if line in desc.issues:
-                desc.issues.remove(line)
-        desc.issues.extend((first, "light: %s" % x) for x in added)
-        material = built.emitters.get(key)
-        if material is not None:
-            compat.node_tree(material).nodes[EMISSION].inputs["Strength"].default_value = ed.radiance * strength
+        if node is not None and node.converted:
+            todo.append((key, ed, built.objects[node.index], node.converted))
+    if not todo:
+        return
+    copies = []
+    try:
+        for _key, _ed, ob, converted in todo:
+            _shown_copy(ob, converted, collection, copies)
+        yield 0, len(todo)
+        view_layer.update()
+        for done, ((key, ed, ob, _converted), copy) in enumerate(zip(todo, copies), 1):
+            base, under = _area(ob.data), _evaluated(copy, view_layer)
+            _spread(desc, built, key, ed, ed.area * under / base if base > 0 else under, strength)
+            yield done, len(todo)
+    finally:
+        for copy in copies:
+            bpy.data.objects.remove(copy)
+
+
+def _spread(desc, built, key, ed, area, strength):
+    """Emitter ed (key in desc.emitters) spread over area (m^2): its strength issues and its material's strength."""
+    gone, added = lights.spread(ed, area)
+    first = ed.users[0]
+    for x in gone:
+        line = (first, "light: %s" % x)
+        if line in desc.issues:
+            desc.issues.remove(line)
+    desc.issues.extend((first, "light: %s" % x) for x in added)
+    material = built.emitters.get(key)
+    if material is not None:
+        compat.node_tree(material).nodes[EMISSION].inputs["Strength"].default_value = ed.radiance * strength

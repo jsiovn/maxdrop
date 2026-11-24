@@ -294,7 +294,7 @@ class Fixtures(unittest.TestCase):
 
     def test_owner_slots_match_the_fixtures(self):
         """Each owner_slots.py entry a fixture's 0x0013 lists says what that table says; every entry has one but the
-        two measured on corpus scene B only."""
+        two measured on corpus scene B only, and Output's pid 0 (map1), measured on corpus scene A only."""
         tables = {}
         for path in FIXTURES:
             with cfb.CompoundFile(path) as cf:
@@ -320,6 +320,7 @@ class Fixtures(unittest.TestCase):
                         self.assertEqual(tables.setdefault(key, found), found, os.path.basename(path))
                 del cf
         corpus_only = {classids.COMPOSITE, owner_slots.LAYERED_TEXMAP}
+        corpus_pids = {(classids.OUTPUT_MAP, 0): 0}  # Output's map1: measured on corpus scene A only
         for (superclass, class_id), blocks in owner_slots.TABLE.items():
             for block_id, want in blocks.items():
                 with self.subTest(class_id=class_id, block=block_id):
@@ -328,7 +329,12 @@ class Fixtures(unittest.TestCase):
                         self.assertIsNone(found)
                         continue
                     self.assertIsNotNone(found, "no fixture 0x0013 for this entry")
-                    self.assertEqual({pid: found.get(pid) for pid in want}, want)
+                    fixture = {pid: s for pid, s in want.items() if (class_id, pid) not in corpus_pids}
+                    self.assertEqual({pid: found.get(pid) for pid in fixture}, fixture)
+                    for (cid, pid), slot in corpus_pids.items():
+                        if cid == class_id:
+                            self.assertNotIn(pid, found)
+                            self.assertEqual(want.get(pid), slot)
 
     def test_vray_values_by_id(self):
         """A few values docs/FORMAT.md quotes, read by parameter id as the converters will."""

@@ -820,7 +820,7 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
     desc = SceneDescription(meters, unit)
     order = scene.walk()
     found = {}  # node -> (reader Node, Stack or None), or the ChunkError its record or object stack raised
-    shape_of = {}  # base object index -> reader Shape, or None when the reader refused it
+    shape_of = {}  # base object index -> reader Shape, or the text of the reader's refusal (_shape)
     unbuilt = set()  # curve keys refused for their range (CurveError), named on their first node
     remaining = collections.Counter()  # base object -> nodes still to build: its MeshData goes with the last
     for i in order:
@@ -835,8 +835,8 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
         except ChunkError as exc:
             found[i] = exc
     data_of = {}  # base object index -> MeshData, or None when the reader refused or does not read it
-    extruded = {}  # base object index -> {Extrude modifier index: MeshData, or None when it cannot be evaluated}
     built = [0]  # face corners the primitives and extrusions made so far
+    extrusions = _Extrusions(scene, desc, shape_of, built)  # shared by the shapes' nodes and the mesh lights
     mapped = {}  # UVW Map modifier index -> (Params, gizmo matrix), or None when it is not evaluated
     told = set()  # modifier indices whose conversion issues were named (on the first node only)
     rims = set()  # (Shell modifier index, mesh key) whose rim issues were named
@@ -875,9 +875,8 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
                     conv, conv_issues = _converted(scene, rest, meters, _offset(t, i), told, convert_modifiers)
                     shell = _rim(conv)
                     mirrors = _mirrors(conv, shell)
-                    key, done = _extruded(scene, desc, shape_of, extruded, mapped, base, ext, maps, i, name,
-                                          t.offset(i), meters, built, _shading(conv), check, shell is not None,
-                                          mirrors, ranges)
+                    key, done = _extruded(scene, desc, extrusions, mapped, base, ext, maps, i, name, t.offset(i),
+                                          meters, _shading(conv), check, shell is not None, mirrors, ranges)
                     if key is None:
                         told.difference_update(fresh)
                 if key is not None:
@@ -890,7 +889,7 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
                     kind, curve = _curve(scene, desc, shape_of, unbuilt, base, i, name, t.offset(i), meters)
                 remaining[base] -= 1
                 if not remaining[base]:
-                    extruded.pop(base, None)
+                    extrusions.drop(base)
             elif base is not None and lights.light_class(scene, base) is not None:
                 class_name = _class_name(scene, base)
                 if swatches is None:
@@ -906,7 +905,7 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
                         try:
                             key, emitter, converted = _emitter(scene, t, desc, emitter_meshes, light_params[base],
                                                                base, i, name, meters, swatches, built, check, stacks,
-                                                               told, convert_modifiers)
+                                                               told, convert_modifiers, extrusions)
                         except MeshError as exc:  # its mesh with the node's offset: nothing of it is written yet
                             emitter_refused[refused] = str(exc)
                             desc.issues.append((i, "light: not built: %s" % exc))
@@ -917,7 +916,9 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
                                     _name_zeroed(desc, desc.meshes[key], i)
                 remaining[base] -= 1
                 if not remaining[base]:
-                    emitter_meshes.pop(base, None)
+                    mesh = emitter_meshes.pop(base, None)
+                    if isinstance(mesh, tuple) and not remaining[mesh[0]]:  # a picked shape no node still needs
+                        extrusions.drop(mesh[0])
             elif base is not None and cameras.camera_class(scene, base) is not None:
                 class_name = _class_name(scene, base)
                 camera = _camera(scene, t, desc, unseen, camera_params, base, i, name, meters, mm)
@@ -1040,7 +1041,7 @@ def _light(scene, desc, unlit, params, base, node, name, meters, swatches, world
 
 
 def _emitter(scene, t, desc, meshes, values, base, node, name, meters, swatches, built, check=None, stacks=None,
-             told=None, convert=True):
+             told=None, convert=True, extrusions=None):
     """(the key in desc.meshes of mesh light base's emitter mesh on node, its key in desc.emitters, the converted
     modifiers of its mesh object as on node (ModifierDescriptions, budgeted)), or (None, None, ()) when it has no mesh
     MaxDrop builds (meshes caches the reason, an issue on every node). The mesh is the mesh object's mesh below its
@@ -1050,9 +1051,9 @@ def _emitter(scene, t, desc, meshes, values, base, node, name, meters, swatches,
     edges (md.creases, as _mapped_mesh does: the shape and so the area depend on it; a smoother's SMOOTH shading and a
     Shell's rim change the shading only, which an emitter does not show). The description's issues, and the line
     naming the modifiers neither evaluated nor converted (but those _converted names), are named on the first
-    node."""
+    node. extrusions: as _emitter_mesh's."""
     if base not in meshes:
-        meshes[base] = _emitter_mesh(scene, desc, values, node, meters, built, check, stacks)
+        meshes[base] = _emitter_mesh(scene, desc, values, node, meters, built, check, stacks, extrusions)
     found = meshes[base]
     if isinstance(found, str):
         desc.issues.append((node, "light: not built: %s" % found))
@@ -1085,19 +1086,22 @@ def _emitter(scene, t, desc, meshes, values, base, node, name, meters, swatches,
     return key, base, converted
 
 
-def _emitter_mesh(scene, desc, values, node, meters, built, check=None, stacks=None):
+def _emitter_mesh(scene, desc, values, node, meters, built, check=None, stacks=None, extrusions=None):
     """(mesh base object index, reader MeshData, its object-space area in m^2 (the faces Blender holds), the reader
     Modifiers above it that render (bottom first, its UVW Maps left out: _emitter_rest), the class names of the
     modifiers of a stack the reader cannot read (top first)) of a mesh light's mesh: its own mesh object
     (lights.MESH_OBJECT: what V-Ray's Replace mesh with light keeps), else (none, or not a mesh read here) the object
     of the node its mesh source (parameter 34) names; or why it has none (the own object's reason when both fail).
     The mesh is the object's base mesh (_mesh_of), or its shape under the Extrude right above it (_emitter_shape).
-    stacks: the scene's reader.modifiers Modifiers (None: none read, every modifier named)."""
+    stacks: the scene's reader.modifiers Modifiers (None: none read, every modifier named); extrusions: the scene's
+    _Extrusions, shared with the shape's own nodes (None: one of its own, counting into built)."""
+    if extrusions is None:
+        extrusions = _Extrusions(scene, desc, {}, built)
     reasons = []
     for obj in (values.get(lights.MESH_OBJECT), _source_object(scene, values.get(lights.P_MESH_SOURCE))):
         if obj is None:
             continue
-        found = _emitter_shape(scene, desc, stacks, obj, node, built)
+        found = _emitter_shape(scene, desc, stacks, obj, node, extrusions)
         if found is None:
             found = _mesh_of(scene, desc, obj, node, built, check)
             if not isinstance(found, str):
@@ -1131,11 +1135,11 @@ def _emitter_rest(scene, desc, stacks, obj, stack, ext, node):
     return (), tuple(_class_name(scene, m) or "a modifier" for m in stack.modifiers)
 
 
-def _emitter_shape(scene, desc, stacks, obj, node, built):
+def _emitter_shape(scene, desc, stacks, obj, node, extrusions):
     """(shape base object index, reader MeshData of the Extrude, reader Stack, the Extrude's reader Modifier) of object
-    obj when it is a shape whose lowest modifier that renders is an Extrude (convert.extrude); why it has no mesh when
-    the shape, the Extrude or the positions cannot be made (shape and Extrude issues on node), or the scene's
-    MAX_BUILT_CORNERS are spent; None when obj is no such shape (_mesh_of then says why)."""
+    obj when it is a shape whose lowest modifier that renders is an Extrude (convert.extrude), made once with the
+    shape's own nodes (_Extrusions); why it has no mesh when the shape, the Extrude or the positions cannot be made,
+    or the scene's MAX_BUILT_CORNERS are spent; None when obj is no such shape (_mesh_of then says why)."""
     if stacks is None:
         return None
     try:
@@ -1151,17 +1155,10 @@ def _emitter_shape(scene, desc, stacks, obj, node, built):
     if not (active and extrude.is_extrude(active[0])):
         return None
     ext = active[0]
-    if built[0] >= MAX_BUILT_CORNERS:
-        return lights.EMITTER_UNREAD % ("its Extrude is not made: " + _SPENT % MAX_BUILT_CORNERS)
-    try:
-        sh = shapes.read_shape(scene, stack.base)
-        params, issues = extrude.read_params(scene, ext)
-        data, more = extrude.extrude(sh, params)
-    except ChunkError as exc:  # ShapeError, ExtrudeError, or a block the reader refuses
-        return lights.EMITTER_UNREAD % exc
-    built[0] += len(data.loop_vertices)
-    desc.issues.extend([(node, "shape: %s" % x) for x in sh.issues] +
-                       [(node, "extrude: %s" % x) for x in issues + more])
+    data = extrusions.get(stack.base, ext, node, light=True)
+    if isinstance(data, tuple):
+        kind, text = data
+        return lights.EMITTER_UNREAD % ("its Extrude is not made: " + text if kind == _SPENT_KIND else text)
     try:
         _positions(data, None, desc.meters)  # before the light node's offset, applied in _emitter (describe)
     except MeshError as exc:
@@ -1260,16 +1257,17 @@ def _primitive(scene, base, issues, node, built):
 
 
 def _shape(scene, desc, shape_of, base, node):
-    """The reader Shape of base, read once (shape_of caches it, None when refused); its issues, or the refusal,
-    are named on the first node only."""
+    """The reader Shape of base, read once (shape_of caches it, or the text of its refusal), None when refused; its
+    issues, or the refusal, are named on the first node only."""
     if base not in shape_of:
         try:
             shape_of[base] = shapes.read_shape(scene, base)
             desc.issues.extend((node, "shape: %s" % x) for x in shape_of[base].issues)
-        except shapes.ShapeError as exc:
-            shape_of[base] = None
+        except ChunkError as exc:  # ShapeError, or a block the reader refuses
+            shape_of[base] = str(exc)
             desc.issues.append((node, "shape: %s" % exc))
-    return shape_of[base]
+    sh = shape_of[base]
+    return None if isinstance(sh, str) else sh
 
 
 def _curve(scene, desc, shape_of, unbuilt, base, node, name, offset, meters):
@@ -1616,34 +1614,94 @@ def _name_zeroed(desc, md, node):
         desc.issues.append((node, "geometry: %d UV coordinates that are not numbers set to 0" % md.zeroed_uvs))
 
 
-def _extruded(scene, desc, shape_of, extruded, mapped, base, ext, maps, node, name, offset, meters, built,
-              shading=None, check=None, rim=False, mirrors=(), ranges=None):
+def _extruded(scene, desc, extrusions, mapped, base, ext, maps, node, name, offset, meters, shading=None, check=None,
+              rim=False, mirrors=(), ranges=None):
     """(the key in desc.meshes of shape base under the Extrude ext and the UVW Maps maps, the maps applied), made on
     first use; (None, ()) when the shape or the Extrude cannot be read or the scene's MAX_BUILT_CORNERS are spent (an
-    issue, once per base object and Extrude), or when its positions do not fit single precision (_mapped_mesh, which
-    gets ranges; the shape is then drawn as a curve). extruded caches the MeshData per base object, built counts the
-    face corners made."""
-    cache = extruded.setdefault(base, {})
-    if ext.index not in cache:
-        cache[ext.index] = None
-        sh = _shape(scene, desc, shape_of, base, node)
-        if sh is not None and built[0] >= MAX_BUILT_CORNERS:
-            desc.issues.append((node, "extrude: not made: " + _SPENT % MAX_BUILT_CORNERS))
-        elif sh is not None:
-            try:
-                params, issues = extrude.read_params(scene, ext)
-                data, more = extrude.extrude(sh, params)
-                cache[ext.index] = data
-                built[0] += len(data.loop_vertices)
-                desc.issues.extend((node, "extrude: %s" % x) for x in issues + more)
-            except extrude.ExtrudeError as exc:
-                desc.issues.append((node, "extrude: %s" % exc))
-    data = cache[ext.index]
-    if data is None:
+    issue, once per base object and Extrude: _Extrusions), or when its positions do not fit single precision
+    (_mapped_mesh, which gets ranges; the shape is then drawn as a curve)."""
+    data = extrusions.get(base, ext, node)
+    if isinstance(data, tuple):
+        kind, text = data
+        if kind != _SHAPE_KIND and extrusions.tell(base, ext):  # a refused shape: _shape named it
+            desc.issues.append((node, "extrude: " + ("not made: " + text if kind == _SPENT_KIND else text)))
         return None, ()
     offset = None if offset == controllers.IDENTITY else offset
     return _mapped_mesh(scene, desc, mapped, (base, offset, ext.index), data, maps, node, name, offset, meters,
                         shading, check, rim, mirrors, ranges, "extrude: not made")
+
+
+_SHAPE_KIND, _SPENT_KIND, _EXTRUDE_KIND = "shape", "spent", "extrude"  # why _Extrusions did not make one
+_DROPPED = "dropped"  # an extrusion made, named and counted, whose MeshData is gone
+
+
+class _Extrusions:
+    """The extrusions of one scene's shapes, one per (shape base object, Extrude modifier index), shared by the shape's
+    own nodes (_extruded) and the mesh lights that pick it (_emitter_shape): made, its shape and Extrude issues named
+    (on the node that makes it) and its face corners counted against MAX_BUILT_CORNERS once. drop() lets the MeshData
+    go once no node needs it; a mesh light after that gets the same mesh made again, naming and counting nothing.
+    Mesh lights that pick one shape share its count as nodes of the shape at different offsets do (each still gets a
+    mesh of its own in desc.meshes). A shape a mesh light reads first and the reader refuses is not kept in shape_of:
+    the shape's own node reads it again and names the refusal (_shape), where a user looks for it. shape_of: the
+    scene's reader Shapes (_shape); built: [face corners made so far]."""
+
+    def __init__(self, scene, desc, shape_of, built):
+        self.scene, self.desc, self.shape_of, self.built = scene, desc, shape_of, built
+        self.made = {}  # base -> {Extrude index: MeshData, _DROPPED or (kind, text) why it is not made}
+        self.told = set()  # (base, Extrude index) whose refusal a shape's node named
+
+    def get(self, base, ext, node, light=False):
+        """The reader MeshData of shape base under the Extrude ext (a reader Modifier) for node (light: a mesh light's),
+        or (kind, text) why it is not made: _SHAPE_KIND (the shape is refused; text its reason), _SPENT_KIND
+        (MAX_BUILT_CORNERS; text says so) or _EXTRUDE_KIND (the Extrude cannot be read or made)."""
+        cache = self.made.setdefault(base, {})
+        found = cache.get(ext.index)
+        if found is None:
+            found = cache[ext.index] = self._make(base, ext, node, light)
+        elif found is _DROPPED:
+            try:
+                found, _issues = extrude.extrude(self.shape_of[base], extrude.read_params(self.scene, ext)[0])
+            except ChunkError as exc:  # it did not fail the first time; a refusal all the same
+                found = (_EXTRUDE_KIND, str(exc))
+        return found
+
+    def _make(self, base, ext, node, light):
+        if light and base not in self.shape_of:
+            try:
+                sh = shapes.read_shape(self.scene, base)
+            except ChunkError as exc:  # not kept: the shape's own node reads it again and names it
+                return _SHAPE_KIND, str(exc)
+            self.shape_of[base] = sh
+            self.desc.issues.extend((node, "shape: %s" % x) for x in sh.issues)
+        else:
+            sh = _shape(self.scene, self.desc, self.shape_of, base, node)
+        if sh is None:
+            return _SHAPE_KIND, self.shape_of[base]
+        if self.built[0] >= MAX_BUILT_CORNERS:
+            return _SPENT_KIND, _SPENT % MAX_BUILT_CORNERS
+        try:
+            params, issues = extrude.read_params(self.scene, ext)
+            data, more = extrude.extrude(sh, params)
+        except ChunkError as exc:  # ExtrudeError, or a block the reader refuses
+            return _EXTRUDE_KIND, str(exc)
+        self.built[0] += len(data.loop_vertices)
+        self.desc.issues.extend((node, "extrude: %s" % x) for x in issues + more)
+        return data
+
+    def tell(self, base, ext):
+        """Whether a shape's node is the first to meet the refusal of base under ext (it names it then)."""
+        key = (base, ext.index)
+        if key in self.told:
+            return False
+        self.told.add(key)
+        return True
+
+    def drop(self, base):
+        """The MeshData of base's extrusions let go; what they were (made, or why not) stays known."""
+        cache = self.made.get(base, {})
+        for index, found in cache.items():
+            if not isinstance(found, tuple):
+                cache[index] = _DROPPED
 
 
 def _layer(scene, i, layers, issues, node):

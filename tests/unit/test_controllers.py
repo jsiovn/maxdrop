@@ -1611,6 +1611,48 @@ class TestConstraint(MatrixCase):
         self.assertMatrix(got, third, places=5)
         self.assertEqual(issues, [(cs[0], ct.UNKNOWN_CLASS)])
 
+    def test_weight_list_without_a_readable_entry(self):
+        """A Float List whose entries give no value (maxdrop-6n0.6.17) is no weight: 50, as one weight controller of
+        an unknown class or without a value; unknown entries are reported once each, as their class."""
+        def world(weights, controllers=None):
+            b = LookAtBuild()
+            targets = [b.target(p) for p in ((0, 0, 20), (100, 0, 0))]
+            cs = [c(b) for c in controllers] if controllers else None
+            n = b.constrained(targets, weights, scale=(1, 2, 1), weight_controllers=cs)
+            t = b.transforms()
+            return t.world(n), [(i.controller, i.reason) for i in t.issues], cs
+
+        def weight_list(*make):
+            def build(b):
+                entries = [m(b) for m in make]
+                weights = list_block(b, *([1.0] * len(entries)))
+                return b.add(node(C_FLOATLIST, refs34(*(entries + [None] * (4 - len(entries))), weights),
+                                  leaf(0x1010, struct.pack("<i", len(entries)))))
+            return build
+
+        want, _issues, _cs = world([50.0, 100.0])
+        unknown = weight_list(lambda b: b.add(node(C_UNKNOWN_FLOAT, leaf(0x2501, struct.pack("<f", 9)))),
+                              lambda b: b.add(node(C_UNKNOWN_FLOAT, leaf(0x2501, struct.pack("<f", 9)))))
+        got, issues, _cs = world([Anim(7.0), 100.0], [unknown])
+        self.assertMatrix(got, want, places=5)
+        self.assertEqual([reason for _c, reason in issues], [ct.UNKNOWN_CLASS, ct.UNKNOWN_CLASS])
+        self.assertEqual(len({c for c, _reason in issues}), 2)
+        got, issues, _cs = world([Anim(7.0), 100.0], [weight_list(lambda b: b.flt())])  # a value-less Bezier Float
+        self.assertMatrix(got, want, places=5)
+        self.assertEqual([reason for _c, reason in issues], [ct.CONSTRAINT_SETTING])
+        got, issues, _cs = world([Anim(7.0), 100.0], [weight_list(lambda b: b.flt(50.0),  # one readable: its sum
+                                                                  lambda b: b.add(node(C_UNKNOWN_FLOAT)))])
+        self.assertMatrix(got, want, places=5)
+        self.assertEqual([reason for _c, reason in issues], [ct.UNKNOWN_CLASS])
+        b = Build()  # under ScaleXYZ the same list still adds nothing: that axis reads 0, as before
+        odd = b.add(node(C_UNKNOWN_FLOAT, leaf(0x2501, struct.pack("<f", 9))))
+        flist = b.add(node(C_FLOATLIST, refs34(odd, None, None, None, list_block(b, 1.0)),
+                           leaf(0x1010, struct.pack("<i", 1))))
+        n = b.node(b.prs(None, None, b.add(node(C_SCALEXYZ, refs34(None, flist, None)))))
+        t = b.transforms()
+        self.assertMatrix(t.world(n), ct.scale_matrix((1, 0, 1)))
+        self.assertEqual([i.reason for i in t.issues], [ct.UNKNOWN_CLASS])
+
     def test_many_unreadable_weights_stay_linear(self):
         """A hostile table of empty animated weight slots (one byte each) is read in linear time."""
         n_weights = 20000
@@ -2136,6 +2178,14 @@ class ParameterValue(unittest.TestCase):
         value, issues = ct.parameter_value(s, mixed)
         self.assertIsNone(value)
         self.assertEqual([x.reason for x in issues], [ct.UNKNOWN_CLASS])
+
+    def test_float_list_without_a_value(self):
+        """A Float List whose entries are of a known class but give no value gives none (maxdrop-6n0.6.17): the
+        parameter keeps its default, where the list read 0 before."""
+        b = Build()
+        flist = b.add(node(C_FLOATLIST, refs34(b.flt(), None, None, None, list_block(b, 1.0)),
+                           leaf(0x1010, struct.pack("<i", 1))))
+        self.assertEqual(ct.parameter_value(self.scene_of(b), flist), (None, []))
 
     def test_bezier_color_from_keys(self):
         """Without a saved value whose interval holds frame 0: the keys (80 bytes each), the first one before it, the
