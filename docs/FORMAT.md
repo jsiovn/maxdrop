@@ -2023,8 +2023,14 @@ numbers on the four shaders: a grey 128 map at amount 100 renders 0.502 of the l
 255 at level 150 1.25; switched off, the level alone; a pure red, green or blue map 1/3, yellow 2/3 (the mean of its
 channels). A flat diffuse map with it: grey 128 at level 50 renders 64; at amount 50 lerp(swatch, 128, 0.5) x 0.5,
 and with the level map lerp(0.5, map, its amount) in place of 0.5. So the diffuse is lerp(swatch, diffuse map,
-amount) x lerp(level, mean(level map), amount), on stored values with the gamma off (gamma on not rendered: assumed
-the same product on linear values). MaxDrop scales the diffuse map by the level as the swatch rule makes it
+amount) x lerp(level, mean(level map), amount), on stored values with the gamma off, and the same product on linear
+values with the gamma on (maxdrop-6n0.6.14, gamma 2.2, files in 2.2, the four shaders alike: a swatch and a Checker
+grey as stored, 128 grey as a level map 0.502 of the level-100 pixel as with the gamma off; a 128 grey PNG level map
+0.2192 = (128 / 255)^2.2, the image decoded; a 64 grey PNG 0.0470; the 128 PNG at amount 50 and level 50 0.3594; a
+(200, 100, 50) PNG level map 0.2470, the mean of its decoded channels; the 128 PNG as the diffuse map at level 50
+0.1096 linear; the color PNG at 61 % with a 64 grey PNG level map at 62 % and level 40 0.0925 0.0307 0.0113 linear,
+the product of lerp(swatch, decoded map, 0.61) and lerp(0.4, 0.0476, 0.62)): what MaxDrop draws with the gamma on,
+the level as is and the level map a mask read linear. MaxDrop scales the diffuse map by the level as the swatch rule makes it
 (`MapRef.scale`, before the amount mixes it with the swatch times the level; gamma off: the sRGB curve, not clamped,
 since Blender decodes the map: the decoded map times the decoded level is within 0.006 linear of the decoded product
 for levels up to 100 %, where a plain x level is up to 0.29 too bright). With a Diffuse Level map the base color is
