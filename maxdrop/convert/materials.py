@@ -78,8 +78,9 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   per-channel radius); a metal with a complex IOR takes the F0 of its n and k as its base color; maps where on, their
   amounts fractions. Specular 1, the IOR's own Fresnel (the material has no reflection level); in IOR mode 1 the base
   and clearcoat IORs are specular levels (F0 = 0.08 x level, at most 0.25). Translucency in thin mode (Corona ignores it
-  otherwise), volumetric absorption and scattering, a metal edge color other than the default, an IOR mode other than 0
-  and 1 and maps in the sheen and SSS slots are named issues.
+  otherwise), maps in the volumetric slots, single bounce, a metal edge color other than the default, an IOR mode
+  other than 0 and 1 and maps in the sheen and SSS slots are named issues. Volumetric absorption and scattering: a
+  medium (corona_medium) inside a solid that refracts (no medium in thin mode: Corona 12 renders none there).
 - CoronaLegacyMtl (CoronaMtl): diffuse, reflection, refraction, opacity and self-illumination colors times their
   levels; specular = the mean reflection; roughness = 1 - glossiness, with PBR mode off the measured
   CORONA_LEGACY_GLOSS (corona_legacy_roughness; a glossiness map stays inverted); transmission and the glass
@@ -87,7 +88,8 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   of CORONA_METAL_IOR or more with a bright reflection (as METAL_REFLECTION) is a metal in the reflection color;
   beside a reflection map only the swatch's share counts, as for VRayMtl (its mean, the level included, times 1 - the
   map amount; Corona's documentation has the level multiply the color and the map alike, so the map is not judged);
-  SSS as the physical material's. A glossiness map with PBR mode off, translucency and absorption are named issues.
+  SSS as the physical material's; absorption and scattering as a medium (corona_medium; media mode 1, inside a solid
+  that refracts). A glossiness map with PBR mode off, translucency, media mode 0 and the medium's maps are named issues.
 - CoronaLightMtl -> emission (color, intensity, map) and its opacity map.
 - CoronaSkinMtl -> one Principled layer: skin color times level, its three SSS layers as one (weighted mean radius
   times the radius scale, weighted mean color), the first reflection as specular, roughness and IOR, opacity, bump.
@@ -97,8 +99,13 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   color: an issue). Its other maps are named issues.
 - CoronaShadowCatcherMtl -> the grey material marked shadow_catcher: an object whose every slot holds one is a shadow
   catcher (build/objects.py); a backplate map and a reflection are named issues.
-- CoronaVolumeMtl, CoronaScannedMtl, CoronaSlicerMtl -> the grey material with a named issue (CORONA_GREY), not
-  counted as a class without a rule.
+- CoronaVolumeMtl -> no surface (alpha 0) and its medium (corona_medium): absorption, scattering, directionality and
+  emission; its maps and single bounce are named issues.
+- Corona media (corona_medium, Corona 12 renders, maxdrop-em3.163): the absorption color is the transmission at its
+  distance (world units), per channel (sigma_t = -ln(color) / distance); the scattering color is the albedo of that
+  extinction; the directionality a Henyey-Greenstein g; emission its color over its distance per unit length.
+- CoronaScannedMtl, CoronaSlicerMtl -> the grey material with a named issue (CORONA_GREY), not counted as a class
+  without a rule.
 - CoronaLayeredMtl with a base and a layer that is on -> the base's IR with its layers (Layer: IR, amount, mask
   with its mask amount; at most MAX_LAYERS), which build/materials.py mixes over it; the weight is the amount times
   lerp(1, mask, mask amount), as Corona 12 renders it (maxdrop-em3.115: amount 0.6, mask 0.25, mask amount 0.5 gives
@@ -172,6 +179,8 @@ CORONA_MAX_F0 = 0.25  # CoronaPhysicalMtl: no IOR reflects more than IOR 3 does 
 # profiles matched). From 0.35 up the profiles agree; below 0.3 no PBR-mode glossiness has the same lobe (the closest)
 CORONA_LEGACY_GLOSS = (0.618, 0.617, 0.612, 0.600, 0.5745, 0.525, 0.4555, 0.386, 0.324, 0.272, 0.2295, 0.1945, 0.165,
                        0.140, 0.1185, 0.099, 0.082, 0.0665, 0.051, 0.035, 0.0)
+MAX_MEDIUM_DENSITY = 1e6  # a medium coefficient per meter at most: a black channel or a distance near 0 (1 um: opaque)
+MAX_ANISOTROPY = 0.99  # a Corona directionality past it is clamped: Blender's Henyey-Greenstein takes -1 < g < 1
 GREY_SRGB = 128 / 255  # the grey of a material without a rule: MaxDrop's own, not a swatch
 
 # wrapper ClassId -> its sub-material parameters (block 0) in getSubMtl order; a table parameter gives each element
@@ -304,6 +313,17 @@ class Input:
     map: object = None
 
 
+@dataclasses.dataclass(frozen=True)
+class Medium:
+    """A homogeneous medium inside a closed mesh, per channel and per meter, linear: scattering (sigma_s) and
+    absorption (sigma_a) coefficients, the Henyey-Greenstein anisotropy of the scattering, the radiance emitted per
+    meter of path."""
+    scattering: tuple = (0.0, 0.0, 0.0)
+    absorption: tuple = (0.0, 0.0, 0.0)
+    anisotropy: float = 0.0
+    emission: tuple = (0.0, 0.0, 0.0)
+
+
 @dataclasses.dataclass
 class MaterialIR:
     """One material, renderer-neutral, linear color. index: the Max material object it was converted from; source:
@@ -338,6 +358,7 @@ class MaterialIR:
     sheen_roughness: float = 0.5
     two_sided: bool = False  # Standard's twoSided: 3ds Max renders the back faces too
     shadow_catcher: bool = False  # CoronaShadowCatcherMtl: an object with nothing else is a shadow catcher
+    medium: object = None  # Medium inside the mesh (Corona volumes), None without one
     unknown: bool = False
     textures: dict = dataclasses.field(default_factory=dict)  # {input name: texmaps.TextureGraphIR}
     issues: list = dataclasses.field(default_factory=list)
@@ -1079,8 +1100,10 @@ def corona_physical_mtl(conv, m, ir):
     381 thinAbsorptionColor, 391 clearcoatAbsorptionColor, 411 / 412 metalness map (on), 421 roughnessMode (1:
     every roughness is a glossiness, the sheen's too); 241 sheenAmount, 245 sheenColor, 251 sheenRoughness; 291
     sssAmount, 301 sssRadius (world units), 311 sssScatterColor; 451 useComplexIor, 452-454 n and 455-457 k per
-    channel (a metal's base color is then the F0 they give). Translucency (371, 375), volumetric absorption and
-    scattering (261, 271, 281), the edge color (161) and maps in the sheen and SSS slots are named issues.
+    channel (a metal's base color is then the F0 they give). Translucency (371, 375), the edge color (161) and maps
+    in the sheen and SSS slots are named issues. With refraction and without thin mode, a medium (corona_medium):
+    261 volumetricAbsorptionColor, 271 volumetricScatteringColor, 281 attenuationDistance, 282
+    scatterDirectionality; its maps (262 / 263, 272 / 273) and 283 scatterSingleBounce are named.
     461 iorMode (Corona 12 renders, maxdrop-em3.115): 0 the IOR parameters (171, 221) are IORs; 1 they are specular
     levels, F0 = CORONA_SPECULAR_F0 x level (MAXScript's setter converts them on a mode change); 2 renders as an IOR
     (not a mode the UI offers): named. No IOR reflects more than F0 CORONA_MAX_F0 (IOR 3); only the specular levels are
@@ -1134,9 +1157,8 @@ def corona_physical_mtl(conv, m, ir):
             conv.issue(m.index, "CoronaPhysicalMtl %r: metal edge color not converted" % (m.name,), ir)
     if thin and (_num(m, 371, 0, 0.0) > 0 or conv.map_ref(m, 372, 373, None, 0, ir=ir) is not None):
         conv.issue(m.index, "CoronaPhysicalMtl %r: translucency not converted" % (m.name,), ir)
-    if t > 0 and _num(m, 281, 0, 0.0) > 0:
-        conv.issue(m.index, "CoronaPhysicalMtl %r: volumetric absorption and scattering not converted" % (m.name,),
-                   ir)
+    if t > 0 and not thin:
+        _corona_volume(conv, m, ir, (281, 261, 271, 282), (262, 263, 272, 273, 283))
 
 
 def _corona_ior(m, pid, ior_mode):
@@ -1154,8 +1176,11 @@ def corona_legacy_mtl(conv, m, ir):
     291, 292, 293, 295, 296, 303; 180 reflectGlossiness, 182 fresnelIor,
     183 ior, 210 thin; 410 levelSss, 411 sssRadius (world units), 412 sssScatterColor. 402 pbrMode off curves the
     glossiness otherwise (Corona 12 renders, maxdrop-em3.115): its roughness is corona_legacy_roughness; a glossiness
-    map then stays 1 - the map, a named issue. Translucency (106, 126, map 148), absorption (188, 190) and the SSS
-    amount map (414) are named issues."""
+    map then stays 1 - the map, a named issue. Translucency (106, 126, map 148) and the SSS amount map (414) are named
+    issues. With refraction and without thin, in media mode 1 (427; the default, also when not stored), a medium
+    (corona_medium): 188 absorptionDistance, 190 absorptionColor, 215 scatterColor, 216 scatterDirectionality; its
+    maps (305 / 306, 308 / 309), 315 singleBounceOnly and media mode 0 (Corona 12 renders the slab black) are
+    named."""
     def slot(map_pid, on_pid, amount_pid, invert=False):
         return conv.map_ref(m, map_pid, on_pid, amount_pid, 0, invert=invert, ir=ir, percent=False)
     diffuse = tuple(min(1.0, c * max(0.0, _num(m, 121, 0, 1.0))) for c in conv.rgb(m, 101, 0, (0.5, 0.5, 0.5)))
@@ -1191,8 +1216,12 @@ def corona_legacy_mtl(conv, m, ir):
         conv.issue(m.index, "CoronaLegacyMtl %r: glossiness map of PBR mode off read as in PBR mode" % (m.name,), ir)
     if _num(m, 126, 0, 0.0) > 0 or slot(148, 168, None) is not None:
         conv.issue(m.index, "CoronaLegacyMtl %r: translucency not converted" % (m.name,), ir)
-    if t > 0 and _num(m, 188, 0, 0.0) > 0:
-        conv.issue(m.index, "CoronaLegacyMtl %r: absorption not converted" % (m.name,), ir)
+    if t > 0 and not ir.thin_walled:
+        mode = m.param(427, 0)
+        if mode is None or mode == 1:
+            _corona_volume(conv, m, ir, (188, 190, 215, 216), (305, 306, 308, 309, 315))
+        elif _num(m, 188, 0, 0.0) > 0:
+            conv.issue(m.index, "CoronaLegacyMtl %r: media mode %r not converted" % (m.name, mode), ir)
 
 
 def corona_light_mtl(conv, m, ir):
@@ -1229,6 +1258,8 @@ def corona_layered_mtl(conv, m, ir):
             conv.issue(m.index, "%s: layer %d is not a material" % (out.name, index), out)
             continue
         total += conv.bsdf_count(layer)
+        if layer.medium is not None:
+            conv.issue(m.index, "%s: layer %d's medium not converted" % (out.name, index), out)
         if total > MAX_LAYER_BSDFS:
             conv.issue(m.index, "%s: layers past %d Principled BSDFs not mixed" % (out.name, MAX_LAYER_BSDFS), out)
             break
@@ -1360,17 +1391,76 @@ def corona_shadow_catcher_mtl(conv, m, ir):
         conv.issue(m.index, "CoronaShadowCatcherMtl %r: reflection not converted" % (m.name,), ir)
 
 
+def corona_medium(conv, color, distance, albedo, directionality, emission=(0.0, 0.0, 0.0), emission_distance=0.0):
+    """A Corona medium (Corona 12 renders, maxdrop-em3.163), None when it has nothing: color (linear) is the
+    transmission at distance (world units; 0 or less: no extinction), per channel, sigma_t = -ln(color) / distance;
+    albedo the share of it that scatters (sigma_s = albedo x sigma_t, sigma_a the rest); directionality a
+    Henyey-Greenstein g (clamped to MAX_ANISOTROPY); emission (linear) the light added over emission_distance, per
+    meter emission / that distance. Coefficients at most MAX_MEDIUM_DENSITY."""
+    def per_meter(d):
+        return d * conv.meters if _finite(d) and d > 0 else 0.0
+    d = per_meter(distance)
+    t = tuple(min(MAX_MEDIUM_DENSITY, -math.log(max(c, 1e-300)) / d) if d > 0 else 0.0
+              for c in (_clamp01(c) for c in color))
+    a = tuple(_clamp01(c) for c in albedo)
+    scattering = tuple(x * y for x, y in zip(a, t))
+    absorption = tuple((1.0 - x) * y for x, y in zip(a, t))
+    e = per_meter(emission_distance)
+    emitted = tuple(min(MAX_MEDIUM_DENSITY, max(0.0, c) / e) if e > 0 else 0.0 for c in emission)
+    if max(scattering + absorption + emitted) <= 0.0:
+        return None
+    g = directionality if _finite(directionality) else 0.0
+    return Medium(scattering, absorption, max(-MAX_ANISOTROPY, min(MAX_ANISOTROPY, g)), emitted)
+
+
+def _corona_volume(conv, m, ir, pids, named):
+    """The medium of a Corona surface material (corona_medium) into ir: pids (distance, absorption color, scattering
+    color, directionality), named (absorption map and its switch, scattering map and its switch, single bounce)
+    named in the report where on, when there is a medium."""
+    distance, color, albedo, g = pids
+    ir.medium = corona_medium(conv, conv.rgb(m, color, 0, (0.5, 0.5, 0.5)), _num(m, distance, 0, 0.0),
+                              conv.rgb(m, albedo, 0, (0.0, 0.0, 0.0)), _num(m, g, 0, 0.0))
+    if ir.medium is not None:
+        _medium_issues(conv, m, ir, named[:4], named[4])
+
+
+def _medium_issues(conv, m, ir, maps, single, emission_map=None):
+    """The issues of a medium: its absorption and scattering maps (map, switch, map, switch), an emission map (map,
+    switch) where on, its single bounce."""
+    what = class_name(m.superclass, m.class_id)
+    slots = [(maps[0], maps[1], "absorption"), (maps[2], maps[3], "scattering")]
+    if emission_map is not None:
+        slots.append((emission_map[0], emission_map[1], "emission"))
+    for map_pid, on_pid, name in slots:
+        if conv.map_ref(m, map_pid, on_pid, None, 0, ir=ir) is not None:
+            conv.issue(m.index, "%s %r: %s map not converted" % (what, m.name, name), ir)
+    if _flag(m, single, 0, False):
+        conv.issue(m.index, "%s %r: single bounce not converted" % (what, m.name), ir)
+
+
+def corona_volume_mtl(conv, m, ir):
+    """CoronaVolumeMtl, block 0: no surface (alpha 0: Corona 12 renders none, maxdrop-em3.163) and the medium of 101
+    absorptionDist, 102 absorptionColor, 203 scatteringColor, 204 scatteringDirectionality, 201 emissionDist, 202
+    emissionColor (corona_medium); its maps (absorption 206 / 208, scattering 205 / 207, emission 210 / 211) and 209
+    singleBounce are named."""
+    ir.alpha = Input(0.0)
+    ir.medium = corona_medium(conv, conv.rgb(m, 102, 0, (0.5, 0.5, 0.5)), _num(m, 101, 0, 0.0),
+                              conv.rgb(m, 203, 0, (0.0, 0.0, 0.0)), _num(m, 204, 0, 0.0),
+                              conv.rgb(m, 202, 0, (1.0, 1.0, 1.0)), _num(m, 201, 0, 0.0))
+    if ir.medium is not None:
+        _medium_issues(conv, m, ir, (206, 208, 205, 207), 209, (210, 211))
+
+
 # Corona material classes without a Principled equivalent: grey, with what is not converted named
 CORONA_GREY = {
-    classids.CORONA_VOLUME_MTL: "volume not converted",
     classids.CORONA_SCANNED_MTL: "scanned material (.ctf) not read",
     classids.CORONA_SLICER_MTL: "slicing not converted",
 }
 
 
 def corona_named_grey(conv, m, ir):
-    """CoronaVolumeMtl, CoronaScannedMtl, CoronaSlicerMtl: the grey material, its issue naming what is lost
-    (CORONA_GREY); not counted as a class without a rule."""
+    """CoronaScannedMtl, CoronaSlicerMtl: the grey material, its issue naming what is lost (CORONA_GREY); not counted
+    as a class without a rule."""
     return conv._grey(m.index, "%s %r: %s, grey" % (ir.source, m.name, CORONA_GREY[ClassId(*m.class_id)]))
 
 
@@ -1390,7 +1480,7 @@ RULES = {
     (classids.SC_MATERIAL, classids.CORONA_SKIN_MTL): corona_skin_mtl,
     (classids.SC_MATERIAL, classids.CORONA_HAIR_MTL): corona_hair_mtl,
     (classids.SC_MATERIAL, classids.CORONA_SHADOW_CATCHER_MTL): corona_shadow_catcher_mtl,
-    (classids.SC_MATERIAL, classids.CORONA_VOLUME_MTL): corona_named_grey,
+    (classids.SC_MATERIAL, classids.CORONA_VOLUME_MTL): corona_volume_mtl,
     (classids.SC_MATERIAL, classids.CORONA_SCANNED_MTL): corona_named_grey,
     (classids.SC_MATERIAL, classids.CORONA_SLICER_MTL): corona_named_grey,
 }

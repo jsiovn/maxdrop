@@ -23,6 +23,13 @@ channel) and Scale (its radius in meters), Sheen Weight, Tint and Roughness, Thi
 layer's amount times its mask); the render method follows every one of them. A color graph on a float input (specular,
 transmission) goes through the mean of its channels, the measure convert/materials.py uses.
 
+Medium (MaterialIR.medium, the Corona volumes, maxdrop-em3.163): on the Material Output's Volume socket, the sum (Add
+Shader) of a Volume Scatter (density the largest scattering coefficient, color each channel's share of it, anisotropy),
+a Volume Absorption (density the largest absorption coefficient, color 1 - each channel's share) and an Emission
+(color the emission over its largest channel, strength that channel), each where it is above 0: Cycles takes the
+coefficients per meter of world space, which convert/materials.py gives. A volume-only material (CoronaVolumeMtl)
+keeps its Principled BSDF at Alpha 0: an unlinked Surface renders black in Cycles.
+
 Reflection weight: V-Ray (and 3ds Max's Physical and Corona materials) multiply the whole Fresnel curve by it, where
 Specular IOR Level scales only the reflectance facing the camera and the curve still rises to 1 at grazing. So a
 weight w between 0 and 1, or a map, is a Mix Shader (WEIGHT_LABEL) by w between a twin of the filled Principled BSDF
@@ -712,6 +719,44 @@ class _Tree:
         m.diffuse_color = _as(ir.base_color.value, COLOR) + (1.0,)
         m.metallic = min(1.0, max(0.0, _mean(ir.metallic.value)))
         m.roughness = min(1.0, max(0.0, _mean(ir.roughness.value)))
+        if ir.medium is not None:
+            self.volume(ir.medium, out)
+
+    def volume(self, medium, out):
+        """A convert.materials.Medium on out's Volume socket (see Medium above); nothing for an empty one."""
+        shaders = []
+        y = min(self.columns.values(), default=0.0) - Y_STEP
+        parts = (("ShaderNodeVolumeScatter", medium.scattering, False), ("ShaderNodeVolumeAbsorption",
+                                                                         medium.absorption, True))
+        for kind, coefficients, complement in parts:
+            density = max(coefficients)
+            if density <= 0.0:
+                continue
+            n = self.nodes.new(kind)
+            share = tuple(c / density for c in coefficients)
+            _in(n, "Color").default_value = tuple(1.0 - c if complement else c for c in share) + (1.0,)
+            _in(n, "Density").default_value = density
+            if not complement:
+                _in(n, "Anisotropy").default_value = medium.anisotropy
+            shaders.append(n)
+        strength = max(medium.emission)
+        if strength > 0.0:
+            n = self.nodes.new("ShaderNodeEmission")
+            _in(n, "Color").default_value = tuple(c / strength for c in medium.emission) + (1.0,)
+            _in(n, "Strength").default_value = strength
+            shaders.append(n)
+        if not shaders:
+            return
+        for i, n in enumerate(shaders):
+            n.location = (0.0, y - i * Y_STEP)
+        top = shaders[0].outputs[0]
+        for n in shaders[1:]:
+            add = self.nodes.new("ShaderNodeAddShader")
+            add.location = (X_STEP * 0.5, n.location[1])
+            self.links.new(top, add.inputs[0])
+            self.links.new(n.outputs[0], add.inputs[1])
+            top = add.outputs[0]
+        self.links.new(top, _in(out, "Volume"))
 
     def layered(self, bsdf, ir, alphas, level):
         """Fill bsdf from ir and mix ir's layers over it: the shader output on top. alphas gets (alpha linked, alpha

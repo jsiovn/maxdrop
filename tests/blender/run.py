@@ -2087,6 +2087,148 @@ def check_principled(label, material, ir, present=False):
     mixed = _color_into_float(material)
     check(label + ": no color output linked into a float input (a data map is the mean of its channels)",
           mixed == [], str(mixed))
+    check_medium(label, material, ir)
+
+
+def _medium_of(material):
+    """The medium a material's Volume socket draws (maxdrop-em3.163): (scattering, absorption, anisotropy, emission)
+    per channel and per meter, summed over its Add Shaders; None when the socket is not linked."""
+    out = next((n for n in material.node_tree.nodes if n.bl_idname == "ShaderNodeOutputMaterial"), None)
+    socket = out.inputs["Volume"] if out is not None else None
+    if socket is None or not socket.is_linked:
+        return None
+    sums = {"scattering": [0.0] * 3, "absorption": [0.0] * 3, "emission": [0.0] * 3, "anisotropy": [0.0],
+            "other": []}
+    stack = [_from(socket)]
+    while stack:
+        n = stack.pop()
+        kind = getattr(n, "bl_idname", None)
+        if kind == "ShaderNodeAddShader":
+            stack.extend(_from(i) for i in n.inputs if i.is_linked)
+            continue
+        color = list(n.inputs["Color"].default_value)[:3] if kind else None
+        if kind == "ShaderNodeVolumeScatter":
+            d = n.inputs["Density"].default_value
+            sums["scattering"] = [a + c * d for a, c in zip(sums["scattering"], color)]
+            sums["anisotropy"] = [n.inputs["Anisotropy"].default_value]
+        elif kind == "ShaderNodeVolumeAbsorption":
+            d = n.inputs["Density"].default_value
+            sums["absorption"] = [a + (1.0 - c) * d for a, c in zip(sums["absorption"], color)]
+        elif kind == "ShaderNodeEmission":
+            d = n.inputs["Strength"].default_value
+            sums["emission"] = [a + c * d for a, c in zip(sums["emission"], color)]
+        else:
+            sums["other"].append(kind)
+    return sums
+
+
+def check_medium(label, material, ir):
+    """The Volume socket is linked iff the IR has a medium, and its nodes give back the IR's coefficients (relative
+    1e-5: Blender stores float32) and anisotropy."""
+    got = _medium_of(material) if material is not None and material.node_tree else None
+    want = ir.medium
+    check(label + ": Volume linked iff the IR has a medium", (got is None) == (want is None),
+          "%s vs %s" % (got, want))
+    if got is None or want is None:
+        return
+    check(label + ": the medium's nodes are Volume Scatter, Volume Absorption, Emission and Add Shaders",
+          got["other"] == [], str(got["other"]))
+    for field in ("scattering", "absorption", "emission"):
+        g, w = got[field], list(getattr(want, field))
+        check("%s: medium %s" % (label, field), all(abs(a - b) <= max(1e-6, 1e-5 * abs(b)) for a, b in zip(g, w)),
+              "%s vs %s" % (g, w))
+    if max(want.scattering) > 0:
+        check(label + ": medium anisotropy", abs(got["anisotropy"][0] - want.anisotropy) <= 1e-6,
+              "%s vs %s" % (got["anisotropy"], want.anisotropy))
+
+
+def check_builder_volume():
+    """Corona media (bead maxdrop-em3.163) drawn by MaterialBuilder and rendered in Cycles: a slab 10 m thick over an
+    emitter of radiance 1, seen straight through by an orthographic camera, lets 0.8 / 0.5 / 0.2 through for an
+    absorption color of 0.8 / 0.5 / 0.2 at 10 m (Corona 12 renders the color at its distance); an emission-only slab
+    of 1 / 0.5 / 0.25 over 10 m adds that over 10 m and 0.5 times it over 5 m; a volume-only material (alpha 0, no
+    medium) lets the emitter through unchanged; a medium of all three parts is built as check_medium reads it."""
+    from maxdrop.build import materials as build_materials
+    from maxdrop.convert import materials as cm
+    empty_scene()
+    class Meters:  # the converter's one attribute corona_medium reads: 1 m per world unit
+        meters = 1.0
+    absorb = cm.corona_medium(Meters, (0.8, 0.5, 0.2), 10.0, (0.0, 0.0, 0.0), 0.0)
+    emit = cm.corona_medium(Meters, (1.0, 1.0, 1.0), 0.0, (0.0, 0.0, 0.0), 0.0, (1.0, 0.5, 0.25), 10.0)
+    full = cm.corona_medium(Meters, (0.5, 0.25, 0.75), 2.0, (0.5, 1.0, 0.0), 0.4, (0.1, 0.2, 0.3), 4.0)
+    irs = {"absorb": cm.MaterialIR(70, "MediumAbsorb", "test", base_color=cm.Input((1.0, 1.0, 1.0)),
+                                       roughness=cm.Input(0.0), transmission=cm.Input(1.0), ior=1.0, medium=absorb),
+           "emit": cm.MaterialIR(71, "MediumEmit", "test", alpha=cm.Input(0.0), medium=emit),
+           "full": cm.MaterialIR(72, "MediumFull", "test", alpha=cm.Input(0.0), medium=full),
+           "none": cm.MaterialIR(73, "MediumNone", "test", alpha=cm.Input(0.0))}
+    built = {k: build_materials.MaterialBuilder().make(ir) for k, ir in irs.items()}
+    scene = bpy.context.scene
+    settings = ("engine", "resolution_x", "resolution_y", "resolution_percentage", "filepath")
+    saved = (scene.camera, scene.world, [getattr(scene.render, a) for a in settings])
+    path = os.path.join(tempfile.mkdtemp(prefix="maxdrop-volume-"), "slabs.exr")
+    try:
+        for k, ir in irs.items():
+            check("volume (%s): material built" % k, built[k] is not None)
+            if built[k] is not None:
+                check_medium("volume (%s)" % k, built[k], ir)
+        if any(m is None for m in built.values()):
+            return
+        world = bpy.data.worlds.new("MediumWorld")
+        world.use_nodes = True
+        world.node_tree.nodes["Background"].inputs[0].default_value = (0.0, 0.0, 0.0, 1.0)
+        scene.world = world
+        light = bpy.data.materials.new("MediumEmitter")
+        light.use_nodes = True
+        nodes = light.node_tree.nodes
+        nodes.clear()
+        e = nodes.new("ShaderNodeEmission")
+        e.inputs["Strength"].default_value = 1.0
+        light.node_tree.links.new(e.outputs[0], nodes.new("ShaderNodeOutputMaterial").inputs["Surface"])
+        mesh = bpy.data.meshes.new("MediumEmitter")
+        mesh.from_pydata([(-200, -100, -50), (200, -100, -50), (200, 100, -50), (-200, 100, -50)], [], [(0, 1, 2, 3)])
+        mesh.materials.append(light)
+        bpy.context.collection.objects.link(bpy.data.objects.new("MediumEmitter", mesh))
+        slabs = (("absorb", 10.0, -150.0), ("emit", 10.0, -75.0), ("emit", 5.0, 0.0), ("none", 10.0, 75.0))
+        for k, h, x in slabs:
+            box = bpy.data.meshes.new("MediumSlab")
+            v = [(x - 20 + 40 * i, -20 + 40 * j, h * z) for z in (0, 1) for j in (0, 1) for i in (0, 1)]
+            box.from_pydata(v, [], [(0, 2, 3, 1), (4, 5, 7, 6), (0, 1, 5, 4), (2, 6, 7, 3), (0, 4, 6, 2),
+                                    (1, 3, 7, 5)])
+            box.materials.append(built[k])
+            bpy.context.collection.objects.link(bpy.data.objects.new("MediumSlab", box))
+        cam = bpy.data.cameras.new("MediumCamera")
+        cam.type, cam.ortho_scale, cam.clip_end = 'ORTHO', 400.0, 1000.0
+        cob = bpy.data.objects.new("MediumCamera", cam)
+        cob.location = (0.0, 0.0, 300.0)
+        bpy.context.collection.objects.link(cob)
+        scene.camera = cob
+        scene.render.engine = 'CYCLES'
+        scene.cycles.samples, scene.cycles.use_denoising = 16, False
+        scene.render.resolution_x, scene.render.resolution_y, scene.render.resolution_percentage = 80, 20, 100
+        scene.view_settings.view_transform = 'Standard'
+        scene.render.image_settings.file_format = 'OPEN_EXR'
+        scene.render.filepath = path
+        bpy.ops.render.render(write_still=True)
+        img = bpy.data.images.load(path)
+        px = list(img.pixels)
+        bpy.data.images.remove(img)
+
+        def at(x):  # the frame is 400 m wide on 80 px, 5 m a pixel; row 10 of 20 is y 0 to 5
+            col = int(round(40 + x / 5.0))
+            k = (10 * 80 + col) * 4
+            return px[k:k + 3]
+        wants = ((-150.0, [0.8, 0.5, 0.2], "absorption 0.8 / 0.5 / 0.2 at 10 m: the color"),
+                 (-75.0, [2.0, 1.5, 1.25], "emission 1 / 0.5 / 0.25 over 10 m on the emitter's 1"),
+                 (0.0, [1.5, 1.25, 1.125], "the same emission over 5 m: half"),
+                 (75.0, [1.0, 1.0, 1.0], "a volume-only material without a medium: nothing"))
+        for x, want, what in wants:
+            got = at(x)
+            check("volume Cycles render: " + what, close(list(got), want, 0.01), "%s vs %s" % (list(got), want))
+    finally:
+        scene.camera, scene.world = saved[:2]
+        for a, v in zip(settings, saved[2]):
+            setattr(scene.render, a, v)
+        empty_scene()
 
 
 def check_layers(label, material, layers, present=False):
@@ -5488,6 +5630,7 @@ def main():
                                  ("builder multiply", check_builder_multiply),
                                  ("builder diffuse level", check_builder_diffuse_level),
                                  ("builder wrapper constants", check_builder_wrapper_constants),
+                                 ("builder volume", check_builder_volume),
                                  ("builder weight", check_builder_weight),
                                  ("builder fresnel off", check_builder_fresnel_off),
                                  ("builder clip mask", check_builder_clip_mask),

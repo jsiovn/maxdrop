@@ -1878,6 +1878,7 @@ CoronaLegacyMtl, CoronaBitmap and CoronaNormal.
 | CoronaSkinMtl `(0xBEC41C73, 0x44CFDE95)` | 101 skinColor, 102 skinLevel, 103 sssAmount, 104 sssRadiusScale, 105 / 106 / 107 sss1 color, radius (world units), weight, 108-110 sss2, 111-113 sss3, 114 reflection1Color, 115 reflection1Level, 116 reflection1Glossiness, 117 reflection1Ior, 118-121 the second reflection, 122 opacityColor, 123 opacityLevel; maps 124-144 (skin color 124 ... bump 144), each switched on by its id + 21, amounts at its id + 42 |
 | CoronaHairMtl `(0x22C05DD6, 0xCA41F546)` | 101 colorTint, 102 colorDiffuse (black), 103 colorOpacity, 104 / 105 / 106 their levels, 107 ior, 108 glossiness, 109 softness, 110 colorlessGlossiness, 111 highlightShift; maps 112-120 (tint, diffuse, opacity, ior, glossiness, softness, colorless glossiness, highlight shift, bump), each switched on by its id + 9, amounts at its id + 18 (fractions; MAXScript shows percent but for bump); 141 melanin, 142 pheomelanin, 143 randomizeMelanin, maps 144 / 145 (switches 146 / 147, amounts 148 / 149); 150 colorlessSpecular, 151 coloredSpecular, 152 transmission (maps 153-155, switches 156-158, amounts 159-161); 162 glintStrength (163 / 164 / 165); 166 giSimplification |
 | CoronaVolumeMtl `(0x39874782, 0x378CDE97)` | 101 absorptionDist (world units; 0 off), 102 absorptionColor, 201 emissionDist, 202 emissionColor, 203 scatteringColor, 204 scatteringDirectionality, 205 / 207 scattering map (on), 206 / 208 absorption map (on), 209 singleBounce, 210 / 211 emission map (on), 212 mappingMode, 213 stepSize, 214 allowMixing, 215 alphaMode |
+| CoronaPhysicalMtl and CoronaLegacyMtl media (maxdrop-em3.163) | CoronaPhysicalMtl: 262 / 263 volumetricAbsorptionTexmap (on), 264 its amount, 272 / 273 volumetricScatteringTexmap (on), 274 its amount, 282 scatterDirectionality, 283 scatterSingleBounce. CoronaLegacyMtl: 215 scatterColor, 216 scatterDirectionality, 305 / 306 / 307 absorption map (on, amount), 308 / 309 / 310 scatter map (on, amount), 315 singleBounceOnly, 427 mediaMode (1 volumetric, the default) |
 | CoronaShadowCatcherMtl `(0x398ACEAD, 0xACDC3625)` | 301 backplateColor, 302 / 360 backplateTexmap (on), 303 alphaMode, 304 shadowAmount, 306 reflectLevel, 307 colorReflect, 308 reflectIor, 309 reflectGlossiness, 310 projectionMode, 311 preserveAspectRatio, 312 useEnviroOffscreen, 313 offscreenColor, 350 / 361 offscreen map, 351 / 362 Fresnel IOR map, 352 / 363 glossiness map, 353 / 364 bump (355 bumpAmount), 354 / 365 reflection color map, 356 projectReflectionMaps, 357 legacyReflect, 358 legacyEnable |
 | CoronaScannedMtl `(0x766665AA, 0x448ADEBB)` | 0 filename (the `.ctf` file), 1 twoSided, 7 tilingFactor, 10-19 filter and paint colors, 20 gamma, 21 saturation, 40-48 clear coat, 64 alphaMode; its uvgen a nameless part at slot 1 |
 | CoronaSlicerMtl `(0x90ACB313, 0x394847CD)` | 500 capMaterial, 501 capMtlOn, 502 createCaps, 503 excludeList (node table), 504 excludeListIncludeMode |
@@ -1952,6 +1953,39 @@ pass and a time limit, read with `getPixels ... linear:true` (a CoronaLightMtl p
   0.4555, 0.386, 0.324, 0.272, 0.2295, 0.1945, 0.165, 0.140, 0.1185, 0.099, 0.082, 0.0665, 0.051, 0.035, 0
   (`materials.CORONA_LEGACY_GLOSS`). From 0.35 up the profiles agree (log rms 0.005 to 0.02, 0.038 at 0.85); below
   0.3 no PBR-mode glossiness gives the same lobe (log rms 0.05 at 0.3, 0.24 at 0): the closest one.
+
+Corona 12 media (maxdrop-em3.163; `3dsmaxbatch`, tone mapping off, the gamma off, read with `getPixels ... linear:true`,
+the swatch's 0-255 value / 255 rendered as the linear color: MaxDrop decodes a gamma-off swatch from sRGB as every
+other color, so the numbers below are in the renderer's space). Boxes 30 x 30 x h world units over a CoronaLightMtl
+plane of intensity 1 in a black environment, an orthographic camera looking down through them, and in a white
+furnace:
+
+- Absorption (CoronaVolumeMtl, and CoronaPhysicalMtl and CoronaLegacyMtl refracting at IOR 1: the same numbers):
+  the transmission is the absorption color at the distance and color^(h / distance) for a grey at every thickness
+  (128 grey at distance 10, h 1 / 2.5 / 5 / 7.5 / 10 / 15 / 20 / 30 / 40: 0.93339, 0.84172, 0.70849, 0.59634, 0.50195,
+  0.35563, 0.25196, 0.12647, 0.06348; distance 20 at h 20 and 40 as distance 10 at 10 and 20; stepSize 0.1 the
+  same). A tinted color couples its channels a little away from its distance (204 / 128 / 51 at distance 10: h 5
+  0.899 / 0.714 / 0.455 for 0.894 / 0.709 / 0.447, h 20 0.614 / 0.238 / 0.030 for 0.640 / 0.252 / 0.040; the law
+  applied in AP1 or Rec. 2020 primaries does not fit either). MaxDrop uses the per-channel law, exact at the distance.
+- Scattering: the scattering color is the albedo of the extinction the absorption makes. Absorption white, or its
+  distance 0, and nothing scatters (the box is invisible); absorption 128 grey with scattering white gives 0.997 in
+  the furnace. So per channel sigma_t = -ln(absorption color) / distance, sigma_s = scattering color x sigma_t,
+  sigma_a the rest; the directionality is a Henyey-Greenstein g. Over the emitter at h 10 (absorption 128 grey,
+  distance 10): scattering white 0.683 (0.674 in a second render), 128 grey 0.570, white with directionality 0.6 /
+  -0.6 0.863 / 0.6075, single bounce on 0.598; in the furnace: white 0.997, 128 grey 0.6775, 128 grey at 0.6 0.691.
+- Emission: its color over its distance per unit length, absorbed as any light (255 / 128 / 64 at distance 10, no
+  absorption: h 5 0.5 / 0.251 / 0.125, h 10 1.0 / 0.502 / 0.251; distance 20 at h 10 half; with absorption 128 grey
+  at distance 10: h 10 0.7226 / 0.3627 / 0.1814, e / sigma (1 - e^(-sigma h))). Distance 0: none.
+- CoronaVolumeMtl renders no surface (1.0 over the emitter and in the furnace with everything off).
+- No medium in thin mode (CoronaPhysicalMtl useThinMode, CoronaLegacyMtl thin: 1.0 through the slab), and a
+  CoronaLegacyMtl in mediaMode 0 renders the slab black. A CoronaPhysicalMtl at refraction 0.5 lets about 0.25 x the
+  absorbed color through (0.2205 / 0.1288 / 0.0497): the medium whatever the amount.
+
+Cycles (Blender 5.2) with the same slabs, the coefficients per meter on a Volume Scatter (density the largest
+sigma_s, color each channel's share), a Volume Absorption (density the largest sigma_a, color 1 - the share) and an
+Emission (strength 1 / distance) on the Volume socket: absorption and emission exact; scattering white 0.681, 128
+grey 0.566, directionality 0.6 / -0.6 0.868 / 0.603; furnace 0.992, 0.677, 0.692. An unlinked Surface with nothing
+on the Volume socket renders black there: a volume-only material keeps its Principled BSDF at Alpha 0.
 
 VRayBitmap `(0x6769144B, 0x02C1017D)` (vray_texmaps, 3ds Max 2020 + V-Ray 5.2; the V-Ray SDK's
 `pb2vrayhdri.h`). MAXScript's `VRayHDRI`, its name before V-Ray 5, is the same class. References: 0 block 0, 1

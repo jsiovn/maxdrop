@@ -1804,8 +1804,7 @@ class CoronaMore(unittest.TestCase, Close):
         self.assertEqual(self.ir("PhysTransl").issues, [], "translucency without thin mode: none in Corona 12")
         absorb = self.ir("PhysAbsorb")
         self.close(absorb.transmission.value, 1.0)
-        self.assertEqual(absorb.issues, ["CoronaPhysicalMtl 'FixtureCoronaPhysAbsorb': volumetric absorption and "
-                                         "scattering not converted"])
+        self.assertEqual(absorb.issues, [], "volumetric absorption and scattering: a medium (maxdrop-em3.163)")
         self.assertEqual(self.ir("PhysEdge").issues,
                          ["CoronaPhysicalMtl 'FixtureCoronaPhysEdge': metal edge color not converted"])
         spec = self.ir("PhysIorMode")
@@ -1831,9 +1830,19 @@ class CoronaMore(unittest.TestCase, Close):
         ir = self.ir("LegacyNoPbr")
         self.close(ir.roughness.value, 0.165, "glossiness 0.6, PBR mode off: CORONA_LEGACY_GLOSS")
         self.close(ir.transmission.value, 0.5)
-        self.assertEqual(ir.issues, [
-            "CoronaLegacyMtl 'FixtureCoronaLegacyNoPbr': translucency not converted",
-            "CoronaLegacyMtl 'FixtureCoronaLegacyNoPbr': absorption not converted"])
+        self.assertEqual(ir.issues, ["CoronaLegacyMtl 'FixtureCoronaLegacyNoPbr': translucency not converted"])
+
+    def test_physical_medium(self):
+        """FixtureCoronaPhysAbsorb: absorption 100 / 180 / 255 at 5 mm, scattering 40 grey (gamma off: decoded)."""
+        got = self.ir("PhysAbsorb").medium
+        self.assertIsNotNone(got)
+        _close_medium(self, got, _medium(_lins(100, 180, 255), 0.005, _lins(40, 40, 40)))
+
+    def test_legacy_medium(self):
+        """FixtureCoronaLegacyNoPbr: absorption 90 / 150 / 60 at 3 mm, no scattering (the default black)."""
+        got = self.ir("LegacyNoPbr").medium
+        self.assertIsNotNone(got)
+        _close_medium(self, got, _medium(_lins(90, 150, 60), 0.003, (0.0, 0.0, 0.0)))
 
     def test_layered(self):
         ir = self.ir("Layers")
@@ -1939,8 +1948,7 @@ class CoronaClasses(unittest.TestCase, Close):
         self.assertFalse(self.ir("HairSet").shadow_catcher)
 
     def test_named_greys(self):
-        for name, cls, what in (("Volume", "CoronaVolumeMtl", "volume not converted"),
-                                ("Scanned", "CoronaScannedMtl", "scanned material (.ctf) not read"),
+        for name, cls, what in (("Scanned", "CoronaScannedMtl", "scanned material (.ctf) not read"),
                                 ("Slicer", "CoronaSlicerMtl", "slicing not converted")):
             ir = self.ir(name)
             self.assertTrue(ir.unknown, name)
@@ -1950,6 +1958,18 @@ class CoronaClasses(unittest.TestCase, Close):
 
     def test_no_class_without_a_rule(self):
         self.assertEqual(dict(self.conv.stats.unknown), {})
+
+    def test_volume(self):
+        """FixtureCoronaVolume (maxdrop-em3.163): no surface (alpha 0), the medium of absorption 200 / 150 / 100 at
+        10 mm, scattering 120 grey, directionality 0.3, emission 255 / 128 / 0 at 5 mm (gamma off: decoded)."""
+        ir = self.ir("Volume")
+        self.assertFalse(ir.unknown)
+        self.assertEqual(ir.source, "CoronaVolumeMtl")
+        self.assertEqual(ir.issues, [])
+        self.close(ir.alpha.value, 0.0)
+        want = _medium(_lins(200, 150, 100), 0.01, _lins(120, 120, 120), 0.3,
+                       tuple(c / 0.005 for c in _lins(255, 128, 0)))
+        _close_medium(self, ir.medium, want)
 
     @unittest.skipIf(numpy is None, "numpy missing")  # assign() needs it
     def test_shadow_catcher_users(self):
@@ -2206,9 +2226,9 @@ class CoronaSynthetic(unittest.TestCase, Close):
         self.assertEqual(ir.bump, mat.MapRef(3, 0.5))
         self.assertEqual(ir.issues, ["CoronaHairMtl 'C': transmission map not converted"], "the glint map is off")
 
-    def test_volume_scanned_slicer_named(self):
-        for key, what in ((classids.CORONA_VOLUME_MTL, "volume"), (classids.CORONA_SCANNED_MTL, "scanned"),
-                          (classids.CORONA_SLICER_MTL, "slicing")):
+    def test_scanned_slicer_named(self):
+        """CoronaVolumeMtl has a rule since maxdrop-em3.163 (CoronaMedia)."""
+        for key, what in ((classids.CORONA_SCANNED_MTL, "scanned"), (classids.CORONA_SLICER_MTL, "slicing")):
             conv, ir = _convert(_corona(0, key))
             self.assertTrue(ir.unknown)
             self.close(ir.base_color.value, GREY)
@@ -2229,6 +2249,141 @@ class CoronaSynthetic(unittest.TestCase, Close):
         plan = mat.MeshSlots([10, 11, 12], [[catcher, catcher, catcher], [catcher, other, None]], None)
         self.assertEqual(mat.shadow_catcher_users(plan), [10], "every slot of the user a catcher")
         self.assertEqual(mat.shadow_catcher_users(mat.MeshSlots([10], [], None)), [], "no slot, no catcher")
+
+
+def _medium(color, meters, albedo, g=0.0, emission=(0.0, 0.0, 0.0)):
+    """The Medium of an absorption color reached at `meters`, a scattering albedo, a directionality and an emission
+    per meter: sigma_t = -ln(color) / meters per channel, sigma_s = albedo x sigma_t, sigma_a the rest."""
+    t = tuple(-math.log(c) / meters for c in color)
+    return mat.Medium(tuple(a * x for a, x in zip(albedo, t)), tuple((1.0 - a) * x for a, x in zip(albedo, t)), g,
+                      emission)
+
+
+def _close_medium(case, got, want):
+    for field in ("scattering", "absorption", "emission"):
+        for a, b in zip(getattr(got, field), getattr(want, field)):
+            case.assertAlmostEqual(a, b, delta=max(TOLERANCE, abs(b) * 1e-6), msg=field)
+    case.assertAlmostEqual(got.anisotropy, want.anisotropy, delta=TOLERANCE)
+
+
+class CoronaMedia(unittest.TestCase, Close):
+    """corona_medium and the three rules that make one (Corona 12 renders, maxdrop-em3.163): the absorption color is
+    reached at its distance, the scattering color is the albedo of that extinction, emission is its color over its
+    distance per unit length; distances in world units."""
+
+    def volume(self, **params):
+        return _convert(_corona(0, classids.CORONA_VOLUME_MTL, **params), *[_map(i) for i in range(1, 4)])
+
+    def test_volume_defaults_are_empty(self):
+        """As created: absorption distance 0 (off), scattering black, emission distance 0: no medium, nothing."""
+        _conv, ir = self.volume()
+        self.assertIsNone(ir.medium)
+        self.close(ir.alpha.value, 0.0, "no surface whatever the medium")
+        self.assertFalse(ir.unknown)
+        self.assertEqual(ir.issues, [])
+
+    def test_volume_in_world_units(self):
+        conv, ir = self.volume(p101=10.0, p102=(0.5, 0.25, 1.0), p203=(1.0, 0.5, 0.0), p204=-0.4)
+        _close_medium(self, ir.medium, _medium((0.5, 0.25, 1.0), 10.0 * conv.meters, (1.0, 0.5, 0.0), -0.4))
+        self.close(ir.medium.absorption[2], 0.0, "a white channel neither absorbs nor scatters")
+        self.close(ir.medium.scattering[2], 0.0)
+
+    def test_emission_without_absorption(self):
+        """Emission distance 10 with the absorption off: emission alone (Corona: 1.0 / 0.502 / 0.251 at h 10)."""
+        conv, ir = self.volume(p201=10.0, p202=(1.0, 0.5, 0.25))
+        self.close(ir.medium.scattering + ir.medium.absorption, (0.0,) * 6)
+        self.close(ir.medium.emission, tuple(c / (10.0 * conv.meters) for c in (1.0, 0.5, 0.25)))
+
+    def test_white_absorption_is_no_medium(self):
+        """Absorption white: no extinction, nothing to scatter (Corona: the slab is invisible)."""
+        _conv, ir = self.volume(p101=10.0, p102=(1.0, 1.0, 1.0), p203=(0.5, 0.5, 0.5))
+        self.assertIsNone(ir.medium)
+
+    def test_untrusted_numbers(self):
+        """A black channel, a tiny or non-finite distance, a directionality past 1: finite coefficients at most
+        MAX_MEDIUM_DENSITY, g inside (-1, 1)."""
+        for params in (dict(p101=10.0, p102=(0.0, 0.0, 0.0), p204=5.0), dict(p101=1e-30, p102=(0.5, 0.5, 0.5)),
+                       dict(p101=float("inf"), p102=(0.5, 0.5, 0.5), p204=float("nan")),
+                       dict(p101=-3.0, p102=(0.5, 0.5, 0.5), p201=1e-30, p202=(1.0, 1.0, 1.0))):
+            _conv, ir = self.volume(**params)
+            m = ir.medium
+            if m is None:
+                continue
+            values = m.scattering + m.absorption + m.emission
+            self.assertTrue(all(math.isfinite(v) and 0.0 <= v <= mat.MAX_MEDIUM_DENSITY for v in values), str(params))
+            self.assertTrue(math.isfinite(m.anisotropy) and -1.0 < m.anisotropy < 1.0, str(params))
+
+    def test_volume_named(self):
+        _conv, ir = self.volume(p101=10.0, p102=(0.5, 0.5, 0.5), p205=Ref(1), p207=1, p206=Ref(2), p208=1,
+                                p210=Ref(3), p211=1, p209=1)
+        self.assertIsNotNone(ir.medium)
+        self.assertEqual(ir.issues, ["CoronaVolumeMtl 'C': absorption map not converted",
+                                     "CoronaVolumeMtl 'C': scattering map not converted",
+                                     "CoronaVolumeMtl 'C': emission map not converted",
+                                     "CoronaVolumeMtl 'C': single bounce not converted"])
+        _conv, off = self.volume(p101=10.0, p102=(0.5, 0.5, 0.5), p205=Ref(1), p207=0, p206=Ref(2), p208=0)
+        self.assertEqual(off.issues, [], "maps switched off")
+
+    def test_physical(self):
+        conv, ir = _convert(_corona(0, classids.CORONA_PHYSICAL_MTL, p191=1.0, p261=(0.5, 0.5, 0.5), p281=4.0,
+                                    p271=(0.25, 0.25, 0.25), p282=0.6))
+        _close_medium(self, ir.medium, _medium((0.5,) * 3, 4.0 * conv.meters, (0.25,) * 3, 0.6))
+        self.assertEqual(ir.issues, [])
+
+    def test_physical_needs_refraction_and_solid(self):
+        """No refraction: nothing enters; thin mode: Corona renders no medium (probe: 1.0 through a thin slab)."""
+        for params in (dict(p191=0.0), dict(p191=1.0, p203=1), dict(p191=1.0, p281=0.0)):
+            full = dict(dict(p261=(0.5, 0.5, 0.5), p281=4.0), **params)
+            _conv, ir = _convert(_corona(0, classids.CORONA_PHYSICAL_MTL, **full))
+            self.assertIsNone(ir.medium, str(params))
+            self.assertEqual(ir.issues, [], str(params))
+
+    def test_physical_named(self):
+        _conv, ir = _convert(_corona(0, classids.CORONA_PHYSICAL_MTL, p191=1.0, p261=(0.5, 0.5, 0.5), p281=4.0,
+                                     p262=Ref(1), p263=1, p272=Ref(2), p273=1, p283=1), _map(1), _map(2))
+        self.assertIsNotNone(ir.medium)
+        self.assertEqual(ir.issues, ["CoronaPhysicalMtl 'C': absorption map not converted",
+                                     "CoronaPhysicalMtl 'C': scattering map not converted",
+                                     "CoronaPhysicalMtl 'C': single bounce not converted"])
+
+    def test_legacy(self):
+        conv, ir = _convert(_corona(0, classids.CORONA_LEGACY_MTL, p123=1.0, p188=2.0, p190=(0.5, 0.25, 0.5),
+                                    p215=(1.0, 1.0, 1.0), p216=0.2, p427=1))
+        _close_medium(self, ir.medium, _medium((0.5, 0.25, 0.5), 2.0 * conv.meters, (1.0,) * 3, 0.2))
+        self.assertEqual(ir.issues, [])
+
+    def test_legacy_media_mode(self):
+        """mediaMode 1 is the medium, also when the file does not store it (an older Corona); 0 renders the slab
+        black in Corona 12: named, no medium."""
+        base = dict(p123=1.0, p188=2.0, p190=(0.5, 0.5, 0.5))
+        _conv, missing = _convert(_corona(0, classids.CORONA_LEGACY_MTL, **base))
+        self.assertIsNotNone(missing.medium)
+        _conv, zero = _convert(_corona(0, classids.CORONA_LEGACY_MTL, p427=0, **base))
+        self.assertIsNone(zero.medium)
+        self.assertEqual(zero.issues, ["CoronaLegacyMtl 'C': media mode 0 not converted"])
+
+    def test_legacy_needs_refraction_and_solid(self):
+        for params in (dict(p123=0.0), dict(p123=1.0, p210=1)):
+            _conv, ir = _convert(_corona(0, classids.CORONA_LEGACY_MTL, p188=2.0, p190=(0.5, 0.5, 0.5), **params))
+            self.assertIsNone(ir.medium, str(params))
+            self.assertEqual(ir.issues, [], str(params))
+
+    def test_legacy_named(self):
+        _conv, ir = _convert(_corona(0, classids.CORONA_LEGACY_MTL, p123=1.0, p188=2.0, p190=(0.5, 0.5, 0.5),
+                                     p305=Ref(1), p306=1, p308=Ref(2), p309=1, p315=1), _map(1), _map(2))
+        self.assertIsNotNone(ir.medium)
+        self.assertEqual(ir.issues, ["CoronaLegacyMtl 'C': absorption map not converted",
+                                     "CoronaLegacyMtl 'C': scattering map not converted",
+                                     "CoronaLegacyMtl 'C': single bounce not converted"])
+
+    def test_layered(self):
+        """The base's medium is the material's (one Volume socket); a layer's is named."""
+        absorb = dict(p191=1.0, p261=(0.5, 0.5, 0.5), p281=4.0)
+        layered = _corona(0, classids.CORONA_LAYERED_MTL, p1000=Ref(1), p1001=[Ref(2)])
+        _conv, ir = _convert(layered, _corona(1, classids.CORONA_PHYSICAL_MTL, **absorb),
+                             _corona(2, classids.CORONA_PHYSICAL_MTL, **absorb))
+        self.assertIsNotNone(ir.medium, "the base's")
+        self.assertEqual(ir.issues, ["C: layer 2's medium not converted"])
 
 
 class CoronaLegacyGloss(unittest.TestCase, Close):

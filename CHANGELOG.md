@@ -35,8 +35,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Corona materials: CoronaHairMtl is imported as a surface with the color Blender's Principled Hair BSDF gives its
   melanin, pheomelanin and tint (plus its diffuse color), its glossiness, IOR, opacity and bump, instead of grey; a
   CoronaShadowCatcherMtl makes its object a shadow catcher (Cycles) when the object has no other material. A
-  CoronaVolumeMtl, CoronaScannedMtl or CoronaSlicerMtl stays grey, now with a line in the report naming what is
+  CoronaScannedMtl or CoronaSlicerMtl stays grey, now with a line in the report naming what is
   left out, no longer listed as a material class without a rule.
+- Corona materials, measured against Corona 12 renders: a CoronaVolumeMtl is imported as a volume (Volume Absorption,
+  Volume Scatter and Emission on the material's Volume output, no surface) instead of a grey box, and the volumetric
+  absorption and scattering of a CoronaPhysicalMtl and the absorption and scattering of a CoronaMtl as a volume
+  inside the glass instead of a line in the report: the absorption color is the color reached at its distance, the
+  scattering color the share of that light scattered, the directionality the scattering's anisotropy, the emission
+  its color over its distance. Their maps, single bounce and a CoronaMtl's media mode 0 are lines in the report.
 - Corona materials, measured against Corona 12 renders: a CoronaMtl with PBR mode off gets the roughness Corona
   renders for its glossiness (a glossiness of 0.4 is roughness 0.32, not 0.6), no longer a line in the report (a
   glossiness map still is: the curve is not applied to it); a CoronaPhysicalMtl in IOR mode Specular reads its base
