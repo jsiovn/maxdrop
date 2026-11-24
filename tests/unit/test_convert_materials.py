@@ -169,6 +169,7 @@ class Helpers(unittest.TestCase, Close):
         self.close(mat.ior_from_reflectance(0.04), 1.5)
         self.close(mat.ior_from_reflectance(0.0), 1.0)
         self.assertTrue(math.isfinite(mat.ior_from_reflectance(1.0)))
+        self.close(mat.ior_from_reflectance(mat.CORONA_MAX_F0), mat.CORONA_MAX_IOR, "the cap's IOR and F0 agree")
 
     def test_class_name(self):
         self.assertEqual(mat.class_name(classids.SC_MATERIAL, classids.VRAY_MTL), "VRayMtl")
@@ -2237,6 +2238,7 @@ class CoronaSynthetic(unittest.TestCase, Close):
             self.assertEqual(len(ir.issues), int(named), str(ir.issues))
             if named:
                 self.assertIn("base IOR %g" % ior, ir.issues[0])
+                self.assertIn("drawn as IOR %g" % want, ir.issues[0])
         _conv, ir = _convert(_corona(0, classids.CORONA_PHYSICAL_MTL, p171=4.0, p192=Ref(1)), _map(1))
         self.close(ir.ior, 4.0, "a transmission map refracts")
         self.assertEqual(len(ir.issues), 1)

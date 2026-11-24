@@ -44,14 +44,15 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   between the metal and V-Ray in every channel otherwise (maxdrop-6n0.6.16: 230 128 26 over 40 80 200 renders
   0.9175 0.6582 0.8060, the copy 0.917 0.533 0.179, the metal 0.900 0.503 0.102; no Mix of two closures meets V-Ray
   when max(R) + max_c((1 - R_c) d_c) > 1); a dimmer colored swatch stays the white mirror by its mean (102 51 13 over
-  grey: V-Ray 0.701 0.602 0.527, white 0.609 0.611 0.609, tinted 0.701 0.501 0.352); a constant metalness 1 keeps
+  grey: V-Ray 0.701 0.602 0.527, white 0.609 0.611 0.609, tinted 0.701 0.501 0.352), so a saturated swatch's weight
+  jumps from its mean to its brightest channel at METAL_REFLECTION (not measured near it); a constant metalness 1 keeps
   the lone metal in the diffuse color (build/materials.py; not measured); beside a reflection map only the swatch's
   share counts (its mean times 1 - the map amount): a map at full amount hides the swatch, so it never makes a metal
   (the map itself is not judged), a map at 0 % amount is left out (the swatch alone, as V-Ray renders it).
-  Fresnel off sets fresnel False; outside that rule the weight (a dim or grey swatch, or a reflection map such as the
-  black to white Falloff) is then reflected as it is at every angle, which build/materials.py draws as a white metal
-  mixed by it over the material without reflection (V-Ray 5.2: a 0.2 swatch reflects 0.200 facing the camera,
-  maxdrop-em3.120).
+  Fresnel off sets fresnel False; outside the metal rule the weight (a swatch below 1, or a reflection map such as the
+  black to white Falloff) is then reflected as it is at every angle, which build/materials.py draws as a metal of
+  mirror_color (white, or the tint above) mixed by it over the material without reflection (V-Ray 5.2: a 0.2 swatch
+  reflects 0.200 facing the camera, maxdrop-em3.120).
   The Fresnel IOR is the refraction IOR when the material refracts or locks the IOR, else the reflection IOR.
 - VRayLightMtl -> emission only; VRayFastSSS2 -> base + subsurface; VRayCarPaintMtl / VRayCarPaintMtl2 -> a metal
   base + coat (VRayCarPaintMtl's coat_strength is the coat's reflectance at normal incidence: a full coat whose
@@ -1171,9 +1172,9 @@ def corona_physical_mtl(conv, m, ir):
     ir.ior = _corona_ior(m, 171, ior_mode, reflects_only=not refracts)
     base_ior = _num(m, 171, 0, 1.5)
     if refracts and ior_mode != 1 and not 1.0 <= base_ior <= CORONA_MAX_IOR:
-        conv.issue(m.index, "CoronaPhysicalMtl %r: base IOR %g outside 1..%g on a refracting material kept: Corona "
-                   "reflects it as IOR %g, its refraction not measured" % (
-                       m.name, base_ior, CORONA_MAX_IOR, _corona_reflection_ior(base_ior)), ir)
+        conv.issue(m.index, "CoronaPhysicalMtl %r: base IOR %g outside 1..%g on a refracting material drawn as IOR %g: "
+                   "Corona reflects it as IOR %g, its refraction not measured" % (
+                       m.name, base_ior, CORONA_MAX_IOR, ir.ior, _corona_reflection_ior(base_ior)), ir)
     ir.specular = Input(1.0)  # no reflection level in the pblock: the IOR's own Fresnel
     if ior_mode not in (None, 0, 1):
         conv.issue(m.index, "CoronaPhysicalMtl %r: unknown IOR mode %r read as an IOR" % (m.name, ior_mode), ir)

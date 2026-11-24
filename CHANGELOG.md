@@ -265,14 +265,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   over a map in a Mix, a CoronaMix mix or multiply, an RGB Multiply or a Composite is no longer taken as 0.
 - Materials: a CoronaPhysicalMtl that does not refract reflects as Corona 12 renders it when its IOR is outside 1 to
   3: an IOR below 1 as its reciprocal (0.5 as 2, was no reflection) and one above 3 as 3 (4 reflected 0.36, Corona
-  0.25). A refracting one keeps its IOR, with a line in the report.
+  0.25). A refracting one keeps its IOR (one below 1 is drawn as 1), with a line in the report.
 - Materials: a CoronaMtl's diffuse, reflection, refraction and opacity levels scale the map in their slot as well as
   the color, as Corona's documentation says: a diffuse map at level 0.5 is drawn at half strength instead of full.
-- Materials: a VRayMtl with reflection Fresnel off and a bright colored reflection below white keeps its diffuse:
-  it is drawn as a mirror tinted by the reflection color over the diffuse instead of a metal in the reflection
-  color (230 128 26 over a blue diffuse: Cycles 0.916 0.534 0.178 facing the camera, V-Ray 0.918 0.658 0.806, the
-  metal gave 0.900 0.503 0.102; 140 128 115 over red: 0.902 0.572 0.522, V-Ray 0.903 0.580 0.537, was 0.548 0.503
-  0.451). A reflection map at 0 % amount no longer makes a bright reflection a metal.
+- Materials: a VRayMtl with reflection Fresnel off and a bright colored reflection below white keeps part of its
+  diffuse: it is drawn as a mirror tinted by the reflection color over the diffuse instead of a metal in the
+  reflection color; less diffuse than V-Ray shows where the reflection is saturated (230 128 26 over a blue
+  diffuse: Cycles 0.916 0.534 0.178 facing the camera, V-Ray 0.918 0.658 0.806, the metal gave 0.900 0.503 0.102;
+  140 128 115 over red: 0.902 0.572 0.522, V-Ray 0.903 0.580 0.537, was 0.548 0.503 0.451). A reflection map at 0 %
+  amount no longer makes a bright reflection a metal.
 
 ## [1.0.1] - 2026-11-22
 

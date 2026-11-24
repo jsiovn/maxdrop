@@ -387,17 +387,17 @@ EXTRUDE_EULER = {"FixtureExtRect": 2, "FixtureExtL": 2, "FixtureExtHole": 0, "Fi
 VALUE_TOLERANCE = 1e-4
 SPECULAR_LEVEL = 0.5  # the IR's specular is a reflection weight: 1 is Blender's Specular IOR Level 0.5
 TWIN_LABEL, WEIGHT_LABEL = "Without reflection", "Reflection weight"  # a weight between 0 and 1 (maxdrop-em3.119)
-MIRROR_LABEL = "Mirror reflection"  # the white metal of a weight without Fresnel (maxdrop-em3.120)
+MIRROR_LABEL = "Mirror reflection"  # the metal (white, or tinted) of a weight without Fresnel (maxdrop-em3.120)
 MIRROR_INPUTS = {"Metallic": 1.0, "Base Color": (1.0, 1.0, 1.0, 1.0), "Specular IOR Level": SPECULAR_LEVEL}
+REFRACTION_LABEL = "Refraction without reflection"  # refracting glass's twin (maxdrop-em3.135)
+TIR_LABEL = "Total internal reflection"  # the weight's mask where glass reflects totally (maxdrop-em3.135)
+DEG = math.pi / 180.0
+failures = []
 
 
 def _mirror_inputs(color):
     """MIRROR_INPUTS with the Base Color of the IR's mirror_color (a VRayMtl's tinted mirror, maxdrop-6n0.6.16)."""
     return dict(MIRROR_INPUTS, **{"Base Color": tuple(color[:3]) + (1.0,)})
-REFRACTION_LABEL = "Refraction without reflection"  # refracting glass's twin (maxdrop-em3.135)
-TIR_LABEL = "Total internal reflection"  # the weight's mask where glass reflects totally (maxdrop-em3.135)
-DEG = math.pi / 180.0
-failures = []
 
 
 def check(name, cond, detail=""):
@@ -3765,7 +3765,8 @@ def check_builder_weight():
 
 def check_builder_fresnel_off():
     """A weight without Fresnel (bead maxdrop-em3.120, VRayMtl Fresnel off): between 0 and 1, or a converted map, a
-    Mix Shader by the weight from the BSDF at Specular IOR Level 0 to its copy as a white metal; 0, a metal and a
+    Mix Shader by the weight from the BSDF at Specular IOR Level 0 to its copy as a metal (white unless the IR's
+    mirror color tints it); 0, a metal and a
     reflection map that did not convert or whose image is not found (no node: its swatch) keep em3.119's drawing;
     Fresnel on keeps the twin. Refracting glass (bead maxdrop-6n0.7.2): the mirror's first shader refracts without
     reflecting (em3.135's refraction twin, the weight 1 under total internal reflection) and the filled BSDF feeds
