@@ -652,8 +652,8 @@ What 3ds Max 2020 makes of it (`snapshotAsMesh`, probed on scratch scenes and ch
   than 1/2048 of the segment, a point at every split (a Circle: 31 per quarter, 128 points; Arcs of 30, 90, 180, 300
   degrees: 13, 25, 49, 97 points). The probe (maxdrop-6n0.6.11; two-knot segments under 3dsmaxbatch, every point
   read back to its parameter): each point sits at a dyadic t, the split tree of 14 of 16 curves (an S, a hook, loops,
-  collinear vectors past the ends) is exactly this rule, and a cusp at t 1/3 is kept in a piece of 1/2048 (49 steps
-  at any scale), so 2047 steps a segment at most. 3ds Max computes in float32: next to a cusp, or far from the
+  collinear vectors past the ends) is exactly this rule, and a cusp at t 1/3 is kept in a piece of 1/2048 (49 steps;
+  50 at 1000 and 0.01 times the size, float32), so 2047 steps a segment at most. 3ds Max computes in float32: next to a cusp, or far from the
   object's origin, its rounding splits pieces the test keeps (a cusp at t 0.5, chord 10: 73 steps, the rule 63; a
   zigzag 129, the rule 131; an S: 19 steps at the origin and 1000 units off, 81 at 10000). MaxDrop
   computes in double. Adaptive's points are counted as they are made against the mesh's MAX_VERTICES.

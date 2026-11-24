@@ -291,6 +291,17 @@ class Fixture(unittest.TestCase):
         spent = [r for _i, r in desc.issues if r.startswith("extrude: not made: the primitives and extrusions ")]
         self.assertEqual(len(spent), 12)
 
+    def test_a_refused_extrude_is_charged_to_the_scene_budget(self):
+        """An Extrude refused after its work (Adaptive's points) counts against MAX_BUILT_CORNERS: the next ones
+        are not made."""
+        refused = extrude.ExtrudeError("more than 1 vertices", conv.MAX_BUILT_CORNERS)
+        with mock.patch.object(extrude, "extrude", side_effect=refused):
+            desc = conv.read(FIXTURE)
+        self.assertEqual([n.kind for n in desc.nodes], [conv.CURVE] * 14)
+        self.assertEqual(len([r for _i, r in desc.issues if r == "extrude: more than 1 vertices"]), 1)
+        spent = [r for _i, r in desc.issues if r.startswith("extrude: not made: the primitives and extrusions ")]
+        self.assertEqual(len(spent), 12)
+
     def test_conversion_issues_wait_for_a_made_extrude(self):
         """A converted modifier's issues are named on the first node whose Extrude is made: one whose Extrude
         fails is a curve, its modifiers not converted."""
@@ -611,14 +622,14 @@ ADAPTIVE_PROBES = [
     ("big", (0, 0, 0), (100, 100, 0), (-90, 100, 0), (10, 0, 0), 103),
     ("knee", (0, 0, 0), (5, 0, 0), (10, 10, 0), (10, 0, 0), 55),
     ("cusp13", (0, 0, 0), (4, 6, 0), (-3, 0, 0), (9, 0, 0), 49),
-    ("cusp13 x1000", (0, 0, 0), (4000, 6000, 0), (-3000, 0, 0), (9000, 0, 0), 49),
 ]
 # 3ds Max computes in float32: next to a cusp, or far from the origin, its rounding splits pieces the test keeps
-# (and the other way round by a hair at 2 degrees); MaxDrop computes in double. These two got 129 and 73 steps in 3ds
-# Max; the double rule's own counts are pinned (cusp13 x1000 got 50 there, one piece next to the cusp).
+# (and the other way round by a hair at 2 degrees); MaxDrop computes in double. These got 129, 73 and 50 steps in 3ds
+# Max (cusp13 x1000: one more piece split next to the cusp); the double rule's own counts are pinned.
 ADAPTIVE_FLOAT32 = [
     ("zz", (0, 0, 0), (40, 20, 0), (-30, -20, 0), (10, 0, 0), 131),
     ("tight", (0, 0, 0), (10, 1, 0), (0, 1, 0), (10, 0, 0), 63),
+    ("cusp13 x1000", (0, 0, 0), (4000, 6000, 0), (-3000, 0, 0), (9000, 0, 0), 49),
 ]
 
 
@@ -708,17 +719,25 @@ class Interpolation(unittest.TestCase):
             self.assertEqual(pl.points[1:-1], want, name)
 
     def test_adaptive_is_counted_against_a_budget(self):
-        """2047 steps a segment at most: an adaptive shape is counted as it is made, not refused up front by that
-        bound (1,000 straight knots), and one whose points pass the budget is refused."""
+        """2047 steps a segment at most: an adaptive shape is counted as it is made, and one whose points pass the
+        budget is refused: an open spline (its last knot too), the room left after another spline, a closed one."""
         many = _shape([shapes.Spline(_knots([(k, k % 2, 0) for k in range(1000)]), False)], adaptive=True)
         self.assertEqual(sum(len(pl.points) for pl in extrude.polylines(many, 1000)), 1000)
-        if numpy is not None:  # the mesh needs it
-            data, _issues = extrude.extrude(many, extrude.DEFAULT._replace(amount=1.0))
-            self.assertEqual(len(data.positions), 2000)
-        loop = _shape([_segment((0, 0, 0), (10, 30, 0), (0, 30, 0), (10, 0, 0))], adaptive=True)
         with self.assertRaises(extrude.ExtrudeError):
-            extrude.polylines(loop, 16)
-        self.assertEqual(sum(len(pl.points) for pl in extrude.polylines(loop, 17)), 17)
+            extrude.polylines(many, 999)
+        loop = _segment((0, 0, 0), (10, 30, 0), (0, 30, 0), (10, 0, 0))  # 15 steps: 17 points
+        for most, splines in ((17, [loop]), (34, [loop, loop])):
+            shape = _shape(splines, adaptive=True)
+            self.assertEqual(sum(len(pl.points) for pl in extrude.polylines(shape, most)), most)
+            with self.assertRaises(extrude.ExtrudeError):
+                extrude.polylines(shape, most - 1)
+        k = shapes.Knot
+        drop = shapes.Spline((k(shapes.BEZIER_CORNER, shapes.CURVE, (0, 0, 0), (0, 0, 0), (10, 30, 0)),
+                              k(shapes.BEZIER_CORNER, shapes.CURVE, (10, 0, 0), (0, 30, 0), (10, 0, 0))), True)
+        closed = _shape([drop], adaptive=True)  # the loop, then a straight line back: 17 points
+        self.assertEqual([len(pl.points) for pl in extrude.polylines(closed, 17)], [17])
+        with self.assertRaises(extrude.ExtrudeError):
+            extrude.polylines(closed, 16)
 
     def test_a_doubled_knot_with_its_vectors_on_it(self):
         """A zero-length curve segment whose vectors lie on its point is straight under Adaptive too (no steps from
@@ -1138,6 +1157,22 @@ class Synthetic(unittest.TestCase):
                                                self.rect(4.5, 4.5, 5.5, 5.5)]), self.params())
         self.assertEqual(issues, ["an outline overlaps another: its hole is left open"])
         self.assertGreater(len(data.loop_starts), 0)
+
+    def test_adaptive_points_past_the_budget(self):
+        """An adaptive shape the up-front estimate lets through (one point a knot) is refused once its points are
+        made, and the refusal is charged like the sides it would have made; 1,000 knots of 2047 steps at most each
+        are not refused up front."""
+        many = _shape([shapes.Spline(_knots([(k, k % 2, 0) for k in range(1000)]), False)], adaptive=True)
+        data, _issues = extrude.extrude(many, self.params())
+        self.assertEqual(len(data.positions), 2000)
+        loop = _shape([_segment((0, 0, 0), (10, 30, 0), (0, 30, 0), (10, 0, 0))], adaptive=True)  # 17 points
+        with mock.patch.object(extrude, "MAX_VERTICES", 33):
+            with self.assertRaises(extrude.ExtrudeError) as caught:
+                extrude.extrude(loop, self.params(segments=2))
+        self.assertEqual((str(caught.exception), caught.exception.spent), ("more than 33 vertices", 11 * 2 * 4))
+        with mock.patch.object(extrude, "MAX_VERTICES", 34):
+            data, _issues = extrude.extrude(loop, self.params())
+        self.assertEqual(len(data.positions), 34)
 
     def test_flat_amount_is_an_issue(self):
         _data, issues = extrude.extrude(_shape([self.square(4)]), self.params(amount=0.0))

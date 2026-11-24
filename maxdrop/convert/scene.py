@@ -172,7 +172,8 @@ UV_NAME = "UVChannel_%d"
 MAX_EDGE_MASKS = 64  # distinct smoothing-group masks paired on one non-manifold edge
 # Face corners the primitives and extrusions of one scene may make: each has its own cap (primitives.MAX_CORNERS,
 # extrude.MAX_VERTICES), but a file can hold any number of them, each costing up to about a second and hundreds of
-# MB. Checked before each is made, so the last one made can pass it by up to its own cap.
+# MB (an adaptive Extrude several seconds, also when it is refused: ExtrudeError.spent counts it). Checked before
+# each is made, so the last one made can pass it by up to its own cap.
 MAX_BUILT_CORNERS = 1 << 24
 # Face corners of a mesh with its copies under the Mirrors below a Shell, counted for the rim's corners (each Mirror
 # doubles them): past it the corners are not counted (a line in the report)
@@ -1187,6 +1188,7 @@ def _emitter_shape(scene, desc, stacks, obj, node, built):
         params, issues = extrude.read_params(scene, ext)
         data, more = extrude.extrude(sh, params)
     except ChunkError as exc:  # ShapeError, ExtrudeError, or a block the reader refuses
+        built[0] += getattr(exc, "spent", 0)
         return lights.EMITTER_UNREAD % exc
     built[0] += len(data.loop_vertices)
     desc.issues.extend([(node, "shape: %s" % x) for x in sh.issues] +
@@ -1800,6 +1802,7 @@ def _extruded(scene, desc, shape_of, extruded, mapped, base, ext, maps, node, na
                 built[0] += len(data.loop_vertices)
                 desc.issues.extend((node, "extrude: %s" % x) for x in issues + more)
             except extrude.ExtrudeError as exc:
+                built[0] += exc.spent
                 desc.issues.append((node, "extrude: %s" % exc))
     data = cache[ext.index]
     if data is None:

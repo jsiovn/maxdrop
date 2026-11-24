@@ -570,6 +570,11 @@ class MeshLightFixture(unittest.TestCase):
             spent = conv._emitter_mesh(sc, desc, v, node, MM, [conv.MAX_BUILT_CORNERS], None,
                                        reader_modifiers.Modifiers(sc))
             self.assertTrue(isinstance(spent, str) and "Extrude is not made" in spent, spent)
+            ext = importlib.import_module(_PKG + ".convert.extrude")
+            built = [0]
+            with mock.patch.object(ext, "extrude", side_effect=ext.ExtrudeError("more than 1 vertices", 5)):
+                refused = conv._emitter_mesh(sc, desc, v, node, MM, built, None, reader_modifiers.Modifiers(sc))
+            self.assertEqual((refused, built[0]), (L.EMITTER_UNREAD % "more than 1 vertices", 5))  # charged
 
     def described(self, change):
         """The fixture described with change(values) applied to the values of every mesh light read."""

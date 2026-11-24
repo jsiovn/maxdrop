@@ -77,7 +77,7 @@ ADAPTIVE_DEPTH = 11  # a piece of 1/2048 of its segment is never split: at most 
 TOP_ID, BOTTOM_ID, SIDE_ID = 0, 1, 2  # zero-based: 3ds Max shows 1, 2, 3
 CAP_GROUP = 1 << 4
 MAX_SEGMENTS = 10000
-MAX_VERTICES = 1 << 21  # about 2 million: about a second and 500 MB at most
+MAX_VERTICES = 1 << 21  # about 2 million: about a second and 500 MB at most (Adaptive's points: several seconds)
 MAX_CAP_POINTS = 5000  # a holed cap is ear-clipped in Python: quadratic
 MAX_CLIP_STEPS = 1 << 25  # the holed caps of one mesh: a 5000-point cap takes up to about 8 million, 3 s
 MAX_LOOPS = 4000  # closed polylines nested against each other: quadratic
@@ -93,7 +93,12 @@ STRAIGHT_AT = (0.4, 0.6)  # where _straight looks at the curve
 
 
 class ExtrudeError(ChunkError):
-    """An Extrude that cannot be evaluated; the shape stays a curve."""
+    """An Extrude that cannot be evaluated; the shape stays a curve. spent: the face corners the work done before
+    the refusal stands for, charged against the scene's budget (convert.scene.MAX_BUILT_CORNERS)."""
+
+    def __init__(self, message, spent=0):
+        super().__init__(message)
+        self.spent = spent
 
 
 class CapError(ValueError):
@@ -209,7 +214,7 @@ def _adaptive(p0, c1, c2, p3, room):
     piece again while the piece fails the straight test and is wider than 2^-ADAPTIVE_DEPTH (maxdrop-6n0.6.11). The
     whole segment is split without a test (it failed it). Stops once it has more than room steps."""
     out = []
-    todo = [(0.0, 1.0, p0, p3, 0)]  # pieces left to right: the last one is the next
+    todo = [(0.0, 1.0, p0, p3, 0)]  # a stack of pieces: (a, b, B(a), B(b), depth)
     while todo:
         a, b, pa, pb, depth = todo.pop()
         if depth >= ADAPTIVE_DEPTH or (depth and not _bent(p0, c1, c2, p3, a, b, pa, pb)):
@@ -302,7 +307,8 @@ def _polyline(spline, steps, optimize, adaptive, room):
 
 def polylines(shape, most=None):
     """[Polyline] of a reader Shape, one per spline of two points or more; ExtrudeError when its splines make more
-    than most points (Adaptive's are known only once made)."""
+    than most points (Adaptive's are known only once made): a spline is stopped once its points before merging pass
+    what is left, and what it keeps after merging is taken from that."""
     out = []
     room = math.inf if most is None else most
     for sp in shape.splines:
@@ -950,7 +956,10 @@ def extrude(shape, params):
     most = _estimate(shape) * levels
     if most > MAX_VERTICES:  # before any point is made: a small file can ask for hundreds of millions
         raise ExtrudeError("up to %d vertices, more than %d" % (most, MAX_VERTICES))
-    lines = polylines(shape, MAX_VERTICES // levels)
+    try:
+        lines = polylines(shape, MAX_VERTICES // levels)
+    except ExtrudeError:  # Adaptive's points were made before they were counted: charged like the sides they make
+        raise ExtrudeError("more than %d vertices" % MAX_VERTICES, MAX_VERTICES // levels * segs * 4) from None
     if params.amount == 0:
         issues.append("an amount of 0: a flat mesh")
     closed = {j: [(p[0], p[1]) for p in pl.points] for j, pl in enumerate(lines) if pl.closed}
