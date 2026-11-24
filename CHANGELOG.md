@@ -235,6 +235,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   where Corona shows 0.040; an HDR color of 2.0 now 4.95). A CoronaMix on a color map is computed on the values
   Corona holds and then decoded, as a Mix is, so its operations match Corona's. Data, normal and bump maps and
   scenes with the gamma on are unchanged.
+- Materials: an RGB Tint or an Output with levels as the mask of a Mix, CoronaMix or Composite on a color map tints
+  the color below it and masks by the mean of the result, as V-Ray 5.2 renders it (measured, gamma on and off),
+  instead of tinting the grey of that color: a tint of (128, 0, 0), (0, 64, 0), (0, 0, 32) over a (200, 100, 50)
+  color now masks 0.172 with the gamma on (was 0.134); with the gamma off that mean is shown decoded, so an Output
+  of level 0.5 over white masks 0.218 linear where V-Ray shows 0.214 (was 0.5). A Color Correction there is
+  unchanged.
 
 ## [1.0.1] - 2026-11-22
 

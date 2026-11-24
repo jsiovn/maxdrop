@@ -1853,6 +1853,21 @@ renders its map1 through its Output part (a red (200, 50, 50) map: 0.784, 0.196,
 changes nothing, 0.682, 0.564, 0.564 with the one above; opacity 0.392 and 0.207); the file stores the switch off. MaxDrop ignores an Output's map1Enabled when the scene's renderer (Renderer ClassIDA / B of the summary stream)
 is Corona's, `(0x62A85DCC, 0x523C3604)` (Corona 12); measured with Corona's own materials, assumed for others.
 Corona's opacity with few passes is noisy (up to 0.006 at 4 passes, the mean at 64).
+A wrapper as a mask in a color graph, measured (maxdrop-6n0.6.2; 3ds Max 2020, V-Ray 5.2 with linear color mapping,
+GI and default lights off, a VRayLightMtl texmap Mix black -> white at amount 0 whose mask is the map, V-Ray's
+internal value): a VRayColor (200, 100, 50) gives 0.4575; an RGB Tint of rows (128, 0, 0), (0, 64, 0), (0, 0, 32)
+over it 0.1722, the empty Tint 0.2928; an Output of RGB level 0.5 over it 0.2287, the empty Output 0.5; the Tint
+over a 128 grey PNG 0.1470 with the gamma off and 0.0643 with it on, an Output of 0.5 over a (200, 100, 50) PNG
+0.2287 and 0.1235. Every constant row is the same with the gamma on and off. So a mask below a Tint or an Output is
+the mean of the wrapper's output on the values V-Ray holds (swatches and the Tint's rows as stored, an image by the
+scene's input rule), which a gamma-off scene shows decoded: MaxDrop converts the wrapper's map as a color with the
+gamma on and as stored with it off, and there takes the mean first and decodes it after (a Tint over a constant
+folded exactly; otherwise a power of 2.2, within 0.005 of V-Ray on these planes). A Color Correction's saturation of
+-50 over the VRayColor gives 0.4739, over the PNG 0.4739 off and 0.2770 on: not Blender's HSV saturation, so a
+Color Correction in a mask keeps its input's mean (a grey). With the gamma off a colored PNG as the mask itself gives
+the decoded mean (0.4575 shown as 0.1768), where MaxDrop draws the mean of the decoded channels (0.2456), and an RGB
+Tint on a color input renders the tint of the stored color, decoded ((0.638, 0.384, 0.350) shown as (0.365, 0.122,
+0.100); MaxDrop draws (0.334, 0.057, 0.048)): both left as they are.
 
 ### The Falloff mix curve
 

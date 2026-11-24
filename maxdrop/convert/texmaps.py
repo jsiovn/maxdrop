@@ -49,8 +49,11 @@ Tint's rows, the mean taken at the float input by the builder (maxdrop-em3.128).
 128 / 64 / 32 renders 0.293 on opacity with the gamma off, the mean of the tinted white with the rows as stored
 (maxdrop-em3.76); that a colored constant keeps its color below the wrapper, Color Correction, and the rows in a
 normal input are assumed by the same rule. Images and masks below such a wrapper are as in DATA / BUMP (base_kind;
-which output the wrapper asks an image for is not measured); a MASK graph keeps its rule of the mean below a wrapper
-too (maxdrop-6n0.6.2).
+which output the wrapper asks an image for is not measured). In a MASK graph an RGB Tint or an Output part takes its
+map as the color V-Ray holds (COLOR with the gamma on, STORED with it off: _wrapper_input) and the mask is the mean of
+its output, decoded after the mean with the gamma off (_mask_mean; V-Ray 5.2 renders, maxdrop-6n0.6.2: rows 128 / 64 /
+32 over a VRayColor (200, 100, 50) mask 0.1722 in both modes); a Color Correction there keeps its input's mean, as
+V-Ray's saturation is not the builder's HSV one (CC saturation -50 over that VRayColor: 0.4739).
 With the gamma off V-Ray computes a Mix or Composite on the stored values (DISPLAY_MIXES; V-Ray 5.2 renders,
 maxdrop-em3.158): its internal value is the one the gamma on gives (a Mix of greys 40 and 220 at 50 % renders 0.510,
 by a 0.502 mask 0.511, a Composite of 64 + 64 in Addition 0.502), which the display-referred scene shows decoded
@@ -698,7 +701,7 @@ def _old(part, index, default):
 
 def rgb_kind(kind):
     """The kind of a color wrapper's input below a map of that kind: DATA_RGB in a data graph, BUMP_RGB in a height,
-    the kind itself elsewhere (a color, a normal; a mask keeps its rule of the mean)."""
+    the kind itself elsewhere (a color, a normal, a mask: see _wrapper_input for a Tint's or Output's in a mask)."""
     return _RGB_KINDS.get(kind, kind)
 
 
@@ -1599,7 +1602,8 @@ def _color_correction(conv, m, kind, walk, depth, chain):
     """0 color, 1 map, 2 rewireMode, 7 hueShift (degrees), 8 saturation (%), 10 tintStrength, 11 lightnessMode
     (0 standard: 12 brightness, 13 contrast; 1 advanced: 18 gainRGB (%), 22 gammaRGB, 26 pivotRGB, 30 liftRGB).
     Its color only without a map (3ds Max's rule): a map that converts to nothing leaves the input its own value.
-    The map and the color are a color (rgb_kind): the correction acts on it, a float input takes the mean after."""
+    The map and the color are a color (rgb_kind): the correction acts on it, a float input takes the mean after. In
+    a mask they keep the mask rule (a grey): V-Ray's saturation is not the builder's HSV one (maxdrop-6n0.6.2)."""
     node = conv._sub(m, 1, None, rgb_kind(kind), walk, depth, chain)
     if node is None:
         if conv._on(m, 1, None) is not None:
