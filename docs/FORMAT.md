@@ -1393,12 +1393,12 @@ picker and Material Editor switches off).
   Bitmap is read as stored whatever its override, and a temperature color is decoded as a swatch is. CoronaBitmap
   and VRayBitmap Auto / sRGB apply their own curve in every case, so with the gamma off V-Ray shows them darker
   than an sRGB image (and an EXR shows its value as stored), and VRayBitmap None shows as stored: converted since
-  maxdrop-em3.123 but for CoronaBitmap (below). Reopening the saved scenes from disk renders the same.
+  maxdrop-em3.123, CoronaBitmap since maxdrop-em3.165 (below). Reopening the saved scenes from disk renders the same.
 - LUT mode belongs to the session: a scene saved in it (Scene `1`, Config `0`) opens as `#gamma` from a `#none` or
   `#gamma` session and renders as gamma on (swatch 186, the PNG 128); a `#lut` session stays in LUT mode for a file
   whose chunk says `1` (and renders as gamma off there: 128, 128). MaxDrop reads the file's `1` as gamma on.
-- A Corona render does not run on this machine (not under `3dsmaxbatch`, not in a silent instance): Corona's own
-  swatches are not measured.
+- Corona's own swatches: Corona 12 renders a 128 swatch 0.502 with the gamma on and off, as V-Ray (maxdrop-em3.165,
+  below; Corona renders run here since 2026-11-23).
 - Data inputs and masks (maxdrop-em3.122), V-Ray 5.2 renders of the same 128 grey PNG and of swatches: VRayMtl
   glossiness through the VRayMtlReflectGlossiness element, VRayMtl opacity as the render alpha, a Mix black -> white
   mask on a VRayLightMtl (its internal value, `getPixels ... linear:true`):
@@ -1428,15 +1428,15 @@ picker and Material Editor switches off).
   | VRayBitmap Inverse gamma 2.0 / 0.5, 128 | 0.7085 / 0.2520 | 0.4598 / 0.0516 |
   | Bitmap automatic, EXR 0.25 / 0.5 / 2.0 | 0.25 / 0.5 / 2.0 | 0.0509 / 0.214 / 4.954 |
   | VRayBitmap Auto / None / From 3ds Max, EXR 0.5; sRGB, EXR 0.5 | 0.5; 0.2140 | 0.214; 0.0376 |
-  | CoronaBitmap automatic 64 / 192, 1.0 192, automatic EXR 0.5 | 0.0478 / 0.5356, 0.753, 0.5 | Corona: not measured |
-  | CoronaColor HDR 0.25 / 0.5 / 2.0, 0.5 x multiplier 2 | 0.25 / 0.5 / 2.0, 1.0 | Corona: not measured |
+  | CoronaBitmap automatic 64 / 192, 1.0 192, automatic EXR 0.5 | 0.0478 / 0.5356, 0.753, 0.5 | 0.0037 / 0.2483, 0.527, 0.214 (Corona 12 alike, below) |
+  | CoronaColor HDR 0.25 / 0.5 / 2.0, 0.5 x multiplier 2 | 0.25 / 0.5 / 2.0, 1.0 | 0.0509 / 0.214 / 4.954, 1.0 (Corona 12 alike, below) |
 
   Inverse gamma g is pixel ^ (1 / g). With the gamma off a color input or mask gets the gamma the scene shows: 2.2 x
   the map's own (2.2: the sRGB color space, which Blender 4.2 to 5.2 applies to an EXR with the extended curve,
   2.0 -> 4.954), 5.0 for the sRGB curve (`SRGB_TWICE`: twice the curve is within 0.008 of x ^ 5 over 0..1); a
   Bitmap and From 3ds Max read any file as stored, sRGB. Data inputs keep the map's own curve. Blender 5.2 and 4.2
-  renders of the probe scenes agree within 0.02 (2 % above 1). CoronaBitmap and CoronaColor HDR are left as they
-  were: whether a Corona render shows them as V-Ray does is not known (no Corona render yet). A dome's texture
+  renders of the probe scenes agree within 0.02 (2 % above 1). CoronaBitmap and CoronaColor HDR follow the same
+  rule since Corona 12 renders them so (maxdrop-em3.165, below). A dome's texture
   gamma is drawn as a material's (a Gamma node in the World), but a float dome texture in a gamma-off scene keeps
   its own decode (a line in the report): measured as a light below (maxdrop-em3.166).
 - Color mixes (maxdrop-em3.158), V-Ray 5.2 renders of VRayLightMtl planes, each plane's internal value; greys are
@@ -1457,7 +1457,32 @@ picker and Material Editor switches off).
   own decode, the mask as stored) and the display shows the result decoded; decoded sides mixed in Blender were off
   by up to 0.27 (the colored pair), 16 of 24 planes by more than 0.02. A product commutes with a power law, so a
   decoded RGB Multiply is within 0.005. The rule is in `maxdrop/convert/texmaps.py` (STORED, Decode); Blender 5.2
-  renders of the probe scenes agree with V-Ray within 0.0085 on every plane. Falloff and CoronaMix were not probed.
+  renders of the probe scenes agree with V-Ray within 0.0085 on every plane. Falloff was not probed; CoronaMix in
+  Corona 12: below (maxdrop-em3.165).
+- Corona maps with the gamma off (maxdrop-em3.165), Corona 12 renders of CoronaLightMtl planes (color white,
+  intensity 1, the map as texmap), tone mapping off, a pass and a time limit, an orthographic camera over a grid,
+  each plane's internal value (`getPixels ... linear:true` of an HDR bitmap, a 9 x 9 pixel mean); the em3.123 greys
+  and EXRs. Gamma on (input 2.2) and off give the same internal value for every row:
+
+  | Map | internal value | shown with the gamma off (Blender linear) |
+  |---|---|---|
+  | swatch 128 (CoronaLightMtl color; CoronaColor color) | 0.502 | 0.216 |
+  | CoronaBitmap automatic or 2.2, 64 / 128 / 192 | 0.0478 / 0.2195 / 0.5356 | 0.0037 / 0.0395 / 0.2483 |
+  | CoronaBitmap 1.0, 64 / 128 / 192 | 0.251 / 0.502 / 0.753 | 0.0513 / 0.216 / 0.527 |
+  | CoronaBitmap automatic, EXR 0.25 / 0.5 / 2.0; 2.2, EXR 0.5 | 0.25 / 0.5 / 2.0; 0.2177 | 0.0509 / 0.214 / 4.954; 0.0389 |
+  | CoronaColor HDR 0.25 / 0.5 / 2.0; 0.5 x multiplier 2 | 0.25 / 0.5 / 2.0; 1.0 | 0.0509 / 0.214 / 4.954; 1.0 |
+  | Mix and CoronaMix (mix) black -> white by a CoronaBitmap automatic 128 | 0.2195 | 0.0395 |
+  | Mix 50 % of CoronaBitmaps automatic 64 and 192; CoronaMix mix 50 % of them | 0.2917; 0.2917 | 0.0692 |
+  | CoronaMix of CoronaColor HDR (0.05, 0.4, 0.9) under (0.6, 0.2, 0.75): screen, overlay, hard light, exclusion, add, multiply | renderMap's values (em3.117) | them decoded |
+
+  So Corona holds a CoronaBitmap's own decode, the HDR color (unclamped) and a swatch as V-Ray holds its maps, and
+  computes a Mix and a CoronaMix on those values: with the gamma off a CoronaBitmap on a color input or a mask gets
+  `_shown`, the HDR color is decoded with the extended curve (the mean on a mask), and a CoronaMix at a color root
+  joins `DISPLAY_MIXES` (STORED under a Decode; a folded constant decoded exactly). A float CoronaBitmap dome texture
+  keeps its own decode, as the other float dome textures do. Data, normal and bump inputs are unchanged. Blender 5.2
+  renders of the saved probe scenes agree within 0.0092 on every CoronaBitmap, CoronaColor, swatch and mask plane,
+  gamma on and off. A first pass that rendered to an EXR output file clamped the bitmap at 1.0 and gave a Bitmap
+  automatic 128 0.2195 with the gamma off (0.502 in the passes rendered into an HDR bitmap, as V-Ray): not used.
 - Normal and bump images (maxdrop-em3.159), V-Ray 5.2 renders read through VRayBumpNormals and Corona 12 renders
   through CGeometry_NormalsShading (both store (n + 1) / 2; an orthographic top camera), 8-bit PNGs: a flat
   (128, 128, 255) and a tilted (180, 100, 220) normal map under VRayNormalMap, Normal Bump and CoronaNormal, a

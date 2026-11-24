@@ -231,6 +231,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Scene packs: a map whose name holds an unassigned Unicode character, or bytes the archive's encoding cannot
   read, is skipped with a line in the report on every system, instead of failing the whole unpack on macOS (which
   cannot store such a name) while Windows and Linux wrote it; a `.max` so named is not offered as a scene.
+- Corona maps in a scene saved with the gamma off: a CoronaBitmap on a color map or mask and a CoronaColor's HDR
+  color show as Corona 12 renders them there (measured), decoded once more for the display-referred scene as a
+  VRayBitmap is since V-Ray's case was measured, instead of too bright (a 128 grey CoronaBitmap was 0.216 linear
+  where Corona shows 0.040; an HDR color of 2.0 now 4.95). A CoronaMix on a color map is computed on the values
+  Corona holds and then decoded, as a Mix is, so its operations match Corona's. Data, normal and bump maps and
+  scenes with the gamma on are unchanged.
 
 ## [1.0.1] - 2026-11-22
 
