@@ -19,64 +19,63 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   and a few rarer cases are a line in the report.
 - Objects: a mesh or curve with Cast Shadows off in 3ds Max (Object Properties) casts no shadows in Blender. Receive
   Shadows off, which Blender cannot set per object, is a line in the report.
-- Objects: Rendering Control By Layer (Object Properties) is read: such an object renders, casts and receives
-  shadows as its own layer says, as 3ds Max renders it, instead of by its own flags. A layer that does not render no
-  longer turns rendering off for every object on it and on the layers below it (Disable in Renders on its
-  collection): 3ds Max renders those objects unless they are set By Layer, and then only their own layer counts.
-- Extrude: grid caps (Cap Type Grid) are made as 3ds Max makes them, with the grid of points 3ds Max puts inside
-  each cap, so an extruded shape gets 3ds Max's vertex and triangle counts, instead of morph caps and a line in the
+- Objects: Rendering Control By Layer (Object Properties) is read: such an object renders, casts and receives shadows
+  as its own layer says, as 3ds Max renders it, instead of by its own flags. A layer that does not render no longer
+  turns rendering off for every object on it and on the layers below it (Disable in Renders on its collection): 3ds
+  Max renders those objects unless they are set By Layer, and then only their own layer counts.
+- Extrude: grid caps (Cap Type Grid) are made as 3ds Max makes them, with the grid of points 3ds Max puts inside each
+  cap, so an extruded shape gets 3ds Max's vertex and triangle counts, instead of morph caps and a line in the
   report.
-- Lights: a V-Ray light (plane, disc, sphere) whose own Cast shadows is off in 3ds Max casts no shadow in Blender;
-  a dome light with it off is a line in the report (Blender's World has no such switch).
+- Lights: a V-Ray light (plane, disc, sphere) whose own Cast shadows is off in 3ds Max casts no shadow in Blender; a
+  dome light with it off is a line in the report (Blender's World has no such switch).
 - Lights: a V-Ray mesh light is imported as an emissive mesh (the mesh it emits, at the light's place) instead of an
   empty: its strength in every units mode as bright as V-Ray 5.2 (measured) times Light Strength, one side or both,
   Flip normals, invisible (not seen by the camera, no shadow), affect diffuse, specular and reflections, on / off.
-  Also a mesh light made with "Replace mesh with light", which keeps the mesh itself. Its mesh keeps its modifiers
-  as V-Ray emits them: TurboSmooth, MeshSmooth, Shell and Symmetry become Blender modifiers on the emitter as on any
-  mesh, an Extrude on a picked shape is made, and in lm and W the strength is spread over the mesh under them (a
-  5 mm Shell on a 200 mm plane about halves it, as in V-Ray). Other modifiers are left out (the mesh below them
-  emits, a line in the report); a mesh light without a mesh stays an empty with a line in the report.
+  Also a mesh light made with "Replace mesh with light", which keeps the mesh itself. Its mesh keeps its modifiers as
+  V-Ray emits them: TurboSmooth, MeshSmooth, Shell and Symmetry become Blender modifiers on the emitter as on any
+  mesh, an Extrude on a picked shape is made, and in lm and W the strength is spread over the mesh under them (a 5 mm
+  Shell on a 200 mm plane about halves it, as in V-Ray). Other modifiers are left out (the mesh below them emits, a
+  line in the report); a mesh light without a mesh stays an empty with a line in the report.
 - CoronaMix: the Screen, Overlay, Color Dodge, Color Burn, Linear Burn, Linear Light, Hard Light and Exclusion
-  operations are imported as nodes, in gamma 2.2 with "mix in sRGB" on as Corona does it, Color Dodge, Color Burn
-  and Exclusion over maps by Corona's formulas, not clamped to 0..1 (Color Dodge of black under white gives white,
-  as in Corona), and Gamma when its top is a grey color or a map that is a color (CoronaColor, VRayColor); a colored
-  top over a bottom map that is a color is folded per channel. These were the first bitmap below and a line in the
+  operations are imported as nodes, in gamma 2.2 with "mix in sRGB" on as Corona does it, Color Dodge, Color Burn and
+  Exclusion over maps by Corona's formulas, not clamped to 0..1 (Color Dodge of black under white gives white, as in
+  Corona), and Gamma when its top is a grey color or a map that is a color (CoronaColor, VRayColor); a colored top
+  over a bottom map that is a color is folded per channel. These were the first bitmap below and a line in the
   report; Soft Light, Vivid Light, Pin Light and Hard Mix keep that, the line now naming the operation.
-- Corona materials: CoronaHairMtl is imported as a surface with the color Corona 12 renders a mesh with its
-  melanin, pheomelanin, tint and transmission color (its diffuse color mixed in as Corona mixes it), its glossiness,
-  IOR, opacity and bump, instead of grey; its tint map is named in the report; a CoronaShadowCatcherMtl makes its
-  object a shadow catcher (Cycles) when the object has no other material. A CoronaScannedMtl or CoronaSlicerMtl
-  stays grey, now with a line in the report naming what is left out, no longer listed as a material class without
-  a rule.
+- Corona materials: CoronaHairMtl is imported as a surface with the color Corona 12 renders a mesh with its melanin,
+  pheomelanin, tint and transmission color (its diffuse color mixed in as Corona mixes it), its glossiness, IOR,
+  opacity and bump, instead of grey; its tint map is named in the report; a CoronaShadowCatcherMtl makes its object a
+  shadow catcher (Cycles) when the object has no other material. A CoronaScannedMtl or CoronaSlicerMtl stays grey,
+  now with a line in the report naming what is left out, no longer listed as a material class without a rule.
 - Corona media, measured against Corona 12 renders: a CoronaVolumeMtl is imported as a volume (Volume Absorption,
   Volume Scatter and Emission on the material's Volume output) instead of a grey box; the volumetric absorption and
   scattering of a CoronaPhysicalMtl and the absorption of a CoronaMtl, until now lines in the report, and a
-  CoronaMtl's scattering are imported as a volume inside the glass. The absorption color is the color reached at
-  its distance, the scattering color the share of that light scattered, the directionality the scattering's
-  anisotropy, the emission its color over its distance. A CoronaVolumeMtl box has no surface at all, so more than
-  four stacked or nested boxes render in Cycles (an invisible surface would spend two of its 8 transparent bounces
-  per box), and a room-sized fog box is see-through in Solid view. A material whose medium scatters is named in the
-  report, with Cycles' Volume Bounces to raise for multiple scattering (0, Blender's default, scatters once; not
-  with Corona's single bounce on, which that default renders); the import changes no scene setting. Their maps,
-  single bounce and a CoronaMtl's media mode 0 are lines in the report.
+  CoronaMtl's scattering are imported as a volume inside the glass. The absorption color is the color reached at its
+  distance, the scattering color the share of that light scattered, the directionality the scattering's anisotropy,
+  the emission its color over its distance. A CoronaVolumeMtl box has no surface at all, so more than four stacked or
+  nested boxes render in Cycles (an invisible surface would spend two of its 8 transparent bounces per box), and a
+  room-sized fog box is see-through in Solid view. A material whose medium scatters is named in the report, with
+  Cycles' Volume Bounces to raise for multiple scattering (0, Blender's default, scatters once; not with Corona's
+  single bounce on, which that default renders); the import changes no scene setting. Their maps, single bounce and a
+  CoronaMtl's media mode 0 are lines in the report.
 - Corona materials, measured against Corona 12 renders: a CoronaMtl with PBR mode off gets the roughness Corona
   renders for its glossiness (a glossiness of 0.4 is roughness 0.32, not 0.6), no longer a line in the report (a
   glossiness map still is: the curve is not applied to it); a CoronaPhysicalMtl in IOR mode Specular reads its base
-  and clearcoat IORs as specular levels (0.5 is IOR 1.5) instead of IORs with a line in the report;
-  CoronaPhysicalMtl translucency is a line in the report only in thin mode, the one mode Corona renders it in.
+  and clearcoat IORs as specular levels (0.5 is IOR 1.5) instead of IORs with a line in the report; CoronaPhysicalMtl
+  translucency is a line in the report only in thin mode, the one mode Corona renders it in.
 
 ### Fixed
 
-- Animation: an object animated through frame 0, in a file saved with the time slider elsewhere, is placed where
-  3ds Max places it at frame 0: between two Bezier, TCB or Smooth Rotation keys the value follows their tangents
-  (Bezier handles, step keys, tension, continuity, bias and ease), instead of a straight line and a line in the
-  report. A smooth, fast, slow, Linear or auto tangent is drawn a third of the segment long, as 3ds Max draws it,
-  whatever length the key stores; a Linear tangent beside a custom or auto key follows the line to that key instead
-  of a stale stored slope (up to 1.5 units off at frame 0 in a probe); a free tangent handle takes its length in
-  frames of the scene's frame rate. Constant velocity on a Bezier Position key, scale keys along turned axes that
-  differ, a TCB rotation of a whole revolution or more and a Linear Rotation of more than half a revolution (the
-  long way round, as in 3ds Max) or a whole turn are placed as in 3ds Max too. A turn just short of a whole
-  revolution, and a few rarer cases, still interpolate linearly with a line in the report.
+- Animation: an object animated through frame 0, in a file saved with the time slider elsewhere, is placed where 3ds
+  Max places it at frame 0: between two Bezier, TCB or Smooth Rotation keys the value follows their tangents (Bezier
+  handles, step keys, tension, continuity, bias and ease), instead of a straight line and a line in the report. A
+  smooth, fast, slow, Linear or auto tangent is drawn a third of the segment long, as 3ds Max draws it, whatever
+  length the key stores; a Linear tangent beside a custom or auto key follows the line to that key instead of a stale
+  stored slope (up to 1.5 units off at frame 0 in a probe); a free tangent handle takes its length in frames of the
+  scene's frame rate. Constant velocity on a Bezier Position key, scale keys along turned axes that differ, a TCB
+  rotation of a whole revolution or more and a Linear Rotation of more than half a revolution (the long way round, as
+  in 3ds Max) or a whole turn are placed as in 3ds Max too. A turn just short of a whole revolution, and a few rarer
+  cases, still interpolate linearly with a line in the report.
 - Objects: a LookAt Constraint target weight MaxDrop cannot read (an animated weight whose controller is missing,
   holds no value or is of an unknown class, a Float List none of whose entries gives a value, a weight that is not a
   number or not stored) counts as 50, the weight 3ds Max gives a new target, instead of 1 (0 for the Float List),
@@ -89,36 +88,36 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   report, and the mesh is kept. A shape whose curve points are past single precision (an NGon radius near the float
   range, say) imports as an empty with a line in the report; a rectangular section or round thickness that large is
   left out, a line in the report.
-- Modifiers: a TurboSmooth or MeshSmooth on an open mesh keeps its corners (a boundary vertex of one face) where
-  3ds Max keeps them, instead of rounding them off: a half-modelled object smoothed below its Symmetry now welds at
-  the seam with 3ds Max's vertex count, without a sliver or gap where the cut meets an open edge. MeshSmooth quad
-  output, which is not Catmull-Clark, is a line in the report, as classic is.
+- Modifiers: a TurboSmooth or MeshSmooth on an open mesh keeps its corners (a boundary vertex of one face) where 3ds
+  Max keeps them, instead of rounding them off: a half-modelled object smoothed below its Symmetry now welds at the
+  seam with 3ds Max's vertex count, without a sliver or gap where the cut meets an open edge. MeshSmooth quad output,
+  which is not Catmull-Clark, is a line in the report, as classic is.
 - Modifiers: the rim a Shell builds on an open mesh (a panel, a wall, a box without its top), also above a Symmetry
   (a half-modelled object, mirrored, then shelled), shades hard against both surfaces, as in 3ds Max, instead of
-  smooth into them, without a seam on the mirror plane: the mesh's open edges are marked sharp before the
-  Solidify. Where Blender still differs, the report says so: auto smooth splitting the rim's sharper corners (a
-  plane's), or the smoothing-group override with auto smooth off.
+  smooth into them, without a seam on the mirror plane: the mesh's open edges are marked sharp before the Solidify.
+  Where Blender still differs, the report says so: auto smooth splitting the rim's sharper corners (a plane's), or
+  the smoothing-group override with auto smooth off.
 - Modifiers: a Shell below a Symmetry that cuts it where its rim lies on the slice plane (a half model shelled before
   its mirror) is now one closed shell as in 3ds Max, instead of keeping the rim's faces inside the seam and a false
   line about auto smooth corners: its Mirror goes below the Solidify (an open half box: 64 triangles, was 72). With
   the weld or slice off, or a rim that leaves the plane, the order stays and the report says so.
 - Extrude: a shape extruded downwards (a negative amount) with only one of its caps on gets that cap where 3ds Max
-  puts it, facing out with its material ID: Cap Start at the far end (Cap End at the shape), instead of at the
-  other end; its sides map as 3ds Max maps them, V from the far end (0) to the shape (1), so a texture on the sides
-  is no longer upside down (with Real-World Map Size V runs from the amount at the shape to 0 at the far end).
-- Extrude: the sides of an extruded pie Arc shade sharp at its corners (the arc's ends and the center), as in
-  3ds Max, instead of round across the arc and both straight sides: the smoothing also breaks at a Bezier knot with
-  a handle on its point.
+  puts it, facing out with its material ID: Cap Start at the far end (Cap End at the shape), instead of at the other
+  end; its sides map as 3ds Max maps them, V from the far end (0) to the shape (1), so a texture on the sides is no
+  longer upside down (with Real-World Map Size V runs from the amount at the shape to 0 at the far end).
+- Extrude: the sides of an extruded pie Arc shade sharp at its corners (the arc's ends and the center), as in 3ds
+  Max, instead of round across the arc and both straight sides: the smoothing also breaks at a Bezier knot with a
+  handle on its point.
 - Extrude: a curved segment of a shape interpolated Adaptive gets its points where 3ds Max puts them, split at its
-  middle piece by piece until each piece is nearly straight, so an uneven curve (an S, a hook, a tight bend) gets
-  3ds Max's vertex and face counts instead of more or fewer, and a clearly curved segment no longer becomes its
-  chord. Curves next to a cusp or far from their object's origin can still differ (3ds Max rounds in float32).
-- Extrude: a closed spline whose own edges cross, touch or run over each other (a bowtie, a slit drawn over itself,
-  a knot moved without its handles, two knots on one spot, also its last knot on its first, right after a straight
+  middle piece by piece until each piece is nearly straight, so an uneven curve (an S, a hook, a tight bend) gets 3ds
+  Max's vertex and face counts instead of more or fewer, and a clearly curved segment no longer becomes its chord.
+  Curves next to a cusp or far from their object's origin can still differ (3ds Max rounds in float32).
+- Extrude: a closed spline whose own edges cross, touch or run over each other (a bowtie, a slit drawn over itself, a
+  knot moved without its handles, two knots on one spot, also its last knot on its first, right after a straight
   segment) gets no cap, morph or grid, as in 3ds Max, also when a curve leaves those knots and without Optimize,
   instead of caps 3ds Max does not make; it is no longer taken as a hole in another spline's cap (or as its
-  container) and keeps its own direction. One line in the report counts them. A curve segment from a knot back to
-  the same spot gets no interpolation steps under Optimize, as in 3ds Max.
+  container) and keeps its own direction. One line in the report counts them. A curve segment from a knot back to the
+  same spot gets no interpolation steps under Optimize, as in 3ds Max.
 - Extrude: a curve segment drawn almost straight (a vector a little off the line between its knots, up to about 2 %
   of its length) gets no interpolation steps under Optimize, as in 3ds Max, instead of its steps; one whose vectors
   run far past its ends on that line gets its steps under Optimize, as in 3ds Max (a rounded Rectangle with very
@@ -126,62 +125,64 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Shapes: a Multi/Sub-Object on a shape built as a curve gives each spline the entry for its segments' material ID,
   instead of ID 1's on every spline. A spline whose segments have different IDs takes its first segment's (a curve
   has one material per spline); the report says so when that changes its material.
-- Shapes: an open shape that renders in 3ds Max with a round section (a Line, an Arc or an open Editable Spline
-  with Enable In Renderer) is capped at both ends, as 3ds Max renders it, instead of a hollow tube with open ends.
+- Shapes: an open shape that renders in 3ds Max with a round section (a Line, an Arc or an open Editable Spline with
+  Enable In Renderer) is capped at both ends, as 3ds Max renders it, instead of a hollow tube with open ends.
 - UVW Map: on a cylindrical or spherical map with a U tile that is not a whole number (2.5, say), the faces across
-  the seam show the part of the image 3ds Max shows, instead of one half an image off; a vertex at a spherical
-  map's center gets 3ds Max's coordinates (V 0.5, U of its face), instead of arbitrary ones from a rounding error.
+  the seam show the part of the image 3ds Max shows, instead of one half an image off; a vertex at a spherical map's
+  center gets 3ds Max's coordinates (V 0.5, U of its face), instead of arbitrary ones from a rounding error.
 - Materials: a material or map parameter animated in 3ds Max (a color, a glossiness, a multiplier, a Color
   Correction's custom rewiring, a map's Coordinates tiling, offset, angle or blur, an Output's amount, level or
   offset, a dome light VRayBitmap's rotation) takes its value at frame 0 from its controller (Bezier, Linear or TCB
   Float, Float List, Bezier Color) instead of the class's default, and that rewiring is no longer a line in the
   report. A parameter a controller holds that is approximated (a color between two keys) or left at its default
   (another controller class) is a line in the report naming the parameter, and marks the map's graph approximated.
-- Materials: in a file saved in the 3ds Max 2012 format, an Output map (also the second side of a Falloff) keeps
-  its map where the file stores no index for it, instead of being drawn as over a white map.
+- Materials: in a file saved in the 3ds Max 2012 format, an Output map (also the second side of a Falloff) keeps its
+  map where the file stores no index for it, instead of being drawn as over a white map.
 - Materials: a Standard material with the Anisotropic, Multi-Layer, Oren-Nayar-Blinn, Translucent or Strauss shader
   takes each map from its shader's own map slot, instead of Blinn's: a Strauss glossiness map no longer arrives as
   the diffuse map, an Anisotropic self-illumination map as the bump. A Strauss metalness map drives the metallic.
   Each map, its on switch and its amount are taken where 3ds Max keeps them, also on a material whose shader was
   switched from Blinn after it was created (3ds Max creates every Standard material as Blinn): a bump map whose
-  amount was never set afterwards imports at 30 % instead of 100 %, a self-illumination map at 100 % instead of
-  30 %, and a map set before the switch (an Anisotropic bump map, for one) lands in its own input.
-- Materials: a Standard material with the Anisotropic, Multi-Layer, Oren-Nayar-Blinn or Translucent shader takes
-  its Diffuse Level into account, on the diffuse color and on a diffuse map, as 3ds Max renders it: a diffuse at a
+  amount was never set afterwards imports at 30 % instead of 100 %, a self-illumination map at 100 % instead of 30 %,
+  and a map set before the switch (an Anisotropic bump map, for one) lands in its own input.
+- Materials: a Standard material with the Anisotropic, Multi-Layer, Oren-Nayar-Blinn or Translucent shader takes its
+  Diffuse Level into account, on the diffuse color and on a diffuse map, as 3ds Max renders it: a diffuse at a
   Diffuse Level of 40 % arrives as dark as 3ds Max renders it, instead of at full brightness; its Diffuse Level map
   is imported: it replaces the level by its amount, the mean of its colors, as 3ds Max does. A missing or animated
   diffuse, glossiness or specular level takes its own shader's default instead of Blinn's.
-- Materials: a VRayMtl with reflection Fresnel off reflects its reflection color or map as it is at every angle
-  over its diffuse, as V-Ray does, instead of that amount times a Fresnel curve (a 0.2 reflection reflected about
-  0.011 facing the camera instead of 0.2, and the usual black to white Falloff in reflection reached a tenth of its
-  brightness near the silhouette) or a metal in the reflection color that dropped the diffuse. A reflection below
-  white, grey or colored, or a reflection map is drawn as a mirror (tinted by a bright colored reflection) mixed by
-  the amount over the material without reflection (checked against V-Ray 5.2 in Cycles: a 0.5 grey over a red
-  diffuse within about 0.2 % facing the camera; where a colored reflection is saturated less diffuse shows than in
-  V-Ray: 230 128 26 over a blue diffuse is 0.916 0.534 0.178 facing the camera, V-Ray 0.918 0.658 0.806, the metal
-  gave 0.900 0.503 0.102); EEVEE does not mirror neighbouring objects. A reflection map at full amount hides the
-  swatch, so the bright swatch behind the usual Falloff no longer makes the material a metal (below full amount the
-  swatch counts in proportion, at 0 % not at all); a refracting one stays glass instead of an opaque metal. A
-  reflection with a channel at full is still a metal. A metalness dims the diffuse by 1 - metalness and leaves the
-  reflection color as it is, as V-Ray 5.2 renders it, instead of a metal in the diffuse color at metalness 1 (which
-  dropped the reflection color) and no change at all below 1.
-- Materials: a CoronaMtl (CoronaLegacyMtl) with a Fresnel IOR of 10 or more and a reflection map at full amount
-  keeps its diffuse instead of becoming a metal colored by the map: as for VRayMtl, only the share of the reflection
-  color the map leaves (times the reflection level) can make it a metal.
+- Materials: a VRayMtl with reflection Fresnel off reflects its reflection color or map as it is at every angle over
+  its diffuse, as V-Ray does, instead of that amount times a Fresnel curve (a 0.2 reflection reflected about 0.011
+  facing the camera instead of 0.2, and the usual black to white Falloff in reflection reached a tenth of its
+  brightness near the silhouette) or a metal in the reflection color that dropped the diffuse. Outside the metal rule
+  below, a reflection below white, grey or colored, or a reflection map is drawn as a mirror (tinted by a bright
+  colored reflection, mixed by its brightest channel) mixed by the amount over the material without reflection
+  (checked against V-Ray 5.2 in Cycles: a 0.5 grey over a red diffuse within about 0.2 % facing the camera; where a
+  colored reflection is saturated less diffuse shows than in V-Ray: 230 128 26 over a blue diffuse is 0.916 0.534
+  0.178 facing the camera, V-Ray 0.918 0.658 0.806, the metal gave 0.900 0.503 0.102); EEVEE does not mirror
+  neighbouring objects. A reflection map at full amount hides the swatch, so the bright swatch behind the usual
+  Falloff no longer makes the material a metal; below full amount the swatch counts in proportion, and a map at 0 %
+  amount is left out (the swatch alone). It is still a metal when that share of the swatch is bright (a mean of about
+  137 grey or more) and the reflection has a channel at full or a reflection map beside it; a refracting one below
+  that stays glass instead of an opaque metal. A constant metalness on a material that does not refract dims the
+  diffuse by 1 - metalness and leaves the reflection color as it is, as V-Ray 5.2 renders it, instead of a metal in
+  the diffuse color at metalness 1 (which dropped the reflection color) and no change at all below 1.
+- Materials: a CoronaMtl (CoronaLegacyMtl) with a Fresnel IOR of 10 or more and a reflection map at full amount keeps
+  its diffuse instead of becoming a metal colored by the map: as for VRayMtl, only the share of the reflection color
+  the map leaves (times the reflection level) can make it a metal.
 - Materials: a grey reflection (a VRayMtl's reflection color, a Standard, Physical or Corona reflection level below
   full) or a reflection map no longer brightens toward the silhouette: the whole Fresnel curve is scaled by it, as
   V-Ray does, through a Mix Shader over a copy of the Principled BSDF without reflection (a grey 128 sphere at IOR
   1.6 was about 50 % too bright near its rim in Cycles; it now matches V-Ray 5.2; the other renderers' materials
   follow the same rule, not checked against them). Such a material shades two Principled BSDFs instead of one: a
   scene of many may render somewhat slower (not measured).
-- Glass: a grey or black reflection (or a reflection map) on refracting glass reflects that share of a white one
-  and refracts the rest, as V-Ray does, instead of reflecting as much as a white reflection; with reflection Fresnel
-  off (a VRayMtl) it reflects its reflection color or map at every angle and refracts the rest, instead of Blender's
+- Glass: a grey or black reflection (or a reflection map) on refracting glass reflects that share of a white one and
+  refracts the rest, as V-Ray does, instead of reflecting as much as a white reflection; with reflection Fresnel off
+  (a VRayMtl) it reflects its reflection color or map at every angle and refracts the rest, instead of Blender's
   glass reflection (a 0.2 reflection on black glass gave 0.05 facing the camera rising toward the rim; it now gives
   0.2 everywhere in Cycles).
-- Materials: a CoronaPhysicalMtl, a Standard material with the Strauss shader and the grey material of an
-  unsupported class reflect their IOR's full Fresnel (Specular IOR Level 0.5, Blender's default) instead of half of
-  it (0.25), which made every non-metal CoronaPhysicalMtl reflect too little.
+- Materials: a CoronaPhysicalMtl, a Standard material with the Strauss shader and the grey material of an unsupported
+  class reflect their IOR's full Fresnel (Specular IOR Level 0.5, Blender's default) instead of half of it (0.25),
+  which made every non-metal CoronaPhysicalMtl reflect too little.
 - Materials: a CoronaPhysicalMtl that does not refract reflects as Corona 12 renders it when its IOR is outside 1 to
   3: an IOR below 1 as its reciprocal (0.5 as 2, was no reflection) and one above 3 as 3 (4 reflected 0.36, Corona
   0.25). A refracting one keeps its IOR (one below 1 is drawn as 1), with a line in the report.
@@ -194,31 +195,30 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   (rendered with V-Ray 5.2 and Corona 12): a VRayOverrideMtl without a base (V-Ray renders black), a Double Sided
   without a facing material or a VRay2SidedMtl without a front (that side is not rendered, or only half at a
   VRay2SidedMtl's default translucency) and a CoronaRaySwitchMtl whose direct material is empty or switched off
-  (Corona renders nothing to the camera, it took the GI material) are the grey material with the reason in the report.
-  A VRayBlendMtl without a base still gives its coat, with a report line (V-Ray renders the coat over nothing); a
-  Shellac without a base gives its coat, as rendered. A Double Sided whose facing material is switched off is a line
-  in the report: MaxDrop draws that material, as V-Ray 5.2 renders it (measured; V-Ray does the same for a
-  VRayOverrideMtl's base switched off), but the 3ds Max scanline renders that side black.
+  (Corona renders nothing to the camera, it took the GI material) are the grey material with the reason in the
+  report. A VRayBlendMtl without a base still gives its coat, with a report line (V-Ray renders the coat over
+  nothing); a Shellac without a base gives its coat, as rendered. A Double Sided whose facing material is switched
+  off is a line in the report: MaxDrop draws that material, as V-Ray 5.2 renders it (measured; V-Ray does the same
+  for a VRayOverrideMtl's base switched off), but the 3ds Max scanline renders that side black.
 - Materials: in a scene saved with the gamma on (3ds Max's default), an image map on a glossiness, roughness,
   metallic or opacity input, or as a mask, is decoded by its gamma as 3ds Max and V-Ray read it, instead of taken as
   stored: a 128 grey glossiness map with automatic gamma gives glossiness 0.22 as in V-Ray 5.2, not 0.50, and image
-  masks are no longer too bright. With the gamma off a mask image is decoded like the colors it mixes (a mask
-  between black and white now shows as in 3ds Max).
+  masks are no longer too bright. With the gamma off a mask image is decoded like the colors it mixes (a mask between
+  black and white now shows as in 3ds Max).
 - Materials: a color map's constant (VRayColor, CoronaColor, a Mix color) on a glossiness, roughness, metallic or
   opacity input, and a Corona material's opacity color, are taken as stored in a scene saved with the gamma off, as
   V-Ray 5.2 renders them (a grey 64 glossiness map is glossiness 0.25, not 0.05).
 - Materials: an RGB Tint, Output or Color Correction on a roughness, metallic, opacity or bump input works on the
-  color below it instead of on its grey mean (a tint over a colored VRayColor or over an empty VRayColor2Bump),
-  and an RGB Tint's colors there are taken as stored, so a tint of (128, 0, 0), (0, 64, 0), (0, 0, 32) on opacity
-  gives V-Ray's measured 0.293 in a scene saved with the gamma off, not 0.094. A constant color in a normal map's
-  normal slot (an empty Output or RGB Tint, a VRayColor) now tilts the normal as V-Ray renders a white map there,
-  instead of a line in the report or a flat normal.
+  color below it instead of on its grey mean (a tint over a colored VRayColor or over an empty VRayColor2Bump), and
+  an RGB Tint's colors there are taken as stored, so a tint of (128, 0, 0), (0, 64, 0), (0, 0, 32) on opacity gives
+  V-Ray's measured 0.293 in a scene saved with the gamma off, not 0.094. A constant color in a normal map's normal
+  slot (an empty Output or RGB Tint, a VRayColor) now tilts the normal as V-Ray renders a white map there, instead of
+  a line in the report or a flat normal.
 - Materials: an RGB Tint or an Output with levels as the mask of a Mix, CoronaMix or Composite on a color map tints
   the color below it and masks by the mean of the result, as V-Ray 5.2 renders it (measured, gamma on and off),
   instead of tinting the grey of that color: a tint of (128, 0, 0), (0, 64, 0), (0, 0, 32) over a (200, 100, 50)
-  color now masks 0.172 with the gamma on (was 0.134); with the gamma off that mean is shown decoded, so an Output
-  of level 0.5 over white masks 0.218 linear where V-Ray shows 0.214 (was 0.5). A Color Correction there is
-  unchanged.
+  color now masks 0.172 with the gamma on (was 0.134); with the gamma off that mean is shown decoded, so an Output of
+  level 0.5 over white masks 0.218 linear where V-Ray shows 0.214 (was 0.5). A Color Correction there is unchanged.
 - Materials: in a scene saved with the gamma off, a colored image (a Bitmap, a VRayBitmap From 3ds Max) as the mask
   of a Mix between black and white masks by the mean of its pixel as stored, shown decoded, as V-Ray 5.2 renders it:
   a (200, 100, 50) PNG masks 0.177 linear, as in V-Ray (was 0.246); a grey image is unchanged. A Color Correction
@@ -226,39 +226,40 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   image inside a mask, as a Corona layer mask and as a Standard material's Diffuse Level map (not measured); a Color
   Correction that rewires channels there picks them from the stored color and masks by the mean of the result.
 - Materials: a constant color below 0 (an HDR CoronaColor, a CoronaMix layer with a negative offset or multiplier)
-  over a map in a Mix, a CoronaMix mix or multiply, an RGB Multiply or a Composite is no longer taken as 0.
-- Materials: in a scene saved with Corona as its renderer, an Output map whose map is switched off keeps that map,
-  as Corona 12 renders it, instead of white (V-Ray and Scanline scenes keep white, as V-Ray renders it). An unset
-  Output or RGB Tint, an RGB Tint switched off and an unset VRayColor2Bump are now measured in Corona and with the
-  gamma on: the same as before.
+  over a map in a Mix, a CoronaMix mix or multiply, an RGB Multiply or a Composite is no longer taken as 0; with "mix
+  in sRGB" off, every CoronaMix operation drawn as a Mix node keeps such a color too.
+- Materials: in a scene saved with Corona as its renderer, an Output map whose map is switched off keeps that map, as
+  Corona 12 renders it, instead of white (V-Ray and Scanline scenes keep white, as V-Ray renders it). An unset Output
+  or RGB Tint, an RGB Tint switched off and an unset VRayColor2Bump are now measured in Corona and with the gamma on:
+  the same as before.
 - Maps: in a scene saved with the gamma off, color maps are mixed on the stored colors and shown decoded, as V-Ray
   5.2 and Corona 12 render them (measured), instead of mixing decoded colors: a Mix or Composite on a color input (a
   Mix of greys 40 and 220 at 50 % is 0.223 linear, not 0.369, and by a 50 % grey mask 0.225, not 0.171; a Composite
-  layer at 50 % or in Addition, Screen and the other blend modes likewise), a Falloff (greys 40 and 220 gave 0.37
-  for V-Ray's 0.22), Color Correction, Output or RGB Tint on a color map, a map's amount below 1 on a color input,
-  and a Mix, Composite, CoronaMix, Falloff or Color Correction inside a mask. Their images below are read as stored
-  and the result goes through a Gamma node of 2.2. A Mix between black and white by a mask stays exact as before,
-  and its mix amount is now decoded too (50 % is 0.214, not 0.5). An RGB Multiply was already within 0.005 and is
-  unchanged.
+  layer at 50 % or in Addition, Screen and the other blend modes likewise), a Falloff (greys 40 and 220 gave 0.37 for
+  V-Ray's 0.22), Color Correction, Output or RGB Tint on a color map, a map's amount below 1 on a color input, and a
+  Mix, Composite, CoronaMix, Falloff or Color Correction inside a mask. Their images below are read as stored and the
+  result goes through a Gamma node of 2.2. A Mix between black and white by a mask stays exact as before, and its mix
+  amount is now decoded too (50 % is 0.214, not 0.5). An RGB Multiply was already within 0.005 and is unchanged.
 - Maps: in a scene saved with the gamma off, a VRayBitmap (transfer function Auto, sRGB, None or Inverse gamma) and
   an EXR or HDR image (a Bitmap, a VRayBitmap From 3ds Max or Auto) on a color map or a mask show as V-Ray 5.2
   renders them, their own decode decoded once more for the display-referred scene, instead of brighter (a 128 grey
   VRayBitmap in sRGB: 0.038 linear instead of 0.216, measured). A dome light's texture gamma is now drawn (a Gamma
-  node in the World) instead of a line in the report, so a gamma-off dome with an 8-bit VRayBitmap is darker; an
-  EXR or HDR dome texture stays linear for the light it gives (a line in the report; measured as a light with
-  V-Ray 5.2: no decode of each texel matches, and the material's would make a sun orders of magnitude too bright),
-  while the camera sees the sky decoded, as V-Ray 5.2 shows it (a uniform 0.5 sky was 0.5 for V-Ray's 0.21).
+  node in the World) instead of a line in the report, so a gamma-off dome with an 8-bit VRayBitmap is darker; an EXR
+  or HDR dome texture stays linear for the light it gives (a line in the report; measured as a light with V-Ray 5.2:
+  no decode of each texel matches, and the material's would make a sun orders of magnitude too bright), while the
+  camera sees the sky (such a texture, or an untextured dome's color) decoded, as V-Ray 5.2 shows it (a uniform 0.5
+  sky was 0.5 for V-Ray's 0.21).
 - Maps: a normal map or bump map image is read as V-Ray 5.2 and Corona 12 read it (measured) instead of always as
   stored: in a scene saved with the gamma on (or whose gamma setting is not found) a Bitmap at automatic gamma (or
-  2.2) is decoded, which bends the normals of a map whose author left it so, as those renderers do; a CoronaBitmap
-  at automatic gamma is decoded with the gamma on and off, and so is a VRayBitmap height at sRGB or Auto. A Bitmap
-  at gamma 1.0, any Bitmap in a scene saved with the gamma off and a VRayBitmap below a normal map stay as stored
-  (one V-Ray reading not followed: a VRayBitmap From 3ds Max directly in a bump slot with the gamma off). A
-  CoronaNormal's Add gamma to input over an image is now applied (with the gamma on; with it off it changes
-  nothing) instead of being a line in the report.
-- Maps: a Bitmap that tiles or mirrors in one direction and not in the other, or a placed image that tiles, no
-  longer shows a thin dark line at each tile and mirror line (EEVEE and Cycles): what it clips is now cut by a mask
-  instead of Blender's Clip extension, which faded the image's border toward black.
+  2.2) is decoded, which bends the normals of a map whose author left it so, as those renderers do; a CoronaBitmap at
+  automatic gamma is decoded with the gamma on and off, and so is a VRayBitmap height at sRGB or Auto. A Bitmap at
+  gamma 1.0, any Bitmap in a scene saved with the gamma off and a VRayBitmap below a normal map stay as stored (one
+  V-Ray reading not followed: a VRayBitmap From 3ds Max directly in a bump slot with the gamma off). A CoronaNormal's
+  Add gamma to input over an image is now applied (with the gamma on; with it off it changes nothing) instead of
+  being a line in the report.
+- Maps: a Bitmap that tiles or mirrors in one direction and not in the other, or a placed image that tiles, no longer
+  shows a thin dark line at each tile and mirror line (EEVEE and Cycles): what it clips is now cut by a mask instead
+  of Blender's Clip extension, which faded the image's border toward black.
 - Color Correction: its saturation is drawn as 3ds Max and V-Ray 5.2 compute it (in HSL, towards the mean of the
   brightest and darkest channel), instead of Blender's HSV saturation, which kept a saturated color too bright; a
   saturation above 0 % leaves no channel below 0, as 3ds Max computes it (measured against V-Ray 5.2, with the hue,
@@ -273,26 +274,27 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   Mix is, so its operations match Corona's. Data, normal and bump maps and scenes with the gamma on are unchanged.
 - Corona materials: a colored opacity color, which Corona 12 renders per channel, is named in the report (the
   material keeps its mean as the alpha).
-- VRayDirt in a scene that renders with Corona is white, as Corona 12 renders it, instead of its unoccluded color
-  or map.
+- VRayDirt in a scene that renders with Corona is white, as Corona 12 renders it, instead of its unoccluded color or
+  map.
 - Lights: a VRayIES whose intensity is not overridden is as bright as V-Ray 5.2 renders it (measured) when its IES
-  file is found (by the texture lookup's rules): its power is scaled by the file's own flux over its rated lumens,
-  as V-Ray scales the file (a relative-photometry file whose rated lumens exceed its luminaire's flux no longer
-  arrives too bright). The file's header counts as V-Ray reads it: the ballast factor and the number of lamps (the
-  report line about a file of more lamps is gone), type A and B files with horizontal angles from -180 to 180 and
-  vertical angles from 0 that go on below 0 as V-Ray extends them, instead of being mirrored, and the candelas
-  integrated linearly in angle (a coarse file's flux was over a third too high). A type A file with horizontal
-  angles from 0 to 90 is dark, as is a file without light rated -1, as V-Ray renders them. A file not found, or one
-  MaxDrop does not read (damaged, a type A or B file with 4 or more such vertical angles that vary, or another range
-  V-Ray renders by no rule found), keeps the power as the flux, a line in the report.
-- Lights: a VRayIES whose IES file is not found because the texture search stopped in a crowded folder says where
-  it stopped, and the report lists that stop also when materials are not imported. The IES, dome and material
-  lookups now walk the texture folders once per scene, not once each.
+  file is found (by the texture lookup's rules): its power is scaled by the file's own flux over its rated lumens, as
+  V-Ray scales the file (a relative-photometry file whose rated lumens exceed its luminaire's flux no longer arrives
+  too bright). The file's header counts as V-Ray reads it: the ballast factor and the number of lamps (the report
+  line about a file of more lamps is gone), type A and B files are read, with horizontal angles from -180 to 180 (of
+  which only -90 to 90 gives light) and vertical angles from 0 that go on below 0 as V-Ray extends them, instead of
+  being mirrored, and the candelas integrated linearly in angle (a coarse file's flux was over a third too high). A
+  type A file with horizontal angles from 0 to 90 is dark, as is a file without light rated -1, as V-Ray renders
+  them. A file not found, or one MaxDrop does not read (damaged, a type A or B file with 4 or more such vertical
+  angles that vary, or another range V-Ray renders by no rule found), keeps the power as the flux, a line in the
+  report.
+- Lights: a VRayIES whose IES file is not found because the texture search stopped in a crowded folder says where it
+  stopped, and the report lists that stop also when materials are not imported. The IES, dome and material lookups
+  now walk the texture folders once per scene, not once each.
 - Import: an AttributeError while reading a file (a defect in MaxDrop's reader) reports the file as not imported,
   with the traceback in the console, as a TypeError or KeyError already did, instead of ending the import.
-- Scene packs: a map whose name holds an unassigned Unicode character, or bytes the archive's encoding cannot
-  read, is skipped with a line in the report on every system, instead of failing the whole unpack on macOS (which
-  cannot store such a name) while Windows and Linux wrote it; a `.max` so named is not offered as a scene.
+- Scene packs: a map whose name holds an unassigned Unicode character, or bytes the archive's encoding cannot read,
+  is skipped with a line in the report on every system, instead of failing the whole unpack on macOS (which cannot
+  store such a name) while Windows and Linux wrote it; a `.max` so named is not offered as a scene.
 
 ## [1.0.1] - 2026-11-22
 
