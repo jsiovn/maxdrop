@@ -1,6 +1,6 @@
 # What MaxDrop imports
 
-**This page describes version 1.0.1.** Nodes, meshes, transforms, hierarchy, instances, layers, scene units and
+**This page describes version 1.0.2.** Nodes, meshes, transforms, hierarchy, instances, layers, scene units and
 materials are read by MaxDrop's own reader; the engine of [io_scene_max](https://github.com/nrgsille76/io_scene_max)
 1.9.2 that 0.0.3 still used for materials is gone. From 0.0.5 the room shell arrives too (shapes, Extrude, UVW
 Map), as do nine of the standard primitives and TurboSmooth, MeshSmooth, Shell and Symmetry as Blender modifiers.
@@ -15,7 +15,11 @@ From 1.0.1 a V-Ray dome light becomes the scene's World, Corona's layered, skin 
 operations are converted, Slice and hemispheres of primitives, an Extrude's shape IDs, an NGon's corner radius, an
 Ellipse's outline and a shape's rectangular section are built as 3ds Max builds them, a shape gets its material, a
 Falloff's mix curve is drawn as a curve, and the LookAt Constraint's offset and orientation and the lights' shadow
-switches are read.
+switches are read. From 1.0.2 a V-Ray mesh light arrives as a glowing mesh with its modifiers, a CoronaVolumeMtl and
+Corona glass media as volumes, CoronaHairMtl with the color Corona renders, an Extrude's grid caps, a node's shadow
+flags and By Layer rendering, keyframe out-of-range types and list Average, and keys between two keys along their
+tangents; the batch also brings many material and map rules closer to what V-Ray 5.2 and Corona 12 render
+(measured), above all in scenes saved with the gamma off.
 
 How far to trust the list: MaxDrop's test files (`tests/fixtures/`, saved by 3ds Max 2020) are compared with what
 3ds Max itself reports for every node: world matrix, bounding box, vertex and face counts, parents, instances,
@@ -30,8 +34,8 @@ the parameters 3ds Max reports, textures included (see [BASELINE.md](BASELINE.md
 the first scene's 214 do and 220 of 220 in the second (four differ in their base-color texture, which 1.0.0 began
 to keep as a graph: in three, the map an Output map holds in that file, saved in the 3ds Max 2012 format, is not
 read, so the Output is drawn as over a white map; in one, a Color Correction's rewiring is held by controllers,
-which MaxDrop did not read in materials and maps: it reported it and left the color unrewired). Since both are
-read (the controllers at frame 0, the Output's map from its owner's references), 214 of 214 do again. Modifiers are checked the same
+which MaxDrop did not read in materials and maps: it reported it and left the color unrewired). In 1.0.2, which reads
+both (the controllers at frame 0, the Output's map from its owner's references), 214 of 214 do again. Modifiers are checked the same
 way: in the test files, the meshes MaxDrop makes from shapes with an Extrude, from primitives, with UVW Maps and with
 the modifiers it keeps as Blender modifiers have 3ds Max's vertex and triangle counts and bounding box (Symmetry's
 weld aside, see its row), and UVW Map coordinates equal 3ds Max's. In the scene whose room is built from outlines

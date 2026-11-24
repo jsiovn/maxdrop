@@ -32,8 +32,8 @@ scene was downloaded as. Blender 4.2 or newer; tested on 4.2 LTS, 4.5 LTS and 5.
   objects render and cast shadows as 3ds Max renders them (their own flags, or their layer's when set By Layer).
 - **Materials** as a Principled BSDF with their maps as nodes (tiling, offset, rotation, cropping, Mix, Color
   Correction, Falloff, Composite, normal and bump maps): VRayMtl and the other V-Ray materials and wrappers,
-  Standard, Physical, Multi/Sub-Object, CoronaPhysicalMtl, CoronaMtl, CoronaLightMtl, CoronaLayeredMtl and
-  CoronaSkinMtl (simplified).
+  Standard, Physical, Multi/Sub-Object, CoronaPhysicalMtl, CoronaMtl, CoronaLightMtl, CoronaLayeredMtl,
+  CoronaSkinMtl and CoronaHairMtl (simplified), CoronaVolumeMtl as a volume.
 - **Textures** that are plain image files, next to the `.max` file, in a `maps` or `textures` folder beside it, or
   in folders you add in the preferences.
 - **Lights**: V-Ray plane, disc and sphere lights, standard and photometric lights, VRaySun and VRayIES as Blender
