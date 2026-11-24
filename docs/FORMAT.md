@@ -2021,13 +2021,15 @@ top by an orthographic camera:
   255 / 128 / 64 at melanin 0: 0.996 / 0.568 / 0.350; black: 0.078 / 0.072 / 0.070 at melanin 0.5). Colored specular
   black: 0.945 at melanin 0 (TRT is small on a plane). IOR 1.3 / 2.0: 0.398 / 0.223 / 0.074 and 0.412 / 0.267 /
   0.156 (the floor and the transmitted part both move). Glossiness 0.2 / 0.9, softness 0 / 0.5, colorless
-  glossiness 0.5 / 1, highlight shift 0 / 5 and GI simplification 0: within 0.01 of the default (they shape the
-  highlight only). Glint strength 1: 0.433 / 0.278 / 0.149 (0: 0.396 / 0.234 / 0.103); randomizeMelanin 0.5: 0.447 /
+  glossiness 0.5 / 1, highlight shift 0 / 5 and GI simplification 0: within 0.01 of the default (no change of
+  the furnace albedo; a lit highlight was not compared). Glint strength 1: 0.433 / 0.278 / 0.149 (0: 0.396 / 0.234 / 0.103); randomizeMelanin 0.5: 0.447 /
   0.368 / 0.293.
-- Hair and Fur strands could not be read: the strands carry Hair and Fur's own tip and root colors on top (default
-  0.6 / 0.54 / 0.38 and 0.36 / 0.25 / 0), do not take a sub-material by MaterialGeomMtlID, and give no alpha to weigh
-  coverage by. Seen end-on with the default colors, melanin 0.5 against melanin 0 reads 0.408 / 0.239 / 0.111 (the
-  plane 0.397 / 0.232 / 0.099).
+- Hair and Fur strands: not measured; not established whether Corona shades Hair and Fur strands with this material.
+  Strands grown on a plane whose own faces are black, tip and root colors white, no hue or value variation, seen
+  from the side in the furnace, read 0.4935 grey for every melanin, pheomelanin and tint (on the plane carrying the
+  material and with Hair and Fur's MR_ApplyShader on alike; setting MR_Shader to the CoronaHairMtl raised an access
+  violation). An earlier end-on view with Hair and Fur's default colors followed the melanin, but its window held
+  the growth plane, which carries the material.
 
 Cycles (Blender 5.2, 256 samples) with the same planes: a Principled BSDF at IOR 1.55, roughness 0.5 reads 0.043 +
 0.957 x its base color in that furnace. MaxDrop's base (0.070 + 0.929 x hair - 0.043) / 0.957 reads Corona's numbers

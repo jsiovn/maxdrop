@@ -1369,7 +1369,7 @@ def corona_hair_mtl(conv, m, ir):
     one about so); roughness = 1 - glossiness (108, map 116 / 125 / 134 inverted); ior (107); specular 1; alpha =
     mono_swatch(colorOpacity 103) x levelOpacity (106), map 114 / 123 / 132; bump 120 / 129 / 138. Maps in the other
     slots (HAIR_UNREAD) are named issues, the tint map too (Corona adds it to the melanin's absorption: a curve no map
-    input draws). Softness, colorless glossiness, highlight shift and GI simplification change no color on a mesh;
+    input draws). Softness, colorless glossiness, highlight shift and GI simplification change no furnace albedo;
     the glint and the specular colors are not read; randomizeMelanin (143) above 0, which lightens a mesh (0.5: blue
     0.099 -> 0.293), is a named issue."""
     def slot(map_pid, invert=False):
