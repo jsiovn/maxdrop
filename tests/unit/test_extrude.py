@@ -1607,23 +1607,37 @@ class SelfCrossing(unittest.TestCase):
                 self.assertEqual(issues, ["1 closed spline that crosses or touches itself: no cap, as in 3ds Max"],
                                  (name, steps))
 
-    def test_a_doubled_knot_judged_by_the_edges_around_its_run(self):
-        """Three knots on one spot: the run's edge in and edge out decide, not a zero-length segment inside it. A
-        segment back to the same spot with its vectors pulled out gets no steps under Optimize, so with a curve
-        leaving the run the spline is capped (its curve meets the spot only through the run)."""
-        k = shapes.Knot
+    def test_a_straight_edge_on_either_side_of_a_doubled_knot(self):
+        """maxdrop-6n0.6.9's second 3ds Max 2020 probe, steps 6: two or three knots on (20, 0) with a straight edge
+        into or out of them get no cap, curves on both sides a cap (as the pills), also with three knots; nearly
+        straight curves (vectors 1 % of the chord off it) count as straight with and without Optimize. Knots as
+        3ds Max gave them back: (type, the segment leaving it, point, in, out)."""
+        bc, c, ln, cv = shapes.BEZIER_CORNER, shapes.CORNER, shapes.LINE, shapes.CURVE
         a = (20.0, 0.0, 0.0)
-        knots = (k(shapes.CORNER, shapes.LINE, (0, 0, 0), (0, 0, 0), (0, 0, 0)),
-                 k(shapes.BEZIER_CORNER, shapes.CURVE, a, a, (21, 3, 0)),
-                 k(shapes.BEZIER_CORNER, shapes.CURVE, a, (19, -3, 0), a),
-                 k(shapes.BEZIER_CORNER, shapes.CURVE, a, a, (26, 4, 0)),
-                 k(shapes.CORNER, shapes.LINE, (20, 10, 0), (20, 7, 0), (20, 10, 0)),
-                 k(shapes.CORNER, shapes.LINE, (0, 10, 0), (0, 10, 0), (0, 10, 0)))
-        pl = extrude.polylines(_shape([shapes.Spline(knots, True)]))[0]
-        self.assertFalse(pl.doubled)
-        straight = knots[:3] + (k(shapes.BEZIER_CORNER, shapes.LINE, a, a, a),) + knots[4:]
-        pl = extrude.polylines(_shape([shapes.Spline(straight, True)]))[0]
-        self.assertTrue(pl.doubled)
+        top = ((c, ln, (20, 10, 0), (23, 7, 0), (13.3333, 10, 0)), (c, ln, (0, 10, 0), (6.66667, 10, 0), (0, 5, 0)))
+        line_in = ((c, ln, (0, 0, 0), (0, 3.33333, 0), (10, 0, 0)),)
+        curve_in = ((bc, cv, (0, 0, 0), (0, 0, 0), (6, -4, 0)), (bc, ln, a, (14, -4, 0), a))
+        curve_out = ((bc, cv, a, a, (26, 4, 0)),)
+        line_out = ((bc, ln, a, a, a), (c, ln, (20, 10, 0), (20, 5, 0), (13.3333, 10, 0)), top[1])
+        cases = {  # name -> (knots, Optimize, capped in 3ds Max)
+            "MixDouble": (line_in + ((bc, ln, a, a, a),) + curve_out + top, True, False),
+            "MixDoubleRev": (curve_in + line_out, True, False),
+            "DoubleCurves": (curve_in + curve_out + top, True, True),
+            "TripleCurves": (curve_in + ((bc, ln, a, a, a),) + curve_out + top, True, True),
+            "TripleLines": (line_in + ((c, ln, a, a, a),) * 3 + ((c, ln, (20, 10, 0), (20, 10, 0), (20, 10, 0)),
+                                                                   top[1]), True, False),
+            "TripleCurveOpt": (line_in + ((bc, cv, a, a, (21, 3, 0)), (bc, cv, a, (19, -3, 0), a)) + curve_out + top,
+                               True, False),
+            "NearNoOpt": (((bc, cv, (0, 0, 0), (0, 0, 0), (6.6667, 0.2, 0)), (bc, ln, a, (13.3333, 0.2, 0), a),
+                           (bc, cv, a, a, (20.2, 3.3333, 0)), (c, ln, (20, 10, 0), (20.1, 6.66665, 0), (13.3333, 10, 0)),
+                           top[1]), False, False),
+        }
+        cases["NearOpt"] = (cases["NearNoOpt"][0], True, False)
+        for name, (knots, optimize, capped) in cases.items():
+            spline = shapes.Spline(tuple(shapes.Knot(*q) for q in knots), True)
+            self.assertEqual(extrude.polylines(_shape([spline], optimize=optimize))[0].doubled, not capped, name)
+            data, issues = self.make([spline], optimize=optimize)
+            self.assertEqual(bool((data.loop_totals != 4).any()), capped, (name, issues))
 
     def test_optimize_gives_a_segment_back_to_its_knot_no_steps(self):
         """The 10 x 20 r 5 pill: its short sides run from a knot to another on the same spot, curve segments with

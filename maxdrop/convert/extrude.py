@@ -26,7 +26,7 @@ The sides join segments + 1 copies of each polyline along the object's Z, one pe
 up; a closed polyline also gets a cap at level 0 (Cap Start) and at the last level (Cap End). Closed polylines nest
 even-odd: one inside an even number of others is a solid, inside an odd number a hole of its innermost container.
 A closed polyline with two edges that do not follow each other and meet (cross, touch or run over each other, on XY,
-without a tolerance) or that lost a zero-length segment between straight edges gets no cap and is left out of the
+without a tolerance) or that lost a zero-length segment beside a straight edge gets no cap and is left out of the
 nesting (no hole, no container, not turned), as 3ds Max 2020 does. Every solid is turned counter-clockwise and every hole
 clockwise seen from +Z (a turned polyline starts at its last point) before the sides are made, and a negative amount
 reverses the sides, so the normals point out whatever way the splines run; an open polyline keeps its own direction
@@ -109,8 +109,8 @@ DEFAULT = Params(0.0, 1, True, True, CAP_MORPH, OUTPUT_MESH, False, True, False,
 class Polyline(collections.namedtuple("Polyline", "points hard closed ids doubled")):
     """A spline as points (x, y, z); hard[k]: point k is a knot where the sides' smoothing changes (_hard);
     ids[k]: the zero-based material ID of the segment the column from point k belongs to (Use Shape IDs); doubled:
-    a closed spline that lost a zero-length segment between two straight edges, with or without Optimize (3ds Max
-    keeps both points and finds the spline touching itself there)."""
+    a closed spline that lost a zero-length segment with a straight edge on either side, with or without Optimize
+    (3ds Max keeps both points and finds the spline touching itself there)."""
     __slots__ = ()
 
 
@@ -220,7 +220,8 @@ def _polyline(spline, steps, optimize, adaptive):
     knots = spline.knots
     n = len(knots)
     closed = spline.closed
-    pts, hard, ids, flat = [], [], [], []  # flat[k]: the edge leaving point k is straight (no curve's step)
+    pts, hard, ids, flat = [], [], [], []  # flat[k]: the edge leaving point k is straight (a straight segment's,
+    # Optimize's test, or a curve's one chord)
     for k in range(n if closed else n - 1):
         a, b = knots[k], knots[(k + 1) % n]
         p0, p3 = a.point, b.point
@@ -268,9 +269,9 @@ def _polyline(spline, steps, optimize, adaptive):
             column.pop()
     if closed and len(out_p) < 3:
         closed = False
-    # straight edges into and out of a run: 3ds Max, keeping its points, finds the spline touching itself there
+    # a straight edge into or out of a run: 3ds Max, keeping its points, finds the spline touching itself there
     # whatever the steps; between curves its rounding decides, mostly a cap (MaxDrop: a cap)
-    doubled = closed and any(r and out_f[k - 1] and out_f[k] for k, r in enumerate(run))
+    doubled = closed and any(r and (out_f[k - 1] or out_f[k]) for k, r in enumerate(run))
     return Polyline(out_p, out_h, closed, out_i, doubled)
 
 
@@ -552,7 +553,7 @@ def _crosses(numpy, xy, tests):
 
 def _crossed(numpy, lines, closed, capped, issues):
     """{j}: the closed polylines that cross, touch or run over themselves (_crosses), or lost a zero-length segment
-    between straight edges (Polyline.doubled): 3ds Max gives them no cap and leaves them out of the nesting. With
+    beside a straight edge (Polyline.doubled): 3ds Max gives them no cap and leaves them out of the nesting. With
     capped, one issue counts them and one more those past MAX_CROSS_TESTS (capped unchecked)."""
     out, tests, unchecked = set(), [MAX_CROSS_TESTS], 0
     for j, xy in closed.items():
