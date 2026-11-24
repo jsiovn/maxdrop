@@ -225,10 +225,7 @@ ISSUES = {"uvwmap": ["uvw map: a UVW Map above Bend is not evaluated",
                           "imported"],
           "vray_dome": ["light: a second dome light: not imported (Blender has one World, FixtureDome's)"],
           "vray_mesh_light": ["light: not built: a mesh light without a mesh (none picked, or its node deleted): not "
-                              "imported",
-                              "light: the modifiers of its mesh (Shell) are not applied: the emitter is the base mesh "
-                              "(V-Ray emits the evaluated mesh, and in lm and W spreads the flux over that one's "
-                              "area)"]}
+                              "imported"]}  # FixtureEmitterOwn's Shell: a Solidify on its emitter
 # the oracle's base_class_id of the lights MaxDrop builds: VRayLight, VRaySun, VRayIES, the standard and the
 # photometric lights
 LIGHT_CLASSES = {("0x3c5575a1", "0x5fd602df"), ("0x732c0383", "0x7d993776"), ("0x2eaf2f07", "0x7ec44f31"),

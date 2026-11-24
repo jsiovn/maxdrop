@@ -68,7 +68,9 @@ the new one; a World that cannot be built leaves the scene imported, a line in t
 the first gives the World. vray_mesh_light and vray_dome's mesh light: each emitter a mesh object of its mesh at the
 light's place (EMITTER_BOXES), its only material an Emission of the radiance V-Ray gives it (EMITTER_RADIANCE)
 times the Light Strength, one side through a Backfacing mix (flipped for Flip normals) or both, its camera, shadow,
-diffuse and glossy visibility; the mesh light without a mesh an empty. lights_standard, lights_photometric (and lookat's
+diffuse and glossy visibility; the mesh light without a mesh an empty; FixtureEmitterOwn's Shell a Solidify of 2 mm
+on its emitter, the radiance spread over the shelled area, measured the same with the emitter hidden or its
+collection excluded. lights_standard, lights_photometric (and lookat's
 target spot): each light of the type, spot cone, power and color of the rules (STOCK_LIGHTS), its -Z axis along the
 oracle's, its flags, its shadow switch (STOCK_SHADOWS); the Skylight an empty.
 Cameras (cameras, lookat): each camera node a camera object of the description's type, sensor fit HORIZONTAL, sensor,
@@ -287,10 +289,14 @@ BARE_MESHES = {"FixtureMeshSource", "FixtureEmitterSource"}  # meshes a fixture 
 # mesh lights (tools/fixtures/vray_mesh_light.ms, vray_dome.ms): the radiance in W/m2/sr by hand (docs/FORMAT.md,
 # "VRayLight": default units m 1500 / (683 pi); W m / (pi a), a double-sided one over 2 a; lm m / (683 pi a); a the
 # object-space mesh area), the world box of the emitter's mesh in file units from the scripts (the source's mesh at
-# the light's place: its position, turn, scale and object offset), double-sided, flip, camera, shadow, diffuse, glossy
+# the light's place: its position, turn, scale and object offset), double-sided, flip, camera, shadow, diffuse, glossy.
+# The box is the mesh's below the modifiers on the emitter (EMITTER_SOLIDIFY: FixtureEmitterOwn's Shell, in file units)
+EMITTER_SOLIDIFY = {"FixtureEmitterOwn": 2.0}
+EMITTER_SHELLED = 760.0  # FixtureEmitterOwn's evaluated area in file units squared (EMITTER_RADIANCE)
 EMITTER_RADIANCE = {"FixtureEmitter": 2.0 * 1500.0 / (683.0 * math.pi),
                     "FixtureEmitterW": 5.0 / (2.0 * math.pi * 0.0008),
-                    "FixtureEmitterOwn": 100.0 / 683.0 / (math.pi * 0.0003),
+                    "FixtureEmitterOwn": 100.0 / 683.0 / (math.pi * 0.00076),  # the 30 x 10 plane under a 2 mm
+                    # Shell: both surfaces and the rim, 2 x 300 + 80 x 2 mm^2
                     "FixtureMeshLight": 10.0 / (math.pi * 0.0016)}
 EMITTER_BOXES = {"FixtureEmitter": ((-20.0, -10.0, 50.0), (20.0, 10.0, 50.0)),
                  "FixtureEmitterW": ((60.0, -10.0, 50.0), (140.0, 10.0, 50.0)),
@@ -523,7 +529,7 @@ def run_fixture(path, modules):
             want = (True, o["hidden"], True, o["frozen"])
         check(label + ": hidden, renderable and frozen flags", flags == want, str(flags))
         if node.emitter is not None:
-            check_emitter(label, ob, desc.emitters[node.emitter], o, meters)
+            check_emitter(label, ob, desc.emitters[node.emitter], o, meters, bool(node.converted))
             continue
         if node.kind in (convert_scene.MESH, convert_scene.CURVE):
             check(label + ": casts shadows as in 3ds Max", ob.visible_shadow == o["cast_shadows"],
@@ -688,7 +694,8 @@ def run_fixture(path, modules):
     # the report counts each modifier class once per node whose stack holds it, applied (an Extrude on a shape, the
     # UVW Maps right above it or a mesh) or not (the rest: the base mesh is built); every modifier of the oracle is
     # one or the other
-    split = [len(n.applied) + len(n.converted) + len(n.modifiers) for n in desc.nodes]
+    split = [len(n.applied) + (len(n.converted) if n.emitter is None else 0) + len(n.modifiers)
+             for n in desc.nodes]  # an emitter's converted modifiers are its mesh object's, not the light node's
     check("%s: each modifier applied or not" % name, split == [len(o["modifiers"]) for o in nodes], str(split))
     modified = sum(len(set(n.modifiers)) for n in desc.nodes)
     applied = sum(len(set(n.applied)) for n in desc.nodes)
@@ -744,6 +751,7 @@ def run_fixture(path, modules):
         check("vray_mesh_light: three emitters, three Emission materials, the mesh light without a mesh an empty",
               lit == ["FixtureEmitter", "FixtureEmitterOwn", "FixtureEmitterW"] and len(bpy.data.materials) == 3
               and none is not None and none.type == 'EMPTY', "%s %d" % (lit, len(bpy.data.materials)))
+        check_spread(desc, meters)
     if name in ("lights_standard", "lights_photometric"):
         lit = [ob for ob in obs if ob.type == 'LIGHT']
         shared = {"lights_standard": ("StdOmni", "StdOmniInst"), "lights_photometric": ("PhPoint", "PhPointInst")}
@@ -817,12 +825,49 @@ def check_render(name, oracle, obs, desc):
               str(desc.camera_note))
 
 
-def check_emitter(label, ob, ed, o, meters):
+def check_spread(desc, meters):
+    """vray_mesh_light's FixtureEmitterOwn: its Shell a Solidify of 2 mm on the emitter (EMITTER_SOLIDIFY), the mesh
+    under it measured at 760 mm^2 by build.emitters.evaluated_area, the same with the emitter hidden (an emitter that
+    is off) and with its collection excluded, and no object left behind."""
+    from maxdrop.build import emitters as build_emitters
+    name = "FixtureEmitterOwn"
+    ob = bpy.data.objects.get(name)
+    node = next((n for n in desc.nodes if n.name == name), None)
+    mods = [(m.type, m.thickness / meters) for m in ob.modifiers if m.type == 'SOLIDIFY'] if ob is not None else []
+    check("vray_mesh_light: %s's Shell a Solidify of %g mm on its emitter" % (name, EMITTER_SOLIDIFY[name]),
+          ob is not None and len(ob.modifiers) == 1 and len(mods) == 1 and
+          abs(mods[0][1] - EMITTER_SOLIDIFY[name]) < 1e-6, str(mods))
+    if ob is None or node is None:
+        return
+    scene, view_layer = bpy.context.scene, bpy.context.view_layer
+    count = len(bpy.data.objects)
+    areas = [build_emitters.evaluated_area(ob, node.converted, scene.collection, view_layer)]
+    ob.hide_viewport = True
+    areas.append(build_emitters.evaluated_area(ob, node.converted, scene.collection, view_layer))
+    ob.hide_viewport = False
+    layer = next(lc for lc in _layer_collections(view_layer.layer_collection) if lc.collection in ob.users_collection)
+    layer.exclude = True
+    areas.append(build_emitters.evaluated_area(ob, node.converted, scene.collection, view_layer))
+    layer.exclude = False
+    got = [(base / meters ** 2, under / meters ** 2) for base, under in areas]
+    check("vray_mesh_light: %s's mesh 300 mm^2, under its Solidify %g, shown, hidden or excluded" % (
+        name, EMITTER_SHELLED), all(abs(b - 300.0) < 1e-3 and abs(u - EMITTER_SHELLED) < 1e-3 for b, u in got) and
+        len(bpy.data.objects) == count, "%s, %d objects (%d before)" % (got, len(bpy.data.objects), count))
+
+
+def _layer_collections(lc):
+    yield lc
+    for child in lc.children:
+        yield from _layer_collections(child)
+
+
+def check_emitter(label, ob, ed, o, meters, spread=False):
     """A mesh light's node: a mesh object at the light's place whose box is the script's (EMITTER_BOXES), its mesh's
     only material an Emission of the radiance by hand (EMITTER_RADIANCE) times the operator's default Light Strength
     and the light's color; one side: a Mix Shader by Geometry Backfacing between it and a black Emission, in the order
     flip says; double-sided: the Emission alone; its flags (EMITTER_FLAGS: double-sided, flip, camera, shadow,
-    diffuse, glossy)."""
+    diffuse, glossy). spread: its node has converted modifiers, so the radiance is the evaluated mesh's
+    (build.emitters.spread), not the description's (convert.scene.read's, of the mesh below them)."""
     from maxdrop import ops
     check(label + ": an emitter mesh object", ob.type == 'MESH', ob.type)
     if ob.type != 'MESH':
@@ -847,7 +892,7 @@ def check_emitter(label, ob, ed, o, meters):
     want = EMITTER_RADIANCE.get(name, -1.0) * ops.LIGHT_STRENGTH
     got = lit[0].inputs["Strength"].default_value if len(lit) == 1 else None
     check(label + ": Emission strength = the radiance x Light Strength", got is not None and
-          abs(got - want) <= want * 1e-5 and abs(got - ed.radiance * ops.LIGHT_STRENGTH) <= want * 1e-6,
+          abs(got - want) <= want * 1e-5 and (spread or abs(got - ed.radiance * ops.LIGHT_STRENGTH) <= want * 1e-6),
           "%s vs %g" % (got, want))
     check(label + ": Emission color = the light's", len(lit) == 1 and
           close(tuple(lit[0].inputs["Color"].default_value)[:3], ed.color, 1e-6), str(ed.color))

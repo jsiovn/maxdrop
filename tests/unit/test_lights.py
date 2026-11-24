@@ -14,7 +14,8 @@ mesh light's emitter, the scaled spheres as V-Ray 5.2 renders them (X scale only
 rules of dome_texture. Mesh lights: the radiance of emitter_radiance against the V-Ray 5.2 renders of
 docs/FORMAT.md "VRayLight" (a 200 x 200 mm source), describe_emitter's issues on hand-made values, and the
 vray_mesh_light fixture (tools/fixtures/vray_mesh_light.ms): a picked source, a scaled double-sided flipped one with
-an object offset, one holding its own mesh (Replace mesh with light) with a Shell, one without a mesh.
+an object offset, one holding its own mesh (Replace mesh with light) with a Shell, one without a mesh; spread on
+hand-made areas, an Extrude on a shape source (the extrude fixture, tools/fixtures/extrude.ms).
 """
 import importlib
 import math
@@ -28,6 +29,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 FIXTURE = os.path.join(ROOT, "tests", "fixtures", "vray_lights.max")
 DOME_FIXTURE = os.path.join(ROOT, "tests", "fixtures", "vray_dome.max")
 MESH_FIXTURE = os.path.join(ROOT, "tests", "fixtures", "vray_mesh_light.max")
+EXTRUDE_FIXTURE = os.path.join(ROOT, "tests", "fixtures", "extrude.max")
 
 # A package named apart from the add-on whose path is maxdrop/: relative imports resolve, maxdrop/__init__.py (which
 # imports bpy) never runs.
@@ -434,6 +436,28 @@ class EmitterRules(unittest.TestCase):
                                         colors.GAMMA_ON, 1e-300)
         self.assertEqual((ed.radiance, issues), (0.0, [L.OUT_OF_RANGE]))
 
+    def test_spread(self):
+        """The radiance over another area (the evaluated mesh's) as describe_emitter gives it for that area: in lm and
+        W; the radiance units and the default keep theirs (the area is still recorded); an area of 0 the issue."""
+        for units in (L.UNITS_W, L.UNITS_LM, L.UNITS_DEFAULT, L.UNITS_W_M2_SR, L.UNITS_LM_M2_SR):
+            for double in (False, True):
+                v = values(type=L.MESH, units=units, multiplier=3.0, double_sided=int(double))
+                ed, _issues = L.describe_emitter(1, "e", v, colors.GAMMA_ON, self.A)
+                want, _issues = L.describe_emitter(1, "e", v, colors.GAMMA_ON, 2.1 * self.A)
+                before = ed.radiance
+                self.assertEqual(L.spread(ed, 2.1 * self.A), [], units)
+                self.assertAlmostEqual(ed.radiance, want.radiance, delta=want.radiance * 1e-12, msg=units)
+                self.assertEqual(ed.area, 2.1 * self.A)
+                if units in (L.UNITS_W, L.UNITS_LM):
+                    self.assertAlmostEqual(ed.radiance, before / 2.1, delta=before * 1e-12)
+                else:
+                    self.assertEqual(ed.radiance, before)
+        ed, _issues = L.describe_emitter(1, "e", values(type=L.MESH, units=L.UNITS_W), colors.GAMMA_ON, self.A)
+        self.assertEqual((L.spread(ed, 0.0), ed.radiance), ([L.EMITTER_FLAT % "watts"], 0.0))
+        ed, _issues = L.describe_emitter(1, "e", values(type=L.MESH, units=L.UNITS_W, multiplier=-1.0),
+                                         colors.GAMMA_ON, self.A)
+        self.assertEqual((L.spread(ed, self.A), ed.radiance), ([L.NEGATIVE % ("multiplier", -1.0)], 0.0))
+
 
 @unittest.skipIf(conv is None, "numpy is not installed")
 class MeshLightFixture(unittest.TestCase):
@@ -476,14 +500,53 @@ class MeshLightFixture(unittest.TestCase):
         self.assertNotEqual(node.mesh, self.by_name["FixtureEmitter"].mesh)  # another light: a mesh of its own
 
     def test_own_mesh_with_a_shell(self):
-        """Replace mesh with light: reference 1 holds the plane (30 x 10) under a Shell; lm 100 over its area; the
-        Shell named, not applied; affect specular and reflections off: no glossy rays."""
+        """Replace mesh with light: reference 1 holds the plane (30 x 10) under a Shell (inner 2): the plane, the
+        Shell a Solidify of 2 mm on the light node (build spreads lm 100 over the shelled area; here the plane's);
+        affect specular and reflections off: no glossy rays; no line."""
         node, ed, md = self.emitter("FixtureEmitterOwn")
         self.assertAlmostEqual(ed.area, 0.0003, delta=1e-9)
         self.assertAlmostEqual(ed.radiance, 100.0 / 683.0 / (math.pi * 0.0003), delta=1e-4)
+        self.assertEqual((ed.units, ed.multiplier), (L.UNITS_LM, 100.0))
         self.assertFalse(ed.glossy_rays)
-        self.assertEqual(self.issues[node.index], ["light: " + L.EMITTER_MODIFIERS % "Shell"])
+        self.assertNotIn(node.index, self.issues)
         self.assertEqual(len(md.loop_starts), 1)
+        self.assertEqual([(m.kind, m.class_name) for m in node.converted], [(conv.rules.SOLIDIFY, "Shell")])
+        settings = dict(node.converted[0].settings)
+        self.assertAlmostEqual(settings["thickness"], 0.002, delta=1e-12)
+        self.assertEqual((settings["offset"], settings["use_rim"]), (-1.0, True))
+        self.assertEqual((node.modifiers, node.applied), ((), ()))  # the light's own stack: none
+        for name in ("FixtureEmitter", "FixtureEmitterW"):  # a picked Plane without modifiers
+            self.assertEqual(self.by_name[name].converted, (), name)
+
+    def test_own_mesh_with_conversion_off(self):
+        """Modifiers: Ignore: nothing converted, the Shell named in the line."""
+        desc = conv.read(MESH_FIXTURE, convert_modifiers=False)
+        node = next(n for n in desc.nodes if n.name == "FixtureEmitterOwn")
+        self.assertEqual(node.converted, ())
+        self.assertEqual([r for i, r in desc.issues if i == node.index], ["light: " + L.EMITTER_MODIFIERS % "Shell"])
+
+    def test_an_extruded_shape_source(self):
+        """A shape under an Extrude as the emitter's mesh (FixtureExtRect: a Rectangle 30 x 20 extruded 10, capped):
+        the extruded mesh, its area 2 x 600 + 100 x 10 mm^2, nothing above it; without the reader's modifiers or
+        past the scene's corner budget, not made."""
+        cfb = importlib.import_module(_PKG + ".reader.cfb")
+        reader_scene = importlib.import_module(_PKG + ".reader.scene")
+        reader_modifiers = importlib.import_module(_PKG + ".reader.modifiers")
+        with cfb.CompoundFile(EXTRUDE_FIXTURE) as cf:
+            sc = reader_scene.Scene.from_file(cf)
+            node = next(i for i in sc.walk() if sc.node(i).name == "FixtureExtRect")
+            v = {L.MESH_OBJECT: sc.node(node).object, L.P_MESH_SOURCE: None}
+            desc = conv.SceneDescription(MM)
+            built = [0]
+            found = conv._emitter_mesh(sc, desc, v, node, MM, built, None, reader_modifiers.Modifiers(sc))
+            self.assertNotIsInstance(found, str, found)
+            _base, data, area, rest, unread = found
+            self.assertAlmostEqual(area, 2200.0 * MM * MM, delta=1e-12)
+            self.assertEqual((rest, unread, built[0]), ((), (), len(data.loop_vertices)))
+            self.assertEqual(conv._emitter_mesh(sc, desc, v, node, MM, [0]), L.EMITTER_CLASS % "Rectangle")
+            spent = conv._emitter_mesh(sc, desc, v, node, MM, [conv.MAX_BUILT_CORNERS], None,
+                                       reader_modifiers.Modifiers(sc))
+            self.assertTrue(isinstance(spent, str) and "Extrude is not made" in spent, spent)
 
     def described(self, change):
         """The fixture described with change(values) applied to the values of every mesh light read."""

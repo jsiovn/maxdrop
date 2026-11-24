@@ -77,9 +77,12 @@ world scale puts on its area (lights.area_scale, 1 but for a VRayLight), so inst
 issues of its parameters are named on its first node, those of a description on the first node of that key. A
 VRayLight's mesh light is a MESH of its emitter (node.emitter, the key into desc.emitters of its
 lights.EmitterDescription, one per light object): its mesh object's base mesh (the light's own, else the picked
-node's object; an Editable Mesh, Editable Poly or primitive built here) in object space with the light node's offset
-baked, keyed (EMITTER, light base, mesh base, offset), the light's nodes its users; its area (mesh_area, object
-space) sets the radiance in lm and W; the modifiers above the base mesh are an issue. A mesh light without such a
+node's object; an Editable Mesh, Editable Poly or primitive built here; a shape under an Extrude, extruded here) in
+object space with the light node's offset baked, keyed (EMITTER, light base, mesh base, offset), the light's nodes
+its users; its area (mesh_area, object space) sets the radiance in lm and W. The mesh object's modifiers that render
+above it, but its UVW Maps (an emitter has no texture), are converted as a mesh node's (Blender modifiers in
+node.converted, with the light node's offset; build.emitters spreads the radiance over the mesh under them); the
+rest are an issue. A mesh light without such a
 mesh, a Skylight (not built yet), or a light whose parameters cannot be read, is an EMPTY with the reason as an
 issue, on every node, not counted as a placeholder. A VRayLight dome is an EMPTY too (its children
 stay placed), not a placeholder: the first dome node that is on (in walk order) gives desc.dome
@@ -901,8 +904,9 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
                         desc.issues.append((i, "light: not built: %s" % emitter_refused[refused]))
                     else:
                         try:
-                            key, emitter = _emitter(scene, t, desc, emitter_meshes, light_params[base], base, i,
-                                                    name, meters, swatches, built, check)
+                            key, emitter, converted = _emitter(scene, t, desc, emitter_meshes, light_params[base],
+                                                               base, i, name, meters, swatches, built, check, stacks,
+                                                               told, convert_modifiers)
                         except MeshError as exc:  # its mesh with the node's offset: nothing of it is written yet
                             emitter_refused[refused] = str(exc)
                             desc.issues.append((i, "light: not built: %s" % exc))
@@ -1035,18 +1039,22 @@ def _light(scene, desc, unlit, params, base, node, name, meters, swatches, world
     return key
 
 
-def _emitter(scene, t, desc, meshes, values, base, node, name, meters, swatches, built, check=None):
-    """(the key in desc.meshes of mesh light base's emitter mesh on node, its key in desc.emitters), or (None, None)
-    when it has no mesh MaxDrop builds (meshes caches the reason, an issue on every node). The mesh is the mesh
-    object's base mesh in its object space with the light node's offset baked (V-Ray places it at the light's object
-    transform); the description's issues are named on the first node."""
+def _emitter(scene, t, desc, meshes, values, base, node, name, meters, swatches, built, check=None, stacks=None,
+             told=None, convert=True):
+    """(the key in desc.meshes of mesh light base's emitter mesh on node, its key in desc.emitters, the converted
+    modifiers of its mesh object as on node (ModifierDescriptions, budgeted)), or (None, None, ()) when it has no mesh
+    MaxDrop builds (meshes caches the reason, an issue on every node). The mesh is the mesh object's mesh below its
+    modifiers (_emitter_mesh) in its object space with the light node's offset baked (V-Ray places it at the light's
+    object transform); the modifiers above it are converted with that offset (_converted: told and convert as there;
+    their issues as a mesh node's). The description's issues, and the line naming the modifiers neither evaluated nor
+    converted, are named on the first node."""
     if base not in meshes:
-        meshes[base] = _emitter_mesh(scene, desc, values, node, meters, built, check)
+        meshes[base] = _emitter_mesh(scene, desc, values, node, meters, built, check, stacks)
     found = meshes[base]
     if isinstance(found, str):
         desc.issues.append((node, "light: not built: %s" % found))
-        return None, None
-    mesh_base, data, area, modifiers = found
+        return None, None, ()
+    mesh_base, data, area, rest, unread = found
     offset = _offset(t, node)
     key = (EMITTER, base, mesh_base, offset)
     md = desc.meshes.get(key)
@@ -1056,34 +1064,101 @@ def _emitter(scene, t, desc, meshes, values, base, node, name, meters, swatches,
             desc.issues.append((node, "geometry: %d faces with a repeated vertex or doubled, left out"
                                 % md.dropped_faces))
     md.users.append(node)
+    converted, issues = _converted(scene, rest, meters, offset, set() if told is None else told, convert)
+    converted, more = rules.budget(converted, len(md.loop_vertices))
+    desc.issues.extend((node, x) for x in issues + more)
     if base not in desc.emitters:
         ed, issues = lights.describe_emitter(base, name, values, swatches, area)
         desc.emitters[base] = ed
-        if modifiers:
-            issues.append(lights.EMITTER_MODIFIERS % ", ".join(modifiers))
+        done = {m.index for m in converted}
+        left = unread + tuple(_class_name(scene, m.index) or "a modifier" for m in reversed(rest)
+                              if m.index not in done)
+        if left:
+            issues.append(lights.EMITTER_MODIFIERS % ", ".join(left))
         desc.issues.extend((node, "light: %s" % x) for x in issues)
     desc.emitters[base].users.append(node)
-    return key, base
+    return key, base, converted
 
 
-def _emitter_mesh(scene, desc, values, node, meters, built, check=None):
-    """(mesh base object index, reader MeshData, its object-space area in m^2 (the faces Blender holds), the class
-    names of the modifiers above it) of a mesh light's mesh: its own mesh object (lights.MESH_OBJECT: what V-Ray's
-    Replace mesh with light keeps), else (none, or not a mesh read here) the object of the node its mesh source
-    (parameter 34) names; or why it has none (the own object's reason when both fail)."""
+def _emitter_mesh(scene, desc, values, node, meters, built, check=None, stacks=None):
+    """(mesh base object index, reader MeshData, its object-space area in m^2 (the faces Blender holds), the reader
+    Modifiers above it that render (bottom first, its UVW Maps left out: _emitter_rest), the class names of the
+    modifiers of a stack the reader cannot read (top first)) of a mesh light's mesh: its own mesh object
+    (lights.MESH_OBJECT: what V-Ray's Replace mesh with light keeps), else (none, or not a mesh read here) the object
+    of the node its mesh source (parameter 34) names; or why it has none (the own object's reason when both fail).
+    The mesh is the object's base mesh (_mesh_of), or its shape under the Extrude right above it (_emitter_shape).
+    stacks: the scene's reader.modifiers Modifiers (None: none read, every modifier named)."""
     reasons = []
     for obj in (values.get(lights.MESH_OBJECT), _source_object(scene, values.get(lights.P_MESH_SOURCE))):
         if obj is None:
             continue
-        found = _mesh_of(scene, desc, obj, node, built, check)
+        found = _emitter_shape(scene, desc, stacks, obj, node, built)
+        if found is None:
+            found = _mesh_of(scene, desc, obj, node, built, check)
+            if not isinstance(found, str):
+                found = found + (None,)
         if not isinstance(found, str):
-            mesh_base, data, stack = found
+            mesh_base, data, stack, ext = found
             keep = valid_faces(data.loop_vertices, data.loop_starts, data.loop_totals)
             area = mesh_area(data.positions, data.loop_vertices, data.loop_starts, data.loop_totals, keep)
-            return mesh_base, data, area * meters * meters, tuple(_class_name(scene, m) or "a modifier"
-                                                                  for m in stack.modifiers)
+            rest, unread = _emitter_rest(scene, desc, stacks, obj, stack, ext, node)
+            return mesh_base, data, area * meters * meters, rest, unread
         reasons.append(found)
     return reasons[0] if reasons else lights.NO_MESH
+
+
+def _active(stacks, obj):
+    """The reader Modifiers of object obj that render, bottom first (ChunkError when its stack cannot be read)."""
+    return [m for m in stacks.object_stack(obj).modifiers if m.renders]
+
+
+def _emitter_rest(scene, desc, stacks, obj, stack, ext, node):
+    """(rest, unread) of _emitter_mesh: the modifiers of object obj that render above its mesh (the Extrude ext made
+    it, or None), but the UVW Maps (an emitter has no texture), bottom first, and (); or, without stacks or when the
+    reader cannot read them (an issue on node), () and the class names of reader Stack stack's modifiers."""
+    if stacks is not None:
+        try:
+            active = _active(stacks, obj)
+        except ChunkError as exc:
+            desc.issues.append((node, "modifiers: the modifier stack cannot be read: %s" % exc))
+        else:
+            return tuple(m for m in active if not uvwmap.is_uvwmap(m) and (ext is None or m.index != ext.index)), ()
+    return (), tuple(_class_name(scene, m) or "a modifier" for m in stack.modifiers)
+
+
+def _emitter_shape(scene, desc, stacks, obj, node, built):
+    """(shape base object index, reader MeshData of the Extrude, reader Stack, the Extrude's reader Modifier) of object
+    obj when it is a shape whose lowest modifier that renders is an Extrude (convert.extrude); why it has no mesh when
+    the shape, the Extrude or the positions cannot be made (shape and Extrude issues on node), or the scene's
+    MAX_BUILT_CORNERS are spent; None when obj is no such shape (_mesh_of then says why)."""
+    if stacks is None:
+        return None
+    try:
+        stack = scene.object_stack(obj)
+        if stack.base is None or not shapes.is_shape(scene, stack.base):
+            return None
+        active = _active(stacks, obj)
+    except ChunkError:  # _mesh_of names the stack it cannot read
+        return None
+    if not (active and extrude.is_extrude(active[0])):
+        return None
+    ext = active[0]
+    if built[0] >= MAX_BUILT_CORNERS:
+        return lights.EMITTER_UNREAD % ("its Extrude is not made: " + _SPENT % MAX_BUILT_CORNERS)
+    try:
+        sh = shapes.read_shape(scene, stack.base)
+        params, issues = extrude.read_params(scene, ext)
+        data, more = extrude.extrude(sh, params)
+    except ChunkError as exc:  # ShapeError, ExtrudeError, or a block the reader refuses
+        return lights.EMITTER_UNREAD % exc
+    built[0] += len(data.loop_vertices)
+    desc.issues.extend([(node, "shape: %s" % x) for x in sh.issues] +
+                       [(node, "extrude: %s" % x) for x in issues + more])
+    try:
+        _positions(data, None, desc.meters)  # before the light node's offset, applied in _emitter (describe)
+    except MeshError as exc:
+        return lights.EMITTER_UNREAD % exc
+    return stack.base, data, stack, ext
 
 
 def _source_object(scene, source):

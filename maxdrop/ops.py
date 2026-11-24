@@ -85,6 +85,8 @@
 # without materials, and an IES file not found then says so.
 # Modified for MaxDrop, 2026-11-24 (jsiovn). The texture-map converters get the scene's renderer from the summary
 # stream (a rule Corona renders otherwise).
+# Modified for MaxDrop, 2026-11-24 (jsiovn). After the modifiers are added, a mesh light's emitter is spread over
+# its mesh's evaluated area (build.emitters.spread).
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -800,6 +802,7 @@ def _scene_steps(opts, scene, view_layer, max_path, pack=None, pack_name="", dir
     becomes the World only when no earlier file of the run made one."""
     from .build import cameras as build_cameras
     from .build import collections as build_collections
+    from .build import emitters as build_emitters
     from .build import materials as build_materials
     from .build import modifiers as build_modifiers
     from .build import objects as build_objects
@@ -834,6 +837,7 @@ def _scene_steps(opts, scene, view_layer, max_path, pack=None, pack_name="", dir
             progress("building %s: %d / %d" % (name, done, total), _READ_SHARE + (1.0 - _READ_SHARE) * done / total)
             yield
         settings_skipped = build_modifiers.add(desc, built)
+        build_emitters.spread(desc, built, scene.collection, view_layer, opts.light_strength)
         kept = build_objects.track_targets(desc, built) if opts.keep_targets else []
         build_collections.finish(cols, view_layer)
         if desc.dome is not None and earlier is None:

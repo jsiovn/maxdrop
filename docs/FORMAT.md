@@ -1073,9 +1073,16 @@ Emission of that radiance × Light Strength (Cycles renders an Emission of stren
 by Geometry Backfacing with a black Emission (flipped for 35), both sides when double-sided; invisible: camera and
 shadow off. The `calib_*` scenes of the calibration (W, default, lm, double-sided, flipped, seen by the camera)
 imported and rendered in Cycles (Blender 5.2, 512 samples, the floor a Diffuse BSDF of 1.0, Light Strength 1.43):
-V-Ray / Cycles 1.0003 to 1.0004. The modifiers of the mesh are left out (a line in the report: the base mesh emits,
-and in W and lm its area sets the radiance); no mesh object, or a class MaxDrop does not build, is an empty with a
-line in the report. A mirrored light node follows the rules of every mesh (an offset with a negative determinant
+V-Ray / Cycles 1.0003 to 1.0004. The modifiers of the mesh are those of any mesh (maxdrop-em3.162): a shape under
+an Extrude right above it is extruded; its UVW Maps are left out (an emitter has no texture); the TurboSmooth,
+MeshSmooth, Shell and Symmetry above it become Blender modifiers on the emitter (with the light node's offset), and
+in W and lm the radiance is spread over the mesh under them: build.emitters measures a copy of the emitter object
+(shown, a Subdivision Surface at its render levels within the viewport budget) and scales the object-space area by
+the evaluated over the unmodified area. The 30 × 10 mm plane under a 2 mm Shell of the vray_mesh_light fixture
+(FixtureEmitterOwn) emits over 2 × 300 + 80 × 2 = 760 mm² (Blender's Solidify), as the 5 mm Shell above (0.143 →
+0.0679 in W: 0.04 / 0.084 m²) says V-Ray does. Not measured against V-Ray: a TurboSmooth or Symmetry under a mesh
+light (Blender's evaluated area is taken). Any other modifier is left out (a line in the report: the mesh below it
+emits); no mesh object, or a class MaxDrop does not build, is an empty with a line in the report. A mirrored light node follows the rules of every mesh (an offset with a negative determinant
 reverses the loops, a mirrored node is left to Blender), so the lit side is the mesh's front as Blender sees it: not
 measured against V-Ray.
 

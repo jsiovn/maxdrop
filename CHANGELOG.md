@@ -27,7 +27,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   empty: its strength in every units mode as bright as V-Ray 5.2 (measured) times Light Strength, one side or both,
   Flip normals, invisible (not seen by the camera, no shadow), affect diffuse, specular and reflections, on / off.
   Also a mesh light made with "Replace mesh with light", which keeps the mesh itself. A mesh light without a mesh
-  stays an empty with a line in the report; the modifiers of its mesh are left out (a line in the report).
+  stays an empty with a line in the report.
+- Lights: a V-Ray mesh light's mesh keeps its modifiers as V-Ray emits them: TurboSmooth, MeshSmooth, Shell and
+  Symmetry become Blender modifiers on the emitter as on any mesh, an Extrude on a picked shape is made, and in lm
+  and W the strength is spread over the mesh under them (a 5 mm Shell on a 200 mm plane about halves it, as in V-Ray).
+  Other modifiers are left out (the mesh below them emits, a line in the report).
 - Corona materials: CoronaHairMtl is imported as a surface with the color Blender's Principled Hair BSDF gives its
   melanin, pheomelanin and tint (plus its diffuse color), its glossiness, IOR, opacity and bump, instead of grey; a
   CoronaShadowCatcherMtl makes its object a shadow catcher (Cycles) when the object has no other material. A

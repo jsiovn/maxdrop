@@ -14,6 +14,7 @@
     dt, issues = dome_texture(graph_ir, material_graph, swatches)   # DomeTexture of the dome's converted map, or None
     is_mesh_light(values)               # a VRayLight mesh light: an emissive mesh, not a light (describe_emitter)
     ed, issues = describe_emitter(key, name, values, swatches, area)   # EmitterDescription (area: the mesh's, m^2)
+    issues = spread(ed, area)           # its radiance over another area (build: the mesh under its modifiers)
     watts(units, multiplier, area(kind, size0, size1, double_sided, meters))
     environment_sky(scene)              # the object index of a VRaySky that is the environment map, else None
 
@@ -61,7 +62,8 @@ A mesh light is an emissive mesh (describe_emitter; docs/FORMAT.md, "VRayLight")
 mesh (reference SLOT_MESH, else the object of the node 34 names; neither: not built, the reason) in object space at
 the light node's object transform, along the faces' normals (35: the other side; double-sided: both), its back black,
 with the radiance of the units mode's flux spread over the mesh's object-space area as a Lambertian emitter (flux =
-pi L a; the node's scale does not change it): emitter_radiance. Invisible: not seen by the camera and no occluder (a
+pi L a; the node's scale does not change it): emitter_radiance. That is the evaluated mesh's area: convert.scene
+describes the mesh below the modifiers MaxDrop converts, build/ measures it under them and spreads (spread). Invisible: not seen by the camera and no occluder (a
 visible one shadows other lights, measured); affect diffuse / specular / reflections as a light's; its texture,
 directional spread, contributions and cast shadows off are not imported (issues). convert.scene builds the mesh.
 
@@ -262,8 +264,8 @@ NO_MESH = "a mesh light without a mesh (none picked, or its node deleted): not i
 EMITTER = "a mesh light is an emitter, not a light"
 EMITTER_CLASS = "its mesh is a %s, which MaxDrop does not build: not imported"
 EMITTER_UNREAD = "its mesh cannot be read: %s"
-EMITTER_MODIFIERS = ("the modifiers of its mesh (%s) are not applied: the emitter is the base mesh (V-Ray emits the "
-                     "evaluated mesh, and in lm and W spreads the flux over that one's area)")
+EMITTER_MODIFIERS = ("the modifiers of its mesh (%s) are not applied: the emitter is its mesh below them (V-Ray "
+                     "emits the evaluated mesh, and in lm and W spreads the flux over that one's area)")
 EMITTER_TEXMAP = "its texture is not imported: the emitter has its color"
 EMITTER_CONTRIBUTION = "%s contribution %g is not imported: an emitter has no such factor"
 EMITTER_GLOSSY = ("affect specular %s, affect reflections %s: Blender has one switch for both, glossy rays, "
@@ -685,15 +687,17 @@ class EmitterDescription:
     Emission strength before the Light Strength); area the mesh's object-space area in m^2; double_sided: both sides
     emit, else the side its faces' normals point to (flip: the other one); on; camera: the camera sees it; occluder:
     it shadows other lights (V-Ray: when visible); diffuse_rays and glossy_rays as a light's; users the object
-    indices of its nodes, in walk order."""
+    indices of its nodes, in walk order; units and multiplier the light's (spread)."""
     __slots__ = ("key", "name", "color", "radiance", "area", "double_sided", "flip", "on", "camera", "occluder",
-                 "diffuse_rays", "glossy_rays", "users")
+                 "diffuse_rays", "glossy_rays", "users", "units", "multiplier")
 
     def __init__(self, key, name, color=(1.0, 1.0, 1.0), radiance=0.0, area=0.0, double_sided=False, flip=False,
-                 on=True, camera=True, occluder=True, diffuse_rays=True, glossy_rays=True):
+                 on=True, camera=True, occluder=True, diffuse_rays=True, glossy_rays=True, units=UNITS_DEFAULT,
+                 multiplier=1.0):
         self.key, self.name, self.color, self.radiance, self.area = key, name, color, radiance, area
         self.double_sided, self.flip, self.on, self.camera, self.occluder = double_sided, flip, on, camera, occluder
         self.diffuse_rays, self.glossy_rays = diffuse_rays, glossy_rays
+        self.units, self.multiplier = units, multiplier
         self.users = []
 
     def __repr__(self):
@@ -710,13 +714,11 @@ def emitter_radiance(units, multiplier, a, double_sided=False):
     return watts(units, multiplier, 1.0) / math.pi
 
 
-def describe_emitter(key, name, values, swatches, a):
-    """(EmitterDescription of a mesh light's values whose mesh has the object-space area a in m^2, issues)."""
+def _emitter_strength(units, multiplier, a, double_sided):
+    """(the radiance of emitter_radiance, issues): 0 for an area of 0 in lm and W, out of range or negative."""
     issues = []
-    units = values[P_UNITS]
-    double = bool(values[P_DOUBLE_SIDED])
     try:
-        radiance = emitter_radiance(units, values[P_MULTIPLIER], a, double)
+        radiance = emitter_radiance(units, multiplier, a, double_sided)
     except ZeroDivisionError:
         issues.append(EMITTER_FLAT % ("lumens" if units == UNITS_LM else "watts"))
         radiance = 0.0
@@ -726,8 +728,27 @@ def describe_emitter(key, name, values, swatches, a):
         issues.append(OUT_OF_RANGE)
         radiance = 0.0
     if radiance < 0:
-        issues.append(NEGATIVE % ("multiplier", values[P_MULTIPLIER]))
+        issues.append(NEGATIVE % ("multiplier", multiplier))
         radiance = 0.0
+    return radiance, issues
+
+
+def spread(ed, a):
+    """Issues; EmitterDescription ed's area made a (m^2: its mesh's evaluated area) and its radiance that of its units
+    mode and multiplier over a. Only the units modes that spread the flux over the area (lm, W) change the radiance,
+    and only those name a new issue."""
+    ed.area = a
+    if ed.units not in (UNITS_LM, UNITS_W):
+        return []
+    ed.radiance, issues = _emitter_strength(ed.units, ed.multiplier, a, ed.double_sided)
+    return issues
+
+
+def describe_emitter(key, name, values, swatches, a):
+    """(EmitterDescription of a mesh light's values whose mesh has the object-space area a in m^2, issues)."""
+    units = values[P_UNITS]
+    double = bool(values[P_DOUBLE_SIDED])
+    radiance, issues = _emitter_strength(units, values[P_MULTIPLIER], a, double)
     if values[P_TEXMAP] is not None and values[P_TEXMAP_ON]:
         issues.append(EMITTER_TEXMAP)
     if values[P_DIRECTIONAL] > 0:
@@ -742,7 +763,7 @@ def describe_emitter(key, name, values, swatches, a):
             issues.append(EMITTER_CONTRIBUTION % (label, values[pid]))
     visible = not values[P_INVISIBLE]
     ed = EmitterDescription(key, name, light_color(values, swatches), radiance, a, double, bool(values[P_MESH_FLIP]),
-                            bool(values[P_ON]), visible, visible, diffuse, spec or refl)
+                            bool(values[P_ON]), visible, visible, diffuse, spec or refl, units, values[P_MULTIPLIER])
     return ed, issues
 
 
