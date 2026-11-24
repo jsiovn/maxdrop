@@ -24,14 +24,17 @@ Rotation or Scale) saves its value at the time slider of the save in 0x2501 (flo
 controller of an animated color parameter: 0x2501 with 3 x f32, its keys laid out as Bezier Position's), directly or
 inside 0x7127, with 0x2500, the interval that value holds for (forever without keys), and its keys in a chunk of its
 class (_KEYFRAMED: i32 time, u32 flags, the value at byte 8, then tangents or TCB parameters). The saved value is used
-when its interval holds time 0; otherwise the keys are evaluated at time 0: the first key's value at or before it,
-the last key's after it (out-of-range types are not read), between two keys linear for a Linear controller
+when its interval holds time 0; otherwise the keys are evaluated at time 0. Outside the controller's range (0x3003,
+the keys' first and last time unless the range bar was moved) its out-of-range types (0x8499) map the time back
+into it (out_of_range: Constant, Cycle, Loop, Ping Pong, Relative Repeat, Linear); inside the range the keys give the
+first key's value before them and the last's after them, between two keys linear for a Linear controller
 (rotation by slerp the way the stored signs give, opposite quaternions a whole turn about the earlier key's local Z),
-along the stored tangents for Bezier (the cubic of the handles, its time curve solved; a free handle's length in
-frames of Scene.ticks_per_frame; a step key held; constant velocity out of a Position key by length along 40
-chords) and TCB (Hermite at the eased fraction; rotations by squad, a turn of a revolution or more with a half-turn
-of squad at either end), a scale axis by slerp at the time fraction, and linear with an issue where 3ds Max's curve
-is not known (_between). A saved value without an
+along the tangents for Bezier (the cubic of the handles, its time curve solved; a handle a third long but for a
+custom tangent, auto ones flagged in 0x2533 / 0x2534; a Linear tangent facing a custom or auto one the chord's slope;
+a free handle's length in frames of Scene.ticks_per_frame; a step key held; constant velocity out of a Position key
+by length along 40 chords) and TCB (Hermite at the eased fraction; rotations by squad, a turn of a revolution or
+more with a half-turn of squad at either end), a scale axis by slerp at the time fraction, and linear with an issue
+where 3ds Max's curve is not known (_between). A saved value without an
 interval is used as it is, with an issue when several keys animate it (it may be another frame's). Euler angles
 are radians, the axis order (0x1003) 0 for XYZ and 100 + order for the others; a Max quaternion (x, y, z, w) as
 stored is the conjugate of the usual one, so the standard column-vector formula applied to it gives the row-vector
@@ -39,7 +42,9 @@ matrix. List controllers keep their entry count in 0x1010
 and the entries at reference slots 0..n-1; their weights are parameter 0 of the list's ParamBlock2 (a float table:
 stored values, or controllers where animated). A list sums its entries times their weights (Float and Position
 List), multiplies I + (S - I) * weight (Scale List) or the rotations turned by their weights, a later entry first
-(Rotation List).
+(Rotation List). With Average on (parameter 1) a Float, Position or Scale List divides that weighted sum by the
+weights' sum (nothing, or identity, when they add up to 0) and a Rotation List slerps from no rotation towards each
+entry in turn by its weight. A Scale List weight after a turned scale axis, and an average of one, are issues.
 
 A Look At controller (a Matrix3 controller: target cameras and lights) and a LookAt Constraint (a rotation
 controller in a PRS) give the node's world matrix from the world positions of other nodes (the target, the
@@ -56,8 +61,8 @@ Anything not supported gives identity (zero position, no rotation, unit scale) f
 an unknown class (also a Look At or a constraint outside a node, as a modifier's gizmo, and a constraint anywhere
 but a PRS's rotation), keys of an unknown layout, a list weight that is not stored, an Euler order other than
 the six Tait-Bryan ones, a damaged controller (a reference cycle, a chain deeper than MAX_DEPTH, a payload too
-short) or a non-finite result. The file comes from anywhere: one bad controller poisons only its own
-node's local matrix. Every class read here is in a committed fixture (docs/FORMAT.md). No bpy, no mathutils, no
+short) or a non-finite result. An unknown out-of-range type keeps the value at the end of the range, with an issue.
+The file comes from anywhere: one bad controller poisons only its own node's local matrix. Every class read here is in a committed fixture (docs/FORMAT.md). No bpy, no mathutils, no
 numpy.
 """
 import bisect
@@ -94,6 +99,11 @@ CONSTRAINT_OFFSET = "LookAt Constraint offset (Keep Initial Offset, Set Orientat
 CONSTRAINT_DEGENERATE = "LookAt Constraint that cannot be aimed (on its target, up along the view), no rotation"
 CONSTRAINT_SETTING = "animated or damaged LookAt Constraint setting, its default used"
 CONSTRAINT_BLOCK = "damaged LookAt Constraint parameters, the defaults used where unread"
+ORT_UNKNOWN = "out-of-range type not known, the value at the end of the range used"
+ORT_APPROXIMATED = ("out-of-range type approximated (Loop past the keys, as Cycle; scale axes that differ; ORTs "
+                    "off beside a range moved off the keys)")
+LIST_AVERAGE = "Scale List average of turned scale axes, the weighted mean of the matrices used"
+SCALE_LIST_WEIGHT = "Scale List weight on turned scale axes, applied as on plain ones"
 
 
 class Issue(collections.namedtuple("Issue", "node controller superclass class_id reason")):
@@ -114,7 +124,15 @@ _INTERVAL, _WRAP = 0x2500, 0x7127
 _EULER_ORDER = 0x1003
 _EULER_ORDER_BASE = 100  # 3ds Max 2020 saves XYZ as 0 and the other orders as 100 + order
 _LIST_COUNT = 0x1010
-_LIST_WEIGHTS = 0  # parameter of the list's ParamBlock2
+_LIST_WEIGHTS, _LIST_AVERAGE = 0, 1  # parameters of the list's ParamBlock2
+# beside a keyframe controller's keys: the out-of-range types (0x8499: 0x3000 before, 0x3001 after, 0x3003 1 when
+# they are switched off) and the range they apply outside (0x3003: start and end time)
+_ORT, _ORT_BEFORE, _ORT_AFTER, _ORT_OFF, _RANGE = 0x8499, 0x3000, 0x3001, 0x3003, 0x3003
+_ORT_CONSTANT, _ORT_CYCLE, _ORT_LOOP, _ORT_PING_PONG, _ORT_LINEAR, _ORT_RELATIVE = 1, 2, 3, 4, 5, 7
+_ORT_KNOWN = frozenset((_ORT_CONSTANT, _ORT_CYCLE, _ORT_LOOP, _ORT_PING_PONG, _ORT_LINEAR, _ORT_RELATIVE))
+_NO_TIME = -2 ** 31
+# bit arrays (in 0x2700: i32 count, then a bit per key) of the Bezier keys whose in / out tangent is auto
+_AUTO_IN, _AUTO_OUT, _BITS = 0x2533, 0x2534, 0x2700
 _KEY_IDS = range(0x2510, 0x2530)
 _KEY_VALUE = 8  # a key record: i32 time, u32 flags, then the value
 _TIME = struct.Struct("<i")
@@ -142,7 +160,7 @@ _BEZIER = frozenset((classids.BEZIER_FLOAT, classids.BEZIER_POSITION, classids.B
 _TCB = frozenset((classids.TCB_FLOAT, classids.TCB_POSITION, classids.TCB_SCALE))
 # a Bezier key's flags: the in tangent's type in bits 7-9, the out tangent's in bits 10-12 (1 linear, 2 step, 5 custom
 # or auto, 0 smooth, 3 fast, 4 slow); constant velocity; a free handle, whose length is in frames, not a fraction
-_IN_TYPE, _OUT_TYPE, _STEP = 7, 10, 2
+_IN_TYPE, _OUT_TYPE, _LINEAR_TANGENT, _STEP, _CUSTOM = 7, 10, 1, 2, 5
 _CONSTANT_VELOCITY, _FREE_HANDLE = 0x8000, 0x100000
 _DEFAULT_LENGTH = 1.0 / 3.0  # a handle length stored as -1
 _SOLVE_STEPS = 60  # bisections of a Bezier segment's time curve: well below a tick
@@ -245,6 +263,28 @@ def _weighted_quat(m, weight):
     """The rotation of matrix m scaled by weight along its own axis, as a matrix."""
     if weight == 1.0:
         return m
+    return quat_matrix(_qpow(_matrix_quat(m), weight))
+
+
+def _qpow(q, s):
+    """Max quaternion q turned s times as far about its own axis, along the shorter arc; NaN when it is not
+    finite."""
+    q = _unit_quat(q)
+    if q is None:
+        return (math.nan,) * 4
+    x, y, z, w = q if q[3] >= 0.0 else tuple(-v for v in q)
+    n = math.sqrt(x * x + y * y + z * z)
+    if n < 1e-12:
+        return (0.0, 0.0, 0.0, 1.0)
+    h = math.atan2(n, w) * s
+    if not math.isfinite(h):  # an infinite weight, where math.sin raises
+        return (math.nan,) * 4
+    k = math.sin(h) / n
+    return (x * k, y * k, z * k, math.cos(h))
+
+
+def _matrix_quat(m):
+    """The Max quaternion (w >= 0) of rotation matrix m: the inverse of quat_matrix."""
     # the standard quaternion of the column-vector rotation m^T (Shepperd's method)
     r = [[m[c][r] for c in range(3)] for r in range(3)]
     trace = r[0][0] + r[1][1] + r[2][2]
@@ -262,15 +302,7 @@ def _weighted_quat(m, weight):
         w, x, y, z = (r[1][0] - r[0][1]) / t, (r[0][2] + r[2][0]) / t, (r[1][2] + r[2][1]) / t, t / 4.0
     if w < 0.0:
         w, x, y, z = -w, -x, -y, -z
-    n = math.sqrt(x * x + y * y + z * z)
-    if n < 1e-12:
-        return IDENTITY
-    h = math.atan2(n, w) * weight
-    if not math.isfinite(h):  # an infinite weight or a NaN matrix, where math.sin raises
-        return _NAN_MATRIX
-    k = math.sin(h) / n
-    # stored the Max way: the conjugate of the standard quaternion
-    return quat_matrix((-x * k, -y * k, -z * k, math.cos(h)))
+    return (-x, -y, -z, w)  # stored the Max way: the conjugate of the standard quaternion
 
 
 def _unit_quat(q):
@@ -454,12 +486,34 @@ def constant_velocity(v0, out_tangent, v1, in_tangent, dt, f):
     return points[-1] if total > 0.0 else points[0]
 
 
-def _between(cid, n, t0, a, flags_a, t1, b, flags_b, t=0, ticks_per_frame=scene_mod.DEFAULT_TICKS_PER_FRAME):
+def _tangents(n, dt, a, flags_a, auto_a, b, flags_b, auto_b):
+    """The Bezier records a and b (the floats after the flags, n of them the value) as 3ds Max 2020 draws the segment
+    between them (dt ticks long): a handle's stored length counts only for a custom tangent (type 5 without the
+    auto bit) or a free handle, every other type is a third long; a Linear tangent facing a custom or auto one is
+    the slope of the chord (the stored one is stale), beside any other type the stored one."""
+    out_type, in_type = (flags_a >> _OUT_TYPE) & 7, (flags_b >> _IN_TYPE) & 7
+    keep_out = (out_type == _CUSTOM and not auto_a) or flags_a & _FREE_HANDLE
+    keep_in = (in_type == _CUSTOM and not auto_b) or flags_b & _FREE_HANDLE
+    a, b = list(a), list(b)
+    for c in range(min(n, 3)):
+        if not keep_out:
+            a[4 * n + c] = -1.0
+        if not keep_in:
+            b[3 * n + c] = -1.0
+        if out_type == _LINEAR_TANGENT and in_type == _CUSTOM:
+            a[2 * n + c] = (b[c] - a[c]) / dt
+        if in_type == _LINEAR_TANGENT and out_type == _CUSTOM:
+            b[n + c] = (a[c] - b[c]) / dt
+    return a, b
+
+
+def _between(cid, n, t0, a, flags_a, t1, b, flags_b, t=0, ticks_per_frame=scene_mod.DEFAULT_TICKS_PER_FRAME,
+             auto_a=False, auto_b=False):
     """The value at time t between the Bezier, TCB or Smooth Rotation keys a (at t0) and b (at t1), each the floats
-    of its record after the flags, n of them the value; a free handle's length is in frames of ticks_per_frame. None
-    where 3ds Max's curve is not known (a free handle of a negative length, scale axes whose quaternions point
-    apart, a TCB turn just short of a revolution or about no axis, opposite Smooth Rotation quaternions or
-    controls)."""
+    of its record after the flags, n of them the value; a free handle's length is in frames of ticks_per_frame;
+    auto_a and auto_b: a's out and b's in tangent is auto (_tangents). None where 3ds Max's curve is not known (a
+    free handle of a negative length, scale axes whose quaternions point apart, a TCB turn just short of a
+    revolution or about no axis, opposite Smooth Rotation quaternions or controls)."""
     f = (t - t0) / (t1 - t0)
     if cid in _BEZIER or cid in _TCB:
         axis = ()
@@ -472,6 +526,7 @@ def _between(cid, n, t0, a, flags_a, t1, b, flags_b, t=0, ticks_per_frame=scene_
             # value, in tangent, out tangent, in length, out length: n floats each
             if (flags_a >> _OUT_TYPE) & 7 == _STEP or (flags_b >> _IN_TYPE) & 7 == _STEP:
                 return tuple(a[:n])
+            a, b = _tangents(n, t1 - t0, a, flags_a, auto_a, b, flags_b, auto_b)
             if cid == classids.BEZIER_POSITION and flags_a & _CONSTANT_VELOCITY:
                 return constant_velocity(a[:3], a[6:9], b[:3], b[3:6], t1 - t0, f)
             free_out = ticks_per_frame if flags_a & _FREE_HANDLE else 0
@@ -524,8 +579,142 @@ def _scale_value(chunk):
     return chunk.unpack("<7f") if chunk.payload_size >= 28 else chunk.unpack("<3f") + (0.0, 0.0, 0.0, 1.0)
 
 
+class _Keys:
+    """The keys of a keyframe controller: value(t) at any time, the first key's value before them and the last's
+    after; known turns False where a segment 3ds Max curves otherwise was taken linearly (KEYS_INTERPOLATED)."""
+
+    def __init__(self, cid, value_id, count, size, view, times, auto_in, auto_out, ticks_per_frame):
+        self.cid, self.value_id, self.count, self.size, self.view = cid, value_id, count, size, view
+        self.times, self.auto_in, self.auto_out, self.ticks_per_frame = times, auto_in, auto_out, ticks_per_frame
+        self.known = True
+
+    def key(self, k):
+        return struct.unpack_from("<%df" % self.count, self.view, k * self.size + _KEY_VALUE)
+
+    def value(self, t):
+        times = self.times
+        k = bisect.bisect_right(times, t)  # times[k - 1] <= t < times[k]
+        if k == 0:
+            return self.key(0)
+        if k == len(times) or times[k - 1] == t:
+            return self.key(k - 1)
+        if self.cid not in _LINEAR:
+            record = "<I%df" % ((self.size - _KEY_VALUE) // 4)  # the flags, then every float
+            a, b = (struct.unpack_from(record, self.view, j * self.size + 4) for j in (k - 1, k))
+            value = _between(self.cid, self.count, times[k - 1], a[1:], a[0], times[k], b[1:], b[0], t,
+                             self.ticks_per_frame, k - 1 in self.auto_out, k in self.auto_in)
+            if value is not None:
+                return value
+            self.known = False
+        f = (t - times[k - 1]) / (times[k] - times[k - 1])
+        q0, q1 = self.key(k - 1), self.key(k)
+        if self.cid in _LINEAR and self.value_id == _QUAT_VALUE:
+            if _opposite(q0, q1):
+                return turn(_unit_quat(q0), f)
+            if _opposite(q0, q1, _NEAR_OPPOSITE):
+                self.known = False
+        elif self.cid in _LINEAR and self.value_id == _SCALE_VALUE:
+            if sum(x * y for x, y in zip(q0[3:], q1[3:])) < 0.0:
+                self.known = False
+        return _interpolate(q0, q1, f, self.value_id)
+
+
+def _conjugate(q):
+    return (-q[0], -q[1], -q[2], q[3])
+
+
+def _repeat(v, first, last, turns, count):
+    """Value v of a cycle moved turns whole cycles on by Relative Repeat: each adds last - first (a rotation:
+    turns by first^-1 * last; a scale: its components, the axis of v). (value, approximated)."""
+    if count == 4:
+        return _qmul(v, _qpow(_qmul(_conjugate(first), last), turns)), False
+    m = min(count, 3)
+    moved = tuple(v[c] + turns * (last[c] - first[c]) for c in range(m)) + tuple(v[m:])
+    return moved, tuple(first[m:]) != tuple(last[m:])
+
+
+def _extend(a, b, ticks, at_start, count):
+    """Linear out-of-range: from value a one tick on to b, ticks from the range end (a's time at its start, b's at
+    its end), as 3ds Max extrapolates the slope of one tick (a rotation: turns by a^-1 * b per tick; a scale: its
+    components, the axis of the end). (value, approximated)."""
+    base = a if at_start else b
+    if count == 4:
+        return _qmul(base, _qpow(_qmul(_conjugate(a), b), ticks)), False
+    m = min(count, 3)
+    moved = tuple(base[c] + (b[c] - a[c]) * ticks for c in range(m)) + tuple(base[m:])
+    return moved, tuple(a[m:]) != tuple(b[m:])
+
+
+def out_of_range(keys, t, before=_ORT_CONSTANT, after=_ORT_CONSTANT, start=None, end=None):
+    """(the value of keys at time t, an issue reason or None) with the out-of-range types before and after the range
+    start..end (ticks; the keys' first and last time when None), as 3ds Max 2020 maps a time outside it: Constant
+    the range end's value, Cycle and Loop the time a whole number of ranges on (a time a whole range before the
+    start lands on the end), Ping Pong mirrored, Relative Repeat that plus the change over a range per range
+    crossed, Linear the slope of one tick at the range end. Inside the range the keys (the nearest key's value
+    outside them)."""
+    first, last = keys.times[0], keys.times[-1]
+    start = first if start is None else start
+    end = last if end is None else end
+    if before == after == _ORT_LOOP and start <= first and last <= end and end - start > last - first:
+        # Loop over a range wider than the keys: the keys repeat every range, a straight line from the last key's
+        # value to the first's across the gap between them, inside the range too
+        u = first + (t - first) % (end - start)
+        if u <= last:
+            return keys.value(u), None
+        g = (u - last) / ((end - start) - (last - first))
+        v = _interpolate(keys.value(last), keys.value(first), g, keys.value_id)
+        return v, None if keys.count in (1, 3) else ORT_APPROXIMATED  # measured on a Bezier Float
+    # Loop on one side only of a range past the keys: not measured, as Cycle (and the keys inside the range)
+    loop_gap = _ORT_LOOP in (before, after) and (start < first or end > last) and not first <= t <= last
+    if start <= t <= end:
+        return keys.value(t), ORT_APPROXIMATED if loop_gap else None
+    kind = before if t < start else after
+    span = end - start
+    edge = start if t < start else end
+    if kind not in _ORT_KNOWN:
+        return keys.value(edge), ORT_UNKNOWN
+    approximated = False
+    if kind == _ORT_CONSTANT or span <= 0:
+        v = keys.value(edge)
+    elif kind == _ORT_PING_PONG:
+        p = (t - start) % (2 * span)
+        v = keys.value(start + (p if p <= span else 2 * span - p))
+    elif kind == _ORT_LINEAR:
+        if t < start:
+            v, approximated = _extend(keys.value(start), keys.value(start + 1), t - start, True, keys.count)
+        else:
+            v, approximated = _extend(keys.value(end - 1), keys.value(end), t - end, False, keys.count)
+    else:
+        mapped = end - (start - t) % span if t < start else start + (t - end) % span
+        v = keys.value(mapped)
+        if kind == _ORT_RELATIVE:
+            v, approximated = _repeat(v, keys.value(start), keys.value(end), (t - mapped) // span, keys.count)
+    return v, ORT_APPROXIMATED if approximated or loop_gap else None
+
+
+def _bits(holder, cid, n):
+    """The key indices (below n) whose bit is set in the bit array chunk cid of holder; none where it is missing or
+    unreadable."""
+    chunk = holder.first(cid) if holder is not None and holder.container else None
+    bits = chunk.first(_BITS) if chunk is not None and chunk.container else None
+    if bits is None or bits.payload_size < 4:
+        return frozenset()
+    data = bytes(bits.view()[4:])
+    count = min(bits.unpack("<i")[0], n, len(data) * 8)
+    return frozenset(k for k in range(count) if data[k >> 3] >> (k & 7) & 1)
+
+
 def _finite(m):
     return all(math.isfinite(v) for row in m for v in row)
+
+
+def _near_identity(m):
+    return not any(abs(m[r][c] - IDENTITY[r][c]) > 1e-9 for r in range(3) for c in range(3))
+
+
+def _diagonal(m):
+    """Whether scale matrix m scales along the axes alone (no turned scale axis; a NaN one is NON_FINITE's)."""
+    return not any(abs(m[r][c]) > 1e-9 for r in range(3) for c in range(3) if r != c)
 
 
 def _sub(a, b):
@@ -685,16 +874,18 @@ class _Eval:
         if not chunk.container:
             return None
         saved = interval = keys = None
-        for holder in (chunk, chunk.first(_WRAP)):
-            if holder is None or not holder.container:
-                continue
+        holders = [h for h in (chunk, chunk.first(_WRAP)) if h is not None and h.container]
+        for holder in tuple(holders):
             self._keys(i, holder, key_id)
             value = holder.first(value_id)
             if saved is None and value is not None:
                 saved = _scale_value(value) if value_id == _SCALE_VALUE else value.unpack("<%df" % count)
                 held = holder.first(_INTERVAL)
                 interval = held.unpack(_INTERVAL_FORMAT) if held is not None else None
-            keys = keys or holder.first(key_id)
+            if keys is None and holder.first(key_id) is not None:
+                keys = holder.first(key_id)
+                holders.remove(holder)
+                holders.insert(0, holder)  # the chunks beside the keys first
         if keys is None or saved is not None and interval is not None and interval[0] <= 0 <= interval[1]:
             return saved
         n, rest = divmod(keys.payload_size, size)
@@ -712,38 +903,43 @@ class _Eval:
         if n > MAX_KEYS:
             raise ChunkError("object %d: %d keys, more than %d" % (i, n, MAX_KEYS))
         view = keys.view()
-        fmt = "<%df" % count
-
-        def value_at(k):
-            return struct.unpack_from(fmt, view, k * size + _KEY_VALUE)
-
         times = [_TIME.unpack_from(view, k * size)[0] for k in range(n)]
         if any(b < a for a, b in zip(times, times[1:])):
             raise ChunkError("object %d: key times out of order" % i)
-        k = bisect.bisect_right(times, 0)  # times[k - 1] <= 0 < times[k]
-        if k == 0:
-            return value_at(0)
-        if k == n or times[k - 1] == 0:
-            return value_at(k - 1)
-        if cid not in _LINEAR:
-            record = "<I%df" % ((size - _KEY_VALUE) // 4)  # the flags, then every float
-            a, b = (struct.unpack_from(record, view, j * size + 4) for j in (k - 1, k))
-            value = _between(cid, count, times[k - 1], a[1:], a[0], times[k], b[1:], b[0],
-                             ticks_per_frame=self.scene.ticks_per_frame)
-            if value is not None:
-                return value
+        beside = holders[0]  # the holder of the keys: its out-of-range types, range and auto bits
+        track = _Keys(cid, value_id, count, size, view, times, _bits(beside, _AUTO_IN, n), _bits(beside, _AUTO_OUT, n),
+                      self.scene.ticks_per_frame)
+        before, after, off = self._ort(holders)
+        start, end = times[0], times[-1]
+        held = next((h.first(_RANGE) for h in holders if h.first(_RANGE) is not None), None)
+        if held is not None:
+            r0, r1 = held.unpack(_INTERVAL_FORMAT)
+            if r0 != _NO_TIME and r0 <= r1:
+                start, end = r0, r1
+        if off:  # switched off: Constant (probed with the range on the keys only)
+            before = after = _ORT_CONSTANT
+        value, reason = out_of_range(track, 0, before, after, start, end)
+        if off and (start, end) != (times[0], times[-1]) and not start <= 0 <= end:
+            reason = ORT_APPROXIMATED
+        if not track.known:
             self.issue(i, KEYS_INTERPOLATED)
-        f = -times[k - 1] / (times[k] - times[k - 1])
-        if cid in _LINEAR and value_id == _QUAT_VALUE:
-            q0, q1 = value_at(k - 1), value_at(k)
-            if _opposite(q0, q1):
-                return turn(_unit_quat(q0), f)
-            if _opposite(q0, q1, _NEAR_OPPOSITE):
-                self.issue(i, KEYS_INTERPOLATED)
-        elif cid in _LINEAR and value_id == _SCALE_VALUE:
-            if sum(x * y for x, y in zip(value_at(k - 1)[3:], value_at(k)[3:])) < 0.0:
-                self.issue(i, KEYS_INTERPOLATED)
-        return _interpolate(value_at(k - 1), value_at(k), f, value_id)
+        if reason is not None:
+            self.issue(i, reason)
+        return value
+
+    @staticmethod
+    def _ort(holders):
+        """(before, after, switched off) of a keyframe controller: its 0x8499, Constant without one."""
+        ort = next((h.first(_ORT) for h in holders if h.first(_ORT) is not None), None)
+        if ort is None:
+            return _ORT_CONSTANT, _ORT_CONSTANT, False
+        if not ort.container:
+            raise ChunkError("out-of-range types of %d bytes, not a container" % ort.payload_size)
+        types = []
+        for cid in (_ORT_BEFORE, _ORT_AFTER, _ORT_OFF):
+            value = ort.first(cid)
+            types.append(value.unpack("<i")[0] if value is not None else (0 if cid == _ORT_OFF else _ORT_CONSTANT))
+        return types[0], types[1], types[2] != 0
 
     def scalar(self, i, default):
         if i is None:
@@ -760,7 +956,7 @@ class _Eval:
                 value = self._keyframe(i)
                 return default if value is None else float(value[0])
             if sc == classids.SC_CTRL_FLOAT and cid == classids.FLOAT_LIST:
-                entries = self._list(i)
+                entries, average = self._list(i)
                 if not entries:
                     return default
                 # an entry that cannot be read adds nothing: the axis default (1 under ScaleXYZ) is the list's own
@@ -770,7 +966,11 @@ class _Eval:
                     if all(entry in self.unknown for entry, _w in entries):
                         self.unknown.add(i)
                     return None
-                return sum((w * v for w, v in values if v is not None), 0.0)
+                total = sum((w * v for w, v in values if v is not None), 0.0)
+                if average:  # divided by the weights' sum; 0 when they add up to 0
+                    weights = sum((w for w, v in values if v is not None), 0.0)
+                    return total / weights if weights != 0.0 else 0.0
+                return total
             self.issue(i, UNKNOWN_CLASS)
             return default
 
@@ -779,21 +979,23 @@ class _Eval:
         return tuple(self.scalar(refs.get(k), default) for k in range(3))
 
     def _weights(self, i, refs):
-        """(block, weights) of list controller i: parameter 0 of its ParamBlock2, each element a number or an
-        Animated; (None, []) without a block."""
+        """(block, weights, average) of list controller i: parameter 0 of its ParamBlock2, each element a number or
+        an Animated, and whether its Average (parameter 1) is on; (None, [], False) without a block."""
         block = next((r for r in refs.values() if self.kind(r)[0] == classids.SC_PARAMETER_BLOCK2), None)
         if block is None:
-            return None, []
+            return None, [], False
         pb = pblock.ParamBlock2.from_chunk(self.scene.chunk(block), self.scene.refs(block), refs, len(self.scene),
                                            self.kind(i))
         param = pb.param(_LIST_WEIGHTS)
         if param is not None and param.error:  # damaged weights read as missing: 1.0
             self.issue(i, "%s: %s" % (LIST_BLOCK, param.error))
         weights = pb.value(_LIST_WEIGHTS, [])
-        return block, weights if isinstance(weights, list) else [weights]
+        average = pb.value(_LIST_AVERAGE, 0)
+        average = isinstance(average, (int, float)) and average != 0  # unreadable or animated: off
+        return block, weights if isinstance(weights, list) else [weights], average
 
     def _list(self, i):
-        """[(entry index, weight)] of a list controller."""
+        """([(entry index, weight)], average) of a list controller."""
         chunk = self.scene.chunk(i)
         refs = self.scene.refs(i)
         count = chunk.first(_LIST_COUNT) if chunk.container else None
@@ -804,7 +1006,7 @@ class _Eval:
             slots = range(n)
         else:
             slots = sorted(k for k, r in refs.items() if self.kind(r)[0] != classids.SC_PARAMETER_BLOCK2)
-        block, weights = self._weights(i, refs)
+        block, weights, average = self._weights(i, refs)
         out = []
         for k in slots:
             entry = refs.get(k)
@@ -818,7 +1020,7 @@ class _Eval:
                 self.issue(i, LIST_WEIGHT)
                 w = 1.0
             out.append((entry, float(w)))
-        return out
+        return out, average
 
     def position(self, i):
         if i is None:
@@ -838,10 +1040,14 @@ class _Eval:
                     return self._keyframe(i) or (0.0, 0.0, 0.0)
                 if cid == classids.POSITION_LIST:
                     total = [0.0, 0.0, 0.0]
-                    for entry, w in self._list(i):
+                    entries, average = self._list(i)
+                    for entry, w in entries:
                         p = self.position(entry)
                         for k in range(3):
                             total[k] += w * p[k]
+                    weights = sum((w for _e, w in entries), 0.0)
+                    if average:  # divided by the weights' sum; the origin when they add up to 0
+                        return tuple(v / weights for v in total) if weights != 0.0 else (0.0, 0.0, 0.0)
                     return tuple(total)
             self.issue(i, UNKNOWN_CLASS)
             return (0.0, 0.0, 0.0)
@@ -872,9 +1078,15 @@ class _Eval:
                     q = self._keyframe(i)
                     return quat_matrix(q) if q is not None else IDENTITY
                 if cid == classids.ROTATION_LIST:
+                    entries, average = self._list(i)
+                    if average:  # from no rotation, a slerp towards each entry in turn by its weight
+                        q = (0.0, 0.0, 0.0, 1.0)
+                        for entry, w in entries:
+                            q = slerp(q, _matrix_quat(self.rotation(entry)), w)
+                        return quat_matrix(q)
                     # each entry pre-rotates what came before, as a relative controller does
                     m = IDENTITY
-                    for entry, w in self._list(i):
+                    for entry, w in entries:
                         m = multiply(_weighted_quat(self.rotation(entry), w), m)
                     return m
             self.issue(i, UNKNOWN_CLASS)
@@ -898,16 +1110,36 @@ class _Eval:
                 if cid == classids.SCALE_XYZ:
                     return scale_matrix(self._floats3(i, 1.0))
                 if cid == classids.SCALE_LIST:
+                    entries, average = self._list(i)
+                    if average:
+                        return self._scale_average(i, entries)
                     m = IDENTITY
-                    for entry, w in self._list(i):
+                    warned = False
+                    for entry, w in entries:
                         s = self.scale(entry)
                         if w != 1.0:
+                            # measured: an entry alone or among plain scales; after a turned one no rule fits
+                            if not (warned or _near_identity(m) or _near_identity(s) or
+                                    _diagonal(m) and _diagonal(s)):
+                                self.issue(i, SCALE_LIST_WEIGHT)
+                                warned = True
                             s = tuple(tuple(IDENTITY[r][c] + (s[r][c] - IDENTITY[r][c]) * w for c in range(4))
                                       for r in range(4))
                         m = multiply(s, m)
                     return m
             self.issue(i, UNKNOWN_CLASS)
             return IDENTITY
+
+    def _scale_average(self, i, entries):
+        """A Scale List with Average on: the weighted mean of its entries' scales, identity when the weights add up
+        to 0; entries along turned axes fit no measured rule (an issue, the mean of the matrices)."""
+        scales = [(self.scale(entry), w) for entry, w in entries]
+        weights = sum((w for _s, w in scales), 0.0)
+        if not all(_diagonal(s) for s, _w in scales):
+            self.issue(i, LIST_AVERAGE)
+        if weights == 0.0:
+            return IDENTITY
+        return tuple(tuple(sum(s[r][c] * w for s, w in scales) / weights for c in range(4)) for r in range(4))
 
     def matrix(self, i):
         with self.at(i):
