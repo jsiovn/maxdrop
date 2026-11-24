@@ -9,14 +9,15 @@ the name policy (archive.refused_reason) on random names. No Blender, no network
     python -I -m unittest discover tests
     MAXDROP_FUZZ_ZIP_CASES=2000 python -I -m unittest discover tests -p test_intake_fuzz.py
 """
-import errno
 import importlib.util
 import os
 import random
 import shutil
 import sys
 import tempfile
+import unicodedata
 import unittest
+import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _spec = importlib.util.spec_from_file_location("maxdrop_fuzz_harness", os.path.join(ROOT, "tests", "unit", "fuzz.py"))
@@ -38,10 +39,10 @@ CREATED = 300  # of them, created on disk
 WINDOWS = os.name == "nt"
 SEPARATORS = ("/", "\\")
 # Pieces that make a name dangerous somewhere: separators, drive and stream colons, device names, dots and spaces at
-# the end, control characters, look-alike slashes and dots, bidi overrides, lone surrogates, characters Windows
-# cannot store, very long runs.
+# the end, control characters, look-alike slashes and dots, bidi overrides, lone surrogates, unassigned code points
+# and noncharacters (APFS refuses them), characters Windows cannot store, very long runs.
 TOKENS = ("/", "\\", ":", ".", "..", " ", "\x00", "\x1f", "\x7f", "con", "CON", "aux", "nul", "PRN", "com1", "LPT9",
-          "COM¹", "lpt³", "／", "＼", "∕", "․", "‮", "​", "\ud800", "\udfff",
+          "COM¹", "lpt³", "／", "＼", "∕", "․", "‮", "​", "\ud800", "\udfff", "\udcff", "\u0378", "\uffff",
           "<", ">", '"', "|", "?", "*", ".jpg", ".max", ".ies", "a", "Z", "é", "文", "~1", "$", "x" * 120)
 
 
@@ -110,6 +111,7 @@ class NamePolicyPropertyTest(unittest.TestCase):
                 self.assertFalse(any(ord(c) < 32 or ord(c) == 127 for c in name))
                 self.assertNotIn(name[-1], ". ")
                 self.assertFalse(any(c in name for c in '<>"|?*'))
+                self.assertFalse(any(unicodedata.category(c) in ("Cn", "Cs") for c in name))
                 self.assertLessEqual(len(name), archive.MAX_NAME_LENGTH)
                 stem = name.split(".")[0].rstrip(" ").upper()
                 self.assertNotIn(stem, ("CON", "PRN", "AUX", "NUL") + tuple("COM%d" % i for i in range(10))
@@ -121,33 +123,55 @@ class NamePolicyPropertyTest(unittest.TestCase):
         rng = random.Random(fuzz.SEED + 1)
         names = [n for _, n in _bases(rng) if archive.refused_reason(n) is None]
         rng.shuffle(names)
-        created = 0
+        self.assertGreaterEqual(len(names), CREATED)
         for i, name in enumerate(names[:CREATED]):
             folder = os.path.join(self.folder, "n%d" % i)
             os.mkdir(folder)
             target = os.path.join(folder, name)
             with self.subTest(name=name):
                 self.assertEqual(os.path.dirname(target), folder)
-                try:
-                    with open(target, "xb") as f:
-                        f.write(b"x")
-                except UnicodeEncodeError:  # a lone surrogate off Windows: the file system API refuses it
-                    self.assertEqual(os.listdir(folder), [])
-                    continue
-                except OSError as e:
-                    # macOS (APFS) refuses a name with an unassigned code point or bytes that are not UTF-8
-                    # (EILSEQ); nothing is created, as above.
-                    if e.errno != errno.EILSEQ or sys.platform != "darwin":
-                        raise
-                    self.assertEqual(os.listdir(folder), [])
-                    continue
+                with open(target, "xb") as f:
+                    f.write(b"x")
                 listed = os.listdir(folder)
                 self.assertEqual(len(listed), 1)
                 self.assertEqual(archive.name_key(listed[0]), archive.name_key(name))
                 self.assertEqual(os.listdir(self.folder).count("n%d" % i), 1)
-            created += 1
-        self.assertGreater(created, CREATED // 2)
-        self.assertEqual(sorted(os.listdir(self.folder)), sorted("n%d" % i for i in range(min(CREATED, len(names)))))
+        self.assertEqual(sorted(os.listdir(self.folder)), sorted("n%d" % i for i in range(CREATED)))
+
+
+UNSTORABLE = "unassigned or unpaired Unicode character"
+
+
+class UnstorableNameTest(unittest.TestCase):
+    """A name one file system cannot store (APFS: EILSEQ for an unassigned code point or bytes that are not UTF-8)
+    is refused on every OS, so that a pack never fails half-way on one system and unpacks on another."""
+
+    def setUp(self):
+        self.folder = tempfile.mkdtemp(prefix="maxdrop-unstorable-")
+        self.addCleanup(shutil.rmtree, self.folder, True)
+
+    def test_unassigned_and_unpaired_code_points_are_refused(self):
+        # Noncharacters are never assigned; U+0378 has been unassigned in every Unicode version.
+        for base in ("wood\uffff.jpg", "wood\U000efffe.jpg", "\u0378.jpg", "wood\ud800.jpg", "wood\udcff.jpg",
+                     "\udfff"):
+            self.assertEqual(archive.refused_reason(base), UNSTORABLE, ascii(base))
+
+    def test_private_use_and_format_characters_stay_accepted(self):
+        for base in ("\ue000.jpg", "\U000f0000.png", "a\u200bb.jpg", "\u202eab.jpg", "\u4e2d\u6587.png",
+                     "\U0001f600.jpg"):
+            self.assertIsNone(archive.refused_reason(base), ascii(base))
+
+    def test_a_pack_with_such_a_map_unpacks_without_it(self):
+        path = os.path.join(self.folder, "pack.zip")
+        with zipfile.ZipFile(path, "w") as z:
+            for name, data in (("room.max", b"MAX"), ("wood\uffff.jpg", b"BAD"), ("ok.jpg", b"OK")):
+                z.writestr(zipfile.ZipInfo(name, date_time=(2020, 1, 1, 0, 0, 0)), data)
+        out = os.path.join(self.folder, "out")
+        os.mkdir(out)
+        r = archive.unpack(path, dest_parent=out)
+        self.assertEqual(r.mode, "unpacked")
+        self.assertEqual(r.refused, [("wood\uffff.jpg", UNSTORABLE)])
+        self.assertEqual(sorted(os.listdir(r.folder)), sorted([archive.MARKER, "room.max", "ok.jpg"]))
 
 
 if __name__ == "__main__":

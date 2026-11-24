@@ -20,7 +20,7 @@ scene was downloaded as. Blender 4.2 or newer; tested on 4.2 LTS, 4.5 LTS and 5.
 - **Editable Mesh and Editable Poly** objects: vertices, faces, material IDs, UV channels, smoothing groups (as
   sharp edges), instances as shared meshes.
 - **Primitives** (Box, Plane, Pyramid, Sphere, GeoSphere, Cylinder, Cone, Tube, Torus) as the meshes 3ds Max builds
-  from their parameters.
+  from their parameters, Slice and hemispheres included.
 - **Shapes** (Line, Editable Spline, Rectangle, Circle, Ellipse, Arc, NGon) as curves, and **Extrude** on a shape as
   the mesh 3ds Max makes of it: walls, floors and ceilings drawn as outlines arrive closed, with their caps.
 - **UVW Map** (planar, box, cylindrical, spherical) applied to its map channel, and **TurboSmooth, MeshSmooth, Shell
@@ -32,19 +32,19 @@ scene was downloaded as. Blender 4.2 or newer; tested on 4.2 LTS, 4.5 LTS and 5.
   objects render and cast shadows as 3ds Max renders them (their own flags, or their layer's when set By Layer).
 - **Materials** as a Principled BSDF with their maps as nodes (tiling, offset, rotation, cropping, Mix, Color
   Correction, Falloff, Composite, normal and bump maps): VRayMtl and the other V-Ray materials and wrappers,
-  Standard, Physical, Multi/Sub-Object, CoronaPhysicalMtl, CoronaMtl, CoronaLightMtl and CoronaLayeredMtl.
+  Standard, Physical, Multi/Sub-Object, CoronaPhysicalMtl, CoronaMtl, CoronaLightMtl, CoronaLayeredMtl and
+  CoronaSkinMtl (simplified).
 - **Textures** that are plain image files, next to the `.max` file, in a `maps` or `textures` folder beside it, or
   in folders you add in the preferences.
 - **Lights**: V-Ray plane, disc and sphere lights, standard and photometric lights, VRaySun and VRayIES as Blender
-  area, point, spot and sun lights, as bright as V-Ray renders them (the import option **Light Strength** scales
-  them all).
+  area, point, spot and sun lights, V-Ray mesh lights as glowing meshes and the V-Ray dome light as the World, as
+  bright as V-Ray renders them (the import option **Light Strength** scales them all).
 - **Cameras** (Free, Target, Physical, VRayPhysicalCamera) with 3ds Max's framing; the camera the file renders
   becomes the scene camera and the file's render size Blender's.
 
-Not yet: Corona lights, V-Ray mesh and dome lights, the sky (the World stays as it was), IES distributions, the other
-modifiers (Edit Poly, Edit Mesh, FFD, Noise…: the object arrives as it was before them), Teapot, sliced primitives
-and hemispheres, other shapes (Star, Text, Helix, Donut…), animation, procedural maps (simplified to the image below
-them). See [docs/SUPPORT.md](docs/SUPPORT.md).
+Not yet: Corona lights, the sky and Skylight, IES distributions, the other modifiers (Edit Poly, Edit Mesh, FFD,
+Noise…: the object arrives as it was before them), Teapot, other shapes (Star, Text, Helix, Donut…), animation,
+procedural maps (simplified to the image below them). See [docs/SUPPORT.md](docs/SUPPORT.md).
 
 ## Install
 
@@ -175,7 +175,7 @@ too.
 
 ```powershell
 python -I -m unittest discover tests                  # the tools, the landing page, the license files: no Blender
-python -I tools/lint.py                               # ruff, at the version CI runs (CONTRIBUTING.md)
+python -I tools/lint.py                               # ruff at the version CI runs + unreachable code (CONTRIBUTING.md)
 powershell -ExecutionPolicy Bypass -File build.ps1    # dist\: the zip, index.json and the landing page
 
 # Inside Blender, headless, with a profile of its own so your preferences are never touched:

@@ -436,6 +436,7 @@ class MaterialConverter:
         self._multis, self._for, self._reported = {}, {}, set()
         self._active = []  # the materials whose rule is running: a layer that comes back to one is a cycle
         self._bsdfs = {}  # id(MaterialIR) -> (the IR, the Principled BSDFs it draws): bsdf_count
+        self._bases = {}  # object index -> peel()'s base found without peeling (None: the peel fails): source_for
 
     def rgb(self, m, pid, block, default, scale=1.0):
         """A swatch parameter as linear RGB by the scene's rule; default is the swatch value (0..1) used when the
@@ -720,14 +721,41 @@ class MaterialConverter:
 
     def source_for(self, index, material_id):
         """The material object index material_for(index, material_id) converts, None where it gives none, found
-        without converting or counting anything: Multi/Sub-Objects looked up by the ID (through the wrappers peel()
-        has already walked; a wrapper not yet peeled is its own answer). To compare IDs that get no slot."""
+        without converting or counting anything (no peel kept): Multi/Sub-Objects looked up by the ID, wrappers
+        through peel()'s result or, for one peel() has not walked yet, its walk over _sub again (from the same object,
+        so the same base; kept in _bases, one walk per object as peel() pays); a wrapper whose peel fails is its own
+        answer (its grey IR is its own). To compare IDs that get no slot."""
+        def base_of(j):
+            if j in self._peels:
+                return self._peels[j][0]
+            if j not in self._bases:
+                self._bases[j] = walk(j)
+            return self._bases[j]
+
+        def walk(j):
+            chain = []
+            while True:
+                try:
+                    m = self.graph.get(j)
+                except ChunkError:
+                    return None
+                key = ClassId(*m.class_id)
+                if m.superclass != classids.SC_MATERIAL or not (key in WRAPPERS or key == classids.SHELL_MTL) or (
+                        key == classids.CORONA_LAYERED_MTL and self._mixes_layers(m)):
+                    return j
+                if len(chain) == MAX_PEEL:
+                    return None
+                chain.append(j)
+                j = self._sub(m, key)[0]
+                if j is None or j in chain:
+                    return None
+
         seen, i = [], index
         while isinstance(i, int) and not isinstance(i, bool) and i not in seen and len(seen) <= MAX_PEEL:
             if self.graph.superclass(i) != classids.SC_MATERIAL:
                 return None
             seen.append(i)
-            base = self._peels.get(i, (i, None))[0]
+            base = base_of(i)
             if base is None or not self.is_class(base, classids.SC_MATERIAL, classids.MULTI_SUB_MTL):
                 return i if base is None else base
             i = self._entry(base, material_id)
@@ -1429,16 +1457,21 @@ def _group(users, ids, materials, conv):
 
 def _mixed(cd, materials, conv):
     """The issue (node, text) of a curve whose spline mixes material IDs that some user gets different materials for
-    (conv.source_for: the IDs without a slot are not converted), named once on its first user; None without one."""
-    for n, sd in enumerate(cd.splines):
-        ids = sd.material_ids
-        if len(ids) < 2:
-            continue
-        for u in cd.users:
-            first = conv.source_for(materials.get(u), ids[0])
-            if any(conv.source_for(materials.get(u), mid) != first for mid in ids[1:]):
-                return (cd.users[0], "shape: spline %d mixes material IDs %s: drawn with ID %d's material (its first "
-                        "segment's)" % (n + 1, ", ".join(str(m + 1) for m in ids), ids[0] + 1))
+    (conv.source_for: the IDs without a slot are not converted), named once on its first user; None without one.
+    Bounded for an untrusted file: one source_for per distinct (material, ID) pair of the mixed splines (users sharing
+    a material asked once), then each spline by dict lookups. The cache lives in this call only: source_for reads the
+    peels, which later curves and meshes add to."""
+    splines = [sd.material_ids for sd in cd.splines]
+    mixed = {mid for ids in splines if len(ids) >= 2 for mid in ids}
+    if not mixed:
+        return None
+    mats = list(dict.fromkeys(materials.get(u) for u in cd.users))
+    kinds = {}  # the sources of an ID over mats -> a small int: IDs of one kind draw alike for every user
+    kind = {mid: kinds.setdefault(tuple(conv.source_for(m, mid) for m in mats), len(kinds)) for mid in mixed}
+    for n, ids in enumerate(splines):
+        if len(ids) >= 2 and any(kind[mid] != kind[ids[0]] for mid in ids[1:]):
+            return (cd.users[0], "shape: spline %d mixes material IDs %s: drawn with ID %d's material (its first "
+                    "segment's)" % (n + 1, ", ".join(str(m + 1) for m in ids), ids[0] + 1))
     return None
 
 

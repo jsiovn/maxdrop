@@ -61,8 +61,8 @@ issue, on the first node of its key), as a primitive whose sizes leave the float
 that does not fit is not drawn (an issue).
 
 A standard primitive (Box, Plane, Pyramid, Sphere, GeoSphere, Cylinder, Cone, Tube, Torus) becomes the mesh 3ds Max
-builds from its parameters (convert.primitives) and from there on is a mesh like any other; one with an option that is
-not built (Slice, a hemisphere) is a placeholder (an issue).
+builds from its parameters (convert.primitives) and from there on is a mesh like any other, Slice and hemispheres
+included; one convert.primitives refuses (a PrimitiveError) is a placeholder (an issue).
 
 A node becomes an EMPTY placeholder when its base object is not an Editable Mesh, Editable Poly, a primitive built
 here or a shape read here, when it has no object, or when the reader refuses its geometry or its record; placeholders
@@ -471,50 +471,98 @@ def rim_corners(positions, loop_vertices, loop_starts, loop_totals, angle, check
     vertex two rim faces meet, each along an open edge a -> b (its face's winding) and the shell's offset direction
     at its ends, so its normal is (pb - pa) x (na + nb), n the sum of the unit face normals at a vertex. 3ds Max's
     auto smooth splits the rim there; with the open edges sharp, Blender's Solidify keeps it smooth. Only the faces
-    at the boundary are measured; check() between the passes."""
+    at the boundary are measured; check() between the passes and their chunks.
+
+    Kept at _open_loops()' peak: int32 indices (vertex indices are int32 and face corners below
+    reader.geometry.MAX_LOOPS), the work per face corner and per open edge in chunks of geometry.CHECK_EVERY, kept
+    only as sums per boundary face and per boundary vertex; a chunk may split a face (numpy.add.at sums in corner
+    order, as one pass would)."""
     import numpy
     loops, nxt = _open_loops(loop_vertices, loop_starts, loop_totals, check)
     if not len(loops):
         return 0
+    chunk = geometry.CHECK_EVERY
     lv = numpy.asarray(loop_vertices, dtype=numpy.int32)
-    starts = numpy.asarray(loop_starts, dtype=numpy.int64)
-    totals = numpy.asarray(loop_totals, dtype=numpy.int64)
-    p = numpy.asarray(positions, dtype=numpy.float64)
-    oa, ob = lv[loops].astype(numpy.int64), lv[nxt].astype(numpy.int64)
+    starts = numpy.asarray(loop_starts, dtype=numpy.int32)
+    totals = numpy.asarray(loop_totals, dtype=numpy.int32)
+    p = numpy.asarray(positions)  # float32 from the reader: each chunk takes float64 (exact)
+    oa, ob = lv[loops], lv[nxt]
+    del loops, nxt
     boundary = numpy.unique(numpy.concatenate((oa, ob)))
-    slot = numpy.full(len(p), -1, dtype=numpy.int64)  # vertex -> its place in boundary, -1 off the boundary
-    slot[boundary] = numpy.arange(len(boundary))
+    slot = numpy.full(len(p), -1, dtype=numpy.int32)  # vertex -> its place in boundary, -1 off the boundary
+    slot[boundary] = numpy.arange(len(boundary), dtype=numpy.int32)
+    n_boundary = len(boundary)
+    del boundary
     if check is not None:
         check()
-    touching = numpy.flatnonzero(slot[lv] >= 0)
-    faces = numpy.unique(numpy.searchsorted(starts, touching, side="right") - 1)
-    del touching
+    parts = []
+    for a in range(0, len(lv), chunk):
+        # int32 like starts: searchsorted would copy starts to int64 on every chunk
+        touching = (numpy.flatnonzero(slot[lv[a:a + chunk]] >= 0) + a).astype(numpy.int32)
+        parts.append(numpy.unique(numpy.searchsorted(starts, touching, side="right") - 1).astype(numpy.int32))
+        if check is not None:
+            check()
+    faces = numpy.unique(numpy.concatenate(parts))
+    del parts
     sizes = totals[faces]
-    own = numpy.repeat(numpy.arange(len(faces)), sizes)  # each loop of those faces: its face among them
-    first = numpy.repeat(starts[faces], sizes)
-    fl = first + numpy.arange(int(sizes.sum())) - numpy.repeat(numpy.cumsum(sizes) - sizes, sizes)
-    fn = fl + 1
-    wrap = fn == first + sizes[own]
-    fn[wrap] = first[wrap]
+    ends = numpy.cumsum(sizes, dtype=numpy.int32)  # those faces' corners one after the other: where each ends
+
+    def corners(a):
+        """(own, fl, fn) of the corners a to a + chunk of the boundary faces: the face among them, the loop and the
+        next loop of its face."""
+        k = numpy.arange(a, min(a + chunk, int(ends[-1])), dtype=numpy.int32)  # as ends, for searchsorted
+        own = numpy.searchsorted(ends, k, side="right")
+        first = starts[faces[own]].astype(numpy.int64)
+        fl = first + (k - (ends[own] - sizes[own]))
+        fn = fl + 1
+        wrap = fn == first + sizes[own]
+        fn[wrap] = first[wrap]
+        return own, fl, fn
+
     normals = numpy.zeros((len(faces), 3))
-    numpy.add.at(normals, own, numpy.cross(p[lv[fl]], p[lv[fn]]))  # Newell: twice the area along the normal
+    for a in range(0, int(ends[-1]), chunk):
+        own, fl, fn = corners(a)
+        # Newell: twice the area along the normal
+        numpy.add.at(normals, own, numpy.cross(p[lv[fl]].astype(numpy.float64), p[lv[fn]].astype(numpy.float64)))
+        if check is not None:
+            check()
     length = numpy.linalg.norm(normals, axis=1)
     normals = numpy.divide(normals, length[:, None], out=numpy.zeros_like(normals), where=length[:, None] > 0)
-    at = slot[lv[fl]]
-    hit = at >= 0
-    at_vertex = numpy.zeros((len(boundary), 3))
-    numpy.add.at(at_vertex, at[hit], normals[own[hit]])
-    rim = numpy.cross(p[ob] - p[oa], at_vertex[slot[oa]] + at_vertex[slot[ob]])
-    length = numpy.linalg.norm(rim, axis=1)
-    good = length > 0
-    rim = numpy.divide(rim, length[:, None], out=numpy.zeros_like(rim), where=good[:, None])
-    order = numpy.argsort(oa, kind="stable")
-    at = numpy.minimum(numpy.searchsorted(oa[order], ob), len(oa) - 1)
-    found = oa[order][at] == ob  # the open edge leaving the vertex this one ends at
-    following = order[at]
-    turn = numpy.einsum("ij,ij->i", rim, rim[following])
-    sharp = found & good & good[following] & (turn < math.cos(math.radians(angle)))
-    return int(sharp.sum())
+    del length
+    at_vertex = numpy.zeros((n_boundary, 3))
+    for a in range(0, int(ends[-1]), chunk):
+        own, fl, _fn = corners(a)
+        at = slot[lv[fl]]
+        hit = at >= 0
+        numpy.add.at(at_vertex, at[hit], normals[own[hit]])
+        if check is not None:
+            check()
+    del normals
+
+    def rim(e):
+        """(unit rim normals, nonzero) of the open edges e."""
+        pa, pb = p[oa[e]].astype(numpy.float64), p[ob[e]].astype(numpy.float64)
+        r = numpy.cross(pb - pa, at_vertex[slot[oa[e]]] + at_vertex[slot[ob[e]]])
+        length = numpy.linalg.norm(r, axis=1)
+        good = length > 0
+        return numpy.divide(r, length[:, None], out=numpy.zeros_like(r), where=good[:, None]), good
+
+    order = numpy.argsort(oa, kind="stable").astype(numpy.int32)
+    ordered = oa[order]
+    cos = math.cos(math.radians(angle))
+    sharp = 0
+    for a in range(0, len(oa), chunk):
+        e = numpy.arange(a, min(a + chunk, len(oa)), dtype=numpy.int64)
+        at = numpy.minimum(numpy.searchsorted(ordered, ob[e]), len(oa) - 1)
+        found = ordered[at] == ob[e]  # the open edge leaving the vertex this one ends at
+        following = order[at]
+        here, good = rim(e)
+        there, good_there = rim(following)
+        turn = numpy.einsum("ij,ij->i", here, there)
+        sharp += int((found & good & good_there & (turn < cos)).sum())
+        if check is not None:
+            check()
+    return sharp
 
 
 def _disjoint(masks):

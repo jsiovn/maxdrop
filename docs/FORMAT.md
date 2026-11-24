@@ -1087,7 +1087,7 @@ is imported all the same. Measured in V-Ray 5.2 (scratch scenes): a white
 floor under a white dome of multiplier 1 renders 1.00018 in the default units, 0.00213024 in lm and lm/m²/sr, 1.43109
 in W and W/m²/sr (a dome has no area: the flux and the radiance units agree); Cycles renders a white floor under a
 white World of strength S at S (1.00002 for 1). So the World's strength is the multiplier × 1500 / (683 π), ×
-1 / 671.8 (0.00213024 / 1.43109) or × 1 in the three pairs, times Light Strength: in the default units 0.9997 of
+1 / 671.8 (0.00213024 / 1.43109) or × 1 in the three pairs, times Light Strength: in the default units 0.9995 of
 V-Ray's at 1.43. A texture replaces the color (a dome color 255, 64, 64 leaves a white texel white) and takes the
 same multiplier and units. With spherical off only the half above the dome's local XY plane shines (a downward-facing
 white plane gets 0; the camera sees 0 below; turned 180° about X the lower half shines; the position does not

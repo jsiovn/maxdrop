@@ -57,6 +57,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   Standard material as Blinn) takes each map, its on switch and its amount where 3ds Max keeps them: a bump map whose
   amount was never set afterwards imports at 30 % instead of 100 %, a self-illumination map at 100 % instead of 30 %,
   and a map set before the switch (an Anisotropic bump map, for one) lands in its own input instead of another one.
+- Glass: a grey or black reflection (or a reflection map) on refracting glass reflects that share of a white one
+  and refracts the rest, as V-Ray does, instead of reflecting as much as a white reflection.
+- Glass: a VRayMtl with reflection Fresnel off on refracting glass reflects its reflection color or map at every
+  angle and refracts the rest, as V-Ray does, instead of Blender's glass reflection (a 0.2 reflection on black glass
+  gave 0.05 facing the camera rising toward the rim; it now gives 0.2 everywhere in Cycles).
 - Materials: a CoronaPhysicalMtl, a Standard material with the Strauss shader and the grey material of an
   unsupported class reflect their IOR's full Fresnel (Specular IOR Level 0.5, Blender's default) instead of half of
   it (0.25), which made every non-metal CoronaPhysicalMtl reflect too little.
@@ -211,6 +216,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   before the operation, as Corona does, for every operation run in gamma 2.2 and Gamma, instead of left negative;
   Color Dodge, Color Burn and Exclusion over maps follow Corona's formulas, no longer clamped to 0..1, and Color
   Dodge of black under white gives white, as in Corona, instead of black.
+- Scene packs: a map whose name holds an unassigned Unicode character, or bytes the archive's encoding cannot
+  read, is skipped with a line in the report on every system, instead of failing the whole unpack on macOS (which
+  cannot store such a name) while Windows and Linux wrote it; a `.max` so named is not offered as a scene.
 
 ## [1.0.1] - 2026-11-22
 

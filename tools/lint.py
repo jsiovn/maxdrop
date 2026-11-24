@@ -2,16 +2,28 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Run ruff on the tree at the version CI runs, the one `required-version` in pyproject.toml names.
+"""Run ruff on the tree at the version CI runs, the one `required-version` in pyproject.toml names, then the
+unreachable-code check ruff has no rule for at that version.
 
     python -I tools/lint.py                              # ruff check .
     python -I tools/lint.py --output-format=github .     # the arguments go to `ruff check`
 
 The ruff used is `ruff` on PATH when it is that version, otherwise `uvx --offline ruff@<version>` when uv has it
-cached (`--offline`: never a download). Exit: ruff's own (0 clean, 1 findings, 2 a ruff error such as a bad
-argument), 3 when no ruff of that version is found or pyproject.toml has no pin. Standard library only, Python 3.9
-and later (no tomllib).
+cached (`--offline`: never a download). The unreachable-code check reads the files ruff checks (`ruff check <the
+arguments> --show-files`) and reports a statement that follows `return`, `raise`, `continue` or `break` in the same
+block, or a compound statement no path through falls out of (a `with` whose body returns, continues or breaks: its
+`__exit__` may swallow a raise; an `if`/`else` exiting on both branches; a `try` whose `finally` exits or whose
+body and handlers do; a `match` ending in an irrefutable case with every case exiting): a test method left nested
+after a return drops out of its suite without a failure. The `with` rule takes `__exit__` not to swallow what the
+body's own calls raise: the fallback after `with suppress(KeyError): return d[k]` is flagged (write it as
+try/except). Loops are never followed (a `break` leaves them, `while True` included) and there is no suppression
+comment (`return` then `yield`, the empty generator, is flagged too); a file this Python cannot parse is noted on
+stderr and not checked; the check is skipped with an argument ruff refuses beside --show-files (--statistics,
+--add-noqa, ...). Exit: ruff's own (0 clean, 1 findings, 2 a ruff error such as a bad argument; an unreachable
+statement turns 0 into 1 unless --exit-zero), 3 when no ruff of that version is found or pyproject.toml has no pin.
+Standard library only, Python 3.9 and later (no tomllib).
 """
+import ast
 import os
 import re
 import shutil
@@ -65,6 +77,117 @@ def _echo(data, stream):
         buffer.flush()
 
 
+_TERMINAL = (ast.Return, ast.Raise, ast.Continue, ast.Break)
+_TRY = tuple(getattr(ast, name) for name in ("Try", "TryStar") if hasattr(ast, name))  # TryStar: 3.11
+_MATCH = getattr(ast, "Match", None)  # 3.10
+_NAMES = {"AsyncWith": "async with", "TryStar": "try"}
+
+
+def _block_exits(block, raises):
+    # Control never passes a statement that exits, so a block exits when any statement in it does.
+    return any(_exits(stmt, raises) for stmt in block)
+
+
+def _irrefutable(pattern):
+    if isinstance(pattern, ast.MatchOr):
+        return any(_irrefutable(p) for p in pattern.patterns)
+    # `case _:` / `case name:`, or `case (_ as name):`
+    return isinstance(pattern, ast.MatchAs) and (pattern.pattern is None or _irrefutable(pattern.pattern))
+
+
+def _exits(stmt, raises=True):
+    """True when no path through `stmt` falls through to the next statement. Loops never exit (a break leaves
+    them, `while True` included), nor do definitions. `raises` False: a raise does not count (under a with)."""
+    if isinstance(stmt, _TERMINAL):
+        return raises or not isinstance(stmt, ast.Raise)
+    if isinstance(stmt, (ast.With, ast.AsyncWith)):
+        # __exit__ may swallow an exception (assertRaises, suppress): only return, continue and break leave it.
+        return _block_exits(stmt.body, False)
+    if isinstance(stmt, ast.If):  # elif: an If in orelse
+        return bool(stmt.orelse) and _block_exits(stmt.body, raises) and _block_exits(stmt.orelse, raises)
+    if isinstance(stmt, _TRY):
+        # The else runs only after the body completes: either one exiting covers the path without an exception.
+        return _block_exits(stmt.finalbody, raises) or (
+            all(_block_exits(handler.body, raises) for handler in stmt.handlers)
+            and (_block_exits(stmt.body, raises) or _block_exits(stmt.orelse, raises)))
+    if _MATCH is not None and isinstance(stmt, _MATCH):
+        last = stmt.cases[-1]
+        return (last.guard is None and _irrefutable(last.pattern)
+                and all(_block_exits(case.body, raises) for case in stmt.cases))
+    return False
+
+
+def _blocks(node):
+    # An except handler and a match case are nodes of their own with a body: ast.walk reaches them.
+    for field in ("body", "orelse", "finalbody"):
+        block = getattr(node, field, None)
+        if isinstance(block, list) and block and isinstance(block[0], ast.stmt):
+            yield block
+
+
+def unreachable(path):
+    """[(line, column, message)] of the first statement after one that exits (`_exits`), once per block; columns
+    from 1. Raises SyntaxError when this Python cannot parse the file (ruff's E9 reports a real one)."""
+    with open(path, "rb") as f:
+        tree = ast.parse(f.read(), path)
+    found = []
+    for node in ast.walk(tree):
+        for block in _blocks(node):
+            for before, dead in zip(block, block[1:]):
+                if _exits(before):
+                    name = type(before).__name__
+                    found.append((dead.lineno, dead.col_offset + 1,
+                                  "unreachable code after `%s`" % _NAMES.get(name, name.lower())))
+                    break
+    return sorted(found)
+
+
+def _shown(path, cwd):
+    try:
+        return os.path.relpath(path, cwd)
+    except ValueError:  # another drive
+        return path
+
+
+def report_unreachable(paths, cwd, output_format=None):
+    """Print the unreachable statements of `paths`; their count. Ruff's concise form on stdout, GitHub annotations
+    for `github`, the concise form on stderr for another machine format (stdout stays that format's own)."""
+    out = sys.stdout if output_format in (None, "concise", "full", "github") else sys.stderr
+    count = 0
+    for path in paths:
+        try:
+            found = unreachable(path)
+        except (SyntaxError, ValueError) as error:
+            sys.stderr.write("MaxDrop lint: %s not parsed by Python %d.%d, unreachable-code check skipped: %s\n"
+                             % (_shown(path, cwd), sys.version_info[0], sys.version_info[1], error))
+            continue
+        for line, col, message in found:
+            where = "%s:%d:%d: %s" % (_shown(path, cwd), line, col, message)
+            if output_format == "github":
+                out.write("::error title=MaxDrop lint (unreachable),file=%s,line=%d,col=%d::%s\n"
+                          % (_shown(path, cwd).replace(os.sep, "/"), line, col, where))
+            else:
+                out.write(where + "\n")
+            count += 1
+    if count:
+        out.write("Found %d unreachable statement%s.\n" % (count, "" if count == 1 else "s"))
+    out.flush()
+    return count
+
+
+# Ruff refuses these beside --show-files (and --add-noqa has rewritten files by then).
+_NO_FILE_LIST = ("--statistics", "--add-noqa", "--show-settings", "--show-files", "--watch")
+
+
+def _output_format(args):
+    for i, arg in enumerate(args):
+        if arg.startswith("--output-format="):
+            return arg.split("=", 1)[1]
+        if arg == "--output-format" and i + 1 < len(args):
+            return args[i + 1]
+    return None
+
+
 def main(args, cwd=ROOT):
     try:
         version = pin()
@@ -78,9 +201,24 @@ def main(args, cwd=ROOT):
             "Get it once with `uvx ruff@%s --version` (uv fetches it), or pip-install `ruff==%s` into a virtual\n"
             "environment of its own and put it on PATH (CONTRIBUTING.md).\n" % (version, version, version))
         return NOT_FOUND
-    done = subprocess.run(ruff + ["check"] + (args or ["."]), cwd=cwd, capture_output=True)
+    args = args or ["."]
+    done = subprocess.run(ruff + ["check"] + args, cwd=cwd, capture_output=True)
     _echo(done.stdout, sys.stdout)
     _echo(done.stderr, sys.stderr)
+    if done.returncode not in (0, 1):
+        return done.returncode
+    clash = [arg for arg in args if arg.split("=", 1)[0] in _NO_FILE_LIST]
+    if clash:
+        sys.stderr.write("MaxDrop lint: unreachable-code check skipped with %s\n" % clash[0])
+        return done.returncode
+    shown = subprocess.run(ruff + ["check"] + args + ["--show-files"], cwd=cwd, capture_output=True)
+    if shown.returncode != 0:
+        _echo(shown.stderr, sys.stderr)
+        return shown.returncode
+    paths = [os.path.join(cwd, line.strip()) for line in shown.stdout.decode("utf-8", "replace").splitlines()
+             if line.strip().endswith(".py")]
+    if report_unreachable(paths, cwd, _output_format(args)) and "--exit-zero" not in args:
+        return 1
     return done.returncode
 
 
