@@ -169,7 +169,8 @@ BLEND_OPS = {tx.BLEND_ADD: 'ADD', tx.BLEND_SUBTRACT: 'SUBTRACT', tx.BLEND_DIVIDE
              tx.BLEND_MAX: 'LIGHTEN', tx.BLEND_DIFFERENCE: 'DIFFERENCE', tx.BLEND_SCREEN: 'SCREEN',
              tx.BLEND_OVERLAY: 'OVERLAY', tx.BLEND_HARD_LIGHT: 'OVERLAY', tx.BLEND_LINEAR_BURN: 'ADD',
              tx.BLEND_LINEAR_LIGHT: 'LINEAR_LIGHT'}
-NON_NEGATIVE_BLENDS = (tx.BLEND_SUBTRACT, tx.BLEND_DIFFERENCE, tx.BLEND_LINEAR_BURN, tx.BLEND_BURN)  # no ABSOLUTE
+# never below 0 on the layers' magnitudes: no closing ABSOLUTE
+NON_NEGATIVE_BLENDS = (tx.BLEND_ADD, tx.BLEND_SUBTRACT, tx.BLEND_DIFFERENCE, tx.BLEND_LINEAR_BURN, tx.BLEND_BURN)
 # Composite blend mode -> the Mix node's blend type drawn at factor 1 (texmaps: AVERAGE, SPOTLIGHT, SPOTLIGHT_BLEND
 # and HARD_LIGHT have forms of their own, LINEAR_DODGE is ADD clamped before the opacity, as measured)
 BLEND_TYPES = {tx.ADDITION: 'ADD', tx.SUBTRACT: 'SUBTRACT', tx.DARKEN: 'DARKEN', tx.MULTIPLY_BLEND: 'MULTIPLY',
@@ -1144,12 +1145,13 @@ class _Tree:
         return result
 
     def arith(self, n, depth):
-        """A Blend (a color socket): with a gamma both sides' magnitudes (a Vector Math ABSOLUTE on a map side, a
-        constant's own) through a Gamma node of 1 / gamma; the operation (a Mix node at factor 1, not clamped, A the
-        bottom: subtract and linear burn floored at 0 by a Vector Math MAXIMUM, linear burn minus 1 first; dodge,
-        burn and exclusion as Vector Math nodes, Corona's unclamped formulas: _dodge_burn, multiply_add); then a Vector
-        Math ABSOLUTE (but for NON_NEGATIVE_BLENDS) and a Gamma node of gamma. A missing side gives the other one when
-        that is a map, else MISSING, as for Multiply."""
+        """A Blend (a color socket): with a gamma both sides' magnitudes to the power 1 / gamma (a map side through a
+        Vector Math ABSOLUTE and a Gamma node, a constant folded); the operation (a Mix node at factor 1, not
+        clamped, A the bottom: subtract and linear burn floored at 0 by a Vector Math MAXIMUM, linear burn minus 1
+        first; dodge, burn and exclusion as Vector Math nodes, Corona's unclamped formulas: _dodge_burn,
+        multiply_add; a constant below 0 on a Mix input through combine_xyz); then a Vector Math ABSOLUTE (but for
+        NON_NEGATIVE_BLENDS) and a Gamma node of gamma. A missing side gives the other one when that is a map, else
+        MISSING, as for Multiply."""
         va, vb = self.graph(n.a, COLOR, depth + 2), self.graph(n.b, COLOR, depth + 2)
         if va is MISSING or vb is MISSING:
             other = vb if va is MISSING else va
@@ -1160,10 +1162,9 @@ class _Tree:
         for v in (va, vb):
             if n.gamma != 1.0:  # Corona takes a negative layer's magnitude (renderMap, maxdrop-em3.161)
                 if isinstance(v, bpy.types.NodeSocket):
-                    v = self.vector_math('ABSOLUTE', v, None, depth + 2)
+                    v = self.gamma(self.vector_math('ABSOLUTE', v, None, depth + 2), 1.0 / n.gamma, depth + 1)
                 else:
-                    v = tuple(abs(c) for c in _as(v, COLOR))
-                v = self.gamma(self.socket(v, COLOR, depth + 2), 1.0 / n.gamma, depth + 1)
+                    v = tuple(abs(c) ** (1.0 / n.gamma) for c in _as(v, COLOR))
             sides.append(v)
         if n.op == tx.BLEND_DODGE:
             out = self._dodge_burn(sides[0], self.multiply_add(sides[1], -1.0, 1.0, depth), True, depth)
@@ -1177,8 +1178,10 @@ class _Tree:
             node.clamp_result = False
             if n.op == tx.BLEND_HARD_LIGHT:  # overlay with the layers' roles swapped
                 sides.reverse()
-            self.feed(a, sides[0])
-            self.feed(b, sides[1])
+            for socket, v in zip((a, b), sides):
+                if not isinstance(v, bpy.types.NodeSocket) and min(_as(v, COLOR)) < 0.0:
+                    v = self.combine_xyz(v, depth + 1)  # a color input's own value is clamped at 0
+                self.feed(socket, v)
         if n.op == tx.BLEND_LINEAR_BURN:
             out = self.vector_math('ADD', out, (-1.0, -1.0, -1.0), depth)
         if n.op in (tx.BLEND_SUBTRACT, tx.BLEND_LINEAR_BURN):
@@ -1209,6 +1212,13 @@ class _Tree:
         self.links.new(_out(q, "Vector"), _in(k, "Vector_001"))
         k = self.vector_math('MAXIMUM', _out(k, "Vector"), (0.0, 0.0, 0.0), depth)
         return self.multiply_add(k, -1.0, 1.0, depth) if dodge else k
+
+    def combine_xyz(self, value, depth):
+        """A constant color as a Combine XYZ node's output, which keeps a channel below 0."""
+        c = self.node("ShaderNodeCombineXYZ", depth)
+        for socket, v in zip(c.inputs, _as(value, COLOR)):
+            socket.default_value = v
+        return c.outputs[0]
 
     def multiply_add(self, v, scale, add, depth):
         """v x scale + add per channel (a Vector Math MULTIPLY_ADD); each a socket or a constant (a float: on every

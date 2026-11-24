@@ -1909,6 +1909,7 @@ bottom of 0 at 0 under a top of 1. Vector Math's Divide gives 0 for a divisor of
 and dodge 1 - max(0, nz - a / (1 - b)), nz = ceil(min(|divisor|, 1)), 0 for a divisor of 0. Checked by a Cycles
 emission bake against `texmaps.blend_value` (every operation, both modes, layers -0.5 to 3, exactly 0 and 1 too).
 The gamma operation over a bottom map draws a ColorCorrect gamma: a negative channel of that map stays negative.
+A Mix node's color input clamps its own value at 0: a constant layer below 0 goes in through a Combine XYZ node.
 
 Corona 12 renders (maxdrop-em3.115): `3dsmaxbatch`, CoronaRenderer with tone mapping off (`colorMap_enabled`) and a
 pass and a time limit, read with `getPixels ... linear:true` (a CoronaLightMtl patch at 0.5 / 1.0 reads 0.49999 /

@@ -22,8 +22,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - CoronaMix: the Screen, Overlay, Color Dodge, Color Burn, Linear Burn, Linear Light, Hard Light and Exclusion
   operations are imported as nodes, in gamma 2.2 with "mix in sRGB" on as Corona does it, and Gamma when its top is
   a grey color, instead of the first bitmap below and a line in the report; Soft Light, Vivid Light, Pin Light and
-  Hard Mix keep that, the line now naming the operation. An Add in sRGB mode whose sum is negative (negative
-  offsets or multipliers) now gives its magnitude raised to 2.2, as Corona does, instead of the negative value.
+  Hard Mix keep that, the line now naming the operation.
 - Lights: a V-Ray mesh light is imported as an emissive mesh (the mesh it emits, at the light's place) instead of an
   empty: its strength in every units mode as bright as V-Ray 5.2 (measured) times Light Strength, one side or both,
   Flip normals, invisible (not seen by the camera, no shadow), affect diffuse, specular and reflections, on / off.
@@ -215,7 +214,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - CoronaMix: in sRGB mode (the default) a layer below 0 (a negative offset or multiplier) is taken by its magnitude
   before the operation, as Corona does, for every operation run in gamma 2.2 and Gamma, instead of left negative;
   Color Dodge, Color Burn and Exclusion over maps follow Corona's formulas, no longer clamped to 0..1, and Color
-  Dodge of black under white gives white, as in Corona, instead of black.
+  Dodge of black under white gives white, as in Corona, instead of black. With "mix in sRGB" off a color below 0
+  over a map is no longer taken as 0 by the operations drawn as a Mix node.
 - Scene packs: a map whose name holds an unassigned Unicode character, or bytes the archive's encoding cannot
   read, is skipped with a line in the report on every system, instead of failing the whole unpack on macOS (which
   cannot store such a name) while Windows and Linux wrote it; a `.max` so named is not offered as a scene.

@@ -265,7 +265,8 @@ BLEND_OPS = (BLEND_ADD, BLEND_SUBTRACT, BLEND_DIVIDE, BLEND_MIN, BLEND_MAX, BLEN
 # only for a grey top that is its color: _corona_gamma_exponent); 15 soft light (Photoshop's, not Blender's), 17 vivid
 # light, 18 pin light and 19 hard mix have no node (peeled). mixInSRgb (on by default) runs the operation on
 # |layer|^(1 / 2.2) and raises the magnitude of the result to 2.2 (linear light: black over black renders white);
-# multiply, divide, min and max come out the same either way. The amount lerp is linear in both modes.
+# multiply, divide, min and max come out the same either way, a negative layer's sign kept (renderMap P5), so they
+# are not CM_GAMMA_OPS. The amount lerp is linear in both modes.
 CM_BLENDS = {0: BLEND_ADD, 1: BLEND_SUBTRACT, 3: BLEND_DIVIDE, 4: BLEND_MIN, 5: BLEND_MAX, 8: BLEND_DIFFERENCE,
              9: BLEND_SCREEN, 10: BLEND_OVERLAY, 11: BLEND_DODGE, 12: BLEND_BURN, 13: BLEND_LINEAR_BURN,
              14: BLEND_LINEAR_LIGHT, 16: BLEND_HARD_LIGHT, 20: BLEND_EXCLUSION}

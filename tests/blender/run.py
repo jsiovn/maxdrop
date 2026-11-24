@@ -3067,8 +3067,8 @@ def check_builder_blend():
         mixes = [n for n in nodes if n.bl_idname == "ShaderNodeMix" and n.blend_type in ('ADD', 'SUBTRACT')]
         add = next((n for n in mixes if n.blend_type == 'ADD'), None)
         gammas = sorted(round(n.inputs[1].default_value, 4) for n in nodes if n.bl_idname == "ShaderNodeGamma")
-        check("blend: add between Gamma 1 / 2.2 and 2.2, unclamped",
-              add is not None and not add.clamp_result and gammas == [round(1 / 2.2, 4)] * 2 + [2.2], str(gammas))
+        check("blend: add between Gamma 1 / 2.2 and 2.2, unclamped (the constant side folded: maxdrop-em3.161)",
+              add is not None and not add.clamp_result and gammas == [round(1 / 2.2, 4), 2.2], str(gammas))
         floor = [n for n in nodes if n.bl_idname == "ShaderNodeVectorMath" and n.operation == 'MAXIMUM']
         check("blend: subtract floored at 0", len(floor) == 1)
         bsdfs, shaders = _bsdfs(m), _shaders(m)
@@ -3103,12 +3103,52 @@ def _reaches_image(socket, depth=4):
     return n.bl_idname == "ShaderNodeTexImage" or any(_reaches_image(i, depth - 1) for i in n.inputs)
 
 
+def _blend_form(op, vms, t):
+    """Whether the Vector Math nodes vms of a dodge, burn or exclusion of an image (a) and the constant t (b, as the
+    operation takes it) are wired as Corona's formula (maxdrop-em3.161): (ok, the operations found)."""
+    from maxdrop.convert import texmaps as tx
+
+    def one(operation):
+        found = [n for n in vms if n.operation == operation]
+        return found[0] if len(found) == 1 else None
+
+    def const(n, name, v):
+        socket = _input(n, name)
+        return not socket.is_linked and close(list(socket.default_value), list(v), 1e-5)
+
+    ones, zeros = (1.0, 1.0, 1.0), (0.0, 0.0, 0.0)
+    madds = [n for n in vms if n.operation == 'MULTIPLY_ADD']
+    found = sorted(n.operation for n in vms)
+    if op == tx.BLEND_EXCLUSION:  # a + b (1 - 2a)
+        inner = next((n for n in madds if const(n, "Vector_001", (-2.0,) * 3)), None)
+        outer = next((n for n in madds if n != inner), None)
+        ok = len(madds) == 2 and inner is not None and outer is not None and const(inner, "Vector_002", ones) \
+            and _reaches_image(_input(inner, "Vector")) and const(outer, "Vector", t) \
+            and _from(_input(outer, "Vector_001")) == inner and _input(outer, "Vector_002").is_linked \
+            and _input(outer, "Vector_002").links[0].from_socket == _input(inner, "Vector").links[0].from_socket
+        return ok, found
+    div, sub, top = one('DIVIDE'), one('SUBTRACT'), one('MAXIMUM')
+    if None in (div, sub, top) or len(madds) != 1:
+        return False, found
+    m = madds[0]
+    ok = const(m, "Vector_001", (-1.0,) * 3) and const(m, "Vector_002", ones) and const(sub, "Vector", ones) \
+        and _from(_input(sub, "Vector_001")) == div and _from(_input(top, "Vector")) == sub \
+        and const(top, "Vector_001", zeros)
+    if op == tx.BLEND_DODGE:  # 1 - max(0, 1 - a / (1 - b))
+        ok = ok and _reaches_image(_input(div, "Vector")) and const(div, "Vector_001", [1.0 - c for c in t]) \
+            and _from(_input(m, "Vector")) == top
+    else:  # burn: max(0, 1 - (1 - a) / b)
+        ok = ok and _from(_input(div, "Vector")) == m and _reaches_image(_input(m, "Vector")) \
+            and const(div, "Vector_001", t)
+    return ok, found
+
+
 def check_builder_blend_modes():
     """The CoronaMix blend modes of bead maxdrop-em3.117 over an image: a Mix node of the mode (bottom in A, hard
     light's top in A), linear burn's add minus 1 floored at 0; dodge, burn and exclusion as Vector Math nodes,
     Corona's unclamped formulas (maxdrop-em3.161); in sRGB mode a Vector Math ABSOLUTE before the map side's
-    Gamma of 1 / 2.2 (Corona takes a layer's magnitude, maxdrop-em3.161) and before the closing Gamma but for
-    linear burn and burn (never below 0), in linear mode none."""
+    Gamma of 1 / 2.2 and a constant side's magnitude folded (Corona takes a layer's magnitude, maxdrop-em3.161), an
+    ABSOLUTE before the closing Gamma but for linear burn and burn (never below 0); in linear mode none."""
     from maxdrop.build import materials as build_materials
     from maxdrop.convert import materials as cm
     from maxdrop.convert import texmaps as tx
@@ -3119,22 +3159,18 @@ def check_builder_blend_modes():
         png = os.path.join(scratch, "blend.png")
         _write_png(png)
         img = tx.Image(1, "blend.png", "blend.png", "", ct.Found(png, ct.SCENE))
-        top = tx.Constant((0.6, 0.2, 0.75))
+        top = (0.6, -0.2, 0.75)  # a channel below 0: its magnitude in sRGB mode
         types = {tx.BLEND_SCREEN: 'SCREEN', tx.BLEND_OVERLAY: 'OVERLAY', tx.BLEND_HARD_LIGHT: 'OVERLAY',
                  tx.BLEND_LINEAR_BURN: 'ADD', tx.BLEND_LINEAR_LIGHT: 'LINEAR_LIGHT'}
-        # the Vector Math operations of the forms over an image and a constant top (dodge's and burn's
-        # ceil(min(|d|, 1)) folded for a constant d, drawn in sRGB mode, where the top is a Gamma node's output)
-        forms = {tx.BLEND_DODGE: ['DIVIDE', 'MAXIMUM', 'MULTIPLY_ADD', 'SUBTRACT'],
-                 tx.BLEND_BURN: ['DIVIDE', 'MAXIMUM', 'MULTIPLY_ADD', 'SUBTRACT'],
-                 tx.BLEND_EXCLUSION: ['MULTIPLY_ADD']}
         builder = build_materials.MaterialBuilder()
-        for op in list(types) + list(forms):
+        for op in list(types) + [tx.BLEND_DODGE, tx.BLEND_BURN, tx.BLEND_EXCLUSION]:
             for gamma in (2.2, 1.0):
                 ir = cm.MaterialIR(30, "Mode", "test", base_color=cm.Input((0.5,) * 3, cm.MapRef(1)))
-                ir.textures = {"base_color": tx.TextureGraphIR(tx.Blend(op, img, top, gamma), tx.COLOR)}
+                ir.textures = {"base_color": tx.TextureGraphIR(tx.Blend(op, img, tx.Constant(top), gamma), tx.COLOR)}
                 m = builder.make(ir)
                 nodes = m.node_tree.nodes
                 what = "blend mode %s, gamma %s" % (op, gamma)
+                t = tuple(abs(c) ** (1 / gamma) for c in top) if gamma != 1.0 else top
                 vms = [n for n in nodes if n.bl_idname == "ShaderNodeVectorMath"]
                 if op in types:
                     blend_type = types[op]
@@ -3143,23 +3179,29 @@ def check_builder_blend_modes():
                     if ok:
                         a, b = _input(mix[0], "A_Color"), _input(mix[0], "B_Color")
                         image, constant = (b, a) if op == tx.BLEND_HARD_LIGHT else (a, b)
-                        ok = _reaches_image(image) and not _reaches_image(constant)
-                    check("%s: one unclamped Mix node, the bottom image in %s"
-                          % (what, "B" if op == tx.BLEND_HARD_LIGHT else "A"), ok)
+                        held = _from(constant)  # a channel below 0: a Combine XYZ (a color input clamps at 0)
+                        if held is None:
+                            value = list(constant.default_value)[:3]
+                        elif held.bl_idname == "ShaderNodeCombineXYZ":
+                            value = [s.default_value for s in held.inputs]
+                        else:
+                            value = None
+                        ok = _reaches_image(image) and value is not None and close(value, list(t), 1e-5) \
+                            and (held is not None) == (min(t) < 0.0)
+                    check("%s: one unclamped Mix node, the bottom image in %s, the top %s"
+                          % (what, "B" if op == tx.BLEND_HARD_LIGHT else "A", [round(c, 4) for c in t]), ok)
                 else:
-                    got = sorted({n.operation for n in vms} - {'ABSOLUTE'})
-                    nz = ['CEIL', 'MINIMUM'] if gamma != 1.0 and op != tx.BLEND_EXCLUSION else []
-                    check("%s: Vector Math nodes, no Mix node" % what, got == sorted(forms[op] + nz)
-                          and not any(n.bl_idname == "ShaderNodeMix" for n in nodes), str(got))
+                    ok, found = _blend_form(op, vms, t)
+                    check("%s: Vector Math nodes wired as Corona's formula, no Mix node" % what,
+                          ok and not any(n.bl_idname == "ShaderNodeMix" for n in nodes), str(found))
                 absolute = [n for n in vms if n.operation == 'ABSOLUTE']
                 into = sorted(round(_input(n.outputs[0].links[0].to_node, "Gamma").default_value, 3)
                               for n in absolute if n.outputs[0].links
                               and n.outputs[0].links[0].to_node.bl_idname == "ShaderNodeGamma")
                 closing = gamma != 1.0 and op not in (tx.BLEND_LINEAR_BURN, tx.BLEND_BURN)
                 wants = ([round(1 / 2.2, 3)] if gamma != 1.0 else []) + ([2.2] if closing else [])
-                nz = 1 if gamma != 1.0 and op in (tx.BLEND_DODGE, tx.BLEND_BURN) else 0  # |d|
                 check("%s: ABSOLUTE into the Gammas %s" % (what, wants),
-                      into == wants and len(absolute) == len(wants) + nz, str(into))
+                      into == wants and len(absolute) == len(wants), str(into))
                 if op == tx.BLEND_LINEAR_BURN:
                     vm = {n.operation: n for n in vms}
                     add, floor = vm.get('ADD'), vm.get('MAXIMUM')
@@ -3167,13 +3209,18 @@ def check_builder_blend_modes():
                           add is not None and tuple(_input(add, "Vector_001").default_value) == (-1.0, -1.0, -1.0)
                           and floor is not None and floor.inputs[0].links[0].from_node == add)
                 bpy.data.materials.remove(m)
-        for op in (tx.BLEND_DODGE, tx.BLEND_BURN):  # a map top: 1 where it is not d = 0, drawn
+        for op in (tx.BLEND_DODGE, tx.BLEND_BURN):  # a map top: nz = ceil(min(|d|, 1)) drawn from the divisor
             ir = cm.MaterialIR(31, "Maps", "test", base_color=cm.Input((0.5,) * 3, cm.MapRef(1)))
             ir.textures = {"base_color": tx.TextureGraphIR(tx.Blend(op, img, tx.Invert(img)), tx.COLOR)}
             m = builder.make(ir)
-            got = sorted(n.operation for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeVectorMath")
-            check("blend mode %s over two maps: ceil(min(|d|, 1)) drawn" % op,
-                  {'ABSOLUTE', 'CEIL', 'MINIMUM'} <= set(got), str(got))
+            vms = {n.operation: n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeVectorMath"}
+            div, sub, ceil = vms.get('DIVIDE'), vms.get('SUBTRACT'), vms.get('CEIL')
+            low, absolute = vms.get('MINIMUM'), vms.get('ABSOLUTE')
+            ok = None not in (div, sub, ceil, low, absolute) and _input(div, "Vector_001").is_linked \
+                and _from(_input(absolute, "Vector")) == _from(_input(div, "Vector_001")) \
+                and _from(_input(low, "Vector")) == absolute and _from(_input(ceil, "Vector")) == low \
+                and _from(_input(sub, "Vector")) == ceil and _from(_input(sub, "Vector_001")) == div
+            check("blend mode %s over two maps: ceil(min(|d|, 1)) of the divisor drawn" % op, ok, str(sorted(vms)))
             bpy.data.materials.remove(m)
     finally:
         empty_scene()
