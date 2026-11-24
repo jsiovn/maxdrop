@@ -121,8 +121,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Lights: a VRayIES whose intensity is not overridden is as bright as V-Ray renders it when its IES file is found
   (by the texture lookup's rules): its power is scaled by the file's own flux over its rated lumens, as V-Ray scales
   the file (a relative-photometry file whose rated lumens exceed its luminaire's flux no longer arrives too bright).
-  A file not found, or one MaxDrop does not read (photometric type A or B, damaged), keeps the power as the flux,
-  a line in the report.
+  A file not found, or one MaxDrop does not read (a damaged one), keeps the power as the flux, a line in the report.
 - Extrude: a shape extruded downwards (a negative amount) with only one of its caps on gets that cap facing the way
   3ds Max faces it (into the solid, as for an upward extrusion) and its material ID, instead of turned out.
 - Extrude: the sides of an extruded pie Arc shade sharp at its corners (the arc's ends and the center), as in
