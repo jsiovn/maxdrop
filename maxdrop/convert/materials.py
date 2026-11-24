@@ -1126,6 +1126,13 @@ def _corona_amount_map(conv, m, map_pid, ir, invert=False):
     return conv.map_ref(m, map_pid, map_pid + 1, map_pid + 2, 0, invert=invert, ir=ir, percent=False)
 
 
+def _corona_opacity(conv, m, pid, level, ref, ir):
+    """A Corona opacity: the swatch at pid (mono_swatch) times its level, clamped to 0..1; a colored swatch is an
+    issue only where it shows (a level above 0, no map at full amount over it)."""
+    shown = level > 0.0 and (ref is None or ref.amount < 1.0)
+    return _clamp01(conv.mono_swatch(m, pid, 0, (1.0, 1.0, 1.0), ir if shown else None) * level)
+
+
 def _unread_map(conv, m, map_pid, ir, what):
     """A Corona map slot (map, switch at + 1) whose input the IR has no map for: an issue when a map is on there."""
     if conv.map_ref(m, map_pid, map_pid + 1, None, 0, ir=ir) is not None:
@@ -1186,8 +1193,8 @@ def corona_physical_mtl(conv, m, ir):
     if ior_mode not in (None, 0, 1):
         conv.issue(m.index, "CoronaPhysicalMtl %r: unknown IOR mode %r read as an IOR" % (m.name, ior_mode), ir)
     ir.thin_walled = thin
-    opacity = _clamp01(conv.mono_swatch(m, 121, 0, (1.0, 1.0, 1.0), ir) * max(0.0, _num(m, 122, 0, 1.0)))
-    ir.alpha = Input(opacity, _corona_amount_map(conv, m, 123, ir))
+    ref = _corona_amount_map(conv, m, 123, ir)
+    ir.alpha = Input(_corona_opacity(conv, m, 121, max(0.0, _num(m, 122, 0, 1.0)), ref, ir), ref)
     ir.emission_color = Input(conv.rgb(m, 331, 0, (1.0, 1.0, 1.0)), _corona_amount_map(conv, m, 333, ir))
     ir.emission_strength = max(0.0, _num(m, 332, 0, 0.0))
     ir.coat_weight = _clamp01(_num(m, 211, 0, 0.0))
@@ -1278,8 +1285,8 @@ def corona_legacy_mtl(conv, m, ir):
     ir.transmission = Input(t, slot(144, 164, 293, level=refract_level))
     ir.ior = _ior(_num(m, 183, 0, 1.52) if t > 0 else fresnel_ior)
     ir.thin_walled = _flag(m, 210, 0, False)
-    opacity = _clamp01(conv.mono_swatch(m, 105, 0, (1.0, 1.0, 1.0), ir) * opacity_level)
-    ir.alpha = Input(opacity, slot(146, 166, 295, level=opacity_level))
+    ref = slot(146, 166, 295, level=opacity_level)
+    ir.alpha = Input(_corona_opacity(conv, m, 105, opacity_level, ref, ir), ref)
     ir.emission_color = Input(conv.rgb(m, 107, 0, (1.0, 1.0, 1.0)), slot(158, 178, 303))
     ir.emission_strength = max(0.0, _num(m, 128, 0, 0.0))
     conv.bump_slot(ir, slot(147, 167, 296))
@@ -1387,8 +1394,8 @@ def corona_skin_mtl(conv, m, ir):
     ir.specular = Input(_clamp01(max(0.0, _num(m, 115, 0, 1.0)) * reflection), slot(135))
     ir.roughness = Input(_roughness(_num(m, 116, 0, 0.5), False), slot(137, invert=True))
     ir.ior = _ior(_num(m, 117, 0, 1.4))
-    opacity = _clamp01(conv.mono_swatch(m, 122, 0, (1.0, 1.0, 1.0), ir) * max(0.0, _num(m, 123, 0, 1.0)))
-    ir.alpha = Input(opacity, slot(143))
+    ref = slot(143)
+    ir.alpha = Input(_corona_opacity(conv, m, 122, max(0.0, _num(m, 123, 0, 1.0)), ref, ir), ref)
     conv.bump_slot(ir, slot(144))
     if _num(m, 119, 0, 0.0) > 0:
         conv.issue(m.index, "CoronaSkinMtl %r: second reflection not converted" % (m.name,), ir)
@@ -1459,8 +1466,8 @@ def corona_hair_mtl(conv, m, ir):
     ir.base_color = Input(tuple(min(1.0, d + (1.0 - w) * h) for h, d in zip(hair, diffuse)))
     ir.roughness = Input(_roughness(_num(m, 108, 0, 0.5), False), slot(116, invert=True))
     ir.ior = _ior(_num(m, 107, 0, 1.55))
-    opacity = _clamp01(conv.mono_swatch(m, 103, 0, (1.0, 1.0, 1.0), ir) * max(0.0, _num(m, 106, 0, 1.0)))
-    ir.alpha = Input(opacity, slot(114))
+    ref = slot(114)
+    ir.alpha = Input(_corona_opacity(conv, m, 103, max(0.0, _num(m, 106, 0, 1.0)), ref, ir), ref)
     conv.bump_slot(ir, slot(120))
     for map_pid, on_pid, what in HAIR_UNREAD:
         if conv.map_ref(m, map_pid, on_pid, None, 0, ir=ir) is not None:

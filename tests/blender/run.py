@@ -3680,7 +3680,8 @@ def check_builder_blend_modes():
 
 def check_builder_gamma_magnitude():
     """A ColorCorrect gamma that takes the magnitude (a CoronaMix gamma in sRGB mode, maxdrop-6n0.6.40): a Vector Math
-    ABSOLUTE between the image and the Gamma node, also beside another step; without the flag none."""
+    ABSOLUTE between the image and the Gamma node, also beside another step; without the flag none; at a gamma of 1
+    the ABSOLUTE alone. Structural, as the other builder checks (the values: test_texmaps and the probe)."""
     from maxdrop.build import materials as build_materials
     from maxdrop.convert import materials as cm
     from maxdrop.convert import texmaps as tx
@@ -3703,18 +3704,30 @@ def check_builder_gamma_magnitude():
                 absolute = [n for n in nodes if n.bl_idname == "ShaderNodeVectorMath" and n.operation == 'ABSOLUTE']
                 ok = len(gammas) == 1 and abs(_input(gammas[0], "Gamma").default_value - 1 / 0.731) < 1e-5
                 if magnitude:
-                    ok = ok and len(absolute) == 1 and _from(_input(gammas[0], "Color")) == absolute[0]                         and _reaches_image(_input(absolute[0], "Vector"))                         and absolute[0].location.x < gammas[0].location.x
+                    ok = (ok and len(absolute) == 1 and _from(_input(gammas[0], "Color")) == absolute[0]
+                          and _reaches_image(_input(absolute[0], "Vector"))
+                          and absolute[0].location.x < gammas[0].location.x)
                 else:
                     ok = ok and not absolute and _reaches_image(_input(gammas[0], "Color"))
                 check("ColorCorrect gamma, magnitude %s, hue %s: %s" % (
                     magnitude, hue, "ABSOLUTE into the Gamma" if magnitude else "no ABSOLUTE"), ok,
                     str([n.bl_idname for n in nodes]))
                 bpy.data.materials.remove(m)
+        ir = cm.MaterialIR(33, "Magnitude1", "test", base_color=cm.Input((0.5,) * 3, cm.MapRef(1)))
+        ir.textures = {"base_color": tx.TextureGraphIR(tx.ColorCorrect(img, magnitude=True), tx.COLOR)}
+        m = builder.make(ir)
+        nodes = m.node_tree.nodes
+        absolute = [n for n in nodes if n.bl_idname == "ShaderNodeVectorMath" and n.operation == 'ABSOLUTE']
+        check("ColorCorrect magnitude at gamma 1: the ABSOLUTE alone, no Gamma",
+              len(absolute) == 1 and _reaches_image(_input(absolute[0], "Vector"))
+              and not any(n.bl_idname == "ShaderNodeGamma" for n in nodes), str([n.bl_idname for n in nodes]))
+        bpy.data.materials.remove(m)
     finally:
         empty_scene()
         for img in list(bpy.data.images):
             bpy.data.images.remove(img)
         shutil.rmtree(scratch, ignore_errors=True)
+
 
 def check_builder_weight():
     """A reflection weight (bead maxdrop-em3.119): between 0 and 1, or a map, a Mix Shader by the weight over a

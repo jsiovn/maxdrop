@@ -4020,6 +4020,8 @@ class CoronaGroup(Checks):
                     if want is None:
                         self.assertEqual(g.root, tx.Constant((1.0, 1.0, 1.0)))
                         self.assertEqual(d.root, tx.Constant(1.0))
+                        self.assertFalse(g.approximated, "what Corona renders: exact")
+                        self.assertEqual(tex.stats.peeled, collections.Counter())
                     elif switch:
                         self.assertEqual(g.root.name, "a.png")
                     else:
@@ -4028,15 +4030,19 @@ class CoronaGroup(Checks):
 
     def test_map_switches_are_read_under_corona(self):
         """Corona honors Mix, RGB Multiply and Falloff switches as V-Ray (6n0.6.23): a switched-off map leaves the
-        map's own color under Corona too."""
-        cases = (FakeMap(1, tx.MIX, {0: 0.0, 4: (0.2, 0.8, 0.2), 5: (0.2, 0.2, 0.8), 6: Ref(2), 9: 0}, [2], cls="Mix"),
-                 FakeMap(1, tx.RGB_MULTIPLY, {0: (0.2, 0.8, 0.2), 1: (1.0, 1.0, 1.0), 2: Ref(2), 4: 0}, [2],
-                         cls="RGB Multiply"))
+        map's own color under Corona too (Composite's are table switches, read by the same code in any scene)."""
+        green = (0.2, 0.8, 0.2)
+        cases = (FakeMap(1, tx.MIX, {0: 0.0, 4: green, 5: (0.2, 0.2, 0.8), 6: Ref(2), 9: 0}, [2], cls="Mix"),
+                 FakeMap(1, tx.RGB_MULTIPLY, {0: green, 1: (1.0, 1.0, 1.0), 2: Ref(2), 4: 0}, [2],
+                         cls="RGB Multiply"),
+                 FakeMap(1, tx.FALLOFF, {tx.FO_TYPE: 1, 0: green, 4: green, 2: Ref(2), 3: 0, 6: Ref(2), 7: 0},
+                         [2], cls="Falloff"))
         for m in cases:
             with self.subTest(m.cls):
                 tex = tx.TexmapConverter(FakeGraph(m, _bitmap(2)), _table(), renderer=tx.CORONA_RENDERER)
                 root = tex.convert(mat.MapRef(1), tx.COLOR).root
                 self.assertNotIn("a.png", repr(root), "the switched-off map is not drawn")
+                self.assertIn(repr(green), repr(root), "its own color")
 
     def test_corona_mix_gamma_magnitude(self):
         """A CoronaMix gamma over a bottom map: in sRGB mode Corona raises the bottom's magnitude (renderMap:

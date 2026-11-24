@@ -3122,7 +3122,12 @@ class CoronaOpacityColor(unittest.TestCase, Close):
     """Corona 12 renders an opacity color per channel, as stored in both gamma modes (maxdrop-6n0.6.35:
     CoronaLegacyMtl and CoronaPhysicalMtl, grey 64 -> 0.251, red -> 1 0 0, 200 100 50 -> 0.784 0.392 0.196): a
     float alpha keeps the mean, a colored one is an issue."""
-    CASES = ((classids.CORONA_LEGACY_MTL, "p105"), (classids.CORONA_PHYSICAL_MTL, "p121"))
+    CASES = ((classids.CORONA_LEGACY_MTL, "p105"), (classids.CORONA_PHYSICAL_MTL, "p121"),
+             (classids.CORONA_SKIN_MTL, "p122"), (classids.CORONA_HAIR_MTL, "p103"))
+    HIDDEN = ((classids.CORONA_LEGACY_MTL, "p105", dict(p146=Ref(1), p166=1, p295=1.0)),
+              (classids.CORONA_LEGACY_MTL, "p105", dict(p127=0.0)),
+              (classids.CORONA_PHYSICAL_MTL, "p121", dict(p123=Ref(1), p124=1, p125=1.0)),
+              (classids.CORONA_PHYSICAL_MTL, "p121", dict(p122=0.0)))
 
     def test_colored_opacity_color_is_an_issue(self):
         for cid, pid in self.CASES:
@@ -3141,6 +3146,13 @@ class CoronaOpacityColor(unittest.TestCase, Close):
                     _conv, ir = _convert(_corona(0, cid, **{pid: (v, v + 0.4 / 255 if v < 1 else v, v)}))
                     self.assertAlmostEqual(ir.alpha.value, v, delta=1e-3, msg="as stored, whatever the gamma")
                     self.assertEqual([r for r in ir.issues if "opacity color" in r], [])
+
+    def test_hidden_opacity_color_is_no_issue(self):
+        """A map at full amount over the swatch, or a level of 0: the swatch does not show, so no issue."""
+        for cid, pid, params in self.HIDDEN:
+            with self.subTest(cid=cid, params=sorted(params)):
+                _conv, ir = _convert(_corona(0, cid, **{pid: (1.0, 0.0, 0.0)}, **params), _map(1))
+                self.assertEqual([r for r in ir.issues if "opacity color" in r], [], ir.issues)
 
 
 if __name__ == "__main__":

@@ -2079,7 +2079,7 @@ renders its map1 through its Output part (a red (200, 50, 50) map: 0.784, 0.196,
 changes nothing, 0.682, 0.564, 0.564 with the one above; opacity 0.392 and 0.207); the file stores the switch off. MaxDrop ignores an Output's map1Enabled when the scene's renderer (Renderer ClassIDA / B of the summary stream)
 is Corona's, `(0x62A85DCC, 0x523C3604)` (Corona 12); measured with Corona's own materials, assumed for others.
 Corona's opacity with few passes is noisy (up to 0.006 at 4 passes, the mean at 64).
-Other materials and maps under Corona (maxdrop-6n0.6.23; Corona 12, the gamma off, 64 passes): in a Standard
+Other materials and maps under Corona (maxdrop-6n0.6.23; Corona 12, gamma off, 32 passes, the furnace 64): in a Standard
 diffuse slot (white furnace, no light, specular level 0) an Output switched off over the red Checker renders its
 map too, 0.784, 0.196, 0.196, as switched on and as the Checker directly (a white Standard reads 1.0), and in a
 CoronaPhysicalMtl base slot the same (0.745, 0.191, 0.194 in all three). A VRayMtl does not render under Corona 12
@@ -2089,7 +2089,8 @@ layer and a layer mask) and Falloff (map1, map2), off and on over the red Checke
 colors in a CoronaLightMtl / VRayLightMtl texmap: Corona renders each exactly as V-Ray 5.2 (off: the own color, or
 the amount for a mask). Color Correction has no map switch. A VRayDirt renders white in Corona 12 with its
 unoccluded map on or off (V-Ray: the map, or the unoccluded color), so MaxDrop draws a VRayDirt white in a Corona
-scene. The renderer ClassID of another Corona version: none at hand; the 371 local `.max` files name one Corona
+scene (measured in a light material's texmap; other slots, a normal map's normal slot among them, assumed).
+The renderer ClassID of another Corona version: none at hand; the 371 local `.max` files name one Corona
 renderer, Corona 12's. V-Ray keeps one renderer ClassID, `(0x73BAB286, 0x77F8FD0C)`, from a 3.60 save (3ds Max
 2015) to 5.2: assumed for Corona.
 A wrapper as a mask in a color graph, measured (maxdrop-6n0.6.2; 3ds Max 2020, V-Ray 5.2 with linear color mapping,
@@ -2347,9 +2348,10 @@ top by an orthographic camera:
   `hairMode` values (0, 1, 2). They take Hair and Fur's own tip and root colors (red: 0.685 / 0.098 / 0.026, grey
   128: 0.424), not the growth object's material: a Multi/Sub whose sub-material at the strands' MaterialGeomMtlID
   is a red CoronaLightMtl, a CoronaHairMtl at melanin 0 or one at melanin 1 reads 0.494 alike. MAXScript refuses
-  `MR_Shader` set to a CoronaColor or a CoronaHairMtl (a system exception, also in em3.164). Corona's own forum
-  points to instanced geometry with a material of its own instead (a mesh: the rule above). An earlier end-on view
-  followed the melanin only because its window held the growth plane, which carried the material.
+  `MR_Shader` set to a CoronaColor or a CoronaHairMtl (an exception; an access violation in em3.164). A Corona
+  forum answer of 2016 points to instanced geometry with a material of its own instead (a mesh: the rule above).
+  An earlier end-on view followed the melanin only because its window held the growth plane, which carried the
+  material.
 
 Cycles (Blender 5.2, 256 samples) with the same planes: a Principled BSDF at IOR 1.55, roughness 0.5 reads 0.043 +
 0.957 x its base color in that furnace. MaxDrop's base (0.070 + 0.929 x hair - 0.043) / 0.957 reads Corona's numbers

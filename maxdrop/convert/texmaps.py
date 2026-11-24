@@ -121,7 +121,7 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
   Multiply, add, subtract, divide, min, max, difference, screen, overlay, color dodge, color burn, linear burn,
   linear light, hard light and exclusion -> Blend (in gamma 2.2 with mix in sRGB on, as Corona does: CM_BLENDS),
   gamma over a grey top color (its own or a map that converts to a constant, decided on the converted layers) ->
-  ColorCorrect gamma, all under a Mix for an amount below 1 or a mask; soft light, vivid light, pin light, hard mix
+  ColorCorrect gamma (of a bottom map's magnitude in sRGB mode), all under a Mix for an amount below 1 or a mask; soft light, vivid light, pin light, hard mix
   (and gamma over another top) peeled to the first bitmap (an issue naming the operation); each layer times its
   multiplier plus its offset (CM_OFFSET_SCALE), measured.
 - Kept as nodes (the allow-list): Mix (color 1 / 2 where a map is off or missing, the mask, the mix amount; Use
@@ -962,6 +962,8 @@ class TexmapConverter:
                     return self._decoded_mask(node, walk, depth, chain)
                 return self._decoded(node, walk, depth, chain)
             return rule(self, m, kind, walk, depth, chain)
+        if key == VRAY_DIRT and self.corona:  # what Corona 12 renders, not a peel (_vray_dirt)
+            return self._swatch(WHITE, kind)
         rule = _PEEL.get(key)
         if rule is not None:
             node = rule(self, m, kind, walk, depth, chain)
@@ -1495,9 +1497,8 @@ def _falloff(conv, m, kind, walk, depth, chain):
 
 def _vray_dirt(conv, m, kind, walk, depth, chain):
     """13 unoccluded_color, 17 texmap_unoccluded_color, 18 its switch. The color only when the map is not used. Corona
-    12 does not render a VRayDirt: white, its map on or off (maxdrop-6n0.6.23), so white in a Corona scene."""
-    if conv.corona:
-        return conv._swatch(WHITE, kind)
+    12 does not render a VRayDirt: white, its map on or off (maxdrop-6n0.6.23), so white in a Corona scene, exact
+    (TexmapConverter._node; measured in a light material's texmap, assumed for other slots)."""
     if conv._on(m, 17, 18) is not None:
         return conv._sub(m, 17, 18, kind, walk, depth, chain)
     return conv._constant(m, 13, kind, (1.0, 1.0, 1.0))
@@ -1974,7 +1975,7 @@ def _corona_mix(conv, m, kind, walk, depth, chain):
     amount 0.8 under a 0.25 mask weighs 0.25), always a linear mix. Operation mix -> Mix(bottom, top, amount, mask),
     multiply -> Multiply, the operations of CM_BLENDS -> Blend (gamma 2.2 for CM_GAMMA_OPS with mixInSRgb on), gamma
     -> a ColorCorrect gamma of the bottom for a grey top (its color, or a map that converts to a constant; two
-    constants folded per channel), each under a Mix when the amount is below 1 or a mask is set; any other operation
+    constants folded per channel; in sRGB mode of the bottom's magnitude, maxdrop-6n0.6.40), each under a Mix when the amount is below 1 or a mask is set; any other operation
     (and a gamma over another top) is peeled to its first bitmap, a gamma as decided on its converted layers
     (_gamma_layers, maxdrop-6n0.6.24). Each layer is its map, or its color where the map is missing or switched off,
     times its multiplier plus its offset times CM_OFFSET_SCALE (measured, the multiplier first)."""

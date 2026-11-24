@@ -114,7 +114,7 @@ datablocks; see Images below), with its placement as a Mapping node and a UV Map
 1; Invert, Decode (a Gamma node of 2.2, a constant through the sRGB curve; a mean: the sRGB curve in Math nodes), Mix,
 Multiply, Blend (Gamma nodes around a Mix node of its operation or Vector Math nodes), ColorCorrect (its rewiring as
 Invert, the mean or Separate / Combine Color, then Hue/Saturation/Value for the hue, the saturation in HSL (Math
-and Vector Math nodes), Bright/Contrast, gain, Gamma), Composite
+and Vector Math nodes), Bright/Contrast, gain, Gamma (a Vector Math ABSOLUTE before it with magnitude)), Composite
 (per layer its blend at factor 1, then a Mix by opacity x mask), Facing (Layer Weight Facing, Fresnel, or the
 Geometry node's Normal . Incoming), Remap (Float Curve, its points straight between them, not clipped; the Mix it
 drives does not clamp its factor), Smoothstep (Map Range SMOOTHSTEP, or a step: 1 - LESS_THAN), Adjust (a map's
@@ -1361,7 +1361,7 @@ class _Tree:
 
     def color_correct(self, n, space, depth):
         steps = [tuple(n.rewire) != tx.REWIRE_NONE, n.hue % 1.0 != 0.0, n.saturation != 1.0,
-                 n.brightness != 0.0 or n.contrast != 0.0, n.gain != 1.0, n.gamma != 1.0]
+                 n.brightness != 0.0 or n.contrast != 0.0, n.gain != 1.0, n.gamma != 1.0 or n.magnitude]
         d = depth + sum(steps) + (n.gamma != 1.0 and n.magnitude) - 1  # the first step's column; the input further left
         v = self.graph(n.input, COLOR, d + 1)
         if v is MISSING:
@@ -1388,9 +1388,9 @@ class _Tree:
             v, d = _out(bc, "Color"), d - 1
         if steps[2]:
             v, d = self.scale(v, n.gain, d), d - 1
-        if steps[3]:
-            if n.magnitude:  # Corona raises a negative channel's magnitude (renderMap, maxdrop-6n0.6.40)
-                v, d = self.vector_math('ABSOLUTE', v, None, d), d - 1
+        if steps[3] and n.magnitude:  # Corona raises a negative channel's magnitude (renderMap, maxdrop-6n0.6.40)
+            v, d = self.vector_math('ABSOLUTE', v, None, d), d - 1
+        if steps[3] and n.gamma != 1.0:
             g = self.node("ShaderNodeGamma", d)
             _in(g, "Gamma").default_value = 1.0 / n.gamma
             self.links.new(v, _in(g, "Color"))
