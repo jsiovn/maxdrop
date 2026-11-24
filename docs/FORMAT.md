@@ -1240,11 +1240,35 @@ the flux. Type B (vertical −90 to 90, horizontal −90 to 90 or 0 to 90), rate
 (the power loading a file rated −1 sets): type C 100, 0, 0 cd at 0, 90, 180° 228.96 lm (the candelas linear in angle:
 228.32; the zone mean × (cos a − cos b) 314.16); a cosine in 10° steps 313.99; planes of 100, 50, 100, 50, 100 cd at
 0 to 360° 942.16; type B isotropic 629.57 (2π · 100 = 628.32), the same with vertical or horizontal angles from 0
-(mirrored) and with horizontal angles from −180 to 180 (only −90 to 90 counts); type B 0, 100, 0 cd at vertical −90,
+and with horizontal angles from −180 to 180 (only −90 to 90 counts); type B 0, 100, 0 cd at vertical −90,
 0, 90° 400.95 (linear 400.00), the same across the horizontal angles 314.80 (314.16); type A isotropic 629.58,
-the same with vertical angles from 0 (mirrored), but type A with horizontal angles from 0 to 90 1.26 lm (also with
-vertical ones from 0): not read. Ballast 0.5 halves that flux, 2 lamps leave it, a multiplier of 2 doubles it; a
+the same with vertical angles from 0, but type A with horizontal angles from 0 to 90 1.26 lm (also with
+vertical ones from 0): dark (below). Ballast 0.5 halves that flux, 2 lamps leave it, a multiplier of 2 doubles it; a
 rated −1 file of ballast 0.5 at power 1000 renders 0.0531.
+
+**VRayIES type A and B ranges, measured** (the same scene in millimeters, power 1000, override off, 64 × 64 renders,
+the mean of the 8 × 8 center pixels; the light turned about X or Y so that the center pixel samples another direction
+of the file (type B: X turns the horizontal angle, Y the vertical one; type A the other way round); each file rated
+628.3, where 100 cd gives 0.1048, and rated −1, V-Ray's own flux in brackets; 100 cd unless given). Horizontal angles
+from −180 to 180, isotropic, type B (629.574) and A (629.575): as −90 to 90; turned 135° or 180° 0 (the back half
+dark); type B 0, 0, 100, 100, 100, 0, 0 cd at −180, −120, −60, 0, 60, 120, 180° (576.90; the table cut at ±90°, 50
+cd there, 575.96): 75 cd turned 75°. Type A with horizontal angles from 0 to 90, vertical ones from −90 or from 0
+(1.257): black in the whole frame turned to each of the six cube faces, rated or not. Vertical angles from 0 are not
+mirrored: type B 100, 50, 0 cd at 0, 45, 90° (629.58; mirrored 400.00) gives 150 cd at −45° and 183 at −75°, the
+first segment going on below 0; 0, 50, 100 (114.31) and 40, 100, 100 at 0, 30, 90 (288.19) are black at −45°, the
+line floored at 0 cd; 100, 70, 0 at 0, 60, 90 (621.76) gives 121 cd at −45° and 136 at −75°; 100, 0 at 0, 90 as
+100, 50, 0; type A 100, 50, 0 the same. V-Ray's own flux is 1.002 × that table's (as for an isotropic file) in every
+file here, but with 4 or more vertical angles from 0 and a run that varies the render is black below 0 where the
+flux goes on: 120, 100, 60, 0 at 0, 30, 60, 90 (730.87), 120, 80, 40, 0 (755.49), 100, 100, 60, 0 (583.17), 100,
+50, 20, 0 (652.78), 120, 110, 90, 50, 0 in 22.5° steps (721.75), and with planes that differ, from −180 to 180 too
+(583.78); with only the middle plane constant (680.19) 83 cd at −45° in it, neither 100 nor 0. Constant runs from 0
+render as isotropic with 2 to 5 angles (629.57). Horizontal angles from 0 (type B) are mirrored: 100, 50, 0 at 0,
+45, 90° (314.80) gives 50 cd at ±45° and 17 at ±75°. Partial ranges follow no rule found: vertical −60 to 60 of 50,
+100, 100, 100, 50 (527.77, types A and B) gives 298 cd at −75° and 50 at 75°, horizontal −60 to 60 the same
+(445.84) 67 and 93 cd at +45° and −45°; isotropic files of vertical −60 to 60, 0 to 60, −90 to 60 or 30 to 90 and of
+horizontal −60 to 60 or 0 to 60 render as the full range (629.57). A table of 0 cd (types B and C) loads a power of
+0 at rated −1 and renders black, rated or not. Next to a change V-Ray's render rises up to 3 % over the table's
+linear value (the front of a file whose back half is 50 cd): its flux, not its render, is linear in angle.
 
 **IES files** (IESNA LM-63, `convert/ies.py`): after the keyword lines, `TILT=NONE`, `TILT=<file>` (nothing inline)
 or `TILT=INCLUDE` (lamp-to-luminaire geometry, the number of pairs n, n angles, n factors); then the number of lamps,
@@ -1257,11 +1281,17 @@ vertical angles (a zone [a, b]: Ia cos a − Ib cos b + (Ib − Ia)(sin b − si
 planes in radians, times 360 / their span (one plane 2π; the spans 90, 180 and 360 of LM-63's symmetries from 0 or
 90, 90 to 270 included; planes from 0 to past 180 but short of 360 closed with the first plane at 360); of a type A or
 B file, whose vertical angles are a latitude, the integral of I(θ) cos θ (Ib sin b − Ia sin a + (Ib − Ia)(cos b −
-cos a) / (b − a)) and the same trapezoid, vertical angles from −90, or from 0 doubled, to 90, horizontal ones from −90
-to 90, or for type B from 0 to 90 doubled. An isotropic file of I cd gives 4π I exactly (type C), 2π I (A and B).
+cos a) / (b − a)) and the same trapezoid, vertical angles from −90 or 0 to 90, horizontal ones from −90
+to 90, from −180 to 180 (only −90 to 90 counts, the planes at ±90 interpolated), or for type B from 0 to 90 doubled.
+Vertical angles from 0 are not doubled: each run goes on below 0 along its first segment, floored at 0 cd (a constant
+run: doubled), read with 2 or 3 vertical angles or constant runs ("VRayIES type A and B ranges, measured"); with 4 or
+more and a run that varies, V-Ray renders the lower half black while its own flux goes on: not read. A type A file
+with horizontal angles from 0 to 90 renders nothing: its flux is 0. An isotropic file of I cd gives 4π I exactly
+(type C), 2π I (A and B).
 The flux is times the candela multiplier and the ballast factor (not the ballast-lamp factor); the rated lumens are
-the number of lamps times the lumens per lamp; rated lumens of 0 or below count as -1. Other ranges of type A and B
-(type A with horizontal angles from 0 included), and a file larger than 4 MiB, of more than 4096 angles per axis or 2^20 candelas, or with a
+the number of lamps times the lumens per lamp; rated lumens of 0 or below count as -1 (a flux of 0 is dark then too,
+as V-Ray renders it). Other ranges of type A and B (partial: V-Ray renders them by no rule found),
+and a file larger than 4 MiB, of more than 4096 angles per axis or 2^20 candelas, or with a
 number out of range or out of order, are not read (a line in the report).
 
 **Spot cones.** Blender's spot size is the falloff; its blend is set so that full intensity ends at the hotspot, as in

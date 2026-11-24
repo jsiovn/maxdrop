@@ -248,6 +248,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   color now masks 0.172 with the gamma on (was 0.134); with the gamma off that mean is shown decoded, so an Output
   of level 0.5 over white masks 0.218 linear where V-Ray shows 0.214 (was 0.5). A Color Correction there is
   unchanged.
+- Lights: a VRayIES with a type A or B IES file is as bright as V-Ray 5.2 renders it in more cases (measured):
+  horizontal angles from -180 to 180 are read (only -90 to 90 lights), vertical angles from 0 go on below 0 as
+  V-Ray extends them instead of being mirrored (4 or more such angles that vary are not read, a line in the
+  report), and a type A file with horizontal angles from 0 to 90 is dark, as is a file without light rated -1.
 
 ## [1.0.1] - 2026-11-22
 
