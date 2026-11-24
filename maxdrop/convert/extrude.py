@@ -989,7 +989,7 @@ def extrude(shape, params):
         x0, y0 = min(xs), min(ys)
         w, h = max(xs) - x0, max(ys) - y0
     for slot, level in enumerate(caps):
-        up = level == top  # every cap faces out, a lone one too
+        up = level == top
         mat = (TOP_ID if up else BOTTOM_ID) if params.material_ids else 0
         index = {}
         first = start + slot * len(grid)

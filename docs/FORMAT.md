@@ -668,8 +668,7 @@ What 3ds Max 2020 makes of it (`snapshotAsMesh`, probed on scratch scenes and ch
   is ID 2, Cap End lies at the shape, faces +Z and is ID 1, alone or together (FixtureExtGridCircle, amount -4, Cap
   End off: its grid cap at z -4, facing -Z, ID 2; FixtureExtDownStart, amount -6, Cap End off: at z -6;
   FixtureExtDownEndReal, Cap Start off: at z 0). The maxdrop-6n0.6.10 probe (3ds Max 2020, a 20 x 10 rectangle at
-  -5, its hole, clockwise and at z 3, morph and grid caps) found the lone cap at that level: an earlier probe saw
-  only its facing and ID, and MaxDrop put it at the other level, facing into the solid.
+  -5, its hole, clockwise and at z 3, morph and grid caps; the grid points at the cap's level too).
 - **Grid caps** (cap type 1; probed on about 60 shapes, `tests/unit/test_extrude.py` GRID_PROBES holds their counts;
   FixtureExtGrid, FixtureExtGridCircle): each solid (an outline with its holes; an island and an overlapping outline
   are solids of their own) gets a grid over the box of its outline's interpolated points, W x H. Divisions per axis:

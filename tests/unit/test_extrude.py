@@ -865,6 +865,27 @@ class Synthetic(unittest.TestCase):
                 n = numpy.cross(q[1] - q[0], q[2] - q[0])
                 self.assertGreater(float(numpy.dot(n[:2], q.mean(axis=0)[:2] - (2.0, 2.0))), 0, (start, end))
 
+    def test_a_lone_grid_cap_of_a_downward_extrusion_lies_at_its_level(self):
+        """Grid caps alike (maxdrop-6n0.6.10's probe, amount -5 in 2 segments): every cap vertex, the grid points
+        too, lies at z -5 for Cap Start and z 0 for Cap End, with the cap's ID and facing."""
+        for start, end, want in ((True, False, {(extrude.BOTTOM_ID, False, -5.0)}),
+                                 (False, True, {(extrude.TOP_ID, True, 0.0)}),
+                                 (True, True, {(extrude.TOP_ID, True, 0.0), (extrude.BOTTOM_ID, False, -5.0)})):
+            data, issues = extrude.extrude(_shape([self.square(20)]), self.params(
+                amount=-5.0, segments=2, cap_start=start, cap_end=end, cap_type=extrude.CAP_GRID))
+            self.assertEqual(issues, [], (start, end))
+            got, grid = set(), 0
+            for f in range(len(data.loop_starts)):
+                if int(_mats(data)[f]) == extrude.SIDE_ID:
+                    continue
+                s, t = int(data.loop_starts[f]), int(data.loop_totals[f])
+                zs = {float(data.positions[v][2]) for v in data.loop_vertices[s:s + t].tolist()}
+                self.assertEqual(len(zs), 1, (start, end))
+                got.add((int(_mats(data)[f]), _face_area_z(data, f) > 0, zs.pop()))
+                grid = max(grid, int(data.loop_vertices[s:s + t].max()))
+            self.assertEqual(got, want, (start, end))
+            self.assertGreaterEqual(grid, 4 * 3)  # the caps use grid points, past the sides' 4 x 3 vertices
+
     def test_no_caps_and_flat_sides(self):
         data, _issues = extrude.extrude(_shape([self.square(4)]), self.params(cap_start=False, cap_end=False,
                                                                               smooth=False))
@@ -1301,7 +1322,6 @@ class NegativeAmount(unittest.TestCase):
                     level = round(float(data.positions[v][2]) / amount * 4)
                     vs.setdefault(level, set()).add(round(float(ch.uvw[i][1]), 6))
             self.assertEqual([sorted(vs[k]) for k in range(5)], [[w] for w in want], (amount, real))
-
 
 
 def _f32(v):
