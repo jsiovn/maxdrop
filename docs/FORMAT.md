@@ -420,7 +420,7 @@ reference is a ParamBlock2:
 
 | Id | Parameter (MAXScript) | Type |
 |---|---|---|
-| 0 | `weight` | float table, one per target; an animated element is a controller (tag `0x80`) in the block's next reference slot ([Parameter blocks](#parameter-blocks)), before the targets' (lookat: FixtureWeightAnimated's second weight, a Bezier Float, at slot 0, its targets at 1 and 2; FixtureWeightUp's one weight at 0, the up node at 2): its value at frame 0; 50 (`appendTarget`'s default) when the slot is empty, the controller gives none or is of an unknown class, or a stored weight is not finite or missing, reported |
+| 0 | `weight` | float table, one per target; an animated element is a controller (tag `0x80`) in the block's next reference slot ([Parameter blocks](#parameter-blocks)), before the targets' (lookat: FixtureWeightAnimated's second weight, a Bezier Float, at slot 0, its targets at 1 and 2; FixtureWeightUp's one weight at 0, the up node at 2): its value at frame 0; 50 (`appendTarget`'s default) when the slot is empty, the controller gives none or is of an unknown class (a Float List none of whose entries gives a value too: under Position XYZ or ScaleXYZ such a list adds nothing), or a stored weight is not finite or missing, reported |
 | 1 | targets (`appendTarget`) | node table, no value: the block's reference slots, after the weights' controllers |
 | 2 | `relative` (Keep Initial Offset) | bool |
 | 3 | `lookat_vector_length` | float (display) |
@@ -1725,6 +1725,9 @@ Reference parameters, checked against the oracle's targets on every fixture:
   `opacity_texmap`, `displacement_texmap` at 1, 2, 3, as corpus scene B has them; VRayMtlWrapper, Double Sided and
   Shellac at 1, 2) and, for Composite and class `0xC90017A5` (no fixture `0x0013` entry: texmap_rules' Composite
   keeps its maps as block references), from corpus scene B's (format 20000); every object of scene A agrees.
+  Output `map1` (0) at slot 0 comes from scene A alone (maxdrop-6n0.6.3): its 8 Output maps hold the map at owner
+  slot 0 (1 the TexOutput, 2 the block), the map 3ds Max reports, and 2 of them store -1; the fixtures (3ds Max
+  2020) store that index directly and list only `output` (2) at 1 in `0x0013`.
   `test_materials.py` checks each entry against the fixtures' tables. Only a block without
   `0x0013` uses it: for a stored -1, and for a stored index that is none of the owner's references when the owner
   holds one at that slot (scene A stores 3704 such indices: 3702 equal the slot's, 2 are stale, a Normal Bump's
@@ -1758,6 +1761,11 @@ of pblock_animated's 6 controllers. A Float List with an entry of another class 
 sum of the rest. Not measured: an hsv parameter (not read); a float controller on an integer parameter (int, bool, radio
 button...; no fixture has one): a whole number is read as that integer, a fraction not (the class default); a
 percent or angle parameter takes the controller's value as stored, like its stored value.
+What a read meets is a line in the import report, under the material or map (maxdrop-6n0.6.32): each issue
+`parameter_value` gives (between two Bezier Color keys, a saved value beside several keys without its interval,
+keys of an unknown layout, a list weight not stored, another class, a damaged controller), and a parameter left at
+its default; in a map's graph it marks the graph approximated. A dome light's VRayBitmap reads its rotation and
+switches the same way.
 
 Transient parameters are mostly not stored (VRayMtl: 25 of the 80 parameters of block 1, among them
 `bump_multiplier` 102 and the `texmap_*` 109-128 that mirror block 4). Some are stored anyway with a stale value
@@ -1769,6 +1777,13 @@ parameter a `0x0002` container: `0x0003` `u32` index, an empty `0x0004` on some 
 `0x0100` + ParamType: `0x0100` float, `0x0101` int, `0x0104` bool (fixtures: the Bitmap's Placement and Output,
 the Standard material's sampler); `0x0102` color and `0x0103` point3 follow the SDK's ParamType, no fixture has
 them.
+A parameter a controller holds has an empty `0x0200` + ParamType instead (no value), and the block's own
+references (`0x2034`) hold the controllers, one per such parameter in index order: stack_basic's Noise block
+animates entry 7 alone, a Bezier Float at slot 0; the Standard shader blocks of standard_physical and
+standard_shaders animate 22 entries (0, 2, 4 to 10, 21 to 33), entry 2 (`0x0202`, a color) a Bezier Color at slot 1,
+the bools On/Off controllers. A map's Coordinates and Output parameters held by a controller are read at frame 0
+as a ParamBlock2's are (`convert/params.py` `old_value`; maxdrop-6n0.6.32); no fixture animates a Placement or an
+Output, so that path is not measured.
 
 ## Materials and maps
 
@@ -2057,6 +2072,11 @@ and dodge 1 - max(0, nz - a / (1 - b)), nz = ceil(min(|divisor|, 1)), 0 for a di
 emission bake against `texmaps.blend_value` (every operation, both modes, layers -0.5 to 3, exactly 0 and 1 too).
 The gamma operation over a bottom map draws a ColorCorrect gamma: a negative channel of that map stays negative.
 A Mix node's color input clamps its own value at 0: a constant layer below 0 goes in through a Combine XYZ node.
+So does every Mix node's (maxdrop-6n0.6.26: Mix maps, CoronaMix mix and multiply, RGB Multiply, Composite layers) and
+an RGB node standing for a constant (`_Tree.socket`); a Cycles emission bake of a Mix (0.5) and a Multiply of a white
+image with a constant side of -0.5 gives 0.25 and -0.5 (was 0.5 and 0, the constant taken as 0). The other users
+of that stand-in (Color Correction, an Output or RGB Tint over a constant, a normal map's constant color) now get
+the negative value too, where they got 0: not measured against a renderer.
 
 Corona 12 renders (maxdrop-em3.115): `3dsmaxbatch`, CoronaRenderer with tone mapping off (`colorMap_enabled`) and a
 pass and a time limit, read with `getPixels ... linear:true` (a CoronaLightMtl patch at 0.5 / 1.0 reads 0.49999 /
@@ -2072,8 +2092,10 @@ pass and a time limit, read with `getPixels ... linear:true` (a CoronaLightMtl p
   specular level, F0 = 0.08 x level (0.5 is F0 0.04, IOR 1.5), and the file stores the level (MAXScript's setter
   converts both on a mode change: set the mode before the values); 2 renders as an IOR (not a mode the UI offers).
   No base IOR reflects more than F0 0.25 (IOR 3: an IOR of 4 or 10 and a specular of 4 all give 0.25), and an IOR
-  below 1 reflects as its reciprocal (0.5 as 2); MaxDrop caps only the specular levels (an IOR below 1 is clamped
-  to 1). The renderer's `defautIorMode` (Corona's spelling) only picks a new material's mode.
+  below 1 reflects as its reciprocal (0.5 as 2); MaxDrop takes the base IOR of a material that does not refract so
+  (maxdrop-6n0.6.22) and keeps a refracting one's (clamped to 1..100, named outside 1..3: its refraction through such
+  an IOR was not measured), the clearcoat IOR as it is. The renderer's `defautIorMode` (Corona's spelling) only picks
+  a new material's mode.
 - CoronaPhysicalMtl edgeColor (161) on a metal (spheres under a white background, roughness 0, read along a row):
   per channel, a white edge brightens the grazing reflection above Schlick's and a black one darkens it (base 230 /
   153 / 77 at 82 degrees: Schlick 0.947 / 0.785 / 0.625; edge black 0.741 / 0.513 / 0.521, the default 0.75 0.938 /
@@ -2126,6 +2148,15 @@ sigma_a, color 1 - the share) and an Emission (strength 1 / distance) on the Vol
 exact; scattering white 0.681, 128 grey 0.566, directionality 0.6 / -0.6 0.868 / 0.603; furnace 0.992, 0.677, 0.692.
 Blender's default Volume Bounces of 0 scatters once (as Corona's single bounce): MaxDrop does not change it. An unlinked Surface with nothing
 on the Volume socket renders black there: a volume-only material keeps its Principled BSDF at Alpha 0.
+Since maxdrop-6n0.6.29 that holds only without a medium. With one on Volume, a volume-only material (alpha 0, no
+alpha map, no layers) leaves Surface unlinked: an Alpha-0 Principled BSDF spends two of Cycles' 8 transparent bounces
+per box (Blender 4.2.23 and 5.2, 20 m boxes over an emitter of 1: one box 1.0, six or twelve stacked 0.0 in Cycles,
+EEVEE 1.0), the unlinked Surface 1.0 at any count, and a camera inside an absorbing box (0.05 / m, 19.5 m) reads 0.379
+both ways in Cycles and EEVEE (e^-0.975 = 0.377). Its viewport color is 0.1 opaque, so Solid view shows the scene in
+it. The em3.163 scattering slab (128 grey at 10, scattering white, h 10, the emitter the slab's footprint) renders
+0.601 at Volume Bounces 0 (Corona single bounce 0.598) and 0.678 at 64 (Corona 0.683): the import names a medium that
+scatters in the report and leaves the setting as it is (owner, 2026-11-24), but one with single bounce on, which
+Blender's default renders as Corona does.
 
 Corona 12 CoronaHairMtl on a mesh (maxdrop-em3.164; `3dsmaxbatch`, tone mapping off, the gamma off, read with
 `getPixels ... linear:true` as a mean of 31 x 31 pixels, the swatch's 0-255 value / 255 rendered as the linear color as

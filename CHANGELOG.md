@@ -50,6 +50,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   glossiness map still is: the curve is not applied to it); a CoronaPhysicalMtl in IOR mode Specular reads its base
   and clearcoat IORs as specular levels (0.5 is IOR 1.5) instead of IORs with a line in the report;
   CoronaPhysicalMtl translucency is a line in the report only in thin mode, the one mode Corona renders it in.
+- Corona media: a material whose medium scatters is named in the report, with Cycles' Volume Bounces to raise for
+  multiple scattering (0, Blender's default, scatters once); the import changes no scene setting.
+  Not with Corona's single bounce on, which that default renders.
+- Corona media: a CoronaVolumeMtl box has no surface at all, so more than four stacked or nested boxes render in
+  Cycles (an invisible surface would spend two of its 8 transparent bounces per box), and a room-sized fog box is
+  see-through in Solid view.
 
 ### Fixed
 
@@ -57,6 +63,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   3ds Max keeps them, instead of rounding them off: a half-modelled object smoothed below its Symmetry now welds at
   the seam with 3ds Max's vertex count, without a sliver or gap where the cut meets an open edge. MeshSmooth quad
   output, which is not Catmull-Clark, is a line in the report, as classic is.
+- Materials: an animated tiling, offset, angle or blur of a map's Coordinates, an animated Output amount, level or
+  offset, and an animated rotation of a dome light's VRayBitmap take their value at frame 0 instead of the default.
+  A parameter a controller holds that is approximated (a color between two keys) or left at its default (another
+  controller class) is a line in the report naming the parameter, and marks the map's graph approximated.
+- Objects: a LookAt Constraint weight held by a Float List none of whose entries gives a value counts as 50, as a
+  single unreadable weight does, instead of 0, which dropped that target.
+- Materials: in a file saved in the 3ds Max 2012 format, an Output map (also the second side of a Falloff) keeps
+  its map where the file stores no index for it, instead of being drawn as over a white map.
 - Materials: a VRayMtl with reflection Fresnel off and a grey reflection color (mid grey up to just below white,
   no reflection map) keeps its diffuse under the reflection, as V-Ray renders it, instead of becoming a metal in
   the reflection color that dropped the diffuse (checked against V-Ray 5.2 in Cycles: a 0.5 grey over a red
@@ -111,8 +125,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Lights: a VRayIES whose intensity is not overridden is as bright as V-Ray renders it when its IES file is found
   (by the texture lookup's rules): its power is scaled by the file's own flux over its rated lumens, as V-Ray scales
   the file (a relative-photometry file whose rated lumens exceed its luminaire's flux no longer arrives too bright).
-  A file not found, or one MaxDrop does not read (photometric type A or B, damaged), keeps the power as the flux,
-  a line in the report.
+  A file not found, or one MaxDrop does not read (a damaged one), keeps the power as the flux, a line in the report.
 - Extrude: a shape extruded downwards (a negative amount) with only one of its caps on gets that cap where 3ds Max
   puts it, facing out with its material ID: Cap Start at the far end (Cap End at the shape), instead of at the
   other end.
@@ -271,6 +284,19 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Extrude: a shape extruded downwards (a negative amount) maps its sides as 3ds Max does, V from the far end (0) to
   the shape (1), so a texture on the sides is no longer upside down; with Real-World Map Size V runs from the
   amount at the shape to 0 at the far end.
+- Materials: a constant color below 0 (an HDR CoronaColor, a CoronaMix layer with a negative offset or multiplier)
+  over a map in a Mix, a CoronaMix mix or multiply, an RGB Multiply or a Composite is no longer taken as 0.
+- Materials: a CoronaPhysicalMtl that does not refract reflects as Corona 12 renders it when its IOR is outside 1 to
+  3: an IOR below 1 as its reciprocal (0.5 as 2, was no reflection) and one above 3 as 3 (4 reflected 0.36, Corona
+  0.25). A refracting one keeps its IOR (one below 1 is drawn as 1), with a line in the report.
+- Materials: a CoronaMtl's diffuse, reflection, refraction and opacity levels scale the map in their slot as well as
+  the color, as Corona's documentation says: a diffuse map at level 0.5 is drawn at half strength instead of full.
+- Materials: a VRayMtl with reflection Fresnel off and a bright colored reflection below white keeps part of its
+  diffuse: it is drawn as a mirror tinted by the reflection color over the diffuse instead of a metal in the
+  reflection color; less diffuse than V-Ray shows where the reflection is saturated (230 128 26 over a blue
+  diffuse: Cycles 0.916 0.534 0.178 facing the camera, V-Ray 0.918 0.658 0.806, the metal gave 0.900 0.503 0.102;
+  140 128 115 over red: 0.902 0.572 0.522, V-Ray 0.903 0.580 0.537, was 0.548 0.503 0.451). A reflection map at 0 %
+  amount no longer makes a bright reflection a metal.
 
 ## [1.0.1] - 2026-11-22
 

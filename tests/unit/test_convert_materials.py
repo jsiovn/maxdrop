@@ -169,6 +169,7 @@ class Helpers(unittest.TestCase, Close):
         self.close(mat.ior_from_reflectance(0.04), 1.5)
         self.close(mat.ior_from_reflectance(0.0), 1.0)
         self.assertTrue(math.isfinite(mat.ior_from_reflectance(1.0)))
+        self.close(mat.ior_from_reflectance(mat.CORONA_MAX_F0), mat.CORONA_MAX_IOR, "the cap's IOR and F0 agree")
 
     def test_class_name(self):
         self.assertEqual(mat.class_name(classids.SC_MATERIAL, classids.VRAY_MTL), "VRayMtl")
@@ -248,32 +249,67 @@ class VRayMtlRules(unittest.TestCase, Close):
     def test_fresnel_off_grey_reflection_keeps_diffuse(self):
         """A grey swatch below 1 without a reflection map is the mirror drawing, not a metal: V-Ray 5.2 renders R +
         (1 - R) x the diffuse (maxdrop-em3.153, 128 grey over 200 40 40: 0.8925 0.5801 0.5801 facing the camera);
-        within NEUTRAL_REFLECTION of grey the mean is the weight."""
+        the weight is the brightest channel, the mirror white for grey (maxdrop-6n0.6.16: no cliff near grey)."""
         for swatch in ((0.5, 0.5, 0.5), (0.99, 0.99, 0.99), (0.25, 0.25, 0.25), (0.509, 0.5, 0.491)):
             b1 = {1: (1.0, 0.0, 0.0), 2: swatch, 8: 0, 91: 0.2}
             conv, ir = _convert(_vray(0, b1=b1))
             self.assertFalse(ir.fresnel, str(swatch))
             self.close(ir.metallic.value, 0.2, str(swatch))
             self.close(ir.base_color.value, (1.0, 0.0, 0.0), str(swatch))
-            self.close(ir.specular.value, sum(swatch) / 3.0, str(swatch))
+            self.close(ir.specular.value, max(swatch), str(swatch))
+            self.close(ir.mirror_color, tuple(c / max(swatch) for c in swatch), str(swatch))
             self.assertIsNone(ir.specular.map)
         conv, ir = _convert(_vray(0, b1={2: (0.5, 0.5, 0.5), 5: (1.0, 1.0, 1.0), 8: 0}))  # glass stays glass
         self.close(ir.metallic.value, 0.0)
         self.close(ir.transmission.value, 1.0)
         self.close(ir.base_color.value, (1.0, 1.0, 1.0))
 
-    def test_fresnel_off_full_or_colored_reflection_is_metal(self):
-        """A full reflection (mean 1 or more) and a colored one (channel spread above NEUTRAL_REFLECTION) keep the
-        metal in the reflection color: the white mirror copy would drop the tint."""
-        for swatch in ((1.0, 1.0, 1.0), (0.55, 0.5, 0.45), (0.9, 0.5, 0.1), (0.3, 0.2, 0.25)):
+    def test_fresnel_off_full_reflection_is_metal(self):
+        """A reflection whose brightest channel is 1 or more keeps the metal in the reflection color: what the
+        tinted mirror gives at weight 1 (build draws no mirror there)."""
+        for swatch in ((1.0, 1.0, 1.0), (1.0, 0.6, 0.2), (1.0, 0.3, 0.3)):
             b1 = {1: (1.0, 0.0, 0.0), 2: swatch, 8: 0, 91: 0.2}
             conv, ir = _convert(_vray(0, b1=b1))
             self.close(ir.metallic.value, 1.0, str(swatch))
             self.close(ir.base_color.value, swatch, str(swatch))
+            self.close(ir.mirror_color, (1.0, 1.0, 1.0), str(swatch))
         b1 = {1: (1.0, 0.0, 0.0), 2: (0.2, 0.1, 0.05), 8: 0, 91: 0.2}  # colored, below METAL_REFLECTION
         conv, ir = _convert(_vray(0, b1=b1))
         self.close(ir.metallic.value, 0.2)
         self.close(ir.base_color.value, (1.0, 0.0, 0.0))
+        self.close(ir.specular.value, 0.35 / 3.0, "the mean: a dim one stays the white mirror")
+        self.close(ir.mirror_color, (1.0, 1.0, 1.0))
+
+    def test_fresnel_off_colored_reflection_is_a_tinted_mirror(self):
+        """A colored swatch from METAL_REFLECTION up, below 1, without a reflection map: the mirror by its brightest
+        channel, its copy tinted R / max(R): R_c + (1 - max R) d_c per channel, between the metal and V-Ray's R_c +
+        (1 - R_c) d_c (maxdrop-6n0.6.16; em3.153's probe: 230 128 26 over 40 80 200 renders 0.9175 0.6582 0.8060,
+        the copy 0.917 0.533 0.179, the metal 0.900 0.503 0.102)."""
+        for swatch in ((0.55, 0.5, 0.45), (0.9, 0.5, 0.1), (0.3, 0.2, 0.25), (0.902, 0.502, 0.102)):
+            b1 = {1: (1.0, 0.0, 0.0), 2: swatch, 8: 0, 91: 0.2}
+            conv, ir = _convert(_vray(0, b1=b1))
+            self.assertFalse(ir.fresnel, str(swatch))
+            self.close(ir.metallic.value, 0.2, str(swatch))
+            self.close(ir.base_color.value, (1.0, 0.0, 0.0), str(swatch))
+            self.close(ir.specular.value, max(swatch), str(swatch))
+            self.assertIsNone(ir.specular.map)
+            self.close(ir.mirror_color, tuple(c / max(swatch) for c in swatch), str(swatch))
+        b1 = {1: (1.0, 0.0, 0.0), 2: (0.9, 0.5, 0.1), 8: 0, 91: 1.0}
+        conv, ir = _convert(_vray(0, b1=b1))
+        self.close((ir.metallic.value, ir.specular.value), (1.0, 0.9), "metalness 1 stays: build's lone metal")
+        self.close(ir.base_color.value, (1.0, 0.0, 0.0), "in the diffuse color, as em3.153's grey (not measured)")
+        self.assertEqual(mat.MaterialIR(0, "x").mirror_color, (1.0, 1.0, 1.0), "every other rule: white")
+
+    def test_fresnel_off_reflection_map_at_zero_amount_is_the_swatch(self):
+        """A reflection map at 0 % amount shows nothing of itself: the swatch alone, as with the map switched off
+        (V-Ray renders both alike): no MapRef left, so build never takes the twin for an unconverted map."""
+        for swatch, metal in (((0.8, 0.8, 0.8), 0.2), ((0.9, 0.5, 0.1), 0.2), ((1.0, 1.0, 1.0), 1.0)):
+            b1 = {1: (1.0, 0.0, 0.0), 2: swatch, 8: 0, 91: 0.2}
+            conv, ir = _convert(_vray(0, b1=b1, b4={101: Ref(1), 201: 0.0}), _map(1))
+            self.assertIsNone(ir.specular.map, str(swatch))
+            self.assertIsNone(ir.base_color.map, str(swatch))
+            self.close(ir.metallic.value, metal, str(swatch))
+            self.close(ir.specular.value, max(swatch) if metal < 1 else 1.0, str(swatch))
 
     def test_fresnel_off_reflection_map_at_full_amount_keeps_diffuse(self):
         """A reflection map at full amount hides the swatch in V-Ray: no metal however bright the swatch; the
@@ -296,8 +332,8 @@ class VRayMtlRules(unittest.TestCase, Close):
         self.close(ir.base_color.value, (1.0, 0.0, 0.0))
         tinted = {**b1, 2: (0.85, 0.8, 0.75)}
         conv, ir = _convert(_vray(0, b1=tinted, b4={101: Ref(1), 151: 0, 201: 100.0}), _map(1))
-        self.close(ir.metallic.value, 1.0)
-        self.close(ir.base_color.value, (0.85, 0.8, 0.75))
+        self.close(ir.metallic.value, 0.2, "a tinted swatch alone: the tinted mirror")
+        self.close(ir.mirror_color, (1.0, 0.8 / 0.85, 0.75 / 0.85))
         self.assertIsNone(ir.base_color.map)
         white = {**b1, 2: (1.0, 1.0, 1.0)}
         conv, ir = _convert(_vray(0, b1=white, b4={101: Ref(1), 201: 75.0}), _map(1))  # 1 x 0.25: the threshold
@@ -313,8 +349,10 @@ class VRayMtlRules(unittest.TestCase, Close):
         self.close(ir.base_color.value, (1.0, 0.0, 0.0))
         conv, ir = _convert(_vray(0, b1={2: (0.2, 0.2, 0.2), 8: 1}))
         self.assertTrue(ir.fresnel)
-        conv, ir = _convert(_vray(0, b1={2: (0.9, 0.8, 0.7), 8: 0}))  # the metal rule: Metallic 1 wins in build
+        conv, ir = _convert(_vray(0, b1={2: (0.9, 0.8, 0.7), 8: 0}))  # bright, colored: the tinted mirror
         self.assertFalse(ir.fresnel)
+        self.close((ir.metallic.value, ir.specular.value), (0.0, 0.9))
+        conv, ir = _convert(_vray(0, b1={2: (1.0, 0.8, 0.7), 8: 0}))  # full: the metal rule, Metallic 1 wins in build
         self.close(ir.metallic.value, 1.0)
         self.assertTrue(mat.MaterialIR(0, "x").fresnel, "every other rule: the IOR's Fresnel")
 
@@ -672,13 +710,14 @@ class VRayBasic(unittest.TestCase, Close):
             conv = mat.MaterialConverter(graph)
             ir = conv.convert(by_name["FixtureVRay"])
             self.assertIsNone(conv.convert(None))  # the real graph: a node without a material
-        reflection = (0.309469, 0.361307, 0.417885)  # 151 162 173; mean 0.362887 >= 0.25, colored (spread
-        # 0.108 > NEUTRAL_REFLECTION), Fresnel off: metal
+        reflection = (0.309469, 0.361307, 0.417885)  # 151 162 173; mean 0.362887 >= 0.25, below 1, Fresnel off:
+        # the tinted mirror (maxdrop-6n0.6.16), weight the brightest channel
         self.assertEqual((ir.name, ir.source, ir.unknown), ("FixtureVRay", "VRayMtl", False))
-        self.close(ir.base_color.value, reflection, "base color = reflection (metal rule)")
-        self.close(ir.metallic.value, 1.0, "metallic")
+        self.close(ir.base_color.value, (0.549691, 0.016857, 0.02602), "201 31 41 mixed with 61 71 81 by 0.063986")
+        self.close(ir.metallic.value, 0.37, "reflection_metalness")
         self.close(ir.roughness.value, 0.83, "roughness = glossiness 0.83 (useRoughness on)")
-        self.close(ir.specular.value, 0.362887, "specular = mean reflection")
+        self.close(ir.specular.value, 0.417885, "specular = the brightest reflection channel")
+        self.close(ir.mirror_color, tuple(c / 0.417885 for c in reflection), "the mirror tinted R / max(R)")
         self.close(ir.transmission.value, 0.063986, "transmission = mean of 61 71 81")
         self.close(ir.ior, 1.61, "ior = refraction_ior (refracts)")
         self.assertTrue(ir.thin_walled)
@@ -1828,7 +1867,7 @@ class Corona(unittest.TestCase, Close):
         self.assertEqual(ir.metallic.map, mat.MapRef(by_name["FixtureCColor"]))
         self.assertEqual(ir.emission_color.map, mat.MapRef(by_name["FixtureCMix"]))
         self.assertEqual(legacy.base_color.map, mat.MapRef(by_name["FixtureCMultiply"]))
-        self.assertEqual(legacy.specular.map, mat.MapRef(by_name["FixtureCAdd"]))
+        self.assertEqual(legacy.specular.map, mat.MapRef(by_name["FixtureCAdd"], scale=0.5), "levelReflect 0.5")
         self.assertEqual(legacy.roughness.map, mat.MapRef(by_name["FixtureCLegacyGloss"], 1.0, True))
         self.assertEqual(legacy.bump, mat.MapRef(by_name["FixtureCLegacyBump"], 0.5))
         self.assertEqual(legacy.alpha.map, mat.MapRef(by_name["FixtureCHdr"]))
@@ -2116,6 +2155,30 @@ class CoronaSynthetic(unittest.TestCase, Close):
         self.close(ir.metallic.value, 1.0, "the map switched off: the whole swatch")
         self.assertIsNone(ir.base_color.map)
 
+    def test_legacy_levels_scale_their_maps(self):
+        """The diffuse, reflection, refraction and opacity levels multiply the map in their slot as well as the color
+        (Corona's documentation): the MapRef's scale, the amount kept (maxdrop-6n0.6.6)."""
+        slots = (("base_color", "p121", "p141", "p290"), ("specular", "p122", "p142", "p291"),
+                 ("transmission", "p123", "p144", "p293"), ("alpha", "p127", "p146", "p295"))
+        for name, level_pid, map_pid, amount_pid in slots:
+            for level, want in ((0.5, mat.MapRef(1, 0.75, False, 0.5)), (1.0, mat.MapRef(1, 0.75)),
+                                (2.0, mat.MapRef(1, 0.75, False, 2.0))):
+                _conv, ir = _convert(_corona(0, classids.CORONA_LEGACY_MTL, **{level_pid: level, map_pid: Ref(1),
+                                                                                amount_pid: 0.75}), _map(1))
+                self.assertEqual(getattr(ir, name).map, want, "%s level %g" % (name, level))
+            _conv, ir = _convert(_corona(0, classids.CORONA_LEGACY_MTL, **{level_pid: 0.0, map_pid: Ref(1)}),
+                                 _map(1))
+            self.assertIsNone(getattr(ir, name).map, "%s level 0: no map" % name)
+        _conv, ir = _convert(_corona(0, classids.CORONA_LEGACY_MTL, p142=Ref(1)), _map(1))
+        self.assertIsNone(ir.specular.map, "levelReflect not stored: 0, no reflection")
+        _conv, ir = _convert(_corona(0, classids.CORONA_LEGACY_MTL, p102=(1.0,) * 3, p122=0.5, p182=999.0,
+                                     p142=Ref(1), p291=0.5), _map(1))
+        self.close(ir.metallic.value, 1.0, "level 0.5 x 0.5 = 0.25 shown: the metal")
+        self.assertEqual(ir.base_color.map, mat.MapRef(1, 0.5, False, 0.5), "the metal's map scaled too")
+        _conv, ir = _convert(_corona(0, classids.CORONA_LEGACY_MTL, p128=0.5, p158=Ref(1)), _map(1))
+        self.assertEqual(ir.emission_color.map, mat.MapRef(1), "self-illumination: the strength scales the map")
+        self.close(ir.emission_strength, 0.5)
+
     def test_legacy_defaults_reflect_nothing(self):
         _conv, ir = _convert(_corona(0, classids.CORONA_LEGACY_MTL))
         self.close(ir.specular.value, 0.0, "levelReflect 0")
@@ -2154,6 +2217,31 @@ class CoronaSynthetic(unittest.TestCase, Close):
         _conv, ir = _convert(_corona(0, classids.CORONA_PHYSICAL_MTL, p461=2, p171=2.0))
         self.close(ir.ior, 2.0)
         self.assertIn("IOR mode 2", ir.issues[0])
+
+    def test_physical_base_ior_outside_1_to_3(self):
+        """IOR mode 0: a base IOR below 1 reflects as its reciprocal, none more than IOR 3 (Corona 12 renders,
+        maxdrop-em3.115); the clearcoat IOR is left as it is (not measured); 0 or below never divides."""
+        for ior, want in ((0.5, 2.0), (4.0, 3.0), (10.0, 3.0), (2.5, 2.5), (1.0, 1.0), (3.0, 3.0), (0.0, 1.0),
+                          (-1.0, 1.0), (0.01, 3.0)):
+            for mode in ({}, {"p461": 0}):
+                _conv, ir = _convert(_corona(0, classids.CORONA_PHYSICAL_MTL, p171=ior, p221=4.0, **mode))
+                self.close(ir.ior, want, "%r %r" % (ior, mode))
+                self.close(ir.coat_ior, 4.0, "the coat as it is")
+                self.assertEqual(ir.issues, [], str(ior))
+
+    def test_physical_refracting_base_ior_outside_1_to_3_is_named(self):
+        """A refracting material keeps its IOR (its refraction through such an IOR was not measured), named when it
+        is outside 1..3; a transmission map counts as refracting."""
+        for ior, want, named in ((4.0, 4.0, True), (0.5, 1.0, True), (1.5, 1.5, False), (3.0, 3.0, False)):
+            _conv, ir = _convert(_corona(0, classids.CORONA_PHYSICAL_MTL, p171=ior, p191=0.5))
+            self.close(ir.ior, want, str(ior))
+            self.assertEqual(len(ir.issues), int(named), str(ir.issues))
+            if named:
+                self.assertIn("base IOR %g" % ior, ir.issues[0])
+                self.assertIn("drawn as IOR %g" % want, ir.issues[0])
+        _conv, ir = _convert(_corona(0, classids.CORONA_PHYSICAL_MTL, p171=4.0, p192=Ref(1)), _map(1))
+        self.close(ir.ior, 4.0, "a transmission map refracts")
+        self.assertEqual(len(ir.issues), 1)
 
     def test_physical_translucency_needs_thin_mode(self):
         for thin, issues in ((0, 0), (1, 1)):
@@ -2454,6 +2542,7 @@ class CoronaMedia(unittest.TestCase, Close):
                                      "CoronaVolumeMtl 'C': scattering map not converted",
                                      "CoronaVolumeMtl 'C': single bounce not converted",
                                      "CoronaVolumeMtl 'C': emission map not converted"])
+        self.assertTrue(ir.medium.single, "single bounce on: the builder names no Volume Bounces (maxdrop-6n0.6.33)")
         _conv, off = self.volume(p101=10.0, p102=(0.5, 0.5, 0.5), p205=Ref(1), p207=0, p206=Ref(2), p208=0)
         self.assertEqual(off.issues, [], "maps switched off")
 
@@ -2479,6 +2568,7 @@ class CoronaMedia(unittest.TestCase, Close):
                                     p271=(0.25, 0.25, 0.25), p282=0.6))
         _close_medium(self, ir.medium, _medium((0.5,) * 3, 4.0 * conv.meters, (0.25,) * 3, 0.6))
         self.assertEqual(ir.issues, [])
+        self.assertFalse(ir.medium.single)
 
     def test_physical_needs_refraction_and_solid(self):
         """No refraction: nothing enters; thin mode: Corona renders no medium (probe: 1.0 through a thin slab)."""
@@ -2495,6 +2585,7 @@ class CoronaMedia(unittest.TestCase, Close):
         self.assertEqual(ir.issues, ["CoronaPhysicalMtl 'C': absorption map not converted",
                                      "CoronaPhysicalMtl 'C': scattering map not converted",
                                      "CoronaPhysicalMtl 'C': single bounce not converted"])
+        self.assertTrue(ir.medium.single)
 
     def test_legacy(self):
         conv, ir = _convert(_corona(0, classids.CORONA_LEGACY_MTL, p123=1.0, p188=2.0, p190=(0.5, 0.25, 0.5),
@@ -2525,6 +2616,7 @@ class CoronaMedia(unittest.TestCase, Close):
         self.assertEqual(ir.issues, ["CoronaLegacyMtl 'C': absorption map not converted",
                                      "CoronaLegacyMtl 'C': scattering map not converted",
                                      "CoronaLegacyMtl 'C': single bounce not converted"])
+        self.assertTrue(ir.medium.single)
 
     def test_layered(self):
         """The base's medium is the material's (one Volume socket); a layer's is named."""
@@ -2731,6 +2823,19 @@ class Assign(unittest.TestCase):
                 conv = mat.MaterialConverter(FakeGraph(*objs))
                 self.assertEqual(conv.source_for(0, 0), 0 if peeled is None else peeled)
                 self.assertEqual((dict(conv.stats.peeled), conv._peels), ({}, {}))
+
+    def test_peel_and_source_for_share_the_wrapper_test(self):
+        """peel() and source_for's walk stop on one predicate (_is_wrapper), so a wrapper class added there reaches
+        both (maxdrop-6n0.7.5): each asks it of every object it walks."""
+        objs = (_wrapper(0, classids.VRAY_MTL_WRAPPER, {0: Ref(1)}), _vray(1, "A"),
+                _wrapper(2, classids.VRAY_MTL_WRAPPER, {0: Ref(1)}))
+        for walk in ("peel", "source_for"):
+            conv = mat.MaterialConverter(FakeGraph(*objs))
+            asked, real = [], conv._is_wrapper
+            conv._is_wrapper = lambda m, key: asked.append(m.index) or real(m, key)
+            self.assertEqual(conv.peel(0) if walk == "peel" else conv.source_for(2, 0), (1, None) if walk == "peel"
+                             else 1)
+            self.assertEqual(asked, [0, 1] if walk == "peel" else [2, 1], walk)
 
     def test_source_for_walks_each_wrapper_once(self):
         """An unpeeled wrapper many IDs wrap onto is walked once, not once per ID: a curve of 1000 IDs, half on a
@@ -2946,6 +3051,71 @@ class FrameZeroParams(unittest.TestCase, Close):
         self.assertEqual(params.frame_zero(s, Block(22), 0, mult), mult)  # point4: not read
         self.assertEqual(params.frame_zero(None, Block(0), 0, mult), mult)  # no scene
         self.assertEqual(params.frame_zero(s, Block(0), 0, 0.5), 0.5)  # a stored value as it is
+
+    def test_report_lines(self):
+        """What a controller's read meets is reported once per material and line however often the rules read it
+        (maxdrop-6n0.6.32): an approximation with the value, a controller left unread with its default."""
+        from unittest import mock
+        controllers = importlib.import_module(_PKG + ".reader.controllers")
+        params = importlib.import_module(_PKG + ".convert.params")
+        vray = self.by_name["FixtureAnimVRay"]
+        diffuse, gloss = (self.graph.get(vray).block(1).get(pid).index for pid in (1, 3))
+        real = controllers.parameter_value
+
+        def value(scene, i):
+            if i == diffuse:  # a color between two keys: interpolated, with its issue
+                return (0.2, 0.4, 0.6), [controllers.Issue(None, i, None, None, controllers.KEYS_INTERPOLATED)]
+            if i == gloss:  # another class
+                return None, [controllers.Issue(None, i, None, None, controllers.UNKNOWN_CLASS)]
+            return real(scene, i)
+
+        with mock.patch.object(controllers, "parameter_value", value):
+            conv = mat.MaterialConverter(self.graph, texmaps=self.tex)
+            ir = conv.convert(vray)
+            conv.convert(vray)
+            conv.graph.get(vray).param(1, 1)  # read again: no second line
+        self.close(ir.base_color.value, conv.swatches.color((0.2, 0.4, 0.6)))
+        self.close(ir.roughness.value, 0.0)  # glossiness 1.0, the default
+        lines = [(i, r) for i, r in conv.stats.issues if "at frame 0" in r]
+        self.assertEqual(sorted(lines), sorted([
+            (vray, "'FixtureAnimVRay': parameter 1 at frame 0 (controller %d): %s" % (
+                diffuse, controllers.KEYS_INTERPOLATED)),
+            (vray, "'FixtureAnimVRay': parameter 3 at frame 0 (controller %d): %s, %s" % (
+                gloss, controllers.UNKNOWN_CLASS, params.DEFAULT_USED))]))
+
+    def test_part_report_lines(self):
+        """A Standard shader's controller lines go to the report under the material, once however often the rule
+        reads the parameter; a read without an issue gives none."""
+        from unittest import mock
+        controllers = importlib.import_module(_PKG + ".reader.controllers")
+        params = importlib.import_module(_PKG + ".convert.params")
+        m = self.graph.get(self.by_name["FixtureAnimVRay"])
+        part = reader_materials.Part(m.index, m.class_id, m.superclass, {0: m.block(1)}, {})
+        heard = []
+        value = mat._PartParams(part, self.graph.scene, lambda i, line: heard.append((i, line)), m).param(1, 1)
+        self.close(value, self.want("FixtureAnimVRay", 1, 1))
+        self.assertEqual(heard, [])  # read without an issue: no line
+
+        class Typed(FakeBlock):
+            def param(self, pid):
+                return types.SimpleNamespace(base_type=2)
+
+        std = _standard(0, classids.BLINN_SHADER, {1: pblock.Animated(9)}, name="Std")
+        std.parts[2] = reader_materials.Part(50, classids.BLINN_SHADER, classids.SC_SHADER,
+                                             {0: Typed(0, {1: pblock.Animated(9)})}, {})
+        std.refs = {}  # no Texmaps object: the maps from block 3
+        graph = FakeGraph(std)
+        graph.scene = object()
+        unknown = controllers.Issue(None, 9, None, None, controllers.UNKNOWN_CLASS)
+        with mock.patch.object(controllers, "parameter_value", return_value=(None, [unknown])):
+            conv = mat.MaterialConverter(graph)
+            ir = conv.convert(0)
+            mat._PartParams(std.parts[2], graph.scene, conv._issue_once, std).param(1, 0)  # read again
+        self.close(ir.base_color.value, (150 / 255,) * 3)  # the default diffuse
+        self.assertEqual([x for x in conv.stats.issues if "at frame 0" in x[1]], [
+            (0, "'Std' shader: parameter 1 at frame 0 (controller 9): %s, %s"
+             % (controllers.UNKNOWN_CLASS, params.DEFAULT_USED))])
+        self.assertEqual(params.at_frame_zero(self.graph, heard.append).report, heard.append)
 
 
 if __name__ == "__main__":

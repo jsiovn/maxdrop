@@ -165,6 +165,7 @@ reader/materials.py (placement, output_invert, bitmap_gamma, mix_curve); what th
 mathutils.
 """
 import collections
+import contextlib
 import dataclasses
 import math
 
@@ -694,14 +695,6 @@ def _ref(m, pid, tab=0):
     return v.index if isinstance(v, pblock.Reference) else None
 
 
-def _old(part, index, default):
-    """A value of a part's old ParamBlock (slot order: the first one)."""
-    if part is None or not part.legacy:
-        return default
-    v = part.legacy[min(part.legacy)].get(index)
-    return float(v) if _finite(v) else default
-
-
 def rgb_kind(kind):
     """The kind of a color wrapper's input below a map of that kind: DATA_RGB in a data graph, BUMP_RGB in a height,
     the kind itself elsewhere (a color, a normal, a mask: see _wrapper_input for a Tint's or Output's in a mask)."""
@@ -775,12 +768,38 @@ class TexmapConverter:
     (reader.metadata's renderer class_id; None: not known), for the rules a renderer changes (corona)."""
 
     def __init__(self, graph, assets=None, textures=None, swatches=None, renderer=None):
-        self.graph, self.assets, self.textures = params.at_frame_zero(graph), assets, textures
+        self.graph, self.assets, self.textures = params.at_frame_zero(graph, self._heard), assets, textures
         self.swatches = swatches if swatches is not None else colors.of_graph(graph)
         self.corona = renderer is not None and tuple(renderer) == CORONA_RENDERER
         self.stats = TexmapStats()
         self._counted, self._done, self._reported = set(), {}, set()
         self._nodes, self._firsts = {}, {}  # keyed (object, kind, depth)
+        self._walks = []  # the walks being filled, innermost last: where a controller's line goes
+
+    def _heard(self, index, line):
+        """A line of a parameter read through its controller (params.frame_zero): the innermost walk's issue, which
+        it marks approximated (the value is one, or the default); stats only outside a walk."""
+        if self._walks:
+            self._walks[-1].approximated = True
+            self._issue(self._walks[-1], index, line)
+        else:
+            self.note(index, line)
+
+    @contextlib.contextmanager
+    def _into(self, walk):
+        """with self._into(walk): walk is the innermost one, where a controller's line goes."""
+        self._walks.append(walk)
+        try:
+            yield
+        finally:
+            self._walks.pop()
+
+    def _old(self, part, index, default, m, what):
+        """A float of a part's old ParamBlock (params.old_value: a controller's at frame 0 too), default when it has
+        none; a line goes under map m, what naming the part."""
+        heard = params.hearing(self._heard, m.index, "%r %s" % (m.name, what))
+        v = params.old_value(self.graph.scene, part, index, heard, number=True)
+        return float(v) if _finite(v) else default
 
     def _issue(self, walk, index, reason):
         self.note(index, reason)
@@ -883,7 +902,8 @@ class TexmapConverter:
         hit = self._nodes.get(key)
         if hit is None:
             sub = _Walk()
-            node = self._convert_node(i, kind, sub, depth, chain)
+            with self._into(sub):
+                node = self._convert_node(i, kind, sub, depth, chain)
             hit = self._nodes[key] = (node, sub.approximated, tuple(sub.issues))
         walk.merge(hit[1], hit[2])
         return hit[0]
@@ -941,7 +961,8 @@ class TexmapConverter:
         if key not in self._firsts:
             self._firsts[key] = (None, False, ())  # a cycle back to here finds nothing
             sub = _Walk()
-            image = self._first_image_walk(m, kind, sub, depth, chain)
+            with self._into(sub):
+                image = self._first_image_walk(m, kind, sub, depth, chain)
             self._firsts[key] = (image, sub.approximated, tuple(sub.issues))
         image, approximated, issues = self._firsts[key]
         walk.merge(approximated, issues)
@@ -1028,7 +1049,7 @@ class TexmapConverter:
         if key == classids.CORONA_BITMAP:
             return self._corona_image(m, kind, walk, entry, found, out)
         uv = next((p for _s, p in sorted(m.parts.items()) if p.superclass == classids.SC_UVGEN), None)
-        mapping = self._mapping(uv)
+        mapping = self._mapping(uv, m)
         if key == classids.VRAY_BITMAP:
             return self._vray_image(m, kind, walk, entry, found, out, mapping)
         self._placement_issues(m, walk, "Bitmap", mapping)
@@ -1039,7 +1060,7 @@ class TexmapConverter:
             crop = Crop(*clip, place=m.param(BM_CROP_PLACE, 0) == 1)
         gamma = self._bitmap_gamma(self._gamma(m), entry.name)
         alpha = m.param(BM_MONO if kind in FLOATS else BM_RGB, 0) == 1
-        return Image(m.index, entry.name, entry.path, entry.resolved, found, mapping, crop, self._output(out),
+        return Image(m.index, entry.name, entry.path, entry.resolved, found, mapping, crop, self._output(out, m),
                      colorspace(kind, gamma, not self.swatches.linear), gamma, alpha)
 
     def _placement_issues(self, m, walk, cls, mapping):
@@ -1084,7 +1105,7 @@ class TexmapConverter:
         if not mult <= MAX_MULTIPLIER:
             self._issue(walk, m.index, "VRayBitmap %r: multiplier %r not converted: 1" % (m.name, mult))
             mult = 1.0
-        output = self._output(out) or TexOutput()
+        output = self._output(out, m) or TexOutput()
         output = dataclasses.replace(output, amount=output.amount * mult)
         alpha = m.param(VB_MONO if kind in FLOATS else VB_RGB, 0) == 1
         if not self.swatches.linear and kind in (COLOR, MASK):
@@ -1168,35 +1189,39 @@ class TexmapConverter:
             # (maxdrop-em3.165), as V-Ray a VRayBitmap's; in STORED the Decode above does that
             gamma = _shown(gamma)
         alpha = m.param(CB_MONO if kind in FLOATS else CB_RGB, 0) == 1
-        return Image(m.index, entry.name, entry.path, entry.resolved, found, mapping, crop, self._output(out),
+        return Image(m.index, entry.name, entry.path, entry.resolved, found, mapping, crop, self._output(out, m),
                      colorspace(kind, gamma), gamma, alpha)
 
-    def _mapping(self, uv):
+    def _mapping(self, uv, m):
         if uv is None:
             return Mapping()
         p = reader_materials.placement(self.graph.scene, uv.index)
         source = p.source if p.source in (EXPLICIT, OBJECT_XYZ, VERTEX_COLOR, WORLD_XYZ) else EXPLICIT
         channel = 1 if p.channel is None else p.channel
         channel = 0 if source == VERTEX_COLOR else (channel if 0 <= channel <= 99 else 1)
+        def old(index, default):
+            return self._old(uv, index, default, m, "Coordinates")
+
         return Mapping(
             channel=channel,
-            tiling=(_old(uv, UV_U_TILING, 1.0), _old(uv, UV_V_TILING, 1.0)),
-            offset=(_old(uv, UV_U_OFFSET, 0.0), _old(uv, UV_V_OFFSET, 0.0)),
-            angle=(_old(uv, UV_U_ANGLE, 0.0), _old(uv, UV_V_ANGLE, 0.0), _old(uv, UV_W_ANGLE, 0.0)),
+            tiling=(old(UV_U_TILING, 1.0), old(UV_V_TILING, 1.0)),
+            offset=(old(UV_U_OFFSET, 0.0), old(UV_V_OFFSET, 0.0)),
+            angle=(old(UV_U_ANGLE, 0.0), old(UV_V_ANGLE, 0.0), old(UV_W_ANGLE, 0.0)),
             tile=p.tile,
             mirror=p.mirror,
             axis=p.axis if p.axis in (0, 1, 2) else 0,
             source=source,
             environment=p.environment,
             real_world=p.real_world,
-            blur=_old(uv, UV_BLUR, 1.0))
+            blur=old(UV_BLUR, 1.0))
 
-    def _output(self, part):
-        """The TexOutput of a map's Output part, None when it changes nothing."""
+    def _output(self, part, m):
+        """The TexOutput of map m's Output part, None when it changes nothing."""
         if part is None:
             return None
-        out = TexOutput(reader_materials.output_invert(self.graph.scene, part.index), _old(part, OUT_AMOUNT, 1.0),
-                        _old(part, OUT_LEVEL, 1.0), _old(part, OUT_OFFSET, 0.0))
+        out = TexOutput(reader_materials.output_invert(self.graph.scene, part.index),
+                        *(self._old(part, pid, default, m, "Output") for pid, default in
+                          ((OUT_AMOUNT, 1.0), (OUT_LEVEL, 1.0), (OUT_OFFSET, 0.0))))
         return None if out == TexOutput() else out
 
     def _gamma(self, m):
@@ -1363,7 +1388,8 @@ def _mix_curve(conv, m, walk):
 
 def _own_part(conv, m):
     """The TexOutput of the map's own Output part, None when it changes nothing."""
-    return conv._output(next((p for _s, p in sorted(m.parts.items()) if p.superclass == classids.SC_TEXOUTPUT), None))
+    return conv._output(next((p for _s, p in sorted(m.parts.items()) if p.superclass == classids.SC_TEXOUTPUT), None),
+                        m)
 
 
 def _own_output(conv, m, node):

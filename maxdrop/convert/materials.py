@@ -36,16 +36,23 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   ior and thin-walled from the refraction parameters; maps where their slot is on, with their multiplier as the
   amount; a normal map (VRayNormalMap, Normal Bump, CoronaNormal) in a bump slot is the normal input, any other
   map the bump input. Added here: a refracting material takes its base color from the refraction color (mixed by
-  the transmission), and with Fresnel off a bright reflection (mean >= METAL_REFLECTION) makes the material a metal
-  in the reflection color, unless it is grey (channels within NEUTRAL_REFLECTION), below 1 and without a reflection
-  map: that one keeps the diffuse, as V-Ray renders R + (1 - R) x the diffuse per channel (maxdrop-em3.153: 128 grey
-  over 200 40 40 gives 0.8925 0.5801 0.5801 facing the camera, the metal 0.502); beside a reflection map only the
-  swatch's share counts (its mean times 1 - the map amount): a map at full amount hides the swatch, so it never
-  makes a metal (the map itself is not judged).
-  Fresnel off sets fresnel False; outside that rule the weight (a dim or grey swatch, or a reflection map such as the
-  black to white Falloff) is then reflected as it is at every angle, which build/materials.py draws as a white metal
-  mixed by it over the material without reflection (V-Ray 5.2: a 0.2 swatch reflects 0.200 facing the camera,
-  maxdrop-em3.120).
+  the transmission), and with Fresnel off a bright reflection (mean >= METAL_REFLECTION) beside a reflection map or
+  with a channel of 1 or more makes the material a metal in the reflection color; below 1 and without a map it keeps
+  the diffuse: V-Ray renders R_c + (1 - R_c) x the diffuse per channel (maxdrop-em3.153: 128 grey over 200 40 40
+  gives 0.8925 0.5801 0.5801 facing the camera, the metal 0.502), drawn as the mirror below by the brightest channel
+  max(R), tinted R / max(R) (mirror_color): R_c + (1 - max R) x the diffuse, V-Ray's for grey or a black diffuse and
+  between the metal and V-Ray in every channel otherwise (maxdrop-6n0.6.16: 230 128 26 over 40 80 200 renders
+  0.9175 0.6582 0.8060, the copy 0.917 0.533 0.179, the metal 0.900 0.503 0.102; no Mix of two closures meets V-Ray
+  when max(R) + max_c((1 - R_c) d_c) > 1); a dimmer colored swatch stays the white mirror by its mean (102 51 13 over
+  grey: V-Ray 0.701 0.602 0.527, white 0.609 0.611 0.609, tinted 0.701 0.501 0.352), so a saturated swatch's weight
+  jumps from its mean to its brightest channel at METAL_REFLECTION (not measured near it); a constant metalness 1 keeps
+  the lone metal in the diffuse color (build/materials.py; not measured); beside a reflection map only the swatch's
+  share counts (its mean times 1 - the map amount): a map at full amount hides the swatch, so it never makes a metal
+  (the map itself is not judged), a map at 0 % amount is left out (the swatch alone, as V-Ray renders it).
+  Fresnel off sets fresnel False; outside the metal rule the weight (a swatch below 1, or a reflection map such as the
+  black to white Falloff) is then reflected as it is at every angle, which build/materials.py draws as a metal of
+  mirror_color (white, or the tint above) mixed by it over the material without reflection (V-Ray 5.2: a 0.2 swatch
+  reflects 0.200 facing the camera, maxdrop-em3.120).
   The Fresnel IOR is the refraction IOR when the material refracts or locks the IOR, else the reflection IOR.
 - VRayLightMtl -> emission only; VRayFastSSS2 -> base + subsurface; VRayCarPaintMtl / VRayCarPaintMtl2 -> a metal
   base + coat (VRayCarPaintMtl's coat_strength is the coat's reflectance at normal incidence: a full coat whose
@@ -77,12 +84,15 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   color; sheen amount, color and roughness; SSS amount, radius (world units, in meters) and scatter color (the
   per-channel radius); a metal with a complex IOR takes the F0 of its n and k as its base color; maps where on, their
   amounts fractions. Specular 1, the IOR's own Fresnel (the material has no reflection level); in IOR mode 1 the base
-  and clearcoat IORs are specular levels (F0 = 0.08 x level, at most 0.25). Translucency in thin mode (Corona ignores it
-  otherwise), maps in the volumetric slots, single bounce, a metal edge color other than the default, an IOR mode
-  other than 0 and 1 and maps in the sheen and SSS slots are named issues. Volumetric absorption and scattering: a
+  and clearcoat IORs are specular levels (F0 = 0.08 x level, at most 0.25); in the other modes a base IOR of a
+  material that does not refract is taken as Corona reflects it (below 1 its reciprocal, at most 3). Translucency in
+  thin mode (Corona ignores it otherwise), maps in the volumetric slots, single bounce, a metal edge color other than
+  the default, an IOR mode other than 0 and 1, a refracting material's base IOR outside 1..3 and maps in the sheen
+  and SSS slots are named issues. Volumetric absorption and scattering: a
   medium (corona_medium) inside a solid that refracts (no medium in thin mode: Corona 12 renders none there).
 - CoronaLegacyMtl (CoronaMtl): diffuse, reflection, refraction, opacity and self-illumination colors times their
-  levels; specular = the mean reflection; roughness = 1 - glossiness, with PBR mode off the measured
+  levels, the maps in the first four slots too (MapRef.scale, Corona's documentation; a level of 0: no map);
+  specular = the mean reflection; roughness = 1 - glossiness, with PBR mode off the measured
   CORONA_LEGACY_GLOSS (corona_legacy_roughness; a glossiness map stays inverted); transmission and the glass
   base color as for VRayMtl, the IOR as well (refraction IOR when it refracts, else the Fresnel IOR); a Fresnel IOR
   of CORONA_METAL_IOR or more with a bright reflection (as METAL_REFLECTION) is a metal in the reflection color;
@@ -171,13 +181,13 @@ from .params import finite as _finite, flag as _flag, num as _num
 ChunkError = chunks.ChunkError
 
 MAX_PEEL = 8
-METAL_REFLECTION = 0.25  # mean linear reflection (about sRGB 137 grey) above which Fresnel off means metal (VRayMtl: not a
-# grey swatch below 1 without a map, NEUTRAL_REFLECTION)
-NEUTRAL_REFLECTION = 0.02  # VRayMtl: a Fresnel-off swatch within this channel spread is grey (the mirror, not a metal)
+METAL_REFLECTION = 0.25  # mean linear reflection (about sRGB 137 grey) above which Fresnel off means metal (VRayMtl: a
+# swatch below 1 without a map is the tinted mirror instead, MaterialIR.mirror_color)
 CORONA_EDGE_DEFAULT = 0.75  # CoronaPhysicalMtl's edgeColor as created (grey): not reported
 CORONA_METAL_IOR = 10.0  # a CoronaLegacyMtl Fresnel IOR from which a bright reflection is a metal (made with 999)
 CORONA_SPECULAR_F0 = 0.08  # CoronaPhysicalMtl IOR mode 1: F0 = 0.08 x the specular level held by an IOR parameter
 CORONA_MAX_F0 = 0.25  # CoronaPhysicalMtl: no IOR reflects more than IOR 3 does (Corona 12 renders, both IOR modes)
+CORONA_MAX_IOR = 3.0  # the IOR of F0 CORONA_MAX_F0: a non-refracting base IOR above it reflects as it (mode 0)
 # CoronaLegacyMtl glossiness with PBR mode off (402) -> the roughness (1 - the PBR-mode glossiness) whose highlight
 # Corona 12 renders alike, at glossiness 0, 0.05 ... 1 (maxdrop-em3.115: a mirror under a small emitter, the highlight
 # profiles matched). From 0.35 up the profiles agree; below 0.3 no PBR-mode glossiness has the same lobe (the closest)
@@ -327,11 +337,12 @@ class Input:
 class Medium:
     """A homogeneous medium inside a closed mesh, per channel and per meter, linear: scattering (sigma_s) and
     absorption (sigma_a) coefficients, the Henyey-Greenstein anisotropy of the scattering, the radiance emitted per
-    meter of path."""
+    meter of path; single: Corona's single bounce on (named; Cycles' default Volume Bounces of 0 renders it so)."""
     scattering: tuple = (0.0, 0.0, 0.0)
     absorption: tuple = (0.0, 0.0, 0.0)
     anisotropy: float = 0.0
     emission: tuple = (0.0, 0.0, 0.0)
+    single: bool = False
 
 
 @dataclasses.dataclass
@@ -347,6 +358,7 @@ class MaterialIR:
     roughness: Input = Input(0.5)
     specular: Input = Input(1.0)  # a reflection weight: 1 is the IOR's own Fresnel (Blender's 0.5)
     fresnel: bool = True  # False: the weight is reflected at every angle, no Fresnel curve (VRayMtl Fresnel off)
+    mirror_color: tuple = (1.0, 1.0, 1.0)  # with fresnel False: the color of that reflection (VRayMtl: R / max(R))
     ior: float = 1.5
     transmission: Input = Input(0.0)
     thin_walled: bool = False
@@ -457,7 +469,7 @@ class MaterialConverter:
     """Converts the materials of one MaterialGraph, each object once."""
 
     def __init__(self, graph, texmaps=None, swatches=None, meters=None):
-        self.graph, self.texmaps = params.at_frame_zero(graph), texmaps
+        self.graph, self.texmaps = params.at_frame_zero(graph, self._issue_once), texmaps
         if swatches is None:
             swatches = texmaps.swatches if texmaps is not None else colors.of_graph(graph)
         self.swatches = swatches
@@ -491,7 +503,8 @@ class MaterialConverter:
             ir.issues.append(reason)
 
     def _issue_once(self, index, reason):
-        """An issue material_for finds again for every face ID: reported once."""
+        """An issue material_for finds again for every face ID, or a parameter's controller line (params.frame_zero)
+        met at every read: reported once."""
         if (index, reason) not in self._reported:
             self._reported.add((index, reason))
             self.issue(index, reason)
@@ -612,6 +625,12 @@ class MaterialConverter:
         base = m.param(CORONA_BASE, 0)
         return isinstance(base, pblock.Reference) and base.index is not None and bool(self.corona_layers(m))
 
+    def _is_wrapper(self, m, key):
+        """Material object m (ClassId key) stands for another one: peel() and source_for walk through it, stopping on
+        anything else (not a material, not in WRAPPERS or the Shell, a CoronaLayeredMtl that mixes its layers)."""
+        return m.superclass == classids.SC_MATERIAL and (key in WRAPPERS or key == classids.SHELL_MTL) and not (
+            key == classids.CORONA_LAYERED_MTL and self._mixes_layers(m))
+
     def peel(self, index):
         """(object index of the material a wrapper stands for, None), the index itself for an object that is no
         wrapper; (None, reason) when the peel ends without a material. The depth guard counts from index, so the
@@ -627,8 +646,7 @@ class MaterialConverter:
                 out = (None, "object %d: %s" % (i, e))
                 break
             key = ClassId(*m.class_id)
-            if m.superclass != classids.SC_MATERIAL or not (key in WRAPPERS or key == classids.SHELL_MTL) or (
-                    key == classids.CORONA_LAYERED_MTL and self._mixes_layers(m)):
+            if not self._is_wrapper(m, key):
                 out = (i, None)
                 break
             if len(chain) == MAX_PEEL:
@@ -761,9 +779,9 @@ class MaterialConverter:
     def source_for(self, index, material_id):
         """The material object index material_for(index, material_id) converts, None where it gives none, found
         without converting or counting anything (no peel kept): Multi/Sub-Objects looked up by the ID, wrappers
-        through peel()'s result or, for one peel() has not walked yet, its walk over _sub again (from the same object,
-        so the same base; kept in _bases, one walk per object as peel() pays); a wrapper whose peel fails is its own
-        answer (its grey IR is its own). To compare IDs that get no slot."""
+        through peel()'s result or, for one peel() has not walked yet, its walk over _sub again (the same stop test,
+        _is_wrapper, from the same object, so the same base; kept in _bases, one walk per object as peel() pays); a
+        wrapper whose peel fails is its own answer (its grey IR is its own). To compare IDs that get no slot."""
         def base_of(j):
             if j in self._peels:
                 return self._peels[j][0]
@@ -779,8 +797,7 @@ class MaterialConverter:
                 except ChunkError:
                     return None
                 key = ClassId(*m.class_id)
-                if m.superclass != classids.SC_MATERIAL or not (key in WRAPPERS or key == classids.SHELL_MTL) or (
-                        key == classids.CORONA_LAYERED_MTL and self._mixes_layers(m)):
+                if not self._is_wrapper(m, key):
                     return j
                 if len(chain) == MAX_PEEL:
                     return None
@@ -841,6 +858,8 @@ def vray_mtl(conv, m, ir):
     reflection = conv.rgb(m, 2, 1, (0.0, 0.0, 0.0))
     refraction = conv.rgb(m, 5, 1, (0.0, 0.0, 0.0))
     reflection_map = conv.map_ref(m, 101, 151, 201, 4, ir=ir)
+    if reflection_map is not None and reflection_map.amount <= 0.0:  # shows nothing of itself: the swatch alone
+        reflection_map = None
 
     t = _clamp01(mean(refraction))
     base = _mix(diffuse, refraction, t) if t > 0 else diffuse
@@ -854,13 +873,16 @@ def vray_mtl(conv, m, ir):
     hidden = min(1.0, reflection_map.amount) if reflection_map is not None else 0.0
     shown = mean(reflection) * (1.0 - hidden)
     ir.fresnel = _flag(m, 8, 1, True)  # reflection_fresnel
-    # a grey swatch below 1 without a map is the mirror drawing (w + (1 - w) diffuse, V-Ray's split); a colored one
-    # stays a metal in its color (the copy is white), a full one too (build draws no mirror at w >= 1)
-    grey = (reflection_map is None and mean(reflection) < 1.0
-            and max(reflection) - min(reflection) <= NEUTRAL_REFLECTION)
-    if not ir.fresnel and shown >= METAL_REFLECTION and not grey:
-        ir.metallic = Input(1.0)
-        ir.base_color = Input(reflection, reflection_map)
+    # a swatch below 1 without a map is the mirror tinted R / max(R) by max(R): R_c + (1 - max R) d_c, V-Ray's R_c +
+    # (1 - R_c) d_c for grey or a black diffuse; at max(R) 1 (build draws no mirror there) it is the metal
+    top = max(reflection)
+    if not ir.fresnel and shown >= METAL_REFLECTION:
+        if reflection_map is None and top < 1.0:
+            ir.specular = Input(top)
+            ir.mirror_color = tuple(c / top for c in reflection)
+        else:
+            ir.metallic = Input(1.0)
+            ir.base_color = Input(reflection, reflection_map)
 
     emit_map = conv.map_ref(m, 117, 167, 217, 4, ir=ir)  # texmap_self_illumination
     ir.emission_color = Input(conv.rgb(m, 81, 1, (0.0, 0.0, 0.0)), emit_map)  # selfIllumination
@@ -938,16 +960,17 @@ def vray_car_paint_mtl2(conv, m, ir):
 
 class _PartParams:
     """The parameters of a material's part (its blocks), read like a MtlBase's: param(pid, block_id); with the
-    scene, an animated one at frame 0 (params.frame_zero)."""
+    scene, an animated one at frame 0 (params.frame_zero), its lines to report(owner's index, line)."""
 
-    def __init__(self, part, scene=None):
+    def __init__(self, part, scene=None, report=None, owner=None):
         self._blocks = [b for _slot, b in sorted(part.blocks.items())] if part is not None else []
         self._scene = scene
+        self._heard = params.hearing(report, owner.index, "%r shader" % (owner.name,)) if owner is not None else None
 
     def param(self, pid, block_id=None, tab=0, default=None):
         for b in self._blocks:
             if (block_id is None or b.block_id == block_id) and pid in b:
-                return params.frame_zero(self._scene, b, pid, b.get(pid, tab, default))
+                return params.frame_zero(self._scene, b, pid, b.get(pid, tab, default), self._heard)
         return default
 
 
@@ -986,7 +1009,7 @@ def standard_mtl(conv, m, ir):
     ir.ior = _ior(_num(m, 6, 1, 1.5))
     shader = next((p for _slot, p in sorted(m.parts.items()) if p.superclass == classids.SC_SHADER), None)
     sid = ClassId(*shader.class_id) if shader is not None else None
-    s = _PartParams(shader, getattr(conv.graph, "scene", None))
+    s = _PartParams(shader, getattr(conv.graph, "scene", None), conv._issue_once, m)
     slots = STD_SLOTS.get(sid, _BLINN_SLOTS)
     ch = _std_channels(conv, m)
     ir.alpha = Input(_clamp01(_num(m, 1, 1, 1.0)), _std_map(conv, m, slots.opacity, ir, channels=ch))
@@ -1124,8 +1147,11 @@ def corona_physical_mtl(conv, m, ir):
     scatterDirectionality; its maps (262 / 263, 272 / 273) and 283 scatterSingleBounce are named.
     461 iorMode (Corona 12 renders, maxdrop-em3.115): 0 the IOR parameters (171, 221) are IORs; 1 they are specular
     levels, F0 = CORONA_SPECULAR_F0 x level (MAXScript's setter converts them on a mode change); 2 renders as an IOR
-    (not a mode the UI offers): named. No IOR reflects more than F0 CORONA_MAX_F0 (IOR 3); only the specular levels are
-    capped here (an IOR above 3 is left to Blender; one below 1, which reflects as its reciprocal, is clamped to 1).
+    (not a mode the UI offers): named. No IOR reflects more than F0 CORONA_MAX_F0 (IOR 3), and a base IOR below 1
+    reflects as its reciprocal: a material that does not refract (no refraction amount, no refraction map) takes its
+    base IOR so (_corona_reflection_ior); a refracting one keeps it (its refraction through such an IOR was not
+    measured: clamped to 1..100), named when it is outside 1..3. The clearcoat IOR is left as it is (whether the same
+    cap holds was not measured: an IOR 2 coat rendered as IOR 2).
     Translucency only works in thin mode (fraction 0.5 without it: no light through). The edge color is not Blender's
     Specular Tint: a white edge brightens the grazing reflection above Schlick, a black one darkens it, and the default
     0.75 is close to Schlick; no single tint, Gulbrandsen edge tint or conductor fits the renders (FORMAT.md)."""
@@ -1142,7 +1168,13 @@ def corona_physical_mtl(conv, m, ir):
     ir.roughness = Input(1.0 - r if gloss else r, _corona_amount_map(conv, m, 132, ir, invert=gloss))
     ir.metallic = Input(1.0 if m.param(111, 0) == 1 else 0.0, conv.map_ref(m, 411, 412, None, 0, ir=ir))
     ir.transmission = Input(t, _corona_amount_map(conv, m, 192, ir))
-    ir.ior = _corona_ior(m, 171, ior_mode)
+    refracts = t > 0 or ir.transmission.map is not None
+    ir.ior = _corona_ior(m, 171, ior_mode, reflects_only=not refracts)
+    base_ior = _num(m, 171, 0, 1.5)
+    if refracts and ior_mode != 1 and not 1.0 <= base_ior <= CORONA_MAX_IOR:
+        conv.issue(m.index, "CoronaPhysicalMtl %r: base IOR %g outside 1..%g on a refracting material drawn as IOR %g: "
+                   "Corona reflects it as IOR %g, its refraction not measured" % (
+                       m.name, base_ior, CORONA_MAX_IOR, ir.ior, _corona_reflection_ior(base_ior)), ir)
     ir.specular = Input(1.0)  # no reflection level in the pblock: the IOR's own Fresnel
     if ior_mode not in (None, 0, 1):
         conv.issue(m.index, "CoronaPhysicalMtl %r: unknown IOR mode %r read as an IOR" % (m.name, ior_mode), ir)
@@ -1179,36 +1211,53 @@ def corona_physical_mtl(conv, m, ir):
         _corona_volume(conv, m, ir, 281, 261, 271, 282, ((262, 263, "absorption"), (272, 273, "scattering")), 283)
 
 
-def _corona_ior(m, pid, ior_mode):
-    """A CoronaPhysicalMtl IOR parameter (default 1.5): an IOR, or in IOR mode 1 a specular level made an IOR."""
+def _corona_reflection_ior(v):
+    """The IOR a CoronaPhysicalMtl base IOR reflects as (Corona 12 renders, maxdrop-em3.115): below 1 its reciprocal,
+    at most CORONA_MAX_IOR; 0 or below (a damaged value) 1."""
+    if v <= 0.0:
+        return 1.0
+    return min(CORONA_MAX_IOR, max(v, 1.0 / v))
+
+
+def _corona_ior(m, pid, ior_mode, reflects_only=False):
+    """A CoronaPhysicalMtl IOR parameter (default 1.5): an IOR, or in IOR mode 1 a specular level made an IOR.
+    reflects_only: an IOR (not mode 1) of a material that does not refract, taken as Corona reflects it."""
     if ior_mode != 1:
-        return _ior(_num(m, pid, 0, 1.5))
+        v = _num(m, pid, 0, 1.5)
+        return _ior(_corona_reflection_ior(v) if reflects_only else v)
     level = max(0.0, _num(m, pid, 0, 0.5))  # mode 1's value of IOR 1.5
     return _ior(ior_from_reflectance(min(CORONA_MAX_F0, CORONA_SPECULAR_F0 * level)))
 
 
 def corona_legacy_mtl(conv, m, ir):
     """CoronaLegacyMtl (CoronaMtl), block 0: colors 101 diffuse, 102 reflect, 103 refract, 105 opacity, 107
-    selfIllum; their levels 121, 122, 123, 127, 128; maps 141 diffuse, 142 reflect, 143 reflectGlossiness,
-    144 refract, 146 opacity, 147 bump, 158 selfIllum, each switched on by id + 20, with amounts (fractions) 290,
-    291, 292, 293, 295, 296, 303; 180 reflectGlossiness, 182 fresnelIor,
-    183 ior, 210 thin; 410 levelSss, 411 sssRadius (world units), 412 sssScatterColor. 402 pbrMode off curves the
-    glossiness otherwise (Corona 12 renders, maxdrop-em3.115): its roughness is corona_legacy_roughness; a glossiness
+    selfIllum; their levels 121, 122, 123, 127, 128 (the first four scale the map in their slot as well, as Corona's
+    documentation has it: the MapRef's scale, no map at level 0; 128 is the emission strength); maps 141 diffuse,
+    142 reflect, 143 reflectGlossiness, 144 refract, 146 opacity, 147 bump, 158 selfIllum, each switched on by id +
+    20, with amounts (fractions) 290, 291, 292, 293, 295, 296, 303; 180 reflectGlossiness, 182 fresnelIor, 183 ior,
+    210 thin; 410 levelSss, 411 sssRadius (world units), 412 sssScatterColor. 402 pbrMode off curves the glossiness
+    otherwise (Corona 12 renders, maxdrop-em3.115): its roughness is corona_legacy_roughness; a glossiness
     map then stays 1 - the map, a named issue. Translucency (106, 126, map 148) and the SSS amount map (414) are named
     issues. With refraction and without thin, in media mode 1 (427; the default, also when not stored), a medium
     (corona_medium): 188 absorptionDistance, 190 absorptionColor, 215 scatterColor, 216 scatterDirectionality; its
     maps (305 / 306, 308 / 309), 315 singleBounceOnly and media mode 0 (Corona 12 renders the slab black) are
     named."""
-    def slot(map_pid, on_pid, amount_pid, invert=False):
-        return conv.map_ref(m, map_pid, on_pid, amount_pid, 0, invert=invert, ir=ir, percent=False)
-    diffuse = tuple(min(1.0, c * max(0.0, _num(m, 121, 0, 1.0))) for c in conv.rgb(m, 101, 0, (0.5, 0.5, 0.5)))
+    def slot(map_pid, on_pid, amount_pid, invert=False, level=1.0):
+        ref = conv.map_ref(m, map_pid, on_pid, amount_pid, 0, invert=invert, ir=ir, percent=False)
+        if ref is None or level == 1.0:
+            return ref
+        return dataclasses.replace(ref, scale=level) if level > 0.0 else None
+    levels = [max(0.0, _num(m, pid, 0, d)) for pid, d in ((121, 1.0), (122, 0.0), (123, 0.0), (127, 1.0))]
+    diffuse_level, reflect_level, refract_level, opacity_level = levels
+    diffuse = tuple(min(1.0, c * diffuse_level) for c in conv.rgb(m, 101, 0, (0.5, 0.5, 0.5)))
     reflect_color = conv.rgb(m, 102, 0, (1.0, 1.0, 1.0))
-    reflection = tuple(min(1.0, c * max(0.0, _num(m, 122, 0, 0.0))) for c in reflect_color)
+    reflection = tuple(min(1.0, c * reflect_level) for c in reflect_color)
     refract_color = conv.rgb(m, 103, 0, (1.0, 1.0, 1.0))
-    t = _clamp01(mean(refract_color) * max(0.0, _num(m, 123, 0, 0.0)))
-    reflection_map = slot(142, 162, 291)
+    t = _clamp01(mean(refract_color) * refract_level)
+    reflection_map = slot(142, 162, 291, level=reflect_level)
     fresnel_ior = _num(m, 182, 0, 1.52)
-    ir.base_color = Input(_mix(diffuse, refract_color, t) if t > 0 else diffuse, slot(141, 161, 290))
+    ir.base_color = Input(_mix(diffuse, refract_color, t) if t > 0 else diffuse, slot(141, 161, 290,
+                                                                                     level=diffuse_level))
     ir.specular = Input(_clamp01(mean(reflection)), reflection_map)
     pbr = _flag(m, 402, 0, True)
     gloss = _num(m, 180, 0, 1.0)
@@ -1219,11 +1268,11 @@ def corona_legacy_mtl(conv, m, ir):
     if fresnel_ior >= CORONA_METAL_IOR and mean(reflection) * (1.0 - hidden) >= METAL_REFLECTION:
         ir.metallic = Input(1.0)
         ir.base_color = Input(reflection, reflection_map)
-    ir.transmission = Input(t, slot(144, 164, 293))
+    ir.transmission = Input(t, slot(144, 164, 293, level=refract_level))
     ir.ior = _ior(_num(m, 183, 0, 1.52) if t > 0 else fresnel_ior)
     ir.thin_walled = _flag(m, 210, 0, False)
-    opacity = _clamp01(conv.mono_swatch(m, 105, 0, (1.0, 1.0, 1.0)) * max(0.0, _num(m, 127, 0, 1.0)))
-    ir.alpha = Input(opacity, slot(146, 166, 295))
+    opacity = _clamp01(conv.mono_swatch(m, 105, 0, (1.0, 1.0, 1.0)) * opacity_level)
+    ir.alpha = Input(opacity, slot(146, 166, 295, level=opacity_level))
     ir.emission_color = Input(conv.rgb(m, 107, 0, (1.0, 1.0, 1.0)), slot(158, 178, 303))
     ir.emission_strength = max(0.0, _num(m, 128, 0, 0.0))
     conv.bump_slot(ir, slot(147, 167, 296))
@@ -1467,6 +1516,8 @@ def _medium_issues(conv, m, ir, slots, single=None):
             conv.issue(m.index, "%s %r: %s map not converted" % (what, m.name, name), ir)
     if single is not None and _flag(m, single, 0, False):
         conv.issue(m.index, "%s %r: single bounce not converted" % (what, m.name), ir)
+        if ir.medium is not None:
+            ir.medium = dataclasses.replace(ir.medium, single=True)
 
 
 def corona_volume_mtl(conv, m, ir):
@@ -1582,8 +1633,8 @@ def _mixed(cd, materials, conv):
     """The issue (node, text) of a curve whose spline mixes material IDs that some user gets different materials for
     (conv.source_for: the IDs without a slot are not converted), named once on its first user; None without one.
     Bounded for an untrusted file: one source_for per distinct (material, ID) pair of the mixed splines (users sharing
-    a material asked once), then each spline by dict lookups. The cache lives in this call only: source_for reads the
-    peels, which later curves and meshes add to."""
+    a material asked once), then each spline by dict lookups. The cache lives in this call only (source_for answers
+    the same whether a wrapper was peeled yet or not: its own walk shares peel()'s stop test)."""
     splines = [sd.material_ids for sd in cd.splines]
     mixed = {mid for ids in splines if len(ids) >= 2 for mid in ids}
     if not mixed:

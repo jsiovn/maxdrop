@@ -143,7 +143,7 @@ import math
 from .. import pathnames
 from ..reader import chunks, classids, pblock
 from ..reader import materials as reader_materials
-from . import colors, texmaps
+from . import colors, params, texmaps
 from .params import finite
 
 ChunkError = chunks.ChunkError
@@ -862,11 +862,17 @@ _ENV_PROJECTIONS = {2: "cylindrical environment", 3: "shrink-wrap environment", 
 def dome_texture(graph_ir, material_graph, swatches=None):
     """(DomeTexture of a dome's converted texture map (convert.texmaps.TextureGraphIR of kind COLOR, None when it
     converts to nothing), or None: the World keeps the color, issues). material_graph (reader.materials
-    MaterialGraph) reads the map's projection; swatches: the scene's colors.Swatches (None: read from
-    material_graph's scene)."""
+    MaterialGraph) reads the map's projection, a parameter a controller holds at frame 0 (params.at_frame_zero; what
+    that meets in the issues, a line the conversion gave already not again); swatches: the scene's colors.Swatches
+    (None: read from material_graph's scene)."""
     if graph_ir is None:
         return None, [DOME_NO_TEXTURE]
     issues = list(graph_ir.issues)
+
+    def heard(_index, line):
+        if line not in issues:
+            issues.append(line)
+    material_graph = params.at_frame_zero(material_graph, heard) if material_graph is not None else None
     img = graph_ir.root
     if not isinstance(img, texmaps.Image):  # a gamma-off Mix, Composite or CoronaMix is named, not its Decode
         return None, issues + [DOME_ROOT % type(img.input if isinstance(img, texmaps.Decode) else img).__name__]

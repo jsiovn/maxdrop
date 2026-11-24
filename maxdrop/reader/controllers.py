@@ -649,7 +649,9 @@ class _Eval:
         self.memo = {}  # (kind, controller) -> value: a shared sub-controller is evaluated once per node
         self.world = False  # matrix() gave the node's world matrix (a look-at), not its local one
         self.look = None  # the LookAt of a Look At controller node
-        self.unknown = set()  # controllers reported as UNKNOWN_CLASS: still known when the memo answers
+        # controllers reported as UNKNOWN_CLASS (and a Float List of only such entries): still known when the memo
+        # answers
+        self.unknown = set()
 
     def where(self):
         return "node %d" % self.node if self.node is not None else "the controller"
@@ -762,7 +764,13 @@ class _Eval:
                 if not entries:
                     return default
                 # an entry that cannot be read adds nothing: the axis default (1 under ScaleXYZ) is the list's own
-                return sum(w * self.scalar(entry, 0.0) for entry, w in entries)
+                values = [(w, self.scalar(entry, None)) for entry, w in entries]
+                if default is None and all(v is None for _w, v in values):
+                    # no value to a caller that asks for none (a LookAt weight: 50); reported once, as their class
+                    if all(entry in self.unknown for entry, _w in entries):
+                        self.unknown.add(i)
+                    return None
+                return sum((w * v for w, v in values if v is not None), 0.0)
             self.issue(i, UNKNOWN_CLASS)
             return default
 
@@ -1186,8 +1194,8 @@ def parameter_value(scene, i):
     (reader.pblock.Animated): a float from a float controller (as a transform's: keyframes and Float List), a tuple of
     3 floats from a Bezier Color (between two keys linear, with an issue: its curve is not measured); None where it
     cannot be evaluated (another class, also as a Float List's entry, where a transform's list adds nothing: a
-    parameter keeps its default instead; no saved value or keys, a damaged controller, a non-finite value), with an
-    Issue (node None) as matrix() gives."""
+    parameter keeps its default instead; no saved value or keys, also in every entry of a Float List; a damaged
+    controller, a non-finite value), with an Issue (node None) as matrix() gives."""
     issues = []
     ev = _Eval(scene, None, issues)
     if not 0 <= i < len(scene):
