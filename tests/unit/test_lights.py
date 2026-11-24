@@ -571,6 +571,73 @@ class MeshLightFixture(unittest.TestCase):
                                        reader_modifiers.Modifiers(sc))
             self.assertTrue(isinstance(spent, str) and "Extrude is not made" in spent, spent)
 
+    def test_one_extrusion_for_a_shape_and_its_mesh_light(self):
+        """FixtureExtRect's shape under its Extrude as a mesh node's mesh and as a mesh light's picked mesh, in either
+        walk order: extruded once, its face corners counted once, its Extrude issues named once (on the node that
+        made it); after the shape's last node (drop) the light gets it made again, naming and counting nothing."""
+        cfb = importlib.import_module(_PKG + ".reader.cfb")
+        reader_scene = importlib.import_module(_PKG + ".reader.scene")
+        reader_modifiers = importlib.import_module(_PKG + ".reader.modifiers")
+        real, calls = conv.extrude.extrude, []
+
+        def counted(sh, params):
+            calls.append(1)
+            data, issues = real(sh, params)
+            return data, issues + ["counted"]
+
+        with cfb.CompoundFile(EXTRUDE_FIXTURE) as cf, mock.patch.object(conv.extrude, "extrude", counted):
+            sc = reader_scene.Scene.from_file(cf)
+            stacks = reader_modifiers.Modifiers(sc)
+            node = next(i for i in sc.walk() if sc.node(i).name == "FixtureExtRect")
+            obj = sc.node(node).object
+            base = sc.object_stack(obj).base
+            ext = [m for m in stacks.object_stack(obj).modifiers if m.renders][0]
+            v = {L.MESH_OBJECT: None, L.P_MESH_SOURCE: node}
+            for order in ("mesh, light", "light, mesh", "mesh, drop, light"):
+                calls.clear()
+                desc, built = conv.SceneDescription(MM), [0]
+                ex = conv._Extrusions(sc, desc, {}, built)
+                found = key = None
+                for step in order.split(", "):
+                    if step == "mesh":
+                        key, _done = conv._extruded(sc, desc, ex, {}, base, ext, (), node, "FixtureExtRect", None, MM)
+                    elif step == "drop":
+                        ex.drop(base)
+                    else:
+                        found = conv._emitter_mesh(sc, desc, v, "light", MM, built, None, stacks, ex)
+                self.assertNotIsInstance(found, str, (order, found))
+                self.assertIsNotNone(key, order)
+                corners = len(found[1].loop_vertices)
+                first = "light" if order.startswith("light") else node
+                self.assertEqual((len(calls), built[0]), (2 if "drop" in order else 1, corners), order)
+                self.assertEqual([(i, r) for i, r in desc.issues if r == "extrude: counted"],
+                                 [(first, "extrude: counted")], order)
+
+    def test_a_refused_extrusion_named_once_for_the_shape_and_on_each_light(self):
+        """The scene's corner budget spent before FixtureExtRect's Extrude: the light that meets it first gets its
+        "Extrude is not made" reason, the shape's node its own "extrude: not made" line, once; nothing is made."""
+        cfb = importlib.import_module(_PKG + ".reader.cfb")
+        reader_scene = importlib.import_module(_PKG + ".reader.scene")
+        reader_modifiers = importlib.import_module(_PKG + ".reader.modifiers")
+        with cfb.CompoundFile(EXTRUDE_FIXTURE) as cf:
+            sc = reader_scene.Scene.from_file(cf)
+            stacks = reader_modifiers.Modifiers(sc)
+            node = next(i for i in sc.walk() if sc.node(i).name == "FixtureExtRect")
+            obj = sc.node(node).object
+            base = sc.object_stack(obj).base
+            ext = [m for m in stacks.object_stack(obj).modifiers if m.renders][0]
+            v = {L.MESH_OBJECT: None, L.P_MESH_SOURCE: node}
+            desc, built = conv.SceneDescription(MM), [conv.MAX_BUILT_CORNERS]
+            ex = conv._Extrusions(sc, desc, {}, built)
+            spent = conv._emitter_mesh(sc, desc, v, "light", MM, built, None, stacks, ex)
+            for _ in range(2):
+                key, _done = conv._extruded(sc, desc, ex, {}, base, ext, (), node, "FixtureExtRect", None, MM)
+                self.assertIsNone(key)
+            self.assertTrue(isinstance(spent, str) and "Extrude is not made" in spent, spent)
+            lines = [(i, r) for i, r in desc.issues if r.startswith("extrude: ")]
+            self.assertEqual(lines, [(node, "extrude: not made: " + conv._SPENT % conv.MAX_BUILT_CORNERS)])
+            self.assertEqual(built[0], conv.MAX_BUILT_CORNERS)
+
     def described(self, change):
         """The fixture described with change(values) applied to the values of every mesh light read."""
         read = conv.lights.read_params
