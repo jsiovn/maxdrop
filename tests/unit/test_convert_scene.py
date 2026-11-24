@@ -61,7 +61,8 @@ UV_LAYERS = {
     "editable_mesh": ["UVMap"],
     # per mesh (named after its first node): Extrude makes channel 1 only with Generate Mapping Coords.
     "falloff_curve": ["UVMap"],
-    "extrude": {"FixtureExtRect": ["UVMap"], "FixtureExtAdaptive": ["UVMap"]},
+    "extrude": {"FixtureExtRect": ["UVMap"], "FixtureExtAdaptive": ["UVMap"], "FixtureExtDownStart": ["UVMap"],
+                "FixtureExtDownEndReal": ["UVMap"]},
     "gamma_swatches": ["UVMap"],
     "hierarchy": [],
     "instances": ["UVMap"],
@@ -133,6 +134,8 @@ SHARP_EDGES_EXTRUDE = {"FixtureExtRect": 4 * 2 + 8, "FixtureExtL": 6 + 12, "Fixt
                        "FixtureUVWExtrude": 4 + 8,
                        # grid caps: as above (the circle smooth, one rim: Cap End off)
                        "FixtureExtGrid": 10 + 8 + 18, "FixtureExtGridCircle": 16,
+                       # downwards, one cap each: 3 and 2 levels of corner columns, one rim
+                       "FixtureExtDownStart": 4 * 3 + 4, "FixtureExtDownEndReal": 4 * 2 + 4,
                        # arc_pie_reverse: both rims of a pie's 23 columns and the side broken at from, the
                        # center and to in 2 segments (maxdrop-em3.111); the open arc none; the clockwise Line and
                        # the holed cap as above

@@ -20,6 +20,10 @@
 -- segments with Cap Type Grid: 25 x 20 grid divisions (the hole refines the grid across), cells dropped along
 -- the slanted edge and round the hole.
 -- FixtureExtGridCircle: a Circle (radius 8, steps 3) extruded -4 with Cap Type Grid and Cap End off.
+-- FixtureExtDownStart: a Rectangle 18 x 12 extruded -6 in 3 segments, Cap End off, with mapping coordinates: the
+-- lone Cap Start at the far level, V from there.
+-- FixtureExtDownEndReal: the same Rectangle extruded -6 in 2 segments, Cap Start off, with real-world mapping
+-- coordinates: V times the signed amount.
 -- One Standard material on every node.
 -- Authored for MaxDrop's tests (see CONTRIBUTING.md, "Test files"): it resets the scene, so run it in a 3ds Max
 -- session with nothing to keep, then sanitize and check the saved file before it goes into tests/fixtures/.
@@ -130,6 +134,14 @@
 	local gc = Circle name:"FixtureExtGridCircle" radius:8 steps:3
 	addModifier gc (Extrude amount:-4 capType:1 capEnd:false)
 	gc.pos = [180,120,0]
+
+	local ds = Rectangle name:"FixtureExtDownStart" length:12 width:18 cornerRadius:0
+	addModifier ds (Extrude amount:-6 segs:3 capEnd:false mapcoords:true)
+	ds.pos = [220,120,0]
+
+	local de = Rectangle name:"FixtureExtDownEndReal" length:12 width:18 cornerRadius:0
+	addModifier de (Extrude amount:-6 segs:2 capStart:false mapcoords:true realWorldMapSize:true)
+	de.pos = [250,120,0]
 
 	local mat = StandardMaterial name:"FixtureGrey" diffuse:(color 128 128 128)
 	for o in objects do o.material = mat

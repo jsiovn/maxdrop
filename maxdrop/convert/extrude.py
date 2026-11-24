@@ -23,8 +23,9 @@ turns by at most 2 degrees (the angle between the chords of its two halves). Wit
 gets its steps.
 
 The sides join segments + 1 copies of each polyline along the object's Z, one per level, amount * level / segments
-up; a closed polyline also gets a cap at level 0 (Cap Start) and at the last level (Cap End). Closed polylines nest
-even-odd: one inside an even number of others is a solid, inside an odd number a hole of its innermost container.
+up; a closed polyline also gets a cap at the bottom (Cap Start: level 0, downwards the last level) and at the top
+(Cap End: the last level, downwards level 0). Closed polylines nest even-odd: one inside an even number of others is
+a solid, inside an odd number a hole of its innermost container.
 A closed polyline with two edges that do not follow each other and meet (cross, touch or run over each other, on XY,
 without a tolerance) or that lost a zero-length segment after a straight edge gets no cap and is left out of the
 nesting (no hole, no container, not turned), as 3ds Max 2020 does. Every solid is turned counter-clockwise and every hole
@@ -37,14 +38,14 @@ per axis, more for a small hole (floor(0.95 x size / half the hole's extent), at
 the box plus a thousandth of a division; the cells that lie wholly inside the solid are quads and the band between
 them and the outline is ear-clipped like a cap with holes (a cap of n outline points, k grid points and h holes:
 n + 2k + 2h - 2 triangles, as 3ds Max). The grid points lie at z 0 and the levels' heights whatever the shape's z,
-as 3ds Max puts them; a solid without a whole cell gets the morph cap. Downwards the caps are turned out only when
-both are on: a lone cap faces as upwards, into the solid, as 3ds Max makes it. The cap facing +Z gets material ID 1,
-the one facing -Z ID 2, the sides ID 3 (zero-based here: 0, 1, 2) when Generate Material IDs is on, else every face
-ID 1; with Use Shape IDs too each side face takes the material ID of the spline segment it comes from (the caps keep
-1 and 2). Smooth gives the sides smoothing groups that change only at a corner or Bezier corner knot or at a Bezier
-knot with a vector on its point (a pie Arc's corners), the caps group 16; without it the sides have none. Mapping:
-the sides' U runs along each polyline from its first point (0 to 1, or its length with Real-World Map Size), V up
-the levels (0 to 1, or the height); the caps map the shape's XY box (0 to 1, or its size).
+as 3ds Max puts them; a solid without a whole cell gets the morph cap. Every cap faces out, a lone one too. The cap
+facing +Z gets material ID 1, the one facing -Z ID 2, the sides ID 3 (zero-based here: 0, 1, 2) when Generate
+Material IDs is on, else every face ID 1; with Use Shape IDs too each side face takes the material ID of the spline
+segment it comes from (the caps keep 1 and 2). Smooth gives the sides smoothing groups that change only at a
+corner or Bezier corner knot or at a Bezier knot with a vector on its point (a pie Arc's corners), the caps group 16;
+without it the sides have none. Mapping: the sides' U runs along each polyline from its first point (0 to 1, or its
+length with Real-World Map Size), V up the levels (0 to 1, or times the amount), downwards from the far level (1 at
+the shape, or the amount there); the caps map the shape's XY box (0 to 1, or its size).
 
 The file comes from anywhere: a parameter that is animated or no number raises ExtrudeError; segments are clamped
 to 1 .. MAX_SEGMENTS; a mesh past MAX_VERTICES raises ExtrudeError; a holed cap past MAX_CAP_POINTS or one that
@@ -636,9 +637,14 @@ def _sides(numpy, pl, base, first, params, side_id):
     lengths = numpy.concatenate(([0.0], numpy.cumsum(numpy.linalg.norm(nxt - p[:columns], axis=1))))
     if not params.real_world:
         lengths = lengths / lengths[-1] if lengths[-1] else numpy.zeros_like(lengths)
-    vs = numpy.arange(segs + 1, dtype=numpy.float64) / segs
+    # V 0 at the shape and 1 at the far level, but downwards 0 at the far level (z = amount), 1 at the shape;
+    # Real-World Map Size: times the signed amount, so downwards from the amount at the shape to 0 (3ds Max 2020)
+    vs = numpy.arange(segs + 1, dtype=numpy.float64)
+    if params.amount < 0:
+        vs = vs[::-1]
+    vs = vs / segs
     if params.real_world:
-        vs = vs * abs(params.amount)
+        vs = vs * params.amount
     uvw = numpy.zeros((segs + 1, row, 3), dtype=numpy.float32)
     uvw[:, :, 0] = lengths[None, :]
     uvw[:, :, 1] = vs[:, None]
@@ -942,7 +948,9 @@ def extrude(shape, params):
     for pl in lines:
         base.append(start)
         start += len(pl.points) * levels
-    caps = ([0] if params.cap_start else []) + ([segs] if params.cap_end else [])
+    # Cap Start is the bottom cap and Cap End the top one: downwards Cap Start lies at the far level (3ds Max 2020)
+    bottom, top = (0, segs) if params.amount >= 0 else (segs, 0)
+    caps = ([bottom] if params.cap_start else []) + ([top] if params.cap_end else [])
     cap_faces, grid = {}, []
     if solids and caps:
         cap_faces, grid = _caps(closed, solids, issues, params.cap_type == CAP_GRID, numpy,
@@ -981,8 +989,7 @@ def extrude(shape, params):
         x0, y0 = min(xs), min(ys)
         w, h = max(xs) - x0, max(ys) - y0
     for slot, level in enumerate(caps):
-        # this cap faces +Z; downwards 3ds Max turns the caps out only when both are on: a lone cap faces as upwards
-        up = (level == segs) == (params.amount >= 0 or not (params.cap_start and params.cap_end))
+        up = level == top  # every cap faces out, a lone one too
         mat = (TOP_ID if up else BOTTOM_ID) if params.material_ids else 0
         index = {}
         first = start + slot * len(grid)

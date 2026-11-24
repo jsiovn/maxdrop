@@ -379,7 +379,8 @@ EXTRUDE_UV_LAYERS = {"FixtureExtRect": ["UVMap"], "FixtureExtAdaptive": ["UVMap"
                      "FixtureUVWExtrude": ["UVMap"],  # uvwmap: no mapping from the Extrude, the UVW Map's
                      "FixturePieRevExt": ["UVMap"], "FixturePieRevWrapExt": ["UVMap"], "FixturePieExt": ["UVMap"],
                      "FixtureArcRevExt": ["UVMap"], "FixtureClockwiseExt": ["UVMap"], "FixtureHoleExt": ["UVMap"],
-                     "FixtureShellUnderSymExtrude": ["UVMap"]}
+                     "FixtureShellUnderSymExtrude": ["UVMap"],
+                     "FixtureExtDownStart": ["UVMap"], "FixtureExtDownEndReal": ["UVMap"]}
 EXTRUDE_SHARP_EDGES = {"FixtureExtRect": 16, "FixtureExtL": 18, "FixtureExtHole": 68, "FixtureExtIsland": 36,
                        "FixtureExtOpen": 0, "FixtureExtMirror": 72, "FixtureExtAdaptive": 256,
                        "FixtureExtShapeIDs": 41, "FixtureExtShapeIDsRect": 12, "FixtureUVWExtrude": 12,
@@ -388,13 +389,15 @@ EXTRUDE_SHARP_EDGES = {"FixtureExtRect": 16, "FixtureExtL": 18, "FixtureExtHole"
                        "FixtureArcRevExt": 0, "FixtureClockwiseExt": 16, "FixtureHoleExt": 72,
                        # stack_shell: an open Line's two corner columns and the rim the Shell above hardens (top and
                        # bottom, not the ends on the Symmetry's plane, which its Mirror welds below the Shell)
-                       "FixtureShellUnderSymExtrude": 8}
+                       "FixtureShellUnderSymExtrude": 8,
+                       "FixtureExtDownStart": 16, "FixtureExtDownEndReal": 12}
 EXTRUDE_EULER = {"FixtureExtRect": 2, "FixtureExtL": 2, "FixtureExtHole": 0, "FixtureExtIsland": 2,
                  "FixtureExtOpen": None, "FixtureExtMirror": 2, "FixtureExtAdaptive": 2, "FixtureExtShapeIDs": 0,
                  "FixtureExtShapeIDsRect": 2, "FixtureUVWExtrude": 2, "FixturePieRevExt": 2,
                  "FixtureExtGrid": 0, "FixtureExtGridCircle": None,  # grid caps: a holed solid; one cap
                  "FixturePieRevWrapExt": 2, "FixturePieExt": 2, "FixtureArcRevExt": None, "FixtureClockwiseExt": 2,
-                 "FixtureHoleExt": 0, "FixtureShellUnderSymExtrude": None}
+                 "FixtureHoleExt": 0, "FixtureShellUnderSymExtrude": None,
+                 "FixtureExtDownStart": None, "FixtureExtDownEndReal": None}  # one cap each
 VALUE_TOLERANCE = 1e-4
 SPECULAR_LEVEL = 0.5  # the IR's specular is a reflection weight: 1 is Blender's Specular IOR Level 0.5
 TWIN_LABEL, WEIGHT_LABEL = "Without reflection", "Reflection weight"  # a weight between 0 and 1 (maxdrop-em3.119)
@@ -645,8 +648,8 @@ def run_fixture(path, modules):
         check_modifier_pivot(obs, meters)
     if name == "extrude":
         kinds = [ob.type for ob in obs]
-        check("extrude: eleven meshes, the switched-off Extrude a curve",
-              kinds == ['MESH'] * 7 + ['CURVE'] + ['MESH'] * 4, str(kinds))
+        check("extrude: thirteen meshes, the switched-off Extrude a curve",
+              kinds == ['MESH'] * 7 + ['CURVE'] + ['MESH'] * 6, str(kinds))
     if name == "shapes":
         curves = sorted(c.name for c in bpy.data.curves)
         shaped = sum(1 for o in nodes if o["shape"] is not None)

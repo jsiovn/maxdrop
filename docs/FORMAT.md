@@ -618,18 +618,19 @@ against the extrude fixture's oracle) keeps its parameters in an old ParamBlock 
 
 | Index | Parameter | extrude fixture |
 |---|---|---|
-| 0 | amount (`f32`) | FixtureExtRect 10, FixtureExtL -15 |
-| 1 | segments | FixtureExtRect 2, the others 1 |
-| 2, 3 | cap start, cap end | 1 everywhere but FixtureExtGridCircle's cap end 0 |
+| 0 | amount (`f32`) | FixtureExtRect 10, FixtureExtL -15, FixtureExtDownStart and FixtureExtDownEndReal -6 |
+| 1 | segments | FixtureExtRect 2, FixtureExtDownStart 3, FixtureExtDownEndReal 2, the others 1 |
+| 2, 3 | cap start, cap end | 1 everywhere but FixtureExtGridCircle's and FixtureExtDownStart's cap end 0 and FixtureExtDownEndReal's cap start 0 |
 | 4 | cap type: 0 morph, 1 grid | FixtureExtGrid and FixtureExtGridCircle 1, the others 0 |
 | 5 | output: 0 patch, 1 mesh, 2 NURBS | 1 |
-| 6 | generate mapping coordinates | FixtureExtRect and FixtureExtAdaptive 1 |
+| 6 | generate mapping coordinates | FixtureExtRect, FixtureExtAdaptive, FixtureExtDownStart and FixtureExtDownEndReal 1 |
 | 7 | generate material IDs | FixtureExtAdaptive 0, the others 1 |
 | 8 | use shape IDs | FixtureExtShapeIDs and FixtureExtShapeIDsRect 1, the others 0 |
 | 9 | smooth | 1 |
 
 Real-World Map Size is not in the block: the modifier's own chunk holds `0x2150 {0x0100 u32 1, 0x0110 {0x0120: 20
-bytes naming the class, 0x0130 u32}}`, and that `u32` is 1 on FixtureExtAdaptive, 0 on the others. `0x2150` can hold
+bytes naming the class, 0x0130 u32}}`, and that `u32` is 1 on FixtureExtAdaptive and FixtureExtDownEndReal, 0 on
+the others. `0x2150` can hold
 several `0x0110` entries: the flag is the one whose `0x0120` names Extrude's ClassID (another class's entry is not it).
 `maxdrop/reader/realworld.py` reads it for Extrude, UVW Map and the primitives alike. A damaged one is off, never an
 error (the flag only changes UVs): a chunk or a `0x2150` whose children do not parse, or a `0x0130` shorter
@@ -655,17 +656,20 @@ What 3ds Max 2020 makes of it (`snapshotAsMesh`, probed on scratch scenes and ch
 - **Faces**: the sides two triangles per segment and level; a cap of n points with h holes n + 2h - 2 triangles,
   without extra vertices (FixtureExtHole: 32 + 2 - 2 = 32 per cap). Nested closed splines alternate solid / hole
   (FixtureExtIsland: a square, a hole, an island in it). An open spline gets no cap (FixtureExtOpen).
-- **Normals**: outward whatever the splines' direction and the sign of the amount (but a lone cap of a downward
-  extrusion, below); the side faces of an open spline look to the right of it.
+- **Normals**: outward whatever the splines' direction and the sign of the amount, a lone cap too; the side faces
+  of an open spline look to the right of it.
 - **Material IDs**: the cap facing +Z gets ID 1, the one facing -Z ID 2, the sides ID 3 (FixtureExtRect: the cap at
   the shape faces down and is ID 2; FixtureExtL, amount -15: the cap at the shape faces up and is ID 1); without
   Generate Material IDs every face is ID 1. Use Shape IDs (with Generate Material IDs; without it every face is still
   ID 1): each side face takes the material ID of the spline segment it comes from, its interpolated steps too, on a
   clockwise outline and a hole alike; the caps keep 1 and 2 (FixtureExtShapeIDs: side triangles 2, 6, 10, 4, 8 on IDs
-  4, 5, 7, 11, 12). A parametric shape's segments are ID 1 (FixtureExtShapeIDsRect). Downwards (a negative amount)
-  the caps are turned out only when both are on: a lone cap faces as upwards, into the solid (Cap Start -Z and ID 2,
-  Cap End +Z and ID 1; FixtureExtGridCircle, amount -4, Cap End off: its cap faces -Z, ID 2); the sides face out
-  in every case.
+  4, 5, 7, 11, 12). A parametric shape's segments are ID 1 (FixtureExtShapeIDsRect). Cap Start is the bottom cap
+  and Cap End the top one: downwards (a negative amount) Cap Start lies at the far level (z = amount), faces -Z and
+  is ID 2, Cap End lies at the shape, faces +Z and is ID 1, alone or together (FixtureExtGridCircle, amount -4, Cap
+  End off: its grid cap at z -4, facing -Z, ID 2; FixtureExtDownStart, amount -6, Cap End off: at z -6;
+  FixtureExtDownEndReal, Cap Start off: at z 0). The maxdrop-6n0.6.10 probe (3ds Max 2020, a 20 x 10 rectangle at
+  -5, its hole, clockwise and at z 3, morph and grid caps) found the lone cap at that level: an earlier probe saw
+  only its facing and ID, and MaxDrop put it at the other level, facing into the solid.
 - **Grid caps** (cap type 1; probed on about 60 shapes, `tests/unit/test_extrude.py` GRID_PROBES holds their counts;
   FixtureExtGrid, FixtureExtGridCircle): each solid (an outline with its holes; an island and an overlapping outline
   are solids of their own) gets a grid over the box of its outline's interpolated points, W x H. Divisions per axis:
@@ -747,7 +751,13 @@ What 3ds Max 2020 makes of it (`snapshotAsMesh`, probed on scratch scenes and ch
   cases. The group bits differ (a pie's sides: MaxDrop 1, 2, 4; 3ds Max 1 to 4 or 5, overlapping along the arc), the
   hard edges do not: `tests/unit/test_extrude.py` compares them by position with `arc_pie_reverse.maps.jsonl`.
 - **Mapping**: the sides U along each spline by length (0 to 1, the seam at its first point), V up the levels; the
-  caps the shape's XY box, 0 to 1. Real-World Map Size: the lengths and sizes in file units instead. A closed spline
+  caps the shape's XY box, 0 to 1. Real-World Map Size: the lengths and sizes in file units instead. Downwards (a
+  negative amount; maxdrop-6n0.6.10, 3ds Max 2020: segments 1 to 4, amounts -5 and -0.75, open, closed, clockwise,
+  holed, at z 3, a Circle, every cap setting) V is 0 at the far level and 1 at the shape ((segments - level) /
+  segments, the level counted from the shape), and with Real-World Map Size that V times the signed amount: the
+  amount at the shape, 0 at the far level (FixtureExtDownStart, FixtureExtDownEndReal); V follows the levels, not
+  z (a shape at z 3 alike). U and the caps' box mapping are as upwards; `tests/unit/test_extrude.py` NEG_PROBES
+  holds every corner of nine probed shapes. A closed spline
   that runs the other way than its role (a clockwise solid, a counter-clockwise hole) is turned whole: its U starts
   at its last interpolated point and runs back (arc_pie_reverse: FixtureClockwiseExt, FixtureHoleExt's Circle, the
   reversed pies; `tests/unit/test_extrude.py` compares every corner with `arc_pie_reverse.maps.jsonl`, the

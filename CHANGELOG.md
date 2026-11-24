@@ -113,8 +113,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   the file (a relative-photometry file whose rated lumens exceed its luminaire's flux no longer arrives too bright).
   A file not found, or one MaxDrop does not read (photometric type A or B, damaged), keeps the power as the flux,
   a line in the report.
-- Extrude: a shape extruded downwards (a negative amount) with only one of its caps on gets that cap facing the way
-  3ds Max faces it (into the solid, as for an upward extrusion) and its material ID, instead of turned out.
+- Extrude: a shape extruded downwards (a negative amount) with only one of its caps on gets that cap where 3ds Max
+  puts it, facing out with its material ID: Cap Start at the far end (Cap End at the shape), instead of at the
+  other end.
 - Extrude: the sides of an extruded pie Arc shade sharp at its corners (the arc's ends and the center), as in
   3ds Max, instead of round across the arc and both straight sides: the smoothing also breaks at a Bezier knot with
   a handle on its point.
@@ -263,6 +264,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   its mirror) is now one closed shell as in 3ds Max, instead of keeping the rim's faces inside the seam and a false
   line about auto smooth corners: its Mirror goes below the Solidify (an open half box: 64 triangles, was 72). With
   the weld or slice off, or a rim that leaves the plane, the order stays and the report says so.
+- Extrude: a shape extruded downwards (a negative amount) maps its sides as 3ds Max does, V from the far end (0) to
+  the shape (1), so a texture on the sides is no longer upside down; with Real-World Map Size V runs from the
+  amount at the shape to 0 at the far end.
 
 ## [1.0.1] - 2026-11-22
 
