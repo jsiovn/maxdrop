@@ -1978,7 +1978,9 @@ The gamma operation over a bottom map draws a ColorCorrect gamma: a negative cha
 A Mix node's color input clamps its own value at 0: a constant layer below 0 goes in through a Combine XYZ node.
 So does every Mix node's (maxdrop-6n0.6.26: Mix maps, CoronaMix mix and multiply, RGB Multiply, Composite layers) and
 an RGB node standing for a constant (`_Tree.socket`); a Cycles emission bake of a Mix (0.5) and a Multiply of a white
-image with a constant side of -0.5 gives 0.25 and -0.5 (was 0.5 and 0, the constant taken as 0).
+image with a constant side of -0.5 gives 0.25 and -0.5 (was 0.5 and 0, the constant taken as 0). The other users
+of that stand-in (Color Correction, an Output or RGB Tint over a constant, a normal map's constant color) now get
+the negative value too, where they got 0: not measured against a renderer.
 
 Corona 12 renders (maxdrop-em3.115): `3dsmaxbatch`, CoronaRenderer with tone mapping off (`colorMap_enabled`) and a
 pass and a time limit, read with `getPixels ... linear:true` (a CoronaLightMtl patch at 0.5 / 1.0 reads 0.49999 /
@@ -2055,7 +2057,8 @@ EEVEE 1.0), the unlinked Surface 1.0 at any count, and a camera inside an absorb
 both ways in Cycles and EEVEE (e^-0.975 = 0.377). Its viewport color is 0.1 opaque, so Solid view shows the scene in
 it. The em3.163 scattering slab (128 grey at 10, scattering white, h 10, the emitter the slab's footprint) renders
 0.601 at Volume Bounces 0 (Corona single bounce 0.598) and 0.678 at 64 (Corona 0.683): the import names a medium that
-scatters in the report and leaves the setting as it is (owner, 2026-11-24).
+scatters in the report and leaves the setting as it is (owner, 2026-11-24), but one with single bounce on, which
+Blender's default renders as Corona does.
 
 Corona 12 CoronaHairMtl on a mesh (maxdrop-em3.164; `3dsmaxbatch`, tone mapping off, the gamma off, read with
 `getPixels ... linear:true` as a mean of 31 x 31 pixels, the swatch's 0-255 value / 255 rendered as the linear color as

@@ -327,11 +327,12 @@ class Input:
 class Medium:
     """A homogeneous medium inside a closed mesh, per channel and per meter, linear: scattering (sigma_s) and
     absorption (sigma_a) coefficients, the Henyey-Greenstein anisotropy of the scattering, the radiance emitted per
-    meter of path."""
+    meter of path; single: Corona's single bounce on (named; Cycles' default Volume Bounces of 0 renders it so)."""
     scattering: tuple = (0.0, 0.0, 0.0)
     absorption: tuple = (0.0, 0.0, 0.0)
     anisotropy: float = 0.0
     emission: tuple = (0.0, 0.0, 0.0)
+    single: bool = False
 
 
 @dataclasses.dataclass
@@ -1469,6 +1470,8 @@ def _medium_issues(conv, m, ir, slots, single=None):
             conv.issue(m.index, "%s %r: %s map not converted" % (what, m.name, name), ir)
     if single is not None and _flag(m, single, 0, False):
         conv.issue(m.index, "%s %r: single bounce not converted" % (what, m.name), ir)
+        if ir.medium is not None:
+            ir.medium = dataclasses.replace(ir.medium, single=True)
 
 
 def corona_volume_mtl(conv, m, ir):

@@ -52,6 +52,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   CoronaPhysicalMtl translucency is a line in the report only in thin mode, the one mode Corona renders it in.
 - Corona media: a material whose medium scatters is named in the report, with Cycles' Volume Bounces to raise for
   multiple scattering (0, Blender's default, scatters once); the import changes no scene setting.
+  Not with Corona's single bounce on, which that default renders.
 
 ### Fixed
 
@@ -260,7 +261,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   unchanged.
 - Materials: a constant color below 0 (an HDR CoronaColor, a CoronaMix layer with a negative offset or multiplier)
   over a map in a Mix, a CoronaMix mix or multiply, an RGB Multiply or a Composite is no longer taken as 0.
-- Corona media: a CoronaVolumeMtl box has no surface at all, so six or more stacked or nested boxes no longer render
+- Corona media: a CoronaVolumeMtl box has no surface at all, so more than four stacked or nested boxes no longer render
   black in Cycles (each box spent two of its 8 transparent bounces), and a room-sized fog box no longer hides the
   scene in Solid view (its viewport color is see-through).
 

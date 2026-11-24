@@ -33,7 +33,8 @@ then crosses the box as a volume boundary, where an Alpha-0 Principled BSDF spen
 per box (six stacked boxes render black); its viewport color is VOLUME_VIEWPORT_ALPHA opaque, so Solid view shows the
 scene inside. Without a medium it keeps its Principled BSDF at Alpha 0: an unlinked Surface with nothing on Volume
 renders black in Cycles. A medium that scatters is a builder issue (VOLUME_BOUNCES): Cycles scatters once at its
-default Volume Bounces of 0, and the import changes no scene setting (owner, 2026-11-24).
+default Volume Bounces of 0, and the import changes no scene setting (owner, 2026-11-24); not with Corona's single
+bounce on (Medium.single), which that default renders.
 
 Reflection weight: V-Ray (and 3ds Max's Physical and Corona materials) multiply the whole Fresnel curve by it, where
 Specular IOR Level scales only the reflectance facing the camera and the curve still rises to 1 at grazing. So a
@@ -140,7 +141,8 @@ Map channel 0 (the vertex color as UVW) has no UV layer: such a map is drawn on 
 A texture file that holds no image (empty, or not starting as its format does: image_has_data) is reported and
 left out as one that does not load. A material whose build raises is removed again and reported: its slot stays
 empty.
-Alpha: Material.surface_render_method only, BLENDED for a constant alpha below 1, DITHERED for an alpha map.
+Alpha: Material.surface_render_method only, BLENDED for a constant alpha below 1, DITHERED for an alpha map; a
+volume-only material keeps the default (no surface: Medium above).
 
 Images: an image already in the file (an earlier import's, or the user's) is reused for the same file and color
 space when it is still that file: a local image (no library), source FILE, not packed, not modified (is_dirty
@@ -497,8 +499,9 @@ class _Tree:
         with a channel below 0 a Combine XYZ node: unclamped)."""
         if isinstance(value, bpy.types.NodeSocket):
             return value
-        if space == COLOR and min(_as(value, COLOR)) < 0.0:
-            return self.combine_xyz(value, depth)
+        held = self.unclamped(value, space, depth)
+        if held is not value:
+            return held
         if space == COLOR:
             n = self.node("ShaderNodeRGB", depth)
             n.outputs[0].default_value = _as(value, COLOR) + (1.0,)
@@ -729,7 +732,8 @@ class _Tree:
         out = next(n for n in self.nodes if n.bl_idname == "ShaderNodeOutputMaterial")
         surface = self.links.new(top, _in(out, "Surface"))
         m = self.material
-        volume_only = ir.medium is not None and self.volume(ir.medium, out) and _volume_only(ir)
+        linked = ir.medium is not None and self.volume(ir.medium, out)
+        volume_only = linked and _volume_only(ir)
         if volume_only:  # a volume boundary, no surface (see Medium above)
             self.links.remove(surface)
         elif any(linked for linked, _v in alphas):
@@ -739,7 +743,7 @@ class _Tree:
         m.diffuse_color = _as(ir.base_color.value, COLOR) + (VOLUME_VIEWPORT_ALPHA if volume_only else 1.0,)
         m.metallic = min(1.0, max(0.0, _mean(ir.metallic.value)))
         m.roughness = min(1.0, max(0.0, _mean(ir.roughness.value)))
-        if ir.medium is not None and _in(out, "Volume").is_linked and max(ir.medium.scattering) > 0.0:
+        if linked and max(ir.medium.scattering) > 0.0 and not ir.medium.single:
             self.builder.issue(self.label, VOLUME_BOUNCES)
 
     def volume(self, medium, out):
@@ -1495,14 +1499,15 @@ class _Tree:
         node.clamp_result = mode == tx.LINEAR_DODGE
         if mode == tx.HARD_LIGHT:  # overlay with the layers' roles swapped
             below, top = top, below
-        self.feed(a, self.unclamped(below, COLOR, depth + 1))
+        below = self.unclamped(below, COLOR, depth + 1)  # one Combine XYZ for both Mix nodes of spotlight blend
+        self.feed(a, below)
         self.feed(b, self.unclamped(top, COLOR, depth + 1))
         if mode == tx.SPOTLIGHT:
             return self.scale(out, 2.0, depth)
         if mode == tx.SPOTLIGHT_BLEND:  # below + below x top
             add, a2, b2, out2 = self.mix_node(COLOR, depth, 'ADD')
             _in(add, "Factor_Float").default_value = 1.0
-            self.feed(a2, self.unclamped(below, COLOR, depth + 1))
+            self.feed(a2, below)
             self.links.new(out, b2)
             return out2
         return out
@@ -1522,11 +1527,13 @@ class _Tree:
             if result is MISSING and layer.opacity >= 1.0 and mask is MISSING:
                 result = v
                 continue
+            if result is not MISSING:  # a constant below 0 on one Combine XYZ, for the blend and the opacity Mix
+                result = self.unclamped(result, work, depth + 1)
             blended = result is not MISSING and layer.blend != tx.NORMAL_BLEND
             top = self.blend(layer.blend, result, v, depth + 1) if blended else v
             node, a, b, out = self.mix_node(work, depth)
             node.clamp_result = blended
-            self.feed(a, _as(0.0, work) if result is MISSING else self.unclamped(result, work, depth + 1))
+            self.feed(a, _as(0.0, work) if result is MISSING else result)
             self.feed(b, self.unclamped(top, work, depth + 1))
             factor = layer.opacity
             if isinstance(mask, bpy.types.NodeSocket):

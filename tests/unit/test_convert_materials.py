@@ -2454,6 +2454,7 @@ class CoronaMedia(unittest.TestCase, Close):
                                      "CoronaVolumeMtl 'C': scattering map not converted",
                                      "CoronaVolumeMtl 'C': single bounce not converted",
                                      "CoronaVolumeMtl 'C': emission map not converted"])
+        self.assertTrue(ir.medium.single, "single bounce on: the builder names no Volume Bounces (maxdrop-6n0.6.33)")
         _conv, off = self.volume(p101=10.0, p102=(0.5, 0.5, 0.5), p205=Ref(1), p207=0, p206=Ref(2), p208=0)
         self.assertEqual(off.issues, [], "maps switched off")
 
@@ -2479,6 +2480,7 @@ class CoronaMedia(unittest.TestCase, Close):
                                     p271=(0.25, 0.25, 0.25), p282=0.6))
         _close_medium(self, ir.medium, _medium((0.5,) * 3, 4.0 * conv.meters, (0.25,) * 3, 0.6))
         self.assertEqual(ir.issues, [])
+        self.assertFalse(ir.medium.single)
 
     def test_physical_needs_refraction_and_solid(self):
         """No refraction: nothing enters; thin mode: Corona renders no medium (probe: 1.0 through a thin slab)."""
@@ -2495,6 +2497,7 @@ class CoronaMedia(unittest.TestCase, Close):
         self.assertEqual(ir.issues, ["CoronaPhysicalMtl 'C': absorption map not converted",
                                      "CoronaPhysicalMtl 'C': scattering map not converted",
                                      "CoronaPhysicalMtl 'C': single bounce not converted"])
+        self.assertTrue(ir.medium.single)
 
     def test_legacy(self):
         conv, ir = _convert(_corona(0, classids.CORONA_LEGACY_MTL, p123=1.0, p188=2.0, p190=(0.5, 0.25, 0.5),
@@ -2525,6 +2528,7 @@ class CoronaMedia(unittest.TestCase, Close):
         self.assertEqual(ir.issues, ["CoronaLegacyMtl 'C': absorption map not converted",
                                      "CoronaLegacyMtl 'C': scattering map not converted",
                                      "CoronaLegacyMtl 'C': single bounce not converted"])
+        self.assertTrue(ir.medium.single)
 
     def test_layered(self):
         """The base's medium is the material's (one Volume socket); a layer's is named."""
