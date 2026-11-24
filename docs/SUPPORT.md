@@ -135,9 +135,10 @@ it holds too (measured); a Falloff or Color Correction on its own, and a Mix ins
 (not measured).
 A material or map parameter that is animated (held by a controller: a Bezier, Linear or TCB Float, a Float List of
 those, a Bezier Color) takes its value at frame 0, as 3ds Max shows it there; another controller (an expression, a
-script, a Boolean Controller…) leaves the class's default. Not yet: an animated tiling, offset, angle or blur of a
-map's Coordinates, an animated Output amount, level or offset, and an animated rotation of a dome light's map keep
-their defaults.
+script, a Boolean Controller…) leaves the class's default. A map's animated Coordinates (tiling, offset, angle,
+blur) and Output (amount, level, offset), and an animated rotation of a dome light's map, are read at frame 0 too (not
+measured: no test file animates one). Where a value is not exact (a color between two keys, interpolated linearly)
+or the default is used, a line in the report names the parameter.
 Turn materials off with **Object Filter**.
 
 | Material | This version |

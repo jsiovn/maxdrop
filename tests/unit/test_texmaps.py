@@ -41,6 +41,8 @@ classids = importlib.import_module(_PKG + ".reader.classids")
 pblock = importlib.import_module(_PKG + ".reader.pblock")
 reader_materials = importlib.import_module(_PKG + ".reader.materials")
 reader_scene = importlib.import_module(_PKG + ".reader.scene")
+controllers_mod = importlib.import_module(_PKG + ".reader.controllers")
+params_mod = importlib.import_module(_PKG + ".convert.params")
 
 Ref = pblock.Reference
 DEG = math.pi / 180.0
@@ -383,6 +385,9 @@ class FakeOld:
 
     def get(self, i, default=None):
         return self._values.get(i, default)
+
+    def controller(self, i):
+        return None
 
 
 class FakeBlock:
@@ -3336,6 +3341,145 @@ class AnimatedRewiring(Checks):
         self.assertEqual(g.root.rewire, tx.REWIRE_NONE)
         self.assertTrue(g.approximated)
         self.assertTrue(any("rewiring" in r for r in g.issues), g.issues)
+
+
+def _cleaf(cid, payload=b""):
+    return struct.pack("<HI", cid, 6 + len(payload)) + payload
+
+
+def _cnode(cid, *children):
+    body = b"".join(children)
+    return struct.pack("<HI", cid, (6 + len(body)) | 0x80000000) + body
+
+
+_BEZIER_FLOAT = (classids.SC_CTRL_FLOAT, classids.BEZIER_FLOAT, "Bezier Float")
+_BEZIER_COLOR = (classids.SC_CTRL_POINT3, classids.BEZIER_COLOR, "Bezier Color")
+_OTHER_FLOAT = (classids.SC_CTRL_FLOAT, (0x7778, 0), "Some Float")
+
+
+class _KeyedScene(FakeScene):
+    """A FakeScene that also holds controllers as real chunks: {object index: ((superclass, ClassId, name), bytes)},
+    and references {object index: {slot: object index}}."""
+    ticks_per_frame = 160
+
+    def __init__(self, objects, controllers, refs=None):
+        super().__init__(objects, {i: chunks.index(data)[0] for i, (_kind, data) in controllers.items()})
+        self.kinds = {i: kind for i, (kind, _data) in controllers.items()}
+        self._refs = refs or {}
+
+    def entry(self, i):
+        if i in self.kinds:
+            return _ControllerEntry(*self.kinds[i])
+        return super().entry(i)
+
+    def refs(self, i):
+        return dict(self._refs.get(i, {}))
+
+
+def _color_keys(before, after, times=(-10, 10)):
+    """A Bezier Color without a saved value at frame 0: its two keys (80 bytes each) around it."""
+    keys = b"".join(struct.pack("<iI3f", t, 0, *v).ljust(80, bytes(1)) for t, v in zip(times, (before, after)))
+    return _cnode(0x9005, _cnode(0x7127, _cleaf(0x2501, struct.pack("<3f", 9, 9, 9)),
+                                 _cleaf(0x2500, struct.pack("<ii", 5, 5)), _cleaf(0x2526, keys)))
+
+
+def _float_saved(value, keys=0):
+    """A Bezier Float whose saved value holds forever, or (keys > 1) has no interval beside that many keys."""
+    if not keys:
+        return _cnode(0x9003, _cnode(0x7127, _cleaf(0x2501, struct.pack("<f", value)),
+                                     _cleaf(0x2500, struct.pack("<ii", -2 ** 31, 2 ** 31 - 1))))
+    body = b"".join(struct.pack("<iIf4f", 160 * k, 0x1690, value, 0, 0, 1 / 3, 1 / 3) for k in range(keys))
+    return _cnode(0x9003, _cnode(0x7127, _cleaf(0x2501, struct.pack("<f", value)), _cleaf(0x2525, body)))
+
+
+class _OldWithControllers(FakeOld):
+    def __init__(self, values, controllers):
+        super().__init__(values)
+        self._controllers = controllers
+
+    def controller(self, i):
+        return self._controllers.get(i)
+
+    def type(self, i):
+        return 0
+
+
+class ControllerLines(Checks):
+    """What reading a parameter through its controller meets goes to the report and marks the graph approximated
+    (maxdrop-6n0.6.32), once per map and line in stats however many walks read it; a map's Coordinates and Output
+    (old ParamBlock) are read through their controllers too."""
+
+    def falloff(self, controller):
+        fo = _falloff(1, color1=pblock.Animated(20), name="fo")
+        fo.blocks = {0: _TypedBlock(0, fo.blocks[0]._params, {tx.FO_COLOR1: 2})}
+        graph = FakeGraph(fo)
+        graph.scene = _KeyedScene(graph.objects, {20: controller})
+        return tx.TexmapConverter(graph, _table())
+
+    def test_color_between_two_keys(self):
+        tex = self.falloff((_BEZIER_COLOR, _color_keys((0.2, 0.4, 0.6), (0.6, 0.8, 1.0))))
+        color = tex.convert(mat.MapRef(1), tx.COLOR)
+        mask = tex.convert(mat.MapRef(1), tx.MASK)
+        for g in (color, mask):
+            self.assertTrue(g.approximated)
+            lines = [r for r in g.issues if "parameter 0 at frame 0 (controller 20)" in r]
+            self.assertEqual(len(lines), 1, g.issues)
+            self.assertIn(controllers_mod.KEYS_INTERPOLATED, lines[0])
+            self.assertTrue(lines[0].startswith("'fo': "), lines[0])
+            self.assertNotIn("default", lines[0])
+        self.assertEqual([r for _i, r in tex.stats.issues if "controller 20" in r], [lines[0]])
+        self.assertEqual([i for i, r in tex.stats.issues if "controller 20" in r], [1])
+
+    def test_unknown_class_keeps_the_default(self):
+        tex = self.falloff((_OTHER_FLOAT, _cnode(0x7778, _cleaf(0x2501, struct.pack("<f", 9)))))
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertTrue(g.approximated)
+        lines = [r for r in g.issues if "controller 20" in r]
+        self.assertEqual(lines, ["'fo': parameter 0 at frame 0 (controller 20): %s, %s"
+                                 % (controllers_mod.UNKNOWN_CLASS, params_mod.DEFAULT_USED)])
+
+    def test_a_value_read_without_an_issue_gives_no_line(self):
+        tex = self.falloff((_BEZIER_COLOR, _color_keys((0.2, 0.4, 0.6), (0.6, 0.8, 1.0), times=(0, 10))))
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertEqual((g.approximated, g.issues), (False, ()))
+
+    def placed(self, controllers, old, owned=None):
+        """A Bitmap with Coordinates (UVGen 50) and Output (70) parts, each an old block (object 51, 71) whose
+        controllers are {parameter index: reference slot}; the blocks' references {slot: controller}."""
+        b = _bitmap(1)
+        b.parts = {0: reader_materials.Part(UVGEN_OBJECT, classids.STD_UVGEN, classids.SC_UVGEN, {},
+                                            {0: _OldWithControllers({}, old.get("uv", {}))}),
+                   1: reader_materials.Part(70, classids.STD_TEXOUTPUT, classids.SC_TEXOUTPUT, {},
+                                            {1: _OldWithControllers({}, old.get("out", {}))})}
+        refs = {UVGEN_OBJECT: {0: 51}, 70: {1: 71}, 51: owned.get("uv", {}) if owned else {},
+                71: owned.get("out", {}) if owned else {}}
+        graph = FakeGraph(b)
+        graph.scene = _KeyedScene(graph.objects, controllers, refs)
+        tex = tx.TexmapConverter(graph, _table())
+        return tex, tex.convert(mat.MapRef(1), tx.COLOR)
+
+    def test_coordinates_and_output_held_by_controllers(self):
+        tex, g = self.placed({30: (_BEZIER_FLOAT, _float_saved(4.0)), 31: (_BEZIER_FLOAT, _float_saved(0.5))},
+                             {"uv": {tx.UV_U_TILING: 0}, "out": {tx.OUT_AMOUNT: 0}},
+                             {"uv": {0: 30}, "out": {0: 31}})
+        self.assertEqual(g.root.mapping.tiling, (4.0, 1.0))
+        self.assertEqual(g.root.output.amount, 0.5)
+        self.assertEqual((g.approximated, g.issues), (False, ()))
+
+    def test_coordinates_with_an_approximation_or_no_value(self):
+        tex, g = self.placed({30: (_BEZIER_FLOAT, _float_saved(4.0, keys=2)),
+                              31: (_OTHER_FLOAT, _cnode(0x7778))},
+                             {"uv": {tx.UV_U_TILING: 0, tx.UV_V_TILING: 1, tx.UV_U_OFFSET: 2}},
+                             {"uv": {0: 30, 1: 31}})
+        self.assertEqual(g.root.mapping.tiling, (4.0, 1.0))  # the saved value (maybe another frame's); unknown: 1
+        self.assertEqual(g.root.mapping.offset, (0.0, 0.0))  # its controller missing: the default
+        self.assertTrue(g.approximated)
+        head = "Coordinates: parameter %d at frame 0 (controller %s): "
+        self.assertEqual(sorted(r for r in g.issues if "at frame 0" in r), sorted([
+            head % (tx.UV_U_TILING, 30) + controllers_mod.ANIMATED,
+            head % (tx.UV_V_TILING, 31) + controllers_mod.UNKNOWN_CLASS + ", " + params_mod.DEFAULT_USED,
+            head % (tx.UV_U_OFFSET, "missing") + params_mod.NOT_READ + ", " + params_mod.DEFAULT_USED]))
+        self.assertTrue(all(i == UVGEN_OBJECT for i, r in tex.stats.issues if "at frame 0" in r))
 
 
 if __name__ == "__main__":

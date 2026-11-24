@@ -1662,6 +1662,11 @@ of pblock_animated's 6 controllers. A Float List with an entry of another class 
 sum of the rest. Not measured: an hsv parameter (not read); a float controller on an integer parameter (int, bool, radio
 button...; no fixture has one): a whole number is read as that integer, a fraction not (the class default); a
 percent or angle parameter takes the controller's value as stored, like its stored value.
+What a read meets is a line in the import report, under the material or map (maxdrop-6n0.6.32): each issue
+`parameter_value` gives (between two Bezier Color keys, a saved value beside several keys without its interval,
+keys of an unknown layout, a list weight not stored, another class, a damaged controller), and a parameter left at
+its default; in a map's graph it marks the graph approximated. A dome light's VRayBitmap reads its rotation and
+switches the same way.
 
 Transient parameters are mostly not stored (VRayMtl: 25 of the 80 parameters of block 1, among them
 `bump_multiplier` 102 and the `texmap_*` 109-128 that mirror block 4). Some are stored anyway with a stale value
@@ -1673,6 +1678,13 @@ parameter a `0x0002` container: `0x0003` `u32` index, an empty `0x0004` on some 
 `0x0100` + ParamType: `0x0100` float, `0x0101` int, `0x0104` bool (fixtures: the Bitmap's Placement and Output,
 the Standard material's sampler); `0x0102` color and `0x0103` point3 follow the SDK's ParamType, no fixture has
 them.
+A parameter a controller holds has an empty `0x0200` + ParamType instead (no value), and the block's own
+references (`0x2034`) hold the controllers, one per such parameter in index order: stack_basic's Noise block
+animates entry 7 alone, a Bezier Float at slot 0; the Standard shader blocks of standard_physical and
+standard_shaders animate 22 entries (0, 2, 4 to 10, 21 to 33), entry 2 (`0x0202`, a color) a Bezier Color at slot 1,
+the bools On/Off controllers. A map's Coordinates and Output parameters held by a controller are read at frame 0
+as a ParamBlock2's are (`convert/params.py` `old_value`; maxdrop-6n0.6.32); no fixture animates a Placement or an
+Output, so that path is not measured.
 
 ## Materials and maps
 

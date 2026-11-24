@@ -546,6 +546,51 @@ class OldParamBlock(unittest.TestCase):
         pb = pblock.ParamBlock.from_chunk(chunks.index(data)[0])
         self.assertEqual(pb.issues, ("0x0001 announces 3 parameters, 1 found",))
 
+    def test_controllers(self):
+        """A parameter a controller holds: an empty 0x0200 + type, no value; its controller at the block's reference
+        slot of its rank among such parameters, in index order (maxdrop-6n0.6.32)."""
+        data = container(0x08, leaf(0x0001, struct.pack("<I", 4)), self.entry(3, 0x0202, b"", True),
+                         self.entry(0, 0x0200, b"", True), self.entry(1, 0x0100, f32(2), True),
+                         self.entry(5, 0x0204, b"", True))
+        pb = pblock.ParamBlock.from_chunk(chunks.index(data)[0])
+        self.assertEqual([pb.controller(i) for i in (0, 1, 3, 5, 9)], [0, None, 1, 2, None])
+        self.assertEqual([pb.get(i) for i in (0, 3, 5)], [None, None, None])
+        self.assertEqual([pb.type(i) for i in (0, 1, 3, 5)], [0, 0, 2, 4])
+        self.assertEqual(pb.get(1), 2.0)
+        self.assertEqual(pb.issues, ())
+
+    def test_controllers_on_fixtures(self):
+        """The fixtures' old blocks that animate entries: each such entry's slot holds a controller of its type (a
+        Bezier Float for a float, int or bool, a Bezier Color for a color), and the block has one reference per such
+        entry. stack_basic's Noise block animates entry 7 alone (slot 0); the Standard shader blocks animate entry 2,
+        a color, second (slot 1)."""
+        cfb = importlib.import_module(_PKG + ".reader.cfb")
+        scene = importlib.import_module(_PKG + ".reader.scene")
+        classids = importlib.import_module(_PKG + ".reader.classids")
+        seen = {}
+        for name in ("stack_basic", "standard_physical", "standard_shaders"):
+            with cfb.CompoundFile(os.path.join(ROOT, "tests", "fixtures", name + ".max")) as cf:
+                sc = scene.Scene.from_file(cf)
+                for i in range(len(sc)):
+                    entry = sc.entry(i)
+                    if entry is None or entry.superclass != classids.SC_PARAMETER_BLOCK or not sc.refs(i):
+                        continue
+                    pb = pblock.ParamBlock.from_chunk(sc.chunk(i))
+                    animated = [k for k in pb.indices() if pb.controller(k) is not None]
+                    refs = sc.refs(i)
+                    with self.subTest(fixture=name, block=i):
+                        self.assertEqual(sorted(refs), list(range(len(animated))))
+                        for k in animated:
+                            c = sc.entry(refs[pb.controller(k)])
+                            want = classids.BEZIER_COLOR if pb.type(k) == 2 else classids.BEZIER_FLOAT
+                            if pb.type(k) == 4 and c.class_id != classids.BEZIER_FLOAT:
+                                continue  # a bool's On/Off controller: not a class the reader knows
+                            self.assertEqual(c.class_id, want)
+                    seen[name] = [(k, pb.controller(k)) for k in animated][:2]
+        self.assertEqual(seen["stack_basic"], [(7, 0)])
+        self.assertEqual(seen["standard_physical"], [(0, 0), (2, 1)])
+        self.assertEqual(seen["standard_shaders"], [(0, 0), (2, 1)])
+
 
 if __name__ == "__main__":
     unittest.main()

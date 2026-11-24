@@ -833,6 +833,52 @@ class DomeTextureRules(unittest.TestCase):
                                   L.DOME_SWITCH % ("sky.hdr", "ground projection"), L.DOME_OUTPUT % "sky.hdr",
                                   L.DOME_GAMMA % ("sky.hdr", 1.8), L.DOME_CROP % "sky.hdr"])
 
+    def test_a_rotation_held_by_a_controller(self):
+        """A VRayBitmap's horizontal rotation a controller holds is its value at frame 0 (maxdrop-6n0.6.32); what the
+        read meets is in the issues, once also when the conversion reported it already."""
+        params = importlib.import_module(_PKG + ".convert.params")
+        controllers = importlib.import_module(_PKG + ".reader.controllers")
+
+        class Block:
+            block_id = 0
+
+            def __init__(self, values):
+                self.values = values
+
+            def __contains__(self, pid):
+                return pid in self.values
+
+            def get(self, pid, tab=0, default=None):
+                return self.values.get(pid, default)
+
+            def param(self, pid):
+                return types.SimpleNamespace(base_type=5 if pid == L.VB_H_ROTATION else 1)
+
+        class Map(_Map):
+            index = 3
+
+            def __init__(self, values):
+                super().__init__(tuple(classids.VRAY_BITMAP), values)
+                self.blocks = {0: Block(values)}
+
+            def block(self, block_id):
+                return self.blocks.get(block_id)
+
+        graph = _Graph({3: Map({texmaps.VB_MAP_TYPE: L.VB_SPHERICAL, L.VB_H_ROTATION: pblock.Animated(40)})})
+        graph.scene = object()
+        line = "'sky': parameter %d at frame 0 (controller 40): %s" % (L.VB_H_ROTATION, controllers.ANIMATED)
+        issue = controllers.Issue(None, 40, None, None, controllers.ANIMATED)
+        with mock.patch.object(params.controllers, "parameter_value", return_value=(0.7, [issue])):
+            dt, issues = L.dome_texture(self.ir(self.image()), graph)
+            self.assertEqual((dt.turn, issues), (0.7, [line]))
+            dt, issues = L.dome_texture(self.ir(self.image(), [line]), graph)
+            self.assertEqual(issues, [line])
+        with mock.patch.object(params.controllers, "parameter_value", return_value=(None, [])):
+            dt, issues = L.dome_texture(self.ir(self.image()), graph)
+        self.assertEqual(dt.turn, 0.0)
+        self.assertEqual(issues, ["'sky': parameter %d at frame 0 (controller 40): %s, %s" % (
+            L.VB_H_ROTATION, params.NOT_READ, params.DEFAULT_USED)])
+
     def test_a_gamma_the_world_draws_is_no_issue(self):
         for gamma, space in ((2.2, texmaps.SRGB), (texmaps.SRGB_TWICE, texmaps.LINEAR), (0.5, texmaps.LINEAR)):
             dt, issues = L.dome_texture(self.ir(self.image(gamma=gamma, colorspace=space)), self.vray({}))

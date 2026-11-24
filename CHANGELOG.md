@@ -53,6 +53,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ### Fixed
 
+- Materials: an animated tiling, offset, angle or blur of a map's Coordinates, an animated Output amount, level or
+  offset, and an animated rotation of a dome light's VRayBitmap take their value at frame 0 instead of the default.
+  A parameter a controller holds that is approximated (a color between two keys) or left at its default (another
+  controller class) is a line in the report naming the parameter, and marks the map's graph approximated.
+- Objects: a LookAt Constraint weight held by a Float List none of whose entries gives a value counts as 50, as a
+  single unreadable weight does, instead of 0, which dropped that target.
 - Materials: a VRayMtl with reflection Fresnel off and a grey reflection color (mid grey up to just below white,
   no reflection map) keeps its diffuse under the reflection, as V-Ray renders it, instead of becoming a metal in
   the reflection color that dropped the diffuse (checked against V-Ray 5.2 in Cycles: a 0.5 grey over a red

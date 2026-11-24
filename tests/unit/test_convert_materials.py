@@ -2879,6 +2879,48 @@ class FrameZeroParams(unittest.TestCase, Close):
         self.assertEqual(params.frame_zero(None, Block(0), 0, mult), mult)  # no scene
         self.assertEqual(params.frame_zero(s, Block(0), 0, 0.5), 0.5)  # a stored value as it is
 
+    def test_report_lines(self):
+        """What a controller's read meets is reported once per material and line however often the rules read it
+        (maxdrop-6n0.6.32): an approximation with the value, a controller left unread with its default."""
+        from unittest import mock
+        controllers = importlib.import_module(_PKG + ".reader.controllers")
+        params = importlib.import_module(_PKG + ".convert.params")
+        vray = self.by_name["FixtureAnimVRay"]
+        diffuse, gloss = (self.graph.get(vray).block(1).get(pid).index for pid in (1, 3))
+        real = controllers.parameter_value
+
+        def value(scene, i):
+            if i == diffuse:  # a color between two keys: interpolated, with its issue
+                return (0.2, 0.4, 0.6), [controllers.Issue(None, i, None, None, controllers.KEYS_INTERPOLATED)]
+            if i == gloss:  # another class
+                return None, [controllers.Issue(None, i, None, None, controllers.UNKNOWN_CLASS)]
+            return real(scene, i)
+
+        with mock.patch.object(controllers, "parameter_value", value):
+            conv = mat.MaterialConverter(self.graph, texmaps=self.tex)
+            ir = conv.convert(vray)
+            conv.convert(vray)
+            conv.graph.get(vray).param(1, 1)  # read again: no second line
+        self.close(ir.base_color.value, conv.swatches.color((0.2, 0.4, 0.6)))
+        self.close(ir.roughness.value, 0.0)  # glossiness 1.0, the default
+        lines = [(i, r) for i, r in conv.stats.issues if "at frame 0" in r]
+        self.assertEqual(sorted(lines), sorted([
+            (vray, "'FixtureAnimVRay': parameter 1 at frame 0 (controller %d): %s" % (
+                diffuse, controllers.KEYS_INTERPOLATED)),
+            (vray, "'FixtureAnimVRay': parameter 3 at frame 0 (controller %d): %s, %s" % (
+                gloss, controllers.UNKNOWN_CLASS, params.DEFAULT_USED))]))
+
+    def test_part_report_lines(self):
+        """A part's (a Standard shader's) controller lines go to the report under the part's index."""
+        params = importlib.import_module(_PKG + ".convert.params")
+        m = self.graph.get(self.by_name["FixtureAnimVRay"])
+        part = reader_materials.Part(m.index, m.class_id, m.superclass, {0: m.block(1)}, {})
+        heard = []
+        value = mat._PartParams(part, self.graph.scene, lambda i, line: heard.append((i, line))).param(1, 1)
+        self.close(value, self.want("FixtureAnimVRay", 1, 1))
+        self.assertEqual(heard, [])  # read without an issue: no line
+        self.assertEqual(params.at_frame_zero(self.graph, heard.append).report, heard.append)
+
 
 if __name__ == "__main__":
     unittest.main()

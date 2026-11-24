@@ -38,7 +38,10 @@ next slot in the same sequence: a VRayBlendMtl with base, coats 1-9 and blend ma
 blend color at 10 and the blend maps at 11-19 (pblock_animated). docs/FORMAT.md says which fixture shows what.
 
 The old ParamBlock: 0x0001 u32 count, then per parameter a 0x0002 container: 0x0003 u32 index, optionally 0x0004,
-and the value in chunk 0x0100 + ParamType (0 float, 1 int, 2 color, 3 point3, 4 bool).
+and the value in chunk 0x0100 + ParamType (0 float, 1 int, 2 color, 3 point3, 4 bool). A parameter a controller
+holds has an empty 0x0200 + ParamType instead (no value); the block's own reference slots hold the controllers, one
+per such parameter in index order (stack_basic's Noise block animates entry 7 alone: its slot 0; the Standard
+shader blocks of standard_physical and standard_shaders animate 22 entries, a color's Bezier Color at slot 1).
 
 The file comes from anywhere: a missing or short header raises ChunkError; a damaged entry or table poisons its
 own parameter (values None, raw bytes and error kept) and, when it may have taken a slot (a block reference or a
@@ -69,7 +72,7 @@ _ENTRIES = (0x100E, 0x000E)
 _ASSET, _BITMAP_DATA, _ASSET_ID, _ASSET_HOLDER = 0x000F, 0x0003, 0x0002, 0x1260
 _ENTRY_HEAD = struct.Struct("<HIII")  # id, type, flags, unknown: 14 bytes
 _HEAD = struct.Struct("<IHIHI")  # owner class (index; superclass after 0x000B's ClassID), block id, version, count, owner
-_OLD_COUNT, _OLD_PARAM, _OLD_INDEX, _OLD_VALUE = 0x0001, 0x0002, 0x0003, 0x0100
+_OLD_COUNT, _OLD_PARAM, _OLD_INDEX, _OLD_VALUE, _OLD_CONTROLLER = 0x0001, 0x0002, 0x0003, 0x0100, 0x0200
 _NEEDS_ASSET = -2
 
 
@@ -359,10 +362,11 @@ class ParamBlock2:
 
 
 class ParamBlock:
-    """The old ParamBlock: values by index."""
+    """The old ParamBlock: values by index; controller(i) the reference slot of a parameter a controller holds."""
 
-    def __init__(self, params, issues=()):
+    def __init__(self, params, issues=(), controllers=None):
         self._params, self.issues = params, tuple(issues)
+        self._controllers = controllers or {}
 
     def __repr__(self):
         return "ParamBlock(%d params)" % len(self._params)
@@ -371,7 +375,7 @@ class ParamBlock:
     def from_chunk(cls, chunk):
         if not chunk.container:
             raise ChunkError("ParamBlock at %d is a leaf chunk" % chunk.offset)
-        params, issues = {}, []
+        params, issues, animated = {}, [], set()
         for entry in chunk.find_all(_OLD_PARAM):
             if not entry.container:
                 issues.append("parameter entry at %d is a leaf" % entry.offset)
@@ -383,6 +387,10 @@ class ParamBlock:
             i = index.unpack("<I")[0]
             ptype, value = None, None
             for c in entry.children:
+                if _OLD_CONTROLLER <= c.id <= _OLD_CONTROLLER + 4:
+                    ptype = c.id - _OLD_CONTROLLER
+                    animated.add(i)
+                    break
                 if _OLD_VALUE <= c.id <= _OLD_VALUE + 4:
                     ptype = c.id - _OLD_VALUE
                     fmt = ("<f", "<i", "<3f", "<3f", "<i")[ptype]
@@ -396,7 +404,7 @@ class ParamBlock:
         declared = chunk.first(_OLD_COUNT)
         if declared is not None and declared.payload_size >= 4 and declared.unpack("<I")[0] != len(params):
             issues.append("0x0001 announces %d parameters, %d found" % (declared.unpack("<I")[0], len(params)))
-        return cls(params, issues)
+        return cls(params, issues, {i: slot for slot, i in enumerate(sorted(animated))})
 
     def __len__(self):
         return len(self._params)
@@ -414,3 +422,7 @@ class ParamBlock:
     def get(self, i, default=None):
         value = self._params.get(i, (None, None))[1]
         return default if value is None else value
+
+    def controller(self, i):
+        """The block's reference slot of the controller that holds parameter i, None when none does."""
+        return self._controllers.get(i)

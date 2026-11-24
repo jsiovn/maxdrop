@@ -688,14 +688,6 @@ def _ref(m, pid, tab=0):
     return v.index if isinstance(v, pblock.Reference) else None
 
 
-def _old(part, index, default):
-    """A value of a part's old ParamBlock (slot order: the first one)."""
-    if part is None or not part.legacy:
-        return default
-    v = part.legacy[min(part.legacy)].get(index)
-    return float(v) if _finite(v) else default
-
-
 def rgb_kind(kind):
     """The kind of a color wrapper's input below a map of that kind: DATA_RGB in a data graph, BUMP_RGB in a height,
     the kind itself elsewhere (a color, a normal; a mask keeps its rule of the mean)."""
@@ -769,12 +761,37 @@ class TexmapConverter:
     (reader.metadata's renderer class_id; None: not known), for the rules a renderer changes (corona)."""
 
     def __init__(self, graph, assets=None, textures=None, swatches=None, renderer=None):
-        self.graph, self.assets, self.textures = params.at_frame_zero(graph), assets, textures
+        self.graph, self.assets, self.textures = params.at_frame_zero(graph, self._heard), assets, textures
         self.swatches = swatches if swatches is not None else colors.of_graph(graph)
         self.corona = renderer is not None and tuple(renderer) == CORONA_RENDERER
         self.stats = TexmapStats()
         self._counted, self._done, self._reported = set(), {}, set()
         self._nodes, self._firsts = {}, {}  # keyed (object, kind, depth)
+        self._walks = []  # the walks being filled, innermost last: where a controller's line goes
+
+    def _heard(self, index, line):
+        """A line of a parameter read through its controller (params.frame_zero): the innermost walk's issue, which
+        it marks approximated (the value is one, or the default); stats only outside a walk."""
+        if self._walks:
+            self._walks[-1].approximated = True
+            self._issue(self._walks[-1], index, line)
+        else:
+            self.note(index, line)
+
+    def _walking(self, walk, fill, *args):
+        """fill(*args) with walk the innermost one."""
+        self._walks.append(walk)
+        try:
+            return fill(*args)
+        finally:
+            self._walks.pop()
+
+    def _old(self, part, index, default, what):
+        """A float of a part's old ParamBlock (params.old_value: a controller's at frame 0 too), default when it has
+        none; what names the part in a line."""
+        v = params.old_value(self.graph.scene, part, index, params.hearing(self._heard, part.index, what)
+                             if part is not None else None)
+        return float(v) if _finite(v) else default
 
     def _issue(self, walk, index, reason):
         self.note(index, reason)
@@ -804,10 +821,10 @@ class TexmapConverter:
         if key in self._done:
             return self._done[key]
         walk = _Walk()
-        root = self._node(ref.index, kind, walk, 0, ())
+        root = self._walking(walk, self._node, ref.index, kind, walk, 0, ())
         out = None
         if root is not None:
-            root = self._slot(root, ref, kind, value, walk)
+            root = self._walking(walk, self._slot, root, ref, kind, value, walk)
             if tree_size(root) > MAX_NODES:
                 image = first_image(root)
                 if image is not None and _has_decode(root):  # it may be in STORED: its map again as a color
@@ -815,7 +832,7 @@ class TexmapConverter:
                 self._issue(walk, ref.index, "map %d: graph of more than %d nodes cut down to its first image"
                             % (ref.index, MAX_NODES))
                 walk.approximated = True
-                root = self._slot(image, ref, kind, value, walk) if image is not None else None
+                root = self._walking(walk, self._slot, image, ref, kind, value, walk) if image is not None else None
             if root is not None:
                 out = TextureGraphIR(root, kind, walk.approximated, tuple(walk.issues))
         self._done[key] = out
@@ -877,7 +894,7 @@ class TexmapConverter:
         hit = self._nodes.get(key)
         if hit is None:
             sub = _Walk()
-            node = self._convert_node(i, kind, sub, depth, chain)
+            node = self._walking(sub, self._convert_node, i, kind, sub, depth, chain)
             hit = self._nodes[key] = (node, sub.approximated, tuple(sub.issues))
         walk.merge(hit[1], hit[2])
         return hit[0]
@@ -935,7 +952,7 @@ class TexmapConverter:
         if key not in self._firsts:
             self._firsts[key] = (None, False, ())  # a cycle back to here finds nothing
             sub = _Walk()
-            image = self._first_image_walk(m, kind, sub, depth, chain)
+            image = self._walking(sub, self._first_image_walk, m, kind, sub, depth, chain)
             self._firsts[key] = (image, sub.approximated, tuple(sub.issues))
         image, approximated, issues = self._firsts[key]
         walk.merge(approximated, issues)
@@ -1172,25 +1189,29 @@ class TexmapConverter:
         source = p.source if p.source in (EXPLICIT, OBJECT_XYZ, VERTEX_COLOR, WORLD_XYZ) else EXPLICIT
         channel = 1 if p.channel is None else p.channel
         channel = 0 if source == VERTEX_COLOR else (channel if 0 <= channel <= 99 else 1)
+        def old(index, default):
+            return self._old(uv, index, default, "Coordinates")
+
         return Mapping(
             channel=channel,
-            tiling=(_old(uv, UV_U_TILING, 1.0), _old(uv, UV_V_TILING, 1.0)),
-            offset=(_old(uv, UV_U_OFFSET, 0.0), _old(uv, UV_V_OFFSET, 0.0)),
-            angle=(_old(uv, UV_U_ANGLE, 0.0), _old(uv, UV_V_ANGLE, 0.0), _old(uv, UV_W_ANGLE, 0.0)),
+            tiling=(old(UV_U_TILING, 1.0), old(UV_V_TILING, 1.0)),
+            offset=(old(UV_U_OFFSET, 0.0), old(UV_V_OFFSET, 0.0)),
+            angle=(old(UV_U_ANGLE, 0.0), old(UV_V_ANGLE, 0.0), old(UV_W_ANGLE, 0.0)),
             tile=p.tile,
             mirror=p.mirror,
             axis=p.axis if p.axis in (0, 1, 2) else 0,
             source=source,
             environment=p.environment,
             real_world=p.real_world,
-            blur=_old(uv, UV_BLUR, 1.0))
+            blur=old(UV_BLUR, 1.0))
 
     def _output(self, part):
         """The TexOutput of a map's Output part, None when it changes nothing."""
         if part is None:
             return None
-        out = TexOutput(reader_materials.output_invert(self.graph.scene, part.index), _old(part, OUT_AMOUNT, 1.0),
-                        _old(part, OUT_LEVEL, 1.0), _old(part, OUT_OFFSET, 0.0))
+        out = TexOutput(reader_materials.output_invert(self.graph.scene, part.index),
+                        *(self._old(part, pid, default, "Output") for pid, default in
+                          ((OUT_AMOUNT, 1.0), (OUT_LEVEL, 1.0), (OUT_OFFSET, 0.0))))
         return None if out == TexOutput() else out
 
     def _gamma(self, m):
