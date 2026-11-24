@@ -1332,6 +1332,12 @@ HAIR_MELANIN = (7.68, 1.2)
 HAIR_PHEOMELANIN_SCALE = 0.685
 HAIR_TINT = 0.054
 HAIR_FLOOR = 1e-4  # the tint's floor (ln 0): a black tint leaves 0.010, Corona the colorless floor only
+# The base color that renders a mesh as Corona does in that furnace: Corona's colorless floor HAIR_SPECULAR plus
+# HAIR_PIGMENT x the color, against the Principled BSDF's own HAIR_PRINCIPLED_SPECULAR (Cycles 5.2, IOR 1.55,
+# roughness 0.5: CoronaHairMtl's defaults) plus the rest x the base color
+HAIR_SPECULAR = 0.070
+HAIR_PIGMENT = 0.929
+HAIR_PRINCIPLED_SPECULAR = 0.043
 # CoronaHairMtl map slots no input of the IR takes: (map, its switch, what)
 HAIR_UNREAD = ((112, 121, "tint"), (113, 122, "diffuse"), (115, 124, "IOR"), (117, 126, "softness"),
                (118, 127, "colorless glossiness"), (119, 128, "highlight shift"), (144, 146, "melanin"),
@@ -1355,10 +1361,11 @@ def hair_color(melanin, pheomelanin, tint):
 
 
 def corona_hair_mtl(conv, m, ir):
-    """CoronaHairMtl, block 0, as one Principled layer (Corona 12 renders, maxdrop-em3.164): base = d + (1 - max d) x
-    hair_color(melanin 141, pheomelanin 142, tint colorTint 101 x levelTint 104) x transmission (152), d =
-    colorDiffuse (102) x levelDiffuse (105), at most 1 (a grey d mixes so exactly, a colored one about so);
-    roughness = 1 - glossiness (108, map 116 / 125 / 134 inverted); ior (107); specular 1; alpha =
+    """CoronaHairMtl, block 0, as one Principled layer (Corona 12 renders, maxdrop-em3.164): the hair h =
+    hair_color(melanin 141, pheomelanin 142, tint colorTint 101 x levelTint 104) x transmission (152) renders as a
+    base of (HAIR_SPECULAR + HAIR_PIGMENT h - HAIR_PRINCIPLED_SPECULAR) / (1 - HAIR_PRINCIPLED_SPECULAR); base = d +
+    (1 - max d) x that, d = colorDiffuse (102) x levelDiffuse (105), at most 1 (a grey d mixes so exactly, a colored
+    one about so); roughness = 1 - glossiness (108, map 116 / 125 / 134 inverted); ior (107); specular 1; alpha =
     mono_swatch(colorOpacity 103) x levelOpacity (106), map 114 / 123 / 132; bump 120 / 129 / 138. Maps in the other
     slots (HAIR_UNREAD) are named issues, the tint map too (Corona adds it to the melanin's absorption: a curve no map
     input draws). Softness, colorless glossiness, highlight shift and GI simplification change no color on a mesh;
@@ -1369,8 +1376,11 @@ def corona_hair_mtl(conv, m, ir):
     diffuse = tuple(c * max(0.0, _num(m, 105, 0, 1.0)) for c in conv.rgb(m, 102, 0, (0.0, 0.0, 0.0)))
     transmission = conv.rgb(m, 152, 0, (1.0, 1.0, 1.0))
     color = hair_color(_num(m, 141, 0, 0.5), _num(m, 142, 0, 0.0), tint)
+    principled = 1.0 - HAIR_PRINCIPLED_SPECULAR
+    hair = [_clamp01((HAIR_SPECULAR - HAIR_PRINCIPLED_SPECULAR + HAIR_PIGMENT * c * t) / principled)
+            for c, t in zip(color, transmission)]
     w = _clamp01(max(diffuse))
-    ir.base_color = Input(tuple(min(1.0, d + (1.0 - w) * c * t) for c, d, t in zip(color, diffuse, transmission)))
+    ir.base_color = Input(tuple(min(1.0, d + (1.0 - w) * h) for h, d in zip(hair, diffuse)))
     ir.roughness = Input(_roughness(_num(m, 108, 0, 0.5), False), slot(116, invert=True))
     ir.ior = _ior(_num(m, 107, 0, 1.55))
     opacity = _clamp01(conv.mono_swatch(m, 103, 0, (1.0, 1.0, 1.0)) * max(0.0, _num(m, 106, 0, 1.0)))

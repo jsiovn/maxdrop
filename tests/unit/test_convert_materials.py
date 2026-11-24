@@ -1612,14 +1612,17 @@ def _lins(*s):
 
 def _hair_color(melanin, pheomelanin, tint, diffuse=(0.0, 0.0, 0.0), transmission=(1.0, 1.0, 1.0)):
     """CoronaHairMtl's base color as Corona 12 renders the material on a plane in a white furnace (maxdrop-em3.164):
-    exp(-u) per channel, u = (7.68 m^2 + 1.2 m^3) x ((1 - p) x eumelanin + 0.685 p x pheomelanin) (Cycles' absorption
-    shapes) + 0.054 ln(tint)^2, times the transmission color; a diffuse color d mixed in as d + (1 - max d) x that."""
+    the color h = exp(-u) per channel, u = (7.68 m^2 + 1.2 m^3) x ((1 - p) x eumelanin + 0.685 p x pheomelanin)
+    (Cycles' absorption shapes) + 0.054 ln(tint)^2, times the transmission color; Corona renders 0.070 + 0.929 h, a
+    Principled BSDF 0.043 + 0.957 x its base (Cycles 5.2, IOR 1.55, roughness 0.5); a diffuse color d mixed in as d +
+    (1 - max d) x that base."""
     k = 7.68 * melanin ** 2 + 1.2 * melanin ** 3
     w = max(diffuse)
     out = []
     for eu, pheo, t, d, tr in zip((0.506, 0.841, 1.653), (0.343, 0.733, 1.924), tint, diffuse, transmission):
         u = k * ((1.0 - pheomelanin) * eu + 0.685 * pheomelanin * pheo) + 0.054 * math.log(min(1.0, max(1e-4, t))) ** 2
-        out.append(min(1.0, d + (1.0 - w) * math.exp(-u) * tr))
+        base = (0.070 + 0.929 * math.exp(-u) * tr - 0.043) / 0.957
+        out.append(min(1.0, d + (1.0 - w) * base))
     return tuple(out)
 
 
@@ -2222,24 +2225,38 @@ class CoronaSynthetic(unittest.TestCase, Close):
         self.close(past.base_color.value, _hair_color(1.0, 0.0, (1.0, 1.0, 1.0)),
                    "melanin and pheomelanin clamped to 0..1")
         _conv, white = _convert(_corona(0, classids.CORONA_HAIR_MTL, p141=0.0))
-        self.close(white.base_color.value, (1.0, 1.0, 1.0), "no pigment, a white tint")
+        self.close(white.base_color.value, _hair_color(0.0, 0.0, (1.0, 1.0, 1.0)), "no pigment, a white tint")
+        self.assertTrue(all(c > 0.998 for c in white.base_color.value), "Corona: 0.995, the furnace 1")
         _conv, inked = _convert(_corona(0, classids.CORONA_HAIR_MTL, p141=0.0, p101=(0.0, 0.0, 0.0)))
         self.close(inked.base_color.value, _hair_color(0.0, 0.0, (0.0, 0.0, 0.0)), "a black tint floored at 1e-4")
-        self.assertTrue(all(0 < c < 0.02 for c in inked.base_color.value), "Corona: only the colorless floor")
+        self.assertTrue(all(0.02 < c < 0.05 for c in inked.base_color.value), "Corona: only the colorless floor")
+
+    def test_hair_base_renders_as_corona(self):
+        """The base color a Principled BSDF (Cycles 5.2, IOR 1.55, roughness 0.5) needs to read what Corona 12 reads
+        in a white furnace: the Principled reads 0.043 + 0.957 x its base, so the base is (read - 0.043) / 0.957
+        (the default read 0.396 / 0.232 / 0.099, melanin 1 0.081 / 0.070 / 0.070)."""
+        for params, read in (({}, (0.3960, 0.2317, 0.0993)), ({"p141": 1.0}, (0.0813, 0.0704, 0.0700)),
+                             ({"p141": 0.3}, (0.7098, 0.5675, 0.3480))):
+            _conv, ir = _convert(_corona(0, classids.CORONA_HAIR_MTL, **params))
+            for g, r in zip(ir.base_color.value, read):
+                self.assertAlmostEqual(g, (r - 0.043) / 0.957, delta=0.012, msg=params)
 
     def test_hair_diffuse_mixed(self):
-        """Corona 12 renders: a grey diffuse d gives d + (1 - d) x the hair color, exactly (0.5 at melanin 0.5 read
-        0.699 / 0.617 / 0.551; 0.5 at level 0.5 read 0.551 / 0.427 / 0.328); a colored one weighs the hair by about
-        1 - its largest channel."""
+        """Corona 12 renders: a grey diffuse d gives d + (1 - d) x the hair, exactly (0.5 at melanin 0.5 read 0.699 /
+        0.617 / 0.551; 0.5 at level 0.5 read 0.551 / 0.427 / 0.328); a colored one weighs the hair by about 1 - its
+        largest channel."""
         def measured(*read):
-            return tuple((r - 0.070) / 0.929 for r in read)
+            return tuple((r - 0.043) / 0.957 for r in read)
         for params, read in (({"p102": (0.5, 0.5, 0.5)}, (0.6988, 0.6171, 0.5513)),
                              ({"p102": (0.5, 0.5, 0.5), "p105": 0.5}, (0.5505, 0.4272, 0.3277))):
             _conv, ir = _convert(_corona(0, classids.CORONA_HAIR_MTL, **params))
             for g, w in zip(ir.base_color.value, measured(*read)):
                 self.assertAlmostEqual(g, w, delta=0.012, msg=params)
         _conv, ir = _convert(_corona(0, classids.CORONA_HAIR_MTL, p141=0.0, p102=(1.0, 0.5, 0.0), p105=0.5))
-        self.close(ir.base_color.value, (1.0, 0.75, 0.5), "white hair under half the weight")
+        self.close(ir.base_color.value, _hair_color(0.0, 0.0, (1.0, 1.0, 1.0), (0.5, 0.25, 0.0)),
+                   "white hair under half the weight")
+        for g, w in zip(ir.base_color.value, (1.0, 0.75, 0.5)):
+            self.assertAlmostEqual(g, w, delta=1e-3)
         _conv, ir = _convert(_corona(0, classids.CORONA_HAIR_MTL, p102=(1.0, 0.5, 0.0), p105=0.5))
         self.close(ir.base_color.value, _hair_color(0.5, 0.0, (1.0, 1.0, 1.0), (0.5, 0.25, 0.0)))
 
@@ -2247,11 +2264,11 @@ class CoronaSynthetic(unittest.TestCase, Close):
         """Corona 12 renders: the transmission color multiplies the pigment part (0.5 grey at melanin 0.5 read 0.237 /
         0.152 / 0.085 against 0.396 / 0.232 / 0.099)."""
         _conv, ir = _convert(_corona(0, classids.CORONA_HAIR_MTL, p152=(0.5, 0.5, 0.5)))
-        self.close(ir.base_color.value, tuple(0.5 * c for c in mat.hair_color(0.5, 0.0, (1.0, 1.0, 1.0))))
+        self.close(ir.base_color.value, _hair_color(0.5, 0.0, (1.0, 1.0, 1.0), transmission=(0.5, 0.5, 0.5)))
         for g, read in zip(ir.base_color.value, (0.2372, 0.1521, 0.0848)):
-            self.assertAlmostEqual(g, (read - 0.070) / 0.929, delta=0.012)
+            self.assertAlmostEqual(g, (read - 0.043) / 0.957, delta=0.012)
         _conv, ir = _convert(_corona(0, classids.CORONA_HAIR_MTL, p141=0.0, p152=(1.0, 0.5, 0.25)))
-        self.close(ir.base_color.value, (1.0, 0.5, 0.25))
+        self.close(ir.base_color.value, _hair_color(0.0, 0.0, (1.0, 1.0, 1.0), transmission=(1.0, 0.5, 0.25)))
         self.assertEqual(ir.issues, [])
 
     def test_hair_maps(self):
