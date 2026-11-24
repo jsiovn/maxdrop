@@ -87,6 +87,7 @@
 # stream (a rule Corona renders otherwise).
 # Modified for MaxDrop, 2026-11-24 (jsiovn). After the modifiers are added, a mesh light's emitter is spread over
 # its mesh's evaluated area (build.emitters.spread).
+# Modified for MaxDrop, 2026-11-24 (jsiovn). That measurement runs as import steps with a progress text.
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -837,7 +838,9 @@ def _scene_steps(opts, scene, view_layer, max_path, pack=None, pack_name="", dir
             progress("building %s: %d / %d" % (name, done, total), _READ_SHARE + (1.0 - _READ_SHARE) * done / total)
             yield
         settings_skipped = build_modifiers.add(desc, built)
-        build_emitters.spread(desc, built, scene.collection, view_layer, opts.light_strength)
+        for done, total in build_emitters.spread(desc, built, scene.collection, view_layer, opts.light_strength):
+            progress("measuring the mesh lights of %s: %d / %d" % (name, done, total), None)
+            yield
         kept = build_objects.track_targets(desc, built) if opts.keep_targets else []
         build_collections.finish(cols, view_layer)
         if desc.dome is not None and earlier is None:

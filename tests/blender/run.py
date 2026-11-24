@@ -856,6 +856,7 @@ def check_spread(desc, meters):
         name, EMITTER_SHELLED), all(abs(b - 300.0) < 1e-3 and abs(u - EMITTER_SHELLED) < 1e-3 for b, u in got) and
         len(bpy.data.objects) == count, "%s, %d objects (%d before)" % (got, len(bpy.data.objects), count))
     check_spread_bench(scene, view_layer)
+    check_spread_steps(scene, view_layer)
 
 
 def check_spread_bench(scene, view_layer):
@@ -892,6 +893,101 @@ def check_spread_bench(scene, view_layer):
     check("evaluated_area: a Subdivision Surface at its render levels and a Mirror by a hidden empty",
           1.0 < under < 2.0 and abs(under - want) < 1e-6 and left == count, "%r vs %r, %d objects (%d before)" % (
               under, want, left, count))
+
+
+class _CountedViewLayer:
+    """A view layer whose update() calls are counted."""
+
+    def __init__(self, view_layer):
+        self.view_layer, self.updates = view_layer, 0
+
+    def update(self):
+        self.updates += 1
+        self.view_layer.update()
+
+    @property
+    def depsgraph(self):
+        return self.view_layer.depsgraph
+
+
+def check_spread_steps(scene, view_layer):
+    """build.emitters.spread as import steps over two hand-made emitters in W (planes of 1 and 2 m^2 under a
+    Subdivision Surface at level 0, render level 2): it yields (0, 2) with both copies linked, then (1, 2) and (2, 2),
+    with one view-layer update for both; each emitter's area is the description's times the evaluated mesh's over the
+    mesh's, as evaluated_area measures it, and no object is left. Closed after its second step: the first emitter
+    spread, the second not, no object left."""
+    import types
+    from maxdrop.build import emitters as build_emitters
+    from maxdrop.convert import lights
+    from maxdrop.convert import modifiers as rules
+    converted = (rules.ModifierDescription(1, rules.SUBSURF, "TurboSmooth", "TurboSmooth", False,
+                                           (("levels", 0), ("render_levels", 2)), None, None),)
+    obs = []
+    for i, width in ((1, 1.0), (2, 2.0)):
+        mesh = bpy.data.meshes.new("SpreadSteps%d" % i)
+        mesh.from_pydata([(0.0, 0.0, 0.0), (width, 0.0, 0.0), (width, 1.0, 0.0), (0.0, 1.0, 0.0)], [], [(0, 1, 2, 3)])
+        ob = bpy.data.objects.new("SpreadSteps%d" % i, mesh)
+        scene.collection.objects.link(ob)
+        smooth = ob.modifiers.new("TurboSmooth", 'SUBSURF')
+        smooth.levels, smooth.render_levels, smooth.show_viewport = 0, 2, False
+        obs.append(ob)
+    try:
+        want = []
+        for ob in obs:
+            base, under = build_emitters.evaluated_area(ob, converted, scene.collection, view_layer)
+            want.append(0.5 * under / base)
+
+        def run(stop_after=None):
+            eds = {k: lights.EmitterDescription(k, "SpreadSteps%d" % k, area=0.5, units=lights.UNITS_W,
+                                                multiplier=10.0) for k in (1, 2)}
+            for k, ed in eds.items():
+                ed.users = [k]
+            desc = types.SimpleNamespace(nodes=[types.SimpleNamespace(index=k, emitter=k, converted=converted)
+                                                for k in (1, 2)], emitters=eds, issues=[])
+            built = types.SimpleNamespace(objects={1: obs[0], 2: obs[1]}, emitters={})
+            counted = _CountedViewLayer(view_layer)
+            count = len(bpy.data.objects)
+            steps, copies = [], []
+            gen = build_emitters.spread(desc, built, scene.collection, view_layer=counted)
+            for step in gen:
+                steps.append(step)
+                copies.append(len(bpy.data.objects) - count)
+                if stop_after is not None and len(steps) == stop_after:
+                    gen.close()
+                    break
+            return steps, copies, counted.updates, [eds[k].area for k in (1, 2)], len(bpy.data.objects) - count
+
+        steps, copies, updates, areas, left = run()
+        check("spread steps: (0, 2), (1, 2), (2, 2) with both copies linked, one update, the evaluated areas, "
+              "no object left", steps == [(0, 2), (1, 2), (2, 2)] and copies == [2, 2, 2] and updates == 1 and
+              close(areas, want, 1e-9) and left == 0, "%s %s %d %s vs %s, %d left" % (
+                  steps, copies, updates, areas, want, left))
+        steps, copies, updates, areas, left = run(stop_after=2)
+        check("spread steps: closed after its second step: the first emitter spread, the second not, no object left",
+              steps == [(0, 2), (1, 2)] and abs(areas[0] - want[0]) < 1e-9 and areas[1] == 0.5 and left == 0,
+              "%s %s %d left" % (steps, areas, left))
+    finally:
+        for ob in obs:
+            mesh = ob.data
+            bpy.data.objects.remove(ob)
+            bpy.data.meshes.remove(mesh)
+
+
+def check_spread_cancel(path):
+    """vray_mesh_light through the run's steps (ops._Run), closed while it measures its mesh lights (their copies
+    linked to the scene's collection, the run's text saying so): nothing is left, the copies neither."""
+    empty_scene()
+    before = _state()
+    scene = bpy.context.scene
+    run = _cancel_run([path])
+    steps = run.steps()
+    held = _advance(steps, lambda: run.text.startswith("measuring the mesh lights of ") and
+                    len(scene.collection.objects) > 0)
+    text, copies = run.text, len(scene.collection.objects)
+    steps.close()
+    check("spread cancel: closed while it measures the mesh lights: nothing left, its copies neither",
+          held and _state() == before and not scene.collection.objects, "%s %r, %d copies | %s | %s" % (
+              held, text, copies, _state(), before))
 
 
 def _layer_collections(lc):
@@ -5666,6 +5762,8 @@ def main():
                                      os.path.join(ROOT, "tests", "fixtures", "lights_photometric.max"))),
                                  ("ies search stopped", lambda: check_ies_search_stopped(
                                      os.path.join(ROOT, "tests", "fixtures", "lights_photometric.max"))),
+                                 ("spread cancel", lambda: check_spread_cancel(
+                                     os.path.join(ROOT, "tests", "fixtures", "vray_mesh_light.max"))),
                                  ("benchmark", lambda: _bench().run(check))):
             try:
                 run_check()
