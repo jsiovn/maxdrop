@@ -892,11 +892,11 @@ What 3ds Max 2020 makes, against Blender's evaluated meshes (`tests/blender/run.
   ends and every face at them is square to the plane (|cos| <= 1e-5), else a line in the report: weld off (3ds Max
   leaves the cut open: FixtureShellUnderSymNoWeld 64 triangles, Blender 80), slice off (3ds Max keeps both copies of
   the rim: 80, Blender 72), the cut's faces slanting across the plane (3ds Max slices the shell: 37 vertices, Blender
-  34). There the rim's corners are counted as if the cut were welded (3ds Max has none there). Only the open edges on
-  the plane decide: others within the weld threshold of it are welded too once the Mirror is moved, where 3ds Max
-  keeps their rim. A mesh that with its copies would pass 4M face corners is not tested (a line). A gizmo 1e-3 to 0.04
-  units off the cut, or turned 1e-3 degrees, keeps the rim in 3ds Max too (80 or 72 triangles, Blender 72): no line. A
-  mesh light's emitter keeps 3ds Max's order.
+  34). With the slice on, the rim's corners are counted there as if the cut were welded (3ds Max has none there). Only
+  the open edges on the plane decide: others within the weld threshold of it are welded too once the Mirror is moved,
+  where 3ds Max keeps their rim. A mesh that with its copies would pass 4M face corners is not tested (a line). A
+  gizmo 1e-3 to 0.04 units off the cut, or turned 1e-3 degrees, keeps the rim in 3ds Max too (80 or 72 triangles,
+  Blender 72): no line. A mesh light's emitter keeps 3ds Max's order.
 - **Symmetry**: the mirror plane is in the gizmo's space, q = p * context * inverse(gizmo), as UVW Map's; without
   flip the side where q along the axis is positive stays, sliced at the plane; without slice the whole object is
   mirrored and both copies stay (FixtureSymmetryNoSlice: 16 vertices). Weld seam: 3ds Max slices beside a vertex

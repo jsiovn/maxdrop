@@ -700,6 +700,9 @@ class Rim(unittest.TestCase):
         self.assertEqual(settings["use_axis"], dict(off.settings)["use_axis"])
         auto = rules.RimRule(True, 45.0, None)
         self.assertEqual(conv.rim_issues(half, auto, mirrors=conv._rim_mirrors(half, (), (off,), 1.0)), [])
+        # without the slice 3ds Max keeps the rim on the plane, corners and all: counted on the mesh as it is
+        self.assertEqual(conv._rim_mirrors(half, (), (_mirror_md(slice_=False),), 1.0), ())
+        self.assertEqual(len(conv.rim_issues(half, auto, mirrors=())), 1)
 
     def test_rim_issues(self):
         plane, box, cube = _description(QUAD), _description(OPEN_CUBE), _description(CUBE)

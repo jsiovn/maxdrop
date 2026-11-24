@@ -182,7 +182,7 @@ MAX_MIRROR_IMAGES = 64  # copies of the open edges tested against the next Mirro
 # (1e-4 off: dropped; 1e-3 off: kept, doubled; lowered()). Positions are float32: some 1000 units from the origin
 # along the plane's axis one step passes it, and such a cut keeps the order
 PLANE_TOLERANCE = 1e-4
-# Blender's Mirror keeps a vertex this close to the plane (meters, bisect_distance's default) on the kept side: in
+# Blender's Mirror keeps a vertex this close to the plane (meters, bisect_threshold's default) on the kept side: in
 # files of large units the on-plane test stays within it, so a moved Mirror cuts no end of the cut away
 BISECT_DISTANCE = 1e-3
 # |cos| between a face's normal and a plane's axis: a face at the plane offset along it by a Shell up to 10 units
@@ -1639,10 +1639,10 @@ def _name_rim(desc, rims, shell, key, node, check=None, mirrors=()):
 def _rim_mirrors(md, mirrors, above, unit):
     """The Mirrors (ModifierDescriptions) the corners of the rim on MeshDescription md are counted with (rim_issues):
     mirrors (below the Shell) and those of above lowered() moves; when the next one leaves a rim on its plane
-    (md.seam_issue SEAM_STAYS), that one too, welding what lies on its plane (3ds Max's slice drops the rim there: no
-    corner)."""
+    (md.seam_issue SEAM_STAYS) and slices, that one too, welding what lies on its plane (3ds Max's slice drops the
+    rim there: no corner; without the slice 3ds Max keeps it, corners and all)."""
     out = tuple(mirrors) + tuple(above[:md.lowered])
-    if md.seam_issue == SEAM_STAYS:
+    if md.seam_issue == SEAM_STAYS and any(dict(above[md.lowered].settings)["use_bisect_axis"]):
         m = above[md.lowered]
         weld = (("use_mirror_merge", True), ("merge_threshold", 2.0 * PLANE_TOLERANCE * unit * (1.0 + 1e-6)))
         out += (m._replace(settings=tuple(x for x in m.settings if x[0] not in dict(weld)) + weld),)
