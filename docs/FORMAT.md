@@ -1637,9 +1637,9 @@ picker and Material Editor switches off).
   Corona 12), except a VRayBitmap below a normal map, which V-Ray reads as stored (below a CoronaNormal assumed
   alike: not probed). A scene whose gamma setting is not found is taken as gamma on, as for swatches. CoronaNormal's
   Add gamma is folded into its image's gamma only for an image without an Output and not read for its alpha (else
-  a line in the report). One reading MaxDrop does not
-  follow: a VRayBitmap From 3ds Max directly in a VRayMtl bump slot with the gamma off is decoded (below
-  VRayNormalMap's bump input it is stored, as on a data input; maxdrop-6n0.6.19). V-Ray bends a normal tilted over
+  a line in the report). A first reading of a
+  VRayBitmap From 3ds Max directly in a VRayMtl bump slot with the gamma off (decoded) does not reproduce: it is
+  stored there too (maxdrop-6n0.6.19, below). V-Ray bends a normal tilted over
   about 44 degrees back toward the surface: the tilted map decoded renders 44.2 degrees for 59.2, and so does that
   decoded normal stored in a file read at 1.0 (V-Ray's limit, not the decode; MaxDrop draws it unbent). The rule is
   in `maxdrop/convert/texmaps.py` (colorspace, `_vray_image`, `_add_gamma`). Blender 5.2 renders (EEVEE and Cycles)
@@ -1705,6 +1705,14 @@ picker and Material Editor switches off).
   within 0.0082. A first Corona pass in a 3dsmaxbatch session whose earlier scripts had failed rendered a Bitmap
   automatic decoded with the gamma off (0.2195, both modes alike): run again in a session of its own it gave 0.502.
   Such a pass is caught by a control row (a Bitmap automatic) rendered in both modes.
+- A VRayBitmap From 3ds Max height (maxdrop-6n0.6.19), V-Ray 5.2 through VRayBumpNormals, em3.159's ramp: with the
+  gamma off it is read as stored in every slot tried (VRayMtl bump directly, under an Output, under a Mix, Normal
+  Bump's and VRayNormalMap's bump input), with it on decoded, as a Bitmap automatic (slope ratio about 1 against
+  3.3; VRayBitmap None stored and sRGB decoded in both modes). em3.159's reading of the bump slot (decoded with the
+  gamma off) does not reproduce: its own probe script run again in a fresh 3dsmaxbatch session gives stored (1.73 /
+  1.73 degrees at 0.25 / 0.75 of a tooth), as the em3.159 table row says. A Standard material's bump does not reach
+  VRayBumpNormals (flat in both modes): not measured. Blender 5.2 renders of the probe scenes show V-Ray's stored or
+  decoded pattern on every plane; the rule is unchanged.
 - The sky and the light of a gamma-off dome (maxdrop-6n0.6.21, maxdrop-6n0.6.20), V-Ray 5.2, em3.166's scenes again
   and mirrors (VRayMtl reflection 255 / 128, Fresnel off, glossiness 1) beside a white floor under a VRayBitmap Auto
   of a uniform EXR, each camera's 32 x 32 render averaged:
