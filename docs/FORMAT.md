@@ -1735,13 +1735,13 @@ values by the fixture scripts or read by the tests):
 | | 2 BRDF | 10 brdf_type (4 = GGX), 54 anisotropy, 58 anisotropy_rotation (stored in degrees, as shown), 69 soften, 86 gtr_gamma, 89 brdf_useRoughness |
 | | 3 options | 11 option_traceReflection, 13 option_doubleSided, 22 option_cutOff, 84 option_opacityMode |
 | | 4 maps | map, on, multiplier: 100 / 150 / 200 diffuse, 101 / 151 / 201 reflection, 102 / 152 / 202 refraction, 103 / 153 / 203 bump, 104 / 154 / 204 reflectionGlossiness, 105 refractionGlossiness, 106 displacement, 109 refractionIOR, 110 hilightGlossiness, 111 reflectionIOR, 112 / 162 / 212 opacity, 113 roughness, 117 self_illumination, 119 metalness (multipliers in percent: 63.0 = 63 %) |
-| VRay2SidedMtl `(0x6066686A, 0x11731B4B)` | 0 | 0 frontMtl, 1 backMtl, 7 translucency, 3 backMtlOn, 4 texmap_translucency, 8 force1SidedSubMtls |
-| VRayBlendMtl `(0x3DA0041B, 0x0F436E31)` | 0 | 0 baseMtl, 1 coatMtl (table), 2 blend (color table), 3 texmap_blend, 4 texmap_blend_multiplier, 6 coatMtl_enable, 5 additiveMode |
+| VRay2SidedMtl `(0x6066686A, 0x11731B4B)` | 0 | 0 frontMtl, 1 backMtl, 7 translucency, 3 backMtlOn, 4 texmap_translucency, 8 force1SidedSubMtls; V-Ray 5.2 renders an empty frontMtl's side not at all at translucency black (the back shows backMtl when backMtlOn, nothing otherwise); at the default translucency (0.5) the front is half transparent, with no front or back color (maxdrop-6n0.6.4) |
+| VRayBlendMtl `(0x3DA0041B, 0x0F436E31)` | 0 | 0 baseMtl, 1 coatMtl (table), 2 blend (color table), 3 texmap_blend, 4 texmap_blend_multiplier, 6 coatMtl_enable, 5 additiveMode; V-Ray 5.2 renders an empty baseMtl as nothing below the coats (a coat at blend grey: alpha 0.5; blend black: not rendered) (maxdrop-6n0.6.4) |
 | Shell Material `(0x255, 0)` | 0 | 2 originalMaterial, 3 bakedMaterial, 0 viewportMtlIndex, 1 renderMtlIndex |
 | VRayOverrideMtl `(0x15D20E6B, 0x54E217EB)` | 0 | 0 baseMtl, 2 giMtl, 4 reflectMtl, 6 refractMtl, 8 shadowMtl (getSubMtl order), each followed by its switch (1 baseMtl_on ... 9 shadowMtl_on); V-Ray 5.2 renders baseMtl for the camera whatever baseMtl_on says, and an empty baseMtl black (maxdrop-em3.136) (vray_more) |
 | VRayMtlWrapper `(0x409517DF, 0x3A5F44B6)` | 0 | 0 baseMtl, 2 generateGIMult (vray_more) |
 | Double Sided `(0x210, 0)` | 0 | 0 material1 (facing), 1 material2 (back), 2 / 3 map1Enabled / map2Enabled, 4 translucency (percent); V-Ray 5.2 renders both sides whatever the switches say, an empty material1 not at all (the front is not rendered), the scanline renders a side switched off black, and an empty material1 too (an empty material2: not measured) (maxdrop-em3.136) (vray_more) |
-| Shellac `(0x46EE536A, 0)` | 0 | 0 shellacMtl1 (base), 1 shellacMtl2, 2 shellacColorBlend (percent) (vray_more) |
+| Shellac `(0x46EE536A, 0)` | 0 | 0 shellacMtl1 (base), 1 shellacMtl2, 2 shellacColorBlend (percent); V-Ray 5.2 and the scanline render an empty shellacMtl1 as shellacMtl2, at blend 0 too (maxdrop-6n0.6.4) (vray_more) |
 | VRayLightMtl `(0x7CCF263E, 0x3F5B39B9)` | 0 | 0 color, 1 multiplier, 2 / 3 texmap (on), 5 / 6 opacity_texmap (on), 9 displacement_texmap (vray_more) |
 | VRayFastSSS2 `(0x3F2C5FAA, 0x750008BC)` | 0 | 26 diffuse_color, 27 / 28 / 29 texmap_diffuse_color (on, multiplier), 36 diffuse_amount, 2 sub_surface_color, 16 scatter_color, 57 overall_color, 0 scatter_radius (a plain float in centimeters whatever the system unit), 22 scale, 31 IOR, 40 specular_color, 44 specular_amount, 51 specular_glossiness, 3 / 4 / 5 texmap_bump (on, multiplier), 85 / 86 / 87 texmap_opacity (on, multiplier) (vray_more) |
 | VRayCarPaintMtl `(0x38312C74, 0x47280883)` | 0 | 0 base_color, 1 / 2 / 3 texmap_base_color (on, multiplier), 4 base_reflection, 8 base_glossiness, 12 flake_color, 16 flake_glossiness, 27 coat_color, 31 coat_strength, 39 coat_glossiness, 55 / 56 / 57 texmap_base_bump (on, multiplier: 30 as created, V-Ray 5.2) (vray_more) |
@@ -1868,6 +1868,22 @@ renders its map1 through its Output part (a red (200, 50, 50) map: 0.784, 0.196,
 changes nothing, 0.682, 0.564, 0.564 with the one above; opacity 0.392 and 0.207); the file stores the switch off. MaxDrop ignores an Output's map1Enabled when the scene's renderer (Renderer ClassIDA / B of the summary stream)
 is Corona's, `(0x62A85DCC, 0x523C3604)` (Corona 12); measured with Corona's own materials, assumed for others.
 Corona's opacity with few passes is noisy (up to 0.006 at 4 passes, the mean at 64).
+A wrapper as a mask in a color graph, measured (maxdrop-6n0.6.2; 3ds Max 2020, V-Ray 5.2 with linear color mapping,
+GI and default lights off, a VRayLightMtl texmap Mix black -> white at amount 0 whose mask is the map, V-Ray's
+internal value): a VRayColor (200, 100, 50) gives 0.4575; an RGB Tint of rows (128, 0, 0), (0, 64, 0), (0, 0, 32)
+over it 0.1722, the empty Tint 0.2928; an Output of RGB level 0.5 over it 0.2287, the empty Output 0.5; the Tint
+over a 128 grey PNG 0.1470 with the gamma off and 0.0643 with it on, an Output of 0.5 over a (200, 100, 50) PNG
+0.2287 and 0.1235. Every constant row is the same with the gamma on and off. So a mask below a Tint or an Output is
+the mean of the wrapper's output on the values V-Ray holds (swatches and the Tint's rows as stored, an image by the
+scene's input rule), which a gamma-off scene shows decoded: MaxDrop converts the wrapper's map as a color with the
+gamma on and as stored with it off, and there takes the mean first and decodes it after (a Tint over a constant
+folded exactly; otherwise a power of 2.2, within 0.005 of V-Ray on these planes). A Color Correction's saturation of
+-50 over the VRayColor gives 0.4739, over the PNG 0.4739 off and 0.2770 on: not Blender's HSV saturation, so a
+Color Correction directly as a mask keeps its input's mean (a grey). The same rule is assumed for Corona, a Corona
+layer mask and a Diffuse Level map (not measured). With the gamma off a colored PNG as the mask itself gives
+the decoded mean (0.4575 shown as 0.1768), where MaxDrop draws the mean of the decoded channels (0.2456), and an RGB
+Tint on a color input renders the tint of the stored color, decoded ((0.638, 0.384, 0.350) shown as (0.365, 0.122,
+0.100); MaxDrop draws (0.334, 0.057, 0.048)): both left as they are.
 
 ### The Falloff mix curve
 
@@ -1924,7 +1940,7 @@ CoronaLegacyMtl, CoronaBitmap and CoronaNormal.
 | CoronaShadowCatcherMtl `(0x398ACEAD, 0xACDC3625)` | 301 backplateColor, 302 / 360 backplateTexmap (on), 303 alphaMode, 304 shadowAmount, 306 reflectLevel, 307 colorReflect, 308 reflectIor, 309 reflectGlossiness, 310 projectionMode, 311 preserveAspectRatio, 312 useEnviroOffscreen, 313 offscreenColor, 350 / 361 offscreen map, 351 / 362 Fresnel IOR map, 352 / 363 glossiness map, 353 / 364 bump (355 bumpAmount), 354 / 365 reflection color map, 356 projectReflectionMaps, 357 legacyReflect, 358 legacyEnable |
 | CoronaScannedMtl `(0x766665AA, 0x448ADEBB)` | 0 filename (the `.ctf` file), 1 twoSided, 7 tilingFactor, 10-19 filter and paint colors, 20 gamma, 21 saturation, 40-48 clear coat, 64 alphaMode; its uvgen a nameless part at slot 1 |
 | CoronaSlicerMtl `(0x90ACB313, 0x394847CD)` | 500 capMaterial, 501 capMtlOn, 502 createCaps, 503 excludeList (node table), 504 excludeListIncludeMode |
-| CoronaRaySwitchMtl `(0x6816116A, 0xABE651DE)` | 1600 giMtl, 1601 reflectMtl, 1602 refractMtl, 1603 directMtl, 1610-1613 their switches |
+| CoronaRaySwitchMtl `(0x6816116A, 0xABE651DE)` | 1600 giMtl, 1601 reflectMtl, 1602 refractMtl, 1603 directMtl, 1610-1613 their switches; Corona 12 renders nothing to the camera (alpha 0) for a directMtl empty or switched off, whatever giMtl holds (maxdrop-6n0.6.4) |
 | CoronaSelectMtl `(0xC74E9F94, 0xC319F213)` | 311 mtlCount, 312 materials (table), 313 selected (zero-based: its default is 0) |
 | CoronaLightMtl `(0x53B7717A, 0x500D5093)` | 110 intensity, 111 texmap, 112 texmapOn, 113 color, 150 opacityTexmap, 151 opacityTexmapOn, 168 twosidedEmission |
 | CoronaBitmap `(0xABBA5784, 0x65484244)` | 101 filename (asset), 103 uvwChannel, 105 uvwScale, 106 uvwOffset (point3), 107 filteringBlur, 108 / 109 tilingU / V (0 none, 1 repeat, 2 mirror), 114 realWorldScale, 117 monoChannelOutput, 118 rgbChannelOutput (1 alpha as gray), 119 clippingOn, 120 clippingMode (0 crop, 1 place), 121-124 clipping u, v, width, height, 125 gamma (-1 automatic), 129 wAngle (radians), 130 uAngle (the U offset times 2 pi, kept in step by Corona); its Output part at slot 1 |

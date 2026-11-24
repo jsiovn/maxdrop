@@ -112,10 +112,14 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   0.375), the mask taking the value the same map gives a color input.
 - Wrappers (VRay2SidedMtl, VRayBlendMtl, VRayOverrideMtl, VRayMtlWrapper, Double Sided, Shellac, CoronaLayeredMtl
   without a base or without a layer on: base, then its layers that are on; CoronaRaySwitchMtl: direct, GI, reflect,
-  refract, each where switched on) -> the first set sub-material in 3ds Max's getSubMtl order (VRayOverrideMtl's and
+  refract) -> the first set sub-material in 3ds Max's getSubMtl order (VRayOverrideMtl's and
   Double Sided's whatever their switches say: V-Ray 5.2 renders the base and the facing material switched off all the
   same, measured in maxdrop-em3.136; the scanline renders a Double Sided side switched off black: an issue for the
-  facing one);
+  facing one). Where the renderer draws no sub-material for an empty first slot the peel ends there, with a reason
+  (WRAPPER_STOPS, rendered in maxdrop-em3.136 and maxdrop-6n0.6.4): VRayOverrideMtl's base (V-Ray renders black),
+  Double Sided's facing material and VRay2SidedMtl's front (that side is not rendered), CoronaRaySwitchMtl's direct
+  material, empty or switched off (Corona renders nothing to the camera). An empty VRayBlendMtl base gives its first
+  set coat and an issue (V-Ray renders the coat over nothing); an empty Shellac base its coat, as rendered;
   CoronaSelectMtl -> its selected material (zero-based: the default is 0); Shell Material -> its render sub-material.
   Peeling stops at any other class (a Multi/Sub-Object included), at most MAX_PEEL wrappers deep; each wrapper object
   peeled counts once.
@@ -183,7 +187,8 @@ MAX_MEDIUM_DENSITY = 1e6  # a medium coefficient per meter at most: a black chan
 MAX_ANISOTROPY = 0.99  # a Corona directionality past it is clamped: Blender's Henyey-Greenstein takes -1 < g < 1
 GREY_SRGB = 128 / 255  # the grey of a material without a rule: MaxDrop's own, not a swatch
 
-# wrapper ClassId -> its sub-material parameters (block 0) in getSubMtl order; a table parameter gives each element
+# wrapper ClassId -> its sub-material parameters (block 0) in getSubMtl order; a table parameter gives each element.
+# A class of WRAPPER_STOPS is peeled to its first slot or not at all: its later slots are never read
 WRAPPERS = {
     classids.VRAY_2SIDED_MTL: (0, 1),  # frontMtl, backMtl
     classids.VRAY_BLEND_MTL: (0, 1),  # baseMtl, coatMtl (table)
@@ -195,11 +200,16 @@ WRAPPERS = {
     classids.CORONA_RAY_SWITCH_MTL: (1603, 1600, 1601, 1602),  # directMtl, giMtl, reflectMtl, refractMtl
     classids.CORONA_SELECT_MTL: (312,),  # materials (table): the one at selected (313, zero-based)
 }
-# wrapper ClassId -> {sub-material parameter: its on switch}; a slot switched off is read as empty. VRayOverrideMtl's
-# (1, 3, 5, 7, 9) and Double Sided's (2, 3) are not here: V-Ray 5.2 renders their sub-materials switched off all the
-# same
-WRAPPER_SWITCHES = {
-    classids.CORONA_RAY_SWITCH_MTL: {1603: 1613, 1600: 1610, 1601: 1611, 1602: 1612},
+# wrapper ClassId -> (its first slot's name, the slot's on switch or None, what the renderer shows): a wrapper whose
+# first slot is empty (or switched off) is not peeled to the next one, the renderer draws no sub-material there
+# (maxdrop-em3.136, maxdrop-6n0.6.4). VRayOverrideMtl's switches (1, 3, 5, 7, 9) and Double Sided's (2, 3) are ignored:
+# V-Ray 5.2 renders their sub-materials switched off all the same. Shellac's empty base renders its coat (V-Ray and
+# the scanline): it peels on; VRayBlendMtl's renders its coats over nothing: it peels on with an issue (_sub)
+WRAPPER_STOPS = {
+    classids.VRAY_OVERRIDE_MTL: ("base material", None, "V-Ray renders it black"),
+    classids.DOUBLE_SIDED_MTL: ("facing material", None, "V-Ray renders that side not at all, the scanline black"),
+    classids.VRAY_2SIDED_MTL: ("front material", None, "V-Ray renders that side not at all"),
+    classids.CORONA_RAY_SWITCH_MTL: ("direct material", 1613, "Corona renders nothing to the camera"),
 }
 DOUBLE_SIDED_FACING_ON = 2  # map1Enabled
 CORONA_SELECT_LIST, CORONA_SELECT_INDEX = 312, 313
@@ -536,10 +546,15 @@ class MaterialConverter:
         else:
             pids = WRAPPERS[key]
         block = m.block(0)
-        switches = WRAPPER_SWITCHES.get(key, {})
+        name = m.name or class_name(m.superclass, key)
+        if key in WRAPPER_STOPS:
+            slot, switch, shows = WRAPPER_STOPS[key]
+            first = block.value(pids[0]) if block is not None else None
+            if switch is not None and not _flag(m, switch, 0, True):
+                return None, "%s: %s switched off: %s" % (name, slot, shows)
+            if not isinstance(first, pblock.Reference) or first.index is None:
+                return None, "%s: %s empty: %s" % (name, slot, shows)
         for pid in pids:
-            if pid in switches and not _flag(m, switches[pid], 0, True):
-                continue
             values = block.value(pid) if block is not None else None
             for k, v in enumerate(values if isinstance(values, list) else [values]):
                 if key == classids.CORONA_LAYERED_MTL and pid == CORONA_LAYERS:
@@ -548,12 +563,15 @@ class MaterialConverter:
                         continue
                 if isinstance(v, pblock.Reference) and v.index is not None:
                     if self.graph.superclass(v.index) != classids.SC_MATERIAL:
-                        return None, "%s: sub-material %d is not a material" % (m.name or "wrapper", v.index)
+                        return None, "%s: sub-material %d is not a material" % (name, v.index)
                     if key == classids.DOUBLE_SIDED_MTL and pid == 0 and not _flag(m, DOUBLE_SIDED_FACING_ON, 0, True):
                         self._issue_once(m.index, "%s: facing material switched off: drawn all the same, as V-Ray "
-                                         "renders it (the scanline renders it black)" % (m.name or "Double Sided"))
+                                         "renders it (the scanline renders it black)" % name)
+                    if key == classids.VRAY_BLEND_MTL and pid != pids[0]:
+                        self._issue_once(m.index, "%s: base material empty: drawn as its coat, which V-Ray renders "
+                                         "over nothing (transparent where the blend is below white)" % name)
                     return v.index, None
-        return None, "%s: no sub-material" % (m.name or "wrapper")
+        return None, "%s: no sub-material" % name
 
     def _selected(self, m):
         """CoronaSelectMtl: the material at selected (zero-based: its default is 0) in materials."""

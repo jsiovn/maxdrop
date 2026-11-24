@@ -102,6 +102,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Materials: a Double Sided whose facing material is switched off is a line in the report: MaxDrop draws that
   material, as V-Ray 5.2 renders it (measured; V-Ray does the same for a VRayOverrideMtl's base switched off), but
   the 3ds Max scanline renders that side black.
+- Materials: a wrapper whose first sub-material is empty no longer takes the next one where the renderer does not
+  (rendered with V-Ray 5.2 and Corona 12): a VRayOverrideMtl without a base (V-Ray renders black), a Double Sided
+  without a facing material or a VRay2SidedMtl without a front (that side is not rendered, or only half at a
+  VRay2SidedMtl's default translucency) and a CoronaRaySwitchMtl whose direct material is empty or switched off
+  (Corona renders nothing to the camera, it took the GI material) are the grey material with the reason in the report.
+  A VRayBlendMtl without a base still gives its coat, with a report line (V-Ray renders the coat over nothing); a
+  Shellac without a base gives its coat, as rendered.
 - Maps: a Bitmap that tiles or mirrors in one direction and not in the other, or a placed image that tiles, no
   longer shows a thin dark line at each tile and mirror line (EEVEE and Cycles): what it clips is now cut by a mask
   instead of Blender's Clip extension, which faded the image's border toward black.
@@ -243,6 +250,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   where Corona shows 0.040; an HDR color of 2.0 now 4.95). A CoronaMix on a color map is computed on the values
   Corona holds and then decoded, as a Mix is, so its operations match Corona's. Data, normal and bump maps and
   scenes with the gamma on are unchanged.
+- Materials: an RGB Tint or an Output with levels as the mask of a Mix, CoronaMix or Composite on a color map tints
+  the color below it and masks by the mean of the result, as V-Ray 5.2 renders it (measured, gamma on and off),
+  instead of tinting the grey of that color: a tint of (128, 0, 0), (0, 64, 0), (0, 0, 32) over a (200, 100, 50)
+  color now masks 0.172 with the gamma on (was 0.134); with the gamma off that mean is shown decoded, so an Output
+  of level 0.5 over white masks 0.218 linear where V-Ray shows 0.214 (was 0.5). A Color Correction there is
+  unchanged.
 
 ## [1.0.1] - 2026-11-22
 
