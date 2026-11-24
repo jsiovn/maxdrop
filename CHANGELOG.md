@@ -323,6 +323,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Color Correction: its saturation is drawn as 3ds Max and V-Ray 5.2 compute it (in HSL, towards the mean of the
   brightest and darkest channel), instead of Blender's HSV saturation, which kept a saturated color too bright; a
   custom rewiring in a mask picks its channel instead of the mean.
+- CoronaMix: Gamma over a bottom map below 0 in sRGB mode takes the map's magnitude, as Corona 12 renders it,
+  instead of leaving it negative; a mid-grey top swatch is checked against Corona 12 on a test file.
+- VRayDirt in a scene that renders with Corona is white, as Corona 12 renders it, instead of its unoccluded color
+  or map.
+- Corona materials: a colored opacity color, which Corona 12 renders per channel, is named in the report (the
+  material keeps its mean as the alpha).
 
 ## [1.0.1] - 2026-11-22
 

@@ -1550,6 +1550,12 @@ picker and Material Editor switches off).
   display-referred (Blender needs `srgb_to_linear` of it): a mask between black and white is the decoded number,
   a mask between two colors mixes display values (target 0.225 linear for the 0.511 above, a decoded mask gives
   0.171). The rules are in `maxdrop/convert/texmaps.py` (MASK, colorspace, `_swatch`).
+- A Corona opacity color (maxdrop-6n0.6.35), Corona 12 renders of a self-illuminated white CoronaLegacyMtl and
+  CoronaPhysicalMtl over black, 64 passes, gamma on and off alike: white 1.0, grey 64 0.251, red (255, 0, 0)
+  1.0 / 0.0 / 0.0, (200, 100, 50) 0.784 / 0.392 / 0.196 (0.785 / 0.393 / 0.197 for the physical one), black 0:
+  the swatch as stored, per channel, not its mean. A Blender alpha is one number: MaxDrop keeps the mean and names
+  a colored opacity color in the report (`MaterialConverter.mono_swatch`; CoronaSkinMtl and CoronaHairMtl assumed
+  alike).
 - Maps with their own decode (maxdrop-em3.123), V-Ray 5.2 renders of VRayLightMtl planes, each rendered alone, its
   internal value (`getPixels ... linear:true` of an HDR bitmap); greys 64 / 128 / 192 as 8-bit PNGs, EXRs of 0.25 /
   0.5 / 2.0. Gamma on (input 2.2) and off give the same internal value for every row:
@@ -2073,6 +2079,19 @@ renders its map1 through its Output part (a red (200, 50, 50) map: 0.784, 0.196,
 changes nothing, 0.682, 0.564, 0.564 with the one above; opacity 0.392 and 0.207); the file stores the switch off. MaxDrop ignores an Output's map1Enabled when the scene's renderer (Renderer ClassIDA / B of the summary stream)
 is Corona's, `(0x62A85DCC, 0x523C3604)` (Corona 12); measured with Corona's own materials, assumed for others.
 Corona's opacity with few passes is noisy (up to 0.006 at 4 passes, the mean at 64).
+Other materials and maps under Corona (maxdrop-6n0.6.23; Corona 12, the gamma off, 64 passes): in a Standard
+diffuse slot (white furnace, no light, specular level 0) an Output switched off over the red Checker renders its
+map too, 0.784, 0.196, 0.196, as switched on and as the Checker directly (a white Standard reads 1.0), and in a
+CoronaPhysicalMtl base slot the same (0.745, 0.191, 0.194 in all three). A VRayMtl does not render under Corona 12
+(white diffuse: 1.0, 0.125, 0.125; the Checker in it 1.0, 0.201, 0.201), so an Output in it cannot be read: the
+scene-wide rule stands. The map switches of Mix (map1, map2, mask), RGB Multiply (map1, map2), Composite (a
+layer and a layer mask) and Falloff (map1, map2), off and on over the red Checker beside green and blue own
+colors in a CoronaLightMtl / VRayLightMtl texmap: Corona renders each exactly as V-Ray 5.2 (off: the own color, or
+the amount for a mask). Color Correction has no map switch. A VRayDirt renders white in Corona 12 with its
+unoccluded map on or off (V-Ray: the map, or the unoccluded color), so MaxDrop draws a VRayDirt white in a Corona
+scene. The renderer ClassID of another Corona version: none at hand; the 371 local `.max` files name one Corona
+renderer, Corona 12's. V-Ray keeps one renderer ClassID, `(0x73BAB286, 0x77F8FD0C)`, from a 3.60 save (3ds Max
+2015) to 5.2: assumed for Corona.
 A wrapper as a mask in a color graph, measured (maxdrop-6n0.6.2; 3ds Max 2020, V-Ray 5.2 with linear color mapping,
 GI and default lights off, a VRayLightMtl texmap Mix black -> white at amount 0 whose mask is the map, V-Ray's
 internal value): a VRayColor (200, 100, 50) gives 0.4575; an RGB Tint of rows (128, 0, 0), (0, 64, 0), (0, 0, 32)
@@ -2193,7 +2212,12 @@ above (maxdrop-em3.161): Blender's Mix types for them clamp to 0..1 (exclusion f
 bottom of 0 at 0 under a top of 1. Vector Math's Divide gives 0 for a divisor of 0, so burn is max(0, nz - (1 - a) / b)
 and dodge 1 - max(0, nz - a / (1 - b)), nz = ceil(min(|divisor|, 1)), 0 for a divisor of 0. Checked by a Cycles
 emission bake against `texmaps.blend_value` (every operation, both modes, layers -0.5 to 3, exactly 0 and 1 too).
-The gamma operation over a bottom map draws a ColorCorrect gamma: a negative channel of that map stays negative.
+The gamma operation over a bottom map draws a ColorCorrect gamma; in sRGB mode with a Vector Math ABSOLUTE before
+its Gamma node (`ColorCorrect.magnitude`), as Corona raises a negative bottom map's magnitude too (maxdrop-6n0.6.40,
+renderMap: a flat 64 / 128 / 192 CoronaBitmap under a 128 top swatch gives 0.015595, 0.125628, 0.425696, gamma on
+and off alike, and the same with multiplierBottom -1; the exponent 0.7310 is the top as stored, (128 / 255)^(1 /
+2.2), pinned by the fixture box FixtureCoronaMixGammaGrey). In linear mode a negative bottom gives no number in
+Corona (NaN, shown 0); MaxDrop leaves it negative.
 A Mix node's color input clamps its own value at 0: a constant layer below 0 goes in through a Combine XYZ node.
 So does every Mix node's (maxdrop-6n0.6.26: Mix maps, CoronaMix mix and multiply, RGB Multiply, Composite layers) and
 an RGB node standing for a constant (`_Tree.socket`); a Cycles emission bake of a Mix (0.5) and a Multiply of a white
@@ -2317,12 +2341,15 @@ top by an orthographic camera:
   glossiness 0.5 / 1, highlight shift 0 / 5 and GI simplification 0: within 0.01 of the default (no change of
   the furnace albedo; a lit highlight was not compared). Glint strength 1: 0.433 / 0.278 / 0.149 (0: 0.396 / 0.234 / 0.103); randomizeMelanin 0.5: 0.447 /
   0.368 / 0.293.
-- Hair and Fur strands: not measured; not established whether Corona shades Hair and Fur strands with this material.
-  Strands grown on a plane whose own faces are black, tip and root colors white, no hue or value variation, seen
-  from the side in the furnace, read 0.4935 grey for every melanin, pheomelanin and tint (on the plane carrying the
-  material and with Hair and Fur's MR_ApplyShader on alike; setting MR_Shader to the CoronaHairMtl raised an access
-  violation). An earlier end-on view with Hair and Fur's default colors followed the melanin, but its window held
-  the growth plane, which carries the material.
+- Hair and Fur strands (maxdrop-6n0.6.30): Corona 12 does not shade them with a CoronaHairMtl. Strands grown on a
+  plane whose own faces are black (a window mean of 0.027 without the modifier), tip and root colors white, seen
+  from the side in the furnace, read 0.494 with or without a Hair and Fur render effect and in each of its
+  `hairMode` values (0, 1, 2). They take Hair and Fur's own tip and root colors (red: 0.685 / 0.098 / 0.026, grey
+  128: 0.424), not the growth object's material: a Multi/Sub whose sub-material at the strands' MaterialGeomMtlID
+  is a red CoronaLightMtl, a CoronaHairMtl at melanin 0 or one at melanin 1 reads 0.494 alike. MAXScript refuses
+  `MR_Shader` set to a CoronaColor or a CoronaHairMtl (a system exception, also in em3.164). Corona's own forum
+  points to instanced geometry with a material of its own instead (a mesh: the rule above). An earlier end-on view
+  followed the melanin only because its window held the growth plane, which carried the material.
 
 Cycles (Blender 5.2, 256 samples) with the same planes: a Principled BSDF at IOR 1.55, roughness 0.5 reads 0.043 +
 0.957 x its base color in that furnace. MaxDrop's base (0.070 + 0.929 x hair - 0.043) / 0.957 reads Corona's numbers
