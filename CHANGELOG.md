@@ -329,6 +329,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   or map.
 - Corona materials: a colored opacity color, which Corona 12 renders per channel, is named in the report (the
   material keeps its mean as the alpha).
+- VRayMtl: with Fresnel off a metalness dims the diffuse by 1 - metalness and leaves the reflection color as it is,
+  as V-Ray 5.2 renders it, instead of a metal in the diffuse color at metalness 1 (which dropped the reflection
+  color) and no change at all below 1.
 
 ## [1.0.1] - 2026-11-22
 

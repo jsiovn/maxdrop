@@ -45,8 +45,11 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   0.9175 0.6582 0.8060, the copy 0.917 0.533 0.179, the metal 0.900 0.503 0.102; no Mix of two closures meets V-Ray
   when max(R) + max_c((1 - R_c) d_c) > 1); a dimmer colored swatch stays the white mirror by its mean (102 51 13 over
   grey: V-Ray 0.701 0.602 0.527, white 0.609 0.611 0.609, tinted 0.701 0.501 0.352), so a saturated swatch's weight
-  jumps from its mean to its brightest channel at METAL_REFLECTION (not measured near it); a constant metalness 1 keeps
-  the lone metal in the diffuse color (build/materials.py; not measured); beside a reflection map only the swatch's
+  jumps from its mean to its brightest channel at METAL_REFLECTION (not measured near it); outside the metal rule a
+  constant metalness m only dims the diffuse: V-Ray renders R_c + (1 - m)(1 - R_c) d_c (maxdrop-6n0.6.39: 128 grey
+  over 40 80 200 at m 1 0.502, at m 0.5 0.541 0.580 0.697), so Metallic 0 and the diffuse (its map by MapRef.scale,
+  left out at m 1) times 1 - m through the swatch rule (gamma off not rendered; a metalness map and a refracting
+  material as before, not measured); beside a reflection map only the swatch's
   share counts (its mean times 1 - the map amount): a map at full amount hides the swatch, so it never makes a metal
   (the map itself is not judged), a map at 0 % amount is left out (the swatch alone, as V-Ray renders it).
   Fresnel off sets fresnel False; outside the metal rule the weight (a swatch below 1, or a reflection map such as the
@@ -883,13 +886,20 @@ def vray_mtl(conv, m, ir):
     # a swatch below 1 without a map is the mirror tinted R / max(R) by max(R): R_c + (1 - max R) d_c, V-Ray's R_c +
     # (1 - R_c) d_c for grey or a black diffuse; at max(R) 1 (build draws no mirror there) it is the metal
     top = max(reflection)
-    if not ir.fresnel and shown >= METAL_REFLECTION:
-        if reflection_map is None and top < 1.0:
+    if not ir.fresnel and shown >= METAL_REFLECTION and (reflection_map is not None or top >= 1.0):
+        ir.metallic = Input(1.0)
+        ir.base_color = Input(reflection, reflection_map)
+    elif not ir.fresnel:
+        if shown >= METAL_REFLECTION:
             ir.specular = Input(top)
             ir.mirror_color = tuple(c / top for c in reflection)
-        else:
-            ir.metallic = Input(1.0)
-            ir.base_color = Input(reflection, reflection_map)
+        # V-Ray renders R_c + (1 - m)(1 - R_c) d_c: the metalness only dims the diffuse (maxdrop-6n0.6.39)
+        if t <= 0 and ir.metallic.map is None and ir.metallic.value > 0.0:
+            k = conv.swatches.channel(1.0 - ir.metallic.value)
+            ref = ir.base_color.map
+            ir.base_color = Input(tuple(k * c for c in ir.base_color.value),
+                                  dataclasses.replace(ref, scale=ref.scale * k) if ref is not None and k > 0 else None)
+            ir.metallic = Input(0.0)
 
     emit_map = conv.map_ref(m, 117, 167, 217, 4, ir=ir)  # texmap_self_illumination
     ir.emission_color = Input(conv.rgb(m, 81, 1, (0.0, 0.0, 0.0)), emit_map)  # selfIllumination
