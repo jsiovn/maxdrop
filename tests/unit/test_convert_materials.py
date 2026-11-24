@@ -3118,5 +3118,30 @@ class FrameZeroParams(unittest.TestCase, Close):
         self.assertEqual(params.at_frame_zero(self.graph, heard.append).report, heard.append)
 
 
+class CoronaOpacityColor(unittest.TestCase, Close):
+    """Corona 12 renders an opacity color per channel, as stored in both gamma modes (maxdrop-6n0.6.35:
+    CoronaLegacyMtl and CoronaPhysicalMtl, grey 64 -> 0.251, red -> 1 0 0, 200 100 50 -> 0.784 0.392 0.196): a
+    float alpha keeps the mean, a colored one is an issue."""
+    CASES = ((classids.CORONA_LEGACY_MTL, "p105"), (classids.CORONA_PHYSICAL_MTL, "p121"))
+
+    def test_colored_opacity_color_is_an_issue(self):
+        for cid, pid in self.CASES:
+            with self.subTest(cid=cid):
+                conv, ir = _convert(_corona(0, cid, **{pid: (1.0, 0.0, 0.0)}))
+                self.close(ir.alpha.value, 1.0 / 3.0, "the mean")
+                found = [r for r in ir.issues if "opacity color" in r]
+                self.assertEqual(len(found), 1, ir.issues)
+                self.assertIn("per channel", found[0])
+                self.assertIn(found[0], [r for _i, r in conv.stats.issues])
+
+    def test_grey_opacity_color_is_exact(self):
+        for cid, pid in self.CASES:
+            for v in (64 / 255, 1.0, 0.0):
+                with self.subTest(cid=cid, v=v):
+                    _conv, ir = _convert(_corona(0, cid, **{pid: (v, v + 0.4 / 255 if v < 1 else v, v)}))
+                    self.assertAlmostEqual(ir.alpha.value, v, delta=1e-3, msg="as stored, whatever the gamma")
+                    self.assertEqual([r for r in ir.issues if "opacity color" in r], [])
+
+
 if __name__ == "__main__":
     unittest.main()

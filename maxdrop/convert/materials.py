@@ -153,7 +153,9 @@ user (SceneDescription.issues) when a user gets another material for one of thos
 Colors are 3ds Max swatches, clamped to 0..1 and made linear by the scene's swatch rule (convert/colors.py): the
 value itself when the scene was saved with the gamma on (or does not say), the sRGB curve when it was off. A color
 that stands for a number (the Corona opacity colors) is the mean of the swatch as stored, whatever the gamma, as V-Ray
-5.2 renders a swatch on a data input (maxdrop-em3.122; Corona assumed to follow it: no Corona render here).
+5.2 renders a swatch on a data input (maxdrop-em3.122). Corona 12 renders an opacity color as stored in both modes
+too, but per channel (maxdrop-6n0.6.35: CoronaLegacyMtl and CoronaPhysicalMtl, grey 64 -> 0.251, red -> 1 0 0),
+which a float alpha cannot hold: a colored one keeps the mean and is an issue.
 A missing or non-finite parameter takes the class's default; an animated one its controller's value at frame 0
 (convert/params.py: the converter's graph reads it so), the default where that cannot be had; an IOR is clamped to
 1..100. The SSS radius is
@@ -489,13 +491,18 @@ class MaterialConverter:
             v = default
         return self.swatches.color(tuple(c * scale for c in v[:3]) if scale != 1.0 else v)
 
-    def mono_swatch(self, m, pid, block, default):
+    def mono_swatch(self, m, pid, block, default, ir=None):
         """A swatch parameter that stands for a number (an opacity color): the mean of the swatch as stored, each
-        channel clamped to 0..1, with no swatch rule (see Colors above); default as rgb's."""
+        channel clamped to 0..1, with no swatch rule (see Colors above); default as rgb's. With ir, a colored swatch
+        (channels apart by more than half a step) is an issue: Corona renders it per channel (maxdrop-6n0.6.35)."""
         v = m.param(pid, block)
         if not (isinstance(v, tuple) and len(v) >= 3 and all(_finite(c) for c in v[:3])):
             v = default
-        return mean(tuple(min(1.0, max(0.0, c)) for c in v[:3]))
+        v = tuple(min(1.0, max(0.0, c)) for c in v[:3])
+        if ir is not None and max(v) - min(v) > 0.5 / 255:
+            self.issue(m.index, "%s %r: opacity color (%.3f, %.3f, %.3f) drawn as its mean %.3f: Corona renders it per "
+                       "channel" % ((class_name(m.superclass, m.class_id), m.name) + v + (mean(v),)), ir)
+        return mean(v)
 
     def issue(self, index, reason, ir=None):
         self.stats.issues.append((index, reason))
@@ -1179,7 +1186,7 @@ def corona_physical_mtl(conv, m, ir):
     if ior_mode not in (None, 0, 1):
         conv.issue(m.index, "CoronaPhysicalMtl %r: unknown IOR mode %r read as an IOR" % (m.name, ior_mode), ir)
     ir.thin_walled = thin
-    opacity = _clamp01(conv.mono_swatch(m, 121, 0, (1.0, 1.0, 1.0)) * max(0.0, _num(m, 122, 0, 1.0)))
+    opacity = _clamp01(conv.mono_swatch(m, 121, 0, (1.0, 1.0, 1.0), ir) * max(0.0, _num(m, 122, 0, 1.0)))
     ir.alpha = Input(opacity, _corona_amount_map(conv, m, 123, ir))
     ir.emission_color = Input(conv.rgb(m, 331, 0, (1.0, 1.0, 1.0)), _corona_amount_map(conv, m, 333, ir))
     ir.emission_strength = max(0.0, _num(m, 332, 0, 0.0))
@@ -1271,7 +1278,7 @@ def corona_legacy_mtl(conv, m, ir):
     ir.transmission = Input(t, slot(144, 164, 293, level=refract_level))
     ir.ior = _ior(_num(m, 183, 0, 1.52) if t > 0 else fresnel_ior)
     ir.thin_walled = _flag(m, 210, 0, False)
-    opacity = _clamp01(conv.mono_swatch(m, 105, 0, (1.0, 1.0, 1.0)) * opacity_level)
+    opacity = _clamp01(conv.mono_swatch(m, 105, 0, (1.0, 1.0, 1.0), ir) * opacity_level)
     ir.alpha = Input(opacity, slot(146, 166, 295, level=opacity_level))
     ir.emission_color = Input(conv.rgb(m, 107, 0, (1.0, 1.0, 1.0)), slot(158, 178, 303))
     ir.emission_strength = max(0.0, _num(m, 128, 0, 0.0))
@@ -1380,7 +1387,7 @@ def corona_skin_mtl(conv, m, ir):
     ir.specular = Input(_clamp01(max(0.0, _num(m, 115, 0, 1.0)) * reflection), slot(135))
     ir.roughness = Input(_roughness(_num(m, 116, 0, 0.5), False), slot(137, invert=True))
     ir.ior = _ior(_num(m, 117, 0, 1.4))
-    opacity = _clamp01(conv.mono_swatch(m, 122, 0, (1.0, 1.0, 1.0)) * max(0.0, _num(m, 123, 0, 1.0)))
+    opacity = _clamp01(conv.mono_swatch(m, 122, 0, (1.0, 1.0, 1.0), ir) * max(0.0, _num(m, 123, 0, 1.0)))
     ir.alpha = Input(opacity, slot(143))
     conv.bump_slot(ir, slot(144))
     if _num(m, 119, 0, 0.0) > 0:
@@ -1452,7 +1459,7 @@ def corona_hair_mtl(conv, m, ir):
     ir.base_color = Input(tuple(min(1.0, d + (1.0 - w) * h) for h, d in zip(hair, diffuse)))
     ir.roughness = Input(_roughness(_num(m, 108, 0, 0.5), False), slot(116, invert=True))
     ir.ior = _ior(_num(m, 107, 0, 1.55))
-    opacity = _clamp01(conv.mono_swatch(m, 103, 0, (1.0, 1.0, 1.0)) * max(0.0, _num(m, 106, 0, 1.0)))
+    opacity = _clamp01(conv.mono_swatch(m, 103, 0, (1.0, 1.0, 1.0), ir) * max(0.0, _num(m, 106, 0, 1.0)))
     ir.alpha = Input(opacity, slot(114))
     conv.bump_slot(ir, slot(120))
     for map_pid, on_pid, what in HAIR_UNREAD:
