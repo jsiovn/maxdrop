@@ -302,7 +302,10 @@ class Read(unittest.TestCase):
         scene = self.write("scene.max", b"")
         for n in range(4):
             self.write("a%d.txt" % n, b"")
-        self.write("lamp.ies", ies_file())
+        # in maps/, not beside the scene: the scene's folder is read in the file system's order (hashed on ext4),
+        # so a lamp beside it could be among the 2 entries taken; maps/ is entered only after that listing
+        os.mkdir(os.path.join(self.dir, "maps"))
+        self.write(os.path.join("maps", "lamp.ies"), ies_file())
         lookup = ies.Lookup(textures.TextureIndex(scene, max_entries=2, is_local_drive=lambda path: False))
         self.assertEqual(lookup.photometry("lamp.ies"), (None, "not found: texture search of the scene's folder "
                                                          "stopped after 2 files and folders, in {0}; texture search of "
