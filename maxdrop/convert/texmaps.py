@@ -276,11 +276,11 @@ BLEND_OPS = (BLEND_ADD, BLEND_SUBTRACT, BLEND_DIVIDE, BLEND_MIN, BLEND_MAX, BLEN
 # renderMap (maxdrop-em3.28, maxdrop-em3.117): 0 add, 1 subtract (bottom - top, at least 0), 3 divide (bottom /
 # top), 4 minimum, 5 maximum, 8 difference, 9 screen, 10 overlay, 11 color dodge, 12 color burn, 13 linear burn, 14
 # linear light, 16 hard light, 20 exclusion (Blend's formulas, Corona's own). 7 gamma is bottom^(1 / top) (drawn
-# for a top that converts to a grey constant, or over a constant bottom: _gamma_drawable); 15 soft light
-# (Photoshop's, not Blender's), 17 vivid light, 18 pin light and 19 hard mix have no node (peeled). mixInSRgb (on by default) runs the operation on
-# |layer|^(1 / 2.2) and raises the magnitude of the result to 2.2 (linear light: black over black renders white);
-# multiply, divide, min and max come out the same either way, a negative layer's sign kept (renderMap P5), so they
-# are not CM_GAMMA_OPS. The amount lerp is linear in both modes.
+# for a top that converts to a grey constant, or over a constant bottom: _gamma_layers); 15 soft light
+# (Photoshop's, not Blender's), 17 vivid light, 18 pin light and 19 hard mix have no node (peeled). mixInSRgb (on by
+# default) runs the operation on |layer|^(1 / 2.2) and raises the magnitude of the result to 2.2 (linear light: black
+# over black renders white); multiply, divide, min and max come out the same either way, a negative layer's sign kept
+# (renderMap P5), so they are not CM_GAMMA_OPS. The amount lerp is linear in both modes.
 CM_BLENDS = {0: BLEND_ADD, 1: BLEND_SUBTRACT, 3: BLEND_DIVIDE, 4: BLEND_MIN, 5: BLEND_MAX, 8: BLEND_DIFFERENCE,
              9: BLEND_SCREEN, 10: BLEND_OVERLAY, 11: BLEND_DODGE, 12: BLEND_BURN, 13: BLEND_LINEAR_BURN,
              14: BLEND_LINEAR_LIGHT, 16: BLEND_HARD_LIGHT, 20: BLEND_EXCLUSION}
@@ -1545,10 +1545,11 @@ def _color2bump(conv, m, kind, walk, depth, chain):
     return node
 
 
-def _sides(conv, m, ids, kind, walk, depth, chain):
+def _sides(conv, m, ids, kind, walk, depth, chain, known=None):
     """The nodes of a two-map wrapper's sides ((map pid, switch pid) each), None where no map is used, and per side
-    whether a used map converted to nothing."""
-    nodes = tuple(conv._sub(m, pid, on, kind, walk, depth, chain) for pid, on in ids)
+    whether a used map converted to nothing. known: {map pid: node} of sides the caller converted already."""
+    known = known or {}
+    nodes = tuple(known[pid] if pid in known else conv._sub(m, pid, on, kind, walk, depth, chain) for pid, on in ids)
     lost = tuple(n is None and conv._on(m, pid, on) is not None for n, (pid, on) in zip(nodes, ids))
     return nodes, lost
 
@@ -1878,21 +1879,23 @@ def _cm_bottom(conv, m, kind, node):
                          _num(m, CM_MULT_BOTTOM, 1.0), _num(m, CM_OFFSET_BOTTOM, 0.0))
 
 
-def _gamma_drawable(conv, m, kind, walk, depth, chain):
+def _gamma_layers(conv, m, kind, walk, depth, chain):
     """Whether a CoronaMix gamma can be drawn, decided layer by layer before the rest is converted, so a peeled one
     converts no more than it must: its top first (drawable only as a constant, a map that converts to one included),
     then, for one exponent per channel, its bottom (a constant). A map that converts to nothing leaves the decision
-    to the lost-side rule (True)."""
+    to the lost-side rule (drawable). None when it cannot be drawn, else {map pid: node} of the layers it converted,
+    which _corona_mix draws without converting them again."""
     top = conv._sub(m, CM_MAP_TOP, CM_TOP_ON, kind, walk, depth, chain)
+    layers = {CM_MAP_TOP: top}
     if top is None and conv._on(m, CM_MAP_TOP, CM_TOP_ON) is not None:
-        return True
+        return layers
     exponent = _corona_gamma_exponent(_cm_top(conv, m, kind, top), _flag(m, CM_SRGB, True))
     if exponent is None:
-        return False
+        return None
     if not isinstance(exponent, tuple) or len(set(exponent)) == 1:
-        return True
-    bottom = conv._sub(m, CM_MAP_BOTTOM, CM_BOTTOM_ON, kind, walk, depth, chain)
-    return bottom is None or isinstance(_cm_bottom(conv, m, kind, bottom), Constant)
+        return layers
+    bottom = layers[CM_MAP_BOTTOM] = conv._sub(m, CM_MAP_BOTTOM, CM_BOTTOM_ON, kind, walk, depth, chain)
+    return layers if bottom is None or isinstance(_cm_bottom(conv, m, kind, bottom), Constant) else None
 
 
 def _corona_peel(conv, m, op, kind, walk, depth, chain):
@@ -1921,15 +1924,16 @@ def _corona_mix(conv, m, kind, walk, depth, chain):
     -> a ColorCorrect gamma of the bottom for a grey top (its color, or a map that converts to a constant; two
     constants folded per channel), each under a Mix when the amount is below 1 or a mask is set; any other operation
     (and a gamma over another top) is peeled to its first bitmap, a gamma as decided on its converted layers
-    (_gamma_drawable, maxdrop-6n0.6.24). Each layer is its map, or its color where the map is missing or switched off,
+    (_gamma_layers, maxdrop-6n0.6.24). Each layer is its map, or its color where the map is missing or switched off,
     times its multiplier plus its offset times CM_OFFSET_SCALE (measured, the multiplier first)."""
     op = m.param(CM_OPERATION, 0)
     if op not in (CM_MIX, CM_MULTIPLY, CM_GAMMA) and op not in CM_BLENDS:
         return _corona_peel(conv, m, op, kind, walk, depth, chain)
-    if op == CM_GAMMA and not _gamma_drawable(conv, m, kind, walk, depth, chain):
+    layers = _gamma_layers(conv, m, kind, walk, depth, chain) if op == CM_GAMMA else {}
+    if layers is None:
         return _corona_peel(conv, m, op, kind, walk, depth, chain)
     (bottom, top), lost = _sides(conv, m, ((CM_MAP_BOTTOM, CM_BOTTOM_ON), (CM_MAP_TOP, CM_TOP_ON)), kind, walk,
-                                 depth, chain)
+                                 depth, chain, layers)
     mask = _mask(conv, m, CM_MASK, CM_MASK_ON, kind, walk, depth, chain)
     amount = min(1.0, max(0.0, _num(m, CM_AMOUNT, 1.0)))
     if any(lost):

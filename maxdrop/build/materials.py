@@ -175,6 +175,7 @@ TIR_LABEL = "Total internal reflection"  # tir_weight()'s nodes
 TIR_FRESNEL = 0.9999  # a Fresnel above it: the glass reflects totally (the Fresnel node gives 1 there)
 CLIP_LABEL = "Clip"  # the node that masks an image's output (clip_axes)
 MAX_LAYER_DEPTH = 8  # layers within layers drawn (convert/materials.py already stops a deeper or cyclic chain)
+SRGB_CURVE_COLUMNS = 3  # srgb_curve's node columns: its Mix at depth, its Math nodes at depth + 1 and depth + 2
 VOLUME_VIEWPORT_ALPHA = 0.1  # a volume-only material's viewport color alpha: Solid view shows what is inside
 VOLUME_BOUNCES = ("its medium scatters: Cycles scatters once at its default Volume Bounces of 0 (Render Properties > "
                   "Light Paths); raise them for multiple scattering, as Corona renders it")
@@ -1171,12 +1172,13 @@ class _Tree:
         """A gamma-off scene's display-referred color as linear: its input in color, a constant through the sRGB
         curve, a socket through a Gamma node of 2.2 (texmaps.Decode); a mean (Decode.mean) the mean of its channels
         through the sRGB curve, a socket's in Math nodes (srgb_curve); MISSING stays."""
-        v = self.graph(n.input, COLOR, depth + (4 if n.mean else 1))
+        mean = depth + SRGB_CURVE_COLUMNS  # mean_of's column, left of the curve's; the input one further left
+        v = self.graph(n.input, COLOR, mean + 1 if n.mean else depth + 1)
         if v is MISSING:
             return v
         if isinstance(v, bpy.types.NodeSocket):
             if n.mean:
-                return self.srgb_curve(self.mean_of(v, depth + 3), depth)
+                return self.srgb_curve(self.mean_of(v, mean), depth)
             return self.gamma(v, tx.SRGB_GAMMA, depth)
         rgb = _as(v, COLOR)
         if n.mean:

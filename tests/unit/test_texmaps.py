@@ -1267,6 +1267,18 @@ class CoronaSynthetic(Checks):
         self.assertEqual(tex.stats.issues, [(1, "CoronaMix 'map': operation gamma drawn as its first bitmap")])
         self.assertEqual(tex.stats.peeled, collections.Counter({"CoronaMix": 1}))
 
+    def test_corona_mix_gamma_converts_each_layer_once(self):
+        """The layers the gamma decision converted are the ones drawn: no layer is asked for twice."""
+        for name, bottom, top, want in (
+                ("grey top over a bitmap", _cbitmap(2), (0.5, 0.5, 0.5), tx.ColorCorrect),
+                ("colored top over a constant", _ccolor(2, p50=1, p58=(0.2, 0.4, 0.6)), (0.5, 0.25, 1.0), tx.Constant)):
+            with self.subTest(name):
+                tex = _tex(_cmix(1, [2, 3], p200=7, p206=Ref(3), p207=Ref(2)), bottom, _ccolor(3, p50=1, p58=top))
+                calls, sub = collections.Counter(), tex._sub
+                tex._sub = lambda m, pid, *a, **k: (calls.update([(m.index, pid)]), sub(m, pid, *a, **k))[1]
+                self.assertIsInstance(tex.convert(mat.MapRef(1), tx.COLOR).root, want)
+                self.assertEqual({k: n for k, n in calls.items() if k[1] in (206, 207)}, {(1, 206): 1, (1, 207): 1})
+
     def test_corona_mix_negative_layers(self):
         """renderMap of probe1's P5 (maxdrop-em3.117): CoronaColor HDR layers below 0 by their offsets; in sRGB mode
         Corona raises each layer's magnitude (maxdrop-em3.161), the gamma operation's top exponent and bottom too."""
