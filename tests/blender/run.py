@@ -911,8 +911,8 @@ class _CountedViewLayer:
 
 
 def check_spread_steps(scene, view_layer):
-    """build.emitters.spread as import steps over two hand-made emitters in W (planes of 1 and 2 m^2 under a
-    Subdivision Surface at level 0, render level 2): it yields (0, 2) with both copies linked, then (1, 2) and (2, 2),
+    """build.emitters.spread as import steps over two hand-made emitters in W (a rectangle and a trapezoid described
+    at 0.5 and 0.8 m^2, under a Subdivision Surface at level 0, render level 2): it yields (0, 2) with both copies linked, then (1, 2) and (2, 2),
     with one view-layer update for both; each emitter's area is the description's times the evaluated mesh's over the
     mesh's, as evaluated_area measures it, and no object is left. Closed after its second step: the first emitter
     spread, the second not, no object left."""
@@ -923,22 +923,24 @@ def check_spread_steps(scene, view_layer):
     converted = (rules.ModifierDescription(1, rules.SUBSURF, "TurboSmooth", "TurboSmooth", False,
                                            (("levels", 0), ("render_levels", 2)), None, None),)
     obs = []
-    for i, width in ((1, 1.0), (2, 2.0)):
+    for i, top in ((1, (0.0, 1.0)), (2, (0.8, 1.2))):
         mesh = bpy.data.meshes.new("SpreadSteps%d" % i)
-        mesh.from_pydata([(0.0, 0.0, 0.0), (width, 0.0, 0.0), (width, 1.0, 0.0), (0.0, 1.0, 0.0)], [], [(0, 1, 2, 3)])
+        mesh.from_pydata([(0.0, 0.0, 0.0), (2.0, 0.0, 0.0), (top[1] * 2.0 - top[0], 1.0, 0.0), (top[0], 1.0, 0.0)],
+                         [], [(0, 1, 2, 3)])
         ob = bpy.data.objects.new("SpreadSteps%d" % i, mesh)
         scene.collection.objects.link(ob)
         smooth = ob.modifiers.new("TurboSmooth", 'SUBSURF')
         smooth.levels, smooth.render_levels, smooth.show_viewport = 0, 2, False
         obs.append(ob)
     try:
+        described = {1: 0.5, 2: 0.8}
         want = []
-        for ob in obs:
+        for k, ob in zip((1, 2), obs):
             base, under = build_emitters.evaluated_area(ob, converted, scene.collection, view_layer)
-            want.append(0.5 * under / base)
+            want.append(described[k] * under / base)
 
         def run(stop_after=None):
-            eds = {k: lights.EmitterDescription(k, "SpreadSteps%d" % k, area=0.5, units=lights.UNITS_W,
+            eds = {k: lights.EmitterDescription(k, "SpreadSteps%d" % k, area=described[k], units=lights.UNITS_W,
                                                 multiplier=10.0) for k in (1, 2)}
             for k, ed in eds.items():
                 ed.users = [k]
@@ -964,7 +966,7 @@ def check_spread_steps(scene, view_layer):
                   steps, copies, updates, areas, want, left))
         steps, copies, updates, areas, left = run(stop_after=2)
         check("spread steps: closed after its second step: the first emitter spread, the second not, no object left",
-              steps == [(0, 2), (1, 2)] and abs(areas[0] - want[0]) < 1e-9 and areas[1] == 0.5 and left == 0,
+              steps == [(0, 2), (1, 2)] and abs(areas[0] - want[0]) < 1e-9 and areas[1] == 0.8 and left == 0,
               "%s %s %d left" % (steps, areas, left))
     finally:
         for ob in obs:
