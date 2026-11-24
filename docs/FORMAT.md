@@ -2123,6 +2123,18 @@ of 2.2): no longer its input's grey. A Mix, Composite, CoronaMix or Falloff in a
 stored values too, an image below it read as stored.
 At a gamma-off color root a Mix of two colors, a Composite and a CoronaMix take their masks as stored (em3.158):
 unchanged.
+Color Correction's saturation and hue, measured on V-Ray 5.2 (maxdrop-6n0.6.38; VRayLightMtl planes, gamma on, the
+internal values): six VRayColors ((200, 100, 50), (230, 128, 26), (40, 80, 200), 128 grey, (250, 20, 120), (20, 200,
+120)) and a (200, 100, 50) PNG, saturation -100 / -50 / +50 / +100 %, hue 30 / 120 and hue 30 with saturation +50.
+Every channel is lerp(L, c, 1 + saturation), L = (max + min) / 2 (HSL), after the hue shift (HSV's rotation, which
+keeps max and min, so the order does not matter), and a channel below 0 is 0, while above 1 it is kept: (200, 100,
+50) at +100 % gives 1.078 0.294 0 (the light at multiplier 0.5 renders 0.539; getPixels reads any value above 1 as 1,
+a VRayColor 0.6 at multiplier 2 included), and an Output offset of +0.2 over it gives 0.2 on blue (a Mix and an Output
+keep a negative input: an offset of -0.5 over 0.2 mixed 50 % with white gives 0.35). The PNG is decoded first (2.2).
+The builder's HSL step (maxdrop-6n0.6.18) renders every row within 0.0005 of V-Ray (EEVEE 5.2) where no channel leaves
+0..1; with a saturation above 0 % it now ends in a Vector Math MAXIMUM of 0, so a channel that would fall below 0 is 0
+in the graph as in 3ds Max (an emission showed a negative channel as 0 already). The hue is the Hue / Saturation /
+Value node's (equal on every row).
 
 ### The Falloff mix curve
 

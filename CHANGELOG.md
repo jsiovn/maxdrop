@@ -332,6 +332,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - VRayMtl: with Fresnel off a metalness dims the diffuse by 1 - metalness and leaves the reflection color as it is,
   as V-Ray 5.2 renders it, instead of a metal in the diffuse color at metalness 1 (which dropped the reflection
   color) and no change at all below 1.
+- Color Correction: a saturation above 0 % leaves no channel below 0, as 3ds Max computes it (measured against
+  V-Ray 5.2, with the hue, on six colors).
 
 ## [1.0.1] - 2026-11-22
 

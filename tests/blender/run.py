@@ -4183,7 +4183,8 @@ def check_builder_mask_mean():
 
 def _evaluate_color(socket):
     """The RGB a color or vector socket gives, from the nodes' own constants (RGB, Separate Color, Math MAXIMUM /
-    MINIMUM / ADD / MULTIPLY, Vector Math MULTIPLY_ADD, Gamma); a float is returned as three equal channels."""
+    MINIMUM / ADD / MULTIPLY, Vector Math MULTIPLY_ADD / MAXIMUM / MINIMUM, Gamma); a float is returned as three equal
+    channels."""
     if not socket.is_linked:
         v = socket.default_value
         return tuple(v[:3]) if hasattr(v, "__len__") else (float(v),) * 3
@@ -4201,6 +4202,9 @@ def _evaluate_color(socket):
     if n.bl_idname == "ShaderNodeVectorMath" and n.operation == 'MULTIPLY_ADD':
         v, s, add = (_evaluate_color(_input(n, k)) for k in ("Vector", "Vector_001", "Vector_002"))
         return tuple(x * y + z for x, y, z in zip(v, s, add))
+    if n.bl_idname == "ShaderNodeVectorMath" and n.operation in ('MAXIMUM', 'MINIMUM'):
+        a, b = (_evaluate_color(_input(n, k)) for k in ("Vector", "Vector_001"))
+        return tuple((max if n.operation == 'MAXIMUM' else min)(x, y) for x, y in zip(a, b))
     if n.bl_idname == "ShaderNodeGamma":
         c, g = _evaluate_color(n.inputs["Color"]), n.inputs["Gamma"].default_value
         return tuple(x ** g if x > 0 else x for x in c)
@@ -4236,6 +4240,21 @@ def check_builder_saturation():
             check("builder saturation: the hue on a Hue/Saturation/Value node of saturation 1, before the HSL step",
                   len(hues) == 1 and source == hues[0] and abs(hues[0].inputs["Saturation"].default_value - 1.0) < 1e-6
                   and abs(hues[0].inputs["Hue"].default_value - 0.0) < 1e-6, str(hues))
+        bpy.data.materials.remove(m)
+    # above 0 %: a channel below 0 is 0, one above 1 kept (V-Ray 5.2, bead maxdrop-6n0.6.38: +100 % over
+    # (200, 100, 50) gives 1.078 0.294 0, +50 % 0.931 0.343 0.049)
+    for saturation, want in ((2.0, [1.0784, 0.2941, 0.0]), (1.5, [0.9314, 0.3431, 0.0490])):
+        ir = cm.MaterialIR(86, "Saturation", "test", emission_color=cm.Input((0.0,) * 3, cm.MapRef(1)),
+                           emission_strength=1.0)
+        ir.textures = {"emission_color": tx.TextureGraphIR(tx.ColorCorrect(tx.Constant(color), saturation=saturation),
+                                                           tx.COLOR)}
+        m = builder.make(ir)
+        socket = _principled(m).inputs["Emission Color"]
+        low = _from(socket)
+        ok = low is not None and low.bl_idname == "ShaderNodeVectorMath" and low.operation == 'MAXIMUM'
+        got = _evaluate_color(socket) if ok else None
+        check("builder saturation %+d %%: a channel below 0 is 0, above 1 kept, as V-Ray renders it" % (
+            round(saturation * 100) - 100), ok and close(got, want, 0.0005), str(got))
         bpy.data.materials.remove(m)
 
 
@@ -5660,10 +5679,14 @@ def check_builder_wiring(ma, mb, builder, cm, tx, srgb, data, lost, gamma):
     gain = _from(gam.inputs["Color"])
     bc = _from(gain.inputs[0])
     sat = _from(bc.inputs["Color"])
+    low = sat if sat.bl_idname == "ShaderNodeVectorMath" and sat.operation == 'MAXIMUM' else None
+    sat = _from(_input(low, "Vector")) if low is not None else sat
     hue = _from(_input(sat, "Vector")) if sat.bl_idname == "ShaderNodeVectorMath" else sat
     comp = _from(hue.inputs["Color"])
-    check("wiring: Color Correction: Hue 0.75, HSL Saturation 1.5 (maxdrop-6n0.6.18), Bright 0.1, Contrast 0.2, "
-          "gain 1.2, Gamma 1 / 1.1", sat.bl_idname == "ShaderNodeVectorMath" and sat.operation == 'MULTIPLY_ADD'
+    check("wiring: Color Correction: Hue 0.75, HSL Saturation 1.5 (maxdrop-6n0.6.18) and a MAXIMUM of 0 after it "
+          "(maxdrop-6n0.6.38), Bright 0.1, Contrast 0.2, gain 1.2, Gamma 1 / 1.1", low is not None
+          and close(list(_input(low, "Vector_001").default_value), [0.0] * 3, 1e-6)
+          and sat.bl_idname == "ShaderNodeVectorMath" and sat.operation == 'MULTIPLY_ADD'
           and close(list(_input(sat, "Vector_001").default_value), [1.5] * 3, 1e-6) and
           gam.bl_idname == "ShaderNodeGamma" and abs(gam.inputs["Gamma"].default_value - 1 / 1.1) < 1e-6
           and gain.bl_idname == "ShaderNodeVectorMath" and gain.operation == 'SCALE'

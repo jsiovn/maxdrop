@@ -1401,7 +1401,9 @@ class _Tree:
         """Color socket v with its saturation scaled by s as 3ds Max's Color Correction does, in HSL: each channel
         lerp(L, c, s), L = (max + min) / 2 (V-Ray 5.2 renders, maxdrop-6n0.6.18: -50 % over (0.784, 0.392, 0.196)
         gives (0.637, 0.441, 0.343); the Hue/Saturation/Value node's HSV keeps the max, 0.784 / 0.588 / 0.490).
-        Exact while the HSL saturation stays within 0..1 (above 0 % not measured)."""
+        Above 0 % (s > 1) a channel below 0 is 0, one above 1 kept (maxdrop-6n0.6.38: +100 % over (0.784, 0.392,
+        0.196) gives 1.078 0.294 0): a Vector Math MAXIMUM of 0 after the lerp; up to 0 % the lerp of channels in
+        0..1 stays in 0..1."""
         sep = self.node("ShaderNodeSeparateColor", depth)
         self.links.new(v, _in(sep, "Color"))
 
@@ -1423,6 +1425,8 @@ class _Tree:
         self.links.new(v, _in(vm, "Vector"))
         _in(vm, "Vector_001").default_value = (s, s, s)
         self.links.new(rest, _in(vm, "Vector_002"))
+        if s > 1.0:
+            return self.vector_math('MAXIMUM', _out(vm, "Vector"), (0.0, 0.0, 0.0), depth)
         return _out(vm, "Vector")
 
     def rewire(self, v, channels, depth):
