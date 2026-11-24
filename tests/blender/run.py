@@ -828,7 +828,9 @@ def check_render(name, oracle, obs, desc):
 def check_spread(desc, meters):
     """vray_mesh_light's FixtureEmitterOwn: its Shell a Solidify of 2 mm on the emitter (EMITTER_SOLIDIFY), the mesh
     under it measured at 760 mm^2 by build.emitters.evaluated_area, the same with the emitter hidden (an emitter that
-    is off) and with its collection excluded, and no object left behind."""
+    is off) and with its collection excluded, and no object left behind. Then a bench of the other modifiers: a
+    1 x 1 plane beside a hidden mirror empty under a Subdivision Surface off in the viewport at level 0 (render level
+    2) and a Mirror, measured as Blender renders it (check_spread_bench)."""
     from maxdrop.build import emitters as build_emitters
     name = "FixtureEmitterOwn"
     ob = bpy.data.objects.get(name)
@@ -853,6 +855,43 @@ def check_spread(desc, meters):
     check("vray_mesh_light: %s's mesh 300 mm^2, under its Solidify %g, shown, hidden or excluded" % (
         name, EMITTER_SHELLED), all(abs(b - 300.0) < 1e-3 and abs(u - EMITTER_SHELLED) < 1e-3 for b, u in got) and
         len(bpy.data.objects) == count, "%s, %d objects (%d before)" % (got, len(bpy.data.objects), count))
+    check_spread_bench(scene, view_layer)
+
+
+def check_spread_bench(scene, view_layer):
+    """build.emitters.evaluated_area of a Subdivision Surface at its render levels (2; viewport 0 and hidden there)
+    and a Mirror whose mirror empty is hidden: the area Blender evaluates at level 2 with the copy shown (1 < a < 2:
+    the plane shrunk by the subdivision, its copy counted), no object left behind."""
+    from maxdrop.build import emitters as build_emitters
+    from maxdrop.convert import modifiers as rules
+    mesh = bpy.data.meshes.new("SpreadBench")
+    mesh.from_pydata([(1.0, 0.0, 0.0), (2.0, 0.0, 0.0), (2.0, 1.0, 0.0), (1.0, 1.0, 0.0)], [], [(0, 1, 2, 3)])
+    ob = bpy.data.objects.new("SpreadBench", mesh)
+    empty = bpy.data.objects.new("SpreadBenchMirror", None)
+    for x in (ob, empty):
+        scene.collection.objects.link(x)
+    empty.hide_viewport = True
+    smooth = ob.modifiers.new("TurboSmooth", 'SUBSURF')
+    smooth.levels, smooth.render_levels, smooth.show_viewport = 0, 2, False
+    mirror = ob.modifiers.new("Symmetry", 'MIRROR')
+    mirror.mirror_object, mirror.use_mirror_merge = empty, False
+    converted = (rules.ModifierDescription(1, rules.SUBSURF, "TurboSmooth", "TurboSmooth", False,
+                                           (("levels", 0), ("render_levels", 2)), None, None),
+                 rules.ModifierDescription(2, rules.MIRROR, "Symmetry", "Symmetry", True, (), None, None))
+    count = len(bpy.data.objects)
+    _base, under = build_emitters.evaluated_area(ob, converted, scene.collection, view_layer)
+    left = len(bpy.data.objects)
+    smooth.levels, smooth.show_viewport, empty.hide_viewport = 2, True, False
+    view_layer.update()
+    ev = ob.evaluated_get(view_layer.depsgraph)
+    want = build_emitters._area(ev.to_mesh())
+    ev.to_mesh_clear()
+    for x in (ob, empty):
+        bpy.data.objects.remove(x)
+    bpy.data.meshes.remove(mesh)
+    check("evaluated_area: a Subdivision Surface at its render levels and a Mirror by a hidden empty",
+          1.0 < under < 2.0 and abs(under - want) < 1e-6 and left == count, "%r vs %r, %d objects (%d before)" % (
+              under, want, left, count))
 
 
 def _layer_collections(lc):

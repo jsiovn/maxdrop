@@ -89,13 +89,19 @@ def _area(mesh):
     return float(areas.sum())
 
 
+def _at_render_levels(m):
+    """ModifierDescription m with a Subdivision Surface's viewport levels made its render levels."""
+    if m.kind != rules.SUBSURF:
+        return m
+    render = dict(m.settings)["render_levels"]
+    return m._replace(settings=tuple((a, render if a == "levels" else v) for a, v in m.settings))
+
+
 def _render_levels(converted, corners):
-    """The viewport levels a mesh of corners face corners gets for its area under converted (ModifierDescriptions):
-    each Subdivision Surface's render levels, lowered as convert.modifiers.budget lowers viewport levels."""
-    wanted = tuple(m._replace(settings=tuple((a, dict(m.settings)["render_levels"] if a == "levels" else v)
-                                             for a, v in m.settings)) if m.kind == rules.SUBSURF else m
-                   for m in converted)
-    out, _issues = rules.budget(wanted, corners)
+    """The viewport levels a mesh of corners face corners gets for its area under converted (ModifierDescriptions),
+    None for each modifier but a Subdivision Surface: its render levels, lowered as convert.modifiers.budget lowers
+    viewport levels."""
+    out, _issues = rules.budget(tuple(_at_render_levels(m) for m in converted), corners)
     return [dict(m.settings)["levels"] if m.kind == rules.SUBSURF else None for m in out]
 
 
@@ -125,17 +131,26 @@ def evaluated_area(ob, converted, collection, view_layer):
 
 
 def spread(desc, built, collection, view_layer, strength=1.0):
-    """After build.modifiers.add: each emitter in built (a build.objects.Built) whose first node with an object has
-    converted modifiers gets the evaluated area of that object's mesh (evaluated_area) through lights.spread, and its
-    Emission material the new strength (radiance x strength); the issues named on that node. The others stay."""
+    """After build.modifiers.add: each emitter in built (a build.objects.Built) of a units mode that spreads its flux
+    (lights.SPREAD_UNITS) whose first node with an object has converted modifiers gets the evaluated area of that
+    object's mesh (evaluated_area) through lights.spread, and its Emission material the new strength (radiance x
+    strength). Its strength issues are those of the new area, on its first node, where describe_emitter named the
+    others. The others stay as they are."""
     nodes = {n.index: n for n in desc.nodes if n.emitter is not None}
     for key, ed in desc.emitters.items():
+        if ed.units not in lights.SPREAD_UNITS:
+            continue
         node = next((nodes[i] for i in ed.users if i in nodes and built.objects.get(i) is not None), None)
         if node is None or not node.converted:
             continue
         base, under = evaluated_area(built.objects[node.index], node.converted, collection, view_layer)
-        issues = lights.spread(ed, ed.area * under / base if base > 0 else under)
-        desc.issues.extend((node.index, "light: %s" % x) for x in issues)
+        gone, added = lights.spread(ed, ed.area * under / base if base > 0 else under)
+        first = ed.users[0]
+        for x in gone:
+            line = (first, "light: %s" % x)
+            if line in desc.issues:
+                desc.issues.remove(line)
+        desc.issues.extend((first, "light: %s" % x) for x in added)
         material = built.emitters.get(key)
         if material is not None:
             compat.node_tree(material).nodes[EMISSION].inputs["Strength"].default_value = ed.radiance * strength

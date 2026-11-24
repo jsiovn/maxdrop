@@ -1046,8 +1046,11 @@ def _emitter(scene, t, desc, meshes, values, base, node, name, meters, swatches,
     MaxDrop builds (meshes caches the reason, an issue on every node). The mesh is the mesh object's mesh below its
     modifiers (_emitter_mesh) in its object space with the light node's offset baked (V-Ray places it at the light's
     object transform); the modifiers above it are converted with that offset (_converted: told and convert as there;
-    their issues as a mesh node's). The description's issues, and the line naming the modifiers neither evaluated nor
-    converted, are named on the first node."""
+    their issues as a mesh node's), a converted smoother that separates by smoothing groups creasing the mesh's sharp
+    edges (md.creases, as _mapped_mesh does: the shape and so the area depend on it; a smoother's SMOOTH shading and a
+    Shell's rim change the shading only, which an emitter does not show). The description's issues, and the line
+    naming the modifiers neither evaluated nor converted (but those _converted names), are named on the first
+    node."""
     if base not in meshes:
         meshes[base] = _emitter_mesh(scene, desc, values, node, meters, built, check, stacks)
     found = meshes[base]
@@ -1067,12 +1070,14 @@ def _emitter(scene, t, desc, meshes, values, base, node, name, meters, swatches,
     converted, issues = _converted(scene, rest, meters, offset, set() if told is None else told, convert)
     converted, more = rules.budget(converted, len(md.loop_vertices))
     desc.issues.extend((node, x) for x in issues + more)
+    if _shading(converted) == rules.CREASE:
+        md.creases = True
     if base not in desc.emitters:
         ed, issues = lights.describe_emitter(base, name, values, swatches, area)
         desc.emitters[base] = ed
         done = {m.index for m in converted}
         left = unread + tuple(_class_name(scene, m.index) or "a modifier" for m in reversed(rest)
-                              if m.index not in done)
+                              if m.index not in done and not (convert and rules.is_convertible(m)))
         if left:
             issues.append(lights.EMITTER_MODIFIERS % ", ".join(left))
         desc.issues.extend((node, "light: %s" % x) for x in issues)
@@ -1135,11 +1140,14 @@ def _emitter_shape(scene, desc, stacks, obj, node, built):
         return None
     try:
         stack = scene.object_stack(obj)
-        if stack.base is None or not shapes.is_shape(scene, stack.base):
-            return None
-        active = _active(stacks, obj)
     except ChunkError:  # _mesh_of names the stack it cannot read
         return None
+    if stack.base is None or not shapes.is_shape(scene, stack.base):
+        return None
+    try:
+        active = _active(stacks, obj)
+    except ChunkError as exc:  # whether an Extrude makes it a mesh is not known
+        return lights.EMITTER_UNREAD % ("the modifier stack cannot be read: %s" % exc)
     if not (active and extrude.is_extrude(active[0])):
         return None
     ext = active[0]

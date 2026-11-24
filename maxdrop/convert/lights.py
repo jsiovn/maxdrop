@@ -14,7 +14,7 @@
     dt, issues = dome_texture(graph_ir, material_graph, swatches)   # DomeTexture of the dome's converted map, or None
     is_mesh_light(values)               # a VRayLight mesh light: an emissive mesh, not a light (describe_emitter)
     ed, issues = describe_emitter(key, name, values, swatches, area)   # EmitterDescription (area: the mesh's, m^2)
-    issues = spread(ed, area)           # its radiance over another area (build: the mesh under its modifiers)
+    gone, added = spread(ed, area)      # its radiance over another area (build: the mesh under its modifiers)
     watts(units, multiplier, area(kind, size0, size1, double_sided, meters))
     environment_sky(scene)              # the object index of a VRaySky that is the environment map, else None
 
@@ -63,8 +63,8 @@ mesh (reference SLOT_MESH, else the object of the node 34 names; neither: not bu
 the light node's object transform, along the faces' normals (35: the other side; double-sided: both), its back black,
 with the radiance of the units mode's flux spread over the mesh's object-space area as a Lambertian emitter (flux =
 pi L a; the node's scale does not change it): emitter_radiance. That is the evaluated mesh's area: convert.scene
-describes the mesh below the modifiers MaxDrop converts, build/ measures it under them and spreads (spread). Invisible: not seen by the camera and no occluder (a
-visible one shadows other lights, measured); affect diffuse / specular / reflections as a light's; its texture,
+describes the mesh below the modifiers MaxDrop converts, build/ measures it under them and spreads (spread).
+Invisible: not seen by the camera and no occluder (a visible one shadows other lights, measured); affect diffuse / specular / reflections as a light's; its texture,
 directional spread, contributions and cast shadows off are not imported (issues). convert.scene builds the mesh.
 
 A dome light is the scene's World (describe_dome; docs/FORMAT.md, "VRayLight"): V-Ray 5.2 lights a white floor under
@@ -271,6 +271,7 @@ EMITTER_CONTRIBUTION = "%s contribution %g is not imported: an emitter has no su
 EMITTER_GLOSSY = ("affect specular %s, affect reflections %s: Blender has one switch for both, glossy rays, "
                   "which stays on")
 EMITTER_SHADOW = "cast shadows off is not imported: what the emitter lights casts shadows"
+SPREAD_UNITS = (UNITS_LM, UNITS_W)  # the units modes whose flux a mesh light spreads over its mesh's area
 EMITTER_FLAT = "its mesh has no area: 0 W/m2/sr (V-Ray spreads its %s over the mesh's area)"
 NOT_SKYLIGHT = "a Skylight is not imported yet (Skylight -> World is later work)"
 DOME_OFF = "dome light off: not imported"
@@ -734,14 +735,16 @@ def _emitter_strength(units, multiplier, a, double_sided):
 
 
 def spread(ed, a):
-    """Issues; EmitterDescription ed's area made a (m^2: its mesh's evaluated area) and its radiance that of its units
-    mode and multiplier over a. Only the units modes that spread the flux over the area (lm, W) change the radiance,
-    and only those name a new issue."""
+    """(gone, added): EmitterDescription ed's area made a (m^2: its mesh's evaluated area) and its radiance that of its
+    units mode and multiplier over a (only SPREAD_UNITS change it); gone the issues of its radiance over the area it
+    had (describe_emitter's) that no longer hold, added those that hold now and did not."""
+    if ed.units not in SPREAD_UNITS:
+        ed.area = a
+        return [], []
+    _radiance, before = _emitter_strength(ed.units, ed.multiplier, ed.area, ed.double_sided)
+    ed.radiance, after = _emitter_strength(ed.units, ed.multiplier, a, ed.double_sided)
     ed.area = a
-    if ed.units not in (UNITS_LM, UNITS_W):
-        return []
-    ed.radiance, issues = _emitter_strength(ed.units, ed.multiplier, a, ed.double_sided)
-    return issues
+    return [x for x in before if x not in after], [x for x in after if x not in before]
 
 
 def describe_emitter(key, name, values, swatches, a):

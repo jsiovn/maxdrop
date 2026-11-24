@@ -438,25 +438,30 @@ class EmitterRules(unittest.TestCase):
 
     def test_spread(self):
         """The radiance over another area (the evaluated mesh's) as describe_emitter gives it for that area: in lm and
-        W; the radiance units and the default keep theirs (the area is still recorded); an area of 0 the issue."""
+        W; the radiance units and the default keep theirs (the area is still recorded). The strength issues that change
+        with the area: gone and added; those that stay (a negative multiplier) neither."""
         for units in (L.UNITS_W, L.UNITS_LM, L.UNITS_DEFAULT, L.UNITS_W_M2_SR, L.UNITS_LM_M2_SR):
             for double in (False, True):
                 v = values(type=L.MESH, units=units, multiplier=3.0, double_sided=int(double))
                 ed, _issues = L.describe_emitter(1, "e", v, colors.GAMMA_ON, self.A)
                 want, _issues = L.describe_emitter(1, "e", v, colors.GAMMA_ON, 2.1 * self.A)
                 before = ed.radiance
-                self.assertEqual(L.spread(ed, 2.1 * self.A), [], units)
+                self.assertEqual(L.spread(ed, 2.1 * self.A), ([], []), units)
                 self.assertAlmostEqual(ed.radiance, want.radiance, delta=want.radiance * 1e-12, msg=units)
                 self.assertEqual(ed.area, 2.1 * self.A)
                 if units in (L.UNITS_W, L.UNITS_LM):
                     self.assertAlmostEqual(ed.radiance, before / 2.1, delta=before * 1e-12)
                 else:
                     self.assertEqual(ed.radiance, before)
-        ed, _issues = L.describe_emitter(1, "e", values(type=L.MESH, units=L.UNITS_W), colors.GAMMA_ON, self.A)
-        self.assertEqual((L.spread(ed, 0.0), ed.radiance), ([L.EMITTER_FLAT % "watts"], 0.0))
-        ed, _issues = L.describe_emitter(1, "e", values(type=L.MESH, units=L.UNITS_W, multiplier=-1.0),
-                                         colors.GAMMA_ON, self.A)
-        self.assertEqual((L.spread(ed, self.A), ed.radiance), ([L.NEGATIVE % ("multiplier", -1.0)], 0.0))
+        ed, _issues = L.describe_emitter(1, "e", values(type=L.MESH, units=L.UNITS_W, multiplier=1.0), colors.GAMMA_ON,
+                                         self.A)
+        self.assertEqual((L.spread(ed, 0.0), ed.radiance), (([], [L.EMITTER_FLAT % "watts"]), 0.0))
+        self.assertEqual(L.spread(ed, self.A), ([L.EMITTER_FLAT % "watts"], []))  # a flat mesh under a Shell
+        self.assertAlmostEqual(ed.radiance, 1.0 / (math.pi * self.A), delta=1e-9)
+        ed, issues = L.describe_emitter(1, "e", values(type=L.MESH, units=L.UNITS_W, multiplier=-1.0),
+                                        colors.GAMMA_ON, self.A)
+        self.assertEqual((issues, L.spread(ed, 2.0 * self.A), ed.radiance),
+                         ([L.NEGATIVE % ("multiplier", -1.0)], ([], []), 0.0))
 
 
 @unittest.skipIf(conv is None, "numpy is not installed")
@@ -517,6 +522,24 @@ class MeshLightFixture(unittest.TestCase):
         self.assertEqual((node.modifiers, node.applied), ((), ()))  # the light's own stack: none
         for name in ("FixtureEmitter", "FixtureEmitterW"):  # a picked Plane without modifiers
             self.assertEqual(self.by_name[name].converted, (), name)
+
+    def test_own_mesh_creased_by_its_smoother(self):
+        """A converted smoother that separates by smoothing groups (CREASE) creases the emitter's mesh, as a mesh
+        node's (md.creases): only FixtureEmitterOwn's, whose node has converted modifiers."""
+        with mock.patch.object(conv, "_shading", lambda converted: conv.rules.CREASE if converted else None):
+            desc = conv.read(MESH_FIXTURE)
+        creased = sorted(n.name for n in desc.nodes if n.emitter is not None and desc.meshes[n.mesh].creases)
+        self.assertEqual(creased, ["FixtureEmitterOwn"])
+
+    def test_a_refused_shell_is_named_once(self):
+        """A Shell the rules refuse: _converted's line names it, the line of the modifiers left out does not."""
+        def refuse(scene, modifier, meters=1.0, offset=None):
+            raise conv.rules.ModifierError("refused here")
+        with mock.patch.object(conv.rules, "convert", refuse):
+            desc = conv.read(MESH_FIXTURE)
+        node = next(n for n in desc.nodes if n.name == "FixtureEmitterOwn")
+        self.assertEqual(node.converted, ())
+        self.assertEqual([r for i, r in desc.issues if i == node.index], ["modifiers: Shell not converted: refused here"])
 
     def test_own_mesh_with_conversion_off(self):
         """Modifiers: Ignore: nothing converted, the Shell named in the line."""
