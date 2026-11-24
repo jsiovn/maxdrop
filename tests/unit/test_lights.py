@@ -757,9 +757,10 @@ class DomeTextureRules(unittest.TestCase):
         dt, issues = L.dome_texture(self.ir(png), self.vray({}), colors.GAMMA_OFF)
         self.assertEqual((dt.image, issues), (png, []), "an 8-bit file: decoded once more, as on a material")
 
-    def test_a_float_texture_keeps_its_own_decode_whatever_the_case_not_on_a_corona_bitmap(self):
+    def test_a_float_texture_keeps_its_own_decode_whatever_the_case_a_corona_bitmap_too(self):
         """Measured as a light (maxdrop-em3.166; docs/FORMAT.md, Scene gamma): the line says so. The extension's case
-        does not matter; a CoronaBitmap keeps what the converter made of it."""
+        does not matter; a CoronaBitmap, shown decoded once more on a material with the gamma off as a VRayBitmap is
+        (maxdrop-em3.165), keeps its own decode too."""
         self.assertNotIn("not measured", L.DOME_FLOAT_OFF)
         shown = dict(gamma=2.2, colorspace=texmaps.SRGB)
         upper = texmaps.Image(3, "SKY.EXR", found=self.FOUND, **shown)
@@ -769,7 +770,11 @@ class DomeTextureRules(unittest.TestCase):
         corona = self.image(**shown)
         dt, issues = L.dome_texture(self.ir(corona), _Graph({3: _Map(tuple(classids.CORONA_BITMAP), {})}),
                                     colors.GAMMA_OFF)
-        self.assertEqual((dt.image, issues), (corona, [L.DOME_CORONA % "sky.hdr"]))
+        self.assertEqual((dt.image.gamma, dt.image.colorspace, issues),
+                         (1.0, texmaps.LINEAR, [L.DOME_CORONA % "sky.hdr", L.DOME_FLOAT_OFF % "sky.hdr"]))
+        dt, issues = L.dome_texture(self.ir(corona), _Graph({3: _Map(tuple(classids.CORONA_BITMAP), {})}),
+                                    colors.GAMMA_ON)
+        self.assertEqual((dt.image, issues), (corona, [L.DOME_CORONA % "sky.hdr"]), "gamma on: as converted")
 
     def test_a_bitmap_is_turned_a_quarter(self):
         graph = _Graph({3: _Map(tuple(classids.BITMAP_TEX), {})})  # no Placement part: texture mapping

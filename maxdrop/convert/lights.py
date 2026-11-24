@@ -911,7 +911,7 @@ def dome_texture(graph_ir, material_graph, swatches=None):
         amount = max(0.0, out.amount)
         if out.invert or out.level != 1.0 or out.offset != 0.0:
             issues.append(DOME_OUTPUT % img.name)
-    if cid != classids.CORONA_BITMAP and img.name.lower().endswith(texmaps.FLOAT_IMAGES) \
+    if img.name.lower().endswith(texmaps.FLOAT_IMAGES) \
             and not (swatches if swatches is not None else colors.of_graph(material_graph)).linear:
         img = texmaps.unshown(img)
         issues.append(DOME_FLOAT_OFF % img.name)

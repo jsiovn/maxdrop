@@ -22,7 +22,8 @@ Image (None: automatic, sRGB; 1.0 for an EXR or HDR file): with the gamma on its
 input gamma (colors.Swatches.file_in); with the gamma off none, whatever its override, as 3ds Max reads the image as
 stored then (maxdrop-em3.38), an EXR or HDR file too (the display-referred scene shows it decoded; maxdrop-em3.123).
 A VRayBitmap's own decode on a color input or a mask is shown decoded once more with the gamma off (_shown,
-maxdrop-em3.123; CoronaBitmap's is not: a Corona render is not measured, maxdrop-em3.165).
+maxdrop-em3.123), and so is a CoronaBitmap's, and CoronaColor's HDR color (Corona 12 renders, maxdrop-em3.165: Corona
+holds them, and a swatch as stored, the same with the gamma on and off).
 The color space (colorspace): a gamma of 2.2 is sRGB, any other Linear Rec.709 (sRGB
 primaries: Blender converts them into the scene's working space; the builder falls back to Non-Color where the color
 space is missing) and the builder applies the gamma (1.0: none), on every input alike; on any but a COLOR input an
@@ -54,13 +55,15 @@ With the gamma off V-Ray computes a Mix or Composite on the stored values (DISPL
 maxdrop-em3.158): its internal value is the one the gamma on gives (a Mix of greys 40 and 220 at 50 % renders 0.510,
 by a 0.502 mask 0.511, a Composite of 64 + 64 in Addition 0.502), which the display-referred scene shows decoded
 (0.223, 0.225, 0.216 linear). Such a map at a color root is converted in the kind STORED (a swatch as stored, an
-image by its own decode, a Bitmap or a VRayBitmap From 3ds Max as stored, a mask DATA; a CoronaBitmap and the HDR
-color encoded so they show as at a color root, maxdrop-em3.165), every map below it too, under one Decode (drawn as
+image by its own decode, a Bitmap or a VRayBitmap From 3ds Max as stored, a mask DATA; CoronaColor's HDR color as
+stored), every map below it too, under one Decode (drawn as
 a power of 2.2, within 0.009 of the sRGB curve on 0..1; a constant, or a Mix of constants, folded exactly; a lone
 image, a peel, is its map again as a color). A Mix between its colors black and white stays a Mix of decoded colors
 by a decoded mask or amount (exact: maxdrop-em3.36). An RGB Multiply at a color root is left as it is: the decoded
-product is within 0.005 of V-Ray's (128 x 128: 0.047 against 0.052). Falloff, CoronaMix, the wrappers and a slot's
-amount at a color root, and a Mix inside a mask, keep decoded values (not measured).
+product is within 0.005 of V-Ray's (128 x 128: 0.047 against 0.052). Corona 12 computes a Mix and a CoronaMix on
+the values it holds, the same with the gamma on and off (maxdrop-em3.165: a 50 % Mix of CoronaBitmaps 64 and 192
+renders 0.2917, a CoronaMix's operations their renderMap values): a CoronaMix is in DISPLAY_MIXES too. Falloff, the
+wrappers and a slot's amount at a color root, and a Mix inside a mask, keep decoded values (not measured).
 
 The graph's nodes (frozen dataclasses): Image (an image map: the file as the scene stores it, the one the texture lookup
 found, Mapping, Crop, TexOutput, color space, gamma, alpha), Constant, Invert, Decode (a gamma-off color mixed on
@@ -368,8 +371,8 @@ class Image:
     FileAssetMetaData3's); found: the textures.Found of the lookup, None without a lookup or when the file was not
     found; gamma: the gamma 3ds Max reads it with in this scene (linear = pixel ^ gamma: its override, or the file
     input gamma), None for automatic (sRGB; 1.0 for an EXR or HDR file); with the gamma off on a color input or a
-    mask the one the display-referred scene shows it with (None, sRGB, for an image read as stored; _shown; a
-    CoronaBitmap keeps its own, Corona not measured); 1.0 for a VRayBitmap below a normal map (read as stored), its
+    mask the one the display-referred scene shows it with (None, sRGB, for an image read as stored; _shown, a
+    CoronaBitmap's too); 1.0 for a VRayBitmap below a normal map (read as stored), its
     decode over 2.2 below a CoronaNormal that adds gamma (_add_gamma); alpha: the image's alpha is used, not its
     color."""
     index: int
@@ -704,11 +707,9 @@ def base_kind(kind):
 
 
 def _linear(rgb, kind):
-    """A linear color (not a swatch) as a Constant of the input's kind: its channels in a color input and where a
-    swatch keeps its channels (STORED_RGB), else their mean. In STORED its channels encoded by the sRGB curve, so the
-    Decode above shows the color a color root shows (CoronaColor's HDR color: kept linear there, maxdrop-em3.165)."""
-    if kind == STORED:
-        return Constant(tuple(colors.linear_to_srgb(c) for c in rgb))
+    """A color as the renderer holds it (not a swatch) as a Constant of the input's kind: its channels in a color
+    input and where a swatch keeps its channels (STORED_RGB: in STORED the Decode above shows it decoded, as a
+    gamma-off color root does CoronaColor's HDR color, maxdrop-em3.165), else their mean."""
     return Constant(tuple(rgb) if kind == COLOR or kind in STORED_RGB else sum(rgb) / 3.0)
 
 
@@ -736,15 +737,16 @@ def _auto_gamma(gamma, name):
 def _shown(gamma):
     """The gamma Blender reads an image with when a gamma-off scene shows the map's own decode (gamma: linear =
     pixel ^ gamma; None: the sRGB curve) decoded once more, as V-Ray 5.2 shows a VRayBitmap and a float file there
-    (maxdrop-em3.123): 2.2 x its own (2.2 itself: sRGB, exact), SRGB_TWICE for the sRGB curve."""
+    (maxdrop-em3.123) and Corona 12 a CoronaBitmap (maxdrop-em3.165): 2.2 x its own (2.2 itself: sRGB, exact),
+    SRGB_TWICE for the sRGB curve."""
     return SRGB_TWICE if gamma is None else gamma * SRGB_GAMMA
 
 
 def unshown(image):
-    """A Bitmap's or VRayBitmap's color Image made in a gamma-off scene with its own decode again (_shown undone;
-    None, an image read as stored, gives linear): for a float file lighting a scene, where the display decode of a
-    sun's values far above 1 lights it orders of magnitude too bright (convert.lights.dome_texture; measured in
-    maxdrop-em3.166)."""
+    """A Bitmap's, VRayBitmap's or CoronaBitmap's color Image made in a gamma-off scene with its own decode again
+    (_shown undone; None, an image read as stored, gives linear): for a float file lighting a scene, where the display
+    decode of a sun's values far above 1 lights it orders of magnitude too bright (convert.lights.dome_texture;
+    measured in maxdrop-em3.166 with V-Ray; a CoronaBitmap's alike, maxdrop-em3.165)."""
     g = image.gamma
     own = 1.0 if g is None else (None if abs(g - SRGB_TWICE) <= GAMMA_TOLERANCE else g / SRGB_GAMMA)
     return dataclasses.replace(image, gamma=own, colorspace=colorspace(COLOR, own))
@@ -1128,7 +1130,9 @@ class TexmapConverter:
 
     def _corona_image(self, m, kind, walk, entry, found, out):
         """A CoronaBitmap's Image. Its tiling, offset and W angle place the image as a Bitmap's do (measured in
-        3ds Max); its environment mode applies only to an environment map."""
+        3ds Max); its environment mode applies only to an environment map. Its gamma applies with the gamma on and
+        off (Corona 12 renders the same internal value); with it off a color input or a mask shows it decoded once
+        more (_shown, maxdrop-em3.165)."""
         def mode(pid):
             v = m.param(pid, 0)
             return v if v in (0, 1, 2) else 1
@@ -1152,8 +1156,10 @@ class TexmapConverter:
             crop = Crop(*clip, place=m.param(CB_CLIP_MODE, 0) == 1)
         gamma = _num(m, CB_GAMMA, -1.0)  # -1: automatic
         gamma = _auto_gamma(gamma if 0.1 <= gamma <= 10.0 else None, entry.name)
-        if kind == STORED:  # a color root shows its own decode (maxdrop-em3.165): the Decode above undone
-            gamma = 1.0 if gamma is None else gamma / SRGB_GAMMA
+        if not self.swatches.linear and kind in (COLOR, MASK):
+            # gamma off: Corona 12 holds its own decode, in both modes, which the scene shows decoded once more
+            # (maxdrop-em3.165), as V-Ray a VRayBitmap's; in STORED the Decode above does that
+            gamma = _shown(gamma)
         alpha = m.param(CB_MONO if kind in FLOATS else CB_RGB, 0) == 1
         return Image(m.index, entry.name, entry.path, entry.resolved, found, mapping, crop, self._output(out),
                      colorspace(kind, gamma), gamma, alpha)
@@ -1674,12 +1680,18 @@ def _corona_color(conv, m, kind, walk, depth, chain):
     scaling the swatch value: 2 x 128 = 255); the temperature is Corona's own linear color (corona_kelvin) times the
     multiplier with the gamma on, decoded as a swatch (clamped) with it off: VRayColor's and CoronaColor's 3000 K
     render the same values with the gamma on and off (V-Ray 5.2, renderMap; maxdrop-em3.38), which a gamma-off
-    scene shows as stored. The HDR color is linear already (with the gamma off V-Ray 5.2 renders it as stored; kept linear, Corona not
-    measured: maxdrop-em3.165). colorSpace (61)
-    changed nothing in renderMap: not read."""
+    scene shows as stored. The HDR color times the multiplier is rendered as stored, unclamped, with the gamma on and
+    off (V-Ray 5.2 and Corona 12, maxdrop-em3.165): linear with the gamma on; with it off the scene shows it decoded,
+    above 1 on the extended curve (2.0: 4.954), on a color input per channel, on a mask the mean (a swatch's rule);
+    in STORED as stored (the Decode above shows it); on a data input as stored. colorSpace (61) changed nothing in
+    renderMap: not read."""
     method, mult = m.param(CC_METHOD, 0), max(0.0, _num(m, CC_MULTIPLIER, 1.0))
     if method == 1:
         rgb = tuple(max(0.0, c) * mult for c in _vec(m, CC_HDR, (1.0, 1.0, 1.0)))
+        if not conv.swatches.linear and kind == COLOR:
+            return Constant(tuple(colors.srgb_to_linear(c) for c in rgb))
+        if not conv.swatches.linear and kind == MASK:
+            return Constant(colors.srgb_to_linear(sum(rgb) / 3.0))
         return _linear(rgb, kind)
     swatch = None
     if method == 2:
@@ -1840,7 +1852,9 @@ def _corona_mix(conv, m, kind, walk, depth, chain):
     return result if mask is None and amount == 1.0 else Mix(bottom, result, amount, mask)
 
 
-DISPLAY_MIXES = (MIX, COMPOSITE)  # in STORED under a Decode at a gamma-off color root (V-Ray 5.2, maxdrop-em3.158)
+# in STORED under a Decode at a gamma-off color root (V-Ray 5.2, maxdrop-em3.158; Corona 12 computes a Mix and a
+# CoronaMix on the values it holds, the same in both modes, maxdrop-em3.165)
+DISPLAY_MIXES = (MIX, COMPOSITE, classids.CORONA_MIX)
 _KEEP = {MIX: _mix, RGB_MULTIPLY: _rgb_multiply, COLOR_CORRECTION: _color_correction, COMPOSITE: _composite,
          classids.CORONA_COLOR: _corona_color, classids.CORONA_MIX: _corona_mix, classids.VRAY_COLOR: _vray_color,
          FALLOFF: _falloff, OUTPUT: _output_map, RGB_TINT: _rgb_tint, VRAY_COLOR2BUMP: _color2bump}

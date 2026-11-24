@@ -14,16 +14,16 @@ With the gamma on (2.2, 3ds Max's default since 2014) 3ds Max and its renderers 
 128 grey swatch renders as 0.502 linear (V-Ray 5.2 writes byte 187). With the gamma off the scene is display-
 referred: the swatch renders as stored (byte 128), which Blender's sRGB display shows only from 0.216 linear, so it
 is decoded with the sRGB curve, as image files are in both cases. A file that does not say is taken as gamma on,
-with a note. Measured in 3ds Max 2020 + V-Ray 5.2 (docs/FORMAT.md, Scene gamma); Corona's swatches are assumed to
-follow 3ds Max's rule (a Corona render does not run here). LUT mode belongs to the session, not the file: a file
+with a note. Measured in 3ds Max 2020 + V-Ray 5.2 (docs/FORMAT.md, Scene gamma); Corona 12 renders a 128 swatch 0.502
+with the gamma on and off too (maxdrop-em3.165). LUT mode belongs to the session, not the file: a file
 saved in it opens with the gamma on, as its chunk says.
 
 file_in is the file input gamma with the gamma on: a Bitmap with automatic gamma (and a VRayBitmap whose transfer
 function is From 3ds Max) is read with it (texmaps). With the gamma off 3ds Max reads a Bitmap as stored whatever
 its gamma, and file_in stays 2.2. A rule with file_in 2.2 is GAMMA_ON itself.
 
-CoronaColor's HDR color (linear; with the gamma off V-Ray 5.2 renders it as stored, Corona not measured:
-maxdrop-em3.165) and colors made by a curve fit in sRGB
+CoronaColor's HDR color (rendered as stored, unclamped, in both modes by V-Ray 5.2 and Corona 12; texmaps decodes
+it with the gamma off, maxdrop-em3.165) and colors made by a curve fit in sRGB
 (kelvin_rgb, the lights') do not go through the rule. No bpy.
 """
 import dataclasses
