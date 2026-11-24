@@ -460,7 +460,8 @@ class Blend:
 class ColorCorrect:
     """rewire: the source of the red, green and blue outputs (REWIRE_NONE: unchanged; codes as CC_REWIRE's), applied
     first; hue: shift in turns; saturation: factor (1 = unchanged); brightness, contrast: added fractions; gain:
-    factor; gamma: the advanced mode's (1 = none)."""
+    factor; gamma: the advanced mode's (1 = none); magnitude: the gamma takes each channel's magnitude, so a negative
+    one comes out positive (a CoronaMix gamma in sRGB mode, maxdrop-6n0.6.40), else a channel at or below 0 stays."""
     input: object
     rewire: tuple = REWIRE_NONE
     hue: float = 0.0
@@ -469,6 +470,7 @@ class ColorCorrect:
     contrast: float = 0.0
     gain: float = 1.0
     gamma: float = 1.0
+    magnitude: bool = False
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1492,7 +1494,10 @@ def _falloff(conv, m, kind, walk, depth, chain):
 
 
 def _vray_dirt(conv, m, kind, walk, depth, chain):
-    """13 unoccluded_color, 17 texmap_unoccluded_color, 18 its switch. The color only when the map is not used."""
+    """13 unoccluded_color, 17 texmap_unoccluded_color, 18 its switch. The color only when the map is not used. Corona
+    12 does not render a VRayDirt: white, its map on or off (maxdrop-6n0.6.23), so white in a Corona scene."""
+    if conv.corona:
+        return conv._swatch(WHITE, kind)
     if conv._on(m, 17, 18) is not None:
         return conv._sub(m, 17, 18, kind, walk, depth, chain)
     return conv._constant(m, 13, kind, (1.0, 1.0, 1.0))
@@ -2011,8 +2016,9 @@ def _corona_mix(conv, m, kind, walk, depth, chain):
             if _flag(m, CM_SRGB, True):
                 v = tuple(abs(c) for c in v) if isinstance(v, tuple) else abs(v)
             result = Constant(_gamma_value(v, exponent))
-        else:
-            result = ColorCorrect(bottom, gamma=exponent if isinstance(exponent, float) else exponent[0])
+        else:  # a map bottom too (renderMap: multiplierBottom -1 gives the positive one's values, 6n0.6.40)
+            result = ColorCorrect(bottom, gamma=exponent if isinstance(exponent, float) else exponent[0],
+                                  magnitude=_flag(m, CM_SRGB, True))
     else:
         blend = CM_BLENDS[op]
         gamma = CM_SRGB_GAMMA if blend in CM_GAMMA_OPS and _flag(m, CM_SRGB, True) else 1.0

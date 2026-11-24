@@ -3678,6 +3678,44 @@ def check_builder_blend_modes():
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def check_builder_gamma_magnitude():
+    """A ColorCorrect gamma that takes the magnitude (a CoronaMix gamma in sRGB mode, maxdrop-6n0.6.40): a Vector Math
+    ABSOLUTE between the image and the Gamma node, also beside another step; without the flag none."""
+    from maxdrop.build import materials as build_materials
+    from maxdrop.convert import materials as cm
+    from maxdrop.convert import texmaps as tx
+    from maxdrop.convert import textures as ct
+    empty_scene()
+    scratch = tempfile.mkdtemp(prefix="maxdrop-gamma-magnitude-")
+    try:
+        png = os.path.join(scratch, "gamma.png")
+        _write_png(png)
+        img = tx.Image(1, "gamma.png", "gamma.png", "", ct.Found(png, ct.SCENE))
+        builder = build_materials.MaterialBuilder()
+        for magnitude in (True, False):
+            for hue in (0.0, 0.25):
+                ir = cm.MaterialIR(32, "Magnitude", "test", base_color=cm.Input((0.5,) * 3, cm.MapRef(1)))
+                ir.textures = {"base_color": tx.TextureGraphIR(
+                    tx.ColorCorrect(img, hue=hue, gamma=0.731, magnitude=magnitude), tx.COLOR)}
+                m = builder.make(ir)
+                nodes = m.node_tree.nodes
+                gammas = [n for n in nodes if n.bl_idname == "ShaderNodeGamma"]
+                absolute = [n for n in nodes if n.bl_idname == "ShaderNodeVectorMath" and n.operation == 'ABSOLUTE']
+                ok = len(gammas) == 1 and abs(_input(gammas[0], "Gamma").default_value - 1 / 0.731) < 1e-5
+                if magnitude:
+                    ok = ok and len(absolute) == 1 and _from(_input(gammas[0], "Color")) == absolute[0]                         and _reaches_image(_input(absolute[0], "Vector"))                         and absolute[0].location.x < gammas[0].location.x
+                else:
+                    ok = ok and not absolute and _reaches_image(_input(gammas[0], "Color"))
+                check("ColorCorrect gamma, magnitude %s, hue %s: %s" % (
+                    magnitude, hue, "ABSOLUTE into the Gamma" if magnitude else "no ABSOLUTE"), ok,
+                    str([n.bl_idname for n in nodes]))
+                bpy.data.materials.remove(m)
+    finally:
+        empty_scene()
+        for img in list(bpy.data.images):
+            bpy.data.images.remove(img)
+        shutil.rmtree(scratch, ignore_errors=True)
+
 def check_builder_weight():
     """A reflection weight (bead maxdrop-em3.119): between 0 and 1, or a map, a Mix Shader by the weight over a
     twin without reflection; 0, 1 and a metal keep the lone Principled at 0.5 x the weight; a layer gets a twin of
@@ -6236,6 +6274,7 @@ def main():
                                  ("builder debt", check_builder_debt), ("builder mirror", check_builder_mirror),
                                  ("builder blend", check_builder_blend), ("builder mono", check_builder_mono),
                                  ("builder blend modes", check_builder_blend_modes),
+                                 ("builder gamma magnitude", check_builder_gamma_magnitude),
                                  ("builder multiply", check_builder_multiply),
                                  ("builder negative constants", check_builder_negative_constants),
                                  ("builder diffuse level", check_builder_diffuse_level),

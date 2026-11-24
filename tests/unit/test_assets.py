@@ -22,7 +22,8 @@ FIXTURE_DIR = os.path.join(ROOT, "tests", "fixtures")
 FIXTURES = sorted(glob.glob(os.path.join(FIXTURE_DIR, "*.max")))
 ASSET_COUNTS = {"vray_maps": 7, "standard_physical": 1, "texmap_rules": 22, "corona_maps": 13, "corona_layered": 1,
                 "corona_light": 3, "vray_texmaps": 12, "texmap_wrappers": 17,
-                "falloff_curve": 2}  # every other fixture names no file
+                "falloff_curve": 2,
+                "corona_mix_blends": 1}  # every other fixture names no file
 # files no material names: lights_photometric's web and IES file (one asset for both)
 LIGHT_ASSETS = {"lights_photometric": [("Photometric", "fixture_web.ies")]}
 # images no material names: vray_dome's dome texture

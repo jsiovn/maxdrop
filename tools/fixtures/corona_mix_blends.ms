@@ -6,8 +6,9 @@
 -- (bottom 0.05 0.4 0.9, top 0.6 0.2 0.75): the operations screen, overlay, color dodge, color burn, linear burn,
 -- linear light, hard light and exclusion with mix in sRGB on (the default), linear light and linear burn with it
 -- off, linear light over dark layers (bottom 0 0.05 0.2, top 0 0.1 0.05); then gamma of the same bottom under a
--- grey top color (white, multiplier 0.5) at amount 1 and 0.5. corona_mix_ops holds the other operations (a file of
--- its own: both together pass 1 MB).
+-- grey top color (white, multiplier 0.5) at amount 1 and 0.5; last, gamma under a mid-grey top swatch (128) over a
+-- CoronaBitmap bottom (a bare file name that need not exist), mix in sRGB on. corona_mix_ops holds the other
+-- operations (a file of its own: both together pass 1 MB).
 -- No file paths. Needs Corona (12, the one this was authored with).
 -- Authored for MaxDrop's tests (see CONTRIBUTING.md, "Test files"): it resets the scene, so run it in a 3ds Max
 -- session with nothing to keep, then sanitize and check the saved file before it goes into tests/fixtures/.
@@ -45,6 +46,10 @@
 			texmapBottom:(CoronaColor name:("FixtureCMix" + o[1] + "Bottom") method:1 colorHdr:[0.05,0.4,0.9])
 		fixtureBox ("FixtureCoronaMix" + o[1]) x t; x += 40
 	)
+	t = CoronaMix name:"FixtureCMixGammaGrey" mixOperation:7 mixAmount:1.0 colorTop:(color 128 128 128) \
+		texmapBottom:(CoronaBitmap name:"FixtureCMixGammaGreyBottom" filename:"cmix_gamma_bottom.png")
+	t.mixInSRgb = true
+	fixtureBox "FixtureCoronaMixGammaGrey" x t; x += 40
 
 	makeDir @"C:\maxdrop_fixtures" all:true
 	saveMaxFile @"C:\maxdrop_fixtures\corona_mix_blends.max" quiet:true

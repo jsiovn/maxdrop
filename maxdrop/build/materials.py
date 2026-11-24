@@ -1362,7 +1362,7 @@ class _Tree:
     def color_correct(self, n, space, depth):
         steps = [tuple(n.rewire) != tx.REWIRE_NONE, n.hue % 1.0 != 0.0, n.saturation != 1.0,
                  n.brightness != 0.0 or n.contrast != 0.0, n.gain != 1.0, n.gamma != 1.0]
-        d = depth + sum(steps) - 1  # the first step's column; the input one further left
+        d = depth + sum(steps) + (n.gamma != 1.0 and n.magnitude) - 1  # the first step's column; the input further left
         v = self.graph(n.input, COLOR, d + 1)
         if v is MISSING:
             return MISSING
@@ -1389,6 +1389,8 @@ class _Tree:
         if steps[2]:
             v, d = self.scale(v, n.gain, d), d - 1
         if steps[3]:
+            if n.magnitude:  # Corona raises a negative channel's magnitude (renderMap, maxdrop-6n0.6.40)
+                v, d = self.vector_math('ABSOLUTE', v, None, d), d - 1
             g = self.node("ShaderNodeGamma", d)
             _in(g, "Gamma").default_value = 1.0 / n.gamma
             self.links.new(v, _in(g, "Color"))

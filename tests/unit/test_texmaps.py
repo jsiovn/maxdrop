@@ -1035,6 +1035,21 @@ class CoronaMixBlends(Checks):
                 for ours, theirs in zip(root.value, want):  # ours encoded back: the value Corona holds
                     self.assertAlmostEqual(colors.linear_to_srgb(ours), theirs, delta=2e-3, msg=name)
 
+    def test_gamma_under_a_grey_swatch_over_a_map(self):
+        """FixtureCoronaMixGammaGrey: gamma, colorTop 128, a CoronaBitmap bottom, mix in sRGB on (maxdrop-6n0.6.40).
+        renderMap with a flat 64 / 128 / 192 PNG as the bottom, gamma off and on alike: bottom (0.04776, 0.21953,
+        0.53567), the mix (0.015595, 0.125628, 0.425696): one exponent ln(bottom) / ln(mix) = 0.7310, the top
+        swatch as stored, (128 / 255)^(1 / 2.2) (decoded it would be 0.498)."""
+        root = self.root("GammaGrey")
+        self.assertIsInstance(root, tx.Decode)
+        cc = root.input
+        self.assertIsInstance(cc, tx.ColorCorrect)
+        self.assertEqual(cc.input.name, "cmix_gamma_bottom.png")
+        self.assertTrue(cc.magnitude, "sRGB mode: the magnitude of a negative bottom")
+        for b, r in zip((0.0477607, 0.219532, 0.535668), (0.0155947, 0.125628, 0.425696)):
+            self.assertAlmostEqual(cc.gamma, math.log(b) / math.log(r), delta=1e-3)
+            self.assertAlmostEqual(b ** (1.0 / cc.gamma), r, delta=1e-4)
+
     def test_gamma_at_half_amount(self):
         root = self.root("GammaHalf")
         self.assertIsInstance(root, tx.Constant, "a Mix of constants, folded")
@@ -3988,6 +4003,56 @@ class ControllerLines(Checks):
         self.assertEqual(sorted(r for r in g.issues if "at frame 0" in r), sorted(
             line % (pid, params_mod.SLOTS % (2, 3), params_mod.DEFAULT_USED)
             for pid in (tx.UV_U_TILING, tx.UV_V_TILING, tx.UV_U_OFFSET)))
+
+
+class CoronaGroup(Checks):
+    """maxdrop-6n0.6.23 and maxdrop-6n0.6.40: Corona 12 renders (local probes, docs/FORMAT.md)."""
+
+    def test_vray_dirt_is_white_under_corona(self):
+        """V-Ray 5.2 renders a VRayDirt's unoccluded map, or its color with the map off; Corona 12 white either way."""
+        for switch in (1, 0):
+            for renderer, want in ((tx.CORONA_RENDERER, None), (None, "map")):
+                with self.subTest(switch=switch, renderer=renderer):
+                    dirt = FakeMap(1, tx.VRAY_DIRT, {13: (0.2, 0.8, 0.2), 17: Ref(2), 18: switch}, [2], cls="VRayDirt")
+                    tex = tx.TexmapConverter(FakeGraph(dirt, _bitmap(2)), _table(), renderer=renderer)
+                    g = tex.convert(mat.MapRef(1), tx.COLOR)
+                    d = tex.convert(mat.MapRef(1), tx.DATA)
+                    if want is None:
+                        self.assertEqual(g.root, tx.Constant((1.0, 1.0, 1.0)))
+                        self.assertEqual(d.root, tx.Constant(1.0))
+                    elif switch:
+                        self.assertEqual(g.root.name, "a.png")
+                    else:
+                        self.close(g.root.value, (0.2, 0.8, 0.2), "the unoccluded color")
+                    self.assertEqual(tex.stats.issues, [])
+
+    def test_map_switches_are_read_under_corona(self):
+        """Corona honors Mix, RGB Multiply and Falloff switches as V-Ray (6n0.6.23): a switched-off map leaves the
+        map's own color under Corona too."""
+        cases = (FakeMap(1, tx.MIX, {0: 0.0, 4: (0.2, 0.8, 0.2), 5: (0.2, 0.2, 0.8), 6: Ref(2), 9: 0}, [2], cls="Mix"),
+                 FakeMap(1, tx.RGB_MULTIPLY, {0: (0.2, 0.8, 0.2), 1: (1.0, 1.0, 1.0), 2: Ref(2), 4: 0}, [2],
+                         cls="RGB Multiply"))
+        for m in cases:
+            with self.subTest(m.cls):
+                tex = tx.TexmapConverter(FakeGraph(m, _bitmap(2)), _table(), renderer=tx.CORONA_RENDERER)
+                root = tex.convert(mat.MapRef(1), tx.COLOR).root
+                self.assertNotIn("a.png", repr(root), "the switched-off map is not drawn")
+
+    def test_corona_mix_gamma_magnitude(self):
+        """A CoronaMix gamma over a bottom map: in sRGB mode Corona raises the bottom's magnitude (renderMap:
+        multiplierBottom -1 renders the positive bottom's values, 6n0.6.40), so the ColorCorrect takes it; with
+        mix in sRGB off the sign is left as it is. A Color Correction map's own gamma never takes it."""
+        for srgb in (1, 0):
+            with self.subTest(srgb=srgb):
+                cm = _cmix(1, [2], p200=7, p207=Ref(2), p208=(0.5, 0.5, 0.5), p214=srgb)
+                root = _tex(cm, _cbitmap(2)).convert(mat.MapRef(1), tx.COLOR).root
+                self.assertIsInstance(root, tx.ColorCorrect)
+                self.assertEqual(root.magnitude, bool(srgb))
+                self.close(root.gamma, 0.5 ** (1 / 2.2) if srgb else 0.5)
+        cc = FakeMap(1, tx.COLOR_CORRECTION, {1: Ref(2), 11: 1, 22: 2.0}, [2], cls="Color Correction")
+        root = _tex(cc, _bitmap(2)).convert(mat.MapRef(1), tx.COLOR).root
+        self.assertIsInstance(root, tx.ColorCorrect)
+        self.assertFalse(root.magnitude)
 
 
 if __name__ == "__main__":
