@@ -3393,15 +3393,15 @@ def _float_saved(value, keys=0):
 
 
 class _OldWithControllers(FakeOld):
-    def __init__(self, values, controllers):
+    def __init__(self, values, controllers, color=False):
         super().__init__(values)
-        self._controllers = controllers
+        self._controllers, self._color = controllers, color
 
     def controller(self, i):
         return self._controllers.get(i)
 
     def type(self, i):
-        return 0
+        return 2 if self._controllers.get(i) is not None and self._color else 0
 
 
 class ControllerLines(Checks):
@@ -3430,6 +3430,25 @@ class ControllerLines(Checks):
         self.assertEqual([r for _i, r in tex.stats.issues if "controller 20" in r], [lines[0]])
         self.assertEqual([i for i, r in tex.stats.issues if "controller 20" in r], [1])
 
+    def test_a_cached_map_replays_its_line(self):
+        """The same map in the same kind for another slot value: a second graph from the cached node, which carries
+        the line and the approximation too."""
+        tex = self.falloff((_BEZIER_COLOR, _color_keys((0.2, 0.4, 0.6), (0.6, 0.8, 1.0))))
+        graphs = [tex.convert(mat.MapRef(1), tx.COLOR, value) for value in ((1.0, 1.0, 1.0), (0.5, 0.5, 0.5))]
+        self.assertIsNot(graphs[0], graphs[1])
+        for g in graphs:
+            self.assertTrue(g.approximated)
+            self.assertEqual(len([r for r in g.issues if "controller 20" in r]), 1, g.issues)
+        self.assertEqual(len([r for _i, r in tex.stats.issues if "controller 20" in r]), 1)
+
+    def test_coordinates_of_another_shape(self):
+        """A Coordinates parameter whose block says color: a controller's color is no tiling (the default, a
+        line)."""
+        tex, g = self.placed({30: (_BEZIER_COLOR, _color_keys((1, 2, 3), (1, 2, 3), times=(0, 10)))},
+                             {"uv": {tx.UV_U_TILING: 0}}, {"uv": {0: 30}}, color=True)
+        self.assertEqual(g.root.mapping.tiling, (1.0, 1.0))
+        self.assertTrue(any(params_mod.DEFAULT_USED in r for r in g.issues), g.issues)
+
     def test_unknown_class_keeps_the_default(self):
         tex = self.falloff((_OTHER_FLOAT, _cnode(0x7778, _cleaf(0x2501, struct.pack("<f", 9)))))
         g = tex.convert(mat.MapRef(1), tx.COLOR)
@@ -3443,12 +3462,12 @@ class ControllerLines(Checks):
         g = tex.convert(mat.MapRef(1), tx.COLOR)
         self.assertEqual((g.approximated, g.issues), (False, ()))
 
-    def placed(self, controllers, old, owned=None):
+    def placed(self, controllers, old, owned=None, color=False):
         """A Bitmap with Coordinates (UVGen 50) and Output (70) parts, each an old block (object 51, 71) whose
         controllers are {parameter index: reference slot}; the blocks' references {slot: controller}."""
         b = _bitmap(1)
         b.parts = {0: reader_materials.Part(UVGEN_OBJECT, classids.STD_UVGEN, classids.SC_UVGEN, {},
-                                            {0: _OldWithControllers({}, old.get("uv", {}))}),
+                                            {0: _OldWithControllers({}, old.get("uv", {}), color)}),
                    1: reader_materials.Part(70, classids.STD_TEXOUTPUT, classids.SC_TEXOUTPUT, {},
                                             {1: _OldWithControllers({}, old.get("out", {}))})}
         refs = {UVGEN_OBJECT: {0: 51}, 70: {1: 71}, 51: owned.get("uv", {}) if owned else {},
@@ -3474,12 +3493,12 @@ class ControllerLines(Checks):
         self.assertEqual(g.root.mapping.tiling, (4.0, 1.0))  # the saved value (maybe another frame's); unknown: 1
         self.assertEqual(g.root.mapping.offset, (0.0, 0.0))  # its controller missing: the default
         self.assertTrue(g.approximated)
-        head = "Coordinates: parameter %d at frame 0 (controller %s): "
+        head = "'map' Coordinates: parameter %d at frame 0 (controller %s): "
         self.assertEqual(sorted(r for r in g.issues if "at frame 0" in r), sorted([
             head % (tx.UV_U_TILING, 30) + controllers_mod.ANIMATED,
             head % (tx.UV_V_TILING, 31) + controllers_mod.UNKNOWN_CLASS + ", " + params_mod.DEFAULT_USED,
             head % (tx.UV_U_OFFSET, "missing") + params_mod.NOT_READ + ", " + params_mod.DEFAULT_USED]))
-        self.assertTrue(all(i == UVGEN_OBJECT for i, r in tex.stats.issues if "at frame 0" in r))
+        self.assertEqual({i for i, r in tex.stats.issues if "at frame 0" in r}, {1})  # under the map
 
 
 if __name__ == "__main__":

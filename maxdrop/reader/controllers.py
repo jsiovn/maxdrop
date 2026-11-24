@@ -770,7 +770,7 @@ class _Eval:
                     if all(entry in self.unknown for entry, _w in entries):
                         self.unknown.add(i)
                     return None
-                return sum(w * v for w, v in values if v is not None)
+                return sum((w * v for w, v in values if v is not None), 0.0)
             self.issue(i, UNKNOWN_CLASS)
             return default
 

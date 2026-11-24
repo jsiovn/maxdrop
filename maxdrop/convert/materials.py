@@ -921,12 +921,12 @@ def vray_car_paint_mtl2(conv, m, ir):
 
 class _PartParams:
     """The parameters of a material's part (its blocks), read like a MtlBase's: param(pid, block_id); with the
-    scene, an animated one at frame 0 (params.frame_zero), its lines to report(the part's index, line)."""
+    scene, an animated one at frame 0 (params.frame_zero), its lines to report(owner's index, line)."""
 
-    def __init__(self, part, scene=None, report=None):
+    def __init__(self, part, scene=None, report=None, owner=None):
         self._blocks = [b for _slot, b in sorted(part.blocks.items())] if part is not None else []
         self._scene = scene
-        self._heard = params.hearing(report, part.index, "shader") if part is not None else None
+        self._heard = params.hearing(report, owner.index, "%r shader" % (owner.name,)) if owner is not None else None
 
     def param(self, pid, block_id=None, tab=0, default=None):
         for b in self._blocks:
@@ -970,7 +970,7 @@ def standard_mtl(conv, m, ir):
     ir.ior = _ior(_num(m, 6, 1, 1.5))
     shader = next((p for _slot, p in sorted(m.parts.items()) if p.superclass == classids.SC_SHADER), None)
     sid = ClassId(*shader.class_id) if shader is not None else None
-    s = _PartParams(shader, getattr(conv.graph, "scene", None), getattr(conv.graph, "report", None))
+    s = _PartParams(shader, getattr(conv.graph, "scene", None), conv._issue_once, m)
     slots = STD_SLOTS.get(sid, _BLINN_SLOTS)
     ch = _std_channels(conv, m)
     ir.alpha = Input(_clamp01(_num(m, 1, 1, 1.0)), _std_map(conv, m, slots.opacity, ir, channels=ch))

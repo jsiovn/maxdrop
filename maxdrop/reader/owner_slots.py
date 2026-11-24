@@ -12,8 +12,9 @@ parameters the stored object index is -1 although the reference is set, or stale
 reference): the slot wins there when the owner holds a reference at it. The slot is the parameter definition's
 reference number, a constant of the class: the values here are the 0x0013 tables of the committed fixtures (saved
 by 3ds Max 2020) and, where no fixture has the class, of corpus scene B (format 20000), equal in every object of
-corpus scene A (format 14000); Output's map1 from scene A's owner references alone (see its entry). A table parameter's element k is at slot + k, as with 0x0013. Keyed by superclass
-and ClassId (a ClassId is unique only within its superclass). No bpy.
+corpus scene A (format 14000); Output's map1 from scene A's owner references alone (see its entry). A table
+parameter's element k is at slot + k, as with 0x0013. Keyed by superclass and ClassId (a ClassId is unique only
+within its superclass). No bpy.
 """
 from . import classids
 from .classdir import ClassId

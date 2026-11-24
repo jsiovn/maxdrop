@@ -35,6 +35,7 @@ from ..reader.errors import MaxFileError
 
 _COLORS = frozenset((2, 3))  # ParamType2 color, point3 (an hsv one, 10, is not measured: not read)
 DEFAULT_USED = "its default used"
+_NON_FINITE = "non-finite value"  # controllers.NON_FINITE names a transform
 NOT_READ = "not read at frame 0"
 
 
@@ -71,7 +72,8 @@ def lines(what, pid, controller, read, issues):
     each issue, else that it was not read; read False adds that the default is used."""
     head = "%s: parameter %d at frame 0 (controller %s)" % (what, pid, "missing" if controller is None else controller)
     tail = "" if read else ", " + DEFAULT_USED
-    out = ["%s: %s%s" % (head, x.reason, tail) for x in issues]
+    out = ["%s: %s%s" % (head, _NON_FINITE if x.reason == controllers.NON_FINITE else x.reason, tail)
+           for x in issues]
     if not out and not read:
         out.append("%s: %s%s" % (head, NOT_READ, tail))
     return out
@@ -108,10 +110,11 @@ def frame_zero(scene, block, pid, v, heard=None):
     return out
 
 
-def old_value(scene, part, index, heard=None):
+def old_value(scene, part, index, heard=None, number=False):
     """Parameter index of a part's old ParamBlock (a map's Coordinates or Output; the first in slot order): its
     stored value, or its controller's at frame 0 in the shape of its type (as frame_zero); None when it has neither.
-    The controller is the block object's reference at the block's controller(index)."""
+    The controller is the block object's reference at the block's controller(index). number: only a finite number
+    counts as read (a color the block's type gives is not)."""
     if part is None or not part.legacy:
         return None
     slot = min(part.legacy)
@@ -131,6 +134,8 @@ def old_value(scene, part, index, heard=None):
         return None
     value, issues = controllers.parameter_value(scene, controller)
     out = _shaped(value, block.type(index), None)
+    if number and not finite(out):
+        out = None
     if heard is not None:
         heard(index, controller, out is not None, issues)
     return out

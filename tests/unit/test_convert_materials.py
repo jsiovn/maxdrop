@@ -2911,14 +2911,37 @@ class FrameZeroParams(unittest.TestCase, Close):
                 gloss, controllers.UNKNOWN_CLASS, params.DEFAULT_USED))]))
 
     def test_part_report_lines(self):
-        """A part's (a Standard shader's) controller lines go to the report under the part's index."""
+        """A Standard shader's controller lines go to the report under the material, once however often the rule
+        reads the parameter; a read without an issue gives none."""
+        from unittest import mock
+        controllers = importlib.import_module(_PKG + ".reader.controllers")
         params = importlib.import_module(_PKG + ".convert.params")
         m = self.graph.get(self.by_name["FixtureAnimVRay"])
         part = reader_materials.Part(m.index, m.class_id, m.superclass, {0: m.block(1)}, {})
         heard = []
-        value = mat._PartParams(part, self.graph.scene, lambda i, line: heard.append((i, line))).param(1, 1)
+        value = mat._PartParams(part, self.graph.scene, lambda i, line: heard.append((i, line)), m).param(1, 1)
         self.close(value, self.want("FixtureAnimVRay", 1, 1))
         self.assertEqual(heard, [])  # read without an issue: no line
+
+        class Typed(FakeBlock):
+            def param(self, pid):
+                return types.SimpleNamespace(base_type=2)
+
+        std = _standard(0, classids.BLINN_SHADER, {1: pblock.Animated(9)}, name="Std")
+        std.parts[2] = reader_materials.Part(50, classids.BLINN_SHADER, classids.SC_SHADER,
+                                             {0: Typed(0, {1: pblock.Animated(9)})}, {})
+        std.refs = {}  # no Texmaps object: the maps from block 3
+        graph = FakeGraph(std)
+        graph.scene = object()
+        unknown = controllers.Issue(None, 9, None, None, controllers.UNKNOWN_CLASS)
+        with mock.patch.object(controllers, "parameter_value", return_value=(None, [unknown])):
+            conv = mat.MaterialConverter(graph)
+            ir = conv.convert(0)
+            mat._PartParams(std.parts[2], graph.scene, conv._issue_once, std).param(1, 0)  # read again
+        self.close(ir.base_color.value, (150 / 255,) * 3)  # the default diffuse
+        self.assertEqual([x for x in conv.stats.issues if "at frame 0" in x[1]], [
+            (0, "'Std' shader: parameter 1 at frame 0 (controller 9): %s, %s"
+             % (controllers.UNKNOWN_CLASS, params.DEFAULT_USED))])
         self.assertEqual(params.at_frame_zero(self.graph, heard.append).report, heard.append)
 
 
