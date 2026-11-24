@@ -38,7 +38,7 @@ FILE_IN_RANGE = (0.1, 10.0)  # an input gamma outside it is taken as 2.2, as a B
 
 
 def srgb_to_linear(c):
-    """One sRGB-encoded channel (0..1) to linear."""
+    """One sRGB-encoded channel (0..1; above 1 on the same curve, extended) to linear."""
     return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
 
 

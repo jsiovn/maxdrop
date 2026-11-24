@@ -1479,7 +1479,9 @@ picker and Material Editor switches off).
   computes a Mix and a CoronaMix on those values: with the gamma off a CoronaBitmap on a color input or a mask gets
   `_shown`, the HDR color is decoded with the extended curve (the mean on a mask), and a CoronaMix at a color root
   joins `DISPLAY_MIXES` (STORED under a Decode; a folded constant decoded exactly). A float CoronaBitmap dome texture
-  keeps its own decode, as the other float dome textures do. Data, normal and bump inputs are unchanged. Blender 5.2
+  keeps its own decode, as the other float dome textures do. Data, normal and bump inputs are unchanged. A value
+  above 1 under a Decode that does not fold (a CoronaMix of an HDR color over a map) follows the Decode's power of
+  2.2, not the extended curve (3.78: 18.6 against 22.2). Blender 5.2
   renders of the saved probe scenes agree within 0.0092 on every CoronaBitmap, CoronaColor, swatch and mask plane,
   gamma on and off. A first pass that rendered to an EXR output file clamped the bitmap at 1.0 and gave a Bitmap
   automatic 128 0.2195 with the gamma off (0.502 in the passes rendered into an HDR bitmap, as V-Ray): not used.

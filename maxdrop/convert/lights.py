@@ -868,7 +868,7 @@ def dome_texture(graph_ir, material_graph, swatches=None):
         return None, [DOME_NO_TEXTURE]
     issues = list(graph_ir.issues)
     img = graph_ir.root
-    if not isinstance(img, texmaps.Image):  # a gamma-off Mix or Composite is named, not its Decode
+    if not isinstance(img, texmaps.Image):  # a gamma-off Mix, Composite or CoronaMix is named, not its Decode
         return None, issues + [DOME_ROOT % type(img.input if isinstance(img, texmaps.Decode) else img).__name__]
     m = material_graph.get(img.index) if material_graph is not None else None
     if m is not None:  # the converter names the root's environment mapping: wrong for a material, expected here

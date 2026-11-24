@@ -2943,6 +2943,30 @@ class GammaOffMixes(Checks):
         mix = self._mix(p4=self.G40, p5=self.G220, p8=Ref(2))
         self.close(self._root(colors.GAMMA_OFF, mix, hdr).value, (_lin(220),) * 3)
 
+    def test_corona_mix_on_stored_values(self):
+        # maxdrop-em3.165, Corona 12 renders: a CoronaMix is computed on the values Corona holds, the same in both
+        # modes (a 50 % mix of CoronaBitmaps 64 and 192 renders 0.2917): STORED under a Decode with the gamma off
+        both = _cmix(1, [2, 3], p200=6, p201=0.5, p206=Ref(2), p207=Ref(3))
+        root = self._root(colors.GAMMA_OFF, both, _cbitmap(2), _cbitmap(3))
+        self.assertIsInstance(root, tx.Decode)
+        self.assertIsInstance(root.input, tx.Mix)
+        self.assertEqual([(i.gamma, i.colorspace) for i in (root.input.a, root.input.b)], [(None, tx.SRGB)] * 2,
+                         "each CoronaBitmap by its own decode")
+        self.assertIsInstance(self._root(colors.GAMMA_ON, both, _cbitmap(2), _cbitmap(3)), tx.Mix, "gamma on: as is")
+        hdr = _cmix(1, [2, 3], p200=10, p206=Ref(2), p207=Ref(3))  # overlay of two HDR colors, folded
+        value = self._root(colors.GAMMA_OFF, hdr, _ccolor(2, p50=1, p58=(0.6, 0.2, 0.75)),
+                           _ccolor(3, p50=1, p58=(0.05, 0.4, 0.9))).value
+        held = tx.blend_value(tx.BLEND_OVERLAY, (0.05, 0.4, 0.9), (0.6, 0.2, 0.75), tx.CM_SRGB_GAMMA)
+        self.close(value, tuple(colors.srgb_to_linear(c) for c in held))
+        # a peel (an operation not drawn) and a lost side give the image again as a color: shown decoded once more
+        peel = _cmix(1, [2, 3], p200=15, p206=Ref(2), p207=Ref(3))
+        lost = _cmix(1, [2, 3], p200=6, p201=0.5, p207=Ref(2), p206=Ref(3))
+        for what, objects in (("peel", (peel, _cbitmap(2), _noise(3))), ("lost", (lost, _noise(2), _cbitmap(3)))):
+            with self.subTest(what):
+                image = self._root(colors.GAMMA_OFF, *objects)
+                self.assertIsInstance(image, tx.Image)
+                self.assertEqual((image.gamma, image.colorspace), (tx.SRGB_TWICE, tx.LINEAR))
+
     def test_maps_below_a_gamma_off_mix_compute_on_stored_values(self):
         # not measured (maxdrop-6n0.6.18): pinned so a change is deliberate
         g = (128 / 255,) * 3

@@ -41,8 +41,8 @@ sRGB curve with it off): in a COLOR graph always linear RGB (also when the input
 transmission are: the builder takes the mean of the graph's color there, the measure materials.py uses); in a MASK
 graph a float, the scene's rule applied to the mean of the swatch (V-Ray 5.2 renders a red mask as 1 / 3 before any
 gamma; TexmapConverter._swatch); in a DATA or BUMP graph the mean of the swatch as stored, whatever the gamma (a grey
-64 VRayColor renders glossiness 0.251 in both modes); the mean of the color for one that is linear already
-(CoronaColor's HDR color; its temperature with the gamma on). In a NORMAL graph, and below a wrapper that works on
+64 VRayColor renders glossiness 0.251 in both modes); the mean of the color for one that is not a swatch
+(CoronaColor's HDR color, decoded on a mask with the gamma off; its temperature with the gamma on). In a NORMAL graph, and below a wrapper that works on
 color (an RGB Tint other than the identity, an Output part that changes anything, a Color Correction) in a DATA or
 BUMP graph (the kinds DATA_RGB and BUMP_RGB, rgb_kind), a swatch keeps its three channels as stored, and so do the
 Tint's rows, the mean taken at the float input by the builder (maxdrop-em3.128). Measured: an empty RGB Tint of rows
@@ -97,7 +97,8 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
   (V-Ray 5.2), From 3ds Max the image as stored, decoded as a Bitmap's.
   An environment mapping type (angular, cubic, spherical, mirrored ball), a map
   source, ACEScg primaries, RGB output intensity, an unusable transfer function or multiplier are issues.
-- CoronaColor -> Constant (color and hex as swatches, the HDR color linear, the temperature Corona's own linear
+- CoronaColor -> Constant (color and hex as swatches, the HDR color as stored, decoded with the gamma off on a color
+  input or mask, the temperature Corona's own linear
   color from CORONA_KELVIN, times the multiplier, decoded as a swatch with the gamma off). VRayColor -> Constant:
   its swatch times its RGB multiplier, then to the power of its color gamma (that order measured), made linear as a
   swatch; in temperature mode its color holds V-Ray's temperature color. Its alpha below 1, RGB primaries other
@@ -177,9 +178,9 @@ FLOATS = (DATA, MASK)  # the kinds a map gives one number to: its mono output
 DATA_RGB, BUMP_RGB = "data rgb", "bump rgb"
 _RGB_KINDS = {DATA: DATA_RGB, BUMP: BUMP_RGB}
 _BASE_KINDS = {v: k for k, v in _RGB_KINDS.items()}
-# A map V-Ray computes on stored values in a gamma-off scene (DISPLAY_MIXES) at a color root, and every map below it:
-# a color as V-Ray holds it there (swatches as stored, images by their own decode, a Bitmap as stored), which the
-# display-referred scene shows decoded (the Decode above it).
+# A map V-Ray or Corona computes on stored values in a gamma-off scene (DISPLAY_MIXES) at a color root, and every map
+# below it: a color as the renderer holds it there (swatches as stored, images by their own decode, a Bitmap as stored,
+# CoronaColor's HDR color as stored), which the display-referred scene shows decoded (the Decode above it).
 STORED = "stored"
 STORED_RGB = (DATA_RGB, BUMP_RGB, NORMAL, STORED)  # the kinds whose swatch is its three channels as stored
 _AS_STORED = (DATA, NORMAL, BUMP, STORED)  # the kinds that take an image read as stored as it is (colorspace)

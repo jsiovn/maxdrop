@@ -152,8 +152,6 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   node in the World) instead of a line in the report, so a gamma-off dome with an 8-bit VRayBitmap is darker; an
   EXR or HDR dome texture stays linear there (a line in the report; measured as a light with V-Ray 5.2: no
   decode of each texel matches, and the material's would make a sun orders of magnitude too bright).
-  A CoronaBitmap and a CoronaColor's HDR color stay as before:
-  whether Corona shows them as V-Ray does was not measured (no Corona render here).
 - Shapes: an open shape that renders in 3ds Max with a round section (a Line, an Arc or an open Editable Spline
   with Enable In Renderer) is capped at both ends, as 3ds Max renders it, instead of a hollow tube with open ends.
 - Shapes: a damaged or hostile file whose shape gives curve points past Blender's single precision (an NGon radius
@@ -233,7 +231,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   cannot store such a name) while Windows and Linux wrote it; a `.max` so named is not offered as a scene.
 - Corona maps in a scene saved with the gamma off: a CoronaBitmap on a color map or mask and a CoronaColor's HDR
   color show as Corona 12 renders them there (measured), decoded once more for the display-referred scene as a
-  VRayBitmap is since V-Ray's case was measured, instead of too bright (a 128 grey CoronaBitmap was 0.216 linear
+  VRayBitmap is, instead of too bright (a 128 grey CoronaBitmap was 0.216 linear
   where Corona shows 0.040; an HDR color of 2.0 now 4.95). A CoronaMix on a color map is computed on the values
   Corona holds and then decoded, as a Mix is, so its operations match Corona's. Data, normal and bump maps and
   scenes with the gamma on are unchanged.
