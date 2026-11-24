@@ -121,6 +121,7 @@ The performance budget of one big mesh (tests/blender/bench.py) runs last, witho
 Prints `FIXTURES PASSED` (exit 0) or `FIXTURES FAILED` (exit 1).
 """
 import collections
+import dataclasses
 import glob
 import importlib.util
 import json
@@ -2091,6 +2092,8 @@ def _fold(n, present):
         v = _fold(n.input, present)
         if v in (MAP, LOST):
             return v
+        if n.mean:  # the mean through the sRGB curve (maxdrop-6n0.6.36)
+            return colors.srgb_to_linear(sum(v) / 3.0 if isinstance(v, tuple) else v)
         return tuple(colors.srgb_to_linear(c) for c in (v if isinstance(v, tuple) else (v,) * 3))
     if isinstance(n, tx.Mix):
         a, b = _fold(n.a, present), _fold(n.b, present)
@@ -4021,6 +4024,87 @@ def check_builder_negative_constants():
         empty_scene()
 
 
+def check_builder_mask_mean():
+    """An image read as stored as a gamma-off mask (texmaps.Decode mean, bead maxdrop-6n0.6.36): the mean of its
+    channels (a DOT_PRODUCT) through the exact sRGB curve in Math nodes (a FLOAT Mix of the power and the linear
+    branch by a LESS_THAN), evaluated here from the nodes' own constants against colors.srgb_to_linear; over a
+    constant folded; a Composite layer below it keeps its image's alpha."""
+    from maxdrop.build import materials as build_materials
+    from maxdrop.convert import colors
+    from maxdrop.convert import materials as cm
+    from maxdrop.convert import texmaps as tx
+    from maxdrop.convert import textures as ct
+    empty_scene()
+    scratch = tempfile.mkdtemp(prefix="maxdrop-mask-mean-")
+
+    def evaluate(socket, f, image):  # the float reaching socket when the image's mean is f
+        if not socket.is_linked:
+            return socket.default_value
+        n = _from(socket)
+        if n == image:
+            return f
+        if n.bl_idname == "ShaderNodeMath":
+            x = [evaluate(i, f, image) for i in n.inputs[:3]]
+            return {'MULTIPLY_ADD': lambda: x[0] * x[1] + x[2], 'POWER': lambda: x[0] ** x[1] if x[0] > 0 else 0.0,
+                    'DIVIDE': lambda: x[0] / x[1], 'LESS_THAN': lambda: float(x[0] < x[1])}[n.operation]()
+        if n.bl_idname == "ShaderNodeMix" and n.data_type == 'FLOAT':
+            t = min(1.0, max(0.0, evaluate(_input(n, "Factor_Float"), f, image)))
+            a, b = evaluate(_input(n, "A_Float"), f, image), evaluate(_input(n, "B_Float"), f, image)
+            return a + (b - a) * t
+        raise ValueError(n.bl_idname)
+
+    try:
+        png = os.path.join(scratch, "mask.png")
+        _write_png(png)
+        img = tx.Image(1, "mask.png", "mask.png", "", ct.Found(png, ct.SCENE), colorspace=tx.NON_COLOR)
+        builder = build_materials.MaterialBuilder()
+        black, white = tx.Constant((0.0,) * 3), tx.Constant((1.0,) * 3)
+        ir = cm.MaterialIR(83, "MaskMean", "test", base_color=cm.Input((0.5,) * 3, cm.MapRef(1)))
+        ir.textures = {"base_color": tx.TextureGraphIR(tx.Mix(black, white, 0.0, tx.Decode(img, mean=True)),
+                                                       tx.COLOR)}
+        m = builder.make(ir)
+        mix = _from(_principled(m).inputs["Base Color"])
+        factor = _input(mix, "Factor_Float") if mix is not None and mix.bl_idname == "ShaderNodeMix" else None
+        curve = _from(factor) if factor is not None else None
+        texture = None
+        if curve is not None and curve.bl_idname == "ShaderNodeMix":
+            dots = [n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeVectorMath"
+                    and n.operation == 'DOT_PRODUCT' and close(list(_input(n, "Vector_001").default_value),
+                                                                [1 / 3.0] * 3, 1e-6)]
+            texture = _from(_input(dots[0], "Vector")) if len(dots) == 1 else None
+        ok = (texture is not None and texture.bl_idname == "ShaderNodeTexImage"
+              and texture.image.colorspace_settings.name == "Non-Color")
+        samples = (0.0, 0.02, 0.04, 0.0405, 0.2, 0.457511, 0.5, 1.0, 1.5)
+        got = [evaluate(factor, f, dots[0]) for f in samples] if ok else []
+        want = [colors.srgb_to_linear(f) for f in samples]
+        check("mask mean: the Non-Color image's mean through the sRGB curve in Math nodes, exact",
+              ok and close(got, want, 1e-6), "%s %s" % (got, want))
+        bpy.data.materials.remove(m)
+        ir = cm.MaterialIR(84, "MaskMeanConstant", "test", base_color=cm.Input((0.5,) * 3, cm.MapRef(1)))
+        ir.textures = {"base_color": tx.TextureGraphIR(tx.Mix(black, white, 0.0, tx.Decode(tx.Constant((
+            0.8, 0.4, 0.2)), mean=True)), tx.COLOR)}
+        m = builder.make(ir)
+        mix = _from(_principled(m).inputs["Base Color"])
+        value = _input(mix, "Factor_Float").default_value if mix is not None else None
+        check("mask mean: over a constant folded to the sRGB curve of its mean",
+              value is not None and abs(value - colors.srgb_to_linear(1.4 / 3)) <= 1e-6, str(value))
+        bpy.data.materials.remove(m)
+        alpha = dataclasses.replace(img, index=2)
+        ir = cm.MaterialIR(85, "MaskMeanLayer", "test", base_color=cm.Input((0.5,) * 3, cm.MapRef(1)))
+        ir.textures = {"base_color": tx.TextureGraphIR(tx.Composite((tx.CompositeLayer(black), tx.CompositeLayer(
+            tx.Decode(alpha, mean=True), 0.5))), tx.COLOR)}
+        m = builder.make(ir)
+        alphas = [k for k in m.node_tree.links if k.from_node.bl_idname == "ShaderNodeTexImage"
+                  and k.from_socket.identifier == "Alpha"]
+        check("mask mean: a Composite layer of a mean keeps its image's alpha in the opacity", len(alphas) == 1,
+              str(len(alphas)))
+        bpy.data.materials.remove(m)
+    finally:
+        for img in list(bpy.data.images):
+            bpy.data.images.remove(img)
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def check_builder_multiply():
     """A Multiply of two maps in a float graph (bead maxdrop-em3.124): V-Ray 5.2 takes the product of the two maps'
     means (red x green 1/9, measured on an RGB Multiply as a Mix mask and a glossiness map, a CoronaMix Multiply as
@@ -5919,6 +6003,7 @@ def main():
                                  ("builder fresnel off", check_builder_fresnel_off),
                                  ("builder clip mask", check_builder_clip_mask),
                                  ("builder clipped normal", check_builder_clipped_normal),
+                                 ("builder mask mean", check_builder_mask_mean),
                                  ("curve step", check_curve_step),
                                  ("crease open edges", check_crease_open_edges),
                                  ("linear fallback", check_linear_fallback),
