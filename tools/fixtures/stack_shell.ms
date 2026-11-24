@@ -29,6 +29,8 @@
 -- FixtureShellBetweenSym: the quarter open box, Symmetry along X, the Shell, then Symmetry along Y.
 -- FixtureShellUnderSymNoWeld: the half open box, the Shell below the Symmetry with its weld off: the slice drops the
 -- rim on the plane and leaves the cut open.
+-- FixtureShellUnderSymExtrude: an open line of three segments from x = 0 to x = 0 (its ends on the plane), extruded 20
+-- without caps, then the Shell and the Symmetry along X: the open box's half made from a shape.
 -- One Standard material on every node.
 -- Authored for MaxDrop's tests (see CONTRIBUTING.md, "Test files"): it resets the scene, so run it in a 3ds Max
 -- session with nothing to keep, then sanitize and check the saved file before it goes into tests/fixtures/.
@@ -110,6 +112,14 @@
 	local noWeld = part_box "FixtureShellUnderSymNoWeld" [320, 40, 0] false false
 	addModifier noWeld (Shell innerAmount:0.0 outerAmount:1.0)
 	addModifier noWeld (Symmetry axis:0 flip:false slice:1 weld:0 threshold:0.1)
+	local line = SplineShape name:"FixtureShellUnderSymExtrude"
+	addNewSpline line
+	for p in #([0, -10, 0], [10, -10, 0], [10, 10, 0], [0, 10, 0]) do addKnot line 1 #corner #line p
+	updateShape line
+	line.pos = [360, 40, 0]
+	addModifier line (Extrude amount:20 segs:1 capStart:false capEnd:false mapCoords:true)
+	addModifier line (Shell innerAmount:0.0 outerAmount:1.0)
+	addModifier line (Symmetry axis:0 flip:false slice:1 weld:1 threshold:0.1)
 
 	local mat = StandardMaterial name:"FixtureGrey" diffuse:(color 128 128 128)
 	for o in objects do o.material = mat

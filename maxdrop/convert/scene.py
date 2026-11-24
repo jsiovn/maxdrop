@@ -136,9 +136,9 @@ splitting the rim's sharper corners, the override group) is an issue, named once
 mesh has open edges. A Symmetry right above the lowest Shell (only Symmetries converted below it) whose slice plane
 holds the mesh's open edges drops the rim the Shell made there in 3ds Max and welds the cut: where that rim lies on
 the plane (lowered()), its Mirror is moved below the Solidify (node.converted is in Blender's order), which welds the
-cut before the shell is made, and the rim is that of the Mirrors below; otherwise an issue. The rim entry of the key
-holds those Mirrors too (("seam", their settings and matrices) without a hardened rim). Viewport levels that would
-give an object more than convert.modifiers.MAX_VIEWPORT_CORNERS face corners are lowered (an issue).
+cut before the shell is made, and the rim is that of the Mirrors below; otherwise an issue. ("seam", the Mirrors
+below the Shell, those right above it) joins the mesh key before its shading entry. Viewport levels that would give
+an object more than convert.modifiers.MAX_VIEWPORT_CORNERS face corners are lowered (an issue).
 describe(..., convert_modifiers=False) converts nothing.
 
 Layers: each node names its layer's object index (None without one, or when the layer record cannot be read, which
@@ -179,13 +179,19 @@ MAX_BUILT_CORNERS = 1 << 24
 MAX_MIRRORED_CORNERS = 1 << 22
 MAX_MIRROR_IMAGES = 64  # copies of the open edges tested against the next Mirror below a Shell (_rim_edges)
 # 3ds Max 2020's slice drops the rim faces of a Shell below it lying within this many system units of its plane
-# (1e-4 off: dropped; 1e-3 off: kept, doubled; lowered())
+# (1e-4 off: dropped; 1e-3 off: kept, doubled; lowered()). Positions are float32: some 1000 units from the origin
+# along the plane's axis one step passes it, and such a cut keeps the order
 PLANE_TOLERANCE = 1e-4
+# Blender's Mirror keeps a vertex this close to the plane (meters, bisect_distance's default) on the kept side: in
+# files of large units the on-plane test stays within it, so a moved Mirror cuts no end of the cut away
+BISECT_DISTANCE = 1e-3
 # |cos| between a face's normal and a plane's axis: a face at the plane offset along it by a Shell up to 10 units
 # thick stays within PLANE_TOLERANCE of the plane
 NORMAL_TOLERANCE = 1e-5
 SEAM_STAYS = ("the rim of the Shell below it along the mirror plane differs from 3ds Max's: the Mirror is moved below "
               "the Solidify only for a rim lying on the plane, with slice and weld on")
+SEAM_UNTESTED = ("whether the rim of the Shell below it lies on the mirror plane is not tested (with its copies the "
+                 "mesh would pass %d face corners): where it does, it differs from 3ds Max's" % MAX_MIRRORED_CORNERS)
 _SPENT = "the primitives and extrusions before it reach %d face corners, the budget for one scene"
 SHEAR_TOLERANCE = 1e-5  # |cos| between two rows of a local matrix
 OFFSET = "its object is offset from its pivot: the camera looks from the pivot, 3ds Max from the object"
@@ -284,11 +290,11 @@ class MeshDescription:
     share it, in walk order; dropped_faces the faces left out (a repeated vertex, doubled); applied the UVW Maps
     (reader.modifiers Modifiers) evaluated into it; creases whether its sharp edges are to be creased (a converted
     smoother separates by smoothing groups); zeroed_uvs the U and V coordinates that were not numbers (inf, NaN),
-    set to 0; lowered how many Mirrors right above its Shell go below it, seam_stays whether the next one leaves a rim
-    on its plane that is not converted (lowered())."""
+    set to 0; lowered how many Mirrors right above its Shell go below it, seam_issue why the next one does not when
+    it may leave a rim on its plane (SEAM_STAYS, SEAM_UNTESTED or None: lowered())."""
     __slots__ = ("key", "name", "positions", "loop_vertices", "loop_starts", "loop_totals", "material_indices",
                  "sharp_faces", "sharp_edges", "uv_layers", "users", "dropped_faces", "applied", "creases",
-                 "zeroed_uvs", "lowered", "seam_stays")
+                 "zeroed_uvs", "lowered", "seam_issue")
 
     def __init__(self, key, name, positions, loop_vertices, loop_starts, loop_totals, material_indices,
                  sharp_faces, sharp_edges, uv_layers, dropped_faces=0, zeroed_uvs=0):
@@ -300,7 +306,7 @@ class MeshDescription:
         self.applied = ()
         self.creases = False
         self.zeroed_uvs = zeroed_uvs
-        self.lowered, self.seam_stays = 0, False
+        self.lowered, self.seam_issue = 0, None
 
     def __repr__(self):
         return "MeshDescription(%r, %d vertices, %d faces, %d UV layers)" % (
@@ -1527,8 +1533,8 @@ def _mirror_once(p, lv, starts, totals, m):
 
 
 def _face_normals(p, lv, starts, totals, faces):
-    """The unit normals (Newell) of the faces (bool (F,)) of a mesh (numpy arrays), float64 (k, 3); a face of no area
-    gets (0, 0, 0)."""
+    """The unit normals of the faces (bool (F,)) of a mesh (numpy arrays), float64 (k, 3): each face's area vector, a
+    fan of cross products from its first vertex; a face of no area gets (0, 0, 0)."""
     import numpy
     face_of = numpy.repeat(numpy.arange(len(starts)), totals)
     following = numpy.arange(1, len(lv) + 1)
@@ -1543,20 +1549,24 @@ def _face_normals(p, lv, starts, totals, faces):
 
 
 def lowered(md, below, above, unit, check=None):
-    """(moved, stays) for a Shell above the Mirrors below and below the Mirrors above (_seam), on MeshDescription md
+    """(moved, issue) for a Shell above the Mirrors below and below the Mirrors above (_seam), on MeshDescription md
     (meters; unit meters per system unit, _unit): how many of above, bottom first, Blender's Mirror makes as 3ds Max
-    2020's Symmetry does from below the Solidify, and whether the next one leaves a rim on its plane that is not
-    converted. Above a Shell, 3ds Max's slice drops the rim faces on its plane (within PLANE_TOLERANCE) and the
-    weld shuts the cut; Blender's bisect keeps them. On the mesh with its copies under the Mirrors below and those
-    moved (_mirrored), a Mirror whose plane holds no open edge (both ends on it) ends the run; one that slices and
-    welds those ends, every face at them square to the plane (NORMAL_TOLERANCE: the rim then lies on the plane), is
-    moved; another ends it with stays. No more than MAX_MIRRORED_CORNERS face corners are tested (the run ends there).
-    check() between the Mirrors."""
+    2020's Symmetry does from below the Solidify, and why the next one is not moved when it may leave a rim on its
+    plane (None otherwise). Above a Shell, 3ds Max's slice drops the rim faces on its plane (within PLANE_TOLERANCE,
+    at most BISECT_DISTANCE) and the weld shuts the cut; Blender's bisect keeps them. On the mesh with its copies
+    under the Mirrors below and those moved (_mirrored), a Mirror whose plane holds no open edge (both ends on it)
+    ends the run; one that slices and welds those ends, every face at them square to the plane (NORMAL_TOLERANCE: the
+    rim then lies on the plane), is moved; another ends it with SEAM_STAYS. Only the open edges on the plane decide:
+    others within the weld threshold of it are welded too once the Mirror is moved, where 3ds Max keeps their rim.
+    The mesh with its copies tested is at most MAX_MIRRORED_CORNERS face corners (past it: SEAM_UNTESTED). check()
+    between the Mirrors."""
     import numpy
-    if not above or len(md.loop_vertices) << len(below) > MAX_MIRRORED_CORNERS:
-        return 0, False
+    if not above:
+        return 0, None
+    if len(md.loop_vertices) << len(below) > MAX_MIRRORED_CORNERS:
+        return 0, SEAM_UNTESTED
     p, lv, starts, totals = _mirrored(md, below, check)
-    tolerance = 2.0 * PLANE_TOLERANCE * unit  # |p - R p|, twice the distance to the plane
+    tolerance = 2.0 * min(PLANE_TOLERANCE * unit, BISECT_DISTANCE)  # |p - R p|, twice the distance to the plane
     for k, m in enumerate(above):
         if check is not None:
             check()
@@ -1566,7 +1576,7 @@ def lowered(md, below, above, unit, check=None):
         on = numpy.einsum("ij,ij->i", d, d) <= tolerance * tolerance
         edges = edges[on[edges[:, 0]] & on[edges[:, 1]]]
         if not len(edges):
-            return k, False
+            return k, None
         ends = numpy.unique(edges)
         settings = dict(m.settings)
         square = any(settings["use_bisect_axis"]) and welded(p[ends], m).all()
@@ -1579,12 +1589,12 @@ def lowered(md, below, above, unit, check=None):
             tilt = n - n @ r[:3, :3].T  # twice the normal's part along the axis
             square = bool((numpy.einsum("ij,ij->i", tilt, tilt) <= 4.0 * NORMAL_TOLERANCE ** 2).all())
         if not square:
-            return k, True
+            return k, SEAM_STAYS
         if k + 1 < len(above):
             if 2 * len(lv) > MAX_MIRRORED_CORNERS:
-                return k + 1, False
+                return k + 1, SEAM_UNTESTED
             p, lv, starts, totals = _mirror_once(p, lv, starts, totals, m)
-    return len(above), False
+    return len(above), None
 
 
 def rim_issues(md, rim, check=None, mirrors=()):
@@ -1629,9 +1639,10 @@ def _name_rim(desc, rims, shell, key, node, check=None, mirrors=()):
 def _rim_mirrors(md, mirrors, above, unit):
     """The Mirrors (ModifierDescriptions) the corners of the rim on MeshDescription md are counted with (rim_issues):
     mirrors (below the Shell) and those of above lowered() moves; when the next one leaves a rim on its plane
-    (md.seam_stays), that one too, welding what lies on its plane (3ds Max's slice drops the rim there: no corner)."""
+    (md.seam_issue SEAM_STAYS), that one too, welding what lies on its plane (3ds Max's slice drops the rim there: no
+    corner)."""
     out = tuple(mirrors) + tuple(above[:md.lowered])
-    if md.seam_stays:
+    if md.seam_issue == SEAM_STAYS:
         m = above[md.lowered]
         weld = (("use_mirror_merge", True), ("merge_threshold", 2.0 * PLANE_TOLERANCE * unit * (1.0 + 1e-6)))
         out += (m._replace(settings=tuple(x for x in m.settings if x[0] not in dict(weld)) + weld),)
@@ -1639,15 +1650,15 @@ def _rim_mirrors(md, mirrors, above, unit):
 
 
 def _name_seam(desc, rims, above, key, node):
-    """The issue of the Mirror of above (_seam) that leaves a rim on its plane on mesh key (md.seam_stays), on node:
-    once per Mirror and mesh."""
+    """The issue of the Mirror of above (_seam) that may leave a rim on its plane on mesh key (md.seam_issue), on
+    node: once per Mirror and mesh."""
     md = desc.meshes[key]
-    if not md.seam_stays:
+    if md.seam_issue is None:
         return
     m = above[md.lowered]
     if ("seam", m.index, key) not in rims:
         rims.add(("seam", m.index, key))
-        desc.issues.append((node, "modifiers: %s: %s" % (m.class_name or "Symmetry", SEAM_STAYS)))
+        desc.issues.append((node, "modifiers: %s: %s" % (m.class_name or "Symmetry", md.seam_issue)))
 
 
 def _large(md, check):
@@ -1696,9 +1707,9 @@ def _mapped_mesh(scene, desc, mapped, key, data, maps, node, name, offset, meter
     then by ("rim", True) when a converted Shell's rim is hardened (_rim): the open edges join the sharp ones. Above
     the Mirrors mirrors (_mirrors), ("rim", their settings and mirror matrices) instead, and the open edges they
     weld shut stay smooth (_rim_edges): marked sharp, the weld would make them a hard seam. With Mirrors above right
-    above the Shell (_seam; mirrors then those below it), the rim entry holds them too, or ("seam", the settings and
-    matrices of mirrors and above) before the shading entry without a hardened rim; md.lowered and md.seam_stays say which of them go below
-    the Shell (lowered()), and the rim is that of mirrors and those. check goes to
+    above the Shell (_seam; mirrors then those below it), ("seam", the settings and matrices of mirrors, those of
+    above) before the shading entry; md.lowered and md.seam_issue say which of them go below the Shell (lowered()),
+    and the rim is that of mirrors and those. check goes to
     mesh_description. (None, ()) when its positions do not fit single precision (MeshError: an issue), found before
     any UVW Map is read (the maps, the shading and the rim leave the positions as they are); ranges caches per key
     as given whether they fit, a refusal (its issue starts with refusal) then named on the first node only."""
@@ -1726,12 +1737,13 @@ def _mapped_mesh(scene, desc, mapped, key, data, maps, node, name, offset, meter
             continue
         usable.append((m, found))
     key = key + tuple((m.index, m.context.tm) for m, _found in usable)
-    if above and not rim:
-        key = key + (("seam", tuple((m.settings, m.mirror) for m in mirrors + tuple(above))),)
+    if above:
+        key = key + (("seam", tuple((m.settings, m.mirror) for m in mirrors),
+                      tuple((m.settings, m.mirror) for m in above)),)
     if shading is not None:
         key = key + (("shading", shading),)
     if rim:
-        key = key + (("rim", tuple((m.settings, m.mirror) for m in mirrors + tuple(above)) or True),)
+        key = key + (("rim", tuple((m.settings, m.mirror) for m in mirrors) or True),)
     md = desc.meshes.get(key)
     if md is None:
         done = []
@@ -1747,7 +1759,7 @@ def _mapped_mesh(scene, desc, mapped, key, data, maps, node, name, offset, meter
             md.sharp_faces[:] = False
             md.sharp_edges = md.sharp_edges[:0]
         if above:
-            md.lowered, md.seam_stays = lowered(md, mirrors, above, _unit(offset, meters), _large(md, check))
+            md.lowered, md.seam_issue = lowered(md, mirrors, above, _unit(offset, meters), _large(md, check))
         if rim:
             md.sharp_edges = _merged_edges(md.sharp_edges, _rim_edges(md, mirrors + tuple(above[:md.lowered]),
                                                                       _large(md, check)))

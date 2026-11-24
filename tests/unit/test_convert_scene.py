@@ -137,7 +137,9 @@ SHARP_EDGES_EXTRUDE = {"FixtureExtRect": 4 * 2 + 8, "FixtureExtL": 6 + 12, "Fixt
                        # center and to in 2 segments (maxdrop-em3.111); the open arc none; the clockwise Line and
                        # the holed cap as above
                        "FixturePieRevExt": 46 + 6, "FixturePieRevWrapExt": 46 + 6, "FixturePieExt": 46 + 6,
-                       "FixtureArcRevExt": 0, "FixtureClockwiseExt": 4 * 2 + 8, "FixtureHoleExt": 4 * 2 + 8 + 56}
+                       "FixtureArcRevExt": 0, "FixtureClockwiseExt": 4 * 2 + 8, "FixtureHoleExt": 4 * 2 + 8 + 56,
+                       # stack_shell: an open Line's two corner columns, the hardened rim but its ends on the plane
+                       "FixtureShellUnderSymExtrude": 2 + 6}
 # uvwmap: boxes of 3 x 2 x 2 segments, a group per side: 28 edges; the cylinder's two rims; the sphere is smooth
 SHARP_EDGES_UVWMAP = {"FixtureUVWCyl": 32, "FixtureUVWSphere": 0, "FixtureUVWSharedB": SHARP_EDGES_POLY_BOX,
                       # uvwmap_oblique: smooth spheres, the rims of a 10-sided cylinder
@@ -1240,9 +1242,10 @@ class Fixtures(unittest.TestCase):
                     md = desc.meshes[node.mesh]
                     if primitive and o["modifiers"]:  # 3ds Max's counts are after the TurboSmooth
                         self.assertTrue(node.converted, "%s %s" % (name, node.name))
-                    elif extruded or primitive:  # 3ds Max's counts are of triangles
-                        self.assertEqual((len(md.positions), int((md.loop_totals - 2).sum())),
-                                         (o["eval_verts"], o["eval_faces"]), "%s %s" % (name, node.name))
+                    elif extruded or primitive:  # 3ds Max's counts are of triangles, after converted modifiers
+                        if not node.converted:
+                            self.assertEqual((len(md.positions), int((md.loop_totals - 2).sum())),
+                                             (o["eval_verts"], o["eval_faces"]), "%s %s" % (name, node.name))
                     else:
                         self.assertEqual((len(md.positions), len(md.loop_starts)), (o["base_verts"], o["base_faces"]),
                                          "%s %s" % (name, node.name))

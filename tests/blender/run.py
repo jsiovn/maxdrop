@@ -31,7 +31,8 @@ Standard material and FixtureCurveMulti's Multi/Sub-Object entry for ID 1 in one
 FixtureCurveIds' two splines (IDs 2 and 1) each on the slot of its entry, FixtureCurveMixed (IDs 2, 1, 1) on ID 2's,
 no slot on the other curves; on every fixture each spline's material index is its slot.
 Converted modifiers (TurboSmooth, MeshSmooth, Shell, Symmetry): each object's Blender modifiers in the converted order
-(3ds Max's, but a Symmetry moved below the Shell whose rim lies on its plane) with the description's settings and mirror empties, creases where a smoother separates by smoothing groups (none on open
+(3ds Max's, but a Symmetry moved below the Shell whose rim lies on its plane) with the description's settings and
+mirror empties, creases where a smoother separates by smoothing groups (none on open
 edges), and the evaluated mesh with 3ds Max's vertex and triangle counts, world box and shading (flat faces, smooth
 regions and hard edges, the oracle's eval_mesh.smoothing; SMOOTHING_DIFFERS pins Blender's where it differs: two
 Shell rims, a weld); under a Solidify its triangles facing up, down and sideways in object space as 3ds Max's
@@ -377,19 +378,23 @@ HOLLOW = {"FixtureTube", "FixtureTubeSwap", "FixtureTubeDown", "FixtureTorus", "
 EXTRUDE_UV_LAYERS = {"FixtureExtRect": ["UVMap"], "FixtureExtAdaptive": ["UVMap"],
                      "FixtureUVWExtrude": ["UVMap"],  # uvwmap: no mapping from the Extrude, the UVW Map's
                      "FixturePieRevExt": ["UVMap"], "FixturePieRevWrapExt": ["UVMap"], "FixturePieExt": ["UVMap"],
-                     "FixtureArcRevExt": ["UVMap"], "FixtureClockwiseExt": ["UVMap"], "FixtureHoleExt": ["UVMap"]}
+                     "FixtureArcRevExt": ["UVMap"], "FixtureClockwiseExt": ["UVMap"], "FixtureHoleExt": ["UVMap"],
+                     "FixtureShellUnderSymExtrude": ["UVMap"]}
 EXTRUDE_SHARP_EDGES = {"FixtureExtRect": 16, "FixtureExtL": 18, "FixtureExtHole": 68, "FixtureExtIsland": 36,
                        "FixtureExtOpen": 0, "FixtureExtMirror": 72, "FixtureExtAdaptive": 256,
                        "FixtureExtShapeIDs": 41, "FixtureExtShapeIDsRect": 12, "FixtureUVWExtrude": 12,
                        "FixtureExtGrid": 36, "FixtureExtGridCircle": 16,
                        "FixturePieRevExt": 52, "FixturePieRevWrapExt": 52, "FixturePieExt": 52,
-                       "FixtureArcRevExt": 0, "FixtureClockwiseExt": 16, "FixtureHoleExt": 72}
+                       "FixtureArcRevExt": 0, "FixtureClockwiseExt": 16, "FixtureHoleExt": 72,
+                       # stack_shell: an open Line's two corner columns and the rim the Shell above hardens (top and
+                       # bottom, not the ends on the Symmetry's plane, which its Mirror welds below the Shell)
+                       "FixtureShellUnderSymExtrude": 8}
 EXTRUDE_EULER = {"FixtureExtRect": 2, "FixtureExtL": 2, "FixtureExtHole": 0, "FixtureExtIsland": 2,
                  "FixtureExtOpen": None, "FixtureExtMirror": 2, "FixtureExtAdaptive": 2, "FixtureExtShapeIDs": 0,
                  "FixtureExtShapeIDsRect": 2, "FixtureUVWExtrude": 2, "FixturePieRevExt": 2,
                  "FixtureExtGrid": 0, "FixtureExtGridCircle": None,  # grid caps: a holed solid; one cap
                  "FixturePieRevWrapExt": 2, "FixturePieExt": 2, "FixtureArcRevExt": None, "FixtureClockwiseExt": 2,
-                 "FixtureHoleExt": 0}
+                 "FixtureHoleExt": 0, "FixtureShellUnderSymExtrude": None}
 VALUE_TOLERANCE = 1e-4
 SPECULAR_LEVEL = 0.5  # the IR's specular is a reflection weight: 1 is Blender's Specular IOR Level 0.5
 TWIN_LABEL, WEIGHT_LABEL = "Without reflection", "Reflection weight"  # a weight between 0 and 1 (maxdrop-em3.119)
@@ -548,6 +553,8 @@ def run_fixture(path, modules):
             continue
         if o["shape"] is not None and node.kind == convert_scene.MESH:
             check_extruded(label, ob, node, o, meters, plan)
+            if node.converted:
+                check_converted(label, ob, node, o, meters, desc)
             continue
         if o["shape"] is not None:
             check_curve(label, ob, o["shape"], meters)
@@ -1202,8 +1209,9 @@ def check_light_strength(path):
 
 
 def check_extruded(label, ob, node, o, meters, plan):
-    """A shape under an Extrude: a mesh with the oracle's world box, vertex count and triangle count, closed with
-    normals outward as rendered (the signed volume of the world mesh, times the sign of the world matrix's
+    """A shape under an Extrude: a mesh with the oracle's world box, vertex count and triangle count (with converted
+    modifiers above the Extrude, the oracle's are after them: check_converted compares the evaluated mesh), closed
+    with normals outward as rendered (the signed volume of the world mesh, times the sign of the world matrix's
     determinant, is positive) when capped, its UV layers, sharp edges and material slots."""
     check(label + ": mesh object", ob.type == 'MESH', ob.type)
     if ob.type != 'MESH':
@@ -1212,12 +1220,13 @@ def check_extruded(label, ob, node, o, meters, plan):
     world = [mw @ v.co for v in mesh.vertices]
     lo = [min(p[k] for p in world) / meters for k in range(3)]
     hi = [max(p[k] for p in world) / meters for k in range(3)]
-    check(label + ": world bounding box", close(lo, o["bbox_min"], BBOX_TOLERANCE)
-          and close(hi, o["bbox_max"], BBOX_TOLERANCE),
-          "%s..%s vs %s..%s" % (["%.6g" % v for v in lo], ["%.6g" % v for v in hi], o["bbox_min"], o["bbox_max"]))
-    triangles = sum(len(p.vertices) - 2 for p in mesh.polygons)
-    check(label + ": vertex and triangle counts", (len(mesh.vertices), triangles) == (o["eval_verts"], o["eval_faces"]),
-          "%d, %d" % (len(mesh.vertices), triangles))
+    if not node.converted:
+        check(label + ": world bounding box", close(lo, o["bbox_min"], BBOX_TOLERANCE)
+              and close(hi, o["bbox_max"], BBOX_TOLERANCE),
+              "%s..%s vs %s..%s" % (["%.6g" % v for v in lo], ["%.6g" % v for v in hi], o["bbox_min"], o["bbox_max"]))
+        triangles = sum(len(p.vertices) - 2 for p in mesh.polygons)
+        check(label + ": vertex and triangle counts", (len(mesh.vertices), triangles) ==
+              (o["eval_verts"], o["eval_faces"]), "%d, %d" % (len(mesh.vertices), triangles))
     name = o["name"]
     euler = EXTRUDE_EULER[name]
     if euler is not None:

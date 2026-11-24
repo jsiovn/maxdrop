@@ -883,16 +883,20 @@ What 3ds Max 2020 makes, against Blender's evaluated meshes (`tests/blender/run.
   in 3ds Max; 72 triangles, (0, 19, 40) and two false rim corners in Blender with the Mirror above the Solidify).
   MaxDrop moves such a Mirror below the Solidify, which welds the cut before the shell is made: 3ds Max's counts and
   shading on Blender 4.2, 4.5 and 5.2 (FixtureShellUnderSym; FixtureShellUnderSymTurbo, a TurboSmooth above: 130
-  vertices, 256 triangles, (0, 1, 0); FixtureShellBetweenSym, a Symmetry on each side; the probe also: inner 1 outer
-  0, a closed half, a quarter under two Symmetries, the gizmo 1e-5 off or turned 1e-4 degrees). The rule
-  (convert/scene.py lowered()): per Symmetry right above the lowest Shell (only Symmetries below it), on the mesh with
-  the copies of those below, the open edges with both ends within 1e-4 units of its plane; none: it stays; moved when
-  it slices and welds those ends and every face at them is square to the plane (|cos| <= 1e-5), else a line in the
-  report: weld off (3ds Max leaves the cut open: FixtureShellUnderSymNoWeld 64 triangles, Blender 80), slice off (3ds
-  Max keeps both copies of the rim: 80, Blender 72), the cut's faces slanting across the plane (3ds Max slices the
-  shell: 37 vertices, Blender 34). There the rim's corners are counted as if the cut were welded (3ds Max has none
-  there). A gizmo 1e-3 to 0.04 units off the cut, or turned 1e-3 degrees, keeps the rim in 3ds Max too (80 or 72
-  triangles, Blender 72): no line. A mesh light's emitter keeps 3ds Max's order.
+  vertices, 256 triangles, (0, 1, 0); FixtureShellBetweenSym, a Symmetry on each side; FixtureShellUnderSymExtrude, an
+  open Line under an Extrude: 24, 48, (0, 10, 32); the probe also: inner 1 outer 0, a closed half, a quarter under two
+  Symmetries, the gizmo 1e-5 off or turned 1e-4 degrees). The rule (convert/scene.py lowered()): per Symmetry right
+  above the lowest Shell (only Symmetries below it), on the mesh with the copies of those below, the open edges with
+  both ends within 1e-4 units of its plane (at most 1 mm, Blender's bisect distance; float32 positions some 1000 units
+  from the origin along the axis pass 1e-4, and keep the order); none: it stays; moved when it slices and welds those
+  ends and every face at them is square to the plane (|cos| <= 1e-5), else a line in the report: weld off (3ds Max
+  leaves the cut open: FixtureShellUnderSymNoWeld 64 triangles, Blender 80), slice off (3ds Max keeps both copies of
+  the rim: 80, Blender 72), the cut's faces slanting across the plane (3ds Max slices the shell: 37 vertices, Blender
+  34). There the rim's corners are counted as if the cut were welded (3ds Max has none there). Only the open edges on
+  the plane decide: others within the weld threshold of it are welded too once the Mirror is moved, where 3ds Max
+  keeps their rim. A mesh that with its copies would pass 4M face corners is not tested (a line). A gizmo 1e-3 to 0.04
+  units off the cut, or turned 1e-3 degrees, keeps the rim in 3ds Max too (80 or 72 triangles, Blender 72): no line. A
+  mesh light's emitter keeps 3ds Max's order.
 - **Symmetry**: the mirror plane is in the gizmo's space, q = p * context * inverse(gizmo), as UVW Map's; without
   flip the side where q along the axis is positive stays, sliced at the plane; without slice the whole object is
   mirrored and both copies stay (FixtureSymmetryNoSlice: 16 vertices). Weld seam: 3ds Max slices beside a vertex
