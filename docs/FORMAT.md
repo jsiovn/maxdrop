@@ -703,23 +703,26 @@ What 3ds Max 2020 makes of it (`snapshotAsMesh`, probed on scratch scenes and ch
   are bounded (`MAX_CROSS_TESTS`): past them a spline is capped unchecked, a line in the report.
   Wherever the spline starts: a doubled first knot (DupFirst), a doubled pair before the last (DupSecondLast), the
   last on the first, all without a cap. Not probed, assumed as above: an Extrude with both caps off (MaxDrop leaves
-  a crossing spline unturned there too), a curve segment from a knot to another on the same spot with its handles
-  pulled out, without Optimize (MaxDrop: its steps run out and back, a crossing), a segment from a knot back to
-  itself with its handles pulled out (MaxDrop: no steps under Optimize), two
+  a crossing spline unturned there too), a segment from a knot back to itself with its handles pulled out
+  (MaxDrop: no steps under Optimize), two
   points on one XY spot at different heights (MaxDrop: a touch on XY, no cap).
   Rounded Rectangles with short straight sides (10 x 20, corner radius 4.8, 4.9, 4.99; 13 x 12.5, radius 6 and
   6.25): 3ds Max gives the short sides their 6 steps (their handles run so far past the ends that the curve folds
   back: not straight, 44 points) and no cap (the steps fold back over the side); radius 3, 4, 4.5: 32 points and a
   cap. MaxDrop the same since maxdrop-em3.142 (the straight test above; radius 6.25 with its zero-length sides
   merged, 42 points).
-  Zero-length segments (maxdrop-6n0.6.9, 3ds Max 2020 probes, steps 6 unless named): a doubled knot with a straight
-  edge into it or out of it gets no cap, the other edge straight or a curve's step, also with three knots on the
-  spot (a line into (20, 0) and a curve out: no cap, with two or three knots; a curve in and a line out: no cap);
-  curves on both sides are capped, as the pills, also with three knots on the spot. Without Optimize the same,
-  whatever the steps (DupCorner 70 / 70, DupMid 84 / 84, the last knot on the first 70 / 70, every point kept;
-  steps 0: 10 / 10, 12 / 12, 10 / 10). A curve whose vectors lie 1 % of its chord off it counts as straight there
-  with and without Optimize (no cap). MaxDrop: an edge is straight when its segment passes Optimize's test (or is a
-  line), or when it is a curve without steps (one chord); a zero-length straight segment's steps sit on its point.
+  Zero-length segments (maxdrop-6n0.6.9, 3ds Max 2020 probes, steps 6 unless named): what decides is the edge
+  into the doubled spot. After a straight edge it gets no cap whatever leaves it (a line into (20, 0) and a curve
+  out, two or three knots on the spot: no cap at scales 1, 0.1, 1.37, 3.3 and 1000 with offsets, with the line
+  tilted, at steps 1, 6 and 10, without Optimize; three line knots: no cap). After a curve's step 3ds Max's
+  rounding decides, a line out or not (a curve in and a line out: capped at scales 1.37, 3.3 and 1000 and at steps
+  10, not at scales 1 and 0.1, steps 1 or without Optimize; the last knot on the first after a curve: capped at
+  1.37 and 1000 only; curves on both sides: the two shapes probed capped, also with three knots on the spot), and
+  MaxDrop caps it, as the pills. Without Optimize the straight cases the same, whatever the steps (DupCorner
+  70 / 70, DupMid 84 / 84, the last knot on the first 70 / 70, every point kept; steps 0: 10 / 10, 12 / 12,
+  10 / 10). A curve whose vectors lie 1 % of its chord off it counted as straight in the one shape probed, with and
+  without Optimize (no cap). MaxDrop: an edge is straight when its segment is a line or passes Optimize's test, or
+  is a curve without steps (one chord); a zero-length straight segment's steps sit on its point.
   MaxDrop keeps merging a zero-length segment's points, a default taken in an unattended run and open to the
   owner's word: 3ds Max's extra vertices only make faces of no area (DupCorner 10 / 10, DupMid 12 / 12, the
   10 x 20 r 5 pill 64 / 124 with a degenerate triangle per doubled spot in each cap; MaxDrop 8 / 8, 10 / 10,

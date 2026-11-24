@@ -1607,11 +1607,15 @@ class SelfCrossing(unittest.TestCase):
                 self.assertEqual(issues, ["1 closed spline that crosses or touches itself: no cap, as in 3ds Max"],
                                  (name, steps))
 
-    def test_a_straight_edge_on_either_side_of_a_doubled_knot(self):
-        """maxdrop-6n0.6.9's second 3ds Max 2020 probe, steps 6: two or three knots on (20, 0) with a straight edge
-        into or out of them get no cap, curves on both sides a cap (as the pills), also with three knots; nearly
-        straight curves (vectors 1 % of the chord off it) count as straight with and without Optimize. Knots as
-        3ds Max gave them back: (type, the segment leaving it, point, in, out)."""
+    def test_a_straight_edge_into_a_doubled_knot(self):
+        """maxdrop-6n0.6.9's later 3ds Max 2020 probes: two or three knots on one spot after a straight edge get no
+        cap whatever leaves them (a line into (20, 0) and a curve out: no cap at four scales and offsets, tilted, at
+        steps 1, 6 and 10, without Optimize). After a curve's step 3ds Max's rounding decides, a line out or not:
+        a curve in and a line out capped at scales 1.37, 3.3 and 1000 and at steps 10, not at scales 1 and 0.1, steps
+        1 or without Optimize; the last knot on the first after a curve likewise; curves on both sides capped in the
+        two shapes probed, also with three knots. MaxDrop caps those. Curves 1 % of their chord off it count as
+        straight (no cap in 3ds Max with and without Optimize). Knots as 3ds Max gave them back: (type, the segment
+        leaving it, point, in, out)."""
         bc, c, ln, cv = shapes.BEZIER_CORNER, shapes.CORNER, shapes.LINE, shapes.CURVE
         a = (20.0, 0.0, 0.0)
         top = ((c, ln, (20, 10, 0), (23, 7, 0), (13.3333, 10, 0)), (c, ln, (0, 10, 0), (6.66667, 10, 0), (0, 5, 0)))
@@ -1619,24 +1623,40 @@ class SelfCrossing(unittest.TestCase):
         curve_in = ((bc, cv, (0, 0, 0), (0, 0, 0), (6, -4, 0)), (bc, ln, a, (14, -4, 0), a))
         curve_out = ((bc, cv, a, a, (26, 4, 0)),)
         line_out = ((bc, ln, a, a, a), (c, ln, (20, 10, 0), (20, 5, 0), (13.3333, 10, 0)), top[1])
-        cases = {  # name -> (knots, Optimize, capped in 3ds Max)
-            "MixDouble": (line_in + ((bc, ln, a, a, a),) + curve_out + top, True, False),
-            "MixDoubleRev": (curve_in + line_out, True, False),
-            "DoubleCurves": (curve_in + curve_out + top, True, True),
-            "TripleCurves": (curve_in + ((bc, ln, a, a, a),) + curve_out + top, True, True),
-            "TripleLines": (line_in + ((c, ln, a, a, a),) * 3 + ((c, ln, (20, 10, 0), (20, 10, 0), (20, 10, 0)),
-                                                                   top[1]), True, False),
-            "TripleCurveOpt": (line_in + ((bc, cv, a, a, (21, 3, 0)), (bc, cv, a, (19, -3, 0), a)) + curve_out + top,
-                               True, False),
-            "NearNoOpt": (((bc, cv, (0, 0, 0), (0, 0, 0), (6.6667, 0.2, 0)), (bc, ln, a, (13.3333, 0.2, 0), a),
-                           (bc, cv, a, a, (20.2, 3.3333, 0)), (c, ln, (20, 10, 0), (20.1, 6.66665, 0), (13.3333, 10, 0)),
-                           top[1]), False, False),
-        }
-        cases["NearOpt"] = (cases["NearNoOpt"][0], True, False)
-        for name, (knots, optimize, capped) in cases.items():
-            spline = shapes.Spline(tuple(shapes.Knot(*q) for q in knots), True)
-            self.assertEqual(extrude.polylines(_shape([spline], optimize=optimize))[0].doubled, not capped, name)
-            data, issues = self.make([spline], optimize=optimize)
+        mix = line_in + ((bc, ln, a, a, a),) + curve_out + top
+        rev = curve_in + line_out
+        near = ((bc, cv, (0, 0, 0), (0, 0, 0), (6.6667, 0.2, 0)), (bc, ln, a, (13.3333, 0.2, 0), a),
+                (bc, cv, a, a, (20.2, 3.3333, 0)), (c, ln, (20, 10, 0), (20.1, 6.66665, 0), (13.3333, 10, 0)), top[1])
+        close_mix = ((c, ln, (0, 0, 0), (0, 0, 0), (0, 0, 0)), (c, ln, a, a, a), (c, ln, (20, 10, 0),) + ((20, 10, 0),) * 2,
+                     (bc, cv, (0, 10, 0), (0, 10, 0), (-3, 7, 0)), (bc, ln, (0, 0, 0), (-3, 3, 0), (0, 0, 0)))
+        cases = [  # (name, knots, steps, Optimize, scale, offset, capped by MaxDrop)
+            ("Mix", mix, 6, True, 1, (0, 0), False),
+            ("Mix_1.37", mix, 6, True, 1.37, (0.123, 4.56), False),
+            ("Mix_1000", mix, 6, True, 1000, (3, 7), False),
+            ("Mix_steps1", mix, 1, True, 1, (0, 0), False),
+            ("Mix_steps10", mix, 10, True, 1, (0, 0), False),
+            ("Mix_noopt", mix, 6, False, 1, (0, 0), False),
+            ("Tilt", ((c, ln, (0, -3, 0), (0, -3, 0), (0, -3, 0)),) + mix[1:], 6, True, 1, (0, 0), False),
+            ("TripleLines", line_in + ((c, ln, a, a, a),) * 3 + ((c, ln) + ((20, 10, 0),) * 3, top[1]), 6, True, 1,
+             (0, 0), False),
+            ("TripleCurveOpt", line_in + ((bc, cv, a, a, (21, 3, 0)), (bc, cv, a, (19, -3, 0), a)) + curve_out + top,
+             6, True, 1, (0, 0), False),
+            ("NearNoOpt", near, 6, False, 1, (0, 0), False),
+            ("NearOpt", near, 6, True, 1, (0, 0), False),
+            # 3ds Max's rounding decides: a cap in MaxDrop
+            ("Rev", rev, 6, True, 1, (0, 0), True),
+            ("Rev_1.37", rev, 6, True, 1.37, (0.123, 4.56), True),
+            ("CloseMix", close_mix, 6, True, 1, (0, 0), True),
+            ("DoubleCurves", curve_in + curve_out + top, 6, True, 1, (0, 0), True),
+            ("TripleCurves", curve_in + ((bc, ln, a, a, a),) + curve_out + top, 6, True, 1, (0, 0), True),
+        ]
+        for name, knots, steps, optimize, f, (ox, oy), capped in cases:
+            def put(p):
+                return (_f32(p[0] * f + ox), _f32(p[1] * f + oy), 0.0)
+            spline = shapes.Spline(tuple(shapes.Knot(k, g, put(p), put(i), put(o)) for k, g, p, i, o in knots), True)
+            shape = _shape([spline], steps=steps, optimize=optimize)
+            self.assertEqual(extrude.polylines(shape)[0].doubled, not capped, name)
+            data, issues = self.make([spline], steps=steps, optimize=optimize)
             self.assertEqual(bool((data.loop_totals != 4).any()), capped, (name, issues))
 
     def test_optimize_gives_a_segment_back_to_its_knot_no_steps(self):
