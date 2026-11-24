@@ -1864,7 +1864,8 @@ scene's input rule), which a gamma-off scene shows decoded: MaxDrop converts the
 gamma on and as stored with it off, and there takes the mean first and decodes it after (a Tint over a constant
 folded exactly; otherwise a power of 2.2, within 0.005 of V-Ray on these planes). A Color Correction's saturation of
 -50 over the VRayColor gives 0.4739, over the PNG 0.4739 off and 0.2770 on: not Blender's HSV saturation, so a
-Color Correction in a mask keeps its input's mean (a grey). With the gamma off a colored PNG as the mask itself gives
+Color Correction directly as a mask keeps its input's mean (a grey). The same rule is assumed for Corona, a Corona
+layer mask and a Diffuse Level map (not measured). With the gamma off a colored PNG as the mask itself gives
 the decoded mean (0.4575 shown as 0.1768), where MaxDrop draws the mean of the decoded channels (0.2456), and an RGB
 Tint on a color input renders the tint of the stored color, decoded ((0.638, 0.384, 0.350) shown as (0.365, 0.122,
 0.100); MaxDrop draws (0.334, 0.057, 0.048)): both left as they are.

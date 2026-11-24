@@ -52,8 +52,11 @@ normal input are assumed by the same rule. Images and masks below such a wrapper
 which output the wrapper asks an image for is not measured). In a MASK graph an RGB Tint or an Output part takes its
 map as the color V-Ray holds (COLOR with the gamma on, STORED with it off: _wrapper_input) and the mask is the mean of
 its output, decoded after the mean with the gamma off (_mask_mean; V-Ray 5.2 renders, maxdrop-6n0.6.2: rows 128 / 64 /
-32 over a VRayColor (200, 100, 50) mask 0.1722 in both modes); a Color Correction there keeps its input's mean, as
-V-Ray's saturation is not the builder's HSV one (CC saturation -50 over that VRayColor: 0.4739).
+32 over a VRayColor (200, 100, 50) mask 0.1722 in both modes; assumed for Corona, a Corona layer mask and a Diffuse
+Level map, which are MASK graphs too); an image there takes its RGB output's alpha rule, as in a color graph (not
+measured). A Color Correction directly as the mask keeps its input's mean, as V-Ray's saturation is not the builder's
+HSV one (CC saturation -50 over that VRayColor: 0.4739); one below such a Tint or Output gets the color
+(maxdrop-6n0.6.38).
 With the gamma off V-Ray computes a Mix or Composite on the stored values (DISPLAY_MIXES; V-Ray 5.2 renders,
 maxdrop-em3.158): its internal value is the one the gamma on gives (a Mix of greys 40 and 220 at 50 % renders 0.510,
 by a 0.502 mask 0.511, a Composite of 64 + 64 in Addition 0.502), which the display-referred scene shows decoded
@@ -1424,8 +1427,8 @@ CORONA_RENDERER = (0x62A85DCC, 0x523C3604)
 
 def _wrapped(conv, m, map_pid, on_pid, kind, walk, depth, chain, empty=WHITE):
     """The map of a wrapper that has no color of its own (Output, RGB Tint, VRayColor2Bump), in kind (the caller's
-    rgb_kind when the wrapper changes the color); without a used map the swatch empty: an Output or RGB Tint renders
-    as over a white map, a VRayColor2Bump the color C2B_EMPTY (3ds Max 2020 renderMap and V-Ray 5.2 renders with the
+    _wrapper_input when the wrapper changes the color); without a used map the swatch empty: an Output or RGB Tint
+    renders as over a white map, a VRayColor2Bump the color C2B_EMPTY (3ds Max 2020 renderMap and V-Ray 5.2 renders with the
     gamma off, maxdrop-em3.76; V-Ray with the gamma on and Corona 12 with it off and on render the same,
     maxdrop-em3.127, but for an Output switched off in Corona: _output_map). In a normal input (a normal map's normal
     slot) that color as stored: V-Ray tilts the normal by an Output's or RGB Tint's white as by a white map, and
@@ -1603,7 +1606,8 @@ def _color_correction(conv, m, kind, walk, depth, chain):
     (0 standard: 12 brightness, 13 contrast; 1 advanced: 18 gainRGB (%), 22 gammaRGB, 26 pivotRGB, 30 liftRGB).
     Its color only without a map (3ds Max's rule): a map that converts to nothing leaves the input its own value.
     The map and the color are a color (rgb_kind): the correction acts on it, a float input takes the mean after. In
-    a mask they keep the mask rule (a grey): V-Ray's saturation is not the builder's HSV one (maxdrop-6n0.6.2)."""
+    a mask itself they keep the mask rule (a grey): V-Ray's saturation is not the builder's HSV one
+    (maxdrop-6n0.6.2); below a Tint or Output in a mask they are that wrapper's color (maxdrop-6n0.6.38)."""
     node = conv._sub(m, 1, None, rgb_kind(kind), walk, depth, chain)
     if node is None:
         if conv._on(m, 1, None) is not None:

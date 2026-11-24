@@ -2387,6 +2387,24 @@ class MaskWrapperConstants(Checks):
                 self.assertEqual(tint, bare)
                 self.assertEqual(out, bare)
 
+    def test_composite_layer_mask(self):
+        # gamma on: a Composite stays a Composite in a color graph, its layer mask a MASK graph
+        comp = FakeMap(1, tx.COMPOSITE, {9: [Ref(5), Ref(6)], 10: [Ref(None), Ref(2)]}, [5, 6, 2], cls="Composite")
+        tex = tx.TexmapConverter(FakeGraph(comp, _vcolor(5, (0.0,) * 3), _vcolor(6, (1.0,) * 3), _wtint(2, 3),
+                                           _vcolor(3, PROBE_COLOR)), _table(), swatches=colors.GAMMA_ON)
+        mask = tex.convert(mat.MapRef(1), tx.COLOR).root.layers[1].mask
+        self.assertEqual(mask.input, tx.Constant(PROBE_COLOR))
+        self.assertAlmostEqual(_tinted_mean(mask), 0.1722, delta=0.0001, msg="V-Ray 5.2")
+        self.close((mask.red, mask.green, mask.blue), STORED_ROWS)
+
+    def test_color_correction_below_a_wrapper_in_a_mask(self):
+        # below a Tint or Output in a mask a Color Correction gets the color (the wrapper's kind): its saturation is
+        # then drawn as the builder's HSV one, not V-Ray's (maxdrop-6n0.6.38)
+        cc = FakeMap(3, tx.COLOR_CORRECTION, {1: Ref(4), 8: -50.0}, [4], cls="Color Correction")
+        _t, mask = self.mask(colors.GAMMA_ON, _bw_mix(1, 2), _wout(2, 3), cc, _vcolor(4, PROBE_COLOR))
+        self.assertEqual(mask, tx.Adjust(tx.ColorCorrect(tx.Constant(PROBE_COLOR), saturation=0.5),
+                                         tx.TexOutput(level=0.5)))
+
     def test_data_graph_is_unchanged(self):
         # em3.128: a data input keeps the Tint's stored channels with no Decode, in both modes
         for rule in RULES:
