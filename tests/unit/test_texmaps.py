@@ -2306,7 +2306,7 @@ def _wout(index, map_ref=None, level=0.5):
     out = FakeMap(index, tx.OUTPUT, {0: Ref(map_ref)}, [map_ref] if map_ref is not None else [], cls="Output",
                   name="out")
     part = FakeMap(index + 40, (0x100, 0), superclass=classids.SC_TEXOUTPUT)
-    part.legacy = {0: {0: level}}
+    part.legacy = {0: FakeOld({0: level})}  # an old ParamBlock: level stored, the rest neither stored nor animated
     out.parts = {2: part}
     return out
 
