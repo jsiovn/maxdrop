@@ -2340,6 +2340,112 @@ class TestTangentsFixture(unittest.TestCase):
             self.assertGreaterEqual(sum(abs(v) > 0.1 for v in angles), 2, angles)  # about several axes
 
 
+RANGES = os.path.join(ROOT, "tests", "fixtures", "controllers_ranges.max")
+
+
+@unittest.skipUnless(os.path.exists(RANGES), "no controllers_ranges fixture")
+class TestRangesFixture(unittest.TestCase):
+    """controllers_ranges.max holds what tools/fixtures/controllers_ranges.ms says (maxdrop-6n0.6.12): out-of-range
+    types with frame 0 outside the range, ranges moved off the keys, lists with Average on, auto tangents."""
+
+    # node -> its keyframe controllers in walk order, each (class, before, after, switched off, range in frames)
+    TYPED = {
+        "FixtureFloatTypes": [("Bezier Float", 2, 1, False, (10, 50)), ("Bezier Float", 4, 1, False, (10, 50)),
+                              ("Bezier Float", 7, 1, False, (10, 50))],
+        "FixtureFloatTypesMore": [("Bezier Float", 3, 3, False, (10, 50)), ("Bezier Float", 5, 1, False, (1, 40)),
+                                  ("Bezier Float", 2, 1, True, (10, 50))],
+        "FixtureFloatAfter": [("Bezier Float", 1, 2, False, (-50, -10)), ("Bezier Float", 1, 7, False, (-50, -10)),
+                              ("Bezier Float", 1, 5, False, (-40, -1))],
+        "FixtureFloatRanges": [("Bezier Float", 3, 3, False, (0, 60)), ("Bezier Float", 1, 1, False, (20, 40)),
+                               ("Bezier Float", 2, 1, False, (20, 40))],
+        "FixtureORTPosition": [("Bezier Position", 2, 1, False, (10, 50))],
+        "FixtureORTRotation": [("TCB Rotation", 7, 1, False, (10, 50))],
+        "FixtureORTLinearRotation": [("Linear Rotation", 5, 1, False, (1, 30))],
+        "FixtureORTScale": [("Bezier Scale", 4, 1, False, (10, 50))],
+        "FixtureORTLinearPosition": [("Linear Position", 1, 7, False, (-50, -10))],
+        "FixtureORTTCBFloat": [("TCB Float", 1, 4, False, (-50, -10)), ("Linear Float", 2, 1, False, (10, 50))],
+    }
+
+    @classmethod
+    def setUpClass(cls):
+        cls.cf = cfb.CompoundFile(RANGES)
+        cls.s = scene.Scene.from_file(cls.cf)
+        cls.nodes = {cls.s.node(i).name: i for i in cls.s.walk()}
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.cf.close()
+
+    def controllers(self, name, kinds):
+        """[(class name, index)] below node name's transform controller whose class name is in kinds, in walk
+        order (references in slot order)."""
+        s, out, seen = self.s, [], set()
+
+        def walk(i):
+            entry = s.entry(i)
+            if i is None or i in seen or entry is None or entry.superclass == classids.SC_BASENODE:
+                return
+            seen.add(i)
+            if entry.name in kinds:
+                out.append((entry.name, i))
+            for k in sorted(s.refs(i)):
+                walk(s.refs(i)[k])
+        walk(s.node(self.nodes[name]).tm)
+        return out
+
+    def holder(self, i, chunk_id):
+        """The chunk of controller i (or its 0x7127) that holds chunk_id; None when neither does."""
+        chunk = self.s.chunk(i)
+        return next((h for h in (chunk, chunk.first(0x7127)) if h is not None and h.container and
+                     h.first(chunk_id) is not None), None)
+
+    def test_types_and_ranges(self):
+        for name, want in self.TYPED.items():
+            with self.subTest(name):
+                found = []
+                for cls, i in self.controllers(name, KEYFRAMED):
+                    _c, key_id, size, _count = KEYFRAMED[cls]
+                    holder = self.holder(i, key_id)
+                    if holder is None or holder.first(key_id).payload_size == 0:
+                        continue  # the untouched floats of a Position XYZ or Euler XYZ
+                    view = holder.first(key_id).view()
+                    first, last = (struct.unpack_from("<i", view, k * size)[0] for k in (0, len(view) // size - 1))
+                    self.assertFalse(first <= 0 <= last, "%s: frame 0 inside the keys" % name)
+                    before, after, off = ct._Eval._ort([holder])
+                    start, end = holder.first(0x3003).unpack("<ii")
+                    found.append((cls, before, after, off, (start // 160, end // 160)))
+                self.assertEqual(found, want)
+
+    def test_lists_average_on(self):
+        lists = ("Float List", "Position List", "Rotation List", "Scale List")
+        for name, want in (("FixtureListAverages", ["Position List", "Rotation List", "Scale List"]),
+                           ("FixtureFloatListAverage", ["Float List"])):
+            with self.subTest(name):
+                found = self.controllers(name, lists)
+                self.assertEqual([c for c, _i in found], want)
+                ev = ct._Eval(self.s, self.nodes[name], [])
+                for _c, i in found:
+                    _entries, average = ev._list(i)
+                    self.assertTrue(average)
+
+    def test_auto_tangents(self):
+        found = self.controllers("FixtureLinearTangents", ("Bezier Float",))
+        bits = []
+        for _c, i in found[:3]:
+            holder = self.holder(i, 0x2525)
+            bits.append((sorted(ct._bits(holder, 0x2533, 9)), sorted(ct._bits(holder, 0x2534, 9))))
+        self.assertEqual(bits, [([], []), ([1], [1]), ([1], [2])])  # custom, auto beside Linear, auto and custom
+        _c, i = self.controllers("FixtureSmoothAuto", ("Bezier Float",))[1]
+        holder = self.holder(i, 0x2525)
+        self.assertEqual(sorted(ct._bits(holder, 0x2533, 9)), [0, 1, 2, 3])
+
+    def test_no_issue(self):
+        t = ct.Transforms(self.s)
+        for i in self.s.walk():
+            t.world(i)
+        self.assertEqual(t.issues, [])
+
+
 LOOKAT = os.path.join(ROOT, "tests", "fixtures", "lookat.max")
 
 

@@ -32,6 +32,7 @@ FLOORS = {"vray_lights": 0, "vray_dome": 0, "lights_standard": 0, "lights_photom
           "vray_mesh_light": 0,
           "arc_pie_reverse": 120, "controllers": 120,
           "controllers_tangents": 120,
+          "controllers_ranges": 120,
           "corona_layered": 630, "corona_legacy": 370, "corona_light": 180, "corona_mix_ops": 2450,
           "corona_mix_blends": 2710,
           "corona_classes": 470,

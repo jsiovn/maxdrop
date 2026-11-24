@@ -104,6 +104,7 @@ UV_LAYERS = {
     "cameras": [],  # its box, without Generate Mapping Coords; the cameras are no mesh
     "controllers": [],  # boxes without Generate Mapping Coords
     "controllers_tangents": [],  # boxes without Generate Mapping Coords
+    "controllers_ranges": [],  # boxes without Generate Mapping Coords
     "vray_wrappers": ["UVMap"],
     # per mesh: every box, the cylinder and the sphere have channel 1; two UVW Maps write channels 2 and 3
     "uvwmap": collections.defaultdict(lambda: ["UVMap"], {"FixtureUVWGizmo": ["UVMap", "UVChannel_2"],
