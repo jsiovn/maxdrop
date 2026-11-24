@@ -93,10 +93,9 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
 - CoronaLightMtl -> emission (color, intensity, map) and its opacity map.
 - CoronaSkinMtl -> one Principled layer: skin color times level, its three SSS layers as one (weighted mean radius
   times the radius scale, weighted mean color), the first reflection as specular, roughness and IOR, opacity, bump.
-- CoronaHairMtl -> one Principled layer (not measured: no Corona render here): the base color Blender's Principled Hair
-  BSDF gives a strand of its melanin, pheomelanin (read as Melanin Redness) and tint (hair_color), plus its diffuse
-  color; roughness = 1 - glossiness, IOR, opacity, bump; the tint map drives the base color (in place of the melanin
-  color: an issue). Its other maps are named issues.
+- CoronaHairMtl -> one Principled layer (Corona 12 renders on a mesh, maxdrop-em3.164): the base color Corona gives a
+  mesh of its melanin, pheomelanin and tint (hair_color) times its transmission color, its diffuse color mixed in;
+  roughness = 1 - glossiness, IOR, opacity, bump. Its maps but those are named issues, the tint map too.
 - CoronaShadowCatcherMtl -> the grey material marked shadow_catcher: an object whose every slot holds one is a shadow
   catcher (build/objects.py); a backplate map and a reflection are named issues.
 - CoronaVolumeMtl -> no surface (alpha 0) and its medium (corona_medium): absorption, scattering, directionality and
@@ -1322,54 +1321,56 @@ def corona_skin_mtl(conv, m, ir):
         conv.issue(m.index, "CoronaSkinMtl %r: SSS maps not converted" % (m.name,), ir)
 
 
-# CoronaHairMtl's base color as Blender's Principled Hair BSDF colors a strand from melanin (Cycles 4.2,
-# kernel/svm/closure.h, kernel/closure/bsdf_util.h): the absorption of eumelanin and of pheomelanin per unit of
-# concentration, and the roughness scale of its reflectance parametrization at its default Radial Roughness 0.3
+# CoronaHairMtl's color on a mesh, measured on Corona 12 renders (maxdrop-em3.164: planes in a white furnace, every
+# channel R + P0 x exp(-u), R = 0.070 the colorless specular, P0 = 0.929): u has the shape of the eumelanin and
+# pheomelanin absorption Cycles' Principled Hair BSDF uses (its channel ratios), the melanin's weight is
+# HAIR_MELANIN[0] m^2 + HAIR_MELANIN[1] m^3 (largest error 0.009 over melanin 0..1), Corona's pheomelanin (the share
+# of the melanin that is red) absorbs HAIR_PHEOMELANIN_SCALE x Cycles' and a tint t adds HAIR_TINT x ln(t)^2
 HAIR_EUMELANIN = (0.506, 0.841, 1.653)
 HAIR_PHEOMELANIN = (0.343, 0.733, 1.924)
-HAIR_RADIAL_ROUGHNESS = 0.3
-_x = HAIR_RADIAL_ROUGHNESS
-HAIR_ROUGHNESS_SCALE = (((((0.245 * _x) + 5.574) * _x - 10.73) * _x + 2.532) * _x - 0.215) * _x + 5.969  # 5.888
-del _x
-HAIR_FLOOR = 1e-4  # Cycles' floor of 1 - melanin; MaxDrop's of the tint (ln 0)
+HAIR_MELANIN = (7.68, 1.2)
+HAIR_PHEOMELANIN_SCALE = 0.685
+HAIR_TINT = 0.054
+HAIR_FLOOR = 1e-4  # the tint's floor (ln 0): a black tint leaves 0.010, Corona the colorless floor only
 # CoronaHairMtl map slots no input of the IR takes: (map, its switch, what)
-HAIR_UNREAD = ((113, 122, "diffuse"), (115, 124, "IOR"), (117, 126, "softness"), (118, 127, "colorless glossiness"),
-               (119, 128, "highlight shift"), (144, 146, "melanin"), (145, 147, "pheomelanin"),
-               (153, 156, "colorless specular"), (154, 157, "colored specular"), (155, 158, "transmission"),
-               (163, 164, "glint strength"))
+HAIR_UNREAD = ((112, 121, "tint"), (113, 122, "diffuse"), (115, 124, "IOR"), (117, 126, "softness"),
+               (118, 127, "colorless glossiness"), (119, 128, "highlight shift"), (144, 146, "melanin"),
+               (145, 147, "pheomelanin"), (153, 156, "colorless specular"), (154, 157, "colored specular"),
+               (155, 158, "transmission"), (163, 164, "glint strength"))
 
 
-def hair_color(melanin, redness, tint):
-    """The linear color Blender's Principled Hair BSDF gives a strand of this melanin (0..1), melanin redness (the
-    fraction that is pheomelanin, 0..1) and tint (linear RGB): -ln(1 - melanin) as the concentration, the tint's
-    absorption added, the color exp(-sqrt(absorption) x HAIR_ROUGHNESS_SCALE)."""
-    c = -math.log(max(1.0 - _clamp01(melanin), HAIR_FLOOR))
-    r = _clamp01(redness)
+def hair_color(melanin, pheomelanin, tint):
+    """The linear color Corona 12 gives a mesh with CoronaHairMtl of this melanin (0..1), pheomelanin (the share of
+    the melanin that is red, 0..1) and tint (linear RGB), its colorless specular left out: exp(-u) per channel, u =
+    (HAIR_MELANIN[0] m^2 + HAIR_MELANIN[1] m^3) x ((1 - p) HAIR_EUMELANIN + p HAIR_PHEOMELANIN_SCALE HAIR_PHEOMELANIN)
+    + HAIR_TINT ln(tint)^2."""
+    m, p = _clamp01(melanin), _clamp01(pheomelanin)
+    k = HAIR_MELANIN[0] * m * m + HAIR_MELANIN[1] * m ** 3
     out = []
     for eu, pheo, t in zip(HAIR_EUMELANIN, HAIR_PHEOMELANIN, tint):
-        sigma = c * (1.0 - r) * eu + c * r * pheo + (
-            math.log(min(1.0, max(HAIR_FLOOR, t))) / HAIR_ROUGHNESS_SCALE) ** 2
-        out.append(math.exp(-math.sqrt(sigma) * HAIR_ROUGHNESS_SCALE))
+        u = k * ((1.0 - p) * eu + p * HAIR_PHEOMELANIN_SCALE * pheo) + HAIR_TINT * math.log(
+            min(1.0, max(HAIR_FLOOR, t))) ** 2
+        out.append(math.exp(-u))
     return tuple(out)
 
 
 def corona_hair_mtl(conv, m, ir):
-    """CoronaHairMtl, block 0, as one Principled layer (not measured: no Corona render here): base = hair_color of
-    melanin (141) and pheomelanin (142, read as Blender's Melanin Redness) with the tint colorTint (101) x levelTint
-    (104), plus colorDiffuse (102) x levelDiffuse (105), at most 1; the tint map (112, switch 121, amount 130) drives
-    the base color in place of that color (an issue when melanin is above 0); roughness = 1 - glossiness (108, map
-    116 / 125 / 134 inverted); ior (107); specular 1; alpha = mono_swatch(colorOpacity 103) x levelOpacity (106), map
-    114 / 123 / 132; bump 120 / 129 / 138. Maps in the other slots (HAIR_UNREAD) are named issues; softness,
-    colorless glossiness, highlight shift, randomizeMelanin, the specular and transmission colors and the glint are
-    not read."""
+    """CoronaHairMtl, block 0, as one Principled layer (Corona 12 renders, maxdrop-em3.164): base = d + (1 - max d) x
+    hair_color(melanin 141, pheomelanin 142, tint colorTint 101 x levelTint 104) x transmission (152), d =
+    colorDiffuse (102) x levelDiffuse (105), at most 1 (a grey d mixes so exactly, a colored one about so);
+    roughness = 1 - glossiness (108, map 116 / 125 / 134 inverted); ior (107); specular 1; alpha =
+    mono_swatch(colorOpacity 103) x levelOpacity (106), map 114 / 123 / 132; bump 120 / 129 / 138. Maps in the other
+    slots (HAIR_UNREAD) are named issues, the tint map too (Corona adds it to the melanin's absorption: a curve no map
+    input draws). Softness, colorless glossiness, highlight shift and GI simplification change no color on a mesh;
+    randomizeMelanin, the glint and the specular colors are not read."""
     def slot(map_pid, invert=False):
         return conv.map_ref(m, map_pid, map_pid + 9, map_pid + 18, 0, invert=invert, ir=ir, percent=False)
     tint = tuple(c * max(0.0, _num(m, 104, 0, 1.0)) for c in conv.rgb(m, 101, 0, (1.0, 1.0, 1.0)))
     diffuse = tuple(c * max(0.0, _num(m, 105, 0, 1.0)) for c in conv.rgb(m, 102, 0, (0.0, 0.0, 0.0)))
+    transmission = conv.rgb(m, 152, 0, (1.0, 1.0, 1.0))
     color = hair_color(_num(m, 141, 0, 0.5), _num(m, 142, 0, 0.0), tint)
-    ir.base_color = Input(tuple(min(1.0, c + d) for c, d in zip(color, diffuse)), slot(112))
-    if ir.base_color.map is not None and _num(m, 141, 0, 0.5) > 0:
-        conv.issue(m.index, "CoronaHairMtl %r: tint map drawn without the melanin color" % (m.name,), ir)
+    w = _clamp01(max(diffuse))
+    ir.base_color = Input(tuple(min(1.0, d + (1.0 - w) * c * t) for c, d, t in zip(color, diffuse, transmission)))
     ir.roughness = Input(_roughness(_num(m, 108, 0, 0.5), False), slot(116, invert=True))
     ir.ior = _ior(_num(m, 107, 0, 1.55))
     opacity = _clamp01(conv.mono_swatch(m, 103, 0, (1.0, 1.0, 1.0)) * max(0.0, _num(m, 106, 0, 1.0)))
