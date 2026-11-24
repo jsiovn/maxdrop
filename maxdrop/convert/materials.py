@@ -187,7 +187,8 @@ MAX_MEDIUM_DENSITY = 1e6  # a medium coefficient per meter at most: a black chan
 MAX_ANISOTROPY = 0.99  # a Corona directionality past it is clamped: Blender's Henyey-Greenstein takes -1 < g < 1
 GREY_SRGB = 128 / 255  # the grey of a material without a rule: MaxDrop's own, not a swatch
 
-# wrapper ClassId -> its sub-material parameters (block 0) in getSubMtl order; a table parameter gives each element
+# wrapper ClassId -> its sub-material parameters (block 0) in getSubMtl order; a table parameter gives each element.
+# A class of WRAPPER_STOPS is peeled to its first slot or not at all: its later slots are never read
 WRAPPERS = {
     classids.VRAY_2SIDED_MTL: (0, 1),  # frontMtl, backMtl
     classids.VRAY_BLEND_MTL: (0, 1),  # baseMtl, coatMtl (table)
@@ -561,15 +562,15 @@ class MaterialConverter:
                         continue
                 if isinstance(v, pblock.Reference) and v.index is not None:
                     if self.graph.superclass(v.index) != classids.SC_MATERIAL:
-                        return None, "%s: sub-material %d is not a material" % (m.name or "wrapper", v.index)
+                        return None, "%s: sub-material %d is not a material" % (name, v.index)
                     if key == classids.DOUBLE_SIDED_MTL and pid == 0 and not _flag(m, DOUBLE_SIDED_FACING_ON, 0, True):
                         self._issue_once(m.index, "%s: facing material switched off: drawn all the same, as V-Ray "
-                                         "renders it (the scanline renders it black)" % (m.name or "Double Sided"))
+                                         "renders it (the scanline renders it black)" % name)
                     if key == classids.VRAY_BLEND_MTL and pid != pids[0]:
                         self._issue_once(m.index, "%s: base material empty: drawn as its coat, which V-Ray renders "
                                          "over nothing (transparent where the blend is below white)" % name)
                     return v.index, None
-        return None, "%s: no sub-material" % (m.name or "wrapper")
+        return None, "%s: no sub-material" % name
 
     def _selected(self, m):
         """CoronaSelectMtl: the material at selected (zero-based: its default is 0) in materials."""

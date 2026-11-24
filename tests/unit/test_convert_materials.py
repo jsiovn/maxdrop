@@ -553,6 +553,19 @@ class Wrappers(unittest.TestCase):
                 self.assertEqual(conv.stats.issues, [(0, reason)])
                 self.assertEqual(conv.source_for(0, 0), 0, "a failed peel is its own answer")
 
+    def test_an_unnamed_wrapper_is_named_by_its_class(self):
+        cases = [(classids.VRAY_OVERRIDE_MTL, {2: Ref(1)}, "VRayOverrideMtl: base material empty: V-Ray renders it black"),
+                 (classids.VRAY_MTL_WRAPPER, {0: Ref(None)}, "VRayMtlWrapper: no sub-material"),
+                 (classids.DOUBLE_SIDED_MTL, {0: Ref(5)}, "Double Sided: sub-material 5 is not a material")]
+        for class_id, params, reason in cases:
+            with self.subTest(reason):
+                conv = mat.MaterialConverter(FakeGraph(_wrapper(0, class_id, params, ""), _vray(1), _map(5)))
+                self.assertEqual(conv.peel(0), (None, reason))
+        conv = mat.MaterialConverter(FakeGraph(_wrapper(0, classids.DOUBLE_SIDED_MTL, {0: Ref(1), 2: 0}, ""), _vray(1)))
+        self.assertEqual(conv.peel(0), (1, None))
+        self.assertEqual(conv.stats.issues, [(0, "Double Sided: facing material switched off: drawn all the same, as "
+                                                 "V-Ray renders it (the scanline renders it black)")])
+
     def test_an_empty_blend_base_draws_its_coat_with_an_issue(self):
         """V-Ray 5.2 renders a VRayBlendMtl without a base as its coats over nothing (transparent where the blend is
         below white, maxdrop-6n0.6.4): the first set coat is drawn, a report line says so, once per wrapper object."""
