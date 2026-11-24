@@ -2293,6 +2293,109 @@ class WrapperConstants(Checks):
                 self.assertEqual(g.root.input.input, tx.Constant((1.0, 1.0, 1.0)))
 
 
+PROBE_COLOR = (200 / 255, 100 / 255, 50 / 255)  # maxdrop-6n0.6.2's VRayColor
+
+
+def _wout(index, map_ref=None, level=0.5):
+    """An Output whose Output part has that RGB level."""
+    out = FakeMap(index, tx.OUTPUT, {0: Ref(map_ref)}, [map_ref] if map_ref is not None else [], cls="Output",
+                  name="out")
+    part = FakeMap(index + 40, (0x100, 0), superclass=classids.SC_TEXOUTPUT)
+    part.legacy = {0: {0: level}}
+    out.parts = {2: part}
+    return out
+
+
+def _bw_mix(index, mask):
+    """A Mix black -> white at amount 0 whose mask is map mask: what V-Ray renders is the mask's value."""
+    return FakeMap(index, tx.MIX, {0: 0.0, 8: Ref(mask)}, [mask], cls="Mix", name="mix")
+
+
+class MaskWrapperConstants(Checks):
+    """An RGB Tint or an Output that changes anything, as the mask of a color graph, acts on the color below it, and
+    the mask is the mean of its output (maxdrop-6n0.6.2): V-Ray 5.2 renders the same internal value with the gamma on
+    and off (swatches, rows and a Bitmap as it holds them), which the gamma-off scene shows decoded. Measured on a Mix
+    black -> white: a Tint of rows 128 / 64 / 32 over a VRayColor (200, 100, 50) renders 0.1722, over white 0.2928;
+    an Output of level 0.5 over that VRayColor 0.2287, over white 0.5."""
+
+    def mask(self, swatches, *objects):
+        tex = tx.TexmapConverter(FakeGraph(*objects), _table(), swatches=swatches)
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertIsInstance(g.root, tx.Mix)
+        return tex, g.root.mask
+
+    def test_tint_over_a_color_constant_in_a_mask(self):
+        want = (PROBE_COLOR[0] * 128 + PROBE_COLOR[1] * 64 + PROBE_COLOR[2] * 32) / 255 / 3.0
+        self.assertAlmostEqual(want, 0.1722, delta=0.0001, msg="V-Ray 5.2, both modes")
+        grey = sum(PROBE_COLOR) / 3.0 * (128 + 64 + 32) / 255 / 3.0
+        self.assertGreater(abs(want - grey), 0.03, "not the tint of the grey")
+        tex, mask = self.mask(colors.GAMMA_OFF, _bw_mix(1, 2), _wtint(2, 3), _vcolor(3, PROBE_COLOR))
+        self.assertIsInstance(mask, tx.Constant, "gamma off: folded")
+        self.close(mask.value, colors.srgb_to_linear(want), "gamma off: the mean decoded")
+        self.assertEqual(tex.stats.issues, [])
+        tex, mask = self.mask(colors.GAMMA_ON, _bw_mix(1, 2), _wtint(2, 3), _vcolor(3, PROBE_COLOR))
+        self.assertEqual(mask.input, tx.Constant(PROBE_COLOR), "gamma on: the color, linear")
+        self.close((mask.red, mask.green, mask.blue), STORED_ROWS)
+        self.close(_tinted_mean(mask), want, "the builder's mean of the tinted color")
+
+    def test_empty_tint_in_a_mask(self):
+        want = 224 / 255 / 3.0  # 0.2928 measured
+        _t, mask = self.mask(colors.GAMMA_OFF, _bw_mix(1, 2), _wtint(2))
+        self.close(mask.value, colors.srgb_to_linear(want))
+        _t, mask = self.mask(colors.GAMMA_ON, _bw_mix(1, 2), _wtint(2))
+        self.close(_tinted_mean(mask), want)
+
+    def test_output_in_a_mask(self):
+        for below in (None, 3):
+            with self.subTest(below=below):
+                objects = (_bw_mix(1, 2), _wout(2, below)) + ((_vcolor(3, PROBE_COLOR),) if below else ())
+                stored = PROBE_COLOR if below else (1.0, 1.0, 1.0)
+                adjust = tx.Adjust(tx.Constant(stored), tx.TexOutput(level=0.5))
+                _t, mask = self.mask(colors.GAMMA_OFF, *objects)
+                self.assertEqual(mask, tx.Decode(tx.Tint(adjust, *(tx.MEAN_ROW,) * 3)), "the mean, then the decode")
+                _t, mask = self.mask(colors.GAMMA_ON, *objects)
+                self.assertEqual(mask, adjust, "gamma on: the color; the builder takes the mean")
+
+    def test_image_below_a_tint_in_a_mask(self):
+        _t, mask = self.mask(colors.GAMMA_OFF, _bw_mix(1, 2), _wtint(2, 3), _bitmap(3))
+        self.assertIsInstance(mask, tx.Decode)
+        self.assertEqual(mask.input.red, mask.input.green)  # MEAN_ROW rows
+        self.close(mask.input.red, (1 / 3.0,) * 3)
+        self.image(mask.input.input.input, "a.png", tx.NON_COLOR)  # V-Ray holds a gamma-off Bitmap as stored
+        self.close(mask.input.input.red, STORED_ROWS[0])
+        _t, mask = self.mask(colors.GAMMA_ON, _bw_mix(1, 2), _wtint(2, 3), _bitmap(3))
+        self.assertIsInstance(mask, tx.Tint)
+        self.image(mask.input, "a.png", tx.SRGB)
+
+    def test_color_correction_in_a_mask_keeps_the_mean(self):
+        # V-Ray's saturation is not the builder's HSV one: a colored input would draw further off (debt)
+        cc = FakeMap(2, tx.COLOR_CORRECTION, {1: Ref(3), 8: -50.0}, [3], cls="Color Correction")
+        for rule in RULES:
+            with self.subTest(linear=rule.linear):
+                _t, mask = self.mask(rule, _bw_mix(1, 2), cc, _vcolor(3, PROBE_COLOR))
+                self.assertEqual(mask, tx.ColorCorrect(tx.Constant(rule.channel(sum(PROBE_COLOR) / 3.0)),
+                                                       saturation=0.5))
+
+    def test_identity_wrapper_in_a_mask(self):
+        identity = {0: (1.0, 0.0, 0.0), 1: (0.0, 1.0, 0.0), 2: (0.0, 0.0, 1.0)}
+        for rule in RULES:
+            with self.subTest(linear=rule.linear):
+                _t, bare = self.mask(rule, _bw_mix(1, 3), _vcolor(3, PROBE_COLOR))
+                _t, tint = self.mask(rule, _bw_mix(1, 2), _wtint(2, 3, identity), _vcolor(3, PROBE_COLOR))
+                _t, out = self.mask(rule, _bw_mix(1, 2), _wout(2, 3, 1.0), _vcolor(3, PROBE_COLOR))
+                self.assertEqual(bare, tx.Constant(rule.channel(sum(PROBE_COLOR) / 3.0)))
+                self.assertEqual(tint, bare)
+                self.assertEqual(out, bare)
+
+    def test_data_graph_is_unchanged(self):
+        # em3.128: a data input keeps the Tint's stored channels with no Decode, in both modes
+        for rule in RULES:
+            with self.subTest(linear=rule.linear):
+                tex = tx.TexmapConverter(FakeGraph(_wtint(1, 2), _vcolor(2, PROBE_COLOR)), _table(), swatches=rule)
+                root = tex.convert(mat.MapRef(1), tx.DATA).root
+                self.assertEqual(root.input, tx.Constant(PROBE_COLOR))
+
+
 class SwatchRule(Checks):
     """Every swatch of a map goes through the scene's rule: linear with the gamma on (or unknown), sRGB with it off;
     the HDR color is decoded only with the gamma off (maxdrop-em3.165), CoronaColor's temperature too."""

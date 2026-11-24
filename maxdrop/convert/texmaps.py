@@ -1432,30 +1432,55 @@ def _wrapped(conv, m, map_pid, on_pid, kind, walk, depth, chain, empty=WHITE):
     return conv._sub(m, map_pid, on_pid, kind, walk, depth, chain)
 
 
+def _wrapper_input(conv, kind):
+    """The kind of the map below a wrapper that changes the color (an RGB Tint other than the identity, an Output
+    part that changes anything) in a graph of that kind: rgb_kind; in a mask the color V-Ray holds, COLOR with the
+    gamma on (linear), STORED with it off (swatches, the Tint's rows and a Bitmap as stored), the mean taken after
+    it (_mask_mean; maxdrop-6n0.6.2)."""
+    if kind == MASK:
+        return COLOR if conv.swatches.linear else STORED
+    return rgb_kind(kind)
+
+
+def _mask_mean(conv, node, kind):
+    """A color wrapper's node as a mask in a gamma-off scene: V-Ray mixes by the mean of the color it holds, the same
+    value as with the gamma on, which the display-referred scene shows decoded (maxdrop-6n0.6.2: a Tint of rows
+    128 / 64 / 32 over a VRayColor (200, 100, 50) renders 0.1722 in both modes, decoded 0.0251), so the mean (a Tint
+    of MEAN_ROW rows) under a Decode; a Tint over a Constant folded exactly. Elsewhere the node: the builder takes the
+    mean of a color socket on a float input."""
+    if node is None or kind != MASK or conv.swatches.linear:
+        return node
+    if isinstance(node, Tint) and isinstance(node.input, Constant):
+        c, rows = _rgb3(node.input.value), (node.red, node.green, node.blue)
+        return Constant(conv.swatches.channel(sum(c[k] * rows[k][i] for k in range(3) for i in range(3)) / 3.0))
+    return Decode(Tint(node, MEAN_ROW, MEAN_ROW, MEAN_ROW))
+
+
 def _output_map(conv, m, kind, walk, depth, chain):
     """0 map1, 1 map1Enabled; its Output part as an Adjust (its clamp and color map curve are not read) over its map
-    as a color (rgb_kind); an Output part that changes nothing leaves the map in its own kind, as with no wrapper.
-    Corona 12 renders map1 with map1Enabled off (Corona's own materials measured, maxdrop-em3.127): in a scene that
-    renders with Corona the switch is not read."""
+    as a color (_wrapper_input; in a gamma-off mask the mean decoded after it, _mask_mean); an Output part that
+    changes nothing leaves the map in its own kind, as with no wrapper. Corona 12 renders map1 with map1Enabled off
+    (Corona's own materials measured, maxdrop-em3.127): in a scene that renders with Corona the switch is not read."""
     out = _own_part(conv, m)
-    node = _wrapped(conv, m, 0, None if conv.corona else 1, kind if out is None else rgb_kind(kind), walk, depth,
-                    chain)
-    return node if node is None or out is None else Adjust(node, out)
+    node = _wrapped(conv, m, 0, None if conv.corona else 1, kind if out is None else _wrapper_input(conv, kind),
+                    walk, depth, chain)
+    return node if node is None or out is None else _mask_mean(conv, Adjust(node, out), kind)
 
 
 def _rgb_tint(conv, m, kind, walk, depth, chain):
-    """0 / 1 / 2 red / green / blue (swatches: made linear in a color graph and a mask, as stored in a data graph, a
-    height or a normal, as every swatch there; em3.76 measured 0.293 on opacity for rows 128 / 64 / 32 over white,
-    gamma off), 3 map1, 4 map1Enabled: a Tint over its map as a color (rgb_kind) unless the identity, which leaves
-    the map in its own kind."""
-    rows = COLOR if kind in (COLOR, MASK) else rgb_kind(kind)
+    """0 / 1 / 2 red / green / blue (swatches: made linear in a color graph, as stored in a data graph, a height, a
+    normal and a gamma-off mask, as every swatch there; em3.76 measured 0.293 on opacity for rows 128 / 64 / 32 over
+    white, gamma off), 3 map1, 4 map1Enabled: a Tint over its map as a color (_wrapper_input; in a gamma-off mask
+    the mean decoded after it, _mask_mean) unless the identity, which leaves the map in its own kind."""
+    inner = _wrapper_input(conv, kind)
+    rows = COLOR if kind == COLOR else inner
     tint = tuple(conv._constant(m, pid, rows, d).value
                  for pid, d in ((TINT_RED, (1.0, 0.0, 0.0)), (TINT_GREEN, (0.0, 1.0, 0.0)),
                                 (TINT_BLUE, (0.0, 0.0, 1.0))))
     if all(abs(c - (1.0 if i == j else 0.0)) <= 1e-6 for j, row in enumerate(tint) for i, c in enumerate(row)):
         return _wrapped(conv, m, 3, 4, kind, walk, depth, chain)
-    node = _wrapped(conv, m, 3, 4, rgb_kind(kind), walk, depth, chain)
-    return None if node is None else Tint(node, *tint)
+    node = _wrapped(conv, m, 3, 4, inner, walk, depth, chain)
+    return None if node is None else _mask_mean(conv, Tint(node, *tint), kind)
 
 
 def _color2bump(conv, m, kind, walk, depth, chain):
