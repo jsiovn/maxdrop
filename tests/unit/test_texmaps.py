@@ -1220,22 +1220,62 @@ class CoronaSynthetic(Checks):
         root = tex.convert(mat.MapRef(1), tx.COLOR).root
         self.assertIsInstance(root, tx.Mix)
         self.assertIs(root.a, root.b.input, "the bottom, shared")
-        # a colored top over a map, a top map, a top of 0: peeled to the first bitmap, the operation named
+        # a colored top over a map, a top image map, a top of 0: peeled to the first bitmap, the operation named
+        table = assets.AssetTable([assets.AssetEntry(G1, "Bitmap", "maps\\a.png", ""),
+                                   assets.AssetEntry(G2, "Bitmap", "maps\\b.png", "")])
         for params in (dict(p208=(0.5, 0.25, 1.0)), dict(p206=Ref(3)), dict(p208=(0.0, 0.0, 0.0))):
             with self.subTest(params=params):
-                tex = _tex(_cmix(1, [2, 3], p200=7, p207=Ref(2), **params), _cbitmap(2), _cbitmap(3, G2))
+                tex = _tex(_cmix(1, [2, 3], p200=7, p207=Ref(2), **params), _cbitmap(2), _cbitmap(3, G2),
+                           table=table)
                 g = tex.convert(mat.MapRef(1), tx.COLOR)
                 self.assertEqual(g.root.name, "a.png")
                 self.assertTrue(g.approximated)
-                self.assertIn("operation gamma drawn as its first bitmap", tex.stats.issues[0][1])
+                self.assertEqual([r for _i, r in tex.stats.issues],
+                                 ["CoronaMix 'map': operation gamma drawn as its first bitmap"])
+        # a top map that converts to nothing: the lost-side rule, its other side (maxdrop-6n0.6.24: sides first)
+        tex = _tex(_cmix(1, [2, 3], p200=7, p206=Ref(3), p207=Ref(2)), _cbitmap(2), _cbitmap(3, G2))
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertEqual((g.root.name, g.approximated), ("a.png", True))
+        self.assertTrue(any("converts to nothing" in r for _i, r in tex.stats.issues), tex.stats.issues)
         self.close(tx._gamma_value(1e6, 0.01), tx.MAX_MULTIPLIER, "held")
+
+    def test_corona_mix_gamma_on_converted_sides(self):
+        """maxdrop-6n0.6.24 (a): the gamma operation is decided on the converted sides: a top map that converts to a
+        constant (CoronaColor) is a top color, and a colored top folds per channel over a bottom map that does."""
+        grey = _ccolor(3, p50=1, p58=(0.5, 0.5, 0.5))  # HDR color: linear as stored with the gamma on
+        for srgb, want in ((1, 0.5 ** (1 / 2.2)), (0, 0.5)):
+            with self.subTest(srgb=srgb):
+                tex = _tex(_cmix(1, [2, 3], p200=7, p206=Ref(3), p207=Ref(2), p214=srgb), _cbitmap(2), grey)
+                g = tex.convert(mat.MapRef(1), tx.COLOR)
+                self.assertIsInstance(g.root, tx.ColorCorrect)
+                self.close(g.root.gamma, want)
+                self.assertEqual(g.root.input.name, "a.png")
+                self.assertEqual((g.approximated, g.issues, tex.stats.issues), (False, (), []))
+        # a colored top color over a CoronaColor bottom map: folded per channel (linear mode: bottom ^ (1 / top))
+        tex = _tex(_cmix(1, [2], p200=7, p207=Ref(2), p208=(0.5, 0.25, 1.0), p214=0),
+                   _ccolor(2, p50=1, p58=(0.05, 0.4, 0.9)))
+        root = tex.convert(mat.MapRef(1), tx.COLOR).root
+        self.assertIsInstance(root, tx.Constant)
+        self.close(root.value, (0.05 ** 2, 0.4 ** 4, 0.9))
+        # a colored CoronaColor top map over a bitmap: one exponent per channel, no node: peeled, the operation named,
+        # once
+        tex = _tex(_cmix(1, [2, 3], p200=7, p206=Ref(3), p207=Ref(2)), _cbitmap(2),
+                   _ccolor(3, p50=1, p58=(0.5, 0.25, 1.0)))
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertEqual((g.root.name, g.approximated), ("a.png", True))
+        self.assertEqual(g.issues, ("CoronaMix 'map': operation gamma drawn as its first bitmap",))
+        self.assertEqual(tex.stats.issues, [(1, "CoronaMix 'map': operation gamma drawn as its first bitmap")])
+        self.assertEqual(tex.stats.peeled, collections.Counter({"CoronaMix": 1}))
 
     def test_corona_mix_negative_layers(self):
         """renderMap of probe1's P5 (maxdrop-em3.117): CoronaColor HDR layers below 0 by their offsets; in sRGB mode
         Corona raises each layer's magnitude (maxdrop-em3.161), the gamma operation's top exponent and bottom too."""
         for op, srgb, want in ((0, 1, (1.18624, 1.13619, 0.799878)), (0, 0, (0.399786, 0.0997939, 0.799878)),
                                (14, 1, (0.629587, 0.258488, 0.624094)), (20, 1, (0.288395, 0.22034, 0.799878)),
-                               (11, 0, (-0.200198, 0.249943, 0.0))):
+                               (11, 0, (-0.200198, 0.249943, 0.0)),
+                               # gamma: P5's renderMap through its CoronaColor maps (maxdrop-6n0.6.24: the top map
+                               # is a constant); the bottom's blue is 0, so the top's 1.1 (0.9 below) changes nothing
+                               (7, 1, (0.0424199, 0.0817881, 0.0))):
             with self.subTest(op=op, srgb=srgb):
                 tex = _tex(_cmix(1, [2, 3], p200=op, p214=srgb, p206=Ref(2), p207=Ref(3), p204=3.0, p205=3.0),
                            _ccolor(2, p50=1, p58=(0.8, 0.1, 1.1)), _ccolor(3, p50=1, p58=(0.2, 0.6, 0.3)))

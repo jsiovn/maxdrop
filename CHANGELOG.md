@@ -274,6 +274,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   diffuse: Cycles 0.916 0.534 0.178 facing the camera, V-Ray 0.918 0.658 0.806, the metal gave 0.900 0.503 0.102;
   140 128 115 over red: 0.902 0.572 0.522, V-Ray 0.903 0.580 0.537, was 0.548 0.503 0.451). A reflection map at 0 %
   amount no longer makes a bright reflection a metal.
+- CoronaMix: Gamma whose top is a map that is a color (CoronaColor, VRayColor) is imported as with a top color, and
+  a colored top over a bottom map that is a color is folded per channel, instead of the first bitmap below.
 
 ## [1.0.1] - 2026-11-22
 

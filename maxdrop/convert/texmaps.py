@@ -111,9 +111,10 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
   than sRGB and unusable values are issues. CoronaMix: operation mix -> Mix(bottom, top, amount, mask), multiply ->
   Multiply, add, subtract, divide, min, max, difference, screen, overlay, color dodge, color burn, linear burn,
   linear light, hard light and exclusion -> Blend (in gamma 2.2 with mix in sRGB on, as Corona does: CM_BLENDS),
-  gamma over a grey top color -> ColorCorrect gamma, all under a Mix for an amount below 1 or a mask; soft light,
-  vivid light, pin light, hard mix (and gamma over another top) peeled to the first bitmap (an issue naming the
-  operation); each layer times its multiplier plus its offset (CM_OFFSET_SCALE), measured.
+  gamma over a grey top color (its own or a map that converts to a constant, decided on the converted layers) ->
+  ColorCorrect gamma, all under a Mix for an amount below 1 or a mask; soft light, vivid light, pin light, hard mix
+  (and gamma over another top) peeled to the first bitmap (an issue naming the operation); each layer times its
+  multiplier plus its offset (CM_OFFSET_SCALE), measured.
 - Kept as nodes (the allow-list): Mix (color 1 / 2 where a map is off or missing, the mask, the mix amount; Use
   Curve as mix_factor: folded into the mix amount, over a mask a Smoothstep), RGB Multiply, Color Correction (its
   rewiring first: monochrome, invert or custom channels, an alpha source drawn as one or zero, an issue; hue shift
@@ -1826,20 +1827,27 @@ def _corona_layer(node, mult, offset):
     return Adjust(node, TexOutput(level=mult, offset=add))
 
 
-def _corona_gamma_exponent(conv, m, kind):
+def _corona_gamma_exponent(top, srgb):
     """The exponents of a CoronaMix gamma (bottom^(1 / e) per channel, renderMap: e is the top, in sRGB mode
-    |top|^(1 / 2.2)) when its top is its color (no map, or the map off), a Constant: a float or a tuple. None when the
-    top is a map or a channel's exponent is outside CM_GAMMA_RANGE (Corona's result is no number at a top of 0)."""
-    if conv._on(m, CM_MAP_TOP, CM_TOP_ON) is not None:
+    |top|^(1 / 2.2)) from its converted top layer: a float or a tuple. None when the top is not a Constant (a map that
+    converts to one, CoronaColor or VRayColor, is; maxdrop-6n0.6.24) or a channel's exponent is outside
+    CM_GAMMA_RANGE (Corona's result is no number at a top of 0)."""
+    if not isinstance(top, Constant):
         return None
-    top = _corona_layer(conv._constant(m, CM_COLOR_TOP, kind, (1.0, 1.0, 1.0)), _num(m, CM_MULT_TOP, 1.0),
-                        _num(m, CM_OFFSET_TOP, 0.0)).value
-    srgb = _flag(m, CM_SRGB, True)
-    es = tuple((abs(t) ** (1.0 / CM_SRGB_GAMMA) if srgb else t) for t in (top if isinstance(top, tuple)
-                                                                          else (top,)))
+    v = top.value
+    es = tuple((abs(t) ** (1.0 / CM_SRGB_GAMMA) if srgb else t) for t in (v if isinstance(v, tuple) else (v,)))
     if not all(CM_GAMMA_RANGE[0] <= e <= CM_GAMMA_RANGE[1] for e in es):
         return None
-    return es if isinstance(top, tuple) else es[0]
+    return es if isinstance(v, tuple) else es[0]
+
+
+def _corona_peel(conv, m, op, kind, walk, depth, chain):
+    """A CoronaMix whose operation is not drawn: its first bitmap (an issue naming the operation), else nothing."""
+    name = CM_OP_NAMES.get(op, repr(op))
+    image = conv._peel_to_image(m, kind, walk, depth, chain, "operation %s and no bitmap below" % (name,))
+    if image is not None:
+        conv._issue(walk, m.index, "CoronaMix %r: operation %s drawn as its first bitmap" % (m.name, name))
+    return image
 
 
 def _gamma_value(v, e):
@@ -1856,20 +1864,14 @@ def _corona_mix(conv, m, kind, walk, depth, chain):
     """result = mix(bottom, operation(bottom, top), amount), the mask map replacing the amount (renderMap: an add at
     amount 0.8 under a 0.25 mask weighs 0.25), always a linear mix. Operation mix -> Mix(bottom, top, amount, mask),
     multiply -> Multiply, the operations of CM_BLENDS -> Blend (gamma 2.2 for CM_GAMMA_OPS with mixInSRgb on), gamma
-    -> a ColorCorrect gamma of the bottom for a grey top that is its color (two colors folded per channel), each
-    under a Mix when the amount is below 1 or a mask is set; any other operation (and a gamma over another top) is
-    peeled to its first bitmap. Each layer is its map, or its color where the map is missing or switched off, times
-    its multiplier plus its offset times CM_OFFSET_SCALE (measured, the multiplier first)."""
+    -> a ColorCorrect gamma of the bottom for a grey top (its color, or a map that converts to a constant; two
+    constants folded per channel), each under a Mix when the amount is below 1 or a mask is set; any other operation
+    (and a gamma over another top) is peeled to its first bitmap, a gamma after its sides are converted, as it is
+    decided on them (maxdrop-6n0.6.24). Each layer is its map, or its color where the map is missing or switched off,
+    times its multiplier plus its offset times CM_OFFSET_SCALE (measured, the multiplier first)."""
     op = m.param(CM_OPERATION, 0)
-    exponent = _corona_gamma_exponent(conv, m, kind) if op == CM_GAMMA else None
-    if isinstance(exponent, tuple) and len(set(exponent)) > 1 and conv._on(m, CM_MAP_BOTTOM, CM_BOTTOM_ON) is not None:
-        exponent = None  # a colored top over a map: one exponent per channel, which no node draws
-    if op not in (CM_MIX, CM_MULTIPLY) and op not in CM_BLENDS and exponent is None:
-        name = CM_OP_NAMES.get(op, repr(op))
-        image = conv._peel_to_image(m, kind, walk, depth, chain, "operation %s and no bitmap below" % (name,))
-        if image is not None:
-            conv._issue(walk, m.index, "CoronaMix %r: operation %s drawn as its first bitmap" % (m.name, name))
-        return image
+    if op not in (CM_MIX, CM_MULTIPLY, CM_GAMMA) and op not in CM_BLENDS:
+        return _corona_peel(conv, m, op, kind, walk, depth, chain)
     (bottom, top), lost = _sides(conv, m, ((CM_MAP_BOTTOM, CM_BOTTOM_ON), (CM_MAP_TOP, CM_TOP_ON)), kind, walk,
                                  depth, chain)
     mask = _mask(conv, m, CM_MASK, CM_MASK_ON, kind, walk, depth, chain)
@@ -1890,6 +1892,11 @@ def _corona_mix(conv, m, kind, walk, depth, chain):
                            _num(m, CM_MULT_BOTTOM, 1.0), _num(m, CM_OFFSET_BOTTOM, 0.0))
     top = _corona_layer(top or conv._constant(m, CM_COLOR_TOP, kind, (1.0, 1.0, 1.0)),
                         _num(m, CM_MULT_TOP, 1.0), _num(m, CM_OFFSET_TOP, 0.0))
+    exponent = _corona_gamma_exponent(top, _flag(m, CM_SRGB, True)) if op == CM_GAMMA else None
+    if isinstance(exponent, tuple) and len(set(exponent)) > 1 and not isinstance(bottom, Constant):
+        exponent = None  # a colored top over a map: one exponent per channel, which no node draws
+    if op == CM_GAMMA and exponent is None:
+        return _corona_peel(conv, m, op, kind, walk, depth, chain)
     if op == CM_MIX:
         return Mix(bottom, top, amount, mask)
     if op == CM_MULTIPLY:
