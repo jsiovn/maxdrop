@@ -3117,21 +3117,38 @@ def check_pack_cancel(fixture):
             z.write(fixture, "pack/" + os.path.basename(fixture))
         scene = "pack/" + os.path.basename(fixture)
 
-        def slow(*args, watch=None, **kwargs):
-            def slowed(n):
-                time.sleep(0.3)  # the close below comes while the scene is being written
-                watch(n)
-            return original(*args, watch=slowed, **kwargs)
+        saw = []
 
-        archive.unpack = slow
+        def held(*args, watch=None, **kwargs):
+            def holding(n):
+                # the worker stays in the unpack until close() stops it: a small pack unpacked before the first
+                # step would start the read, and that step would not be _WAIT
+                deadline = time.perf_counter() + 30.0
+                while time.perf_counter() < deadline:
+                    try:
+                        watch(n)  # archive.Cancelled once the steps are closed
+                    except archive.Cancelled:
+                        saw.append(True)
+                        raise
+                    time.sleep(0.005)
+                saw.append(False)
+                watch(n)
+            return original(*args, watch=holding, **kwargs)
+
+        archive.unpack = held
         run = ops._Run(_cancel_run([pack]).opts, [pack], {pack: scene}, bpy.context)
-        steps = run.steps(threaded=True)
-        waited = next(steps) is ops._WAIT
-        steps.close()
-        archive.unpack = original
+        try:
+            steps = run.steps(threaded=True)
+            waited = next(steps) is ops._WAIT
+            steps.close()
+        finally:
+            archive.unpack = original
+            for worker in list(ops._WORKERS):  # close() waits _STOP_WAIT at most: here until the unpack has ended
+                worker.join(60)
         check("pack cancel: closed while it unpacks: only the archive is left, nothing in Blender",
-              waited and os.listdir(scratch) == ["pack.zip"] and _state() == before,
-              "%s %s" % (os.listdir(scratch), run.text))
+              waited and saw == [True] and ops._busy() == "" and os.listdir(scratch) == ["pack.zip"]
+              and _state() == before, "waited %s, stop seen %s, busy %r, %s %s" % (
+                  waited, saw, ops._busy(), os.listdir(scratch), run.text))
 
         run = ops._Run(_cancel_run([pack]).opts, [pack], {pack: scene}, bpy.context)
         steps = run.steps(threaded=True)
