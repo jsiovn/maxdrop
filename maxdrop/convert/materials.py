@@ -36,12 +36,18 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   ior and thin-walled from the refraction parameters; maps where their slot is on, with their multiplier as the
   amount; a normal map (VRayNormalMap, Normal Bump, CoronaNormal) in a bump slot is the normal input, any other
   map the bump input. Added here: a refracting material takes its base color from the refraction color (mixed by
-  the transmission), and with Fresnel off a bright reflection (mean >= METAL_REFLECTION) makes the material a metal
-  in the reflection color, unless it is grey (channels within NEUTRAL_REFLECTION), below 1 and without a reflection
-  map: that one keeps the diffuse, as V-Ray renders R + (1 - R) x the diffuse per channel (maxdrop-em3.153: 128 grey
-  over 200 40 40 gives 0.8925 0.5801 0.5801 facing the camera, the metal 0.502); beside a reflection map only the
-  swatch's share counts (its mean times 1 - the map amount): a map at full amount hides the swatch, so it never
-  makes a metal (the map itself is not judged).
+  the transmission), and with Fresnel off a bright reflection (mean >= METAL_REFLECTION) beside a reflection map or
+  with a channel of 1 or more makes the material a metal in the reflection color; below 1 and without a map it keeps
+  the diffuse: V-Ray renders R_c + (1 - R_c) x the diffuse per channel (maxdrop-em3.153: 128 grey over 200 40 40
+  gives 0.8925 0.5801 0.5801 facing the camera, the metal 0.502), drawn as the mirror below by the brightest channel
+  max(R), tinted R / max(R) (mirror_color): R_c + (1 - max R) x the diffuse, V-Ray's for grey or a black diffuse and
+  between the metal and V-Ray in every channel otherwise (maxdrop-6n0.6.16: 230 128 26 over 40 80 200 renders
+  0.9175 0.6582 0.8060, the copy 0.917 0.533 0.179, the metal 0.900 0.503 0.102; no Mix of two closures meets V-Ray
+  when max(R) + max_c((1 - R_c) d_c) > 1); a dimmer colored swatch stays the white mirror by its mean (102 51 13 over
+  grey: V-Ray 0.701 0.602 0.527, white 0.609 0.611 0.609, tinted 0.701 0.501 0.352); a constant metalness 1 keeps
+  the lone metal in the diffuse color (build/materials.py; not measured); beside a reflection map only the swatch's
+  share counts (its mean times 1 - the map amount): a map at full amount hides the swatch, so it never makes a metal
+  (the map itself is not judged), a map at 0 % amount is left out (the swatch alone, as V-Ray renders it).
   Fresnel off sets fresnel False; outside that rule the weight (a dim or grey swatch, or a reflection map such as the
   black to white Falloff) is then reflected as it is at every angle, which build/materials.py draws as a white metal
   mixed by it over the material without reflection (V-Ray 5.2: a 0.2 swatch reflects 0.200 facing the camera,
@@ -174,9 +180,8 @@ from .params import finite as _finite, flag as _flag, num as _num
 ChunkError = chunks.ChunkError
 
 MAX_PEEL = 8
-METAL_REFLECTION = 0.25  # mean linear reflection (about sRGB 137 grey) above which Fresnel off means metal (VRayMtl: not a
-# grey swatch below 1 without a map, NEUTRAL_REFLECTION)
-NEUTRAL_REFLECTION = 0.02  # VRayMtl: a Fresnel-off swatch within this channel spread is grey (the mirror, not a metal)
+METAL_REFLECTION = 0.25  # mean linear reflection (about sRGB 137 grey) above which Fresnel off means metal (VRayMtl: a
+# swatch below 1 without a map is the tinted mirror instead, MaterialIR.mirror_color)
 CORONA_EDGE_DEFAULT = 0.75  # CoronaPhysicalMtl's edgeColor as created (grey): not reported
 CORONA_METAL_IOR = 10.0  # a CoronaLegacyMtl Fresnel IOR from which a bright reflection is a metal (made with 999)
 CORONA_SPECULAR_F0 = 0.08  # CoronaPhysicalMtl IOR mode 1: F0 = 0.08 x the specular level held by an IOR parameter
@@ -352,6 +357,7 @@ class MaterialIR:
     roughness: Input = Input(0.5)
     specular: Input = Input(1.0)  # a reflection weight: 1 is the IOR's own Fresnel (Blender's 0.5)
     fresnel: bool = True  # False: the weight is reflected at every angle, no Fresnel curve (VRayMtl Fresnel off)
+    mirror_color: tuple = (1.0, 1.0, 1.0)  # with fresnel False: the color of that reflection (VRayMtl: R / max(R))
     ior: float = 1.5
     transmission: Input = Input(0.0)
     thin_walled: bool = False
@@ -773,8 +779,8 @@ class MaterialConverter:
         """The material object index material_for(index, material_id) converts, None where it gives none, found
         without converting or counting anything (no peel kept): Multi/Sub-Objects looked up by the ID, wrappers
         through peel()'s result or, for one peel() has not walked yet, its walk over _sub again (the same stop test,
-        _is_wrapper, from the same object, so the same base; kept in _bases, one walk per object as peel() pays); a wrapper whose peel fails is its own
-        answer (its grey IR is its own). To compare IDs that get no slot."""
+        _is_wrapper, from the same object, so the same base; kept in _bases, one walk per object as peel() pays); a
+        wrapper whose peel fails is its own answer (its grey IR is its own). To compare IDs that get no slot."""
         def base_of(j):
             if j in self._peels:
                 return self._peels[j][0]
@@ -851,6 +857,8 @@ def vray_mtl(conv, m, ir):
     reflection = conv.rgb(m, 2, 1, (0.0, 0.0, 0.0))
     refraction = conv.rgb(m, 5, 1, (0.0, 0.0, 0.0))
     reflection_map = conv.map_ref(m, 101, 151, 201, 4, ir=ir)
+    if reflection_map is not None and reflection_map.amount <= 0.0:  # shows nothing of itself: the swatch alone
+        reflection_map = None
 
     t = _clamp01(mean(refraction))
     base = _mix(diffuse, refraction, t) if t > 0 else diffuse
@@ -864,13 +872,16 @@ def vray_mtl(conv, m, ir):
     hidden = min(1.0, reflection_map.amount) if reflection_map is not None else 0.0
     shown = mean(reflection) * (1.0 - hidden)
     ir.fresnel = _flag(m, 8, 1, True)  # reflection_fresnel
-    # a grey swatch below 1 without a map is the mirror drawing (w + (1 - w) diffuse, V-Ray's split); a colored one
-    # stays a metal in its color (the copy is white), a full one too (build draws no mirror at w >= 1)
-    grey = (reflection_map is None and mean(reflection) < 1.0
-            and max(reflection) - min(reflection) <= NEUTRAL_REFLECTION)
-    if not ir.fresnel and shown >= METAL_REFLECTION and not grey:
-        ir.metallic = Input(1.0)
-        ir.base_color = Input(reflection, reflection_map)
+    # a swatch below 1 without a map is the mirror tinted R / max(R) by max(R): R_c + (1 - max R) d_c, V-Ray's R_c +
+    # (1 - R_c) d_c for grey or a black diffuse; at max(R) 1 (build draws no mirror there) it is the metal
+    top = max(reflection)
+    if not ir.fresnel and shown >= METAL_REFLECTION:
+        if reflection_map is None and top < 1.0:
+            ir.specular = Input(top)
+            ir.mirror_color = tuple(c / top for c in reflection)
+        else:
+            ir.metallic = Input(1.0)
+            ir.base_color = Input(reflection, reflection_map)
 
     emit_map = conv.map_ref(m, 117, 167, 217, 4, ir=ir)  # texmap_self_illumination
     ir.emission_color = Input(conv.rgb(m, 81, 1, (0.0, 0.0, 0.0)), emit_map)  # selfIllumination
@@ -1220,11 +1231,11 @@ def _corona_ior(m, pid, ior_mode, reflects_only=False):
 def corona_legacy_mtl(conv, m, ir):
     """CoronaLegacyMtl (CoronaMtl), block 0: colors 101 diffuse, 102 reflect, 103 refract, 105 opacity, 107
     selfIllum; their levels 121, 122, 123, 127, 128 (the first four scale the map in their slot as well, as Corona's
-    documentation has it: the MapRef's scale, no map at level 0; 128 is the emission strength); maps 141 diffuse, 142 reflect, 143 reflectGlossiness,
-    144 refract, 146 opacity, 147 bump, 158 selfIllum, each switched on by id + 20, with amounts (fractions) 290,
-    291, 292, 293, 295, 296, 303; 180 reflectGlossiness, 182 fresnelIor,
-    183 ior, 210 thin; 410 levelSss, 411 sssRadius (world units), 412 sssScatterColor. 402 pbrMode off curves the
-    glossiness otherwise (Corona 12 renders, maxdrop-em3.115): its roughness is corona_legacy_roughness; a glossiness
+    documentation has it: the MapRef's scale, no map at level 0; 128 is the emission strength); maps 141 diffuse,
+    142 reflect, 143 reflectGlossiness, 144 refract, 146 opacity, 147 bump, 158 selfIllum, each switched on by id +
+    20, with amounts (fractions) 290, 291, 292, 293, 295, 296, 303; 180 reflectGlossiness, 182 fresnelIor, 183 ior,
+    210 thin; 410 levelSss, 411 sssRadius (world units), 412 sssScatterColor. 402 pbrMode off curves the glossiness
+    otherwise (Corona 12 renders, maxdrop-em3.115): its roughness is corona_legacy_roughness; a glossiness
     map then stays 1 - the map, a named issue. Translucency (106, 126, map 148) and the SSS amount map (414) are named
     issues. With refraction and without thin, in media mode 1 (427; the default, also when not stored), a medium
     (corona_medium): 188 absorptionDistance, 190 absorptionColor, 215 scatterColor, 216 scatterDirectionality; its

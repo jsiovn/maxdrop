@@ -248,32 +248,67 @@ class VRayMtlRules(unittest.TestCase, Close):
     def test_fresnel_off_grey_reflection_keeps_diffuse(self):
         """A grey swatch below 1 without a reflection map is the mirror drawing, not a metal: V-Ray 5.2 renders R +
         (1 - R) x the diffuse (maxdrop-em3.153, 128 grey over 200 40 40: 0.8925 0.5801 0.5801 facing the camera);
-        within NEUTRAL_REFLECTION of grey the mean is the weight."""
+        the weight is the brightest channel, the mirror white for grey (maxdrop-6n0.6.16: no cliff near grey)."""
         for swatch in ((0.5, 0.5, 0.5), (0.99, 0.99, 0.99), (0.25, 0.25, 0.25), (0.509, 0.5, 0.491)):
             b1 = {1: (1.0, 0.0, 0.0), 2: swatch, 8: 0, 91: 0.2}
             conv, ir = _convert(_vray(0, b1=b1))
             self.assertFalse(ir.fresnel, str(swatch))
             self.close(ir.metallic.value, 0.2, str(swatch))
             self.close(ir.base_color.value, (1.0, 0.0, 0.0), str(swatch))
-            self.close(ir.specular.value, sum(swatch) / 3.0, str(swatch))
+            self.close(ir.specular.value, max(swatch), str(swatch))
+            self.close(ir.mirror_color, tuple(c / max(swatch) for c in swatch), str(swatch))
             self.assertIsNone(ir.specular.map)
         conv, ir = _convert(_vray(0, b1={2: (0.5, 0.5, 0.5), 5: (1.0, 1.0, 1.0), 8: 0}))  # glass stays glass
         self.close(ir.metallic.value, 0.0)
         self.close(ir.transmission.value, 1.0)
         self.close(ir.base_color.value, (1.0, 1.0, 1.0))
 
-    def test_fresnel_off_full_or_colored_reflection_is_metal(self):
-        """A full reflection (mean 1 or more) and a colored one (channel spread above NEUTRAL_REFLECTION) keep the
-        metal in the reflection color: the white mirror copy would drop the tint."""
-        for swatch in ((1.0, 1.0, 1.0), (0.55, 0.5, 0.45), (0.9, 0.5, 0.1), (0.3, 0.2, 0.25)):
+    def test_fresnel_off_full_reflection_is_metal(self):
+        """A reflection whose brightest channel is 1 or more keeps the metal in the reflection color: what the
+        tinted mirror gives at weight 1 (build draws no mirror there)."""
+        for swatch in ((1.0, 1.0, 1.0), (1.0, 0.6, 0.2), (1.0, 0.3, 0.3)):
             b1 = {1: (1.0, 0.0, 0.0), 2: swatch, 8: 0, 91: 0.2}
             conv, ir = _convert(_vray(0, b1=b1))
             self.close(ir.metallic.value, 1.0, str(swatch))
             self.close(ir.base_color.value, swatch, str(swatch))
+            self.close(ir.mirror_color, (1.0, 1.0, 1.0), str(swatch))
         b1 = {1: (1.0, 0.0, 0.0), 2: (0.2, 0.1, 0.05), 8: 0, 91: 0.2}  # colored, below METAL_REFLECTION
         conv, ir = _convert(_vray(0, b1=b1))
         self.close(ir.metallic.value, 0.2)
         self.close(ir.base_color.value, (1.0, 0.0, 0.0))
+        self.close(ir.specular.value, 0.35 / 3.0, "the mean: a dim one stays the white mirror")
+        self.close(ir.mirror_color, (1.0, 1.0, 1.0))
+
+    def test_fresnel_off_colored_reflection_is_a_tinted_mirror(self):
+        """A colored swatch from METAL_REFLECTION up, below 1, without a reflection map: the mirror by its brightest
+        channel, its copy tinted R / max(R): R_c + (1 - max R) d_c per channel, between the metal and V-Ray's R_c +
+        (1 - R_c) d_c (maxdrop-6n0.6.16; em3.153's probe: 230 128 26 over 40 80 200 renders 0.9175 0.6582 0.8060,
+        the copy 0.917 0.533 0.179, the metal 0.900 0.503 0.102)."""
+        for swatch in ((0.55, 0.5, 0.45), (0.9, 0.5, 0.1), (0.3, 0.2, 0.25), (0.902, 0.502, 0.102)):
+            b1 = {1: (1.0, 0.0, 0.0), 2: swatch, 8: 0, 91: 0.2}
+            conv, ir = _convert(_vray(0, b1=b1))
+            self.assertFalse(ir.fresnel, str(swatch))
+            self.close(ir.metallic.value, 0.2, str(swatch))
+            self.close(ir.base_color.value, (1.0, 0.0, 0.0), str(swatch))
+            self.close(ir.specular.value, max(swatch), str(swatch))
+            self.assertIsNone(ir.specular.map)
+            self.close(ir.mirror_color, tuple(c / max(swatch) for c in swatch), str(swatch))
+        b1 = {1: (1.0, 0.0, 0.0), 2: (0.9, 0.5, 0.1), 8: 0, 91: 1.0}
+        conv, ir = _convert(_vray(0, b1=b1))
+        self.close((ir.metallic.value, ir.specular.value), (1.0, 0.9), "metalness 1 stays: build's lone metal")
+        self.close(ir.base_color.value, (1.0, 0.0, 0.0), "in the diffuse color, as em3.153's grey (not measured)")
+        self.assertEqual(mat.MaterialIR(0, "x").mirror_color, (1.0, 1.0, 1.0), "every other rule: white")
+
+    def test_fresnel_off_reflection_map_at_zero_amount_is_the_swatch(self):
+        """A reflection map at 0 % amount shows nothing of itself: the swatch alone, as with the map switched off
+        (V-Ray renders both alike): no MapRef left, so build never takes the twin for an unconverted map."""
+        for swatch, metal in (((0.8, 0.8, 0.8), 0.2), ((0.9, 0.5, 0.1), 0.2), ((1.0, 1.0, 1.0), 1.0)):
+            b1 = {1: (1.0, 0.0, 0.0), 2: swatch, 8: 0, 91: 0.2}
+            conv, ir = _convert(_vray(0, b1=b1, b4={101: Ref(1), 201: 0.0}), _map(1))
+            self.assertIsNone(ir.specular.map, str(swatch))
+            self.assertIsNone(ir.base_color.map, str(swatch))
+            self.close(ir.metallic.value, metal, str(swatch))
+            self.close(ir.specular.value, max(swatch) if metal < 1 else 1.0, str(swatch))
 
     def test_fresnel_off_reflection_map_at_full_amount_keeps_diffuse(self):
         """A reflection map at full amount hides the swatch in V-Ray: no metal however bright the swatch; the
@@ -296,8 +331,8 @@ class VRayMtlRules(unittest.TestCase, Close):
         self.close(ir.base_color.value, (1.0, 0.0, 0.0))
         tinted = {**b1, 2: (0.85, 0.8, 0.75)}
         conv, ir = _convert(_vray(0, b1=tinted, b4={101: Ref(1), 151: 0, 201: 100.0}), _map(1))
-        self.close(ir.metallic.value, 1.0)
-        self.close(ir.base_color.value, (0.85, 0.8, 0.75))
+        self.close(ir.metallic.value, 0.2, "a tinted swatch alone: the tinted mirror")
+        self.close(ir.mirror_color, (1.0, 0.8 / 0.85, 0.75 / 0.85))
         self.assertIsNone(ir.base_color.map)
         white = {**b1, 2: (1.0, 1.0, 1.0)}
         conv, ir = _convert(_vray(0, b1=white, b4={101: Ref(1), 201: 75.0}), _map(1))  # 1 x 0.25: the threshold
@@ -313,8 +348,10 @@ class VRayMtlRules(unittest.TestCase, Close):
         self.close(ir.base_color.value, (1.0, 0.0, 0.0))
         conv, ir = _convert(_vray(0, b1={2: (0.2, 0.2, 0.2), 8: 1}))
         self.assertTrue(ir.fresnel)
-        conv, ir = _convert(_vray(0, b1={2: (0.9, 0.8, 0.7), 8: 0}))  # the metal rule: Metallic 1 wins in build
+        conv, ir = _convert(_vray(0, b1={2: (0.9, 0.8, 0.7), 8: 0}))  # bright, colored: the tinted mirror
         self.assertFalse(ir.fresnel)
+        self.close((ir.metallic.value, ir.specular.value), (0.0, 0.9))
+        conv, ir = _convert(_vray(0, b1={2: (1.0, 0.8, 0.7), 8: 0}))  # full: the metal rule, Metallic 1 wins in build
         self.close(ir.metallic.value, 1.0)
         self.assertTrue(mat.MaterialIR(0, "x").fresnel, "every other rule: the IOR's Fresnel")
 
@@ -672,13 +709,14 @@ class VRayBasic(unittest.TestCase, Close):
             conv = mat.MaterialConverter(graph)
             ir = conv.convert(by_name["FixtureVRay"])
             self.assertIsNone(conv.convert(None))  # the real graph: a node without a material
-        reflection = (0.309469, 0.361307, 0.417885)  # 151 162 173; mean 0.362887 >= 0.25, colored (spread
-        # 0.108 > NEUTRAL_REFLECTION), Fresnel off: metal
+        reflection = (0.309469, 0.361307, 0.417885)  # 151 162 173; mean 0.362887 >= 0.25, below 1, Fresnel off:
+        # the tinted mirror (maxdrop-6n0.6.16), weight the brightest channel
         self.assertEqual((ir.name, ir.source, ir.unknown), ("FixtureVRay", "VRayMtl", False))
-        self.close(ir.base_color.value, reflection, "base color = reflection (metal rule)")
-        self.close(ir.metallic.value, 1.0, "metallic")
+        self.close(ir.base_color.value, (0.549691, 0.016857, 0.02602), "201 31 41 mixed with 61 71 81 by 0.063986")
+        self.close(ir.metallic.value, 0.37, "reflection_metalness")
         self.close(ir.roughness.value, 0.83, "roughness = glossiness 0.83 (useRoughness on)")
-        self.close(ir.specular.value, 0.362887, "specular = mean reflection")
+        self.close(ir.specular.value, 0.417885, "specular = the brightest reflection channel")
+        self.close(ir.mirror_color, tuple(c / 0.417885 for c in reflection), "the mirror tinted R / max(R)")
         self.close(ir.transmission.value, 0.063986, "transmission = mean of 61 71 81")
         self.close(ir.ior, 1.61, "ior = refraction_ior (refracts)")
         self.assertTrue(ir.thin_walled)

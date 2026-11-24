@@ -389,6 +389,11 @@ SPECULAR_LEVEL = 0.5  # the IR's specular is a reflection weight: 1 is Blender's
 TWIN_LABEL, WEIGHT_LABEL = "Without reflection", "Reflection weight"  # a weight between 0 and 1 (maxdrop-em3.119)
 MIRROR_LABEL = "Mirror reflection"  # the white metal of a weight without Fresnel (maxdrop-em3.120)
 MIRROR_INPUTS = {"Metallic": 1.0, "Base Color": (1.0, 1.0, 1.0, 1.0), "Specular IOR Level": SPECULAR_LEVEL}
+
+
+def _mirror_inputs(color):
+    """MIRROR_INPUTS with the Base Color of the IR's mirror_color (a VRayMtl's tinted mirror, maxdrop-6n0.6.16)."""
+    return dict(MIRROR_INPUTS, **{"Base Color": tuple(color[:3]) + (1.0,)})
 REFRACTION_LABEL = "Refraction without reflection"  # refracting glass's twin (maxdrop-em3.135)
 TIR_LABEL = "Total internal reflection"  # the weight's mask where glass reflects totally (maxdrop-em3.135)
 DEG = math.pi / 180.0
@@ -1816,7 +1821,8 @@ def _weight_mix(p):
         copy = _from(n.inputs[2]) if n.bl_idname == "ShaderNodeMixShader" and n.label == WEIGHT_LABEL else None
         below = _from(n.inputs[1]) if copy is not None else None
         if getattr(copy, "label", "") == MIRROR_LABEL and below is not None \
-                and below.bl_idname != "ShaderNodeBsdfPrincipled" and _same_inputs(p, copy, MIRROR_INPUTS) == []:
+                and below.bl_idname != "ShaderNodeBsdfPrincipled" \
+                and _same_inputs(p, copy, _mirror_inputs(copy.inputs["Base Color"].default_value)) == []:
             found.append(n)
     return found[0] if found else None
 
@@ -1870,8 +1876,10 @@ def check_specular(label, p, ir, present):
           and (linked or _value_ok(fac, w)),
           "mix %s, level %r, factor %r vs %r" % (mix is not None, s.default_value,
                                                   None if fac is None else fac.default_value, w))
-    if mix is not None:
-        (check_mirror if mirror else check_refraction_twin if _refracting(p) else check_twin)(label, p, mix)
+    if mix is not None and mirror:
+        check_mirror(label, p, mix, ir.mirror_color)
+    elif mix is not None:
+        (check_refraction_twin if _refracting(p) else check_twin)(label, p, mix)
 
 
 def _same_inputs(p, copy, own):
@@ -1896,16 +1904,18 @@ def _same_inputs(p, copy, own):
     return bad
 
 
-def check_mirror(label, p, mix):
+def check_mirror(label, p, mix, color=(1.0, 1.0, 1.0)):
     """A weight without Fresnel: the Mix Shader's first shader is p (Specular IOR Level 0), its second p's copy as
-    a white metal: p's links and values but Metallic 1, Base Color white (both unlinked), Specular IOR Level 0.5.
-    On refracting glass (bead maxdrop-6n0.7.2) the first shader is the refraction twin (check_refraction_twin)."""
+    a metal of color (the IR's mirror_color: white, or a VRayMtl's tint, bead maxdrop-6n0.6.16): p's links and
+    values but Metallic 1, Base Color color (both unlinked), Specular IOR Level 0.5. On refracting glass (bead
+    maxdrop-6n0.7.2) the first shader is the refraction twin (check_refraction_twin)."""
     copy = _from(mix.inputs[2])
     refracts = _refracting(p)
     ok = copy is not None and copy.bl_idname == "ShaderNodeBsdfPrincipled" and copy.label == MIRROR_LABEL \
         and (refracts or _from(mix.inputs[1]) == p)
-    bad = _same_inputs(p, copy, MIRROR_INPUTS) if ok else []
-    check(label + ": the mirror is the Principled BSDF as a white metal", ok and bad == [], str(bad))
+    bad = _same_inputs(p, copy, _mirror_inputs(color)) if ok else []
+    tint = "white" if tuple(color[:3]) == (1.0, 1.0, 1.0) else "color %s" % (tuple(round(c, 3) for c in color[:3]),)
+    check(label + ": the mirror is the Principled BSDF as a metal of " + tint, ok and bad == [], str(bad))
     if ok and refracts:
         check_refraction_twin(label, p, mix, copy)
 
@@ -3759,7 +3769,8 @@ def check_builder_fresnel_off():
     reflection map that did not convert or whose image is not found (no node: its swatch) keep em3.119's drawing;
     Fresnel on keeps the twin. Refracting glass (bead maxdrop-6n0.7.2): the mirror's first shader refracts without
     reflecting (em3.135's refraction twin, the weight 1 under total internal reflection) and the filled BSDF feeds
-    nothing; a black reflection is the twin at 0, a white one the lone BSDF; a coat keeps the mirror over the BSDF."""
+    nothing; a black reflection is the twin at 0, a white one the lone BSDF; a coat keeps the mirror over the BSDF.
+    A tinted mirror color (bead maxdrop-6n0.6.16) is the copy's Base Color, over the BSDF and over refracting glass."""
     from maxdrop.build import materials as build_materials
     from maxdrop.convert import materials as cm
     from maxdrop.convert import texmaps as tx
@@ -3778,6 +3789,9 @@ def check_builder_fresnel_off():
             ("GlassOffBlack", dict(glass, specular=cm.Input(0.0)), {}, "twin", 0.5),
             ("GlassOffWhite", dict(glass, specular=cm.Input(1.0)), {}, "lone", 0.5),
             ("GlassOffUnconverted", dict(glass, specular=cm.Input(0.6, cm.MapRef(1))), {}, "twin", 0.5),
+            ("GlassOffTinted", dict(glass, mirror_color=(1.0, 0.5, 0.25)), {}, "mirror", 0.0),
+            ("Tinted", dict(specular=cm.Input(0.6), base_color=cm.Input((0.2, 0.3, 0.8)),
+                            mirror_color=(1.0, 0.5, 0.25)), {}, "mirror", 0.0),
             ("Dim", dict(specular=cm.Input(0.2), roughness=cm.Input(0.3)), {}, "mirror", 0.0),
             ("DimRed", dict(specular=cm.Input(0.2), base_color=cm.Input((1.0, 0.0, 0.0), cm.MapRef(1)),
                             metallic=cm.Input(0.2, cm.MapRef(1))),
@@ -3802,6 +3816,10 @@ def check_builder_fresnel_off():
         got = "lone" if mix is None else "mirror" if getattr(second, "label", "") == MIRROR_LABEL else "twin"
         check("fresnel off: %s: %s, Specular IOR Level %.1f" % (name, drawing, level), level_ok and got == drawing,
               "%s, level %r" % (got, None if p is None else p.inputs["Specular IOR Level"].default_value))
+        if name in ("Tinted", "GlassOffTinted") and got == "mirror":
+            check("fresnel off: %s: the mirror's Base Color is the IR's mirror color, the BSDF's the base" % name,
+                  close(list(second.inputs["Base Color"].default_value)[:3], [1.0, 0.5, 0.25], 1e-6)
+                  and close(list(p.inputs["Base Color"].default_value)[:3], list(ir.base_color.value), 1e-6))
         if name == "DimRed" and got == "mirror":
             check("fresnel off: DimRed: the source's Base Color and Metallic are linked (the copy's are not)",
                   p.inputs["Base Color"].is_linked and p.inputs["Metallic"].is_linked)

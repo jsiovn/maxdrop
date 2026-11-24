@@ -62,8 +62,9 @@ white glass keeps 0.999 of the white environment in Cycles (0.83 without the mas
 BSDF has no multiscatter GGX), and a Principled with a metallic, an alpha below 1 or a map, an emission, a coat or a
 sheen (none of which a Refraction BSDF has) keeps em3.119's twin, whose glass still reflects in full. Not measured against V-Ray (no V-Ray render of a glass with a grey reflection).
 An IR whose fresnel is off (VRayMtl Fresnel off) reflects its weight at every angle: the same Mix Shader then has the
-filled BSDF at Specular IOR Level 0 first and a copy of it second (MIRROR_LABEL: Metallic 1, Base Color white, both
-unlinked), a white metal reflecting 1 at every angle, so w + (1 - w) diffuse. Measured on V-Ray 5.2 (bead
+filled BSDF at Specular IOR Level 0 first and a copy of it second (MIRROR_LABEL: Metallic 1, Base Color the IR's
+mirror_color, white unless a VRayMtl's colored swatch tints it, both unlinked), a metal reflecting that color at every
+angle, so w x color + (1 - w) diffuse. Measured on V-Ray 5.2 (bead
 maxdrop-em3.120, the same scene): a 0.2 swatch reflects 0.200 facing the camera, where Specular IOR Level 0.1 gave
 0.011. A reflection map that did not convert, or whose image is not found, keeps the twin (its swatch is a weight with
 Fresnel), so a bright swatch it hid never becomes a mirror. On refracting glass (refracting() above, full or partial)
@@ -91,7 +92,7 @@ to 0 by hand, orthographic camera, a checker world of 0.1 / 0.9): a sphere's mea
 rotated cube's from 0.206-0.221 to 0.196-0.217, both far off), and on a white world half transmission (sphere and
 cube) moves away from Cycles' 0.851-0.853 (0.975-0.983, the default 0.896-0.905).
 Glass that refracting() refuses keeps the filled BSDF under the mirror, its glass Fresnel still reflecting; a
-constant w of at least 1 keeps the lone BSDF (a VRayMtl's bright Fresnel-off reflection is a metal before it gets
+constant w of at least 1 keeps the lone BSDF (a VRayMtl's full Fresnel-off reflection is a metal before it gets
 here). Not measured against V-Ray.
 
 Data maps (a map on roughness, metallic or alpha, a mask, a bump height: a graph drawn as a float) take the mean of
@@ -167,7 +168,7 @@ from ..convert import texmaps as tx
 
 SPECULAR_LEVEL = 0.5
 TWIN_LABEL, WEIGHT_LABEL = "Without reflection", "Reflection weight"  # reflection_weight()'s nodes
-MIRROR_LABEL = "Mirror reflection"  # reflection_weight()'s copy for a weight without Fresnel
+MIRROR_LABEL = "Mirror reflection"  # reflection_weight()'s copy for a weight without Fresnel (Base Color: its color)
 MIRROR_INPUTS = {"Metallic": 1.0, "Base Color": (1.0, 1.0, 1.0, 1.0), "Specular IOR Level": SPECULAR_LEVEL}
 REFRACTION_LABEL = "Refraction without reflection"  # reflection_weight()'s twin of refracting glass
 TIR_LABEL = "Total internal reflection"  # tir_weight()'s nodes
@@ -584,19 +585,20 @@ class _Tree:
         s = self.bsdf.inputs.get(name)
         return s is not None and not s.is_linked and s.default_value >= bound
 
-    def reflection_weight(self, bsdf, weight, mirror=False):
+    def reflection_weight(self, bsdf, weight, mirror=False, color=(1.0, 1.0, 1.0)):
         """bsdf (at the IOR's full Fresnel) mixed by weight over a twin without reflection: the Mix Shader's
         output. The twin has bsdf's links and values, but Specular IOR Level 0; on refracting glass it refracts
         without reflecting (refraction_twin), and the weight is 1 where the glass reflects totally (tir_weight).
-        mirror: the second shader is bsdf's copy as a white metal (MIRROR_LABEL: MIRROR_INPUTS, Specular IOR Level
-        0.5 only for an edit that lowers Metallic), the first bsdf (without reflection), or on refracting glass the
-        refraction twin (bsdf, whose glass still reflects, then feeds nothing)."""
+        mirror: the second shader is bsdf's copy as a metal of color (MIRROR_LABEL: MIRROR_INPUTS with that Base
+        Color, Specular IOR Level 0.5 only for an edit that lowers Metallic), the first bsdf (without reflection), or
+        on refracting glass the refraction twin (bsdf, whose glass still reflects, then feeds nothing)."""
         self.start_row()
         y = self.row - Y_STEP
         self.columns[-1] = self.row - 2 * Y_STEP
         above = _out(bsdf, "BSDF")
         if mirror:
-            above = self.copy_principled(bsdf, MIRROR_LABEL, MIRROR_INPUTS, y)
+            own = dict(MIRROR_INPUTS, **{"Base Color": tuple(color[:3]) + (1.0,)})
+            above = self.copy_principled(bsdf, MIRROR_LABEL, own, y)
         if self.refracting(bsdf):
             if mirror:
                 y -= Y_STEP
@@ -852,7 +854,7 @@ class _Tree:
         if ir.thin_walled:
             self.value("Thin Wall", True)
         alpha = self.bsdf_input("Alpha", needed=False)
-        top = _out(bsdf, "BSDF") if weight is None else self.reflection_weight(bsdf, *weight)
+        top = _out(bsdf, "BSDF") if weight is None else self.reflection_weight(bsdf, *weight, color=ir.mirror_color)
         return top, (alpha_map, (None if alpha is None or alpha_map else alpha.default_value))
 
     def graph(self, node, space, depth):
