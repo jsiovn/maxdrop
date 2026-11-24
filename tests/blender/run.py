@@ -68,9 +68,9 @@ the new one; a World that cannot be built leaves the scene imported, a line in t
 the first gives the World. vray_mesh_light and vray_dome's mesh light: each emitter a mesh object of its mesh at the
 light's place (EMITTER_BOXES), its only material an Emission of the radiance V-Ray gives it (EMITTER_RADIANCE)
 times the Light Strength, one side through a Backfacing mix (flipped for Flip normals) or both, its camera, shadow,
-diffuse and glossy visibility; the mesh light without a mesh an empty. lights_standard, lights_photometric (and lookat's target spot): each light of the type,
-spot cone, power and color of the rules (STOCK_LIGHTS), its -Z axis along the oracle's, its flags, its shadow switch (STOCK_SHADOWS);
-the Skylight an empty.
+diffuse and glossy visibility; the mesh light without a mesh an empty. lights_standard, lights_photometric (and lookat's
+target spot): each light of the type, spot cone, power and color of the rules (STOCK_LIGHTS), its -Z axis along the
+oracle's, its flags, its shadow switch (STOCK_SHADOWS); the Skylight an empty.
 Cameras (cameras, lookat): each camera node a camera object of the description's type, sensor fit HORIZONTAL, sensor,
 lens, shift, clipping and orthographic width, Blender's horizontal field of view (angle_x) within 0.05 degrees of 3ds
 Max's (the oracle's EvalCameraState), depth of field off, its -Z axis and +Y up along the oracle's; cameras' shifts and
