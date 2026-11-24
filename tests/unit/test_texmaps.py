@@ -2013,6 +2013,35 @@ class LostMaps(Checks):
         self.assertEqual(tex.stats.issues, [])
         self.assertEqual(tex.stats.peeled, collections.Counter())
 
+    def test_empty_wrapper_under_corona(self):
+        """Corona 12 renders an Output's map with map1Enabled off (V-Ray 5.2 and renderMap: white); it honors RGB
+        Tint's switch and draws an unset Output white (maxdrop-em3.127)."""
+        vray = classdir.ClassId(0x73BAB286, 0x77F8FD0C)
+        for renderer, used in ((classdir.ClassId(0x62A85DCC, 0x523C3604), True), ((0x62A85DCC, 0x523C3604), True), (None, False),
+                               (vray, False)):
+            with self.subTest(renderer=renderer):
+                out = FakeMap(1, tx.OUTPUT, {0: Ref(2), 1: 0}, [2], cls="Output", name="out")
+                tex = tx.TexmapConverter(FakeGraph(out, _bitmap(2)), _table(), renderer=renderer)
+                g = tex.convert(mat.MapRef(1), tx.COLOR)
+                if used:
+                    self.assertEqual(g.root.name, "a.png", "the map, its switch ignored")
+                else:
+                    self.assertEqual(g.root, tx.Constant((1.0, 1.0, 1.0)))
+                self.assertEqual(tex.stats.issues, [])
+        out = FakeMap(1, tx.OUTPUT, {0: Ref(2), 1: 0}, [2], cls="Output", name="out")
+        part = FakeMap(5, (0x100, 0), superclass=classids.SC_TEXOUTPUT)
+        part.legacy = {0: {0: 0.8, 1: 0.1, 2: 0.5}}
+        out.parts = {2: part}
+        tex = tx.TexmapConverter(FakeGraph(out, _bitmap(2)), _table(), renderer=tx.CORONA_RENDERER)
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertIsInstance(g.root, tx.Adjust, "its Output part over its map")
+        self.assertEqual(g.root.input.name, "a.png")
+        for wrapper in (FakeMap(1, tx.OUTPUT, {0: Ref(None)}, cls="Output"),
+                        FakeMap(1, tx.RGB_TINT, {3: Ref(2), 4: 0}, [2], cls="RGB Tint")):
+            with self.subTest(wrapper=wrapper.cls):
+                tex = tx.TexmapConverter(FakeGraph(wrapper, _bitmap(2)), _table(), renderer=tx.CORONA_RENDERER)
+                self.assertEqual(tex.convert(mat.MapRef(1), tx.COLOR).root, tx.Constant((1.0, 1.0, 1.0)))
+
     def test_color2bump_with_a_map_is_still_peeled(self):
         tex = _tex(FakeMap(1, tx.VRAY_COLOR2BUMP, {0: Ref(2)}, [2], cls="VRayColor2Bump"), _bitmap(2))
         g = tex.convert(mat.MapRef(1), tx.BUMP)

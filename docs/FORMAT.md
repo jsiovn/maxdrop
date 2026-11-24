@@ -1801,7 +1801,7 @@ gave the same pixel as over white) or its tint ((128, 0, 0), (0, 64, 0), (0, 0, 
 VRayColor2Bump without a map renders (0.5, 0.5, 1), opaque, in a color slot (over a white map: white); it has no map
 switch. On an opacity input V-Ray takes the mean (1, 0.293, 0.667). In a VRayMtl bump slot each one is flat; inside
 a VRayNormalMap's normal slot the white of an empty Output or RGB Tint tilts the normal as a white map does, the
-VRayColor2Bump's color is flat. Corona renders do not run on the machine of the measurement: not measured. MAXScript
+VRayColor2Bump's color is flat. Corona and the gamma on: the next paragraph. MAXScript
 `copy` of an Output map loses map1Enabled (the copy renders its map).
 The 0.293 is the mean of the tint rows as stored (128 / 255, 64 / 255, 32 / 255), not decoded by the gamma-off
 swatch rule (0.094): in a data, bump or normal input MaxDrop takes a wrapper's rows and a swatch below a wrapper
@@ -1809,6 +1809,16 @@ that works on color (RGB Tint, an Output part, Color Correction) as stored, keep
 mean at the float input (maxdrop-em3.128); a constant color in a normal map's normal slot is drawn as that color.
 That a colored constant keeps its color below the wrapper, Color Correction, and the rows in a normal input
 follow the same rule by assumption, not by measurement.
+The same cases with the gamma on and in Corona (maxdrop-em3.127; 3ds Max 2020, V-Ray 5.2 and Corona 12 with tone
+mapping off, each with the gamma off and on, a VRayLightMtl / CoronaLightMtl texmap and the opacity of a
+self-illuminated VRayMtl / CoronaLegacyMtl, black background): V-Ray with the gamma on renders every case as with it
+off (white, 0.725 for the Output part above, 0.502 / 0.251 / 0.125 for the tint, (0.5, 0.5, 1) for VRayColor2Bump,
+0.293 and 0.667 on opacity), so (0.5, 0.5, 1) is the swatch as stored in both modes. Corona renders the same for an
+unset Output or RGB Tint, an RGB Tint switched off and an unset VRayColor2Bump, but an Output with map1Enabled off
+renders its map1 through its Output part (a red (200, 50, 50) map: 0.784, 0.196, 0.196); the file stores the switch
+off. MaxDrop ignores an Output's map1Enabled when the scene's renderer (Renderer ClassIDA / B of the summary stream)
+is Corona's, `(0x62A85DCC, 0x523C3604)` (Corona 12); measured with Corona's own materials, assumed for others.
+Corona's opacity with few passes is noisy (up to 0.006 at 4 passes, the mean at 64).
 
 ### The Falloff mix curve
 

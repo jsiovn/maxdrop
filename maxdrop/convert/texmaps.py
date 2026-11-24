@@ -5,7 +5,8 @@
 """Texture-map rules: the map that drives a material input, turned into a small renderer-neutral graph.
 
     tex = TexmapConverter(graph, assets, textures=index, swatches=sw)   # MaterialGraph, AssetTable, optional
-                                        # TextureIndex, colors.Swatches (default: read from graph's scene)
+                                        # TextureIndex, colors.Swatches (default: read from graph's scene),
+                                        # renderer= the scene's renderer ClassID (None: not known)
     g = tex.convert(map_ref, kind, value)   # TextureGraphIR, None when nothing usable drives the input
     g.root, g.kind, g.approximated, g.issues
     graphs = texture_graphs(ir, tex)        # {MaterialIR input name: TextureGraphIR}
@@ -118,8 +119,9 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
   else the unoccluded color), VRayColor2Bump (its map). An Output or RGB Tint without a map (or with it off) is
   drawn as over a white map, its own Output or tint applied; a VRayColor2Bump without a map (it has no switch) is
   the constant (0.5, 0.5, 1); neither is counted (3ds Max 2020 renderMap and V-Ray 5.2 renders with the gamma off,
-  maxdrop-em3.76; with it on assumed the same swatch, Corona not measured). In a normal map's normal slot that color
-  as stored, drawn: V-Ray tilts the normal by the white as by a white map, (0.5, 0.5, 1) is flat (maxdrop-em3.128).
+  maxdrop-em3.76; V-Ray with the gamma on and Corona 12 render the same, maxdrop-em3.127; Corona renders an
+  Output's map with its switch off, which a scene saved with Corona as its renderer keeps). In a normal map's normal
+  slot that color as stored, drawn: V-Ray tilts the normal by the white as by a white map, (0.5, 0.5, 1) is flat (maxdrop-em3.128).
   Any other map class with maps below gives the first image below it (depth first, in reference order), counted the
   same way; one without is unsupported (counted, no graph).
 - Normal maps (VRayNormalMap, Normal Bump, CoronaNormal) in a normal or bump input -> NormalMap: the normal image
@@ -758,11 +760,13 @@ def drawn_gamma(image):
 class TexmapConverter:
     """Converts the maps of one MaterialGraph; assets: the scene's reader.assets.AssetTable (None: no file is
     known); textures: a convert.textures.TextureIndex to look each file up (None: no lookup); swatches: the
-    colors.Swatches rule of the scene (None: read from graph's scene)."""
+    colors.Swatches rule of the scene (None: read from graph's scene); renderer: the scene's renderer ClassID
+    (reader.metadata's renderer class_id; None: not known), for the rules a renderer changes (corona)."""
 
-    def __init__(self, graph, assets=None, textures=None, swatches=None):
+    def __init__(self, graph, assets=None, textures=None, swatches=None, renderer=None):
         self.graph, self.assets, self.textures = params.at_frame_zero(graph), assets, textures
         self.swatches = swatches if swatches is not None else colors.of_graph(graph)
+        self.corona = renderer is not None and tuple(renderer) == CORONA_RENDERER
         self.stats = TexmapStats()
         self._counted, self._done, self._reported = set(), {}, set()
         self._nodes, self._firsts = {}, {}  # keyed (object, kind, depth)
@@ -1401,13 +1405,17 @@ def _vray_dirt(conv, m, kind, walk, depth, chain):
 
 WHITE = (1.0, 1.0, 1.0)
 C2B_EMPTY = (0.5, 0.5, 1.0)  # what a VRayColor2Bump without a map renders: a flat normal's color
+# Corona's renderer ClassID (Corona 12), as the summary stream names a scene's renderer (Renderer ClassIDA / B,
+# reader.metadata); not a class of the class directory, so not in reader.classids
+CORONA_RENDERER = (0x62A85DCC, 0x523C3604)
 
 
 def _wrapped(conv, m, map_pid, on_pid, kind, walk, depth, chain, empty=WHITE):
     """The map of a wrapper that has no color of its own (Output, RGB Tint, VRayColor2Bump), in kind (the caller's
     rgb_kind when the wrapper changes the color); without a used map the swatch empty: an Output or RGB Tint renders
     as over a white map, a VRayColor2Bump the color C2B_EMPTY (3ds Max 2020 renderMap and V-Ray 5.2 renders with the
-    gamma off, maxdrop-em3.76; with it on assumed, Corona not measured). In a normal input (a normal map's normal
+    gamma off, maxdrop-em3.76; V-Ray with the gamma on and Corona 12 with it off and on render the same,
+    maxdrop-em3.127, but for an Output switched off in Corona: _output_map). In a normal input (a normal map's normal
     slot) that color as stored: V-Ray tilts the normal by an Output's or RGB Tint's white as by a white map, and
     leaves it flat for C2B_EMPTY, which the builder draws the same (maxdrop-em3.128)."""
     if conv._on(m, map_pid, on_pid) is None:
@@ -1417,9 +1425,12 @@ def _wrapped(conv, m, map_pid, on_pid, kind, walk, depth, chain, empty=WHITE):
 
 def _output_map(conv, m, kind, walk, depth, chain):
     """0 map1, 1 map1Enabled; its Output part as an Adjust (its clamp and color map curve are not read) over its map
-    as a color (rgb_kind); an Output part that changes nothing leaves the map in its own kind, as with no wrapper."""
+    as a color (rgb_kind); an Output part that changes nothing leaves the map in its own kind, as with no wrapper.
+    Corona 12 renders map1 with map1Enabled off (Corona's own materials measured, maxdrop-em3.127): in a scene that
+    renders with Corona the switch is not read."""
     out = _own_part(conv, m)
-    node = _wrapped(conv, m, 0, 1, kind if out is None else rgb_kind(kind), walk, depth, chain)
+    node = _wrapped(conv, m, 0, None if conv.corona else 1, kind if out is None else rgb_kind(kind), walk, depth,
+                    chain)
     return node if node is None or out is None else Adjust(node, out)
 
 

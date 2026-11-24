@@ -83,6 +83,8 @@
 # Modified for MaxDrop, 2026-11-23 (jsiovn). The IES, dome and material lookups share one walk of the texture folders
 # (convert.textures.TextureIndex.share), each with its own counts; a walk that stopped short is in the report also
 # without materials, and an IES file not found then says so.
+# Modified for MaxDrop, 2026-11-24 (jsiovn). The texture-map converters get the scene's renderer from the summary
+# stream (a rule Corona renders otherwise).
 
 
 __author__ = "Sebastian Sille <nrgsille@gmail.com>"
@@ -486,26 +488,27 @@ def _preflight_of(path):
         return None
 
 
-def _material_slots(sc, desc, table, index, meters=None):
+def _material_slots(sc, desc, table, index, meters=None, renderer=None):
     """(the material slots of desc's meshes and curves (convert.materials.Slots), (the material converter's, the
     texture-map converter's and the texture lookup's counters, the scene's swatch rule) for the import report): every
     material converted, its texture files looked up. sc: the reader Scene, which the converters read; table: the
     file's reader.assets.AssetTable (the one the scene description got); index: the texture lookup
     (convert.textures.TextureIndex, a share of the import's: its counts are the materials'); meters: per file unit,
-    as the geometry is scaled (lengths such as an SSS radius; None: the file's own unit); the counters hold no reference to either. Touches no Blender data."""
+    as the geometry is scaled (lengths such as an SSS radius; None: the file's own unit); renderer: the scene's
+    renderer ClassID (_renderer_id); the counters hold no reference to either. Touches no Blender data."""
     from .convert import colors as convert_colors
     from .convert import materials as convert_materials
     from .convert import texmaps as convert_texmaps
     from .reader import materials as reader_materials
     graph = reader_materials.MaterialGraph(sc)
     swatches = convert_colors.of_scene(sc)
-    tex = convert_texmaps.TexmapConverter(graph, table, textures=index, swatches=swatches)
+    tex = convert_texmaps.TexmapConverter(graph, table, textures=index, swatches=swatches, renderer=renderer)
     conv = convert_materials.MaterialConverter(graph, texmaps=tex, swatches=swatches, meters=meters)
     slots = convert_materials.assign(desc, convert_materials.node_materials(sc, desc), conv)
     return slots, (conv.stats, tex.stats, index.report, swatches)
 
 
-def _dome_texture(sc, dd, table, index):
+def _dome_texture(sc, dd, table, index, renderer=None):
     """(convert.lights DomeTexture of the dome dd's texture map, or None, issues): the map converted as a color input
     with a converter of its own (the materials' counters stay theirs), its file looked up by index (a share of the
     import's convert.textures.TextureIndex: its counts are its own)."""
@@ -515,7 +518,8 @@ def _dome_texture(sc, dd, table, index):
     from .convert import texmaps as convert_texmaps
     from .reader import materials as reader_materials
     graph = reader_materials.MaterialGraph(sc)
-    tex = convert_texmaps.TexmapConverter(graph, table, textures=index, swatches=convert_colors.of_scene(sc))
+    tex = convert_texmaps.TexmapConverter(graph, table, textures=index, swatches=convert_colors.of_scene(sc),
+                                          renderer=renderer)
     graph_ir = tex.convert(convert_materials.MapRef(dd.texmap), convert_texmaps.COLOR, dd.color)
     return convert_lights.dome_texture(graph_ir, graph)
 
@@ -692,6 +696,16 @@ def _read_scene(max_path, opts, dirs, cancel=None):
         raise _defect(os.path.basename(max_path), e) from e
 
 
+def _renderer_id(cf):
+    """The ClassID (a, b) of the renderer the open .max cf was saved with (its summary stream), None when it does
+    not say or the stream is not readable: an optional fact never costs the import."""
+    from .reader import metadata
+    try:
+        return (metadata.read(cf).get("renderer") or {}).get("class_id")
+    except _UNREADABLE:
+        return None
+
+
 def _read_file(max_path, opts, dirs, cancel):
     """_read_scene() without its net for _DEFECTS."""
     from .convert import cameras, colors
@@ -706,6 +720,7 @@ def _read_file(max_path, opts, dirs, cancel):
         unit = units.system_unit(sc)
         meters, read.note = _meters(opts.units, unit, opts.scale_objects)
         table = assets.AssetTable.from_file(cf)
+        renderer = _renderer_id(cf)
         # one walk of the texture folders, a share per lookup: the materials' counts are their textures only
         files = convert_textures.TextureIndex(max_path, dirs, scene_subfolders=opts.use_image_search)
         read.walk = files.report
@@ -715,7 +730,7 @@ def _read_file(max_path, opts, dirs, cancel):
         read.slots, read.counts, read.failed = None, None, []
         if desc.dome is not None and desc.dome.texmap is not None:
             try:
-                desc.dome.texture, issues = _dome_texture(sc, desc.dome, table, files.share())
+                desc.dome.texture, issues = _dome_texture(sc, desc.dome, table, files.share(), renderer)
             except Exception as e:  # a texture rule's bug costs the World its texture, never the scene
                 print("MaxDrop: dome texture of %s not converted:\n%s" % (name, traceback.format_exc()), end="")
                 issues = ["its texture is not converted (%s: %s): the World has its color" % (type(e).__name__, e)]
@@ -725,7 +740,8 @@ def _read_file(max_path, opts, dirs, cancel):
             if cancel is not None and cancel():
                 raise convert_scene.Cancelled()
             try:
-                read.slots, read.counts = _material_slots(sc, desc, table, files.share(), meters)
+                read.slots, read.counts = _material_slots(sc, desc, table, files.share(), meters,
+                                                            renderer)
             except Exception as e:  # a material rule's bug costs the materials, never the scene
                 print("MaxDrop: materials of %s not converted:\n%s" % (name, traceback.format_exc()), end="")
                 read.failed.append(("materials", "not converted (%s: %s): the scene is imported without materials"
