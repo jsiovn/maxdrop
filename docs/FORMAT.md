@@ -1629,6 +1629,9 @@ Reference parameters, checked against the oracle's targets on every fixture:
   `opacity_texmap`, `displacement_texmap` at 1, 2, 3, as corpus scene B has them; VRayMtlWrapper, Double Sided and
   Shellac at 1, 2) and, for Composite and class `0xC90017A5` (no fixture `0x0013` entry: texmap_rules' Composite
   keeps its maps as block references), from corpus scene B's (format 20000); every object of scene A agrees.
+  Output `map1` (0) at slot 0 comes from scene A alone (maxdrop-6n0.6.3): its 8 Output maps hold the map at owner
+  slot 0 (1 the TexOutput, 2 the block), the map 3ds Max reports, and 2 of them store -1; the fixtures (3ds Max
+  2020) store that index directly and list only `output` (2) at 1 in `0x0013`.
   `test_materials.py` checks each entry against the fixtures' tables. Only a block without
   `0x0013` uses it: for a stored -1, and for a stored index that is none of the owner's references when the owner
   holds one at that slot (scene A stores 3704 such indices: 3702 equal the slot's, 2 are stale, a Normal Bump's

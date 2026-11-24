@@ -390,6 +390,19 @@ class OwnerSlotsWithoutTable(unittest.TestCase):
                    owner_refs={1: 301, 3: 303}, owner_class=multi)
         self.assertEqual(pb.value(0), [Reference(301), Reference(None), Reference(303)])
 
+    def test_output_map1_at_owner_slot_0(self):
+        """An Output map's map1 (pid 0) stored -1 in a block without 0x0013 is the owner's slot 0, its output (pid 2)
+        slot 1 (corpus scene A, maxdrop-6n0.6.3); a stored index the owner holds is kept."""
+        output = (0x0C10, (0x2B0, 0))
+        refs = {0: 301, 1: 302, 2: 303}  # the map, the TexOutput, the block
+        pb = parse(block(scalar(0, TEXMAP, OWNERS, 0x40, i32(-1)), scalar(2, 17, OWNERS, 0x40, i32(-1)),
+                         block_id=0), owner_refs=refs, owner_class=output)
+        self.assertEqual((pb.get(0), pb.get(2)), (Reference(301), Reference(302)))  # 17: a reference target
+        self.assertEqual(pb.issues, ())
+        pb = parse(block(scalar(0, TEXMAP, OWNERS, 0x40, i32(302)), block_id=0), owner_refs=refs,
+                   owner_class=output)
+        self.assertEqual(pb.get(0), Reference(302))
+
     def test_a_0x0013_table_always_wins(self):
         pb = parse(block(scalar(6, TEXMAP, OWNERS, 0x40, i32(-1)), scalar(7, TEXMAP, OWNERS, 0x40, i32(-1)),
                          block_id=0, extra=[owner_table((6, 3, 0))]),

@@ -59,6 +59,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   controller class) is a line in the report naming the parameter, and marks the map's graph approximated.
 - Objects: a LookAt Constraint weight held by a Float List none of whose entries gives a value counts as 50, as a
   single unreadable weight does, instead of 0, which dropped that target.
+- Materials: in a file saved in the 3ds Max 2012 format, an Output map (also the second side of a Falloff) keeps
+  its map where the file stores no index for it, instead of being drawn as over a white map.
 - Materials: a VRayMtl with reflection Fresnel off and a grey reflection color (mid grey up to just below white,
   no reflection map) keeps its diffuse under the reflection, as V-Ray renders it, instead of becoming a metal in
   the reflection color that dropped the diffuse (checked against V-Ray 5.2 in Cycles: a 0.5 grey over a red

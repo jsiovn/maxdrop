@@ -12,7 +12,7 @@ parameters the stored object index is -1 although the reference is set, or stale
 reference): the slot wins there when the owner holds a reference at it. The slot is the parameter definition's
 reference number, a constant of the class: the values here are the 0x0013 tables of the committed fixtures (saved
 by 3ds Max 2020) and, where no fixture has the class, of corpus scene B (format 20000), equal in every object of
-corpus scene A (format 14000). A table parameter's element k is at slot + k, as with 0x0013. Keyed by superclass
+corpus scene A (format 14000); Output's map1 from scene A's owner references alone (see its entry). A table parameter's element k is at slot + k, as with 0x0013. Keyed by superclass
 and ClassId (a ClassId is unique only within its superclass). No bpy.
 """
 from . import classids
@@ -40,7 +40,10 @@ TABLE = {
     (_TEX, classids.MIX): {0: {6: 1, 7: 2, 8: 3, 12: 4}},
     (_TEX, classids.NOISE): {0: {2: 2, 3: 3, 13: 4}},
     (_TEX, classids.RGB_MULTIPLY): {0: {2: 1, 3: 2}},
-    (_TEX, classids.OUTPUT_MAP): {0: {2: 1}},
+    # Output: pid 2 from the fixtures' 0x0013; pid 0 (map1) at slot 0 measured on corpus scene A (format 14000:
+    # owner slot 0 the map, as 3ds Max names it, on all 8 Output maps); the fixtures store pid 0's index directly
+    # and list only pid 2 in 0x0013
+    (_TEX, classids.OUTPUT_MAP): {0: {0: 0, 2: 1}},
     (_TEX, classids.COLOR_CORRECTION): {0: {1: 1}},
     (_TEX, classids.NORMAL_BUMP): {0: {2: 1, 3: 2}},
     (_TEX, classids.FALLOFF): {0: {2: 4, 6: 5}},
