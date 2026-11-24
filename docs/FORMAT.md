@@ -1902,6 +1902,14 @@ these operations too. CoronaColor's temperature is Corona's own linear color, th
 brightest channel 1 (`texmaps.CORONA_KELVIN`, 24 points from 1000 K to 40000 K; 3000 K = (255, 121.6, 39.2));
 colorSpace (61) changed nothing for a color, a hex value or a temperature.
 
+MaxDrop draws a CoronaMix in sRGB mode with a Vector Math ABSOLUTE before each map layer's Gamma node of 1 / 2.2 (a
+constant layer's magnitude folded), and color dodge, color burn and exclusion with Vector Math nodes in the forms
+above (maxdrop-em3.161): Blender's Mix types for them clamp to 0..1 (exclusion floored at 0) and its Dodge leaves a
+bottom of 0 at 0 under a top of 1. Vector Math's Divide gives 0 for a divisor of 0, so burn is max(0, nz - (1 - a) / b)
+and dodge 1 - max(0, nz - a / (1 - b)), nz = ceil(min(|divisor|, 1)), 0 for a divisor of 0. Checked by a Cycles
+emission bake against `texmaps.blend_value` (every operation, both modes, layers -0.5 to 3, exactly 0 and 1 too).
+The gamma operation over a bottom map draws a ColorCorrect gamma: a negative channel of that map stays negative.
+
 Corona 12 renders (maxdrop-em3.115): `3dsmaxbatch`, CoronaRenderer with tone mapping off (`colorMap_enabled`) and a
 pass and a time limit, read with `getPixels ... linear:true` (a CoronaLightMtl patch at 0.5 / 1.0 reads 0.49999 /
 1.0, a white diffuse plane under a white background 0.99999):

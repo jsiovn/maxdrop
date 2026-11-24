@@ -207,6 +207,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   as Corona 12 renders it, instead of white (V-Ray and Scanline scenes keep white, as V-Ray renders it). An unset
   Output or RGB Tint, an RGB Tint switched off and an unset VRayColor2Bump are now measured in Corona and with the
   gamma on: the same as before.
+- CoronaMix: in sRGB mode (the default) a layer below 0 (a negative offset or multiplier) is taken by its magnitude
+  before the operation, as Corona does, for every operation run in gamma 2.2 and Gamma, instead of left negative;
+  Color Dodge, Color Burn and Exclusion over maps follow Corona's formulas, no longer clamped to 0..1, and Color
+  Dodge of black under white gives white, as in Corona, instead of black.
 
 ## [1.0.1] - 2026-11-22
 

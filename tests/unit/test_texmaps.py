@@ -1031,6 +1031,10 @@ def _ccolor(index, **params):
     return FakeMap(index, classids.CORONA_COLOR, {int(k[1:]): v for k, v in params.items()}, cls="CoronaColor")
 
 
+# probe1's P5 layers (maxdrop-em3.117): bottom (0.2, 0.6, 0.3) and top (0.8, 0.1, 1.1), each with offset 3 (-0.3)
+P5_BOTTOM, P5_TOP = (-0.1, 0.3, 0.0), (0.5, -0.2, 0.8)
+
+
 def _cmix(index, children=(), **params):
     return FakeMap(index, classids.CORONA_MIX, {int(k[1:]): v for k, v in params.items()}, children,
                    cls="CoronaMix")
@@ -1129,8 +1133,9 @@ class CoronaSynthetic(Checks):
         self.close(tx.blend_value(tx.BLEND_DIFFERENCE, 0.2, 0.5), 0.3)
         self.close(tx.blend_value(tx.BLEND_MIN, 0.2, 0.5), 0.2)
         self.close(tx.blend_value(tx.BLEND_MAX, 0.2, 0.5), 0.5)
-        self.close(tx.blend_value(tx.BLEND_ADD, -0.1, 0.25, 2.2), (-0.1 + 0.25 ** (1 / 2.2)) ** 2.2,
-                   "a negative channel through a Gamma node as it is")
+        self.close(tx.blend_value(tx.BLEND_ADD, -0.1, 0.25, 2.2), (0.1 ** (1 / 2.2) + 0.25 ** (1 / 2.2)) ** 2.2,
+                   "Corona raises a negative layer's magnitude in sRGB mode (maxdrop-em3.161)")
+        self.close(tx.blend_value(tx.BLEND_ADD, -0.1, 0.25), 0.15, "linear mode: the sign kept")
         self.assertTrue(math.isfinite(tx.blend_value(tx.BLEND_ADD, 1e308, 1e308, 2.2)), "no overflow")
         for op in tx.BLEND_OPS:
             for a, b in ((1e308, 1e-308), (-1e308, 1.0), (1.0, 1.0), (0.0, 0.0), (1e-320, -1e-320)):
@@ -1157,6 +1162,19 @@ class CoronaSynthetic(Checks):
             (tx.BLEND_LINEAR_LIGHT, (0.0, 0.05, 0.2), (0.0, 0.1, 0.05), 2.2, (0.998245, 0.000915527, 0.0)),
             (tx.BLEND_EXCLUSION, (2.0, 1.0, 0.0), (2.0, 1.0, 0.0), 2.2, (1.03243, 0.0, 0.0)),
             (tx.BLEND_EXCLUSION, (0.25, 0.5, 1.5), (2.0, 0.5, 0.25), 1.0, (1.24971, 0.499886, 0.999771)),
+            # P5: negative layers (offset 3 on both), magnitudes in sRGB mode (maxdrop-em3.161)
+            (tx.BLEND_ADD, P5_BOTTOM, P5_TOP, 2.2, (1.18624, 1.13619, 0.799878)),
+            (tx.BLEND_SUBTRACT, P5_BOTTOM, P5_TOP, 2.2, (0.0, 0.00579834, 0.0)),
+            (tx.BLEND_DIFFERENCE, P5_BOTTOM, P5_TOP, 2.2, (0.1178, 0.00579834, 0.799878)),
+            (tx.BLEND_SCREEN, P5_BOTTOM, P5_TOP, 2.2, (0.654002, 0.581064, 0.799878)),
+            (tx.BLEND_OVERLAY, P5_BOTTOM, P5_TOP, 2.2, (0.229496, 0.281987, 0.0)),
+            (tx.BLEND_DODGE, P5_BOTTOM, P5_TOP, 2.2, (0.999771, 0.999771, 0.0)),
+            (tx.BLEND_BURN, P5_BOTTOM, P5_TOP, 2.2, (0.00762939, 0.0100708, 0.0)),
+            (tx.BLEND_LINEAR_LIGHT, P5_BOTTOM, P5_TOP, 2.2, (0.629587, 0.258488, 0.624094)),
+            (tx.BLEND_HARD_LIGHT, P5_BOTTOM, P5_TOP, 2.2, (0.386358, 0.275578, 0.624094)),
+            (tx.BLEND_EXCLUSION, P5_BOTTOM, P5_TOP, 2.2, (0.288395, 0.22034, 0.799878)),
+            (tx.BLEND_DODGE, P5_BOTTOM, P5_TOP, 1.0, (-0.200198, 0.249943, 0.0)),
+            (tx.BLEND_BURN, P5_BOTTOM, P5_TOP, 1.0, (0.0, 4.49989, 0.0)),
         )
         for op, bottom, top, gamma, want in cases:
             with self.subTest(op=op, gamma=gamma):
@@ -1193,6 +1211,29 @@ class CoronaSynthetic(Checks):
                 self.assertTrue(g.approximated)
                 self.assertIn("operation gamma drawn as its first bitmap", tex.stats.issues[0][1])
         self.close(tx._gamma_value(1e6, 0.01), tx.MAX_MULTIPLIER, "held")
+
+    def test_corona_mix_negative_layers(self):
+        """renderMap of probe1's P5 (maxdrop-em3.117): CoronaColor HDR layers below 0 by their offsets; in sRGB mode
+        Corona raises each layer's magnitude (maxdrop-em3.161), the gamma operation's top exponent and bottom too."""
+        for op, srgb, want in ((0, 1, (1.18624, 1.13619, 0.799878)), (0, 0, (0.399786, 0.0997939, 0.799878)),
+                               (14, 1, (0.629587, 0.258488, 0.624094)), (20, 1, (0.288395, 0.22034, 0.799878)),
+                               (11, 0, (-0.200198, 0.249943, 0.0))):
+            with self.subTest(op=op, srgb=srgb):
+                tex = _tex(_cmix(1, [2, 3], p200=op, p214=srgb, p206=Ref(2), p207=Ref(3), p204=3.0, p205=3.0),
+                           _ccolor(2, p50=1, p58=(0.8, 0.1, 1.1)), _ccolor(3, p50=1, p58=(0.2, 0.6, 0.3)))
+                root = tex.convert(mat.MapRef(1), tx.COLOR).root
+                self.assertIsInstance(root, tx.Constant)
+                for ours, theirs in zip(root.value, want):
+                    self.assertAlmostEqual(ours, theirs, delta=2e-3)
+        # gamma: two swatches (P5's, the top's blue 0.9: the bottom's blue is 0 either way)
+        tex = _tex(_cmix(1, p200=7, p208=(0.8, 0.1, 0.9), p209=(0.2, 0.6, 0.3), p204=3.0, p205=3.0))
+        for ours, theirs in zip(tex.convert(mat.MapRef(1), tx.COLOR).root.value, (0.0424199, 0.0817881, 0.0)):
+            self.assertAlmostEqual(ours, theirs, delta=2e-3)
+        # a top of -0.2 over a map in sRGB mode: the exponent 0.2^(1 / 2.2), drawn
+        tex = _tex(_cmix(1, [2], p200=7, p207=Ref(2), p208=(0.1, 0.1, 0.1), p204=3.0), _cbitmap(2))
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertIsInstance(g.root, tx.ColorCorrect)
+        self.close(g.root.gamma, 0.2 ** (1 / 2.2))
 
     def test_corona_mix_peeled_operations_named(self):
         for op, name in ((15, "soft light"), (17, "vivid light"), (18, "pin light"), (19, "hard mix")):

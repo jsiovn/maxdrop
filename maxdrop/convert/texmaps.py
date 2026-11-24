@@ -264,7 +264,7 @@ BLEND_OPS = (BLEND_ADD, BLEND_SUBTRACT, BLEND_DIVIDE, BLEND_MIN, BLEND_MAX, BLEN
 # linear light, 16 hard light, 20 exclusion (Blend's formulas, Corona's own). 7 gamma is bottom^(1 / top) (drawn
 # only for a grey top that is its color: _corona_gamma_exponent); 15 soft light (Photoshop's, not Blender's), 17 vivid
 # light, 18 pin light and 19 hard mix have no node (peeled). mixInSRgb (on by default) runs the operation on
-# layer^(1 / 2.2) and raises the magnitude of the result to 2.2 (linear light: black over black renders white);
+# |layer|^(1 / 2.2) and raises the magnitude of the result to 2.2 (linear light: black over black renders white);
 # multiply, divide, min and max come out the same either way. The amount lerp is linear in both modes.
 CM_BLENDS = {0: BLEND_ADD, 1: BLEND_SUBTRACT, 3: BLEND_DIVIDE, 4: BLEND_MIN, 5: BLEND_MAX, 8: BLEND_DIFFERENCE,
              9: BLEND_SCREEN, 10: BLEND_OVERLAY, 11: BLEND_DODGE, 12: BLEND_BURN, 13: BLEND_LINEAR_BURN,
@@ -419,13 +419,13 @@ class Multiply:
 
 @dataclasses.dataclass(frozen=True)
 class Blend:
-    """op (BLEND_OPS) per channel on a^(1 / gamma) and b^(1 / gamma), the magnitude of the result raised to gamma:
+    """op (BLEND_OPS) per channel on |a|^(1 / gamma) and |b|^(1 / gamma), the magnitude of the result raised to gamma:
     add a + b, subtract a - b floored at 0, divide a / b (a where b is 0, as Blender divides), min, max, difference
     |a - b|, screen 1 - (1 - a)(1 - b), overlay 2ab where a < 0.5 else 1 - 2(1 - a)(1 - b), hard light overlay(b, a),
     dodge a / (1 - b) at most 1 (1 where b is 1), burn 1 - (1 - a) / b at least 0 (0 where b is 0), linear burn
     a + b - 1 at least 0, linear light a + 2b - 1, exclusion a + b - 2ab. Not clamped otherwise (CoronaMix's
-    formulas; Blender's Dodge, Burn and Exclusion nodes clamp to 0..1 where those leave it, which only a layer
-    outside 0..1 reaches, and a dodge of 0 under 1). A CoronaMix in sRGB mode is gamma 2.2."""
+    formulas, drawn as they are: maxdrop-em3.161). A CoronaMix in sRGB mode is gamma 2.2 (the magnitudes of a
+    negative layer, as Corona takes them: renderMap, maxdrop-em3.161)."""
     op: str
     a: object
     b: object
@@ -651,11 +651,11 @@ def _overlay(x, y):
 
 
 def blend_value(op, a, b, gamma=1.0):
-    """Blend's result for two constants (linear RGB tuples or floats), CoronaMix's formulas (Blend): a Gamma node
-    leaves an input channel at or below 0 as it is, the result's magnitude is raised. Inputs held within
+    """Blend's result for two constants (linear RGB tuples or floats), CoronaMix's formulas (Blend): with a gamma
+    the magnitude of each input channel and of the result raised (renderMap, maxdrop-em3.161). Inputs held within
     +-MAX_MULTIPLIER (no overflow), the result before its gamma too."""
     def power(v, p):
-        return v ** p if v > 0.0 else v
+        return abs(v) ** p
 
     def one(x, y):
         x, y = (min(MAX_MULTIPLIER, max(-MAX_MULTIPLIER, v)) for v in (x, y))
@@ -1755,15 +1755,15 @@ def _corona_layer(node, mult, offset):
 
 def _corona_gamma_exponent(conv, m, kind):
     """The exponents of a CoronaMix gamma (bottom^(1 / e) per channel, renderMap: e is the top, in sRGB mode
-    top^(1 / 2.2)) when its top is its color (no map, or the map off), a Constant: a float or a tuple. None when the
+    |top|^(1 / 2.2)) when its top is its color (no map, or the map off), a Constant: a float or a tuple. None when the
     top is a map or a channel's exponent is outside CM_GAMMA_RANGE (Corona's result is no number at a top of 0)."""
     if conv._on(m, CM_MAP_TOP, CM_TOP_ON) is not None:
         return None
     top = _corona_layer(conv._constant(m, CM_COLOR_TOP, kind, (1.0, 1.0, 1.0)), _num(m, CM_MULT_TOP, 1.0),
                         _num(m, CM_OFFSET_TOP, 0.0)).value
     srgb = _flag(m, CM_SRGB, True)
-    es = tuple((t ** (1.0 / CM_SRGB_GAMMA) if srgb and t > 0.0 else t) for t in (top if isinstance(top, tuple)
-                                                                                 else (top,)))
+    es = tuple((abs(t) ** (1.0 / CM_SRGB_GAMMA) if srgb else t) for t in (top if isinstance(top, tuple)
+                                                                          else (top,)))
     if not all(CM_GAMMA_RANGE[0] <= e <= CM_GAMMA_RANGE[1] for e in es):
         return None
     return es if isinstance(top, tuple) else es[0]
@@ -1822,8 +1822,11 @@ def _corona_mix(conv, m, kind, walk, depth, chain):
     if op == CM_MULTIPLY:
         result = Multiply(bottom, top)
     elif op == CM_GAMMA:
-        if isinstance(bottom, Constant):
-            result = Constant(_gamma_value(bottom.value, exponent))
+        if isinstance(bottom, Constant):  # in sRGB mode |bottom|^(1 / e) (renderMap: P5, maxdrop-em3.161)
+            v = bottom.value
+            if _flag(m, CM_SRGB, True):
+                v = tuple(abs(c) for c in v) if isinstance(v, tuple) else abs(v)
+            result = Constant(_gamma_value(v, exponent))
         else:
             result = ColorCorrect(bottom, gamma=exponent if isinstance(exponent, float) else exponent[0])
     else:
