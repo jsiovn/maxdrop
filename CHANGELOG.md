@@ -195,6 +195,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   of its length) gets no interpolation steps under Optimize, as in 3ds Max, instead of its steps; one whose vectors
   run far past its ends on that line gets its steps under Optimize, as in 3ds Max (a rounded Rectangle with very
   short sides: no cap), instead of none.
+- Extrude: a closed spline with two knots on one spot between straight segments (also its last knot on its first)
+  gets no cap without Optimize too, as in 3ds Max, instead of caps 3ds Max does not make.
 - Objects animated through frame 0, in a file saved with the time slider elsewhere, now sit where 3ds Max puts them
   at frame 0 in more cases, instead of a straight line between the two keys and a line in the report: a free
   tangent handle on a Bezier key (its length in frames of the scene's frame rate), constant velocity on a Bezier

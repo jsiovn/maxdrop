@@ -109,8 +109,8 @@ DEFAULT = Params(0.0, 1, True, True, CAP_MORPH, OUTPUT_MESH, False, True, False,
 class Polyline(collections.namedtuple("Polyline", "points hard closed ids doubled")):
     """A spline as points (x, y, z); hard[k]: point k is a knot where the sides' smoothing changes (_hard);
     ids[k]: the zero-based material ID of the segment the column from point k belongs to (Use Shape IDs); doubled:
-    a closed spline that lost a zero-length segment between two straight edges (3ds Max keeps both points and finds
-    the spline touching itself there)."""
+    a closed spline that lost a zero-length segment between two straight edges, with or without Optimize (3ds Max
+    keeps both points and finds the spline touching itself there)."""
     __slots__ = ()
 
 
@@ -220,7 +220,7 @@ def _polyline(spline, steps, optimize, adaptive):
     knots = spline.knots
     n = len(knots)
     closed = spline.closed
-    pts, hard, ids, bare = [], [], [], []  # bare[k]: no steps follow point k (a straight edge leaves it)
+    pts, hard, ids, flat = [], [], [], []  # flat[k]: the edge leaving point k is straight (no curve's step)
     for k in range(n if closed else n - 1):
         a, b = knots[k], knots[(k + 1) % n]
         p0, p3 = a.point, b.point
@@ -233,46 +233,45 @@ def _polyline(spline, steps, optimize, adaptive):
             count = 0 if optimize and (straight or p0 == p3) else steps
         pts.append(p0)
         hard.append(_hard(a))
-        bare.append(count == 0)
-        pts.extend(_bezier(p0, c1, c2, p3, s / (count + 1.0)) for s in range(1, count + 1))
+        if straight and p0 == p3:  # its steps on its point exactly: the Bezier sum can round them off it
+            pts.extend([p0] * count)
+        else:
+            pts.extend(_bezier(p0, c1, c2, p3, s / (count + 1.0)) for s in range(1, count + 1))
         hard.extend([False] * count)
-        bare.extend([False] * count)
+        flat.append(straight or count == 0)  # no steps: one chord, straight whatever the curve
+        flat.extend([straight] * count)
         ids.extend([a.material] * (count + 1))
     if not closed and n:
         pts.append(knots[-1].point)
         hard.append(_hard(knots[-1]))
-        bare.append(True)
+        flat.append(True)
         ids.append(0)  # no column leaves the last point
-    out_p, out_h, out_i, out_b = [], [], [], []
-    doubled = at_first = False
-    for p, h, i, b in zip(pts, hard, ids, bare):  # a zero-length segment would make faces of no area
+    # A zero-length segment is merged into one point (3ds Max keeps both, with faces of no area: docs/FORMAT.md,
+    # Extrude); run[k]: point k stood for more than one.
+    out_p, out_h, out_i, out_f, run = [], [], [], [], []
+    for p, h, i, f in zip(pts, hard, ids, flat):
         if out_p and p == out_p[-1]:
-            # straight edges on both sides: 3ds Max, keeping both points, finds them touching (between curves its
-            # rounding decides, mostly a cap); on the first point the edge into it is the closing one, known below
-            if len(out_b) > 1:
-                doubled = doubled or (out_b[-2] and b)
-            else:
-                at_first = True
             out_h[-1] = out_h[-1] or h
             out_i[-1] = i  # the column that leaves this point is the one that remains
-            out_b[-1] = b
+            out_f[-1] = f
+            run[-1] = True
             continue
         out_p.append(p)
         out_h.append(h)
         out_i.append(i)
-        out_b.append(b)
-    if closed and len(out_p) > 1 and out_p[0] == out_p[-1]:
-        doubled = doubled or (len(out_b) > 2 and out_b[-2] and out_b[0])
+        out_f.append(f)
+        run.append(False)
+    if closed and len(out_p) > 1 and out_p[0] == out_p[-1]:  # the last point on the first: one run with it
         out_h[0] = out_h[0] or out_h[-1]
-        out_p.pop()
-        out_h.pop()
-        out_i.pop()
-        out_b.pop()
-    if at_first and len(out_b) > 2:
-        doubled = doubled or (out_b[-1] and out_b[0])
+        run[0] = True
+        for column in (out_p, out_h, out_i, out_f, run):
+            column.pop()
     if closed and len(out_p) < 3:
         closed = False
-    return Polyline(out_p, out_h, closed, out_i, closed and doubled)
+    # straight edges into and out of a run: 3ds Max, keeping its points, finds the spline touching itself there
+    # whatever the steps; between curves its rounding decides, mostly a cap (MaxDrop: a cap)
+    doubled = closed and any(r and out_f[k - 1] and out_f[k] for k, r in enumerate(run))
+    return Polyline(out_p, out_h, closed, out_i, doubled)
 
 
 def polylines(shape):

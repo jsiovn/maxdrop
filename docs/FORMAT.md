@@ -703,14 +703,27 @@ What 3ds Max 2020 makes of it (`snapshotAsMesh`, probed on scratch scenes and ch
   are bounded (`MAX_CROSS_TESTS`): past them a spline is capped unchecked, a line in the report.
   Wherever the spline starts: a doubled first knot (DupFirst), a doubled pair before the last (DupSecondLast), the
   last on the first, all without a cap. Not probed, assumed as above: an Extrude with both caps off (MaxDrop leaves
-  a crossing spline unturned there too), a doubled knot without Optimize (MaxDrop: its steps run out and back, a
-  crossing), a segment from a knot back to itself with its handles pulled out (MaxDrop: no steps under Optimize), two
+  a crossing spline unturned there too), a doubled knot between curves without Optimize (MaxDrop: its steps run out
+  and back, a crossing; between line segments it was probed, below), a segment from a knot back to itself with its handles pulled out (MaxDrop: no steps under Optimize), two
   points on one XY spot at different heights (MaxDrop: a touch on XY, no cap).
   Rounded Rectangles with short straight sides (10 x 20, corner radius 4.8, 4.9, 4.99; 13 x 12.5, radius 6 and
   6.25): 3ds Max gives the short sides their 6 steps (their handles run so far past the ends that the curve folds
   back: not straight, 44 points) and no cap (the steps fold back over the side); radius 3, 4, 4.5: 32 points and a
   cap. MaxDrop the same since maxdrop-em3.142 (the straight test above; radius 6.25 with its zero-length sides
   merged, 42 points).
+  Zero-length segments (maxdrop-6n0.6.9, 3ds Max 2020 probe): without Optimize a doubled knot between line segments
+  gets no cap either, at steps 6 and 0 (steps 6: DupCorner 70 / 70, DupMid 84 / 84, the last knot on the first
+  70 / 70, every point kept); MaxDrop finds the touch from the straight edges into and out of the merged point
+  whatever their steps (a curve segment without steps is one straight chord). MaxDrop keeps merging a zero-length
+  segment's points, a default taken in an unattended run and open to the owner's word: 3ds Max's extra vertices
+  only make faces of no area (DupCorner 10 / 10, DupMid 12 / 12, the 10 x 20 r 5 pill 64 / 124 with a degenerate
+  triangle per doubled spot in each cap; MaxDrop 8 / 8, 10 / 10, 60 / 116). Keeping them would change the crossing
+  test (it would find a touch at every merged point between curves and uncap the pills 3ds Max caps), the ear
+  clipping and the grid bands (two ring points on one spot) and the caps' polygons. The pill's cap stays as it is:
+  its knots are bit-equal to MaxDrop's (the two on each doubled spot too, capped or not), its interpolated steps
+  1 to 4 float32 ulps off MaxDrop's (3ds Max's are not even mirror-symmetric), so whatever 3ds Max tests at the
+  spot turns on bits MaxDrop does not reproduce (Pill 10 x 20 and Full 14.6 capped, Pill 7.3 x 19.1, 3 x 4 and Full
+  10 not, the 10 x 20 one at steps 7 capped, 10 not: MaxDrop caps them all).
 - **Smoothing**: caps group 16; the sides change group only at a corner or Bezier-corner knot (FixtureExtMirror's
   rounded Rectangle: sharp at its 8 Bezier-corner knots) or a Bezier knot with a vector on its point, the groups
   alternating 1, 2 (4 where three runs meet, 1, 3, 2 ... along a spline with no corner). A Bezier knot breaks the

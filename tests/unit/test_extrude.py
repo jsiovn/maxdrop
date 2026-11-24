@@ -1586,6 +1586,45 @@ class SelfCrossing(unittest.TestCase):
         self.assertEqual(len(data.positions), 60)  # 3ds Max: 64, both copies of the two doubled knots
         self.assertEqual(int((data.loop_totals - 2).sum()), 60 + 2 * 28)
 
+    def test_zero_length_segments_without_optimize(self):
+        """maxdrop-6n0.6.9's 3ds Max 2020 probe: a doubled knot between line segments without Optimize, steps 6 and
+        0, gets no cap either (DupCorner 70 / 70, DupMid 84 / 84, CloseDup 70 / 70 at steps 6: every point kept).
+        MaxDrop merges the zero-length segment's steps, which lie exactly on its point, and finds the touch from the
+        straight segments on either side, whatever their steps."""
+        cases = {
+            "DupCorner": ([(0, 0, 0), (20, 0, 0), (20, 0, 0), (20, 10, 0), (0, 10, 0)], 4),
+            "DupMid": ([(0, 0, 0), (10, 0, 0), (10, 0, 0), (20, 0, 0), (20, 10, 0), (0, 10, 0)], 5),
+            "CloseDup": ([(0, 0, 0), (20, 0, 0), (20, 10, 0), (0, 10, 0), (0, 0, 0)], 4),
+            "CloseDupOff": ([(3.3, -7.77, 0), (23.3, -7.77, 0), (23.3, 2.23, 0), (3.3, 2.23, 0), (3.3, -7.77, 0)], 4),
+        }
+        for name, (pts, corners) in cases.items():
+            for steps in (6, 0):
+                shape = _shape([_poly(pts)], steps=steps, optimize=False)
+                pl = extrude.polylines(shape)[0]
+                self.assertEqual((len(pl.points), pl.doubled), (corners * (steps + 1), True), (name, steps))
+                data, issues = self.make([_poly(pts)], steps=steps, optimize=False)
+                self.assertTrue((data.loop_totals == 4).all(), (name, steps))  # the sides alone
+                self.assertEqual(issues, ["1 closed spline that crosses or touches itself: no cap, as in 3ds Max"],
+                                 (name, steps))
+
+    def test_a_doubled_knot_judged_by_the_edges_around_its_run(self):
+        """Three knots on one spot: the run's edge in and edge out decide, not a zero-length segment inside it. A
+        segment back to the same spot with its vectors pulled out gets no steps under Optimize, so with a curve
+        leaving the run the spline is capped (its curve meets the spot only through the run)."""
+        k = shapes.Knot
+        a = (20.0, 0.0, 0.0)
+        knots = (k(shapes.CORNER, shapes.LINE, (0, 0, 0), (0, 0, 0), (0, 0, 0)),
+                 k(shapes.BEZIER_CORNER, shapes.CURVE, a, a, (21, 3, 0)),
+                 k(shapes.BEZIER_CORNER, shapes.CURVE, a, (19, -3, 0), a),
+                 k(shapes.BEZIER_CORNER, shapes.CURVE, a, a, (26, 4, 0)),
+                 k(shapes.CORNER, shapes.LINE, (20, 10, 0), (20, 7, 0), (20, 10, 0)),
+                 k(shapes.CORNER, shapes.LINE, (0, 10, 0), (0, 10, 0), (0, 10, 0)))
+        pl = extrude.polylines(_shape([shapes.Spline(knots, True)]))[0]
+        self.assertFalse(pl.doubled)
+        straight = knots[:3] + (k(shapes.BEZIER_CORNER, shapes.LINE, a, a, a),) + knots[4:]
+        pl = extrude.polylines(_shape([shapes.Spline(straight, True)]))[0]
+        self.assertTrue(pl.doubled)
+
     def test_optimize_gives_a_segment_back_to_its_knot_no_steps(self):
         """The 10 x 20 r 5 pill: its short sides run from a knot to another on the same spot, curve segments with
         their vectors off it. 3ds Max: no steps under Optimize (32 points with both copies, 30 merged), its steps
