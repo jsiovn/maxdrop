@@ -915,7 +915,10 @@ def check_spread_steps(scene, view_layer):
     at 0.5 and 0.8 m^2, under a Subdivision Surface at level 0, render level 2): it yields (0, 2) with both copies
     linked, then (1, 2) and (2, 2), with one view-layer update for both; each emitter's area is the description's times the evaluated mesh's over the
     mesh's, as evaluated_area measures it, and no object is left. Closed after its second step: the first emitter
-    spread, the second not, no object left."""
+    spread, the second not, no object left. Both emitters carry their Emission material (make_material, on their
+    meshes and in built.emitters; maxdrop-6n0.8.1): spread at strength 2 writes each one's radiance x 2 between the
+    measurements, with no update of its own, and the areas stay the evaluated ones; closed early, the second keeps
+    its first strength."""
     import types
     from maxdrop.build import emitters as build_emitters
     from maxdrop.convert import lights
@@ -946,28 +949,48 @@ def check_spread_steps(scene, view_layer):
                 ed.users = [k]
             desc = types.SimpleNamespace(nodes=[types.SimpleNamespace(index=k, emitter=k, converted=converted)
                                                 for k in (1, 2)], emitters=eds, issues=[])
-            built = types.SimpleNamespace(objects={1: obs[0], 2: obs[1]}, emitters={})
+            materials = {k: build_emitters.make_material(eds[k], 2.0) for k in (1, 2)}
+            first = {k: eds[k].radiance * 2.0 for k in (1, 2)}
+            for k, ob in zip((1, 2), obs):
+                ob.data.materials.append(materials[k])
+            built = types.SimpleNamespace(objects={1: obs[0], 2: obs[1]}, emitters=materials)
             counted = _CountedViewLayer(view_layer)
             count = len(bpy.data.objects)
             steps, copies = [], []
-            gen = build_emitters.spread(desc, built, scene.collection, view_layer=counted)
-            for step in gen:
-                steps.append(step)
-                copies.append(len(bpy.data.objects) - count)
-                if stop_after is not None and len(steps) == stop_after:
-                    gen.close()
-                    break
-            return steps, copies, counted.updates, [eds[k].area for k in (1, 2)], len(bpy.data.objects) - count
+            try:
+                gen = build_emitters.spread(desc, built, scene.collection, view_layer=counted, strength=2.0)
+                for step in gen:
+                    steps.append(step)
+                    copies.append(len(bpy.data.objects) - count)
+                    if stop_after is not None and len(steps) == stop_after:
+                        gen.close()
+                        break
+                strengths = [(materials[k].node_tree.nodes[build_emitters.EMISSION].inputs["Strength"].default_value,
+                              eds[k].radiance * 2.0, first[k]) for k in (1, 2)]
+            finally:
+                for ob in obs:
+                    ob.data.materials.clear()
+                for material in materials.values():
+                    bpy.data.materials.remove(material)
+            return (steps, copies, counted.updates, [eds[k].area for k in (1, 2)], len(bpy.data.objects) - count,
+                    strengths)
 
-        steps, copies, updates, areas, left = run()
+        steps, copies, updates, areas, left, strengths = run()
         check("spread steps: (0, 2), (1, 2), (2, 2) with both copies linked, one update, the evaluated areas, "
               "no object left", steps == [(0, 2), (1, 2), (2, 2)] and copies == [2, 2, 2] and updates == 1 and
               close(areas, want, 1e-9) and left == 0, "%s %s %d %s vs %s, %d left" % (
                   steps, copies, updates, areas, want, left))
-        steps, copies, updates, areas, left = run(stop_after=2)
+        check("spread steps: both emitters' Emission Strength = their spread radiance x 2, changed",
+              all(w > 0 and abs(g - w) <= w * 1e-6 and abs(w - f) > w * 1e-3 for g, w, f in strengths),
+              str(strengths))
+        steps, copies, updates, areas, left, strengths = run(stop_after=2)
         check("spread steps: closed after its second step: the first emitter spread, the second not, no object left",
               steps == [(0, 2), (1, 2)] and abs(areas[0] - want[0]) < 1e-9 and areas[1] == 0.8 and left == 0,
               "%s %s %d left" % (steps, areas, left))
+        (g1, w1, f1), (g2, _w2, f2) = strengths
+        check("spread steps: closed early: the first Strength spread, the second its first one",
+              w1 > 0 and abs(g1 - w1) <= w1 * 1e-6 and abs(w1 - f1) > w1 * 1e-3 and abs(g2 - f2) <= max(f2, 1.0) * 1e-6,
+              str(strengths))
     finally:
         for ob in obs:
             mesh = ob.data

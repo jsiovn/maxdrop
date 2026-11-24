@@ -675,6 +675,67 @@ class MeshLightFixture(unittest.TestCase):
             self.assertEqual(lines, [(node, "extrude: not made: " + conv._SPENT % conv.MAX_BUILT_CORNERS)])
             self.assertEqual(built[0], conv.MAX_BUILT_CORNERS)
 
+    def test_shared_extrusion_dropped_at_the_last_node_of_the_shape_and_of_the_light(self):
+        """describe() of the extrude fixture with FixtureExtL turned into a mesh light (shape test, light class and
+        parameters patched: FixtureEmitter's values with FixtureExtRect's node as its mesh source) and the walk order
+        patched (FixtureExtRect's node twice: a shape of two nodes): the extrusion is dropped at the shape's last
+        node and at the light's last node only once no node of the shape is left (maxdrop-6n0.8.1). Per order: the
+        extrude calls, the face corners counted (one extrusion's), its Extrude issue once on the node that made it."""
+        cfb = importlib.import_module(_PKG + ".reader.cfb")
+        reader_scene = importlib.import_module(_PKG + ".reader.scene")
+        reader_modifiers = importlib.import_module(_PKG + ".reader.modifiers")
+        with cfb.CompoundFile(MESH_FIXTURE) as cf:
+            msc = reader_scene.Scene.from_file(cf)
+            emitter = next(i for i in msc.walk() if msc.node(i).name == "FixtureEmitter")
+            values, _issues = L.read_params(msc, msc.object_stack(msc.node(emitter).object).base)
+        real_extrude, real_cls = conv.extrude.extrude, conv._Extrusions
+        real_is_shape, real_class, real_read = conv.shapes.is_shape, L.light_class, L.read_params
+        with cfb.CompoundFile(EXTRUDE_FIXTURE) as cf:
+            sc = reader_scene.Scene.from_file(cf)
+            by_name = {sc.node(i).name: i for i in sc.walk()}
+            rect, light = by_name["FixtureExtRect"], by_name["FixtureExtL"]
+            rect_base = sc.object_stack(sc.node(rect).object).base
+            light_base = sc.object_stack(sc.node(light).object).base
+            ext = [m for m in reader_modifiers.Modifiers(sc).object_stack(sc.node(rect).object).modifiers
+                   if m.renders][0]
+            data, _more = real_extrude(conv.shapes.read_shape(sc, rect_base), conv.extrude.read_params(sc, ext)[0])
+            corners = len(data.loop_vertices)
+            light_values = dict(values)
+            light_values[L.MESH_OBJECT], light_values[L.P_MESH_SOURCE] = None, rect
+            calls, made = [], []
+
+            def counted(sh, params):
+                calls.append(1)
+                found, issues = real_extrude(sh, params)
+                return found, issues + ["counted"]
+
+            def captured(*args, **kw):
+                made.append(real_cls(*args, **kw))
+                return made[-1]
+
+            patches = (mock.patch.object(conv.extrude, "extrude", counted),
+                       mock.patch.object(conv, "_Extrusions", captured),
+                       mock.patch.object(conv.shapes, "is_shape", lambda s, i: i != light_base and real_is_shape(s, i)),
+                       mock.patch.object(L, "light_class", lambda s, i: L.VRAY if i == light_base else
+                                         real_class(s, i)),
+                       mock.patch.object(L, "read_params", lambda s, i, *a, **kw: (dict(light_values), [])
+                                         if i == light_base else real_read(s, i, *a, **kw)))
+            wants = {(light, rect): (1, light), (rect, light): (2, rect), (rect, light, rect): (1, rect),
+                     (light, rect, rect): (1, light)}
+            for order, (n_calls, first) in wants.items():
+                calls.clear()
+                made.clear()
+                with patches[0], patches[1], patches[2], patches[3], patches[4], \
+                        mock.patch.object(sc, "walk", return_value=list(order)):
+                    desc = conv.describe(sc, MM)
+                names = [sc.node(i).name for i in order]
+                described = [n for n in desc.nodes if n.index == light]
+                self.assertTrue(described and described[0].kind == conv.MESH and described[0].emitter is not None,
+                                names)
+                self.assertEqual((len(calls), len(made), made[0].built[0]), (n_calls, 1, corners), names)
+                self.assertEqual([(i, r) for i, r in desc.issues if r == "extrude: counted"],
+                                 [(first, "extrude: counted")], names)
+
     def described(self, change):
         """The fixture described with change(values) applied to the values of every mesh light read."""
         read = conv.lights.read_params
