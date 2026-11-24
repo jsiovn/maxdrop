@@ -420,6 +420,9 @@ class Rules(unittest.TestCase):
         self.assertEqual((dict(out[1].settings)["levels"], len(issues)), (7, 1))
         out, issues = rules.budget((smooth, smooth), 24)  # the second gets what the first left: none
         self.assertEqual(([dict(m.settings)["levels"] for m in out], len(issues)), ([8, 0], 2))
+        stack = (smooth, shell, smooth)  # one out per modifier in, in order: build.emitters pairs them by position
+        out, _issues = rules.budget(stack, 24)
+        self.assertEqual([(m.index, m.kind) for m in out], [(m.index, m.kind) for m in stack])
         small, _i = _convert(classids.TURBOSMOOTH, {0: 2})
         self.assertEqual(rules.budget((small,), 24), ((small,), []))
         self.assertEqual(rules.budget((), 10 ** 9), ((), []))

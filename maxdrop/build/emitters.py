@@ -115,6 +115,8 @@ def _shown_copy(ob, converted, collection, copies):
     copies.append(copy)
     collection.objects.link(copy)
     copy.hide_viewport = False
+    # pairs by position: build.modifiers.add makes one Blender modifier per description, in order (a missing setting
+    # is skipped, never the modifier), and nothing else adds or removes one; budget keeps them one for one too
     for mod, levels in zip(copy.modifiers, _render_levels(converted, len(ob.data.loops))):
         mod.show_viewport = True
         if levels is not None:

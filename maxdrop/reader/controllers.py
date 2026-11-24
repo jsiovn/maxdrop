@@ -126,7 +126,8 @@ _EULER_ORDER_BASE = 100  # 3ds Max 2020 saves XYZ as 0 and the other orders as 1
 _LIST_COUNT = 0x1010
 _LIST_WEIGHTS, _LIST_AVERAGE = 0, 1  # parameters of the list's ParamBlock2
 # beside a keyframe controller's keys: the out-of-range types (0x8499: 0x3000 before, 0x3001 after, 0x3003 1 when
-# they are switched off) and the range they apply outside (0x3003: start and end time)
+# they are switched off) and the range they apply outside (0x3003: start and end time); the same id twice on
+# purpose: _ORT_OFF is looked up inside 0x8499, _RANGE beside it
 _ORT, _ORT_BEFORE, _ORT_AFTER, _ORT_OFF, _RANGE = 0x8499, 0x3000, 0x3001, 0x3003, 0x3003
 _ORT_CONSTANT, _ORT_CYCLE, _ORT_LOOP, _ORT_PING_PONG, _ORT_LINEAR, _ORT_RELATIVE = 1, 2, 3, 4, 5, 7
 _ORT_KNOWN = frozenset((_ORT_CONSTANT, _ORT_CYCLE, _ORT_LOOP, _ORT_PING_PONG, _ORT_LINEAR, _ORT_RELATIVE))
