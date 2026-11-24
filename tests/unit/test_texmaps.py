@@ -3523,6 +3523,9 @@ class _OldWithControllers(FakeOld):
     def controller(self, i):
         return self._controllers.get(i)
 
+    def controller_slots(self):
+        return len(self._controllers)
+
     def type(self, i):
         return 2 if self._controllers.get(i) is not None and self._color else 0
 
@@ -3585,6 +3588,33 @@ class ControllerLines(Checks):
         g = tex.convert(mat.MapRef(1), tx.COLOR)
         self.assertEqual((g.approximated, g.issues), (False, ()))
 
+    def test_a_dome_map_line_heard_by_the_converter_and_the_dome_once(self):
+        """A VRayBitmap whose mapping type and horizontal rotation controllers hold, as a dome's map: the converter
+        reads the type (its line in the TextureGraphIR's issues), dome_texture reads it again and the rotation, which
+        the converter does not read. Given its own graph or the converter's FrameZeroGraph (rewrapped): the type's
+        line once, the rotation's in the dome's issues, nothing told to the converter's stats."""
+        lights = importlib.import_module(_PKG + ".convert.lights")
+
+        class Index:
+            def find(self, path, resolved=""):
+                return ("found", path)
+
+        vb = _vbitmap(1, p2=pblock.Animated(20), p3=pblock.Animated(21))
+        vb.blocks = {0: _TypedBlock(0, vb.blocks[0]._params, {tx.VB_MAP_TYPE: 1, lights.VB_H_ROTATION: 0})}
+        graph = FakeGraph(vb)
+        graph.scene = _KeyedScene(graph.objects, {20: (_BEZIER_FLOAT, _float_saved(float(lights.VB_SPHERICAL), 2)),
+                                                  21: (_BEZIER_FLOAT, _float_saved(0.5, 2))})
+        head = "'vb': parameter %d at frame 0 (controller %d): " + controllers_mod.ANIMATED
+        kind, turn = head % (tx.VB_MAP_TYPE, 20), head % (lights.VB_H_ROTATION, 21)
+        for which in ("raw", "converter's"):
+            tex = tx.TexmapConverter(graph, _table(), textures=Index())
+            g = tex.convert(mat.MapRef(1), tx.COLOR)
+            self.assertEqual([r for r in g.issues if "at frame 0" in r], [kind], which)
+            told = list(tex.stats.issues)
+            dt, issues = lights.dome_texture(g, graph if which == "raw" else tex.graph)
+            self.assertEqual((dt.turn, issues), (0.5, [kind, turn]), which)
+            self.assertEqual(tex.stats.issues, told, which)
+
     def placed(self, controllers, old, owned=None, color=False):
         """A Bitmap with Coordinates (UVGen 50) and Output (70) parts, each an old block (object 51, 71) whose
         controllers are {parameter index: reference slot}; the blocks' references {slot: controller}."""
@@ -3610,18 +3640,31 @@ class ControllerLines(Checks):
 
     def test_coordinates_with_an_approximation_or_no_value(self):
         tex, g = self.placed({30: (_BEZIER_FLOAT, _float_saved(4.0, keys=2)),
-                              31: (_OTHER_FLOAT, _cnode(0x7778))},
+                              31: (_OTHER_FLOAT, _cnode(0x7778)), 32: (_BEZIER_FLOAT, _float_saved(0.25))},
                              {"uv": {tx.UV_U_TILING: 0, tx.UV_V_TILING: 1, tx.UV_U_OFFSET: 2}},
-                             {"uv": {0: 30, 1: 31}})
+                             {"uv": {0: 30, 1: 31, 2: 32}})
         self.assertEqual(g.root.mapping.tiling, (4.0, 1.0))  # the saved value (maybe another frame's); unknown: 1
-        self.assertEqual(g.root.mapping.offset, (0.0, 0.0))  # its controller missing: the default
+        self.assertEqual(g.root.mapping.offset, (0.25, 0.0))
         self.assertTrue(g.approximated)
         head = "'map' Coordinates: parameter %d at frame 0 (controller %s): "
         self.assertEqual(sorted(r for r in g.issues if "at frame 0" in r), sorted([
             head % (tx.UV_U_TILING, 30) + controllers_mod.ANIMATED,
-            head % (tx.UV_V_TILING, 31) + controllers_mod.UNKNOWN_CLASS + ", " + params_mod.DEFAULT_USED,
-            head % (tx.UV_U_OFFSET, "missing") + params_mod.NOT_READ + ", " + params_mod.DEFAULT_USED]))
+            head % (tx.UV_V_TILING, 31) + controllers_mod.UNKNOWN_CLASS + ", " + params_mod.DEFAULT_USED]))
         self.assertEqual({i for i, r in tex.stats.issues if "at frame 0" in r}, {1})  # under the map
+
+    def test_coordinates_whose_block_misses_a_controller_slot(self):
+        """Three animated Coordinates parameters and two references: which parameter lost its slot is not known (a
+        later one would read another's controller), so none is read: each at its default, a line naming the
+        mismatch."""
+        tex, g = self.placed({30: (_BEZIER_FLOAT, _float_saved(4.0)), 31: (_BEZIER_FLOAT, _float_saved(2.0))},
+                             {"uv": {tx.UV_U_TILING: 0, tx.UV_V_TILING: 1, tx.UV_U_OFFSET: 2}},
+                             {"uv": {0: 30, 1: 31}})
+        self.assertEqual((g.root.mapping.tiling, g.root.mapping.offset), ((1.0, 1.0), (0.0, 0.0)))
+        self.assertTrue(g.approximated)
+        line = "'map' Coordinates: parameter %d at frame 0 (controller missing): %s, %s"
+        self.assertEqual(sorted(r for r in g.issues if "at frame 0" in r), sorted(
+            line % (pid, params_mod.SLOTS % (2, 3), params_mod.DEFAULT_USED)
+            for pid in (tx.UV_U_TILING, tx.UV_V_TILING, tx.UV_U_OFFSET)))
 
 
 if __name__ == "__main__":

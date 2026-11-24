@@ -26,7 +26,8 @@ controller: each issue of the controller's evaluation (a color between two keys 
 value of another frame, keys of an unknown layout, a list weight not stored, another class, a damaged controller),
 and a parameter left at its default. A map's Coordinates and Output (an old ParamBlock: old_value) are read the
 same way; no fixture animates one (not measured: the old block's layout is the one of stack_basic's Noise block and
-the Standard shader blocks).
+the Standard shader blocks). An old block whose references are not one slot per animated parameter (slots 0 to n - 1,
+the measured layout) is read for none of them: a line names the mismatch (SLOTS), the default is used.
 """
 import math
 
@@ -37,6 +38,7 @@ _COLORS = frozenset((2, 3))  # ParamType2 color, point3 (an hsv one, 10, is not 
 DEFAULT_USED = "its default used"
 _NON_FINITE = "non-finite value"  # controllers.NON_FINITE names a transform
 NOT_READ = "not read at frame 0"
+SLOTS = "the block's %d controller references do not match its %d animated parameters, not read"
 
 
 def finite(v):
@@ -113,8 +115,9 @@ def frame_zero(scene, block, pid, v, heard=None):
 def old_value(scene, part, index, heard=None, number=False):
     """Parameter index of a part's old ParamBlock (a map's Coordinates or Output; the first in slot order): its
     stored value, or its controller's at frame 0 in the shape of its type (as frame_zero); None when it has neither.
-    The controller is the block object's reference at the block's controller(index). number: only a finite number
-    counts as read (a color the block's type gives is not)."""
+    The controller is the block object's reference at the block's controller(index), read only when the block's
+    references are exactly its controller slots (SLOTS otherwise). number: only a finite number counts as read (a
+    color the block's type gives is not)."""
     if part is None or not part.legacy:
         return None
     slot = min(part.legacy)
@@ -125,9 +128,15 @@ def old_value(scene, part, index, heard=None, number=False):
         return v
     try:
         holder = scene.refs(part.index).get(slot)
-        controller = scene.refs(holder).get(ref) if holder is not None else None
+        refs = scene.refs(holder) if holder is not None else None
     except MaxFileError:
-        controller = None
+        refs = None
+    n = block.controller_slots()
+    if refs is not None and sorted(refs) != list(range(n)):
+        if heard is not None:
+            heard(index, None, False, [controllers.Issue(None, None, None, None, SLOTS % (len(refs), n))])
+        return None
+    controller = refs.get(ref) if refs is not None else None
     if controller is None:
         if heard is not None:
             heard(index, None, False, [])

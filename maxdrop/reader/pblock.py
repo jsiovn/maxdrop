@@ -41,7 +41,9 @@ The old ParamBlock: 0x0001 u32 count, then per parameter a 0x0002 container: 0x0
 and the value in chunk 0x0100 + ParamType (0 float, 1 int, 2 color, 3 point3, 4 bool). A parameter a controller
 holds has an empty 0x0200 + ParamType instead (no value); the block's own reference slots hold the controllers, one
 per such parameter in index order (stack_basic's Noise block animates entry 7 alone: its slot 0; the Standard
-shader blocks of standard_physical and standard_shaders animate 22 entries, a color's Bezier Color at slot 1).
+shader blocks of standard_physical and standard_shaders animate 22 entries, a color's Bezier Color at slot 1). A
+block whose references are not exactly those slots is not read by convert.params.old_value: a slot shifted would
+read another parameter's controller.
 
 The file comes from anywhere: a missing or short header raises ChunkError; a damaged entry or table poisons its
 own parameter (values None, raw bytes and error kept) and, when it may have taken a slot (a block reference or a
@@ -426,3 +428,7 @@ class ParamBlock:
     def controller(self, i):
         """The block's reference slot of the controller that holds parameter i, None when none does."""
         return self._controllers.get(i)
+
+    def controller_slots(self):
+        """The number of reference slots the controllers take: one per parameter a controller holds."""
+        return len(self._controllers)

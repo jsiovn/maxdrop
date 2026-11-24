@@ -736,6 +736,52 @@ class MeshLightFixture(unittest.TestCase):
                 self.assertEqual([(i, r) for i, r in desc.issues if r == "extrude: counted"],
                                  [(first, "extrude: counted")], names)
 
+    def test_a_refused_shape_a_mesh_light_meets_first_named_on_the_shapes_node_by_describe(self):
+        """describe() with FixtureExtL a mesh light picking FixtureExtRect (patched as in the test above) and the reader
+        refusing FixtureExtRect's shape: whichever node meets it first, the shape's node names the refusal once
+        ("shape: bad": the light does not keep it in shape_of, the shape's _curve reads it again), the light gets it
+        as its reason, both stay empties."""
+        cfb = importlib.import_module(_PKG + ".reader.cfb")
+        reader_scene = importlib.import_module(_PKG + ".reader.scene")
+        shapes = importlib.import_module(_PKG + ".reader.shapes")
+        with cfb.CompoundFile(MESH_FIXTURE) as cf:
+            msc = reader_scene.Scene.from_file(cf)
+            emitter = next(i for i in msc.walk() if msc.node(i).name == "FixtureEmitter")
+            values, _issues = L.read_params(msc, msc.object_stack(msc.node(emitter).object).base)
+        real_is_shape, real_class, real_read, real_shape = (conv.shapes.is_shape, L.light_class, L.read_params,
+                                                            conv.shapes.read_shape)
+        with cfb.CompoundFile(EXTRUDE_FIXTURE) as cf:
+            sc = reader_scene.Scene.from_file(cf)
+            by_name = {sc.node(i).name: i for i in sc.walk()}
+            rect, light = by_name["FixtureExtRect"], by_name["FixtureExtL"]
+            rect_base = sc.object_stack(sc.node(rect).object).base
+            light_base = sc.object_stack(sc.node(light).object).base
+            light_values = dict(values)
+            light_values[L.MESH_OBJECT], light_values[L.P_MESH_SOURCE] = None, rect
+
+            def refused(s, i):
+                if i == rect_base:
+                    raise shapes.ShapeError("bad")
+                return real_shape(s, i)
+
+            for order in ((light, rect), (rect, light), (light, rect, rect)):
+                names = [sc.node(i).name for i in order]
+                with mock.patch.object(conv.shapes, "read_shape", refused), \
+                        mock.patch.object(conv.shapes, "is_shape",
+                                          lambda s, i: i != light_base and real_is_shape(s, i)), \
+                        mock.patch.object(L, "light_class", lambda s, i: L.VRAY if i == light_base else
+                                          real_class(s, i)), \
+                        mock.patch.object(L, "read_params", lambda s, i, *a, **kw: (dict(light_values), [])
+                                          if i == light_base else real_read(s, i, *a, **kw)), \
+                        mock.patch.object(sc, "walk", return_value=list(order)):
+                    desc = conv.describe(sc, MM)
+                self.assertEqual([(i, r) for i, r in desc.issues if r.startswith(("shape: ", "extrude: "))],
+                                 [(rect, "shape: bad")], names)
+                self.assertEqual([(i, r) for i, r in desc.issues if r.startswith("light: not built")],
+                                 [(light, "light: not built: " + L.EMITTER_UNREAD % "bad")], names)
+                self.assertEqual({n.index: n.kind for n in desc.nodes if n.index in (rect, light)},
+                                 {rect: conv.EMPTY, light: conv.EMPTY}, names)
+
     def described(self, change):
         """The fixture described with change(values) applied to the values of every mesh light read."""
         read = conv.lights.read_params

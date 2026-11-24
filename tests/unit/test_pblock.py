@@ -567,6 +567,7 @@ class OldParamBlock(unittest.TestCase):
                          self.entry(5, 0x0204, b"", True))
         pb = pblock.ParamBlock.from_chunk(chunks.index(data)[0])
         self.assertEqual([pb.controller(i) for i in (0, 1, 3, 5, 9)], [0, None, 1, 2, None])
+        self.assertEqual(pb.controller_slots(), 3)
         self.assertEqual([pb.get(i) for i in (0, 3, 5)], [None, None, None])
         self.assertEqual([pb.type(i) for i in (0, 1, 3, 5)], [0, 0, 2, 4])
         self.assertEqual(pb.get(1), 2.0)
