@@ -10,6 +10,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ### Added
 
+- Transforms: a keyframe controller's out-of-range types (Cycle, Loop, Ping Pong, Linear, Relative Repeat) and its
+  range are read, so an object whose keys start after frame 0 or end before it is placed as 3ds Max places it at
+  frame 0, instead of at the nearest key; a list controller with Average on (Float, Position, Rotation, Scale List)
+  averages its entries by their weights. An unknown out-of-range type, a Scale List weight after a turned scale axis
+  and a few rarer cases are a line in the report.
 - Extrude: grid caps (Cap Type Grid) are made as 3ds Max makes them, with the grid of points 3ds Max puts inside
   each cap, so an extruded shape gets 3ds Max's vertex and triangle counts, instead of morph caps and a line in the
   report.
@@ -59,6 +64,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ### Fixed
 
+- Transforms: between two Bezier keys a smooth, fast, slow, Linear or auto tangent is drawn a third of the segment
+  long, as 3ds Max draws it, whatever length the key stores, and a Linear tangent beside a custom or auto key follows
+  the line to that key instead of a stale stored slope (up to 1.5 units off at frame 0 in a probe).
 - Modifiers: a TurboSmooth or MeshSmooth on an open mesh keeps its corners (a boundary vertex of one face) where
   3ds Max keeps them, instead of rounding them off: a half-modelled object smoothed below its Symmetry now welds at
   the seam with 3ds Max's vertex count, without a sliver or gap where the cut meets an open edge. MeshSmooth quad

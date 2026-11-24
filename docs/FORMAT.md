@@ -278,8 +278,26 @@ Keyframe controllers (controllers fixture; every class read here is a 3ds Max 20
   `0x2501` = 36.6667, oracle -20, the frame-0 key).
 - A key record: `i32` time (ticks, 160 per frame at 30 fps), `u32` flags, the value (1, 3, 4 or 7 floats as the
   value chunk), then the class's tangents or TCB parameters. TCB Rotation keeps the absolute quaternion there and
-  an angle-axis relative to the previous key later in the record. `0x3003` = the first and last key's time
-  (`(-2^31, -2^31)` without keys), `0x3002` 0 for Linear and 4 for TCB and Bezier when keyed.
+  an angle-axis relative to the previous key later in the record. `0x3003` = the range, the first and last key's
+  time unless the range bar was moved (`(-2^31, -2^31)` without keys), `0x3002` 0 for Linear and 4 for TCB and
+  Bezier when keyed.
+- Out-of-range types (controllers_ranges; probes of every keyframe class, maxdrop-6n0.6.12): a container `0x8499`
+  beside the keys (in `0x7127` for a Bezier Float) holds `0x3000` (before) and `0x3001` (after), `i32` 2 Cycle, 3
+  Loop, 4 Ping Pong, 5 Linear, 7 Relative Repeat (MAXScript's #identity is 0, and the whole controller then reads
+  zero, a scale too: not followed, an issue), and `0x3003` = 1 when they are switched off (Enable ORTs; then
+  Constant). Without `0x8499` both are Constant. Setting them on a Position XYZ writes them on its three floats too.
+  They apply outside the range `[r0, r1]` (span `T`): Constant the value at the range end; Cycle and Loop the time
+  `r1 - (r0 - t) mod T` before and `r0 + (t - r1) mod T` after (a time a whole range before the start lands on the
+  end); Ping Pong mirrored; Relative Repeat that plus `k (v(r1) - v(r0))`, `k` the ranges crossed (a rotation:
+  `v * (v0^-1 v1)^k`, a scale its components); Linear the slope of one tick at the range end, `v(r0 + 1) - v(r0)`
+  per tick (a rotation turned by `(a^-1 b)` per tick). Inside the range the keys (the nearest key's value outside
+  them): a range of frames 20 to 40 over keys at 10 to 50 gives frame 20's value at frame 0 with Constant
+  (FixtureFloatRanges). Loop over a range wider than the keys repeats them every range and goes in a straight line
+  from the last key's value to the first's across the gap, inside the range too (FixtureFloatRanges' X: 2.5 at
+  frame 0, halfway from 5 at frame 50 to 0 at frame 70). 3ds Max takes the one-tick values of Linear in single
+  precision through its own time curve: the reader is within 2e-4 ten frames out on probes of every class, more
+  further out or past a curved end (8e-4 at one frame from a custom key), exact past a straight end
+  (FixtureFloatAfter's Z).
 - At time 0: a key at 0 gives its value (FixtureBezierKeys, the keyed nodes, the lists' animated entries); before
   the first key, the first key's value (FixtureTCBBefore, keys at frames 10 and 50); between two Linear keys, linear
   (FixtureLinearBetween, keys at -10 and 40: position `[-56, 93, 11]`, scale rows of length 1.1, 1.0, 1.4) and the
@@ -304,10 +322,19 @@ Keyframe controllers (controllers fixture; every class read here is a 3ds Max 20
   | Smooth Rotation | quaternion, the in and the out control quaternion (equal), two identity quaternions |
 
   - Bezier: tangents in value per tick (MAXScript shows them times the frame rate, a scale's times 100 more), the in
-    tangent pointing back; every tangent type (smooth, linear, fast, slow, auto, custom) stores the tangent it
-    computed (but see the Linear tangent in [Open](#open)). Flags: the in
+    tangent pointing back; smooth, fast, slow and auto tangents store the tangent 3ds Max computed when it last
+    evaluated the controller (a smooth key between keys `dt_in` and `dt_out` away: the chords' slopes weighted
+    `(s_in dt_out + s_out dt_in) / (dt_in + dt_out)`; auto: `(v[k+1] - v[k-1]) / (t[k+1] - t[k-1])`, flat at an
+    extreme). Flags: the in
     tangent's type in bits 7-9, the out tangent's in bits 10-12 (0 smooth, 1 linear, 2 step, 3 fast, 4 slow, 5 custom
     and auto), `0x8000` constant velocity, `0x100000` free handle. A length is a fraction of the segment, -1 a third.
+    `0x2533` and `0x2534` beside the keys are bit arrays of the keys whose in and out tangent is auto (`0x2700`:
+    `i32` count, then a bit per key, the first key's the lowest bit; `0x2532` their union). Only a custom tangent
+    (type 5 without its auto bit) and a free handle are drawn with their stored length: every other type is a third
+    long, though they store 0.3333 or 0.333 (up to 8.7e-3 off in the probes; controllers_ranges' FixtureSmoothAuto).
+    A Linear tangent facing a custom or auto tangent across its segment is the chord's slope (it stores a stale one,
+    1.5 off: FixtureLinearTangents, FixtureLinearPosition); facing a smooth, fast, slow or Linear one its stored
+    tangent, `2 s - ` the neighbour's (the chord's slope `s` between two Linear keys), is right.
     The segment is the cubic through `(t0, v0)`, `(t0 + lo dt, v0 + out lo dt)`, `(t1 - li dt, v1 + in li dt)`,
     `(t1, v1)`, its time curve solved for the time (FixtureBezierFloats, FixtureBezierCustom with lengths 0.6 and
     0.15, FixtureBezierPosition and FixtureBezierScale with a length per axis); in the probes this curve and
@@ -364,7 +391,16 @@ block's reference slots where animated. Each entry weighs as the oracle shows:
   `[25, 30, 15]`; FixtureFloats `0.5 * 30 + 1.0 * 7` = 22).
 - Scale List: the product of `I + (S - I) * weight` per entry (FixtureScaleList `[1.5, 2, 0.75]` from `[2, 1, 1]`
   and `[1, 3, 0.5]` at 50 %), a later entry applied first (controllers_tangents' FixtureScaleListAxes: two scales
-  along turned axes at 100 %; the other order misses by 1.28).
+  along turned axes at 100 %; the other order misses by 1.28). One entry along a turned axis at any weight
+  (controllers_ranges' FixtureScaleListTurned at 60 %; probes at 30, 150 and -50 %) and plain scales at any weights
+  fit it; a weight other than 100 % on an entry applied after a turned one fits none of the rules tried (0.2 to
+  0.5 off): an issue.
+- Average (parameter 1 of the block, an `i32`, 1 when on; controllers_ranges' FixtureListAverages and
+  FixtureFloatListAverage, probes of 3 to 11 lists of each class): a Float, Position and Scale List divide the
+  weighted sum by the weights' sum (0, the origin or identity when they add up to 0; one entry at 40 %: its value),
+  a Rotation List slerps from no rotation towards each entry in turn by its weight, `q = slerp(q, q_k, w_k)`
+  (X 30 deg at 50 % and Z 80 deg at 100 %: Z 80 deg). A Scale List average of turned scales fits none of the rules
+  tried (0.59 off): the weighted mean of the matrices, an issue.
 - Rotation List: each entry's rotation turned by its weight along its own axis, a later entry applied first
   (FixtureRotList: 30 deg about X and 80 deg about Z at 50 % give Z 40 deg, then X 15 deg; controllers_tangents'
   FixtureRotListMulti: two turns about all three axes at 50 % and 30 %).
@@ -2347,15 +2383,14 @@ Not shown by any fixture yet, so not stated above:
   revolution (1 + dot from 5e-7 to 1e-3), between two Smooth Rotation keys opposite quaternions or controls (3ds Max
   stored none: linear, an issue each); the bare Euler orders 1 to 5 and 100 (read as the SDK numbers
   them: 1 = XZY ... 5 = ZYX, 100 = XYZ); the Euler orders 106 to 108 (an issue).
-- Shown by probes (maxdrop-em3.144, 3ds Max 2020), not read yet: parameter 1 of a list's block is Average (an `i32`,
-  1 when on): a Position and a Scale List then divide the weighted sum by the weights' sum (50 % and 100 %:
-  `[0.667, 12, 11.33]` from `[10, 20, 30]` and `[-4, 8, 2]`), a Rotation List with it gave the later entry alone
-  (30 deg about X at 50 %, 80 deg about Z at 100 %: 80 deg about Z), rule not known; a Scale List entry of a weight
-  below 1 along a turned axis is not `I + (S - I) * weight` (0.48 off at 60 % and 30 %); the out-of-range types are
-  a chunk `0x8499` of 30 bytes beside the keys, and cycle, loop, ping pong, linear and relative repeat give other
-  values than the constant one taken (keys at 10, 30, 50: 12.5, 12.5, 10, -10, 7.5 at frame 0 instead of 0); a
-  Linear tangent beside a custom key stores a tangent 3ds Max does not draw with (1.5 off; the slope to the
-  neighbouring key is 2e-2 off).
+- Controllers the probes of maxdrop-6n0.6.12 left open (3ds Max 2020): a Scale List weight other than 100 % after an
+  entry along a turned axis, and a Scale List average of turned scales (no rule tried fits: an issue each); Loop on
+  one side only of a range wider than the keys, and the types switched off beside a range moved off the keys (not
+  probed: as Cycle and Constant, an issue); MAXScript's #identity type (0: the controller reads zero; an issue); a
+  Float List average and a Rotation List average with an animated weight (not probed: read as the stored ones).
+  A file saved by a script that never evaluated a Bezier controller after its keys changed keeps stale smooth and
+  auto tangents (a smooth key read as flat, 0.31 off at frame 0 in a dry run); 3ds Max computes them on evaluation,
+  so a file saved from the user interface holds current ones, and the fixtures evaluate every node before saving.
 - The Falloff mix curve in other formats ([The Falloff mix curve](#the-falloff-mix-curve); maxdrop-em3.130), seen
   only in files not committed: falloff_curve's script saved by 3ds Max 2020 as 2017, 2018 and 2019 (formats 19000,
   20000, 21000) stores every curve as its 3ds Max 2020 file does (`0x2035`, `0x204B` (not decoded), `0x1000`, one
