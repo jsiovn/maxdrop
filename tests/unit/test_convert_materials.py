@@ -469,12 +469,15 @@ def _wrapper(index, class_id, params, name="W"):
 class Wrappers(unittest.TestCase):
     def test_each_wrapper_peels_to_its_first_set_sub_material(self):
         cases = [
-            (classids.VRAY_OVERRIDE_MTL, {0: Ref(None), 2: Ref(1), 4: Ref(2)}, 1),  # empty base: the next slot
+            (classids.VRAY_OVERRIDE_MTL, {0: Ref(2), 2: Ref(1), 4: Ref(1)}, 2),
             (classids.VRAY_MTL_WRAPPER, {0: Ref(1)}, 1),
             (classids.DOUBLE_SIDED_MTL, {0: Ref(2), 1: Ref(1)}, 2),
             (classids.SHELLAC_MTL, {0: Ref(1), 1: Ref(2)}, 1),
-            (classids.VRAY_2SIDED_MTL, {0: Ref(None), 1: Ref(2)}, 2),
-            (classids.VRAY_BLEND_MTL, {0: Ref(None), 1: [Ref(None), Ref(2), Ref(1)]}, 2),  # coat table
+            (classids.SHELLAC_MTL, {0: Ref(None), 1: Ref(2)}, 2),  # an empty base: V-Ray and the scanline draw the coat
+            (classids.VRAY_2SIDED_MTL, {0: Ref(2), 1: Ref(1)}, 2),
+            (classids.VRAY_BLEND_MTL, {0: Ref(1), 1: [Ref(None), Ref(2)]}, 1),
+            (classids.CORONA_RAY_SWITCH_MTL, {1600: Ref(1), 1603: Ref(2), 1613: 1}, 2),  # directMtl
+            (classids.CORONA_RAY_SWITCH_MTL, {1600: Ref(None), 1603: Ref(2)}, 2),
             (classids.SHELL_MTL, {1: 1, 2: Ref(1), 3: Ref(2)}, 2),  # render index 1: baked
             (classids.SHELL_MTL, {1: 0, 2: Ref(1), 3: Ref(2)}, 1),
         ]
@@ -517,11 +520,63 @@ class Wrappers(unittest.TestCase):
                 self.assertEqual(conv.convert(0).name, "V1")
                 self.assertEqual(conv.stats.issues, [(0, off)] if issue else [])
 
+    def test_an_empty_first_slot_stops_where_the_renderer_does(self):
+        """Rendered in maxdrop-em3.136 (V-Ray 5.2) and maxdrop-6n0.6.4 (V-Ray 5.2, Corona 12): an empty VRayOverrideMtl
+        base renders black, an empty Double Sided facing material or VRay2SidedMtl front renders that side not at all,
+        a CoronaRaySwitchMtl's direct material empty or switched off renders nothing to the camera: the peel ends there
+        (the grey material, the reason in the report) instead of taking the next sub-material."""
+        OV, DS, TS, RS = (classids.VRAY_OVERRIDE_MTL, classids.DOUBLE_SIDED_MTL, classids.VRAY_2SIDED_MTL,
+                          classids.CORONA_RAY_SWITCH_MTL)
+        cases = [
+            (OV, {0: Ref(None), 2: Ref(1), 4: Ref(2)}, "Wrap: base material empty: V-Ray renders it black"),
+            (OV, {1: 1, 2: Ref(1)}, "Wrap: base material empty: V-Ray renders it black"),  # no base stored
+            (DS, {0: Ref(None), 1: Ref(2)},
+             "Wrap: facing material empty: V-Ray renders that side not at all, the scanline black"),
+            (DS, {0: Ref(None), 1: Ref(2), 2: 0},
+             "Wrap: facing material empty: V-Ray renders that side not at all, the scanline black"),
+            (TS, {0: Ref(None), 1: Ref(2), 3: 1}, "Wrap: front material empty: V-Ray renders that side not at all"),
+            (RS, {1600: Ref(1), 1601: Ref(2), 1603: Ref(None), 1613: 1},
+             "Wrap: direct material empty: Corona renders nothing to the camera"),
+            (RS, {1600: Ref(1), 1603: Ref(2), 1613: 0},
+             "Wrap: direct material switched off: Corona renders nothing to the camera"),
+            (RS, {1600: Ref(1), 1603: Ref(None), 1610: 0, 1613: 0},
+             "Wrap: direct material switched off: Corona renders nothing to the camera"),
+        ]
+        for class_id, params, reason in cases:
+            with self.subTest((class_id, params)):
+                conv = mat.MaterialConverter(FakeGraph(_wrapper(0, class_id, params, "Wrap"), _vray(1, "A"),
+                                                       _vray(2, "B")))
+                self.assertEqual(conv.peel(0), (None, reason))
+                ir = conv.convert(0)
+                self.assertTrue(ir.unknown)
+                self.assertEqual(ir.name, "Wrap")
+                self.assertEqual(conv.stats.issues, [(0, reason)])
+                self.assertEqual(conv.source_for(0, 0), 0, "a failed peel is its own answer")
+
+    def test_an_empty_blend_base_draws_its_coat_with_an_issue(self):
+        """V-Ray 5.2 renders a VRayBlendMtl without a base as its coats over nothing (transparent where the blend is
+        below white, maxdrop-6n0.6.4): the first set coat is drawn, a report line says so, once per wrapper object."""
+        line = ("Wrap: base material empty: drawn as its coat, which V-Ray renders over nothing (transparent where the "
+                "blend is below white)")
+        cases = [({0: Ref(None), 1: [Ref(None), Ref(2), Ref(1)]}, 2, [(0, line)]),
+                 ({1: [Ref(1)]}, 1, [(0, line)]),  # no base stored
+                 ({0: Ref(None), 1: [Ref(None)]}, None, [(0, "Wrap: no sub-material")])]
+        for params, want, issues in cases:
+            with self.subTest(params):
+                outer = _wrapper(6, classids.VRAY_MTL_WRAPPER, {0: Ref(0)}, "Outer")
+                conv = mat.MaterialConverter(FakeGraph(_wrapper(0, classids.VRAY_BLEND_MTL, params, "Wrap"), outer,
+                                                       _vray(1, "A"), _vray(2, "B")))
+                self.assertEqual(conv.peel(6)[0], want)
+                self.assertEqual(conv.peel(0)[0], want)  # _sub runs again on the same wrapper
+                conv.convert(0)
+                self.assertEqual(conv.stats.issues, issues)
+
     def test_a_facing_slot_switched_off_and_unused_is_no_issue(self):
-        """The facing-material line names only a facing material that is drawn: an empty one (the back is drawn) or
-        one that is not a material (the peel fails) gives none."""
+        """The facing-material line names only a facing material that is drawn: an empty one (the peel ends there)
+        or one that is not a material (the peel fails) gives none."""
         DS = classids.DOUBLE_SIDED_MTL
-        for params, want in [({0: Ref(None), 1: Ref(2), 2: 0}, (2, None)),
+        for params, want in [({0: Ref(None), 1: Ref(2), 2: 0}, (None, "Wrap: facing material empty: V-Ray renders that "
+                                                                     "side not at all, the scanline black")),
                              ({0: Ref(7), 1: Ref(2), 2: 0}, (None, "Wrap: sub-material 7 is not a material"))]:
             with self.subTest(params):
                 conv = mat.MaterialConverter(FakeGraph(_wrapper(0, DS, params, "Wrap"), _vray(2, "V2"), _map(7)))
@@ -2148,7 +2203,7 @@ class CoronaSynthetic(unittest.TestCase, Close):
     def test_ray_switch_and_select(self):
         rs = _corona(0, classids.CORONA_RAY_SWITCH_MTL, p1600=Ref(1), p1603=Ref(2), p1613=0)
         conv, ir = _convert(rs, _corona(1, classids.CORONA_PHYSICAL_MTL), _corona(2, classids.CORONA_LEGACY_MTL))
-        self.assertEqual(conv.peel(0), (1, None), "direct switched off: the GI material")
+        self.assertEqual(conv.peel(0), (None, "C: direct material switched off: Corona renders nothing to the camera"))
         sel = _corona(0, classids.CORONA_SELECT_MTL, p312=[Ref(1), Ref(None)], p313=1)
         conv, ir = _convert(sel, _corona(1, classids.CORONA_PHYSICAL_MTL))
         self.assertTrue(ir.unknown)
