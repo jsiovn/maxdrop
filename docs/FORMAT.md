@@ -1801,7 +1801,7 @@ gave the same pixel as over white) or its tint ((128, 0, 0), (0, 64, 0), (0, 0, 
 VRayColor2Bump without a map renders (0.5, 0.5, 1), opaque, in a color slot (over a white map: white); it has no map
 switch. On an opacity input V-Ray takes the mean (1, 0.293, 0.667). In a VRayMtl bump slot each one is flat; inside
 a VRayNormalMap's normal slot the white of an empty Output or RGB Tint tilts the normal as a white map does, the
-VRayColor2Bump's color is flat. Corona and the gamma on: the next paragraph. MAXScript
+VRayColor2Bump's color is flat. Corona and the gamma on: below, after the 0.293 note. MAXScript
 `copy` of an Output map loses map1Enabled (the copy renders its map).
 The 0.293 is the mean of the tint rows as stored (128 / 255, 64 / 255, 32 / 255), not decoded by the gamma-off
 swatch rule (0.094): in a data, bump or normal input MaxDrop takes a wrapper's rows and a swatch below a wrapper
@@ -1815,8 +1815,8 @@ self-illuminated VRayMtl / CoronaLegacyMtl, black background): V-Ray with the ga
 off (white, 0.725 for the Output part above, 0.502 / 0.251 / 0.125 for the tint, (0.5, 0.5, 1) for VRayColor2Bump,
 0.293 and 0.667 on opacity), so (0.5, 0.5, 1) is the swatch as stored in both modes. Corona renders the same for an
 unset Output or RGB Tint, an RGB Tint switched off and an unset VRayColor2Bump, but an Output with map1Enabled off
-renders its map1 through its Output part (a red (200, 50, 50) map: 0.784, 0.196, 0.196); the file stores the switch
-off. MaxDrop ignores an Output's map1Enabled when the scene's renderer (Renderer ClassIDA / B of the summary stream)
+renders its map1 through its Output part (a red (200, 50, 50) map: 0.784, 0.196, 0.196 with an Output part that
+changes nothing, 0.682, 0.564, 0.564 with the one above; opacity 0.392 and 0.207); the file stores the switch off. MaxDrop ignores an Output's map1Enabled when the scene's renderer (Renderer ClassIDA / B of the summary stream)
 is Corona's, `(0x62A85DCC, 0x523C3604)` (Corona 12); measured with Corona's own materials, assumed for others.
 Corona's opacity with few passes is noisy (up to 0.006 at 4 passes, the mean at 64).
 

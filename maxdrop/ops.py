@@ -494,8 +494,8 @@ def _material_slots(sc, desc, table, index, meters=None, renderer=None):
     material converted, its texture files looked up. sc: the reader Scene, which the converters read; table: the
     file's reader.assets.AssetTable (the one the scene description got); index: the texture lookup
     (convert.textures.TextureIndex, a share of the import's: its counts are the materials'); meters: per file unit,
-    as the geometry is scaled (lengths such as an SSS radius; None: the file's own unit); renderer: the scene's
-    renderer ClassID (_renderer_id); the counters hold no reference to either. Touches no Blender data."""
+    as the geometry is scaled (lengths such as an SSS radius; None: the file's own unit); the counters hold no
+    reference to sc or table. renderer: the scene's renderer ClassID (_renderer_id). Touches no Blender data."""
     from .convert import colors as convert_colors
     from .convert import materials as convert_materials
     from .convert import texmaps as convert_texmaps
@@ -698,7 +698,8 @@ def _read_scene(max_path, opts, dirs, cancel=None):
 
 def _renderer_id(cf):
     """The ClassID (a, b) of the renderer the open .max cf was saved with (its summary stream), None when it does
-    not say or the stream is not readable: an optional fact never costs the import."""
+    not say or the stream is not readable (an unreadable stream never costs the import; a reader defect still
+    surfaces, as everywhere in the reading)."""
     from .reader import metadata
     try:
         return (metadata.read(cf).get("renderer") or {}).get("class_id")

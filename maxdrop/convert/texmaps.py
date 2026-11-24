@@ -121,7 +121,8 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
   the constant (0.5, 0.5, 1); neither is counted (3ds Max 2020 renderMap and V-Ray 5.2 renders with the gamma off,
   maxdrop-em3.76; V-Ray with the gamma on and Corona 12 render the same, maxdrop-em3.127; Corona renders an
   Output's map with its switch off, which a scene saved with Corona as its renderer keeps). In a normal map's normal
-  slot that color as stored, drawn: V-Ray tilts the normal by the white as by a white map, (0.5, 0.5, 1) is flat (maxdrop-em3.128).
+  slot that color as stored, drawn: V-Ray tilts the normal by the white as by a white map, (0.5, 0.5, 1) is flat
+  (maxdrop-em3.128).
   Any other map class with maps below gives the first image below it (depth first, in reference order), counted the
   same way; one without is unsupported (counted, no graph).
 - Normal maps (VRayNormalMap, Normal Bump, CoronaNormal) in a normal or bump input -> NormalMap: the normal image

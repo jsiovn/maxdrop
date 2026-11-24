@@ -2016,17 +2016,19 @@ class LostMaps(Checks):
     def test_empty_wrapper_under_corona(self):
         """Corona 12 renders an Output's map with map1Enabled off (V-Ray 5.2 and renderMap: white); it honors RGB
         Tint's switch and draws an unset Output white (maxdrop-em3.127)."""
-        vray = classdir.ClassId(0x73BAB286, 0x77F8FD0C)
-        for renderer, used in ((classdir.ClassId(0x62A85DCC, 0x523C3604), True), ((0x62A85DCC, 0x523C3604), True), (None, False),
-                               (vray, False)):
+        vray, corona = classdir.ClassId(0x73BAB286, 0x77F8FD0C), classdir.ClassId(0x62A85DCC, 0x523C3604)
+        for renderer, used in ((corona, True), ((0x62A85DCC, 0x523C3604), True), (None, False), (vray, False)):
             with self.subTest(renderer=renderer):
                 out = FakeMap(1, tx.OUTPUT, {0: Ref(2), 1: 0}, [2], cls="Output", name="out")
                 tex = tx.TexmapConverter(FakeGraph(out, _bitmap(2)), _table(), renderer=renderer)
                 g = tex.convert(mat.MapRef(1), tx.COLOR)
+                d = tex.convert(mat.MapRef(1), tx.DATA)
                 if used:
                     self.assertEqual(g.root.name, "a.png", "the map, its switch ignored")
+                    self.assertEqual(d.root.name, "a.png", "on a data input too")
                 else:
                     self.assertEqual(g.root, tx.Constant((1.0, 1.0, 1.0)))
+                    self.assertEqual(d.root, tx.Constant(1.0))
                 self.assertEqual(tex.stats.issues, [])
         out = FakeMap(1, tx.OUTPUT, {0: Ref(2), 1: 0}, [2], cls="Output", name="out")
         part = FakeMap(5, (0x100, 0), superclass=classids.SC_TEXOUTPUT)

@@ -4218,6 +4218,34 @@ def check_light_note_on_failure(max_path):
     empty_scene()
 
 
+def check_renderer_reaches_converters(max_path):
+    """One import of a file with a dome texture and materials hands the renderer ClassID of its summary stream
+    (reader.metadata) to both texture-map converters it makes, the dome's and the materials' (maxdrop-em3.127: the
+    Corona rules key on it)."""
+    from maxdrop.convert import texmaps
+    from maxdrop.reader import cfb, metadata
+    with cfb.CompoundFile(max_path) as cf:
+        expected = (metadata.read(cf).get("renderer") or {}).get("class_id")
+    empty_scene()
+    original, seen = texmaps.TexmapConverter, []
+
+    class Recording(original):
+        def __init__(self, *args, **kwargs):
+            seen.append(kwargs.get("renderer"))
+            super().__init__(*args, **kwargs)
+
+    texmaps.TexmapConverter = Recording
+    try:
+        result = bpy.ops.import_scene.maxdrop(filepath=max_path)
+    finally:
+        texmaps.TexmapConverter = original
+    check("renderer: the summary stream's renderer reaches the dome's and the materials' converters",
+          result == {'FINISHED'} and expected is not None and len(seen) == 2
+          and all(r is not None and tuple(r) == tuple(expected) for r in seen),
+          "%s, expected %s, seen %s" % (result, expected, seen))
+    empty_scene()
+
+
 def check_ies_header(max_path):
     """max_path (lights_photometric) copied beside a self-authored fixture_web.ies, rated 500 lm, 100 cd in every
     direction: the import finds it, IesPower (1500, override off) gets 1500 x 400 pi / 500 lm, IesOverride (override
@@ -5098,6 +5126,8 @@ def main():
                                      os.path.join(ROOT, "tests", "fixtures", "multi_uv.max"))),
                                  ("asset table once", lambda: check_asset_table_once(
                                      os.path.join(ROOT, "tests", "fixtures", "vray_lights.max"))),
+                                 ("renderer reaches converters", lambda: check_renderer_reaches_converters(
+                                     os.path.join(ROOT, "tests", "fixtures", "vray_dome.max"))),
                                  ("ies header", lambda: check_ies_header(
                                      os.path.join(ROOT, "tests", "fixtures", "lights_photometric.max"))),
                                  ("ies search stopped", lambda: check_ies_search_stopped(
