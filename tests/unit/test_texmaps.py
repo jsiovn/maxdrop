@@ -2579,6 +2579,10 @@ class SceneGammaImages(Checks):
         return tx.TexmapConverter(FakeGraph(m), _table(), swatches=rule).convert(mat.MapRef(1), kind).root
 
     def check(self, image, gamma, space, msg=None):
+        if space == MEAN:  # an image read as stored as a gamma-off mask: its mean decoded (maxdrop-6n0.6.36)
+            self.assertIsInstance(image, tx.Decode, msg)
+            self.assertTrue(image.mean, msg)
+            image, space = image.input, tx.NON_COLOR
         self.assertEqual(image.colorspace, space, msg)
         if gamma is None:
             self.assertIsNone(image.gamma, msg)
@@ -2609,7 +2613,7 @@ class SceneGammaImages(Checks):
                 self.check(self._bitmap(rule, table=table), 1.0 if rule.linear else None,
                            tx.LINEAR if rule.linear else tx.SRGB, "an EXR: linear")
                 self.check(self._bitmap(rule, table=table, kind=tx.MASK), 1.0 if rule.linear else None,
-                           tx.NON_COLOR if rule.linear else tx.SRGB, "an EXR as a mask: the color rule")
+                           tx.NON_COLOR if rule.linear else MEAN, "an EXR as a mask: the color rule")
                 self.check(self._bitmap(rule, table=table, kind=tx.DATA), 1.0 if rule.linear else None,
                            tx.NON_COLOR, "an EXR: as stored")
                 # a data input: decoded as a color input with the gamma on, as stored with it off (em3.122)
@@ -2647,10 +2651,10 @@ class SceneGammaImages(Checks):
                  ({"p25": 1, "p8": 2.2}, None, (1.0, tx.LINEAR), (1.0, tx.NON_COLOR), (1 / 2.2, tx.LINEAR)),
                  ({"p25": 2}, None, (tx.SRGB_TWICE, tx.LINEAR), (tx.SRGB_TWICE, tx.LINEAR), (None, tx.SRGB)),
                  ({"p25": 0}, None, (2.2, tx.SRGB), (2.2, tx.SRGB), (1.0, tx.NON_COLOR)),
-                 ({"p25": 3}, None, (None, tx.SRGB), (None, tx.SRGB), (None, tx.NON_COLOR)),
+                 ({"p25": 3}, None, (None, tx.SRGB), (None, MEAN), (None, tx.NON_COLOR)),
                  ({"p25": 4}, exr, (2.2, tx.SRGB), (2.2, tx.SRGB), (1.0, tx.NON_COLOR)),
                  ({"p25": 0}, exr, (2.2, tx.SRGB), (2.2, tx.SRGB), (1.0, tx.NON_COLOR)),
-                 ({"p25": 3}, exr, (None, tx.SRGB), (None, tx.SRGB), (1.0, tx.NON_COLOR)),
+                 ({"p25": 3}, exr, (None, tx.SRGB), (None, MEAN), (1.0, tx.NON_COLOR)),
                  ({"p25": 2}, exr, (tx.SRGB_TWICE, tx.LINEAR), (tx.SRGB_TWICE, tx.LINEAR), (None, tx.SRGB)))
         for params, table, color, mask, data in cases:
             with self.subTest(params=params, exr=table is not None):
@@ -2783,10 +2787,14 @@ class DataAndMaskRule(Checks):
     def test_bitmap_mask(self):
         mix = FakeMap(1, tx.MIX, {8: Ref(2)}, [2], cls="Mix")
         for rule, info, space in ((colors.GAMMA_ON, None, tx.SRGB), (colors.GAMMA_ON, _info(1.0, 5), tx.NON_COLOR),
-                                  (colors.GAMMA_OFF, None, tx.SRGB), (colors.GAMMA_OFF, _info(1.0, 5), tx.SRGB)):
+                                  (colors.GAMMA_OFF, None, MEAN), (colors.GAMMA_OFF, _info(1.0, 5), MEAN)):
             with self.subTest(rule=rule, info=info):
                 b, chunk_map = _placed(index=2, info=info)
-                self.assertEqual(self._root(rule, mix, b, chunk_map=chunk_map).mask.colorspace, space)
+                mask = self._root(rule, mix, b, chunk_map=chunk_map).mask
+                if space == MEAN:  # gamma off: its stored mean, decoded (maxdrop-6n0.6.36)
+                    self.assertTrue(isinstance(mask, tx.Decode) and mask.mean)
+                    mask, space = mask.input, tx.NON_COLOR
+                self.assertEqual(mask.colorspace, space)
         b, chunk_map = _placed(index=2)
         self.assertEqual(self._root(colors.GAMMA_OFF, mix, b, kind=tx.DATA, chunk_map=chunk_map).mask.colorspace,
                          tx.NON_COLOR, "a mask in a data graph: data")
@@ -2797,6 +2805,49 @@ class DataAndMaskRule(Checks):
             self.assertEqual(tx.first_image(root.mask).colorspace, tx.NON_COLOR, "CoronaMix mask")
         root = self._root(colors.GAMMA_ON, cmix, _bitmap(2))
         self.assertEqual(tx.first_image(root.mask).colorspace, tx.SRGB, "gamma on: decoded")
+
+    def test_colored_image_as_a_gamma_off_mask_is_its_decoded_mean(self):
+        """maxdrop-6n0.6.36 (measured in maxdrop-6n0.6.2, V-Ray 5.2): with the gamma off a (200, 100, 50) PNG as the
+        mask of a Mix black -> white renders 0.4575 internal (the mean of the stored pixel), shown 0.1768 linear; the
+        mean of its decoded channels (0.2456) masked too much. Gamma on: the decoded mean (0.2456 vs 0.2471)."""
+        mix = FakeMap(1, tx.MIX, {8: Ref(2)}, [2], cls="Mix")
+        stored = (_bitmap(2), _vbitmap(2, p25=3))  # a Bitmap, a VRayBitmap From 3ds Max: read as stored
+        for leaf in stored:
+            with self.subTest(leaf.cls):
+                mask = self._root(colors.GAMMA_OFF, mix, leaf).mask
+                self.assertIsInstance(mask, tx.Decode)
+                self.assertTrue(mask.mean)
+                self.assertEqual((mask.input.colorspace, mask.input.gamma, mask.input.name), (tx.NON_COLOR, None,
+                                                                                            "a.png"))
+                self.assertIsInstance(self._root(colors.GAMMA_ON, mix, leaf).mask, tx.Image, "gamma on: as before")
+                self.assertIsInstance(self._root(colors.GAMMA_OFF, mix, leaf, kind=tx.DATA).mask, tx.Image,
+                                      "a mask in a data graph: data")
+        # their own decode, shown decoded once more (_shown), is kept: no mean
+        for leaf in (_vbitmap(2, p25=2), _vbitmap(2, p25=0), _cbitmap(2)):
+            with self.subTest(leaf.cls, params=leaf.blocks[0]._params):
+                self.assertIsInstance(self._root(colors.GAMMA_OFF, mix, leaf).mask, tx.Image)
+        # a mono output of alpha: Blender never decodes an alpha, left as it was
+        alpha = FakeMap(2, classids.BITMAP_TEX, {13: pblock.Asset(G1), tx.BM_MONO: 1}, cls="Bitmap")
+        mask = self._root(colors.GAMMA_OFF, mix, alpha).mask
+        self.assertIsInstance(mask, tx.Image)
+        self.assertTrue(mask.alpha)
+        # what the builder draws: the mean of the stored pixel through the sRGB curve, V-Ray's number shown; a grey
+        # the same as the sRGB image read per channel (exact)
+        pixel = (200 / 255, 100 / 255, 50 / 255)
+        self.close(colors.srgb_to_linear(sum(pixel) / 3), colors.srgb_to_linear(0.457511), "RefCBm")
+        self.assertGreater(sum(colors.srgb_to_linear(c) for c in pixel) / 3 - colors.srgb_to_linear(0.457511),
+                           0.06, "the mean of the decoded channels: +0.069")
+        self.close(colors.srgb_to_linear(sum((128 / 255,) * 3) / 3), colors.srgb_to_linear(128 / 255), "a grey")
+
+    def test_image_below_a_mask_wrapper_is_unchanged(self):
+        # below an RGB Tint or an Output in a gamma-off mask the image is STORED (_wrapper_input) and the wrapper's
+        # mean decoded (_mask_mean): no second mean
+        mix = FakeMap(1, tx.MIX, {8: Ref(2)}, [2], cls="Mix")
+        mask = self._root(colors.GAMMA_OFF, mix, _wtint(2, 3), _bitmap(3)).mask
+        self.assertIsInstance(mask, tx.Decode)
+        self.assertFalse(mask.mean)
+        self.assertIsInstance(tx.first_image(mask), tx.Image)
+        self.assertEqual([d for d in _decodes(mask) if d.mean], [])
 
     def test_composite_mask_follows_the_graph(self):
         comp = FakeMap(1, tx.COMPOSITE, {9: [Ref(2), Ref(3)], 10: [Ref(None), Ref(4)]}, [2, 3, 4], cls="Composite")
@@ -2951,6 +3002,9 @@ def _drawn(n, pixel=128 / 255):
     return pixel ** (n.gamma or 1.0) if n.colorspace == tx.LINEAR else pixel
 
 
+MEAN = "mean"  # SceneGammaImages.check: Decode(mean) over the image read as stored (Non-Color)
+
+
 def _decodes(root):
     """The Decode nodes of a graph."""
     seen, stack, out = set(), [root], []
@@ -3016,7 +3070,9 @@ class GammaOffMixes(Checks):
             with self.subTest(kind):
                 root = self._root(colors.GAMMA_OFF, mix, _bitmap(2), kind=kind)
                 self.assertIsInstance(root, tx.Mix)
-                self.assertEqual(_decodes(root), [])
+                # in a mask an image is its stored mean decoded (maxdrop-6n0.6.36), the Mix itself not in STORED
+                self.assertEqual([d for d in _decodes(root) if not d.mean], [])
+                self.assertEqual(len(_decodes(root)), kind == tx.MASK)
 
     def test_mix_with_a_map_is_decoded_once(self):
         mix = self._mix(p0=0.25, p4=self.G40, p5=self.G220, p6=Ref(2), p8=Ref(3))
@@ -3051,7 +3107,8 @@ class GammaOffMixes(Checks):
         self.close(root.b.value, (1.0,) * 3)
         self.close(root.mask.value, _lin(128))
         root = self._root(colors.GAMMA_OFF, self._mix(p8=Ref(2)), _bitmap(2))
-        self.assertEqual(root.mask.colorspace, tx.SRGB)
+        self.assertTrue(isinstance(root.mask, tx.Decode) and root.mask.mean, "its stored mean decoded (6n0.6.36)")
+        self.assertEqual(root.mask.input.colorspace, tx.NON_COLOR)
         root = self._root(colors.GAMMA_OFF, self._mix(p0=0.5))
         self.assertIsInstance(root, tx.Mix)
         self.close(root.factor, _lin(127.5))

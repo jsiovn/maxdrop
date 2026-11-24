@@ -36,6 +36,8 @@ except that V-Ray reads a VRayBitmap below a normal map as stored whatever its t
 nothing with it off. A 128 grey PNG as glossiness, opacity or a mask renders 0.2195 with the gamma on (Bitmap auto or
 2.2, CoronaBitmap auto, VRayBitmap From 3ds Max), 0.502 with it off (Bitmap whatever its override; CoronaBitmap and
 VRayBitmap sRGB keep their curve: 0.2195, 0.2159).
+With the gamma off an image read as stored as a mask in a color graph is the mean of its stored pixel, decoded
+(_stored_mask; V-Ray 5.2, maxdrop-6n0.6.36): a (200, 100, 50) PNG 0.4575 internal, not the mean of its decoded channels.
 Constants are linear, a swatch made so by the scene's swatch rule (convert/colors.py: linear with the gamma on, the
 sRGB curve with it off): in a COLOR graph always linear RGB (also when the input itself is a float, as specular and
 transmission are: the builder takes the mean of the graph's color there, the measure materials.py uses); in a MASK
@@ -411,8 +413,10 @@ class Invert:
 @dataclasses.dataclass(frozen=True)
 class Decode:
     """A gamma-off scene's display-referred color (a graph of kind STORED) as linear, what the display shows of it:
-    the sRGB curve, drawn as a power of SRGB_GAMMA (a constant folded exactly)."""
+    the sRGB curve, drawn as a power of SRGB_GAMMA (a constant folded exactly). mean: the mean of the input's channels
+    through the exact sRGB curve, a float (an image read as stored as a gamma-off mask: _stored_mask)."""
     input: object
+    mean: bool = False
 
 
 @dataclasses.dataclass(frozen=True)
@@ -743,6 +747,18 @@ def _shown(gamma):
     return SRGB_TWICE if gamma is None else gamma * SRGB_GAMMA
 
 
+def _stored_mask(image, kind, stored):
+    """An image read as stored (a Bitmap, a VRayBitmap From 3ds Max, with the gamma off) as a mask in a color graph:
+    V-Ray mixes by the mean of the stored pixel, which the display-referred scene shows decoded (maxdrop-6n0.6.36,
+    measured in maxdrop-6n0.6.2: a (200, 100, 50) PNG renders 0.4575, shown 0.1768; the mean of the decoded channels
+    is 0.2456), so the image as stored (Non-Color) under a Decode of its mean through the exact sRGB curve, which
+    leaves a grey as the sRGB image gave it. An image whose mono output is its alpha stays as it is: Blender never
+    decodes an alpha (not measured)."""
+    if kind != MASK or not stored or image.alpha:
+        return image
+    return Decode(dataclasses.replace(image, colorspace=NON_COLOR), mean=True)
+
+
 def unshown(image):
     """A Bitmap's, VRayBitmap's or CoronaBitmap's color Image made in a gamma-off scene with its own decode again
     (_shown undone; None, an image read as stored, gives linear): for a float file lighting a scene, where the display
@@ -1061,8 +1077,9 @@ class TexmapConverter:
             crop = Crop(*clip, place=m.param(BM_CROP_PLACE, 0) == 1)
         gamma = self._bitmap_gamma(self._gamma(m), entry.name)
         alpha = m.param(BM_MONO if kind in FLOATS else BM_RGB, 0) == 1
-        return Image(m.index, entry.name, entry.path, entry.resolved, found, mapping, crop, self._output(out, m),
-                     colorspace(kind, gamma, not self.swatches.linear), gamma, alpha)
+        stored = not self.swatches.linear
+        return _stored_mask(Image(m.index, entry.name, entry.path, entry.resolved, found, mapping, crop,
+                                  self._output(out, m), colorspace(kind, gamma, stored), gamma, alpha), kind, stored)
 
     def _placement_issues(self, m, walk, cls, mapping):
         """The issues of a UVGen's mapping that no UVs can draw."""
@@ -1113,8 +1130,9 @@ class TexmapConverter:
             # gamma off: From 3ds Max reads any file as stored, which the scene shows decoded (a Bitmap's rule);
             # every other transfer function is V-Ray's own decode, shown decoded once more
             gamma = None if stored else _shown(gamma)
-        return Image(m.index, entry.name, entry.path, entry.resolved, found, mapping, crop,
-                     None if output == TexOutput() else output, colorspace(kind, gamma, stored), gamma, alpha)
+        return _stored_mask(Image(m.index, entry.name, entry.path, entry.resolved, found, mapping, crop,
+                                  None if output == TexOutput() else output, colorspace(kind, gamma, stored), gamma,
+                                  alpha), kind, stored)
 
     def _bitmap_gamma(self, override, name):
         """A Bitmap's gamma as 3ds Max reads it in this scene (maxdrop-em3.38, V-Ray 5.2 renders): with the gamma on

@@ -274,6 +274,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   diffuse: Cycles 0.916 0.534 0.178 facing the camera, V-Ray 0.918 0.658 0.806, the metal gave 0.900 0.503 0.102;
   140 128 115 over red: 0.902 0.572 0.522, V-Ray 0.903 0.580 0.537, was 0.548 0.503 0.451). A reflection map at 0 %
   amount no longer makes a bright reflection a metal.
+- Materials: in a scene saved with the gamma off, a colored image (a Bitmap, a VRayBitmap From 3ds Max) as the mask
+  of a Mix, CoronaMix or Composite on a color map masks by the mean of its pixel as stored, shown decoded, as V-Ray
+  5.2 renders it: a (200, 100, 50) PNG masks 0.177 linear, as in V-Ray (was 0.246); a grey image is unchanged. A
+  Color Correction directly as such a mask now gives 0.177 where V-Ray shows 0.191 (was 0.412).
 - CoronaMix: Gamma whose top is a map that is a color (CoronaColor, VRayColor) is imported as with a top color, and
   a colored top over a bottom map that is a color is folded per channel, instead of the first bitmap below.
 
