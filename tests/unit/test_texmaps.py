@@ -2295,7 +2295,7 @@ class WrapperConstants(Checks):
 
 class SwatchRule(Checks):
     """Every swatch of a map goes through the scene's rule: linear with the gamma on (or unknown), sRGB with it off;
-    the HDR color does not, CoronaColor's temperature only with the gamma off."""
+    the HDR color is decoded only with the gamma off (maxdrop-em3.165), CoronaColor's temperature too."""
 
     def _root(self, swatches, *objects, kind=tx.COLOR):
         tex = tx.TexmapConverter(FakeGraph(*objects), _table(), swatches=swatches)
@@ -2393,10 +2393,10 @@ class SwatchRule(Checks):
 class SceneGammaImages(Checks):
     """maxdrop-em3.38: an image on a color input as 3ds Max 2020 + V-Ray 5.2 read a 128 grey PNG (docs/FORMAT.md,
     Scene gamma): with the gamma on a Bitmap with automatic gamma (and a VRayBitmap From 3ds Max) takes the file
-    input gamma; with it off a Bitmap is read as stored whatever its gamma; CoronaBitmap keeps its own (Corona not
-    measured). maxdrop-em3.123 (the same renders, greys 64 / 128 / 192, EXRs 0.25 / 0.5 / 2.0): with the gamma off
-    V-Ray shows a VRayBitmap's own decode, and a float file read as stored, decoded once more on a color input or
-    a mask (the internal value v as srgb_to_linear(v))."""
+    input gamma; with it off a Bitmap is read as stored whatever its gamma; CoronaBitmap applies its own in both.
+    maxdrop-em3.123 (the same renders, greys 64 / 128 / 192, EXRs 0.25 / 0.5 / 2.0): with the gamma off V-Ray shows a
+    VRayBitmap's own decode, and a float file read as stored, decoded once more on a color input or a mask (the
+    internal value v as srgb_to_linear(v)); maxdrop-em3.165: Corona 12 a CoronaBitmap's alike."""
 
     ON_10 = colors.Swatches(True, file_in=1.0)
     ON_18 = colors.Swatches(True, file_in=1.8)
