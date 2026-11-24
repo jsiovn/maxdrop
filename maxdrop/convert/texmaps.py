@@ -160,7 +160,7 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
   leaves the mix amount, a lost Composite layer is left out (both approximations); a normal map class keeps its
   other map.
 - The slot itself: a glossiness map feeding roughness (MapRef.invert) is under an Invert; a MapRef.scale other than 1
-  (Standard's Diffuse Level) multiplies the map; a slot amount below 1 mixes
+  (Standard's Diffuse Level, a Fresnel-off VRayMtl's metalness) multiplies the map; a slot amount below 1 mixes
   the input's value with the map (Mix(Constant(value), map, amount)), above 1 multiplies the map; in a bump input the
   amount is the Bump's strength, in a normal input it scales the NormalMap's strengths. A Standard material's
   Diffuse Level map (materials.DiffuseLevel) makes the base color graph Multiply(the diffuse at level 1, a Tint of
@@ -857,7 +857,8 @@ class TexmapConverter:
         walk = _Walk()
         # a gamma-off color input mixed with its own value by an amount below 1: V-Ray mixes the stored values and the
         # display-referred scene shows the result decoded (maxdrop-6n0.6.18), as a Mix at a color root; a scale (a
-        # Standard's Diffuse Level other than 1 on its diffuse map, linear) keeps the decoded mix (not measured with an
+        # Standard's Diffuse Level other than 1 on its diffuse map, a Fresnel-off VRayMtl's metalness, linear) keeps
+        # the decoded mix (not measured with an
         # amount; _leveled's diffuse at level 1 takes the stored one); an amount of 0 is the value alone, exact
         stored = (kind == COLOR and not self.swatches.linear and 0.0 < ref.amount < 1.0 and value is not None
                   and ref.scale == 1.0)

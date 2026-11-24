@@ -375,6 +375,11 @@ class VRayMtlRules(unittest.TestCase, Close):
                     conv, ir = _convert(_vray(0, b1=b1, b4={100: Ref(1), 200: 60.0}), _map(1))
                     self.close(ir.metallic.value, 0.0)
                     self.close(ir.base_color.value, tuple(k * c for c in (0.157, 0.314, 0.784)))
+                    top, shown = max(refl), sum(refl) / 3.0
+                    bright = shown >= mat.METAL_REFLECTION
+                    self.close(ir.specular.value, top if bright else shown)
+                    self.close(ir.mirror_color, tuple(c / top for c in refl) if bright else (1.0, 1.0, 1.0),
+                               "the mirror as at m 0")
                     if k == 0.0:
                         self.assertIsNone(ir.base_color.map, "nothing of the diffuse shows")
                     else:
@@ -384,9 +389,8 @@ class VRayMtlRules(unittest.TestCase, Close):
                 b1 = {1: (0.5, 0.5, 0.5), 2: (0.502,) * 3, 8: 0, 91: 0.5}
                 conv = mat.MaterialConverter(FakeGraph(_vray(0, b1=b1, b4={100: Ref(1)}), _map(1)), swatches=sw)
                 ir = conv.convert(0)
-                k = sw.channel(0.5)
-                self.close(ir.base_color.value, tuple(k * c for c in sw.color((0.5, 0.5, 0.5))))
-                self.close(ir.base_color.map.scale, k)
+                self.close(ir.base_color.value, sw.color((0.25, 0.25, 0.25)), "scaled before the swatch rule")
+                self.close(ir.base_color.map.scale, sw.channel(0.5), "the map by the rule's factor")
 
     def test_fresnel_off_metalness_left_as_is(self):
         """Not measured, so as before: the metal rule (Metallic 1 in the reflection color), a metalness map, a
@@ -402,6 +406,9 @@ class VRayMtlRules(unittest.TestCase, Close):
         conv, ir = _convert(_vray(0, b1={**b1, 5: (0.5, 0.5, 0.5)}))
         self.close(ir.metallic.value, 0.5)
         self.close(ir.transmission.value, 0.5)
+        conv, ir = _convert(_vray(0, b1=b1, b4={102: Ref(1)}), _map(1))  # refracting by its map alone
+        self.close((ir.metallic.value, *ir.base_color.value), (0.5, 1.0, 0.0, 0.0))
+        self.assertEqual(ir.transmission.map, mat.MapRef(1))
         conv, ir = _convert(_vray(0, b1={**b1, 8: 1}))
         self.close((ir.metallic.value, *ir.base_color.value), (0.5, 1.0, 0.0, 0.0))
 
