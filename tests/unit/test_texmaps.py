@@ -906,8 +906,10 @@ class CoronaMaps(Checks):
 
     def test_add_is_a_blend_in_gamma_space(self):
         g = self.f.irs["FixtureCoronaLegacyMaps"].textures["specular"]
-        self.assertIsInstance(g.root, tx.Decode)
-        blend = g.root.input
+        self.assertIsInstance(g.root, tx.Multiply, "levelReflect 0.5 scales the map (maxdrop-6n0.6.6)")
+        self.close(g.root.b.value, (0.5, 0.5, 0.5))
+        self.assertIsInstance(g.root.a, tx.Decode)
+        blend = g.root.a.input
         self.assertIsInstance(blend, tx.Blend)
         self.assertEqual((blend.op, blend.gamma), (tx.BLEND_ADD, 2.2), "mix in sRGB: on by default")
         self.close(blend.a.value, (0.0, 0.0, 0.0), "the bottom color, black")
