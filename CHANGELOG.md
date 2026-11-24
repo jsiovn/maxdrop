@@ -94,6 +94,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Materials: a Double Sided whose facing material is switched off is a line in the report: MaxDrop draws that
   material, as V-Ray 5.2 renders it (measured; V-Ray does the same for a VRayOverrideMtl's base switched off), but
   the 3ds Max scanline renders that side black.
+- Materials: a wrapper whose first sub-material is empty no longer takes the next one where the renderer does not
+  (rendered with V-Ray 5.2 and Corona 12): a VRayOverrideMtl without a base (V-Ray renders black), a Double Sided
+  without a facing material or a VRay2SidedMtl without a front (that side is not rendered) and a CoronaRaySwitchMtl
+  whose direct material is empty or switched off (Corona renders nothing to the camera, it took the GI material) are
+  the grey material with the reason in the report. A VRayBlendMtl without a base still gives its coat, with a report
+  line (V-Ray renders the coat over nothing); a Shellac without a base gives its coat, as rendered.
 - Maps: a Bitmap that tiles or mirrors in one direction and not in the other, or a placed image that tiles, no
   longer shows a thin dark line at each tile and mirror line (EEVEE and Cycles): what it clips is now cut by a mask
   instead of Blender's Clip extension, which faded the image's border toward black.
