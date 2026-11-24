@@ -912,8 +912,8 @@ class _CountedViewLayer:
 
 def check_spread_steps(scene, view_layer):
     """build.emitters.spread as import steps over two hand-made emitters in W (a rectangle and a trapezoid described
-    at 0.5 and 0.8 m^2, under a Subdivision Surface at level 0, render level 2): it yields (0, 2) with both copies linked, then (1, 2) and (2, 2),
-    with one view-layer update for both; each emitter's area is the description's times the evaluated mesh's over the
+    at 0.5 and 0.8 m^2, under a Subdivision Surface at level 0, render level 2): it yields (0, 2) with both copies
+    linked, then (1, 2) and (2, 2), with one view-layer update for both; each emitter's area is the description's times the evaluated mesh's over the
     mesh's, as evaluated_area measures it, and no object is left. Closed after its second step: the first emitter
     spread, the second not, no object left."""
     import types

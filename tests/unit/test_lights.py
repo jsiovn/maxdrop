@@ -613,6 +613,43 @@ class MeshLightFixture(unittest.TestCase):
                 self.assertEqual([(i, r) for i, r in desc.issues if r == "extrude: counted"],
                                  [(first, "extrude: counted")], order)
 
+    def test_a_refused_shape_or_extrude_named_on_the_shapes_node_in_either_order(self):
+        """FixtureExtRect's shape refused by the reader, or its Extrude: in either walk order the shape's own node
+        names it once ("shape: ..." through _curve as describe() falls back to it, or "extrude: ..."), the light gets
+        it as its reason and no shape or extrude line of its own."""
+        cfb = importlib.import_module(_PKG + ".reader.cfb")
+        reader_scene = importlib.import_module(_PKG + ".reader.scene")
+        reader_modifiers = importlib.import_module(_PKG + ".reader.modifiers")
+        shapes = importlib.import_module(_PKG + ".reader.shapes")
+        cases = (("shape", mock.patch.object(conv.shapes, "read_shape", side_effect=shapes.ShapeError("bad"))),
+                 ("extrude", mock.patch.object(conv.extrude, "read_params",
+                                               side_effect=conv.extrude.ExtrudeError("bad"))))
+        with cfb.CompoundFile(EXTRUDE_FIXTURE) as cf:
+            sc = reader_scene.Scene.from_file(cf)
+            stacks = reader_modifiers.Modifiers(sc)
+            node = next(i for i in sc.walk() if sc.node(i).name == "FixtureExtRect")
+            obj = sc.node(node).object
+            base = sc.object_stack(obj).base
+            ext = [m for m in stacks.object_stack(obj).modifiers if m.renders][0]
+            v = {L.MESH_OBJECT: None, L.P_MESH_SOURCE: node}
+            for kind, patch in cases:
+                for order in (("mesh", "light"), ("light", "mesh")):
+                    desc, built, shape_of = conv.SceneDescription(MM), [0], {}
+                    ex = conv._Extrusions(sc, desc, shape_of, built)
+                    reason = None
+                    with patch:
+                        for step in order:
+                            if step == "mesh":
+                                key, _done = conv._extruded(sc, desc, ex, {}, base, ext, (), node, "FixtureExtRect",
+                                                            None, MM)
+                                self.assertIsNone(key)
+                                conv._curve(sc, desc, shape_of, set(), base, node, "FixtureExtRect", None, MM)
+                            else:
+                                reason = conv._emitter_mesh(sc, desc, v, "light", MM, built, None, stacks, ex)
+                    self.assertEqual(reason, L.EMITTER_UNREAD % "bad", (kind, order))
+                    self.assertEqual(desc.issues, [(node, "%s: bad" % kind)], (kind, order))
+                    self.assertEqual(built[0], 0, (kind, order))
+
     def test_a_refused_extrusion_named_once_for_the_shape_and_on_each_light(self):
         """The scene's corner budget spent before FixtureExtRect's Extrude: the light that meets it first gets its
         "Extrude is not made" reason, the shape's node its own "extrude: not made" line, once; nothing is made."""

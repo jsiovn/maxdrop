@@ -820,7 +820,7 @@ def describe(scene, meters=1.0, unit=None, convert_modifiers=True, assets=None, 
     desc = SceneDescription(meters, unit)
     order = scene.walk()
     found = {}  # node -> (reader Node, Stack or None), or the ChunkError its record or object stack raised
-    shape_of = {}  # base object index -> reader Shape, or None when the reader refused it
+    shape_of = {}  # base object index -> reader Shape, or the text of the reader's refusal (_shape)
     unbuilt = set()  # curve keys refused for their range (CurveError), named on their first node
     remaining = collections.Counter()  # base object -> nodes still to build: its MeshData goes with the last
     for i in order:
@@ -1155,7 +1155,7 @@ def _emitter_shape(scene, desc, stacks, obj, node, extrusions):
     if not (active and extrude.is_extrude(active[0])):
         return None
     ext = active[0]
-    data = extrusions.get(stack.base, ext, node)
+    data = extrusions.get(stack.base, ext, node, light=True)
     if isinstance(data, tuple):
         kind, text = data
         return lights.EMITTER_UNREAD % ("its Extrude is not made: " + text if kind == _SPENT_KIND else text)
@@ -1640,21 +1640,24 @@ class _Extrusions:
     own nodes (_extruded) and the mesh lights that pick it (_emitter_shape): made, its shape and Extrude issues named
     (on the node that makes it) and its face corners counted against MAX_BUILT_CORNERS once. drop() lets the MeshData
     go once no node needs it; a mesh light after that gets the same mesh made again, naming and counting nothing.
-    shape_of: the scene's reader Shapes (_shape); built: [face corners made so far]."""
+    Mesh lights that pick one shape share its count as nodes of the shape at different offsets do (each still gets a
+    mesh of its own in desc.meshes). A shape a mesh light reads first and the reader refuses is not kept in shape_of:
+    the shape's own node reads it again and names the refusal (_shape), where a user looks for it. shape_of: the
+    scene's reader Shapes (_shape); built: [face corners made so far]."""
 
     def __init__(self, scene, desc, shape_of, built):
         self.scene, self.desc, self.shape_of, self.built = scene, desc, shape_of, built
         self.made = {}  # base -> {Extrude index: MeshData, _DROPPED or (kind, text) why it is not made}
         self.told = set()  # (base, Extrude index) whose refusal a shape's node named
 
-    def get(self, base, ext, node):
-        """The reader MeshData of shape base under the Extrude ext (a reader Modifier), or (kind, text) why it is not
-        made: _SHAPE_KIND (the shape is refused, _shape named it; text its reason), _SPENT_KIND (MAX_BUILT_CORNERS;
-        text says so) or _EXTRUDE_KIND (the Extrude cannot be read or made)."""
+    def get(self, base, ext, node, light=False):
+        """The reader MeshData of shape base under the Extrude ext (a reader Modifier) for node (light: a mesh light's),
+        or (kind, text) why it is not made: _SHAPE_KIND (the shape is refused; text its reason), _SPENT_KIND
+        (MAX_BUILT_CORNERS; text says so) or _EXTRUDE_KIND (the Extrude cannot be read or made)."""
         cache = self.made.setdefault(base, {})
         found = cache.get(ext.index)
         if found is None:
-            found = cache[ext.index] = self._make(base, ext, node)
+            found = cache[ext.index] = self._make(base, ext, node, light)
         elif found is _DROPPED:
             try:
                 found, _issues = extrude.extrude(self.shape_of[base], extrude.read_params(self.scene, ext)[0])
@@ -1662,8 +1665,16 @@ class _Extrusions:
                 found = (_EXTRUDE_KIND, str(exc))
         return found
 
-    def _make(self, base, ext, node):
-        sh = _shape(self.scene, self.desc, self.shape_of, base, node)
+    def _make(self, base, ext, node, light):
+        if light and base not in self.shape_of:
+            try:
+                sh = shapes.read_shape(self.scene, base)
+            except ChunkError as exc:  # not kept: the shape's own node reads it again and names it
+                return _SHAPE_KIND, str(exc)
+            self.shape_of[base] = sh
+            self.desc.issues.extend((node, "shape: %s" % x) for x in sh.issues)
+        else:
+            sh = _shape(self.scene, self.desc, self.shape_of, base, node)
         if sh is None:
             return _SHAPE_KIND, self.shape_of[base]
         if self.built[0] >= MAX_BUILT_CORNERS:

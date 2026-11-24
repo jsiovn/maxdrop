@@ -134,7 +134,8 @@ def _evaluated(copy, view_layer):
 
 def evaluated_area(ob, converted, collection, view_layer):
     """(the area of object ob's mesh, of that mesh under ob's modifiers) in Blender units squared, measured on a shown
-    copy of ob in collection (_shown_copy) and removed again."""
+    copy of ob in collection (_shown_copy) and removed again: one emitter measured as spread measures it (the tests'
+    reference)."""
     copies = []
     try:
         copy = _shown_copy(ob, converted, collection, copies)
