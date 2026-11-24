@@ -1828,7 +1828,7 @@ class Corona(unittest.TestCase, Close):
         self.assertEqual(ir.metallic.map, mat.MapRef(by_name["FixtureCColor"]))
         self.assertEqual(ir.emission_color.map, mat.MapRef(by_name["FixtureCMix"]))
         self.assertEqual(legacy.base_color.map, mat.MapRef(by_name["FixtureCMultiply"]))
-        self.assertEqual(legacy.specular.map, mat.MapRef(by_name["FixtureCAdd"]))
+        self.assertEqual(legacy.specular.map, mat.MapRef(by_name["FixtureCAdd"], scale=0.5), "levelReflect 0.5")
         self.assertEqual(legacy.roughness.map, mat.MapRef(by_name["FixtureCLegacyGloss"], 1.0, True))
         self.assertEqual(legacy.bump, mat.MapRef(by_name["FixtureCLegacyBump"], 0.5))
         self.assertEqual(legacy.alpha.map, mat.MapRef(by_name["FixtureCHdr"]))
@@ -2115,6 +2115,30 @@ class CoronaSynthetic(unittest.TestCase, Close):
         ir = metal((0.8,) * 3, 1.0, p162=0, p291=1.0)
         self.close(ir.metallic.value, 1.0, "the map switched off: the whole swatch")
         self.assertIsNone(ir.base_color.map)
+
+    def test_legacy_levels_scale_their_maps(self):
+        """The diffuse, reflection, refraction and opacity levels multiply the map in their slot as well as the color
+        (Corona's documentation): the MapRef's scale, the amount kept (maxdrop-6n0.6.6)."""
+        slots = (("base_color", "p121", "p141", "p290"), ("specular", "p122", "p142", "p291"),
+                 ("transmission", "p123", "p144", "p293"), ("alpha", "p127", "p146", "p295"))
+        for name, level_pid, map_pid, amount_pid in slots:
+            for level, want in ((0.5, mat.MapRef(1, 0.75, False, 0.5)), (1.0, mat.MapRef(1, 0.75)),
+                                (2.0, mat.MapRef(1, 0.75, False, 2.0))):
+                _conv, ir = _convert(_corona(0, classids.CORONA_LEGACY_MTL, **{level_pid: level, map_pid: Ref(1),
+                                                                                amount_pid: 0.75}), _map(1))
+                self.assertEqual(getattr(ir, name).map, want, "%s level %g" % (name, level))
+            _conv, ir = _convert(_corona(0, classids.CORONA_LEGACY_MTL, **{level_pid: 0.0, map_pid: Ref(1)}),
+                                 _map(1))
+            self.assertIsNone(getattr(ir, name).map, "%s level 0: no map" % name)
+        _conv, ir = _convert(_corona(0, classids.CORONA_LEGACY_MTL, p142=Ref(1)), _map(1))
+        self.assertIsNone(ir.specular.map, "levelReflect not stored: 0, no reflection")
+        _conv, ir = _convert(_corona(0, classids.CORONA_LEGACY_MTL, p102=(1.0,) * 3, p122=0.5, p182=999.0,
+                                     p142=Ref(1), p291=0.5), _map(1))
+        self.close(ir.metallic.value, 1.0, "level 0.5 x 0.5 = 0.25 shown: the metal")
+        self.assertEqual(ir.base_color.map, mat.MapRef(1, 0.5, False, 0.5), "the metal's map scaled too")
+        _conv, ir = _convert(_corona(0, classids.CORONA_LEGACY_MTL, p128=0.5, p158=Ref(1)), _map(1))
+        self.assertEqual(ir.emission_color.map, mat.MapRef(1), "self-illumination: the strength scales the map")
+        self.close(ir.emission_strength, 0.5)
 
     def test_legacy_defaults_reflect_nothing(self):
         _conv, ir = _convert(_corona(0, classids.CORONA_LEGACY_MTL))

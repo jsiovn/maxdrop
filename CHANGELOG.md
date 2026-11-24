@@ -266,6 +266,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Materials: a CoronaPhysicalMtl that does not refract reflects as Corona 12 renders it when its IOR is outside 1 to
   3: an IOR below 1 as its reciprocal (0.5 as 2, was no reflection) and one above 3 as 3 (4 reflected 0.36, Corona
   0.25). A refracting one keeps its IOR, with a line in the report.
+- Materials: a CoronaMtl's diffuse, reflection, refraction and opacity levels scale the map in their slot as well as
+  the color, as Corona's documentation says: a diffuse map at level 0.5 is drawn at half strength instead of full.
 
 ## [1.0.1] - 2026-11-22
 

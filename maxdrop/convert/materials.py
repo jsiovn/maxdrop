@@ -84,7 +84,8 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   and SSS slots are named issues. Volumetric absorption and scattering: a
   medium (corona_medium) inside a solid that refracts (no medium in thin mode: Corona 12 renders none there).
 - CoronaLegacyMtl (CoronaMtl): diffuse, reflection, refraction, opacity and self-illumination colors times their
-  levels; specular = the mean reflection; roughness = 1 - glossiness, with PBR mode off the measured
+  levels, the maps in the first four slots too (MapRef.scale, Corona's documentation; a level of 0: no map);
+  specular = the mean reflection; roughness = 1 - glossiness, with PBR mode off the measured
   CORONA_LEGACY_GLOSS (corona_legacy_roughness; a glossiness map stays inverted); transmission and the glass
   base color as for VRayMtl, the IOR as well (refraction IOR when it refracts, else the Fresnel IOR); a Fresnel IOR
   of CORONA_METAL_IOR or more with a bright reflection (as METAL_REFLECTION) is a metal in the reflection color;
@@ -1214,7 +1215,8 @@ def _corona_ior(m, pid, ior_mode, reflects_only=False):
 
 def corona_legacy_mtl(conv, m, ir):
     """CoronaLegacyMtl (CoronaMtl), block 0: colors 101 diffuse, 102 reflect, 103 refract, 105 opacity, 107
-    selfIllum; their levels 121, 122, 123, 127, 128; maps 141 diffuse, 142 reflect, 143 reflectGlossiness,
+    selfIllum; their levels 121, 122, 123, 127, 128 (the first four scale the map in their slot as well, as Corona's
+    documentation has it: the MapRef's scale, no map at level 0; 128 is the emission strength); maps 141 diffuse, 142 reflect, 143 reflectGlossiness,
     144 refract, 146 opacity, 147 bump, 158 selfIllum, each switched on by id + 20, with amounts (fractions) 290,
     291, 292, 293, 295, 296, 303; 180 reflectGlossiness, 182 fresnelIor,
     183 ior, 210 thin; 410 levelSss, 411 sssRadius (world units), 412 sssScatterColor. 402 pbrMode off curves the
@@ -1224,16 +1226,22 @@ def corona_legacy_mtl(conv, m, ir):
     (corona_medium): 188 absorptionDistance, 190 absorptionColor, 215 scatterColor, 216 scatterDirectionality; its
     maps (305 / 306, 308 / 309), 315 singleBounceOnly and media mode 0 (Corona 12 renders the slab black) are
     named."""
-    def slot(map_pid, on_pid, amount_pid, invert=False):
-        return conv.map_ref(m, map_pid, on_pid, amount_pid, 0, invert=invert, ir=ir, percent=False)
-    diffuse = tuple(min(1.0, c * max(0.0, _num(m, 121, 0, 1.0))) for c in conv.rgb(m, 101, 0, (0.5, 0.5, 0.5)))
+    def slot(map_pid, on_pid, amount_pid, invert=False, level=1.0):
+        ref = conv.map_ref(m, map_pid, on_pid, amount_pid, 0, invert=invert, ir=ir, percent=False)
+        if ref is None or level == 1.0:
+            return ref
+        return dataclasses.replace(ref, scale=level) if level > 0.0 else None
+    levels = [max(0.0, _num(m, pid, 0, d)) for pid, d in ((121, 1.0), (122, 0.0), (123, 0.0), (127, 1.0))]
+    diffuse_level, reflect_level, refract_level, opacity_level = levels
+    diffuse = tuple(min(1.0, c * diffuse_level) for c in conv.rgb(m, 101, 0, (0.5, 0.5, 0.5)))
     reflect_color = conv.rgb(m, 102, 0, (1.0, 1.0, 1.0))
-    reflection = tuple(min(1.0, c * max(0.0, _num(m, 122, 0, 0.0))) for c in reflect_color)
+    reflection = tuple(min(1.0, c * reflect_level) for c in reflect_color)
     refract_color = conv.rgb(m, 103, 0, (1.0, 1.0, 1.0))
-    t = _clamp01(mean(refract_color) * max(0.0, _num(m, 123, 0, 0.0)))
-    reflection_map = slot(142, 162, 291)
+    t = _clamp01(mean(refract_color) * refract_level)
+    reflection_map = slot(142, 162, 291, level=reflect_level)
     fresnel_ior = _num(m, 182, 0, 1.52)
-    ir.base_color = Input(_mix(diffuse, refract_color, t) if t > 0 else diffuse, slot(141, 161, 290))
+    ir.base_color = Input(_mix(diffuse, refract_color, t) if t > 0 else diffuse, slot(141, 161, 290,
+                                                                                     level=diffuse_level))
     ir.specular = Input(_clamp01(mean(reflection)), reflection_map)
     pbr = _flag(m, 402, 0, True)
     gloss = _num(m, 180, 0, 1.0)
@@ -1244,11 +1252,11 @@ def corona_legacy_mtl(conv, m, ir):
     if fresnel_ior >= CORONA_METAL_IOR and mean(reflection) * (1.0 - hidden) >= METAL_REFLECTION:
         ir.metallic = Input(1.0)
         ir.base_color = Input(reflection, reflection_map)
-    ir.transmission = Input(t, slot(144, 164, 293))
+    ir.transmission = Input(t, slot(144, 164, 293, level=refract_level))
     ir.ior = _ior(_num(m, 183, 0, 1.52) if t > 0 else fresnel_ior)
     ir.thin_walled = _flag(m, 210, 0, False)
-    opacity = _clamp01(conv.mono_swatch(m, 105, 0, (1.0, 1.0, 1.0)) * max(0.0, _num(m, 127, 0, 1.0)))
-    ir.alpha = Input(opacity, slot(146, 166, 295))
+    opacity = _clamp01(conv.mono_swatch(m, 105, 0, (1.0, 1.0, 1.0)) * opacity_level)
+    ir.alpha = Input(opacity, slot(146, 166, 295, level=opacity_level))
     ir.emission_color = Input(conv.rgb(m, 107, 0, (1.0, 1.0, 1.0)), slot(158, 178, 303))
     ir.emission_strength = max(0.0, _num(m, 128, 0, 0.0))
     conv.bump_slot(ir, slot(147, 167, 296))
