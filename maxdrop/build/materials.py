@@ -111,9 +111,9 @@ a CoronaMix Multiply as a Mix mask), red x green gives 1/9 (not 0) and yellow x 
 Texture graphs (convert/texmaps.py) become nodes, a node of the IR shared by several inputs once per material: Image
 -> Image Texture (its image datablock reused per file and color space: one file used in two color spaces is two
 datablocks; see Images below), with its placement as a Mapping node and a UV Map node for a map channel other than
-1; Invert, Decode (a Gamma node of 2.2, a constant through the sRGB curve), Mix, Multiply, Blend (Gamma nodes around a
-Mix node of its operation or Vector Math nodes), ColorCorrect (its rewiring as Invert, the mean or Separate / Combine
-Color, then Hue/Saturation/Value, Bright/Contrast, gain, Gamma), Composite
+1; Invert, Decode (a Gamma node of 2.2, a constant through the sRGB curve; a mean: the sRGB curve in Math nodes), Mix,
+Multiply, Blend (Gamma nodes around a Mix node of its operation or Vector Math nodes), ColorCorrect (its rewiring as
+Invert, the mean or Separate / Combine Color, then Hue/Saturation/Value, Bright/Contrast, gain, Gamma), Composite
 (per layer its blend at factor 1, then a Mix by opacity x mask), Facing (Layer Weight Facing, Fresnel, or the
 Geometry node's Normal . Incoming), Remap (Float Curve, its points straight between them, not clipped; the Mix it
 drives does not clamp its factor), Smoothstep (Map Range SMOOTHSTEP, or a step: 1 - LESS_THAN), Adjust (a map's
@@ -175,6 +175,7 @@ TIR_LABEL = "Total internal reflection"  # tir_weight()'s nodes
 TIR_FRESNEL = 0.9999  # a Fresnel above it: the glass reflects totally (the Fresnel node gives 1 there)
 CLIP_LABEL = "Clip"  # the node that masks an image's output (clip_axes)
 MAX_LAYER_DEPTH = 8  # layers within layers drawn (convert/materials.py already stops a deeper or cyclic chain)
+SRGB_CURVE_COLUMNS = 3  # srgb_curve's node columns: its Mix at depth, its Math nodes at depth + 1 and depth + 2
 VOLUME_VIEWPORT_ALPHA = 0.1  # a volume-only material's viewport color alpha: Solid view shows what is inside
 VOLUME_BOUNCES = ("its medium scatters: Cycles scatters once at its default Volume Bounces of 0 (Render Properties > "
                   "Light Paths); raise them for multiple scattering, as Corona renders it")
@@ -1169,11 +1170,42 @@ class _Tree:
 
     def decode(self, n, space, depth):
         """A gamma-off scene's display-referred color as linear: its input in color, a constant through the sRGB
-        curve, a socket through a Gamma node of 2.2 (texmaps.Decode); MISSING stays."""
-        v = self.graph(n.input, COLOR, depth + 1)
-        if v is MISSING or isinstance(v, bpy.types.NodeSocket):
-            return v if v is MISSING else self.gamma(v, tx.SRGB_GAMMA, depth)
-        return _as(tuple(colors.srgb_to_linear(c) for c in _as(v, COLOR)), space)
+        curve, a socket through a Gamma node of 2.2 (texmaps.Decode); a mean (Decode.mean) the mean of its channels
+        through the sRGB curve, a socket's in Math nodes (srgb_curve); MISSING stays."""
+        mean = depth + SRGB_CURVE_COLUMNS  # mean_of's column, left of the curve's; the input one further left
+        v = self.graph(n.input, COLOR, mean + 1 if n.mean else depth + 1)
+        if v is MISSING:
+            return v
+        if isinstance(v, bpy.types.NodeSocket):
+            if n.mean:
+                return self.srgb_curve(self.mean_of(v, mean), depth)
+            return self.gamma(v, tx.SRGB_GAMMA, depth)
+        rgb = _as(v, COLOR)
+        if n.mean:
+            return _as(colors.srgb_to_linear(sum(rgb) / 3.0), space)
+        return _as(tuple(colors.srgb_to_linear(c) for c in rgb), space)
+
+    def srgb_curve(self, f, depth):
+        """Float socket f through the sRGB curve (colors.srgb_to_linear), exact: f / 12.92 below 0.04045, else
+        ((f + 0.055) / 1.055) ^ 2.4 (the two agree there within 1e-7); a FLOAT Mix by a LESS_THAN picks one."""
+        def op(operation, col, *inputs):
+            m = self.node("ShaderNodeMath", col)
+            m.operation = operation
+            for k, x in enumerate(inputs):
+                if isinstance(x, bpy.types.NodeSocket):
+                    self.links.new(x, m.inputs[k])
+                else:
+                    m.inputs[k].default_value = x
+            return m.outputs[0]
+        shifted = op('MULTIPLY_ADD', depth + 2, f, 1.0 / 1.055, 0.055 / 1.055)
+        power = op('POWER', depth + 1, shifted, 2.4)
+        linear = op('DIVIDE', depth + 1, f, 12.92)
+        low = op('LESS_THAN', depth + 1, f, colors.SRGB_KNEE)
+        node, a, b, result = self.mix_node(FLOAT, depth)
+        self.links.new(power, a)
+        self.links.new(linear, b)
+        self.links.new(low, _in(node, "Factor_Float"))
+        return result
 
     def mix_node(self, space, depth, blend='MIX'):
         """A Mix node of the space's data type: (node, A, B, Result)."""
@@ -1542,7 +1574,7 @@ class _Tree:
                 factor = self.times(mask, factor, depth + 1)
             elif mask is not MISSING:
                 factor *= _mean(mask)
-            img = layer.node
+            img = layer.node.input if isinstance(layer.node, tx.Decode) and layer.node.mean else layer.node  # its alpha
             tex = self.texture_nodes.get(id(img)) if isinstance(img, tx.Image) and not img.alpha else None
             if tex is not None and result is not MISSING:
                 factor = self.times(self.masked(img, tex, "Alpha", depth + 1), factor, depth + 1)

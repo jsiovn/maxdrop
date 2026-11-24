@@ -1977,9 +1977,18 @@ folded exactly; otherwise a power of 2.2, within 0.005 of V-Ray on these planes)
 -50 over the VRayColor gives 0.4739, over the PNG 0.4739 off and 0.2770 on: not Blender's HSV saturation, so a
 Color Correction directly as a mask keeps its input's mean (a grey). The same rule is assumed for Corona, a Corona
 layer mask and a Diffuse Level map (not measured). With the gamma off a colored PNG as the mask itself gives
-the decoded mean (0.4575 shown as 0.1768), where MaxDrop draws the mean of the decoded channels (0.2456), and an RGB
+the decoded mean (0.4575 shown as 0.1768), where MaxDrop drew the mean of the decoded channels (0.2456), and an RGB
 Tint on a color input renders the tint of the stored color, decoded ((0.638, 0.384, 0.350) shown as (0.365, 0.122,
-0.100); MaxDrop draws (0.334, 0.057, 0.048)): both left as they are.
+0.100); MaxDrop draws (0.334, 0.057, 0.048)): the Tint left as it is.
+Since maxdrop-6n0.6.36 an image read as stored (a Bitmap, a VRayBitmap From 3ds Max) as a gamma-off mask is that
+image as Non-Color, the mean of its channels, then the sRGB curve in Math nodes (exact; a grey as before): the PNG
+mask renders 0.1768 in Blender 5.2 (EEVEE, the 6n0.6.2 probe), and the Color Correction of saturation -50 over it
+0.1768 where V-Ray gives 0.1906 (was 0.4119); every other row of the probe unchanged. Assumed, not measured: the
+same for such an image anywhere in a mask graph (below an RGB Multiply, a Falloff, a Color Correction), a Corona
+layer mask and a Diffuse Level map, as a swatch there is the rule of its mean; a Color Correction that rewires
+channels in a gamma-off mask picks them from the stored color, the mean decoded after it, as an RGB Tint.
+At a gamma-off color root a Mix of two colors, a Composite and a CoronaMix take their masks as stored (em3.158):
+unchanged.
 
 ### The Falloff mix curve
 

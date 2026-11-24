@@ -37,9 +37,12 @@ FILE_IN_TOLERANCE = 0.05  # an input gamma this close to 2.2 is 2.2 (texmaps' to
 FILE_IN_RANGE = (0.1, 10.0)  # an input gamma outside it is taken as 2.2, as a Bitmap's override outside it
 
 
+SRGB_KNEE = 0.04045  # where the sRGB curve turns from linear to a power
+
+
 def srgb_to_linear(c):
     """One sRGB-encoded channel (0..1; above 1 on the same curve, extended) to linear."""
-    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+    return c / 12.92 if c <= SRGB_KNEE else ((c + 0.055) / 1.055) ** 2.4
 
 
 def linear_to_srgb(c):
