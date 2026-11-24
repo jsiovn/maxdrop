@@ -618,6 +618,39 @@ class MeshLightFixture(unittest.TestCase):
                 self.assertEqual([(i, r) for i, r in desc.issues if r == "extrude: counted"],
                                  [(first, "extrude: counted")], order)
 
+    def test_a_refused_adaptive_extrude_charged_once_for_a_shape_and_its_mesh_light(self):
+        """FixtureExtRect's Extrude refused after its points are made (ExtrudeError.spent): met by the shape's node and
+        by a mesh light in either walk order, it is tried once and its spent corners charged to built once."""
+        cfb = importlib.import_module(_PKG + ".reader.cfb")
+        reader_scene = importlib.import_module(_PKG + ".reader.scene")
+        reader_modifiers = importlib.import_module(_PKG + ".reader.modifiers")
+        calls = []
+
+        def refused(sh, params):
+            calls.append(1)
+            raise conv.extrude.ExtrudeError("more than 1 vertices", 5)
+
+        with cfb.CompoundFile(EXTRUDE_FIXTURE) as cf, mock.patch.object(conv.extrude, "extrude", refused):
+            sc = reader_scene.Scene.from_file(cf)
+            stacks = reader_modifiers.Modifiers(sc)
+            node = next(i for i in sc.walk() if sc.node(i).name == "FixtureExtRect")
+            obj = sc.node(node).object
+            base = sc.object_stack(obj).base
+            ext = [m for m in stacks.object_stack(obj).modifiers if m.renders][0]
+            v = {L.MESH_OBJECT: None, L.P_MESH_SOURCE: node}
+            for order in ("mesh, light", "light, mesh"):
+                calls.clear()
+                desc, built = conv.SceneDescription(MM), [0]
+                ex = conv._Extrusions(sc, desc, {}, built)
+                for step in order.split(", "):
+                    if step == "mesh":
+                        key, _done = conv._extruded(sc, desc, ex, {}, base, ext, (), node, "FixtureExtRect", None, MM)
+                        self.assertIsNone(key, order)
+                    else:
+                        found = conv._emitter_mesh(sc, desc, v, "light", MM, built, None, stacks, ex)
+                        self.assertIsInstance(found, str, order)
+                self.assertEqual((len(calls), built[0]), (1, 5), order)
+
     def test_a_refused_shape_or_extrude_named_on_the_shapes_node_in_either_order(self):
         """FixtureExtRect's shape refused by the reader, or its Extrude: in either walk order the shape's own node
         names it once ("shape: ..." through _curve as describe() falls back to it, or "extrude: ..."), the light gets

@@ -1802,12 +1802,13 @@ _DROPPED = "dropped"  # an extrusion made, named and counted, whose MeshData is 
 class _Extrusions:
     """The extrusions of one scene's shapes, one per (shape base object, Extrude modifier index), shared by the shape's
     own nodes (_extruded) and the mesh lights that pick it (_emitter_shape): made, its shape and Extrude issues named
-    (on the node that makes it) and its face corners counted against MAX_BUILT_CORNERS once. drop() lets the MeshData
-    go once no node needs it; a mesh light after that gets the same mesh made again, naming and counting nothing.
-    Mesh lights that pick one shape share its count as nodes of the shape at different offsets do (each still gets a
-    mesh of its own in desc.meshes). A shape a mesh light reads first and the reader refuses is not kept in shape_of:
-    the shape's own node reads it again and names the refusal (_shape), where a user looks for it. shape_of: the
-    scene's reader Shapes (_shape); built: [face corners made so far]."""
+    (on the node that makes it) and its face corners counted against MAX_BUILT_CORNERS once (a refused adaptive
+    Extrude's ExtrudeError.spent too, once for both paths). drop() lets the MeshData go once no node needs it; a mesh
+    light after that gets the same mesh made again, naming and counting nothing. Mesh lights that pick one shape
+    share its count as nodes of the shape at different offsets do (each still gets a mesh of its own in desc.meshes).
+    A shape a mesh light reads first and the reader refuses is not kept in shape_of: the shape's own node reads it
+    again and names the refusal (_shape), where a user looks for it. shape_of: the scene's reader Shapes (_shape);
+    built: [face corners made so far]."""
 
     def __init__(self, scene, desc, shape_of, built):
         self.scene, self.desc, self.shape_of, self.built = scene, desc, shape_of, built
