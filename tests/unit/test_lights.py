@@ -909,6 +909,15 @@ class DomeRules(unittest.TestCase):
         dd, _ = L.describe_dome(4, "d", values(type=L.DOME, texmap=9, texmap_on=0), colors.GAMMA_ON, self.ROWS)
         self.assertIsNone(dd.texmap)
 
+    def test_a_gamma_off_dome_is_shown_to_the_camera(self):
+        """maxdrop-6n0.6.21: an untextured dome of a gamma-off scene (multiplier 0.5: V-Ray's sky 0.5, target 0.214)
+        asks the World for the camera's decoded reading; gamma on or unknown does not."""
+        for rule, shown in ((colors.GAMMA_OFF, True), (colors.GAMMA_ON, False), (colors.UNKNOWN, False)):
+            with self.subTest(rule):
+                dd, _ = L.describe_dome(1, "d", values(type=L.DOME, multiplier=0.5), rule, self.ROWS)
+                self.assertIs(dd.shown, shown)
+        self.assertFalse(L.DomeDescription(1, "d").shown, "none by default")
+
     def test_shadows_off_is_a_line(self):
         """A World has no shadow switch: a dome with cast shadows off is a line, built as before."""
         on, _ = L.describe_dome(1, "d", values(type=L.DOME), colors.GAMMA_ON, self.ROWS)
@@ -1051,6 +1060,23 @@ class DomeTextureRules(unittest.TestCase):
         png = texmaps.Image(3, "sky.png", found=self.FOUND, gamma=texmaps.SRGB_TWICE, colorspace=texmaps.LINEAR)
         dt, issues = L.dome_texture(self.ir(png), self.vray({}), colors.GAMMA_OFF)
         self.assertEqual((dt.image, issues), (png, []), "an 8-bit file: decoded once more, as on a material")
+
+    def test_the_camera_sees_a_gamma_off_float_texture_decoded(self):
+        """maxdrop-6n0.6.21: V-Ray 5.2 shows a gamma-off float dome's sky display-referred (a uniform 0.5 EXR: sky
+        0.5, target 0.214; at multiplier 2: 1.0): DomeTexture.shown asks the World for the camera's reading; a
+        gamma-on or 8-bit texture has none."""
+        for gamma, space in ((2.2, texmaps.SRGB), (None, texmaps.SRGB), (texmaps.SRGB_TWICE, texmaps.LINEAR)):
+            with self.subTest(gamma=gamma):
+                dt, _issues = L.dome_texture(self.ir(self.image(gamma=gamma, colorspace=space)), self.vray({}),
+                                             colors.GAMMA_OFF)
+                self.assertTrue(dt.shown)
+                self.assertIn("shown", repr(dt))
+        lin = self.image(gamma=1.0, colorspace=texmaps.LINEAR)
+        self.assertFalse(L.dome_texture(self.ir(lin), self.vray({}), colors.GAMMA_ON)[0].shown, "gamma on")
+        png = texmaps.Image(3, "sky.png", found=self.FOUND, gamma=texmaps.SRGB_TWICE, colorspace=texmaps.LINEAR)
+        self.assertFalse(L.dome_texture(self.ir(png), self.vray({}), colors.GAMMA_OFF)[0].shown, "an 8-bit file")
+        self.assertIn("the camera sees the sky decoded", L.DOME_FLOAT_OFF)
+        self.assertFalse(L.DomeTexture(lin).shown, "none by default")
 
     def test_a_float_texture_keeps_its_own_decode_whatever_the_case_a_corona_bitmap_too(self):
         """Measured as a light (maxdrop-em3.166; docs/FORMAT.md, Scene gamma): the line says so. The extension's case

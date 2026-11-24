@@ -16,15 +16,23 @@ other way round from Blender's equirectangular u = 0.5 - phi / 2 pi, so the dire
 by -turn about Z: a Mapping node of scale (1, -1, 1), whose rotation R' = Rz(-turn) F T F (F the mirror, T the
 direction's turn into the texture's frame) makes R' (F d) = Rz(-turn) F T d (checked against V-Ray renders at
 +-X, +-Y, +-20 degrees). Camera, diffuse and glossy rays see it as the dome says (World.cycles_visibility: Cycles).
+A texture whose values a gamma-off scene shows decoded (DomeTexture.shown): camera rays see a second Background,
+the sRGB curve of the texture times the strength (SRGB_A x + SRGB_B in a Vector Math node, then a Gamma node of
+SRGB_POWER: the curve's power segment, within 0.001 of it below its knee) at strength 1, picked by a Mix Shader on
+the Light Path's Is Camera Ray; every other ray (reflections too) the texture as it is (maxdrop-6n0.6.21). An
+untextured dome of a gamma-off scene (DomeDescription.shown) alike, its camera color computed exactly.
 """
 import bpy
 from mathutils import Matrix
 
 from .. import compat
+from ..convert import colors
 from ..convert import texmaps as tx
 
 X_STEP = 220.0
 MIRROR = Matrix.Diagonal((1.0, -1.0, 1.0))
+SRGB_A, SRGB_B, SRGB_POWER = 1.0 / 1.055, 0.055 / 1.055, 2.4  # the sRGB curve above its knee: (a x + b) ^ power
+CAMERA_BACKGROUND = "Camera Background"  # the Background camera rays see (DomeTexture.shown)
 
 
 def _turn_z(angle):
@@ -70,8 +78,12 @@ def make_world(dd, image=None, strength=1.0, axis=None):
             links.new(color, power.inputs["Color"])
             color = power.outputs["Color"]
         links.new(color, bg.inputs["Color"])
+        if texture.shown:
+            _camera_split(nodes, links, out, bg, color, value)
     else:
         bg.inputs["Color"].default_value = tuple(dd.color) + (1.0,)
+        if dd.shown:
+            _camera_split(nodes, links, out, bg, tuple(dd.color), value)
     if dd.hemisphere:
         up = nodes.new("ShaderNodeMapping")
         up.vector_type = 'VECTOR'
@@ -92,9 +104,46 @@ def make_world(dd, image=None, strength=1.0, axis=None):
         links.new(split.outputs["Z"], above.inputs[0])
         links.new(above.outputs["Value"], times.inputs[0])
         links.new(times.outputs["Value"], bg.inputs["Strength"])
+        seen = nodes.get(CAMERA_BACKGROUND)
+        if seen is not None:  # the camera's sky has the value in its color: the mask alone
+            links.new(above.outputs["Value"], seen.inputs["Strength"])
     else:
         bg.inputs["Strength"].default_value = value
     rays = getattr(world, "cycles_visibility", None)  # Cycles' property group: not there without Cycles
     if rays is not None:
         rays.camera, rays.diffuse, rays.glossy = dd.camera, dd.diffuse, dd.glossy
     return world
+
+
+def _camera_split(nodes, links, out, bg, color, value):
+    """The World's output a Mix Shader of bg (every ray but the camera's) and a Background named CAMERA_BACKGROUND
+    of color x value through the sRGB curve (camera rays) at strength 1. color: a socket (the texture's), or the
+    dome's linear color (a swatch made so by the sRGB curve: as stored again first, then exact)."""
+    seen = nodes.new("ShaderNodeBackground")
+    seen.name = seen.label = CAMERA_BACKGROUND
+    seen.location = (0.0, 2 * X_STEP)
+    if isinstance(color, tuple):
+        seen.inputs["Color"].default_value = tuple(
+            colors.srgb_to_linear(colors.linear_to_srgb(c) * value) for c in color[:3]) + (1.0,)
+    else:
+        curve = nodes.new("ShaderNodeVectorMath")
+        curve.operation = 'MULTIPLY_ADD'
+        curve.location = (-X_STEP, 3 * X_STEP)
+        links.new(color, curve.inputs[0])
+        curve.inputs[1].default_value = (value * SRGB_A,) * 3
+        curve.inputs[2].default_value = (SRGB_B,) * 3
+        power = nodes.new("ShaderNodeGamma")
+        power.location = (0.0, 3 * X_STEP)
+        links.new(curve.outputs["Vector"], power.inputs["Color"])
+        power.inputs["Gamma"].default_value = SRGB_POWER
+        links.new(power.outputs["Color"], seen.inputs["Color"])
+    seen.inputs["Strength"].default_value = 1.0
+    path = nodes.new("ShaderNodeLightPath")
+    path.location = (0.0, 4 * X_STEP)
+    mix = nodes.new("ShaderNodeMixShader")
+    mix.location = (X_STEP, X_STEP)
+    links.new(path.outputs["Is Camera Ray"], mix.inputs[0])
+    links.new(bg.outputs["Background"], mix.inputs[1])
+    links.new(seen.outputs["Background"], mix.inputs[2])
+    out.location = (2 * X_STEP, 0.0)
+    links.new(mix.outputs["Shader"], out.inputs["Surface"])

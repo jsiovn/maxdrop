@@ -65,6 +65,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   input, and a Mix, Composite, CoronaMix, Falloff or Color Correction inside a mask are computed on the stored colors
   and shown decoded, as V-Ray 5.2 and Corona 12 render them (measured), instead of mixing decoded colors (a Falloff
   of greys 40 and 220 was 0.37 for V-Ray's 0.22).
+- Gamma-off scenes: the sky of a dome light (an EXR or HDR texture, or its color) is seen by the camera decoded, as
+  V-Ray 5.2 shows it, while the light it gives keeps its linear values (a uniform 0.5 sky was 0.5 for V-Ray's 0.21).
 
 ### Fixed
 

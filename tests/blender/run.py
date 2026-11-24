@@ -4188,6 +4188,78 @@ def check_builder_saturation():
         bpy.data.materials.remove(m)
 
 
+def check_world_shown_sky():
+    """A float dome texture of a gamma-off scene (DomeTexture.shown, bead maxdrop-6n0.6.21): camera rays see a second
+    Background of the sRGB curve of texture x strength (at strength 1), picked by the Light Path's Is Camera Ray on a
+    Mix Shader; other rays the texture at the strength. Evaluated from the nodes' constants: a 0.5 sky at multiplier
+    2 is srgb_to_linear(1.0), 0.25 at 2 srgb_to_linear(0.5); a hemisphere masks both; a texture not shown has none."""
+    from maxdrop.build import world as build_world
+    from maxdrop.convert import colors
+    from maxdrop.convert import lights as cl
+    from maxdrop.convert import texmaps as tx
+    empty_scene()
+    image = bpy.data.images.new("ShownSky", 4, 4, float_buffer=True)
+    texture = tx.Image(1, "sky.exr", "sky.exr", colorspace=tx.LINEAR, gamma=1.0)
+    try:
+        for hemisphere in (False, True):
+            dd = cl.DomeDescription(None, "ShownSky", radiance=2.0, hemisphere=hemisphere)
+            dd.texture = cl.DomeTexture(texture, shown=True)
+            world = build_world.make_world(dd, image, 1.0)
+            nodes = world.node_tree.nodes
+            out = next(n for n in nodes if n.bl_idname == "ShaderNodeOutputWorld")
+            mix = _from(out.inputs["Surface"])
+            seen = nodes.get(build_world.CAMERA_BACKGROUND)
+            path = _from(mix.inputs[0]) if mix is not None and mix.bl_idname == "ShaderNodeMixShader" else None
+            light = _from(mix.inputs[1]) if path is not None else None
+            ok = (path is not None and path.bl_idname == "ShaderNodeLightPath"
+                  and mix.inputs[0].links[0].from_socket.name == "Is Camera Ray"
+                  and light is not None and light.bl_idname == "ShaderNodeBackground" and light != seen
+                  and _from(mix.inputs[2]) == seen)
+            power = _from(seen.inputs["Color"]) if ok else None
+            curve = _from(power.inputs["Color"]) if power is not None else None
+            env = _from(_input(curve, "Vector")) if curve is not None else None
+            got = []
+            if env is not None and env.bl_idname == "ShaderNodeTexEnvironment":
+                for texel in (0.5, 0.25):
+                    s, add = (_input(curve, k).default_value[0] for k in ("Vector_001", "Vector_002"))
+                    got.append((texel * s + add) ** power.inputs["Gamma"].default_value)
+            check("world shown sky%s: camera rays see the sRGB curve of texture x 2, others the texture"
+                  % (" (hemisphere)" if hemisphere else ""), ok and len(got) == 2
+                  and close(got, [colors.srgb_to_linear(1.0), colors.srgb_to_linear(0.5)], 0.001)
+                  and _from(light.inputs["Color"]) == env, "%s %s" % (ok, got))
+            if hemisphere:
+                above = _from(seen.inputs["Strength"]) if seen is not None else None
+                check("world shown sky (hemisphere): the camera's strength the mask alone, the light's mask x 2",
+                      above is not None and above.operation == 'GREATER_THAN'
+                      and _from(light.inputs["Strength"]).operation == 'MULTIPLY')
+            else:
+                check("world shown sky: the camera's Background at strength 1, the light's at 2",
+                      ok and abs(seen.inputs["Strength"].default_value - 1.0) < 1e-6
+                      and abs(light.inputs["Strength"].default_value - 2.0) < 1e-6)
+            bpy.data.worlds.remove(world)
+        dd = cl.DomeDescription(None, "PlainSky", radiance=2.0)
+        dd.texture = cl.DomeTexture(texture)
+        world = build_world.make_world(dd, image, 1.0)
+        kinds = {n.bl_idname for n in world.node_tree.nodes}
+        check("world shown sky: a texture not shown has no Light Path", "ShaderNodeLightPath" not in kinds
+              and "ShaderNodeMixShader" not in kinds, str(sorted(kinds)))
+        bpy.data.worlds.remove(world)
+        dd = cl.DomeDescription(None, "ColorSky", color=(colors.srgb_to_linear(0.5),) * 3, radiance=0.5)
+        dd.shown = True
+        world = build_world.make_world(dd, None, 1.0)
+        seen = world.node_tree.nodes.get(build_world.CAMERA_BACKGROUND)
+        out = next(n for n in world.node_tree.nodes if n.bl_idname == "ShaderNodeOutputWorld")
+        mix = _from(out.inputs["Surface"])
+        got = list(seen.inputs["Color"].default_value)[:3] if seen is not None else None
+        check("world shown sky: an untextured gamma-off dome (grey 128 at 0.5): the camera sees srgb_to_linear(0.25)",
+              mix is not None and mix.bl_idname == "ShaderNodeMixShader" and got is not None
+              and close(got, [colors.srgb_to_linear(0.25)] * 3, 1e-6) and not seen.inputs["Color"].is_linked
+              and abs(seen.inputs["Strength"].default_value - 1.0) < 1e-6, str(got))
+        bpy.data.worlds.remove(world)
+    finally:
+        bpy.data.images.remove(image)
+
+
 def check_builder_multiply():
     """A Multiply of two maps in a float graph (bead maxdrop-em3.124): V-Ray 5.2 takes the product of the two maps'
     means (red x green 1/9, measured on an RGB Multiply as a Mix mask and a glossiness map, a CoronaMix Multiply as
@@ -6095,6 +6167,7 @@ def main():
                                  ("builder clipped normal", check_builder_clipped_normal),
                                  ("builder mask mean", check_builder_mask_mean),
                                  ("builder saturation", check_builder_saturation),
+                                 ("world shown sky", check_world_shown_sky),
                                  ("curve step", check_curve_step),
                                  ("crease open edges", check_crease_open_edges),
                                  ("linear fallback", check_linear_fallback),

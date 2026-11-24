@@ -291,10 +291,11 @@ DOME_SWITCH = "its texture %s's %s is not imported"
 DOME_PLACEMENT = "its texture %s's offset, tiling or angle is not imported"
 DOME_OUTPUT = "its texture %s's Output (invert, RGB level or offset) is not imported"
 DOME_GAMMA = "its texture %s's gamma %g is not applied"
-DOME_FLOAT_OFF = ("its texture %s is a float image in a scene saved with the gamma off: kept linear (its own decode), "
-                  "as the dome's multiplier is; V-Ray 5.2 shows the light it gives display-referred, so below 1 it is "
-                  "brighter and above 1 darker than V-Ray's (measured; decoded as on a material a sun would be "
-                  "orders of magnitude too bright)")
+DOME_FLOAT_OFF = ("its texture %s is a float image in a scene saved with the gamma off: the camera sees the sky decoded, "
+                  "as V-Ray 5.2 shows it, but the light it gives (reflections too) is kept linear (its own decode), as "
+                  "the dome's multiplier is; V-Ray shows that light display-referred, so below 1 it is brighter and "
+                  "above 1 darker than V-Ray's (measured; decoded as on a material a sun would be orders of "
+                  "magnitude too bright)")
 DOME_CROP = "its texture %s's crop or placement is not imported"
 DOME_SHADOW = "cast shadows off is not imported: the World casts shadows"
 SKY = "the environment map is a VRaySky: not imported yet (environment -> World is later work)"
@@ -776,9 +777,11 @@ class DomeDescription:
     the dome node's world rotation (3 rows of 3, Blender's convention: the columns are its local axes in world space,
     in the file's frame); locked: its texture turns with the node; texmap the object index of its texture map, None
     without one (or switched off); camera, diffuse, glossy: which rays see it; texture: the DomeTexture ops sets
-    (dome_texture), None: the color."""
+    (dome_texture), None: the color; shown: the scene's gamma is off, so camera rays see the color's value (the
+    swatch as stored times the strength) through the sRGB curve, as V-Ray 5.2 shows it (maxdrop-6n0.6.21: an
+    untextured dome at multiplier 0.5, sky 0.5, target 0.214)."""
     __slots__ = ("node", "name", "color", "radiance", "hemisphere", "rotation", "locked", "texmap", "camera",
-                 "diffuse", "glossy", "texture")
+                 "diffuse", "glossy", "texture", "shown")
 
     def __init__(self, node, name, color=(1.0, 1.0, 1.0), radiance=0.0, hemisphere=False,
                  rotation=((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)), locked=False, texmap=None,
@@ -786,7 +789,7 @@ class DomeDescription:
         self.node, self.name, self.color, self.radiance = node, name, color, radiance
         self.hemisphere, self.rotation, self.locked, self.texmap = hemisphere, rotation, locked, texmap
         self.camera, self.diffuse, self.glossy = camera, diffuse, glossy
-        self.texture = None
+        self.texture, self.shown = None, False
 
     def __repr__(self):
         return "DomeDescription(%r, %g W/m2/sr%s)" % (self.name, self.radiance, ", texture" if self.texture else "")
@@ -794,15 +797,18 @@ class DomeDescription:
 
 class DomeTexture:
     """The image of a dome's texture: image (convert.texmaps.Image, its file found), turn (radians: what V-Ray adds to
-    phi before u = 0.5 + phi / 2 pi, its horizontal rotation; a Bitmap's spherical environment pi / 2) and amount
-    (its Output's amount, a VRayBitmap's multipliers: a factor on the strength)."""
-    __slots__ = ("image", "turn", "amount")
+    phi before u = 0.5 + phi / 2 pi, its horizontal rotation; a Bitmap's spherical environment pi / 2), amount (its
+    Output's amount, a VRayBitmap's multipliers: a factor on the strength) and shown (a float image of a gamma-off
+    scene: camera rays see the sky's value, the image times the strength, through the sRGB curve, as V-Ray 5.2 shows
+    it; other rays the image as it is, maxdrop-6n0.6.21)."""
+    __slots__ = ("image", "turn", "amount", "shown")
 
-    def __init__(self, image, turn=0.0, amount=1.0):
-        self.image, self.turn, self.amount = image, turn, amount
+    def __init__(self, image, turn=0.0, amount=1.0, shown=False):
+        self.image, self.turn, self.amount, self.shown = image, turn, amount, shown
 
     def __repr__(self):
-        return "DomeTexture(%r, %g rad, x %g)" % (self.image.name, self.turn, self.amount)
+        return "DomeTexture(%r, %g rad, x %g%s)" % (self.image.name, self.turn, self.amount,
+                                                   ", shown" if self.shown else "")
 
 
 def _rotation(world, issues):
@@ -848,6 +854,7 @@ def describe_dome(node, name, values, swatches, world):
     dd = DomeDescription(node, name, light_color(values, swatches), radiance, not values[P_DOME_SPHERICAL],
                          _rotation(world, issues), bool(values[P_DOME_LOCKED]), texmap, not values[P_INVISIBLE],
                          diffuse, spec or refl)
+    dd.shown = not swatches.linear
     return dd, issues
 
 
@@ -912,21 +919,21 @@ def dome_texture(graph_ir, material_graph, swatches=None):
         if (mp.tiling, mp.offset, mp.angle) != ((1.0, 1.0), (0.0, 0.0), (0.0, 0.0, 0.0)):
             issues.append(DOME_PLACEMENT % img.name)
     out = img.output
-    amount = 1.0
+    amount, shown = 1.0, False
     if out is not None:
         amount = max(0.0, out.amount)
         if out.invert or out.level != 1.0 or out.offset != 0.0:
             issues.append(DOME_OUTPUT % img.name)
     if img.name.lower().endswith(texmaps.FLOAT_IMAGES) \
             and not (swatches if swatches is not None else colors.of_graph(material_graph)).linear:
-        img = texmaps.unshown(img)
+        img, shown = texmaps.unshown(img), True
         issues.append(DOME_FLOAT_OFF % img.name)
     # a guard: the converter's images always have the color space of their gamma (drawn by it or a Gamma node)
     if img.gamma not in (None, 1.0) and img.colorspace != texmaps.colorspace(texmaps.COLOR, img.gamma):
         issues.append(DOME_GAMMA % (img.name, img.gamma))
     if img.crop is not None:
         issues.append(DOME_CROP % img.name)
-    return DomeTexture(img, turn, amount), issues
+    return DomeTexture(img, turn, amount, shown), issues
 
 
 def _rays(ld, diffuse, specular, diffuse_contribution, specular_contribution, issues):

@@ -1669,9 +1669,9 @@ picker and Material Editor switches off).
   0.05 times with the sun, as a dome's multiplier already is (the untextured row). Neither is within a factor 2 of
   the target on every float row (the plan's gate); a float dome texture keeps its own decode, the smaller worst case
   (about 21 times against 1664; `convert/lights.py`, `dome_texture`; a line in the report), and the display-referred
-  light is maxdrop-6n0.6.20. On an 8-bit display a value above 1 is white
+  light is maxdrop-6n0.6.20 (below). On an 8-bit display a value above 1 is white
   in both. An 8-bit dome texture keeps the material rule (within 0.007 of the target). A rule that sees the sky
-  decoded only from the camera would need the World's nodes (a Light Path), not drawn (maxdrop-6n0.6.21).
+  decoded only from the camera needs the World's nodes (a Light Path): drawn since maxdrop-6n0.6.21 (below).
 - Maps at a color root and in a mask (maxdrop-6n0.6.18), V-Ray 5.2 renders of VRayLightMtl planes (a VRayMtl's
   self-illumination for the slot amounts) under an orthographic camera (a Falloff plane tilted 60 degrees: facing
   ratio 0.5), each plane's internal value, a 9 x 9 pixel mean; greys and colors are swatches (VRayColor), Bm a 128
@@ -1705,6 +1705,34 @@ picker and Material Editor switches off).
   within 0.0082. A first Corona pass in a 3dsmaxbatch session whose earlier scripts had failed rendered a Bitmap
   automatic decoded with the gamma off (0.2195, both modes alike): run again in a session of its own it gave 0.502.
   Such a pass is caught by a control row (a Bitmap automatic) rendered in both modes.
+- The sky and the light of a gamma-off dome (maxdrop-6n0.6.21, maxdrop-6n0.6.20), V-Ray 5.2, em3.166's scenes again
+  and mirrors (VRayMtl reflection 255 / 128, Fresnel off, glossiness 1) beside a white floor under a VRayBitmap Auto
+  of a uniform EXR, each camera's 32 x 32 render averaged:
+
+  | Dome | white / grey mirror | floor | sky |
+  |---|---|---|---|
+  | EXR 0.5 | 0.500 / 0.251 | 0.4995 | 0.500 |
+  | EXR 4.0 | 4.000 / 2.008 | 3.9995 | 4.000 |
+  | EXR 0.5, multiplier 2 | 1.000 / 0.502 | 0.9997 | 1.000 |
+
+  The gamma on gives the same. The sky is the multiplier times the texel, a mirror the sky times its reflection. With
+  the gamma off camera rays now see the sky's value decoded (`build/world.py`: a second Background, the sRGB curve of
+  texture x strength, picked by the Light Path's Is Camera Ray; an untextured dome its color as stored x strength,
+  decoded): Blender 5.2 renders (Cycles and EEVEE) of every float and untextured sky of em3.166's scenes and these
+  within 0.02 of srgb_to_linear(V-Ray) (2 % above 1); floors and planes as em3.166 measured. Other rays keep the
+  texture's own decode: a mirror of the 0.5 sky would be exact with the camera's reading (0.214; the light's gives
+  0.5) and the grey one nearer (0.046 against 0.051; 0.108), but a rough reflection of the sun's 2000 would take the
+  camera's reading as the material rule's floor does (1664 times the target): reflections follow the light. An 8-bit
+  dome texture keeps the material rule for every ray (exact at multiplier 1, em3.166). The display-referred light
+  (maxdrop-6n0.6.20): V-Ray's internal value is the same with the gamma on and off on every probe row (em3.123,
+  em3.158, em3.165, em3.166 and the rows above), and the gamma-on import matches it within 0.007 to 0.0092, so a
+  gamma-off scene imported on those values (the gamma-on rules, a Bitmap read as stored) and shown through Blender's
+  Raw view, which puts the value on the display as it is (checked on 4.2, 4.5 and 5.2: a 0.5 sky saves byte 128,
+  Standard 188), would match V-Ray's display on every floor, plane and sky. Not done: the view belongs to the whole
+  Blender scene (an import into a file with other content, or a gamma-on scene imported with it, cannot both be
+  right), and as an option it needs image rules of its own (a Bitmap's gamma override read as stored, CoronaNormal's
+  Add gamma) across the gamma-off rules. The cost stays as em3.166's table measures it (a dome at 0.5 lights a white
+  floor 2.3 times the target).
 
 ## Summary properties
 
