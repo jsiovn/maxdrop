@@ -2210,6 +2210,11 @@ class CoronaSynthetic(unittest.TestCase, Close):
             self.close(ir.base_color.value, _hair_color(melanin, 0.0, (1.0, 1.0, 1.0)))
             self.assertEqual(ir.issues, ["CoronaHairMtl 'C': tint map not converted"])
 
+    def test_hair_randomize_melanin_named(self):
+        _conv, ir = _convert(_corona(0, classids.CORONA_HAIR_MTL, p143=0.5))
+        self.close(ir.base_color.value, _hair_color(0.5, 0.0, (1.0, 1.0, 1.0)))
+        self.assertEqual(ir.issues, ["CoronaHairMtl 'C': randomize melanin not converted"])
+
     def test_layered_over_a_shadow_catcher_is_no_shadow_catcher(self):
         layered = _corona(0, classids.CORONA_LAYERED_MTL, p1000=Ref(1), p1001=[Ref(2)], p1004=[1])
         conv, ir = _convert(layered, _corona(1, classids.CORONA_SHADOW_CATCHER_MTL),
@@ -2259,6 +2264,9 @@ class CoronaSynthetic(unittest.TestCase, Close):
             self.assertAlmostEqual(g, w, delta=1e-3)
         _conv, ir = _convert(_corona(0, classids.CORONA_HAIR_MTL, p102=(1.0, 0.5, 0.0), p105=0.5))
         self.close(ir.base_color.value, _hair_color(0.5, 0.0, (1.0, 1.0, 1.0), (0.5, 0.25, 0.0)))
+        _conv, ir = _convert(_corona(0, classids.CORONA_HAIR_MTL, p102=(0.8, 128 / 255, 0.2)))
+        for g, w in zip(ir.base_color.value, measured(0.9264, 0.5760, 0.2317)):
+            self.assertAlmostEqual(g, w, delta=0.06, msg="a colored diffuse: approximately")
 
     def test_hair_transmission(self):
         """Corona 12 renders: the transmission color multiplies the pigment part (0.5 grey at melanin 0.5 read 0.237 /
@@ -2269,6 +2277,8 @@ class CoronaSynthetic(unittest.TestCase, Close):
             self.assertAlmostEqual(g, (read - 0.043) / 0.957, delta=0.012)
         _conv, ir = _convert(_corona(0, classids.CORONA_HAIR_MTL, p141=0.0, p152=(1.0, 0.5, 0.25)))
         self.close(ir.base_color.value, _hair_color(0.0, 0.0, (1.0, 1.0, 1.0), transmission=(1.0, 0.5, 0.25)))
+        for g, read in zip(ir.base_color.value, (0.9956, 0.5676, 0.3497)):
+            self.assertAlmostEqual(g, (read - 0.043) / 0.957, delta=0.06, msg="at melanin 0: approximately")
         self.assertEqual(ir.issues, [])
 
     def test_hair_maps(self):

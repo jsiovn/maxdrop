@@ -2031,9 +2031,10 @@ top by an orthographic camera:
 
 Cycles (Blender 5.2, 256 samples) with the same planes: a Principled BSDF at IOR 1.55, roughness 0.5 reads 0.043 +
 0.957 x its base color in that furnace. MaxDrop's base (0.070 + 0.929 x hair - 0.043) / 0.957 reads Corona's numbers
-within 0.009 over the sweeps, the tints, a grey diffuse and a grey transmission; a colored diffuse (204 / 128 / 51:
-0.879 / 0.561 / 0.246 for 0.926 / 0.576 / 0.232) and transmission (255 / 128 / 64: 0.535 / 0.302 for 0.568 / 0.350
-in green and blue) within 0.05.
+within 0.009 over the sweeps, the tints, a grey diffuse and a 0.5 grey transmission at melanin 0.5; a colored diffuse
+(204 / 128 / 51: 0.879 / 0.561 / 0.246 for 0.926 / 0.576 / 0.232) and a transmission color at melanin 0 (0.5 grey:
+0.535 for 0.567; 255 / 128 / 64: 0.535 / 0.302 for 0.568 / 0.350 in green and blue: the rule scales the TRT part too)
+within 0.05. Other IORs were not checked in the furnace (Corona's floor and the Principled's both rise with the IOR).
 
 VRayBitmap `(0x6769144B, 0x02C1017D)` (vray_texmaps, 3ds Max 2020 + V-Ray 5.2; the V-Ray SDK's
 `pb2vrayhdri.h`). MAXScript's `VRayHDRI`, its name before V-Ray 5, is the same class. References: 0 block 0, 1

@@ -95,7 +95,8 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   times the radius scale, weighted mean color), the first reflection as specular, roughness and IOR, opacity, bump.
 - CoronaHairMtl -> one Principled layer (Corona 12 renders on a mesh, maxdrop-em3.164): the base color Corona gives a
   mesh of its melanin, pheomelanin and tint (hair_color) times its transmission color, its diffuse color mixed in;
-  roughness = 1 - glossiness, IOR, opacity, bump. Its maps but those are named issues, the tint map too.
+  roughness = 1 - glossiness, IOR, opacity, bump. Its other maps (the tint map too) and randomizeMelanin are named
+  issues.
 - CoronaShadowCatcherMtl -> the grey material marked shadow_catcher: an object whose every slot holds one is a shadow
   catcher (build/objects.py); a backplate map and a reflection are named issues.
 - CoronaVolumeMtl -> no surface (alpha 0) and its medium (corona_medium): absorption, scattering, directionality and
@@ -1369,7 +1370,8 @@ def corona_hair_mtl(conv, m, ir):
     mono_swatch(colorOpacity 103) x levelOpacity (106), map 114 / 123 / 132; bump 120 / 129 / 138. Maps in the other
     slots (HAIR_UNREAD) are named issues, the tint map too (Corona adds it to the melanin's absorption: a curve no map
     input draws). Softness, colorless glossiness, highlight shift and GI simplification change no color on a mesh;
-    randomizeMelanin, the glint and the specular colors are not read."""
+    the glint and the specular colors are not read; randomizeMelanin (143) above 0, which lightens a mesh (0.5: blue
+    0.099 -> 0.293), is a named issue."""
     def slot(map_pid, invert=False):
         return conv.map_ref(m, map_pid, map_pid + 9, map_pid + 18, 0, invert=invert, ir=ir, percent=False)
     tint = tuple(c * max(0.0, _num(m, 104, 0, 1.0)) for c in conv.rgb(m, 101, 0, (1.0, 1.0, 1.0)))
@@ -1389,6 +1391,8 @@ def corona_hair_mtl(conv, m, ir):
     for map_pid, on_pid, what in HAIR_UNREAD:
         if conv.map_ref(m, map_pid, on_pid, None, 0, ir=ir) is not None:
             conv.issue(m.index, "CoronaHairMtl %r: %s map not converted" % (m.name, what), ir)
+    if _num(m, 143, 0, 0.0) > 0:
+        conv.issue(m.index, "CoronaHairMtl %r: randomize melanin not converted" % (m.name,), ir)
 
 
 def corona_shadow_catcher_mtl(conv, m, ir):
