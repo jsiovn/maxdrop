@@ -263,6 +263,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   unchanged.
 - Materials: a constant color below 0 (an HDR CoronaColor, a CoronaMix layer with a negative offset or multiplier)
   over a map in a Mix, a CoronaMix mix or multiply, an RGB Multiply or a Composite is no longer taken as 0.
+- Materials: a CoronaPhysicalMtl that does not refract reflects as Corona 12 renders it when its IOR is outside 1 to
+  3: an IOR below 1 as its reciprocal (0.5 as 2, was no reflection) and one above 3 as 3 (4 reflected 0.36, Corona
+  0.25). A refracting one keeps its IOR, with a line in the report.
 
 ## [1.0.1] - 2026-11-22
 

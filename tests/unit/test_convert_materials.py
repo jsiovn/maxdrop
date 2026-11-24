@@ -2155,6 +2155,30 @@ class CoronaSynthetic(unittest.TestCase, Close):
         self.close(ir.ior, 2.0)
         self.assertIn("IOR mode 2", ir.issues[0])
 
+    def test_physical_base_ior_outside_1_to_3(self):
+        """IOR mode 0: a base IOR below 1 reflects as its reciprocal, none more than IOR 3 (Corona 12 renders,
+        maxdrop-em3.115); the clearcoat IOR is left as it is (not measured); 0 or below never divides."""
+        for ior, want in ((0.5, 2.0), (4.0, 3.0), (10.0, 3.0), (2.5, 2.5), (1.0, 1.0), (3.0, 3.0), (0.0, 1.0),
+                          (-1.0, 1.0), (0.01, 3.0)):
+            for mode in ({}, {"p461": 0}):
+                _conv, ir = _convert(_corona(0, classids.CORONA_PHYSICAL_MTL, p171=ior, p221=4.0, **mode))
+                self.close(ir.ior, want, "%r %r" % (ior, mode))
+                self.close(ir.coat_ior, 4.0, "the coat as it is")
+                self.assertEqual(ir.issues, [], str(ior))
+
+    def test_physical_refracting_base_ior_outside_1_to_3_is_named(self):
+        """A refracting material keeps its IOR (its refraction through such an IOR was not measured), named when it
+        is outside 1..3; a transmission map counts as refracting."""
+        for ior, want, named in ((4.0, 4.0, True), (0.5, 1.0, True), (1.5, 1.5, False), (3.0, 3.0, False)):
+            _conv, ir = _convert(_corona(0, classids.CORONA_PHYSICAL_MTL, p171=ior, p191=0.5))
+            self.close(ir.ior, want, str(ior))
+            self.assertEqual(len(ir.issues), int(named), str(ir.issues))
+            if named:
+                self.assertIn("base IOR %g" % ior, ir.issues[0])
+        _conv, ir = _convert(_corona(0, classids.CORONA_PHYSICAL_MTL, p171=4.0, p192=Ref(1)), _map(1))
+        self.close(ir.ior, 4.0, "a transmission map refracts")
+        self.assertEqual(len(ir.issues), 1)
+
     def test_physical_translucency_needs_thin_mode(self):
         for thin, issues in ((0, 0), (1, 1)):
             _conv, ir = _convert(_corona(0, classids.CORONA_PHYSICAL_MTL, p203=thin, p371=0.4))

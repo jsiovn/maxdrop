@@ -77,9 +77,11 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   color; sheen amount, color and roughness; SSS amount, radius (world units, in meters) and scatter color (the
   per-channel radius); a metal with a complex IOR takes the F0 of its n and k as its base color; maps where on, their
   amounts fractions. Specular 1, the IOR's own Fresnel (the material has no reflection level); in IOR mode 1 the base
-  and clearcoat IORs are specular levels (F0 = 0.08 x level, at most 0.25). Translucency in thin mode (Corona ignores it
-  otherwise), maps in the volumetric slots, single bounce, a metal edge color other than the default, an IOR mode
-  other than 0 and 1 and maps in the sheen and SSS slots are named issues. Volumetric absorption and scattering: a
+  and clearcoat IORs are specular levels (F0 = 0.08 x level, at most 0.25); in the other modes a base IOR of a
+  material that does not refract is taken as Corona reflects it (below 1 its reciprocal, at most 3). Translucency in
+  thin mode (Corona ignores it otherwise), maps in the volumetric slots, single bounce, a metal edge color other than
+  the default, an IOR mode other than 0 and 1, a refracting material's base IOR outside 1..3 and maps in the sheen
+  and SSS slots are named issues. Volumetric absorption and scattering: a
   medium (corona_medium) inside a solid that refracts (no medium in thin mode: Corona 12 renders none there).
 - CoronaLegacyMtl (CoronaMtl): diffuse, reflection, refraction, opacity and self-illumination colors times their
   levels; specular = the mean reflection; roughness = 1 - glossiness, with PBR mode off the measured
@@ -178,6 +180,7 @@ CORONA_EDGE_DEFAULT = 0.75  # CoronaPhysicalMtl's edgeColor as created (grey): n
 CORONA_METAL_IOR = 10.0  # a CoronaLegacyMtl Fresnel IOR from which a bright reflection is a metal (made with 999)
 CORONA_SPECULAR_F0 = 0.08  # CoronaPhysicalMtl IOR mode 1: F0 = 0.08 x the specular level held by an IOR parameter
 CORONA_MAX_F0 = 0.25  # CoronaPhysicalMtl: no IOR reflects more than IOR 3 does (Corona 12 renders, both IOR modes)
+CORONA_MAX_IOR = 3.0  # the IOR of F0 CORONA_MAX_F0: a non-refracting base IOR above it reflects as it (mode 0)
 # CoronaLegacyMtl glossiness with PBR mode off (402) -> the roughness (1 - the PBR-mode glossiness) whose highlight
 # Corona 12 renders alike, at glossiness 0, 0.05 ... 1 (maxdrop-em3.115: a mirror under a small emitter, the highlight
 # profiles matched). From 0.35 up the profiles agree; below 0.3 no PBR-mode glossiness has the same lobe (the closest)
@@ -1127,8 +1130,11 @@ def corona_physical_mtl(conv, m, ir):
     scatterDirectionality; its maps (262 / 263, 272 / 273) and 283 scatterSingleBounce are named.
     461 iorMode (Corona 12 renders, maxdrop-em3.115): 0 the IOR parameters (171, 221) are IORs; 1 they are specular
     levels, F0 = CORONA_SPECULAR_F0 x level (MAXScript's setter converts them on a mode change); 2 renders as an IOR
-    (not a mode the UI offers): named. No IOR reflects more than F0 CORONA_MAX_F0 (IOR 3); only the specular levels are
-    capped here (an IOR above 3 is left to Blender; one below 1, which reflects as its reciprocal, is clamped to 1).
+    (not a mode the UI offers): named. No IOR reflects more than F0 CORONA_MAX_F0 (IOR 3), and a base IOR below 1
+    reflects as its reciprocal: a material that does not refract (no refraction amount, no refraction map) takes its
+    base IOR so (_corona_reflection_ior); a refracting one keeps it (its refraction through such an IOR was not
+    measured: clamped to 1..100), named when it is outside 1..3. The clearcoat IOR is left as it is (whether the same
+    cap holds was not measured: an IOR 2 coat rendered as IOR 2).
     Translucency only works in thin mode (fraction 0.5 without it: no light through). The edge color is not Blender's
     Specular Tint: a white edge brightens the grazing reflection above Schlick, a black one darkens it, and the default
     0.75 is close to Schlick; no single tint, Gulbrandsen edge tint or conductor fits the renders (FORMAT.md)."""
@@ -1145,7 +1151,13 @@ def corona_physical_mtl(conv, m, ir):
     ir.roughness = Input(1.0 - r if gloss else r, _corona_amount_map(conv, m, 132, ir, invert=gloss))
     ir.metallic = Input(1.0 if m.param(111, 0) == 1 else 0.0, conv.map_ref(m, 411, 412, None, 0, ir=ir))
     ir.transmission = Input(t, _corona_amount_map(conv, m, 192, ir))
-    ir.ior = _corona_ior(m, 171, ior_mode)
+    refracts = t > 0 or ir.transmission.map is not None
+    ir.ior = _corona_ior(m, 171, ior_mode, reflects_only=not refracts)
+    base_ior = _num(m, 171, 0, 1.5)
+    if refracts and ior_mode != 1 and not 1.0 <= base_ior <= CORONA_MAX_IOR:
+        conv.issue(m.index, "CoronaPhysicalMtl %r: base IOR %g outside 1..%g on a refracting material kept: Corona "
+                   "reflects it as IOR %g, its refraction not measured" % (
+                       m.name, base_ior, CORONA_MAX_IOR, _corona_reflection_ior(base_ior)), ir)
     ir.specular = Input(1.0)  # no reflection level in the pblock: the IOR's own Fresnel
     if ior_mode not in (None, 0, 1):
         conv.issue(m.index, "CoronaPhysicalMtl %r: unknown IOR mode %r read as an IOR" % (m.name, ior_mode), ir)
@@ -1182,10 +1194,20 @@ def corona_physical_mtl(conv, m, ir):
         _corona_volume(conv, m, ir, 281, 261, 271, 282, ((262, 263, "absorption"), (272, 273, "scattering")), 283)
 
 
-def _corona_ior(m, pid, ior_mode):
-    """A CoronaPhysicalMtl IOR parameter (default 1.5): an IOR, or in IOR mode 1 a specular level made an IOR."""
+def _corona_reflection_ior(v):
+    """The IOR a CoronaPhysicalMtl base IOR reflects as (Corona 12 renders, maxdrop-em3.115): below 1 its reciprocal,
+    at most CORONA_MAX_IOR; 0 or below (a damaged value) 1."""
+    if v <= 0.0:
+        return 1.0
+    return min(CORONA_MAX_IOR, max(v, 1.0 / v))
+
+
+def _corona_ior(m, pid, ior_mode, reflects_only=False):
+    """A CoronaPhysicalMtl IOR parameter (default 1.5): an IOR, or in IOR mode 1 a specular level made an IOR.
+    reflects_only: an IOR (not mode 1) of a material that does not refract, taken as Corona reflects it."""
     if ior_mode != 1:
-        return _ior(_num(m, pid, 0, 1.5))
+        v = _num(m, pid, 0, 1.5)
+        return _ior(_corona_reflection_ior(v) if reflects_only else v)
     level = max(0.0, _num(m, pid, 0, 0.5))  # mode 1's value of IOR 1.5
     return _ior(ior_from_reflectance(min(CORONA_MAX_F0, CORONA_SPECULAR_F0 * level)))
 
