@@ -141,7 +141,7 @@
     {"class_id": ["0x00000002", "0x00000000"], "class_name": "Standardmaterial", "index": 0, "name": "FixtureGrey", "sub_count": 0}
   ],
   "max_version": [22000, 2020],
-  "node_count": 9,
+  "node_count": 10,
   "nodes": [
     {
       "base_class_id": ["0x1bf8338d", "0x192f6098"],
@@ -484,6 +484,44 @@
       "renderable": true,
       "shape": null,
       "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 40, 120, 0]
+    },
+    {
+      "base_class_id": ["0x1bf8338d", "0x192f6098"],
+      "base_class_name": "Editable_Poly",
+      "base_faces": 4,
+      "base_superclass": 16,
+      "base_verts": 8,
+      "bbox_max": [90, 130, 20],
+      "bbox_min": [70, 110, 0],
+      "camera": null,
+      "cast_shadows": true,
+      "eval_faces": 64,
+      "eval_maps": null,
+      "eval_mesh": {
+        "map_channel_1": {"corners": null, "count": 72, "max": [1, 1, 0], "min": [0, 0, 0]},
+        "material_ids": [[2, 0, 16, 0], [4, 0, 8, 8], [5, 0, 8, 8], [6, 0, 8, 8]],
+        "smoothing": {"flat": 0, "hard_edges": 0, "regions": 1}
+      },
+      "eval_verts": 39,
+      "frozen": false,
+      "handle": 10,
+      "hidden": false,
+      "index": 9,
+      "instances": [10],
+      "layer": "0",
+      "material": 0,
+      "modifiers": [{"class_id": ["0x2d7e702b", "0x0be41a6e"], "class_name": "symmetry", "context_bbox_max": [10, 10, 20], "context_bbox_min": [0, -10, 0], "context_tm": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0], "enabled": true, "enabled_in_renders": true, "enabled_in_views": true, "name": "Symmetry"}, {"class_id": ["0x0d727b3e", "0x491d29a7"], "class_name": "TurboSmooth", "context_bbox_max": [10, 10, 20], "context_bbox_min": [0, -10, 0], "context_tm": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0], "enabled": true, "enabled_in_renders": true, "enabled_in_views": true, "name": "TurboSmooth"}],
+      "name": "FixtureTurboSymHalf",
+      "object_transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 80, 120, 0],
+      "offset_pos": [0, 0, 0],
+      "offset_rot": [0, 0, 0, 1],
+      "offset_scale": [1, 1, 1],
+      "parent": null,
+      "receive_shadows": true,
+      "render_by_layer": false,
+      "renderable": true,
+      "shape": null,
+      "transform": [1, 0, 0, 0, 1, 0, 0, 0, 1, 80, 120, 0]
     }
   ],
   "oracle_version": 14,

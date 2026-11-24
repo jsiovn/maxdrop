@@ -242,7 +242,7 @@ UNBUILT_LIGHTS = {"FixtureMesh", "FixtureDome", "FixtureDomeColor", "FixtureEmit
 EMITTERS = {"FixtureMeshLight", "FixtureEmitter", "FixtureEmitterW", "FixtureEmitterOwn"}
 # meshes under a converted smoother with Smooth Result: no sharp edge (modifier_pivot's reference, stack_basic's box)
 SHARP_EDGES_SMOOTHED = {"FixtureSmooth": 0, "FixtureTurbo": 0, "FixtureTurboOne": 0, "FixtureMeshSmooth": 0,
-                        "FixtureOrder": 0}
+                        "FixtureOrder": 0, "FixtureTurboSymHalf": 0}
 
 
 def _shading(node):

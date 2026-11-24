@@ -205,7 +205,8 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1; kept literal: tes
 # a converted TurboSmooth or MeshSmooth with Smooth Result leaves no sharp edge
 SHARP_EDGES = {"editable_mesh": 8, "modifier_pivot": {"FixtureSmooth": 0, None: 24},
                "stack_basic": {"FixtureTurbo": 0, None: 12},
-               "stack_convert": {"FixtureTurboOne": 0, "FixtureMeshSmooth": 0, "FixtureOrder": 0, None: 12},
+               "stack_convert": {"FixtureTurboOne": 0, "FixtureMeshSmooth": 0, "FixtureOrder": 0, None: 12,
+                                 "FixtureTurboSymHalf": 0},
                # boxes without their top: the 4 vertical and the 4 bottom edges, and the 4 open edges a hardened Shell
                # rim makes sharp; the plane's open edges; a TurboSmooth below the Shell clears the groups, not the
                # open edges; one above it smooths the rim too
@@ -1410,7 +1411,7 @@ def check_ignore_option(path, modules):
         ob.type == 'MESH' for ob in bpy.data.objects), str(mods))
     text = bpy.data.texts.get(modules[4].TEXT_NAME)
     check("stack_convert: Ignore: the report counts them as not applied", text is not None and
-          "nodes by class: Symmetry 4, TurboSmooth 4, Shell 2, Bend 1, MeshSmooth 1" in text.as_string()
+          "nodes by class: Symmetry 5, TurboSmooth 5, Shell 2, Bend 1, MeshSmooth 1" in text.as_string()
           and "converted to a Blender modifier" not in text.as_string())
 
 

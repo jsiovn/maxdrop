@@ -22,7 +22,9 @@ Symmetry 0 axis, 1 slice along mirror, 2 weld seam, 3 threshold, 4 flip, its mir
 reference slot 1.
 
 What 3ds Max 2020 makes (tests/blender/run.py against the stack_convert fixture's oracle): a smoother refines the
-control points as Catmull-Clark does (not the limit surface); Shell moves the new surfaces along the vertex normals
+control points as Catmull-Clark does (not the limit surface), keeps an open mesh's corners (a boundary vertex of one
+face: PRESERVE_CORNERS) and smooths the rest of its boundary along it (MeshSmooth quad output is another scheme: an
+issue); Shell moves the new surfaces along the vertex normals
 by the inner and outer amounts (not an even thickness), also both to one side, and turns inside out when inner +
 outer < 0 (the stack_shell fixture: boxes and facing); Symmetry mirrors in its gizmo's space, q = p * context *
 inverse(gizmo) for a point p of the object, keeps the side where q along the axis is positive (flip: negative) and
@@ -122,7 +124,9 @@ def _smoother(modifier):
         method = int(_value(b, 9, NURMS))
         if method == CLASSIC:
             issues.append("classic subdivision made as Catmull-Clark")
-        elif method not in (QUAD_OUTPUT, NURMS):
+        elif method == QUAD_OUTPUT:
+            issues.append("quad output made as Catmull-Clark")
+        elif method != NURMS:
             issues.append("subdivision method %d made as Catmull-Clark" % method)
         smoothness = float(_value(b, 2, 1.0))
         if smoothness < 1.0:
@@ -135,7 +139,8 @@ def _smoother(modifier):
         issues.append("separate by materials not converted")
     shading = CREASE if _value(b, by_groups, 0) else SMOOTH if _value(b, smooth, 1) else None
     settings = (("subdivision_type", "CATMULL_CLARK"), ("levels", levels), ("render_levels", render_levels),
-                ("use_limit_surface", False), ("use_creases", True))
+                ("use_limit_surface", False), ("boundary_smooth", "PRESERVE_CORNERS"),
+                ("use_creases", True))
     return settings, shading, issues
 
 

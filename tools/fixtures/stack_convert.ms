@@ -13,6 +13,8 @@
 -- FixtureSymmetryNoSlice: Symmetry along Z, slice along mirror off, no weld.
 -- FixtureOrder: Shell (outer amount 1), then Symmetry along X, then TurboSmooth (one iteration).
 -- FixtureBlocked: a Bend, then a TurboSmooth (not converted: MaxDrop does not evaluate the Bend).
+-- FixtureTurboSymHalf: an open half box (2 width segments, its top and its -X half deleted), TurboSmooth (one
+-- iteration), then Symmetry along X: the cut's corner at the open top stays on the plane, which welds it.
 -- Editable Poly boxes 20 x 20 x 20; one Standard material on every node.
 -- Authored for MaxDrop's tests (see CONTRIBUTING.md, "Test files"): it resets the scene, so run it in a 3ds Max
 -- session with nothing to keep, then sanitize and check the saved file before it goes into tests/fixtures/.
@@ -54,6 +56,19 @@
 	local blocked = box_at "FixtureBlocked" [40, 120, 0]
 	addModifier blocked (Bend angle:30 axis:2)
 	addModifier blocked (TurboSmooth iterations:1)
+
+	local half = Box name:"FixtureTurboSymHalf" length:20 width:20 height:20 widthsegs:2 mapcoords:true
+	convertToPoly half
+	local gone = #{}
+	for f = 1 to polyop.getNumFaces half do
+	(
+		local c = polyop.getFaceCenter half f
+		if c.z > 19.99 or c.x < -0.001 do gone[f] = true
+	)
+	polyop.deleteFaces half gone
+	half.pos = [80, 120, 0]
+	addModifier half (TurboSmooth iterations:1)
+	addModifier half (Symmetry axis:0 flip:false slice:1 weld:1 threshold:0.1)
 
 	local mat = StandardMaterial name:"FixtureGrey" diffuse:(color 128 128 128)
 	for o in objects do o.material = mat

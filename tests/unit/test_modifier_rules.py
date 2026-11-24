@@ -51,7 +51,7 @@ NONE = (False, False, False)
 
 def _subsurf(levels, render):
     return (SUBSURF, {"subdivision_type": "CATMULL_CLARK", "levels": levels, "render_levels": render,
-                      "use_limit_surface": False, "use_creases": True})
+                      "use_limit_surface": False, "boundary_smooth": "PRESERVE_CORNERS", "use_creases": True})
 
 
 def _solidify(inner, outer):
@@ -77,6 +77,7 @@ CONVERTED = {
     "FixtureSymmetryNoSlice": [_mirror(Z, False, False, False, 0.1)],
     "FixtureOrder": [_solidify(0.0, 1.0), _mirror(X, False, True, True, 0.1), _subsurf(1, 1)],
     "FixtureBlocked": [],
+    "FixtureTurboSymHalf": [_subsurf(1, 1), _mirror(X, False, True, True, 0.1)],
 }
 # From tools/fixtures/stack_shell.ms: (inner, outer) of each open box's Shell
 SHELLS = {"FixtureShellOut": (-1.0, 2.0), "FixtureShellIn": (3.0, -1.0), "FixtureShellCrossed": (-2.0, 1.0),
@@ -95,8 +96,10 @@ SHELL_ISSUES = [("FixtureShellPlane", "modifiers: Shell: auto smooth: 4 corners 
                 ("FixtureShellOverride", "modifiers: Shell: smoothing group override (group 4) not converted: 3ds "
                  "Max merges the rim into the faces along it of that group")]
 SHADING = {"FixtureTurboOne": rules.SMOOTH, "FixtureTurboRender": rules.CREASE, "FixtureMeshSmooth": rules.SMOOTH,
-           "FixtureOrder": rules.SMOOTH}
+           "FixtureOrder": rules.SMOOTH, "FixtureTurboSymHalf": rules.SMOOTH}
 SHARP_EDGES_BOX = 12  # a poly box: a smoothing group per side
+# FixtureTurboSymHalf's open half box: the five edges between its four sides
+SHARP_EDGES_HALF_BOX = {"FixtureTurboSymHalf": 5}
 
 
 def _frame(rows):
@@ -174,11 +177,11 @@ class Fixture(unittest.TestCase):
 
     def test_the_report_counts_them_as_converted(self):
         rep = report.gather(self.desc)
-        self.assertEqual(dict(rep.modifiers_converted), {"Symmetry": 4, "TurboSmooth": 3, "Shell": 2,
+        self.assertEqual(dict(rep.modifiers_converted), {"Symmetry": 5, "TurboSmooth": 4, "Shell": 2,
                                                          "MeshSmooth": 1})
         self.assertEqual(dict(rep.modifiers), {"TurboSmooth": 1, "Bend": 1})
         self.assertEqual(dict(rep.modifiers_applied), {})
-        self.assertIn("Modifiers converted to a Blender modifier, nodes by class: Symmetry 4, TurboSmooth 3, "
+        self.assertIn("Modifiers converted to a Blender modifier, nodes by class: Symmetry 5, TurboSmooth 4, "
                       "Shell 2, MeshSmooth 1", rep.text())
 
     def test_option_off_converts_nothing(self):
@@ -187,9 +190,11 @@ class Fixture(unittest.TestCase):
         self.assertEqual(desc.issues, [])
         self.assertEqual({n.name: n.modifiers for n in desc.nodes}["FixtureOrder"],
                          ("TurboSmooth", "Symmetry", "Shell"))
-        self.assertTrue(all(len(md.sharp_edges) == SHARP_EDGES_BOX and not md.creases
-                            for md in desc.meshes.values()))
-        self.assertEqual(sum(report.gather(desc).modifiers.values()), 12)
+        for node in desc.nodes:
+            md = desc.meshes[node.mesh]
+            self.assertEqual(len(md.sharp_edges), SHARP_EDGES_HALF_BOX.get(node.name, SHARP_EDGES_BOX), node.name)
+            self.assertFalse(md.creases, node.name)
+        self.assertEqual(sum(report.gather(desc).modifiers.values()), 14)
 
     def test_stack_shell_one_sided_and_inside_out(self):
         desc = conv.read(STACK_SHELL)
@@ -303,16 +308,17 @@ class Rules(unittest.TestCase):
         self.assertEqual((dict(md.settings)["levels"], dict(md.settings)["render_levels"], len(issues)), (10, 0, 2))
 
     def test_what_is_not_converted_is_an_issue(self):
-        cases = ((classids.MESHSMOOTH, {9: rules.CLASSIC}), (classids.MESHSMOOTH, {9: 5}),
+        cases = ((classids.MESHSMOOTH, {9: rules.CLASSIC}), (classids.MESHSMOOTH, {9: rules.QUAD_OUTPUT}),
+                 (classids.MESHSMOOTH, {9: 5}),
                  (classids.MESHSMOOTH, {2: 0.5}), (classids.MESHSMOOTH, {6: 1}), (classids.TURBOSMOOTH, {5: 1}),
                  (classids.SHELL, {12: 3}), (classids.SHELL, {19: 1}), (classids.SHELL, {2: 1}),
                  (classids.SHELL, {8: 1}), (classids.SHELL, {17: 1}))
         for cid, values in cases:
             _md, issues = _convert(cid, values)
             self.assertEqual(len(issues), 1, repr(values))
-        # MeshSmooth quad output is Catmull-Clark; with auto smooth on (the default) 3ds Max ignores the override;
-        # with it off the override depends on the mesh: convert.scene names it (test_rim_rule)
-        for cid, values in ((classids.MESHSMOOTH, {9: rules.QUAD_OUTPUT}), (classids.SHELL, {4: 1}),
+        # with auto smooth on (the default) 3ds Max ignores the override; with it off the override depends on the
+        # mesh: convert.scene names it (test_rim_rule)
+        for cid, values in ((classids.MESHSMOOTH, {9: rules.NURMS}), (classids.SHELL, {4: 1}),
                             (classids.SHELL, {4: 1, 14: 1}), (classids.SHELL, {14: 0}),
                             (classids.SHELL, {4: 1, 14: 0})):
             _md, issues = _convert(cid, values)

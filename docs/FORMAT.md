@@ -833,11 +833,19 @@ Max 2020 with every parameter set apart from its default, then the stack_convert
 What 3ds Max 2020 makes, against Blender's evaluated meshes (`tests/blender/run.py`, the oracle's `eval_verts`,
 `eval_faces`, box and `eval_mesh.smoothing` after the stack):
 
-- **TurboSmooth, MeshSmooth NURMS / quad output**: Catmull-Clark on the control points, not the limit surface: a
+- **TurboSmooth, MeshSmooth NURMS**: Catmull-Clark on the control points, not the limit surface: a
   box gives 26 vertices after one iteration, 98 after two, and Blender's Subdivision Surface with
   `use_limit_surface` off has the same vertices (the limit surface shrinks the box to 8.4 of 10). MeshSmooth classic
   is another scheme (80 vertices after two iterations). Separate by smoothing groups keeps the vertex count and
   hardens the edges between groups (a crease of 1 in Blender).
+  An open mesh's boundary is smoothed along itself (1/8, 6/8, 1/8 of a vertex and its two boundary neighbours), but a
+  corner (a boundary vertex of one face) stays where it is: Subdivision Surface's `boundary_smooth` PRESERVE_CORNERS
+  (ALL, Blender's default, moves it). It shows under a Symmetry: an open half box (its top and half deleted) keeps
+  the corner where the cut meets the top on the mirror plane, which welds it; with ALL it moves 1.25 of 10 off the
+  plane and stays unwelded (FixtureTurboSymHalf: 39 vertices, 64 triangles in 3ds Max and Blender 4.2, 4.5 and 5.2;
+  41 with ALL; a Shell above: 78 and 152, (0, 3, 24), as 3ds Max). MeshSmooth quad output is another scheme: the
+  same counts, but every boundary vertex stays and a box corner moves to the mean of its edges' midpoints (8.33, not
+  Catmull-Clark's 7.78 of 10): a line in the report.
 - **Shell**: the new surfaces lie at -inner and +outer amount along the vertex normals, not at an even thickness: a
   box with outer amount 2 grows by 2 / √3 along each axis (Solidify with `use_even_offset` off). Both may lie on
   one side of the original (inner -1, outer 2; inner 3, outer -1): Solidify's offset (hi + lo) / (hi - lo) past

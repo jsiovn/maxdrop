@@ -53,6 +53,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ### Fixed
 
+- Modifiers: a TurboSmooth or MeshSmooth on an open mesh keeps its corners (a boundary vertex of one face) where
+  3ds Max keeps them, instead of rounding them off: a half-modelled object smoothed below its Symmetry now welds at
+  the seam with 3ds Max's vertex count, without a sliver or gap where the cut meets an open edge. MeshSmooth quad
+  output, which is not Catmull-Clark, is a line in the report, as classic is.
 - Materials: a VRayMtl with reflection Fresnel off and a grey reflection color (mid grey up to just below white,
   no reflection map) keeps its diffuse under the reflection, as V-Ray renders it, instead of becoming a metal in
   the reflection color that dropped the diffuse (checked against V-Ray 5.2 in Cycles: a 0.5 grey over a red
