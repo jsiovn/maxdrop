@@ -168,10 +168,11 @@ class Page(unittest.TestCase):
         for needle in ("Phiên bản 1.2.3", "không liên kết với Autodesk hay Chaos", "Cài đặt", "Khắc phục sự cố",
                        "MaxDrop (.max, .zip, .rar, .7z)", "MaxDrop (.max, .rar, .7z)",
                        "kể cả Slice và bán cầu", "đèn dome của V-Ray thành World",
-                       "đèn mesh của V-Ray thành lưới phát sáng", "CoronaSkinMtl (đơn giản hóa)",
+                       "đèn mesh của V-Ray thành lưới phát sáng", "CoronaHairMtl (đơn giản hóa)",
+                       "CoronaVolumeMtl dưới dạng volume",
                        "<strong>Teapot</strong>: được nhập thành empty"):
             self.assertIn(needle, vietnamese)
-        for gone in ("đèn mesh và dome của V-Ray", "primitive bị cắt lát (slice) và bán cầu"):
+        for gone in ("đèn mesh và dome của V-Ray", "primitive bị cắt lát (slice) và bán cầu", "Corona Volume and Slicer"):
             self.assertNotIn(gone, vietnamese)
 
     def test_the_page_says_what_this_release_is(self):
@@ -191,7 +192,7 @@ class Page(unittest.TestCase):
                 "<strong>Light Strength</strong> scales every light",
                 "<strong>Text Encoding</strong> picks the code page",
                 "Slice and hemispheres included", "V-Ray mesh lights as glowing meshes",
-                "the V-Ray dome light as the World", "CoronaSkinMtl (simplified)",
+                "the V-Ray dome light as the World", "CoronaHairMtl (simplified)", "CoronaVolumeMtl as a volume",
                 "<strong>Teapot</strong>: it arrives as an empty"):
             self.assertTrue(needle in page, needle)
 
@@ -201,7 +202,7 @@ class Page(unittest.TestCase):
                      "<strong>Modifiers</strong> (Extrude", "Apply Matrix", "<strong>Collection</strong>",
                      "one 3ds Max unit becomes one meter",
                      "imports exactly what that importer imports",
-                     "Lights and cameras are not read yet", "early release", "Lights and cameras are not imported yet",
+                     "Lights and cameras are not read yet", "early release", "Corona Volume and Slicer", "Lights and cameras are not imported yet",
                      "Falloff and other procedural maps", "<strong>Lights and cameras</strong>, V-Ray lights included",
                      "sliced primitives and hemispheres", "V-Ray mesh and dome lights"):
             self.assertFalse(gone in page, gone)
