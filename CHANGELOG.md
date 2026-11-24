@@ -32,8 +32,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   Symmetry become Blender modifiers on the emitter as on any mesh, an Extrude on a picked shape is made, and in lm
   and W the strength is spread over the mesh under them (a 5 mm Shell on a 200 mm plane about halves it, as in V-Ray).
   Other modifiers are left out (the mesh below them emits, a line in the report).
-- Corona materials: CoronaHairMtl is imported as a surface with the color Blender's Principled Hair BSDF gives its
-  melanin, pheomelanin and tint (plus its diffuse color), its glossiness, IOR, opacity and bump, instead of grey; a
+- Corona materials: CoronaHairMtl is imported as a surface with the color Corona 12 renders a mesh with its
+  melanin, pheomelanin, tint and transmission color (its diffuse color mixed in as Corona mixes it), its glossiness,
+  IOR, opacity and bump, instead of grey; its tint map is named in the report; a
   CoronaShadowCatcherMtl makes its object a shadow catcher (Cycles) when the object has no other material. A
   CoronaScannedMtl or CoronaSlicerMtl stays grey, now with a line in the report naming what is
   left out, no longer listed as a material class without a rule.

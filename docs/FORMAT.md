@@ -1988,6 +1988,53 @@ exact; scattering white 0.681, 128 grey 0.566, directionality 0.6 / -0.6 0.868 /
 Blender's default Volume Bounces of 0 scatters once (as Corona's single bounce): MaxDrop does not change it. An unlinked Surface with nothing
 on the Volume socket renders black there: a volume-only material keeps its Principled BSDF at Alpha 0.
 
+Corona 12 CoronaHairMtl on a mesh (maxdrop-em3.164; `3dsmaxbatch`, tone mapping off, the gamma off, read with
+`getPixels ... linear:true` as a mean of 31 x 31 pixels, the swatch's 0-255 value / 255 rendered as the linear color as
+for the media above). Planes 40 x 40 in a white furnace (white environment, no light: 1.0 everywhere), seen from the
+top by an orthographic camera:
+
+- Every channel reads R + P0 x exp(-u): R = 0.070, the colorless specular (colorlessSpecular black removes it:
+  melanin 0 then 0.929, melanin 1 0.011 / 0 / 0), P0 = 0.929. A plane turned 90 degrees about its normal reads the
+  same, one tilted 60 degrees 1% darker. The default (melanin 0.5) reads 0.396 / 0.232 / 0.099; melanin 0, 0.1 ...
+  1 at pheomelanin 0: 0.995, 0.961 / 0.937 / 0.881, 0.858 / 0.775 / 0.613, 0.710 / 0.567 / 0.348, 0.548 / 0.375 /
+  0.178, 0.396 / 0.232 / 0.099, 0.272 / 0.144 / 0.074, 0.184 / 0.098 / 0.069, 0.128 / 0.079 / 0.069, 0.097 / 0.072
+  / 0.070, 0.081 / 0.070 / 0.070; at pheomelanin 1: 0.995, 0.983 / 0.964 / 0.908, 0.934 / 0.862 / 0.684, 0.857 /
+  0.715 / 0.436, 0.761 / 0.551 / 0.244, 0.651 / 0.398 / 0.133, 0.535 / 0.274 / 0.083, 0.424 / 0.184 / 0.067, 0.326
+  / 0.127 / 0.065, 0.245 / 0.095 / 0.066, 0.183 / 0.079 / 0.068.
+- u has the channel shape of the absorption Blender's Principled Hair BSDF uses (Cycles' eumelanin 0.506 / 0.841 /
+  1.653, ratios 1 : 1.66 : 3.27, read 1 : 1.67 : 3.25; pheomelanin 0.343 / 0.733 / 1.924, 1 : 2.14 : 5.61, read
+  1 : 2.2 : 5.7), the same at every melanin. Pheomelanin is the share of the melanin that is red, as Blender's
+  Melanin Redness (melanin 0 with pheomelanin 0.6 reads as melanin 0; u mixes linearly in it), but Corona's absorbs
+  0.685 x Cycles' coefficients. Fit: u = (7.68 m^2 + 1.2 m^3) x ((1 - p) eumelanin + 0.685 p pheomelanin), largest
+  error 0.009 over both sweeps; nine held-out mixes (pheomelanin 0.2 ... 0.8, melanin 0.3 ... 0.8) within 0.006
+  (`materials.hair_color`). Not the color Principled Hair's parametrization gives the same melanin (0.031 / 0.011 /
+  0.002 at the default).
+- Tint (colorTint x levelTint): a grey t adds 0.054 ln(t)^2 to u (0.25: 0.837, 0.5: 0.905 of 0.929; black: the
+  floor only). A CoronaColor in the tint slot renders as the same swatch would (melanin 0, 204 / 128 / 51: 0.995 /
+  0.981 / 0.887, not 0.8 / 0.5 / 0.2), added to the melanin's u at any melanin.
+- Diffuse (colorDiffuse x levelDiffuse): a grey d gives d + (1 - d) x the hair, exactly (0.5 at melanin 0.5: 0.699 /
+  0.617 / 0.551; 0.25 by levelDiffuse 0.5: 0.551 / 0.427 / 0.328; 0.25 at melanin 0.8: 0.350 / 0.313 / 0.305). A
+  colored d weighs the hair less than 1 - its mean: 204 / 128 / 51 by 0.32 at melanin 0.5 (0.926 / 0.576 / 0.232)
+  and 0.39 at 0.8, pure red by 0.39, pure blue by 0.09, 51 / 128 / 204 by about 0.25; MaxDrop uses 1 - its largest
+  channel.
+- Transmission color: multiplies the hair's TT part (0.5 grey: melanin 0.5 0.237 / 0.152 / 0.085, melanin 0 0.567;
+  255 / 128 / 64 at melanin 0: 0.996 / 0.568 / 0.350; black: 0.078 / 0.072 / 0.070 at melanin 0.5). Colored specular
+  black: 0.945 at melanin 0 (TRT is small on a plane). IOR 1.3 / 2.0: 0.398 / 0.223 / 0.074 and 0.412 / 0.267 /
+  0.156 (the floor and the transmitted part both move). Glossiness 0.2 / 0.9, softness 0 / 0.5, colorless
+  glossiness 0.5 / 1, highlight shift 0 / 5 and GI simplification 0: within 0.01 of the default (they shape the
+  highlight only). Glint strength 1: 0.433 / 0.278 / 0.149 (0: 0.396 / 0.234 / 0.103); randomizeMelanin 0.5: 0.447 /
+  0.368 / 0.293.
+- Hair and Fur strands could not be read: the strands carry Hair and Fur's own tip and root colors on top (default
+  0.6 / 0.54 / 0.38 and 0.36 / 0.25 / 0), do not take a sub-material by MaterialGeomMtlID, and give no alpha to weigh
+  coverage by. Seen end-on with the default colors, melanin 0.5 against melanin 0 reads 0.408 / 0.239 / 0.111 (the
+  plane 0.397 / 0.232 / 0.099).
+
+Cycles (Blender 5.2, 256 samples) with the same planes: a Principled BSDF at IOR 1.55, roughness 0.5 reads 0.043 +
+0.957 x its base color in that furnace. MaxDrop's base (0.070 + 0.929 x hair - 0.043) / 0.957 reads Corona's numbers
+within 0.009 over the sweeps, the tints, a grey diffuse and a grey transmission; a colored diffuse (204 / 128 / 51:
+0.879 / 0.561 / 0.246 for 0.926 / 0.576 / 0.232) and transmission (255 / 128 / 64: 0.535 / 0.302 for 0.568 / 0.350
+in green and blue) within 0.05.
+
 VRayBitmap `(0x6769144B, 0x02C1017D)` (vray_texmaps, 3ds Max 2020 + V-Ray 5.2; the V-Ray SDK's
 `pb2vrayhdri.h`). MAXScript's `VRayHDRI`, its name before V-Ray 5, is the same class. References: 0 block 0, 1
 block 1, 2 its Placement (a standard UVGen, the same chunks as a Bitmap's), 3 block 2, 4 its Output, 5 block 3.
