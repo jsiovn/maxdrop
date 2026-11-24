@@ -776,6 +776,11 @@ class TestTangents(MatrixCase):
                 got, issues = TestKeyframe.world(name, keys=records(name, *keys) + bits)
                 self.assertNear(got, ct.translation(want))
                 self.assertEqual(issues, [])
+        # the later key's Linear in tangent facing a custom out tangent: frame 20 of the first case
+        shifted = tuple((t - 3200, flags, floats) for t, flags, floats in LINEAR_BESIDE_CUSTOM)
+        got, issues = TestKeyframe.world("Bezier Float", keys=records("Bezier Float", *shifted))
+        self.assertNear(got, ct.translation((83.2255325, 0, 0)))
+        self.assertEqual(issues, [])
         # without its bits an auto tangent reads as custom: its stored length, a curve 3ds Max does not draw
         got, _issues = TestKeyframe.world("Bezier Float", keys=records("Bezier Float", *AUTO_IN_CUSTOM_OUT))
         self.assertGreater(abs(got[3][0] - -36.4814835), 1e-3)
@@ -1093,6 +1098,10 @@ class TestOutOfRange(MatrixCase):
                 got, issues = self.value(LATER_KEYS, ort(before=code, after=code))
                 self.assertMatrix(got, ct.translation((0, 0, 0)))
                 self.assertEqual(issues, [ct.ORT_UNKNOWN])
+                # inside the keys too: the whole curve changes, not only past the range
+                got, issues = self.value(((-1600, (5.0,)), (1600, (5.0,))), ort(before=2, after=code))
+                self.assertMatrix(got, ct.translation((5, 0, 0)))
+                self.assertEqual(issues, [ct.ORT_UNKNOWN])
 
     def test_whole_periods_and_bezier_in_the_wrap(self):
         b = Build()  # Bezier Float keys with chord tangents (a straight line), the types inside 0x7127
@@ -1123,12 +1132,25 @@ class TestOutOfRange(MatrixCase):
             ("switched off, range moved", (ort(2, 2, 1), time_range(3200, 6400)), 10.0, [ct.ORT_APPROXIMATED]),
             ("range reversed", (ort(2, 2), time_range(6400, 3200)), 12.5, []),
             ("no range", (ort(2, 2), time_range(-2 ** 31, -2 ** 31)), 12.5, []),
+            ("loop, range moved past the last key", (ort(3, 3), time_range(4800, 9600)), 5.0, [ct.ORT_APPROXIMATED]),
         ]
         for label, extra, want, reasons in cases:
             with self.subTest(label):
                 got, issues = self.value(LATER_KEYS, *extra)
                 self.assertMatrix(got, ct.translation((want, 0, 0)))
                 self.assertEqual(issues, reasons)
+
+    def test_loop_over_a_moved_range_is_a_guess(self):
+        # keys at 0, 3200, 6400 over a range of 1600 to 9600: frame 0, before it, lands at 8000, in the gap
+        keys = ((0, (0.0,)), (3200, (20.0,)), (6400, (5.0,)))
+        got, issues = self.value(keys, ort(3, 3), time_range(1600, 9600))
+        self.assertMatrix(got, ct.translation((5, 0, 0)))  # as Cycle: the last key's value
+        self.assertEqual(issues, [ct.ORT_APPROXIMATED])
+        # the straight line across the gap of a wider range, measured on Bezier Floats only
+        got, issues = self.value(((1600, _rotz(0)), (8000, _rotz(60))), ort(3, 3), time_range(0, 9600),
+                                 name="Linear Rotation")
+        self.assertMatrix(got, ct.quat_matrix(_rotz(30)))
+        self.assertEqual(issues, [ct.ORT_APPROXIMATED])
 
     def test_rotation_position_and_scale(self):
         keys = ((1600, _rotz(0)), (4800, _rotz(60)))

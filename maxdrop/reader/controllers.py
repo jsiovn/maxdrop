@@ -61,9 +61,9 @@ Anything not supported gives identity (zero position, no rotation, unit scale) f
 an unknown class (also a Look At or a constraint outside a node, as a modifier's gizmo, and a constraint anywhere
 but a PRS's rotation), keys of an unknown layout, a list weight that is not stored, an Euler order other than
 the six Tait-Bryan ones, a damaged controller (a reference cycle, a chain deeper than MAX_DEPTH, a payload too
-short) or a non-finite result. An unknown out-of-range type keeps the value at the end of the range, with an issue.
-The file comes from anywhere: one bad controller poisons only its own node's local matrix. Every class read here is in a committed fixture (docs/FORMAT.md). No bpy, no mathutils, no
-numpy.
+short) or a non-finite result. An unknown out-of-range type keeps the keys' value (the range end's outside the
+range), with an issue. The file comes from anywhere: one bad controller poisons only its own node's local matrix.
+Every class read here is in a committed fixture (docs/FORMAT.md). No bpy, no mathutils, no numpy.
 """
 import bisect
 import collections
@@ -100,8 +100,8 @@ CONSTRAINT_DEGENERATE = "LookAt Constraint that cannot be aimed (on its target, 
 CONSTRAINT_SETTING = "animated or damaged LookAt Constraint setting, its default used"
 CONSTRAINT_BLOCK = "damaged LookAt Constraint parameters, the defaults used where unread"
 ORT_UNKNOWN = "out-of-range type not known, the value at the end of the range used"
-ORT_APPROXIMATED = ("out-of-range type approximated (Loop past the keys, as Cycle; scale axes that differ; ORTs "
-                    "off beside a range moved off the keys)")
+ORT_APPROXIMATED = ("out-of-range type approximated (Loop over a range moved off the keys, scale axes that differ, "
+                    "ORTs off beside a moved range)")
 LIST_AVERAGE = "Scale List average of turned scale axes, the weighted mean of the matrices used"
 SCALE_LIST_WEIGHT = "Scale List weight on turned scale axes, applied as on plain ones"
 
@@ -651,10 +651,11 @@ def out_of_range(keys, t, before=_ORT_CONSTANT, after=_ORT_CONSTANT, start=None,
     the range end's value, Cycle and Loop the time a whole number of ranges on (a time a whole range before the
     start lands on the end), Ping Pong mirrored, Relative Repeat that plus the change over a range per range
     crossed, Linear the slope of one tick at the range end. Inside the range the keys (the nearest key's value
-    outside them)."""
+    outside them). An unknown type is an issue wherever t is: 3ds Max's #identity (0) changes the whole curve."""
     first, last = keys.times[0], keys.times[-1]
     start = first if start is None else start
     end = last if end is None else end
+    unknown = before not in _ORT_KNOWN or after not in _ORT_KNOWN
     if before == after == _ORT_LOOP and start <= first and last <= end and end - start > last - first:
         # Loop over a range wider than the keys: the keys repeat every range, a straight line from the last key's
         # value to the first's across the gap between them, inside the range too
@@ -663,38 +664,46 @@ def out_of_range(keys, t, before=_ORT_CONSTANT, after=_ORT_CONSTANT, start=None,
             return keys.value(u), None
         g = (u - last) / ((end - start) - (last - first))
         v = _interpolate(keys.value(last), keys.value(first), g, keys.value_id)
-        return v, None if keys.count in (1, 3) else ORT_APPROXIMATED  # measured on a Bezier Float
-    # Loop on one side only of a range past the keys: not measured, as Cycle (and the keys inside the range)
-    loop_gap = _ORT_LOOP in (before, after) and (start < first or end > last) and not first <= t <= last
-    if start <= t <= end:
-        return keys.value(t), ORT_APPROXIMATED if loop_gap else None
-    kind = before if t < start else after
-    span = end - start
-    edge = start if t < start else end
-    if kind not in _ORT_KNOWN:
-        return keys.value(edge), ORT_UNKNOWN
+        return v, None if keys.count == 1 else ORT_APPROXIMATED  # measured on Bezier Floats only
+    times = []  # the times the keys are read at: Loop that lands outside them over a range moved off them is a guess
+
+    def at(u):
+        times.append(u)
+        return keys.value(u)
+
     approximated = False
-    if kind == _ORT_CONSTANT or span <= 0:
-        v = keys.value(edge)
-    elif kind == _ORT_PING_PONG:
-        p = (t - start) % (2 * span)
-        v = keys.value(start + (p if p <= span else 2 * span - p))
-    elif kind == _ORT_LINEAR:
-        if t < start:
-            v, approximated = _extend(keys.value(start), keys.value(start + 1), t - start, True, keys.count)
-        else:
-            v, approximated = _extend(keys.value(end - 1), keys.value(end), t - end, False, keys.count)
+    if start <= t <= end:
+        v = at(t)
     else:
-        mapped = end - (start - t) % span if t < start else start + (t - end) % span
-        v = keys.value(mapped)
-        if kind == _ORT_RELATIVE:
-            v, approximated = _repeat(v, keys.value(start), keys.value(end), (t - mapped) // span, keys.count)
-    return v, ORT_APPROXIMATED if approximated or loop_gap else None
+        kind = before if t < start else after
+        span = end - start
+        edge = start if t < start else end
+        if kind not in _ORT_KNOWN or kind == _ORT_CONSTANT or span <= 0:
+            v = at(edge)
+        elif kind == _ORT_PING_PONG:
+            p = (t - start) % (2 * span)
+            v = at(start + (p if p <= span else 2 * span - p))
+        elif kind == _ORT_LINEAR:
+            if t < start:
+                v, approximated = _extend(at(start), at(start + 1), t - start, True, keys.count)
+            else:
+                v, approximated = _extend(at(end - 1), at(end), t - end, False, keys.count)
+        else:
+            mapped = end - (start - t) % span if t < start else start + (t - end) % span
+            v = at(mapped)
+            if kind == _ORT_RELATIVE:
+                v, approximated = _repeat(v, at(start), at(end), (t - mapped) // span, keys.count)
+    if unknown:
+        return v, ORT_UNKNOWN
+    moved = start < first or end > last
+    if _ORT_LOOP in (before, after) and moved and any(not first <= u <= last for u in times):
+        approximated = True  # Loop over a range moved off the keys: measured only on both sides of a wider one
+    return v, ORT_APPROXIMATED if approximated else None
 
 
 def _bits(holder, cid, n):
     """The key indices (below n) whose bit is set in the bit array chunk cid of holder; none where it is missing or
-    unreadable."""
+    unreadable, without an issue: a key whose auto bit is not read keeps its stored length, as a custom one."""
     chunk = holder.first(cid) if holder is not None and holder.container else None
     bits = chunk.first(_BITS) if chunk is not None and chunk.container else None
     if bits is None or bits.payload_size < 4:
@@ -911,7 +920,7 @@ class _Eval:
                       self.scene.ticks_per_frame)
         before, after, off = self._ort(holders)
         start, end = times[0], times[-1]
-        held = next((h.first(_RANGE) for h in holders if h.first(_RANGE) is not None), None)
+        held = next((c for c in (h.first(_RANGE) for h in holders) if c is not None), None)
         if held is not None:
             r0, r1 = held.unpack(_INTERVAL_FORMAT)
             if r0 != _NO_TIME and r0 <= r1:
@@ -936,9 +945,9 @@ class _Eval:
         if not ort.container:
             raise ChunkError("out-of-range types of %d bytes, not a container" % ort.payload_size)
         types = []
-        for cid in (_ORT_BEFORE, _ORT_AFTER, _ORT_OFF):
-            value = ort.first(cid)
-            types.append(value.unpack("<i")[0] if value is not None else (0 if cid == _ORT_OFF else _ORT_CONSTANT))
+        for chunk_id in (_ORT_BEFORE, _ORT_AFTER, _ORT_OFF):
+            value = ort.first(chunk_id)
+            types.append(value.unpack("<i")[0] if value is not None else 0 if chunk_id == _ORT_OFF else _ORT_CONSTANT)
         return types[0], types[1], types[2] != 0
 
     def scalar(self, i, default):

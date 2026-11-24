@@ -284,7 +284,7 @@ Keyframe controllers (controllers fixture; every class read here is a 3ds Max 20
 - Out-of-range types (controllers_ranges; probes of every keyframe class, maxdrop-6n0.6.12): a container `0x8499`
   beside the keys (in `0x7127` for a Bezier Float) holds `0x3000` (before) and `0x3001` (after), `i32` 2 Cycle, 3
   Loop, 4 Ping Pong, 5 Linear, 7 Relative Repeat (MAXScript's #identity is 0, and the whole controller then reads
-  zero, a scale too: not followed, an issue), and `0x3003` = 1 when they are switched off (Enable ORTs; then
+  zero, a scale too, inside the keys as well: not followed, an issue wherever frame 0 is), and `0x3003` = 1 when they are switched off (Enable ORTs; then
   Constant). Without `0x8499` both are Constant. Setting them on a Position XYZ writes them on its three floats too.
   They apply outside the range `[r0, r1]` (span `T`): Constant the value at the range end; Cycle and Loop the time
   `r1 - (r0 - t) mod T` before and `r0 + (t - r1) mod T` after (a time a whole range before the start lands on the
@@ -294,7 +294,8 @@ Keyframe controllers (controllers fixture; every class read here is a 3ds Max 20
   them): a range of frames 20 to 40 over keys at 10 to 50 gives frame 20's value at frame 0 with Constant
   (FixtureFloatRanges). Loop over a range wider than the keys repeats them every range and goes in a straight line
   from the last key's value to the first's across the gap, inside the range too (FixtureFloatRanges' X: 2.5 at
-  frame 0, halfway from 5 at frame 50 to 0 at frame 70). 3ds Max takes the one-tick values of Linear in single
+  frame 0, halfway from 5 at frame 50 to 0 at frame 70; a probe of a Bezier Float within 2.4e-7 at every frame of
+  three gaps; other classes are not probed: the same line, an issue). 3ds Max takes the one-tick values of Linear in single
   precision through its own time curve: the reader is within 2e-4 ten frames out on probes of every class, more
   further out or past a curved end (8e-4 at one frame from a custom key), exact past a straight end
   (FixtureFloatAfter's Z).
@@ -2384,10 +2385,12 @@ Not shown by any fixture yet, so not stated above:
   stored none: linear, an issue each); the bare Euler orders 1 to 5 and 100 (read as the SDK numbers
   them: 1 = XZY ... 5 = ZYX, 100 = XYZ); the Euler orders 106 to 108 (an issue).
 - Controllers the probes of maxdrop-6n0.6.12 left open (3ds Max 2020): a Scale List weight other than 100 % after an
-  entry along a turned axis, and a Scale List average of turned scales (no rule tried fits: an issue each); Loop on
-  one side only of a range wider than the keys, and the types switched off beside a range moved off the keys (not
-  probed: as Cycle and Constant, an issue); MAXScript's #identity type (0: the controller reads zero; an issue); a
-  Float List average and a Rotation List average with an animated weight (not probed: read as the stored ones).
+  entry along a turned axis, and a Scale List average of turned scales (no rule tried fits: an issue each); Loop
+  that reads a time outside the keys over a range moved off them other than wider on both sides (Loop on one side
+  only, a range shifted past a key), and the types switched off beside a moved range (not probed: as Cycle and
+  Constant, an issue); MAXScript's #identity type (0: the controller reads zero; an issue); an animated or
+  unreadable Average switch (read as off, no issue) and an animated weight of a list with Average on (not probed:
+  read as the stored ones).
   A file saved by a script that never evaluated a Bezier controller after its keys changed keeps stale smooth and
   auto tangents (a smooth key read as flat, 0.31 off at frame 0 in a dry run); 3ds Max computes them on evaluation,
   so a file saved from the user interface holds current ones, and the fixtures evaluate every node before saving.
