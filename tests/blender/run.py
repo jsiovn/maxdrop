@@ -205,8 +205,8 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1; kept literal: tes
 # a converted TurboSmooth or MeshSmooth with Smooth Result leaves no sharp edge
 SHARP_EDGES = {"editable_mesh": 8, "modifier_pivot": {"FixtureSmooth": 0, None: 24},
                "stack_basic": {"FixtureTurbo": 0, None: 12},
-               "stack_convert": {"FixtureTurboOne": 0, "FixtureMeshSmooth": 0, "FixtureOrder": 0, None: 12,
-                                 "FixtureTurboSymHalf": 0},
+               "stack_convert": {"FixtureTurboOne": 0, "FixtureMeshSmooth": 0, "FixtureOrder": 0,
+                                 "FixtureTurboSymHalf": 0, None: 12},
                # boxes without their top: the 4 vertical and the 4 bottom edges, and the 4 open edges a hardened Shell
                # rim makes sharp; the plane's open edges; a TurboSmooth below the Shell clears the groups, not the
                # open edges; one above it smooths the rim too

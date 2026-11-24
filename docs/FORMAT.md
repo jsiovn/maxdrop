@@ -843,9 +843,10 @@ What 3ds Max 2020 makes, against Blender's evaluated meshes (`tests/blender/run.
   (ALL, Blender's default, moves it). It shows under a Symmetry: an open half box (its top and half deleted) keeps
   the corner where the cut meets the top on the mirror plane, which welds it; with ALL it moves 1.25 of 10 off the
   plane and stays unwelded (FixtureTurboSymHalf: 39 vertices, 64 triangles in 3ds Max and Blender 4.2, 4.5 and 5.2;
-  41 with ALL; a Shell above: 78 and 152, (0, 3, 24), as 3ds Max). MeshSmooth quad output is another scheme: the
-  same counts, but every boundary vertex stays and a box corner moves to the mean of its edges' midpoints (8.33, not
-  Catmull-Clark's 7.78 of 10): a line in the report.
+  41 with ALL; probed, not in a fixture: a Shell above, 78 and 152, (0, 3, 24), as 3ds Max). MeshSmooth quad output
+  is another scheme: the same counts, but every boundary vertex stays and the half box's corner (10, -10, 0) goes to
+  the mean of its edges' midpoints (8.33, -6.67, 3.33), not Catmull-Clark's (7.78, -5.56, 4.44): a line in the
+  report.
 - **Shell**: the new surfaces lie at -inner and +outer amount along the vertex normals, not at an even thickness: a
   box with outer amount 2 grows by 2 / √3 along each axis (Solidify with `use_even_offset` off). Both may lie on
   one side of the original (inner -1, outer 2; inner 3, outer -1): Solidify's offset (hi + lo) / (hi - lo) past
