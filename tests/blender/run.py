@@ -4072,7 +4072,8 @@ def check_builder_mask_mean():
                     and n.operation == 'DOT_PRODUCT' and close(list(_input(n, "Vector_001").default_value),
                                                                 [1 / 3.0] * 3, 1e-6)]
             texture = _from(_input(dots[0], "Vector")) if len(dots) == 1 else None
-        ok = texture is not None and texture.bl_idname == "ShaderNodeTexImage"             and texture.image.colorspace_settings.name == "Non-Color"
+        ok = (texture is not None and texture.bl_idname == "ShaderNodeTexImage"
+              and texture.image.colorspace_settings.name == "Non-Color")
         samples = (0.0, 0.02, 0.04, 0.0405, 0.2, 0.457511, 0.5, 1.0, 1.5)
         got = [evaluate(factor, f, dots[0]) for f in samples] if ok else []
         want = [colors.srgb_to_linear(f) for f in samples]

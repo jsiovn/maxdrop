@@ -112,8 +112,8 @@ Texture graphs (convert/texmaps.py) become nodes, a node of the IR shared by sev
 -> Image Texture (its image datablock reused per file and color space: one file used in two color spaces is two
 datablocks; see Images below), with its placement as a Mapping node and a UV Map node for a map channel other than
 1; Invert, Decode (a Gamma node of 2.2, a constant through the sRGB curve; a mean: the sRGB curve in Math nodes), Mix,
-Multiply, Blend (Gamma nodes around a Mix node of its operation or Vector Math nodes), ColorCorrect (its rewiring as Invert, the mean or Separate / Combine
-Color, then Hue/Saturation/Value, Bright/Contrast, gain, Gamma), Composite
+Multiply, Blend (Gamma nodes around a Mix node of its operation or Vector Math nodes), ColorCorrect (its rewiring as
+Invert, the mean or Separate / Combine Color, then Hue/Saturation/Value, Bright/Contrast, gain, Gamma), Composite
 (per layer its blend at factor 1, then a Mix by opacity x mask), Facing (Layer Weight Facing, Fresnel, or the
 Geometry node's Normal . Incoming), Remap (Float Curve, its points straight between them, not clipped; the Mix it
 drives does not clamp its factor), Smoothstep (Map Range SMOOTHSTEP, or a step: 1 - LESS_THAN), Adjust (a map's

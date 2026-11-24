@@ -1313,6 +1313,21 @@ class CoronaSynthetic(Checks):
         self.assertEqual(g.root.name, "a.png")
         self.assertEqual(tex.stats.unsupported, collections.Counter(), "the bottom Noise is never drawn")
 
+    def test_corona_mix_gamma_peeled_on_its_top_converts_nothing_else(self):
+        # maxdrop-6n0.6.24: the top decides first; an image top peels before the bottom and the mask are converted
+        tex = _tex(_cmix(1, [2, 3, 4], p200=7, p206=Ref(2), p207=Ref(3), p210=Ref(4)), _cbitmap(2), _noise(3),
+                   _noise(4))
+        g = tex.convert(mat.MapRef(1), tx.COLOR)
+        self.assertEqual(g.root.name, "a.png")
+        self.assertEqual(tex.stats.unsupported, collections.Counter(), "the bottom and mask Noise are never drawn")
+        self.assertEqual([r for _i, r in tex.stats.issues], ["CoronaMix 'map': operation gamma drawn as its first "
+                                                             "bitmap"])
+        # a colored constant top: the bottom decides, the mask is not converted
+        tex = _tex(_cmix(1, [2, 3], p200=7, p208=(0.5, 0.25, 1.0), p207=Ref(2), p210=Ref(3)), _cbitmap(2),
+                   _noise(3))
+        self.assertEqual(tex.convert(mat.MapRef(1), tx.COLOR).root.name, "a.png")
+        self.assertEqual(tex.stats.unsupported, collections.Counter(), "the mask Noise is never drawn")
+
     def test_corona_mix_other_operation_without_a_bitmap(self):
         tex = _tex(_cmix(1, p200=17))
         self.assertIsNone(tex.convert(mat.MapRef(1), tx.COLOR))
@@ -2831,13 +2846,6 @@ class DataAndMaskRule(Checks):
         mask = self._root(colors.GAMMA_OFF, mix, alpha).mask
         self.assertIsInstance(mask, tx.Image)
         self.assertTrue(mask.alpha)
-        # what the builder draws: the mean of the stored pixel through the sRGB curve, V-Ray's number shown; a grey
-        # the same as the sRGB image read per channel (exact)
-        pixel = (200 / 255, 100 / 255, 50 / 255)
-        self.close(colors.srgb_to_linear(sum(pixel) / 3), colors.srgb_to_linear(0.457511), "RefCBm")
-        self.assertGreater(sum(colors.srgb_to_linear(c) for c in pixel) / 3 - colors.srgb_to_linear(0.457511),
-                           0.06, "the mean of the decoded channels: +0.069")
-        self.close(colors.srgb_to_linear(sum((128 / 255,) * 3) / 3), colors.srgb_to_linear(128 / 255), "a grey")
 
     def test_image_below_a_mask_wrapper_is_unchanged(self):
         # below an RGB Tint or an Output in a gamma-off mask the image is STORED (_wrapper_input) and the wrapper's
@@ -2848,6 +2856,37 @@ class DataAndMaskRule(Checks):
         self.assertFalse(mask.mean)
         self.assertIsInstance(tx.first_image(mask), tx.Image)
         self.assertEqual([d for d in _decodes(mask) if d.mean], [])
+
+    def test_stored_image_inside_a_mask_graph(self):
+        """maxdrop-6n0.6.36 inside a mask (not measured): with the gamma off a stored image below a map that keeps
+        the MASK kind (RGB Multiply, Falloff, a Color Correction without rewiring) is its decoded mean, as a swatch
+        there is the rule of its mean; a Color Correction that rewires picks from the stored color (STORED), its mean
+        decoded after it, as a Tint does; with the gamma on each is as before (the image sRGB)."""
+        mix = FakeMap(1, tx.MIX, {8: Ref(2)}, [2], cls="Mix")
+
+        def cc(rewire):
+            params = {1: Ref(3)}
+            if rewire:
+                params.update({tx.CC_REWIRE_MODE: 3, 3: 0, 4: 0, 5: 0})  # custom: red, red, red
+            return FakeMap(2, tx.COLOR_CORRECTION, params, [3], cls="Color Correction", name="cc")
+        mul = FakeMap(2, tx.RGB_MULTIPLY, {2: Ref(3), 4: 1}, [3], cls="RGB Multiply")
+        for what, wrapper, field in (("RGB Multiply", mul, "a"), ("Falloff", _falloff(2, 3), "a"),
+                                     ("Color Correction", cc(False), "input")):
+            with self.subTest(what):
+                off = getattr(self._root(colors.GAMMA_OFF, mix, wrapper, _bitmap(3)).mask, field)
+                self.assertTrue(isinstance(off, tx.Decode) and off.mean, off)
+                self.assertEqual(off.input.colorspace, tx.NON_COLOR)
+                on = getattr(self._root(colors.GAMMA_ON, mix, wrapper, _bitmap(3)).mask, field)
+                self.assertEqual((type(on), on.colorspace), (tx.Image, tx.SRGB))
+        off = self._root(colors.GAMMA_OFF, mix, cc(True), _bitmap(3)).mask
+        self.assertTrue(isinstance(off, tx.Decode) and not off.mean, off)
+        self.assertIsInstance(off.input, tx.Tint)
+        self.assertEqual((off.input.red, off.input.green, off.input.blue), (tx.MEAN_ROW,) * 3)
+        picked = off.input.input
+        self.assertEqual((type(picked), picked.rewire), (tx.ColorCorrect, (0, 0, 0)))
+        self.assertEqual((type(picked.input), picked.input.colorspace), (tx.Image, tx.NON_COLOR), "as stored")
+        on = self._root(colors.GAMMA_ON, mix, cc(True), _bitmap(3)).mask
+        self.assertEqual((type(on), on.rewire, on.input.colorspace), (tx.ColorCorrect, (0, 0, 0), tx.SRGB))
 
     def test_composite_mask_follows_the_graph(self):
         comp = FakeMap(1, tx.COMPOSITE, {9: [Ref(2), Ref(3)], 10: [Ref(None), Ref(4)]}, [2, 3, 4], cls="Composite")

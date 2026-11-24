@@ -135,7 +135,8 @@ then a Gamma node of 2.2, within 0.009 of the sRGB curve), and for a CoronaMix, 
 it holds too (measured); a Falloff or Color Correction on its own, and a Mix inside a mask, still mix decoded colors
 (not measured).
 With the gamma off a colored image read as stored (a Bitmap, a VRayBitmap From 3ds Max) as a mask masks by the mean
-of its pixel, decoded, as V-Ray 5.2 renders it (measured; a grey one as before).
+of its pixel, decoded, as V-Ray 5.2 renders it (measured as the mask of a Mix between black and white; a grey one as
+before); inside a mask, as a Corona layer mask and as a Diffuse Level map it follows the same rule (not measured).
 A material or map parameter that is animated (held by a controller: a Bezier, Linear or TCB Float, a Float List of
 those, a Bezier Color) takes its value at frame 0, as 3ds Max shows it there; another controller (an expression, a
 script, a Boolean Controller…) leaves the class's default. A map's animated Coordinates (tiling, offset, angle,

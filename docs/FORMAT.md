@@ -1887,7 +1887,12 @@ Tint on a color input renders the tint of the stored color, decoded ((0.638, 0.3
 Since maxdrop-6n0.6.36 an image read as stored (a Bitmap, a VRayBitmap From 3ds Max) as a gamma-off mask is that
 image as Non-Color, the mean of its channels, then the sRGB curve in Math nodes (exact; a grey as before): the PNG
 mask renders 0.1768 in Blender 5.2 (EEVEE, the 6n0.6.2 probe), and the Color Correction of saturation -50 over it
-0.1768 where V-Ray gives 0.1906 (was 0.4119); every other row of the probe unchanged.
+0.1768 where V-Ray gives 0.1906 (was 0.4119); every other row of the probe unchanged. Assumed, not measured: the
+same for such an image anywhere in a mask graph (below an RGB Multiply, a Falloff, a Color Correction), a Corona
+layer mask and a Diffuse Level map, as a swatch there is the rule of its mean; a Color Correction that rewires
+channels in a gamma-off mask picks them from the stored color, the mean decoded after it, as an RGB Tint.
+At a gamma-off color root a Mix of two colors, a Composite and a CoronaMix take their masks as stored (em3.158):
+unchanged.
 
 ### The Falloff mix curve
 
