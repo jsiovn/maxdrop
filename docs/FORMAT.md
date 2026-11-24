@@ -1285,7 +1285,8 @@ cos a) / (b − a)) and the same trapezoid, vertical angles from −90 or 0 to 9
 to 90, from −180 to 180 (only −90 to 90 counts, the planes at ±90 interpolated), or for type B from 0 to 90 doubled.
 Vertical angles from 0 are not doubled: each run goes on below 0 along its first segment, floored at 0 cd (a constant
 run: doubled), read with 2 or 3 vertical angles or constant runs ("VRayIES type A and B ranges, measured"); with 4 or
-more and a run that varies, V-Ray renders the lower half black while its own flux goes on: not read. A type A file
+more and a run that varies, V-Ray renders the lower half black while its own flux goes on: not read; nor a run that
+varies with a first segment shorter than 30° (the shortest measured), 0 included. A type A file
 with horizontal angles from 0 to 90 renders nothing: its flux is 0. An isotropic file of I cd gives 4π I exactly
 (type C), 2π I (A and B).
 The flux is times the candela multiplier and the ballast factor (not the ballast-lamp factor); the rated lumens are

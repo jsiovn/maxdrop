@@ -30,7 +30,8 @@ with its first plane at 360). Types A and B (vertical angles a latitude from -90
 -90 to 90, from -180 to 180 of which only -90 to 90 counts, or for type B from 0 to 90 mirrored): I(t) cos t
 instead, the same trapezoid. Vertical angles from 0 are not mirrored: each run goes on below 0 along its first
 segment, down to 0 cd at most; V-Ray renders that with 2 or 3 vertical angles or runs that do not vary, and the
-lower half black otherwise (not read). Type A with horizontal angles from 0 to 90 renders nothing: flux 0. An
+lower half black otherwise (not read); a run that varies is read only with a first segment of 30 degrees or more
+(the shortest measured). Type A with horizontal angles from 0 to 90 renders nothing: flux 0. An
 isotropic file of I cd gives 4 pi I exactly (type C), 2 pi I (types A and B). Other ranges of type A and B (V-Ray
 renders them by no rule found) are not read.
 
@@ -68,7 +69,7 @@ class Photometry(collections.namedtuple("Photometry", "lamps rated multiplier fl
     def scale(self):
         """V-Ray's power times this is the flux it renders: flux / (lamps x rated lumens); when they are not
         positive 1, or 0 for a flux of 0 (V-Ray renders such a table black; measured, docs/FORMAT.md "VRayIES
-        header, measured")."""
+        header, measured" and "VRayIES type A and B ranges, measured")."""
         if self.rated > 0:
             return self.flux / (self.lamps * self.rated)
         return 1.0 if self.flux > 0 else 0.0
@@ -229,8 +230,8 @@ def _flux(vertical, horizontal, candelas):
 
 
 def _flux_ab(vertical, horizontal, candelas, kind):
-    """Lumens of a type A or B candela table as V-Ray renders it (measured, docs/FORMAT.md "VRayIES header,
-    measured"): vertical angles (latitude) from -90 or 0 to 90, each run from 0 going on below 0 along its first
+    """Lumens of a type A or B candela table as V-Ray renders it (measured, docs/FORMAT.md "VRayIES type A and B
+    ranges, measured"): vertical angles (latitude) from -90 or 0 to 90, each run from 0 going on below 0 along its first
     segment (floored at 0 cd); horizontal ones from -90 to 90, from -180 to 180 (only -90 to 90 counts), or (type
     B) from 0 to 90 mirrored; type A from 0 to 90 renders nothing."""
     name = "?CBA"[kind]
@@ -243,15 +244,18 @@ def _flux_ab(vertical, horizontal, candelas, kind):
     if horizontal[0] == 0 and kind != TYPE_B:
         return 0.0  # V-Ray renders type A from 0 to 90 black (its own flux of 100 cd: 1.257 lm)
     nv = len(vertical)
-    if vertical[0] == 0 and vertical[1] == 0:
-        raise IesError("its first two vertical angles are both 0: no segment goes on below 0")
-    if vertical[0] == 0 and nv > 3 and any(len(set(candelas[j:j + nv])) > 1 for j in range(0, len(candelas), nv)):
+    # every plane counts here, also those past +-90 a cut drops: V-Ray's render of one plane depends on the others
+    varies = vertical[0] == 0 and any(len(set(candelas[j:j + nv])) > 1 for j in range(0, len(candelas), nv))
+    if varies and nv > 3:
         raise IesError("its candelas vary over %d vertical angles from 0: V-Ray renders the lower half black "
                        "where its own flux goes on below 0 (2 or 3 angles are read)" % nv)
+    if varies and vertical[1] < 30:
+        raise IesError("its candelas vary below a first vertical angle of %g degrees from 0: going on below 0 is "
+                       "measured from 30" % vertical[1])
     planes = _planes(vertical, horizontal, candelas, _ab_zone)
-    if vertical[0] == 0:
-        planes = [p + _below_0(math.radians(vertical[1]), candelas[j * nv], candelas[j * nv + 1])
-                  for j, p in enumerate(planes)]
+    if vertical[0] == 0:  # a constant run adds its value at 0 whatever the first angle (0 included)
+        planes = [p + (_below_0(math.radians(vertical[1]), candelas[j * nv], candelas[j * nv + 1]) if varies
+                       else candelas[j * nv]) for j, p in enumerate(planes)]
     if horizontal[0] == -180:
         horizontal, planes = _cut(horizontal, planes)
     return _trapezoid(planes, horizontal) * (2.0 if horizontal[0] == 0 else 1.0)
@@ -269,12 +273,15 @@ def _below_0(b, i0, i1):
 
 def _cut(horizontal, planes):
     """The planes from -90 to 90 of horizontal angles from -180 to 180: the ends interpolated linearly."""
-    def at(h):
-        for a, b, p, q in zip(horizontal, horizontal[1:], planes, planes[1:]):
-            if a <= h <= b:
-                return p if b == a else p + (q - p) * (h - a) / (b - a)
+    def at(h, pairs):  # the segment nearest the counted side: a repeated angle takes its inner plane
+        for a, b, p, q in pairs:
+            if min(a, b) <= h <= max(a, b):
+                return q if a == b else p + (q - p) * (h - a) / (b - a)
+    forward = list(zip(horizontal, horizontal[1:], planes, planes[1:]))
+    backward = [(b, a, q, p) for a, b, p, q in reversed(forward)]
     inner = [(h, p) for h, p in zip(horizontal, planes) if -90 < h < 90]
-    return [-90.0] + [h for h, _ in inner] + [90.0], [at(-90.0)] + [p for _, p in inner] + [at(90.0)]
+    return ([-90.0] + [h for h, _ in inner] + [90.0],
+            [at(-90.0, backward)] + [p for _, p in inner] + [at(90.0, forward)])
 
 
 class Lookup:

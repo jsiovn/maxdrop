@@ -158,10 +158,9 @@ class VRayRules(unittest.TestCase):
         self.assertAlmostEqual(p.scale, math.pi * 100.0 / 500.0, delta=1e-12)  # V-Ray 629.57 lm before ballast
 
 
-
 class TypeABRanges(unittest.TestCase):
-    """Ranges of type A and B V-Ray 5.2 renders by rules of its own (measured, docs/FORMAT.md "VRayIES header,
-    measured"; V-Ray's own flux is about 1.002 times these)."""
+    """Ranges of type A and B V-Ray 5.2 renders by rules of its own (measured, docs/FORMAT.md "VRayIES type A and B
+    ranges, measured"; V-Ray's own flux is about 1.002 times these)."""
     HALF = 2.0 * math.pi * 100.0  # 100 cd over the hemisphere
 
     def flux(self, kind=2, vertical=(-90, 0, 90), horizontal=(-90, 0, 90), **kw):
@@ -196,14 +195,26 @@ class TypeABRanges(unittest.TestCase):
             self.assertAlmostEqual(self.flux(vertical=v, candelas=rows), 0.75 * self.HALF, delta=1e-9, msg=v)
 
     def test_both_rules_at_once(self):
-        """V from 0 extended, H -180..180 cut at +-90 (V-Ray 583.78 = 1.002 x 582.58)."""
+        """V from 0 extended, H -180..180 cut at +-90. Four vertical angles: refused (V-Ray's own flux 583.78 =
+        1.002 x 582.58, its render black below 0); the same runs at 0, 30, 90: 580.570 (a brute-force integral)."""
         rows = [10, 20, 30, 40, 80, 60, 40, 20, 100, 90, 50, 10, 120, 100, 60, 0, 90, 80, 70, 60, 50, 50, 50, 50,
                 5, 5, 5, 5]
         with self.assertRaises(ies.IesError):  # four vertical angles, not constant
             self.flux(vertical=(0, 30, 60, 90), horizontal=(-180, -100, -45, 0, 45, 100, 180), candelas=rows)
         rows = [r for i, r in enumerate(rows) if i % 4 != 2]  # 0, 30, 90 of the same runs
         f = self.flux(vertical=(0, 30, 90), horizontal=(-180, -100, -45, 0, 45, 100, 180), candelas=rows)
-        self.assertGreater(f, 0.0)
+        self.assertAlmostEqual(f, 580.570, delta=0.001)
+
+    def test_a_repeated_cut_angle_takes_the_counted_side(self):
+        rows = [0, 0, 0] * 2 + [100, 100, 100] * 3  # planes at -180, -90 (back side), -90, 90, 180
+        f = self.flux(horizontal=(-180, -90, -90, 90, 180), candelas=rows)
+        self.assertAlmostEqual(f, self.HALF, delta=1e-9)
+        f = self.flux(horizontal=(-180, -90, 90, 90, 180), candelas=list(reversed(rows)))
+        self.assertAlmostEqual(f, self.HALF, delta=1e-9)
+
+    def test_a_constant_run_with_a_repeated_0(self):
+        f = self.flux(vertical=(0, 0, 90), horizontal=(-90, 90))
+        self.assertAlmostEqual(f, self.HALF, delta=1e-9)
 
     def test_type_a_horizontal_from_0_is_dark(self):
         """V-Ray renders nothing (its own flux 1.257 lm at 100 cd): flux 0, rated or not."""
@@ -218,7 +229,9 @@ class TypeABRanges(unittest.TestCase):
             for rated in (-1, 0, 628.3):
                 p = ies.parse(ies_file(kind=kind, vertical=v, horizontal=h, rated=rated, candela=0))
                 self.assertEqual(p.scale, 0.0, (kind, rated))
+        # derived, not measured: V-Ray's own flux takes the multiplier (2 doubles it), so 0 loads a power of 0
         self.assertEqual(ies.parse(ies_file(rated=-1, multiplier=0)).scale, 0.0)
+
 
 class Refused(unittest.TestCase):
     def refused(self, data, start):
@@ -240,7 +253,9 @@ class Refused(unittest.TestCase):
                      "its horizontal angles run from -90 to 0")
         self.refused(ies_file(kind=3, vertical=(-90, 90), horizontal=(0, 45)),
                      "its horizontal angles run from 0 to 45 degrees: not one of type A's")
-        self.refused(ies_file(kind=2, vertical=(0, 0, 90), horizontal=(-90, 90)), "its first two vertical angles")
+        for second in (0, 1e-323, 29.9):  # a varying run: going on below 0 is measured from a first angle of 30
+            self.refused(ies_file(kind=2, vertical=(0, second, 90), horizontal=(-90, 90), candelas=[100, 0, 0] * 2),
+                         "its candelas vary below a first vertical angle of")
         self.refused(ies_file(kind=2, vertical=(0, 30, 60, 90), horizontal=(-90, 0, 90), candelas=[120, 100, 60, 0] * 3),
                      "its candelas vary over 4 vertical angles from 0: V-Ray renders the lower half black")
         self.refused(ies_file(kind=2, vertical=(-90, 90, 0), horizontal=(0, 90)),
