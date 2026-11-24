@@ -39,10 +39,6 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   glossiness map still is: the curve is not applied to it); a CoronaPhysicalMtl in IOR mode Specular reads its base
   and clearcoat IORs as specular levels (0.5 is IOR 1.5) instead of IORs with a line in the report;
   CoronaPhysicalMtl translucency is a line in the report only in thin mode, the one mode Corona renders it in.
-- Materials: in a scene saved with Corona as its renderer, an Output map whose map is switched off keeps that map,
-  as Corona 12 renders it, instead of white (V-Ray and Scanline scenes keep white, as V-Ray renders it). An unset
-  Output or RGB Tint, an RGB Tint switched off and an unset VRayColor2Bump are now measured in Corona and with the
-  gamma on: the same as before.
 
 ### Fixed
 
@@ -207,6 +203,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   (one V-Ray reading not followed: a VRayBitmap From 3ds Max directly in a bump slot with the gamma off). A
   CoronaNormal's Add gamma to input over an image is now applied (with the gamma on; with it off it changes
   nothing) instead of being a line in the report.
+- Materials: in a scene saved with Corona as its renderer, an Output map whose map is switched off keeps that map,
+  as Corona 12 renders it, instead of white (V-Ray and Scanline scenes keep white, as V-Ray renders it). An unset
+  Output or RGB Tint, an RGB Tint switched off and an unset VRayColor2Bump are now measured in Corona and with the
+  gamma on: the same as before.
 
 ## [1.0.1] - 2026-11-22
 
