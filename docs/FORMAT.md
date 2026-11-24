@@ -1976,6 +1976,9 @@ and dodge 1 - max(0, nz - a / (1 - b)), nz = ceil(min(|divisor|, 1)), 0 for a di
 emission bake against `texmaps.blend_value` (every operation, both modes, layers -0.5 to 3, exactly 0 and 1 too).
 The gamma operation over a bottom map draws a ColorCorrect gamma: a negative channel of that map stays negative.
 A Mix node's color input clamps its own value at 0: a constant layer below 0 goes in through a Combine XYZ node.
+So does every Mix node's (maxdrop-6n0.6.26: Mix maps, CoronaMix mix and multiply, RGB Multiply, Composite layers) and
+an RGB node standing for a constant (`_Tree.socket`); a Cycles emission bake of a Mix (0.5) and a Multiply of a white
+image with a constant side of -0.5 gives 0.25 and -0.5 (was 0.5 and 0, the constant taken as 0).
 
 Corona 12 renders (maxdrop-em3.115): `3dsmaxbatch`, CoronaRenderer with tone mapping off (`colorMap_enabled`) and a
 pass and a time limit, read with `getPixels ... linear:true` (a CoronaLightMtl patch at 0.5 / 1.0 reads 0.49999 /
@@ -2045,6 +2048,14 @@ sigma_a, color 1 - the share) and an Emission (strength 1 / distance) on the Vol
 exact; scattering white 0.681, 128 grey 0.566, directionality 0.6 / -0.6 0.868 / 0.603; furnace 0.992, 0.677, 0.692.
 Blender's default Volume Bounces of 0 scatters once (as Corona's single bounce): MaxDrop does not change it. An unlinked Surface with nothing
 on the Volume socket renders black there: a volume-only material keeps its Principled BSDF at Alpha 0.
+Since maxdrop-6n0.6.29 that holds only without a medium. With one on Volume, a volume-only material (alpha 0, no
+alpha map, no layers) leaves Surface unlinked: an Alpha-0 Principled BSDF spends two of Cycles' 8 transparent bounces
+per box (Blender 4.2.23 and 5.2, 20 m boxes over an emitter of 1: one box 1.0, six or twelve stacked 0.0 in Cycles,
+EEVEE 1.0), the unlinked Surface 1.0 at any count, and a camera inside an absorbing box (0.05 / m, 19.5 m) reads 0.379
+both ways in Cycles and EEVEE (e^-0.975 = 0.377). Its viewport color is 0.1 opaque, so Solid view shows the scene in
+it. The em3.163 scattering slab (128 grey at 10, scattering white, h 10, the emitter the slab's footprint) renders
+0.601 at Volume Bounces 0 (Corona single bounce 0.598) and 0.678 at 64 (Corona 0.683): the import names a medium that
+scatters in the report and leaves the setting as it is (owner, 2026-11-24).
 
 Corona 12 CoronaHairMtl on a mesh (maxdrop-em3.164; `3dsmaxbatch`, tone mapping off, the gamma off, read with
 `getPixels ... linear:true` as a mean of 31 x 31 pixels, the swatch's 0-255 value / 255 rendered as the linear color as

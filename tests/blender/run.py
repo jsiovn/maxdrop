@@ -2194,7 +2194,10 @@ def check_principled(label, material, ir, present=False):
     check(label + ": Thin Wall", (thin is None and bpy.app.version < (5, 0, 0)) or
           (thin is not None and bool(thin.default_value) == ir.thin_walled))
     alphas = [(alpha is None, alpha)] + [_alpha_of(layer.ir, present) for layer in layers]
-    method = 'DITHERED' if any(linked for linked, _v in alphas) else \
+    from maxdrop.build import materials as build_materials
+    output = next(n for n in material.node_tree.nodes if n.bl_idname == "ShaderNodeOutputMaterial")
+    volume_only = build_materials._volume_only(ir) and output.inputs["Volume"].is_linked  # no surface: maxdrop-6n0.6.29
+    method = 'DITHERED' if volume_only or any(linked for linked, _v in alphas) else \
         'BLENDED' if any(v is not None and v < 1.0 for _l, v in alphas) else 'DITHERED'
     check(label + ": surface_render_method", material.surface_render_method == method,
           "%s vs %s" % (material.surface_render_method, method))
@@ -2268,7 +2271,12 @@ def check_builder_volume():
     emitter of radiance 1, seen straight through by an orthographic camera, lets 0.8 / 0.5 / 0.2 through for an
     absorption color of 0.8 / 0.5 / 0.2 at 10 m (Corona 12 renders the color at its distance); an emission-only slab
     of 1 / 0.5 / 0.25 over 10 m adds that over 10 m and 0.5 times it over 5 m; a volume-only material (alpha 0, no
-    medium) lets the emitter through unchanged; a medium of all three parts is built as check_medium reads it."""
+    medium) lets the emitter through unchanged; a medium of all three parts is built as check_medium reads it.
+    maxdrop-6n0.6.29: a volume-only material with a medium leaves Surface unlinked, keeps the default render method
+    and a viewport alpha of VOLUME_VIEWPORT_ALPHA; one with a surface, or alpha 0 without a medium, keeps its
+    Principled BSDF on Surface and a viewport alpha of 1; a medium that scatters is a VOLUME_BOUNCES issue; six
+    stacked 1 m slabs of a near-clear volume-only material let 0.9^0.06 through (an Alpha-0 Principled BSDF spends
+    two of Cycles' 8 transparent bounces per slab: black)."""
     from maxdrop.build import materials as build_materials
     from maxdrop.convert import materials as cm
     empty_scene()
@@ -2281,8 +2289,11 @@ def check_builder_volume():
                                        roughness=cm.Input(0.0), transmission=cm.Input(1.0), ior=1.0, medium=absorb),
            "emit": cm.MaterialIR(71, "MediumEmit", "test", alpha=cm.Input(0.0), medium=emit),
            "full": cm.MaterialIR(72, "MediumFull", "test", alpha=cm.Input(0.0), medium=full),
-           "none": cm.MaterialIR(73, "MediumNone", "test", alpha=cm.Input(0.0))}
-    built = {k: build_materials.MaterialBuilder().make(ir) for k, ir in irs.items()}
+           "none": cm.MaterialIR(73, "MediumNone", "test", alpha=cm.Input(0.0)),
+           "thin": cm.MaterialIR(74, "MediumThin", "test", alpha=cm.Input(0.0),
+                                 medium=cm.corona_medium(Meters, (0.9, 0.9, 0.9), 100.0, (0.0, 0.0, 0.0), 0.0))}
+    builder = build_materials.MaterialBuilder()
+    built = {k: builder.make(ir) for k, ir in irs.items()}
     scene = bpy.context.scene
     settings = ((scene.render, ("engine", "resolution_x", "resolution_y", "resolution_percentage", "filepath")),
                 (scene.render.image_settings, ("file_format",)), (scene.view_settings, ("view_transform",)),
@@ -2297,6 +2308,21 @@ def check_builder_volume():
                 check_medium("volume (%s)" % k, built[k], ir)
         if any(m is None for m in built.values()):
             return
+        for k, m in built.items():
+            out = next(n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeOutputMaterial")
+            surface = _from(out.inputs["Surface"])
+            if k in ("emit", "full", "thin"):
+                check("volume (%s): volume-only: Surface unlinked, the default render method, viewport alpha %g"
+                      % (k, build_materials.VOLUME_VIEWPORT_ALPHA), surface is None and m.surface_render_method
+                      == 'DITHERED' and abs(m.diffuse_color[3] - build_materials.VOLUME_VIEWPORT_ALPHA) < 1e-6,
+                      "%s %s %s" % (surface, m.surface_render_method, tuple(m.diffuse_color)))
+            else:
+                check("volume (%s): its Principled BSDF on Surface, viewport alpha 1" % k, surface is not None and
+                      surface.bl_idname == "ShaderNodeBsdfPrincipled" and m.diffuse_color[3] == 1.0,
+                      "%s %s" % (surface, tuple(m.diffuse_color)))
+        lines = [(label, r) for label, r in builder.issues() if r == build_materials.VOLUME_BOUNCES]
+        check("volume: the Volume Bounces line for the medium that scatters only",
+              lines == [("material " + built["full"].name, build_materials.VOLUME_BOUNCES)], str(builder.issues()))
         from maxdrop import compat
         world = bpy.data.worlds.new("MediumWorld")
         compat.node_tree(world).nodes["Background"].inputs[0].default_value = (0.0, 0.0, 0.0, 1.0)
@@ -2319,6 +2345,13 @@ def check_builder_volume():
                                     (1, 3, 7, 5)])
             box.materials.append(built[k])
             bpy.context.collection.objects.link(bpy.data.objects.new("MediumSlab", box))
+        for z in range(0, 12, 2):  # six 1 m slabs, 12 crossings: past Cycles' 8 transparent bounces
+            box = bpy.data.meshes.new("MediumStack")
+            v = [(130 + 40 * i, -20 + 40 * j, z + c) for c in (0, 1) for j in (0, 1) for i in (0, 1)]
+            box.from_pydata(v, [], [(0, 2, 3, 1), (4, 5, 7, 6), (0, 1, 5, 4), (2, 6, 7, 3), (0, 4, 6, 2),
+                                    (1, 3, 7, 5)])
+            box.materials.append(built["thin"])
+            bpy.context.collection.objects.link(bpy.data.objects.new("MediumStack", box))
         cam = bpy.data.cameras.new("MediumCamera")
         cam.type, cam.ortho_scale, cam.clip_end = 'ORTHO', 400.0, 1000.0
         cob = bpy.data.objects.new("MediumCamera", cam)
@@ -2343,7 +2376,8 @@ def check_builder_volume():
         wants = ((-150.0, [0.8, 0.5, 0.2], "absorption 0.8 / 0.5 / 0.2 at 10 m: the color"),
                  (-75.0, [2.0, 1.5, 1.25], "emission 1 / 0.5 / 0.25 over 10 m on the emitter's 1"),
                  (0.0, [1.5, 1.25, 1.125], "the same emission over 5 m: half"),
-                 (75.0, [1.0, 1.0, 1.0], "a volume-only material without a medium: nothing"))
+                 (75.0, [1.0, 1.0, 1.0], "a volume-only material without a medium: nothing"),
+                 (150.0, [0.9 ** 0.06] * 3, "six stacked 1 m slabs of absorption 0.9 at 100 m: 0.9^0.06"))
         for x, want, what in wants:
             got = at(x)
             check("volume Cycles render: " + what, close(list(got), want, 0.01), "%s vs %s" % (list(got), want))
@@ -3877,6 +3911,66 @@ def check_builder_mono():
         for img in list(bpy.data.images):
             bpy.data.images.remove(img)
         shutil.rmtree(scratch, ignore_errors=True)
+
+
+def check_builder_negative_constants():
+    """A constant color below 0 on a Mix node's color input (bead maxdrop-6n0.6.26): a color input, and an RGB
+    node's color, clamp their own value at 0, so mix, multiply, a Composite's opacity Mix and its blend Mix, and
+    _Tree.socket put it on a Combine XYZ node, which keeps it; a constant of no channel below 0 stays the input's own
+    value (an RGB node for socket)."""
+    from maxdrop.build import materials as build_materials
+    from maxdrop.convert import materials as cm
+    from maxdrop.convert import texmaps as tx
+    from maxdrop.convert import textures as ct
+    empty_scene()
+    scratch = tempfile.mkdtemp(prefix="maxdrop-negative-")
+    neg, pos = (-0.5, 0.25, -0.2), (0.2, 0.3, 0.4)
+
+    def held(socket):  # the constant on a color input: (its values, whether a Combine XYZ holds them)
+        n = _from(socket)
+        if n is None:
+            return list(socket.default_value)[:3], False
+        if n.bl_idname == "ShaderNodeCombineXYZ":
+            return [i.default_value for i in n.inputs], True
+        return None, False
+
+    try:
+        png = os.path.join(scratch, "negative.png")
+        _write_png(png)
+        img = tx.Image(1, "negative.png", "negative.png", "", ct.Found(png, ct.SCENE))
+        cases = (("mix", lambda c: tx.Mix(img, tx.Constant(c), 0.5), 'MIX'),
+                 ("multiply", lambda c: tx.Multiply(img, tx.Constant(c)), 'MULTIPLY'),
+                 ("composite opacity", lambda c: tx.Composite((tx.CompositeLayer(img),
+                                                               tx.CompositeLayer(tx.Constant(c), 0.5))), 'MIX'),
+                 ("composite blend", lambda c: tx.Composite((tx.CompositeLayer(img),
+                                                             tx.CompositeLayer(tx.Constant(c), 1.0, tx.ADDITION))),
+                  'ADD'))
+        builder = build_materials.MaterialBuilder()
+        for what, graph, blend in cases:
+            for c in (neg, pos):
+                ir = cm.MaterialIR(80, "Negative", "test", base_color=cm.Input((0.5,) * 3, cm.MapRef(1)))
+                ir.textures = {"base_color": tx.TextureGraphIR(graph(c), tx.COLOR)}
+                m = builder.make(ir)
+                mixes = [n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeMix" and n.blend_type == blend]
+                value, combined = held(_input(mixes[0], "B_Color")) if len(mixes) == 1 else (None, False)
+                check("negative constants: %s of an image and %s: %s" % (
+                          what, list(c), "on a Combine XYZ" if min(c) < 0 else "the input's own value"),
+                      value is not None and close(value, list(c), 1e-6) and combined == (min(c) < 0)
+                      and _reaches_image(_input(mixes[0], "A_Color")), "%d %s %s" % (len(mixes), value, combined))
+                bpy.data.materials.remove(m)
+        m = bpy.data.materials.new("NegativeSocket")
+        tree = build_materials._Tree(builder, m, cm.MaterialIR(81, "NegativeSocket", "test"))
+        for c, kind in ((neg, "ShaderNodeCombineXYZ"), (pos, "ShaderNodeRGB")):
+            out = tree.socket(c, build_materials.COLOR, 0)
+            node = out.node
+            got = [i.default_value for i in node.inputs] if node.bl_idname == "ShaderNodeCombineXYZ" else \
+                list(out.default_value)[:3]
+            check("negative constants: socket() of %s: a %s holding it" % (list(c), kind[10:]),
+                  node.bl_idname == kind and close(got, list(c), 1e-6), "%s %s" % (node.bl_idname, got))
+        bpy.data.materials.remove(m)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+        empty_scene()
 
 
 def check_builder_multiply():
@@ -5769,6 +5863,7 @@ def main():
                                  ("builder blend", check_builder_blend), ("builder mono", check_builder_mono),
                                  ("builder blend modes", check_builder_blend_modes),
                                  ("builder multiply", check_builder_multiply),
+                                 ("builder negative constants", check_builder_negative_constants),
                                  ("builder diffuse level", check_builder_diffuse_level),
                                  ("builder wrapper constants", check_builder_wrapper_constants),
                                  ("builder volume", check_builder_volume),

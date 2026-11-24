@@ -50,6 +50,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   glossiness map still is: the curve is not applied to it); a CoronaPhysicalMtl in IOR mode Specular reads its base
   and clearcoat IORs as specular levels (0.5 is IOR 1.5) instead of IORs with a line in the report;
   CoronaPhysicalMtl translucency is a line in the report only in thin mode, the one mode Corona renders it in.
+- Corona media: a material whose medium scatters is named in the report, with Cycles' Volume Bounces to raise for
+  multiple scattering (0, Blender's default, scatters once); the import changes no scene setting.
 
 ### Fixed
 
@@ -256,6 +258,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   color now masks 0.172 with the gamma on (was 0.134); with the gamma off that mean is shown decoded, so an Output
   of level 0.5 over white masks 0.218 linear where V-Ray shows 0.214 (was 0.5). A Color Correction there is
   unchanged.
+- Materials: a constant color below 0 (an HDR CoronaColor, a CoronaMix layer with a negative offset or multiplier)
+  over a map in a Mix, a CoronaMix mix or multiply, an RGB Multiply or a Composite is no longer taken as 0.
+- Corona media: a CoronaVolumeMtl box has no surface at all, so six or more stacked or nested boxes no longer render
+  black in Cycles (each box spent two of its 8 transparent bounces), and a room-sized fog box no longer hides the
+  scene in Solid view (its viewport color is see-through).
 
 ## [1.0.1] - 2026-11-22
 
