@@ -305,8 +305,9 @@ class SunAndIes(unittest.TestCase):
         self.assertEqual(issues, [L.IES_FILE % "a.ies"])
         ld, issues = describe(with_file(ies(power=1000.0), ies_bytes(rated=0)))  # 0 lm: the power is the flux
         self.assertAlmostEqual(ld.watts, 1000.0 / 683.0, delta=1e-12)
-        ld, issues = describe(with_file(ies(power=1000.0), ies_bytes(candela=0)))
-        self.assertEqual((ld.watts, issues), (0.0, [L.IES_DARK % "a.ies", L.IES_FILE % "a.ies"]))
+        for rated in (500, -1):  # V-Ray renders a table without light black, also when absolute (measured)
+            ld, issues = describe(with_file(ies(power=1000.0), ies_bytes(candela=0, rated=rated)))
+            self.assertEqual((ld.watts, issues), (0.0, [L.IES_DARK % "a.ies", L.IES_FILE % "a.ies"]), rated)
         ld, issues = describe(with_file(ies(power=1000.0), ies_bytes(rated="1e-300")))
         self.assertEqual((ld.watts, ld.power, issues), (0.0, 0.0, [L.IES_FILE % "a.ies", L.OUT_OF_RANGE]))
 

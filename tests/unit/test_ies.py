@@ -145,7 +145,7 @@ class VRayRules(unittest.TestCase):
         self.assertAlmostEqual(p.flux, 100.0 * math.pi, delta=1e-9)
 
     def test_type_a(self):
-        """Read as type B (V-Ray 629.58 lm isotropic, vertical angles from 0 mirrored); horizontal from 0 refused."""
+        """Read as type B (V-Ray 629.58 lm isotropic, also with vertical angles from 0)."""
         for v in ((-90, 0, 90), (0, 90)):
             p = ies.parse(ies_file(kind=3, vertical=v, horizontal=(-90, 0, 90), rated=628.3, multiplier=2))
             self.assertAlmostEqual(p.flux, 4.0 * math.pi * 100.0, delta=1e-9, msg=v)
@@ -158,6 +158,68 @@ class VRayRules(unittest.TestCase):
         self.assertAlmostEqual(p.scale, math.pi * 100.0 / 500.0, delta=1e-12)  # V-Ray 629.57 lm before ballast
 
 
+
+class TypeABRanges(unittest.TestCase):
+    """Ranges of type A and B V-Ray 5.2 renders by rules of its own (measured, docs/FORMAT.md "VRayIES header,
+    measured"; V-Ray's own flux is about 1.002 times these)."""
+    HALF = 2.0 * math.pi * 100.0  # 100 cd over the hemisphere
+
+    def flux(self, kind=2, vertical=(-90, 0, 90), horizontal=(-90, 0, 90), **kw):
+        return ies.parse(ies_file(kind=kind, vertical=vertical, horizontal=horizontal, rated=-1, **kw)).flux
+
+    def test_horizontal_from_minus_180_counts_minus_90_to_90(self):
+        for kind in (2, 3):  # V-Ray 629.57: the back half renders black
+            self.assertAlmostEqual(self.flux(kind, horizontal=(-180, -90, 0, 90, 180)), self.HALF, delta=1e-9)
+            self.assertAlmostEqual(self.flux(kind, horizontal=(-180, 180)), self.HALF, delta=1e-9)
+        # planes at +-90 interpolated: 50 cd there (V-Ray 576.90 = 1.002 x 575.96)
+        h = (-180, -120, -60, 0, 60, 120, 180)
+        rows = [0, 0, 0] * 2 + [100, 100, 100] * 3 + [0, 0, 0] * 2
+        self.assertAlmostEqual(self.flux(horizontal=h, candelas=rows), 100.0 * math.pi * 11.0 / 6.0, delta=1e-9)
+
+    def test_vertical_from_0_extends_the_first_segment(self):
+        v = (0, 45, 90)
+        # 100, 50, 0: 150 cd at V -45, 200 at -90 (V-Ray 629.58; the mirror gave 400)
+        self.assertAlmostEqual(self.flux(vertical=v, candelas=[100, 50, 0] * 3), self.HALF, delta=1e-9)
+        self.assertAlmostEqual(self.flux(vertical=(0, 90), candelas=[100, 0] * 3), self.HALF, delta=1e-9)
+        # 0, 50, 100: the extension is negative below 0, floored: the upper half alone (V-Ray 114.31)
+        upper = self.flux(vertical=v, candelas=[0, 50, 100] * 3)
+        self.assertAlmostEqual(upper, 114.16, delta=0.01)
+        # 40, 100, 100 at 0, 30, 90: 0 cd from V -20 down (V-Ray 288.19 = 1.002 x 287.64)
+        self.assertAlmostEqual(self.flux(vertical=(0, 30, 90), candelas=[40, 100, 100] * 3), 287.64, delta=0.01)
+        # 100, 70, 0 at 0, 60, 90 (V-Ray 621.76 = 1.002 x 620.53)
+        self.assertAlmostEqual(self.flux(vertical=(0, 60, 90), candelas=[100, 70, 0] * 3), 620.53, delta=0.01)
+
+    def test_vertical_from_0_constant_runs(self):
+        """Constant vertical runs are read with any number of angles (V-Ray renders them as the mirror)."""
+        for v in ((0, 30, 60, 90), (0, 22.5, 45, 67.5, 90)):
+            rows = [100] * len(v) + [50] * len(v) + [100] * len(v)
+            self.assertAlmostEqual(self.flux(vertical=v, candelas=rows), 0.75 * self.HALF, delta=1e-9, msg=v)
+
+    def test_both_rules_at_once(self):
+        """V from 0 extended, H -180..180 cut at +-90 (V-Ray 583.78 = 1.002 x 582.58)."""
+        rows = [10, 20, 30, 40, 80, 60, 40, 20, 100, 90, 50, 10, 120, 100, 60, 0, 90, 80, 70, 60, 50, 50, 50, 50,
+                5, 5, 5, 5]
+        with self.assertRaises(ies.IesError):  # four vertical angles, not constant
+            self.flux(vertical=(0, 30, 60, 90), horizontal=(-180, -100, -45, 0, 45, 100, 180), candelas=rows)
+        rows = [r for i, r in enumerate(rows) if i % 4 != 2]  # 0, 30, 90 of the same runs
+        f = self.flux(vertical=(0, 30, 90), horizontal=(-180, -100, -45, 0, 45, 100, 180), candelas=rows)
+        self.assertGreater(f, 0.0)
+
+    def test_type_a_horizontal_from_0_is_dark(self):
+        """V-Ray renders nothing (its own flux 1.257 lm at 100 cd): flux 0, rated or not."""
+        for v in ((-90, 0, 90), (0, 90)):
+            for rated in (628.3, -1):
+                p = ies.parse(ies_file(kind=3, vertical=v, horizontal=(0, 90), rated=rated))
+                self.assertEqual((p.flux, p.scale), (0.0, 0.0), (v, rated))
+
+    def test_a_table_without_light_scales_by_0(self):
+        """Every candela 0: V-Ray loads a power of 0 at rated -1 and renders black, rated or not."""
+        for kind, v, h in ((1, (0, 90, 180), (0,)), (2, (-90, 0, 90), (-90, 0, 90))):
+            for rated in (-1, 0, 628.3):
+                p = ies.parse(ies_file(kind=kind, vertical=v, horizontal=h, rated=rated, candela=0))
+                self.assertEqual(p.scale, 0.0, (kind, rated))
+        self.assertEqual(ies.parse(ies_file(rated=-1, multiplier=0)).scale, 0.0)
+
 class Refused(unittest.TestCase):
     def refused(self, data, start):
         with self.assertRaises(ies.IesError) as cm:
@@ -169,13 +231,18 @@ class Refused(unittest.TestCase):
         self.refused(ies_file(kind=2), "its vertical angles run from 0 to 180 degrees: not one of type B's")
         self.refused(ies_file(kind=2, vertical=(-60, 0, 90)), "its vertical angles run from -60 to 90 degrees")
         self.refused(ies_file(kind=2, vertical=(-90, 0, 60)), "its vertical angles run from -90 to 60 degrees")
-        self.refused(ies_file(kind=2, vertical=(-90, 90), horizontal=(-180, 0, 180)),
-                     "its horizontal angles run from -180 to 180 degrees: not one of type B's")
+        self.refused(ies_file(kind=2, vertical=(-90, 90), horizontal=(-180, 0, 90)),
+                     "its horizontal angles run from -180 to 90 degrees: not one of type B's")
+        self.refused(ies_file(kind=2, vertical=(-90, 90), horizontal=(-90, 0, 180)),
+                     "its horizontal angles run from -90 to 180 degrees: not one of type B's")
         self.refused(ies_file(kind=2, vertical=(-90, 90), horizontal=(0,)), "its horizontal angles run from 0 to 0")
         self.refused(ies_file(kind=2, vertical=(-90, 90), horizontal=(-90, 0)),
                      "its horizontal angles run from -90 to 0")
-        self.refused(ies_file(kind=3, vertical=(-90, 90), horizontal=(0, 90)),
-                     "its horizontal angles run from 0 to 90 degrees: not one of type A's")
+        self.refused(ies_file(kind=3, vertical=(-90, 90), horizontal=(0, 45)),
+                     "its horizontal angles run from 0 to 45 degrees: not one of type A's")
+        self.refused(ies_file(kind=2, vertical=(0, 0, 90), horizontal=(-90, 90)), "its first two vertical angles")
+        self.refused(ies_file(kind=2, vertical=(0, 30, 60, 90), horizontal=(-90, 0, 90), candelas=[120, 100, 60, 0] * 3),
+                     "its candelas vary over 4 vertical angles from 0: V-Ray renders the lower half black")
         self.refused(ies_file(kind=2, vertical=(-90, 90, 0), horizontal=(0, 90)),
                      "its vertical angles are not in order")
         self.refused(ies_file(kind=2, vertical=(-90, 90), horizontal=(90, 0)), "its horizontal angles are not in order")

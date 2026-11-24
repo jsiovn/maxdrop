@@ -26,10 +26,13 @@ left out); the candelas are interpolated linearly in angle. Type C (vertical ang
 horizontal ones about the vertical axis): per horizontal plane the integral of I(t) sin t over the vertical angles,
 then the trapezoid over the planes in radians, times 360 / their span (one plane: 2 pi; the span 90, 180 or 360
 degrees of LM-63's symmetries from 0 or 90, 90 to 270 included; a file from 0 to past 180 but short of 360 is closed
-with its first plane at 360). Types A and B (vertical angles a latitude from -90, or from 0 mirrored, to 90;
-horizontal ones from -90 to 90, or for type B from 0 to 90 mirrored): I(t) cos t instead, the same trapezoid. An
-isotropic file of I cd gives 4 pi I exactly (type C), 2 pi I (types A and B). Other ranges of type A and B, type A
-with horizontal angles from 0 included (V-Ray's own flux of it is not the table's), are not read.
+with its first plane at 360). Types A and B (vertical angles a latitude from -90 or 0 to 90; horizontal ones from
+-90 to 90, from -180 to 180 of which only -90 to 90 counts, or for type B from 0 to 90 mirrored): I(t) cos t
+instead, the same trapezoid. Vertical angles from 0 are not mirrored: each run goes on below 0 along its first
+segment, down to 0 cd at most; V-Ray renders that with 2 or 3 vertical angles or runs that do not vary, and the
+lower half black otherwise (not read). Type A with horizontal angles from 0 to 90 renders nothing: flux 0. An
+isotropic file of I cd gives 4 pi I exactly (type C), 2 pi I (types A and B). Other ranges of type A and B (V-Ray
+renders them by no rule found) are not read.
 
 The file comes from anywhere: at most MAX_BYTES are read (a larger file is refused), MAX_ANGLES per axis and
 MAX_VALUES candelas, counts checked against the numbers there are before any list is made; the numbers are read
@@ -63,9 +66,12 @@ class Photometry(collections.namedtuple("Photometry", "lamps rated multiplier fl
 
     @property
     def scale(self):
-        """V-Ray's power times this is the flux it renders: flux / (lamps x rated lumens), 1 when they are not
-        positive (measured, docs/FORMAT.md "VRayIES header, measured")."""
-        return self.flux / (self.lamps * self.rated) if self.rated > 0 else 1.0
+        """V-Ray's power times this is the flux it renders: flux / (lamps x rated lumens); when they are not
+        positive 1, or 0 for a flux of 0 (V-Ray renders such a table black; measured, docs/FORMAT.md "VRayIES
+        header, measured")."""
+        if self.rated > 0:
+            return self.flux / (self.lamps * self.rated)
+        return 1.0 if self.flux > 0 else 0.0
 
 
 def read(path):
@@ -223,19 +229,52 @@ def _flux(vertical, horizontal, candelas):
 
 
 def _flux_ab(vertical, horizontal, candelas, kind):
-    """Lumens of a type A or B candela table: vertical angles (latitude) from -90, or from 0 mirrored, to 90;
-    horizontal ones from -90 to 90, or (type B) from 0 to 90 mirrored, as V-Ray reads them (measured: type A with
-    horizontal angles from 0 is not, V-Ray's flux of it is not the table's)."""
+    """Lumens of a type A or B candela table as V-Ray renders it (measured, docs/FORMAT.md "VRayIES header,
+    measured"): vertical angles (latitude) from -90 or 0 to 90, each run from 0 going on below 0 along its first
+    segment (floored at 0 cd); horizontal ones from -90 to 90, from -180 to 180 (only -90 to 90 counts), or (type
+    B) from 0 to 90 mirrored; type A from 0 to 90 renders nothing."""
     name = "?CBA"[kind]
     if vertical[0] not in (-90, 0) or vertical[-1] != 90:
         raise IesError("its vertical angles run from %g to %g degrees: not one of type %s's"
                        % (vertical[0], vertical[-1], name))
-    if horizontal[-1] != 90 or horizontal[0] not in ((-90, 0) if kind == TYPE_B else (-90,)):
+    if (horizontal[0], horizontal[-1]) not in ((-90, 90), (-180, 180), (0, 90)):
         raise IesError("its horizontal angles run from %g to %g degrees: not one of type %s's"
                        % (horizontal[0], horizontal[-1], name))
+    if horizontal[0] == 0 and kind != TYPE_B:
+        return 0.0  # V-Ray renders type A from 0 to 90 black (its own flux of 100 cd: 1.257 lm)
+    nv = len(vertical)
+    if vertical[0] == 0 and vertical[1] == 0:
+        raise IesError("its first two vertical angles are both 0: no segment goes on below 0")
+    if vertical[0] == 0 and nv > 3 and any(len(set(candelas[j:j + nv])) > 1 for j in range(0, len(candelas), nv)):
+        raise IesError("its candelas vary over %d vertical angles from 0: V-Ray renders the lower half black "
+                       "where its own flux goes on below 0 (2 or 3 angles are read)" % nv)
     planes = _planes(vertical, horizontal, candelas, _ab_zone)
-    mirrored = (2.0 if vertical[0] == 0 else 1.0) * (2.0 if horizontal[0] == 0 else 1.0)
-    return _trapezoid(planes, horizontal) * mirrored
+    if vertical[0] == 0:
+        planes = [p + _below_0(math.radians(vertical[1]), candelas[j * nv], candelas[j * nv + 1])
+                  for j, p in enumerate(planes)]
+    if horizontal[0] == -180:
+        horizontal, planes = _cut(horizontal, planes)
+    return _trapezoid(planes, horizontal) * (2.0 if horizontal[0] == 0 else 1.0)
+
+
+def _below_0(b, i0, i1):
+    """The integral of cos t over [-pi/2, 0] times the run's first segment (i0 cd at 0, i1 at b radians) going on
+    below 0, floored at 0 cd."""
+    slope = (i1 - i0) / b
+    a = -0.5 * math.pi
+    if i0 + slope * a < 0:
+        a = -i0 / slope  # slope > 0 here: the line meets 0 cd at a, in (-pi/2, 0]
+    return _ab_zone(a, 0.0, max(0.0, i0 + slope * a), i0)
+
+
+def _cut(horizontal, planes):
+    """The planes from -90 to 90 of horizontal angles from -180 to 180: the ends interpolated linearly."""
+    def at(h):
+        for a, b, p, q in zip(horizontal, horizontal[1:], planes, planes[1:]):
+            if a <= h <= b:
+                return p if b == a else p + (q - p) * (h - a) / (b - a)
+    inner = [(h, p) for h, p in zip(horizontal, planes) if -90 < h < 90]
+    return [-90.0] + [h for h, _ in inner] + [90.0], [at(-90.0)] + [p for _, p in inner] + [at(90.0)]
 
 
 class Lookup:
