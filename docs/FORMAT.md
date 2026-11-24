@@ -1693,7 +1693,8 @@ picker and Material Editor switches off).
   So with the gamma off V-Ray computes each of them on the values it holds (a swatch and a Bitmap as stored) and the
   display shows the result decoded, as em3.158's Mix: at a color root converted in STORED under one Decode (a Tint or
   an Output over a constant folded exactly), a slot's amount below 1 mixing the input's own value as stored with its
-  map (a scale, a Standard's Diffuse Level, keeps the decoded mix: not measured with an amount); in a mask the mean
+  map (a Standard's Diffuse Level other than 1 on its diffuse map keeps the decoded mix, while with a Diffuse Level
+  map the diffuse at level 1 takes the stored one: neither measured with an amount); in a mask the mean
   of it decoded (a Mix, Composite, CoronaMix or Falloff: Decode mean; a Color Correction, Tint or Output: the mean
   after the color, `_mask_mean`). Corona 12 renders (CoronaLightMtl planes, a pass and a time limit) give the same
   internal values for a Mix, Composite, Falloff, Color Correction, Output, Tint, CoronaMix and a Mix in a mask, gamma
@@ -1730,12 +1731,14 @@ picker and Material Editor switches off).
   within 0.02 of srgb_to_linear(V-Ray) (2 % above 1); floors and planes as em3.166 measured. Other rays keep the
   texture's own decode: a mirror of the 0.5 sky would be exact with the camera's reading (0.214; the light's gives
   0.5) and the grey one nearer (0.046 against 0.051; 0.108), but a rough reflection of the sun's 2000 would take the
-  camera's reading as the material rule's floor does (1664 times the target): reflections follow the light. An 8-bit
+  camera's reading as the material rule's floor does (1664 times the target): reflections follow the light, and so
+  does the sky seen through glass (transmission rays: 0.5 for a target of 0.214; not rendered). The camera's sky is the
+  value at the import's Light Strength, V-Ray's at the default one. An 8-bit
   dome texture keeps the material rule for every ray (exact at multiplier 1, em3.166). The display-referred light
   (maxdrop-6n0.6.20): V-Ray's internal value is the same with the gamma on and off on every probe row (em3.123,
   em3.158, em3.165, em3.166 and the rows above), and the gamma-on import matches it within 0.007 to 0.0092, so a
   gamma-off scene imported on those values (the gamma-on rules, a Bitmap read as stored) and shown through Blender's
-  Raw view, which puts the value on the display as it is (checked on 4.2, 4.5 and 5.2: a 0.5 sky saves byte 128,
+  Raw view, which puts the value on the display as it is (checked on 4.2, 4.5 and 5.2: a 0.5 emission saves byte 128,
   Standard 188), would match V-Ray's display on every floor, plane and sky. Not done: the view belongs to the whole
   Blender scene (an import into a file with other content, or a gamma-on scene imported with it, cannot both be
   right), and as an option it needs image rules of its own (a Bitmap's gamma override read as stored, CoronaNormal's
@@ -2093,6 +2096,11 @@ mask renders 0.1768 in Blender 5.2 (EEVEE, the 6n0.6.2 probe), and the Color Cor
 same for such an image anywhere in a mask graph (below an RGB Multiply, a Falloff, a Color Correction), a Corona
 layer mask and a Diffuse Level map, as a swatch there is the rule of its mean; a Color Correction that rewires
 channels in a gamma-off mask picks them from the stored color, the mean decoded after it, as an RGB Tint.
+Since maxdrop-6n0.6.18 (measured there) a Color Correction in a mask, rewired or not, takes the color V-Ray holds (the
+color with the gamma on, STORED with it off), its saturation drawn in HSL, and the mask is the mean after it, decoded
+with the gamma off through the exact sRGB curve (Decode mean, as an RGB Tint's and an Output's now; they were a power
+of 2.2): no longer its input's grey. A Mix, Composite, CoronaMix or Falloff in a gamma-off mask is computed on the
+stored values too, an image below it read as stored.
 At a gamma-off color root a Mix of two colors, a Composite and a CoronaMix take their masks as stored (em3.158):
 unchanged.
 

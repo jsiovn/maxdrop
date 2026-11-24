@@ -74,8 +74,9 @@ Falloff, a Color Correction, an Output and an RGB Tint (V-Ray 5.2 renders, maxdr
 in both modes: a Falloff of greys 40 / 220 at facing ratio 0.5 0.510, brightness 20 over 128 0.702, an Output's level
 0.5 over 200 0.392; Corona 12 alike): a Tint or an Output over a constant folded exactly. A slot's amount below 1 on a
 color input mixes the input's own value as stored with its map in STORED, under one Decode (a VRayMtl
-self-illumination of 40 with a VRayColor 220 at 50 % 0.510; a scale, a Standard's Diffuse Level, keeps the decoded
-mix: not measured with an amount). Inside a mask such a mix (MASK_MIXES: a Mix, Composite, CoronaMix or Falloff, not
+self-illumination of 40 with a VRayColor 220 at 50 % 0.510; a Standard's Diffuse Level other than 1 on its diffuse
+map, a scale, keeps the decoded mix, while _leveled's diffuse at level 1 takes the stored one: neither measured with
+an amount; an amount of 0 is the value alone). Inside a mask such a mix (MASK_MIXES: a Mix, Composite, CoronaMix or Falloff, not
 black to white) is computed on the held values too, and the mask is the mean of it decoded (Decode mean; a Mix of greys
 40 / 220 at 50 % as a mask 0.510, shown 0.223).
 
@@ -854,8 +855,9 @@ class TexmapConverter:
         walk = _Walk()
         # a gamma-off color input mixed with its own value by an amount below 1: V-Ray mixes the stored values and the
         # display-referred scene shows the result decoded (maxdrop-6n0.6.18), as a Mix at a color root; a scale (a
-        # Standard's Diffuse Level, linear) keeps the decoded mix (not measured with an amount)
-        stored = (kind == COLOR and not self.swatches.linear and ref.amount < 1.0 and value is not None
+        # Standard's Diffuse Level other than 1 on its diffuse map, linear) keeps the decoded mix (not measured with an
+        # amount; _leveled's diffuse at level 1 takes the stored one); an amount of 0 is the value alone, exact
+        stored = (kind == COLOR and not self.swatches.linear and 0.0 < ref.amount < 1.0 and value is not None
                   and ref.scale == 1.0)
         root = self._node(ref.index, STORED if stored else kind, walk, 0, ())
         out = None
@@ -1529,15 +1531,15 @@ def _wrapper_input(conv, kind):
 def _mask_mean(conv, node, kind):
     """A color wrapper's node as a mask in a gamma-off scene: V-Ray mixes by the mean of the color it holds, the same
     value as with the gamma on, which the display-referred scene shows decoded (maxdrop-6n0.6.2: a Tint of rows
-    128 / 64 / 32 over a VRayColor (200, 100, 50) renders 0.1722 in both modes, decoded 0.0251), so the mean (a Tint
-    of MEAN_ROW rows) under a Decode; a Tint over a Constant folded exactly. Elsewhere the node: the builder takes the
-    mean of a color socket on a float input."""
+    128 / 64 / 32 over a VRayColor (200, 100, 50) renders 0.1722 in both modes, decoded 0.0251), so the mean through
+    the exact sRGB curve (Decode mean), as _decoded_mask draws a mix; a Tint or an Adjust over a Constant folded.
+    Elsewhere the node: the builder takes the mean of a color socket on a float input."""
     if node is None or kind != MASK or conv.swatches.linear:
         return node
-    if isinstance(node, Tint) and isinstance(node.input, Constant):
-        c, rows = _rgb3(node.input.value), (node.red, node.green, node.blue)
-        return Constant(conv.swatches.channel(sum(c[k] * rows[k][i] for k in range(3) for i in range(3)) / 3.0))
-    return Decode(Tint(node, MEAN_ROW, MEAN_ROW, MEAN_ROW))
+    value = _constant_value(node)
+    if value is not None:
+        return Constant(conv.swatches.channel(sum(value) / 3.0))
+    return Decode(node, mean=True)
 
 
 def _output_map(conv, m, kind, walk, depth, chain):
@@ -1678,8 +1680,8 @@ def _mix(conv, m, kind, walk, depth, chain):
             return _other_side(conv, m, (a, b), walk)
     a = a or conv._constant(m, 4, kind, (0.0, 0.0, 0.0))
     b = b or conv._constant(m, 5, kind, (1.0, 1.0, 1.0))
-    if kind == COLOR and not conv.swatches.linear:  # only black to white: _convert_node sends the rest to STORED
-        factor = conv.swatches.channel(factor)
+    if kind in (COLOR, MASK) and not conv.swatches.linear:  # only black to white: _convert_node sends the rest
+        factor = conv.swatches.channel(factor)  # to STORED
     return Mix(a, b, factor, mask)
 
 
@@ -2021,8 +2023,6 @@ def _corona_mix(conv, m, kind, walk, depth, chain):
     return result if mask is None and amount == 1.0 else Mix(bottom, result, amount, mask)
 
 
-# in STORED under a Decode at a gamma-off color root (V-Ray 5.2, maxdrop-em3.158; Corona 12 computes a Mix and a
-# CoronaMix on the values it holds, the same in both modes, maxdrop-em3.165)
 # the maps computed on the values the renderer holds in a gamma-off scene: at a color root in STORED under a Decode
 # (_convert_node), and those not a wrapper of their own (_wrapper_input) in a mask the mean of it decoded
 MASK_MIXES = (MIX, COMPOSITE, classids.CORONA_MIX, FALLOFF)

@@ -19,8 +19,10 @@ direction's turn into the texture's frame) makes R' (F d) = Rz(-turn) F T d (che
 A texture whose values a gamma-off scene shows decoded (DomeTexture.shown): camera rays see a second Background,
 the sRGB curve of the texture times the strength (SRGB_A x + SRGB_B in a Vector Math node, then a Gamma node of
 SRGB_POWER: the curve's power segment, within 0.001 of it below its knee) at strength 1, picked by a Mix Shader on
-the Light Path's Is Camera Ray; every other ray (reflections too) the texture as it is (maxdrop-6n0.6.21). An
-untextured dome of a gamma-off scene (DomeDescription.shown) alike, its camera color computed exactly.
+the Light Path's Is Camera Ray; every other ray (reflections, and the sky seen through glass: transmission rays)
+the texture as it is (maxdrop-6n0.6.21). An untextured dome of a gamma-off scene (DomeDescription.shown) alike, its
+camera color computed exactly. The strength includes the import's Light Strength, so the camera's sky is V-Ray's
+value at the default one.
 """
 import bpy
 from mathutils import Matrix
@@ -53,7 +55,7 @@ def make_world(dd, image=None, strength=1.0, axis=None):
     to_file = (axis if axis is not None else Matrix.Identity(3)).transposed()  # a rotation: its inverse
     texture = dd.texture if image is not None else None
     value = dd.radiance * strength * (texture.amount if texture is not None else 1.0)
-    coords = None
+    coords = seen = None
     if texture is not None or dd.hemisphere:
         coords = nodes.new("ShaderNodeTexCoord")
         coords.location = (-4 * X_STEP, 0.0)
@@ -79,11 +81,11 @@ def make_world(dd, image=None, strength=1.0, axis=None):
             color = power.outputs["Color"]
         links.new(color, bg.inputs["Color"])
         if texture.shown:
-            _camera_split(nodes, links, out, bg, color, value)
+            seen = _camera_split(nodes, links, out, bg, color, value)
     else:
         bg.inputs["Color"].default_value = tuple(dd.color) + (1.0,)
         if dd.shown:
-            _camera_split(nodes, links, out, bg, tuple(dd.color), value)
+            seen = _camera_split(nodes, links, out, bg, tuple(dd.color), value)
     if dd.hemisphere:
         up = nodes.new("ShaderNodeMapping")
         up.vector_type = 'VECTOR'
@@ -104,7 +106,6 @@ def make_world(dd, image=None, strength=1.0, axis=None):
         links.new(split.outputs["Z"], above.inputs[0])
         links.new(above.outputs["Value"], times.inputs[0])
         links.new(times.outputs["Value"], bg.inputs["Strength"])
-        seen = nodes.get(CAMERA_BACKGROUND)
         if seen is not None:  # the camera's sky has the value in its color: the mask alone
             links.new(above.outputs["Value"], seen.inputs["Strength"])
     else:
@@ -117,8 +118,8 @@ def make_world(dd, image=None, strength=1.0, axis=None):
 
 def _camera_split(nodes, links, out, bg, color, value):
     """The World's output a Mix Shader of bg (every ray but the camera's) and a Background named CAMERA_BACKGROUND
-    of color x value through the sRGB curve (camera rays) at strength 1. color: a socket (the texture's), or the
-    dome's linear color (a swatch made so by the sRGB curve: as stored again first, then exact)."""
+    of color x value through the sRGB curve (camera rays) at strength 1, returned. color: a socket (the texture's),
+    or the dome's linear color (a swatch made so by the sRGB curve: as stored again first, then exact)."""
     seen = nodes.new("ShaderNodeBackground")
     seen.name = seen.label = CAMERA_BACKGROUND
     seen.location = (0.0, 2 * X_STEP)
@@ -147,3 +148,4 @@ def _camera_split(nodes, links, out, bg, color, value):
     links.new(seen.outputs["Background"], mix.inputs[2])
     out.location = (2 * X_STEP, 0.0)
     links.new(mix.outputs["Shader"], out.inputs["Surface"])
+    return seen

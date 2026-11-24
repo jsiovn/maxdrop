@@ -2444,17 +2444,16 @@ class MaskWrapperConstants(Checks):
                 stored = PROBE_COLOR if below else (1.0, 1.0, 1.0)
                 adjust = tx.Adjust(tx.Constant(stored), tx.TexOutput(level=0.5))
                 _t, mask = self.mask(colors.GAMMA_OFF, *objects)
-                self.assertEqual(mask, tx.Decode(tx.Tint(adjust, *(tx.MEAN_ROW,) * 3)), "the mean, then the decode")
+                want = sum(0.5 * c for c in stored) / 3.0  # the Output folded: its mean, then the decode
+                self.assertEqual(mask, tx.Constant(colors.srgb_to_linear(want)), "the mean, then the decode")
                 _t, mask = self.mask(colors.GAMMA_ON, *objects)
                 self.assertEqual(mask, adjust, "gamma on: the color; the builder takes the mean")
 
     def test_image_below_a_tint_in_a_mask(self):
         _t, mask = self.mask(colors.GAMMA_OFF, _bw_mix(1, 2), _wtint(2, 3), _bitmap(3))
-        self.assertIsInstance(mask, tx.Decode)
-        self.assertEqual(mask.input.red, mask.input.green)  # MEAN_ROW rows
-        self.close(mask.input.red, (1 / 3.0,) * 3)
-        self.image(mask.input.input.input, "a.png", tx.NON_COLOR)  # V-Ray holds a gamma-off Bitmap as stored
-        self.close(mask.input.input.red, STORED_ROWS[0])
+        self.assertTrue(isinstance(mask, tx.Decode) and mask.mean, "the mean through the exact sRGB curve")
+        self.image(mask.input.input, "a.png", tx.NON_COLOR)  # V-Ray holds a gamma-off Bitmap as stored
+        self.close(mask.input.red, STORED_ROWS[0])
         _t, mask = self.mask(colors.GAMMA_ON, _bw_mix(1, 2), _wtint(2, 3), _bitmap(3))
         self.assertIsInstance(mask, tx.Tint)
         self.image(mask.input, "a.png", tx.SRGB)
@@ -2466,7 +2465,7 @@ class MaskWrapperConstants(Checks):
         cc = FakeMap(2, tx.COLOR_CORRECTION, {1: Ref(3), 8: -50.0}, [3], cls="Color Correction")
         corrected = tx.ColorCorrect(tx.Constant(PROBE_COLOR), saturation=0.5)
         _t, mask = self.mask(colors.GAMMA_OFF, _bw_mix(1, 2), cc, _vcolor(3, PROBE_COLOR))
-        self.assertEqual(mask, tx.Decode(tx.Tint(corrected, *(tx.MEAN_ROW,) * 3)), "the mean, then the decode")
+        self.assertEqual(mask, tx.Decode(corrected, mean=True), "the mean, then the decode")
         _t, mask = self.mask(colors.GAMMA_ON, _bw_mix(1, 2), cc, _vcolor(3, PROBE_COLOR))
         self.assertEqual(mask, corrected, "gamma on: the color; the builder takes the mean")
 
@@ -2882,13 +2881,13 @@ class DataAndMaskRule(Checks):
 
     def test_image_below_a_mask_wrapper_is_unchanged(self):
         # below an RGB Tint or an Output in a gamma-off mask the image is STORED (_wrapper_input) and the wrapper's
-        # mean decoded (_mask_mean): no second mean
+        # mean decoded (_mask_mean): one mean, the wrapper's
         mix = FakeMap(1, tx.MIX, {8: Ref(2)}, [2], cls="Mix")
         mask = self._root(colors.GAMMA_OFF, mix, _wtint(2, 3), _bitmap(3)).mask
-        self.assertIsInstance(mask, tx.Decode)
-        self.assertFalse(mask.mean)
+        self.assertTrue(isinstance(mask, tx.Decode) and mask.mean)
+        self.assertIsInstance(mask.input, tx.Tint)
         self.assertIsInstance(tx.first_image(mask), tx.Image)
-        self.assertEqual([d for d in _decodes(mask) if d.mean], [])
+        self.assertEqual(len(_decodes(mask)), 1)
 
     def test_stored_image_inside_a_mask_graph(self):
         """maxdrop-6n0.6.36 inside a mask: with the gamma off a stored image below a map that keeps the MASK kind
@@ -2911,18 +2910,16 @@ class DataAndMaskRule(Checks):
         self.assertTrue(isinstance(off, tx.Decode) and off.mean, off)
         self.assertEqual((type(off.input.a), off.input.a.colorspace), (tx.Image, tx.NON_COLOR), "as stored")
         off = self._root(colors.GAMMA_OFF, mix, cc(False), _bitmap(3)).mask
-        self.assertTrue(isinstance(off, tx.Decode) and not off.mean, off)
-        self.assertEqual(off.input.input.input.colorspace, tx.NON_COLOR, "the mean of the held color, decoded")
+        self.assertTrue(isinstance(off, tx.Decode) and off.mean, off)
+        self.assertEqual(off.input.input.colorspace, tx.NON_COLOR, "the mean of the held color, decoded")
         for what, wrapper, field in (("RGB Multiply", mul, "a"), ("Falloff", _falloff(2, 3), "a"),
                                      ("Color Correction", cc(False), "input")):
             with self.subTest(what):
                 on = getattr(self._root(colors.GAMMA_ON, mix, wrapper, _bitmap(3)).mask, field)
                 self.assertEqual((type(on), on.colorspace), (tx.Image, tx.SRGB))
         off = self._root(colors.GAMMA_OFF, mix, cc(True), _bitmap(3)).mask
-        self.assertTrue(isinstance(off, tx.Decode) and not off.mean, off)
-        self.assertIsInstance(off.input, tx.Tint)
-        self.assertEqual((off.input.red, off.input.green, off.input.blue), (tx.MEAN_ROW,) * 3)
-        picked = off.input.input
+        self.assertTrue(isinstance(off, tx.Decode) and off.mean, off)
+        picked = off.input
         self.assertEqual((type(picked), picked.rewire), (tx.ColorCorrect, (0, 0, 0)))
         self.assertEqual((type(picked.input), picked.input.colorspace), (tx.Image, tx.NON_COLOR), "as stored")
         on = self._root(colors.GAMMA_ON, mix, cc(True), _bitmap(3)).mask
@@ -3392,18 +3389,21 @@ class GammaOffWrappers(Checks):
         self.assertIsInstance(root.mask.input.mask, tx.Facing)
 
     def test_black_to_white_in_a_mask_stays(self):
-        # em3.36's exact rule holds inside a mask too: the decoded mask of a decoded mask
+        # em3.36's exact rule holds inside a mask too: the decoded mask of a decoded mask, or its decoded amount
         root = self._root(colors.GAMMA_OFF, _bw_mix(1, 2), _bw_mix(2, 3), _vcolor(3, (128 / 255,) * 3))
         self.assertIsInstance(root.mask, tx.Mix)
         self.close(root.mask.mask.value, _lin(128))
+        by_amount = FakeMap(2, tx.MIX, {0: 0.5}, cls="Mix")
+        self.close(self._root(colors.GAMMA_OFF, _bw_mix(1, 2), by_amount).mask.factor, _lin(127.5))
+        self.close(self._root(colors.GAMMA_ON, _bw_mix(1, 2), by_amount).mask.factor, 0.5)
 
     def test_color_correction_in_a_mask(self):
         # brightness 20 over a VRayColor 128 as a mask renders 0.702 in both modes; red to all over (200, 100, 50)
         # 0.784 in both modes
         bright = self._cc(2, 3, p11=0, p12=20.0)
         root = self._root(colors.GAMMA_OFF, _bw_mix(1, 2), bright, _vcolor(3, (128 / 255,) * 3))
-        self.assertEqual(root.mask, tx.Decode(tx.Tint(tx.ColorCorrect(tx.Constant((128 / 255,) * 3), brightness=0.2),
-                                                      *(tx.MEAN_ROW,) * 3)))
+        self.assertEqual(root.mask, tx.Decode(tx.ColorCorrect(tx.Constant((128 / 255,) * 3), brightness=0.2),
+                                              mean=True))
         red = self._cc(2, 3, p2=3, p3=0, p4=0, p5=0)
         root = self._root(colors.GAMMA_ON, _bw_mix(1, 2), red, _vcolor(3, PROBE_COLOR))
         self.assertEqual(root.mask, tx.ColorCorrect(tx.Constant(PROBE_COLOR), (0, 0, 0)),
@@ -3430,6 +3430,9 @@ class GammaOffWrappers(Checks):
         self.image(full, "a.png", tx.SRGB)
         scaled = self._root(colors.GAMMA_OFF, _bitmap(1), ref=mat.MapRef(1, amount=0.5, scale=0.8), value=value)
         self.assertIsInstance(scaled, tx.Mix, "a scale keeps the decoded mix (not measured)")
+        none = self._root(colors.GAMMA_OFF, _bitmap(1), ref=mat.MapRef(1, amount=0.0), value=value)
+        self.assertEqual(_decodes(none), [], "an amount of 0: the value alone, exact")
+        self.close(none.a.value, value)
 
 
 class TexmapWrappers(Checks):

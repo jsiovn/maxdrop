@@ -4260,6 +4260,86 @@ def check_world_shown_sky():
         bpy.data.images.remove(image)
 
 
+def _render_mean(scene, camera, path):
+    """The mean red of an 8 x 8 render of scene through camera, written to path (an EXR) and read back."""
+    scene.camera = camera
+    scene.render.filepath = path
+    bpy.ops.render.render(write_still=True)
+    img = bpy.data.images.load(path)
+    px = img.pixels[:]
+    n = len(px) // 4
+    value = sum(px[i * 4] for i in range(n)) / n
+    bpy.data.images.remove(img)
+    return value
+
+
+def check_world_shown_render():
+    """The Light Path split rendered (bead maxdrop-6n0.6.21): a World of a uniform 0.5 float texture made shown, a
+    camera looking at the sky alone sees srgb_to_linear(0.5) = 0.214 and a white diffuse floor under it, seen from
+    above, is lit by the texture as it is (0.5), in Cycles and in this version's EEVEE (world lighting is not a camera
+    ray there either)."""
+    from maxdrop import compat
+    from maxdrop.build import world as build_world
+    from maxdrop.convert import colors
+    from maxdrop.convert import lights as cl
+    from maxdrop.convert import texmaps as tx
+    empty_scene()
+    scene = bpy.context.scene
+    scratch = tempfile.mkdtemp(prefix="maxdrop-world-shown-")
+    image = bpy.data.images.new("ShownHalf", 8, 4, float_buffer=True)
+    image.pixels[:] = [0.5, 0.5, 0.5, 1.0] * 32
+    try:
+        dd = cl.DomeDescription(None, "ShownHalf", radiance=1.0)
+        dd.texture = cl.DomeTexture(tx.Image(1, "half.exr", "half.exr", colorspace=tx.LINEAR, gamma=1.0), shown=True)
+        scene.world = build_world.make_world(dd, image, 1.0)
+        mesh = bpy.data.meshes.new("ShownFloor")
+        mesh.from_pydata([(-50, -50, 0), (50, -50, 0), (50, 50, 0), (-50, 50, 0)], [], [(0, 1, 2, 3)])
+        floor = bpy.data.objects.new("ShownFloor", mesh)
+        scene.collection.objects.link(floor)
+        mat = bpy.data.materials.new("ShownWhite")
+        tree = compat.node_tree(mat)
+        tree.nodes.clear()
+        diffuse = tree.nodes.new("ShaderNodeBsdfDiffuse")
+        diffuse.inputs["Color"].default_value = (1.0, 1.0, 1.0, 1.0)
+        out = tree.nodes.new("ShaderNodeOutputMaterial")
+        tree.links.new(diffuse.outputs[0], out.inputs["Surface"])
+        mesh.materials.append(mat)
+        cams = {}
+        for name, z, angle in (("sky", 1.0, math.pi), ("floor", 1.0, 0.0)):
+            data = bpy.data.cameras.new("Shown" + name)
+            data.type = 'ORTHO'
+            data.ortho_scale = 1.0
+            data.clip_start = 0.01
+            cam = bpy.data.objects.new("Shown" + name, data)
+            cam.location = (0.0, 0.0, z)
+            cam.rotation_euler = (angle, 0.0, 0.0)  # 0: looking down; pi: looking up, away from the floor
+            scene.collection.objects.link(cam)
+            cams[name] = cam
+        scene.render.resolution_x = scene.render.resolution_y = 8
+        scene.render.resolution_percentage = 100
+        scene.render.image_settings.file_format = 'OPEN_EXR'
+        scene.render.image_settings.color_depth = '32'
+        scene.view_settings.view_transform = 'Standard'
+        eevee = 'BLENDER_EEVEE' if bpy.app.version >= (5, 0, 0) else 'BLENDER_EEVEE_NEXT'
+        for engine in ('CYCLES', eevee):
+            scene.render.engine = engine
+            if engine == 'CYCLES':
+                scene.cycles.samples = 64
+                scene.cycles.use_denoising = False
+            else:
+                scene.eevee.taa_render_samples = 16
+            sky = _render_mean(scene, cams["sky"], os.path.join(scratch, "sky_%s.exr" % engine))
+            lit = _render_mean(scene, cams["floor"], os.path.join(scratch, "floor_%s.exr" % engine))
+            check("world shown sky, %s: the camera sees srgb_to_linear(0.5), the floor is lit by 0.5" % engine,
+                  abs(sky - colors.srgb_to_linear(0.5)) <= 0.02 and abs(lit - 0.5) <= 0.03,
+                  "sky %.4f floor %.4f" % (sky, lit))
+    finally:
+        for ob in list(bpy.data.objects):
+            bpy.data.objects.remove(ob)
+        bpy.data.images.remove(image)
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def check_builder_multiply():
     """A Multiply of two maps in a float graph (bead maxdrop-em3.124): V-Ray 5.2 takes the product of the two maps'
     means (red x green 1/9, measured on an RGB Multiply as a Mix mask and a glossiness map, a CoronaMix Multiply as
@@ -6168,6 +6248,7 @@ def main():
                                  ("builder mask mean", check_builder_mask_mean),
                                  ("builder saturation", check_builder_saturation),
                                  ("world shown sky", check_world_shown_sky),
+                                 ("world shown render", check_world_shown_render),
                                  ("curve step", check_curve_step),
                                  ("crease open edges", check_crease_open_edges),
                                  ("linear fallback", check_linear_fallback),
