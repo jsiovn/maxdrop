@@ -238,6 +238,8 @@ class TextureIndex:
         """A lookup over this one's walk: the same folders and bounds, each rule's folders walked once for both
         (and every other share), a stopped walk in the report of each; its own cache and its own found and missing
         counts (the materials' report counts their textures, not an IES file or the dome's image)."""
+        # shallow on purpose: _tiers and report.truncated stay the same objects, so a rule one share walked is not
+        # walked again by another, and every share's report has the stops of every rule any of them walked
         other = copy.copy(self)
         other._cache = {}
         other.report = TextureReport()

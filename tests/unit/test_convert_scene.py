@@ -697,6 +697,34 @@ class DamagedInput(unittest.TestCase):
         self.assertEqual(len(layer_issues), 2)
         self.assertTrue(all(r.startswith("layer: ") for r in layer_issues))
 
+    def test_a_by_layer_node_without_a_readable_layer_renders_by_its_own_flags(self):
+        """layers_render with FixtureNoRenderLayer's record refused and FixtureByLayerOwnOff's layer slot on an
+        object that is not a layer (a slot past the objects is refused with the node, test_scene's test_damaged):
+        no collection hides them from the render (build/collections.py), so their own flags must."""
+        sc = self.scene("layers_render")
+        by_name = {sc.layer(i).name: i for i in sc.layer_indices}
+        real = sc.layer
+
+        def layer(i):
+            if i == by_name["FixtureNoRenderLayer"]:
+                raise reader_scene.ChunkError("layer %d: refused" % i)
+            return real(i)
+
+        sc.layer = layer
+        own_off = next(i for i in sc.node_indices if sc.node(i).name == "FixtureByLayerOwnOff")
+        sc.node(own_off).refs[reader_scene.SLOT_LAYER] = own_off
+        desc = conv.describe(sc, 1.0)
+        got = {n.name: (n.layer, n.renderable, n.cast_shadows, n.receive_shadows) for n in desc.nodes
+               if n.layer is None}
+        self.assertEqual(got, {"FixtureByLayerNoRender": (None, True, True, True),
+                               "FixtureByObjectOnNoRender": (None, True, True, True),
+                               "FixtureByLayerOwnOff": (None, False, False, False)})
+        lost = {by_name["FixtureNoRenderLayer"], by_name["FixtureOnLayer"]}
+        self.assertFalse(lost & {la.index for la in desc.layers})
+        by_index = {n.index: n.name for n in desc.nodes}
+        self.assertEqual(sorted(by_index[i] for i, r in desc.issues if r.startswith("layer: ")),
+                         ["FixtureByLayerNoRender", "FixtureByLayerOwnOff", "FixtureByObjectOnNoRender"])
+
     def test_unknown_controllers_are_counted_by_class(self):
         sc = self.scene("hierarchy")
         real = conv.controllers.Transforms
