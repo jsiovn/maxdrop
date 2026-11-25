@@ -244,14 +244,14 @@ SHARP_EDGES_SMOOTHED = {"FixtureSmooth": 0, "FixtureTurbo": 0, "FixtureTurboOne"
 
 
 def _run_py_table(name):
-    """A module-level table of tests/blender/run.py, which imports bpy: read from its source."""
-    path = os.path.join(ROOT, "tests", "blender", "run.py")
+    """A module-level table of tests/blender/tables.py, whose package imports bpy: read from its source."""
+    path = os.path.join(ROOT, "tests", "blender", "tables.py")
     with open(path, encoding="utf-8") as f:
         tree = ast.parse(f.read(), path)
     for stmt in tree.body:
         if isinstance(stmt, ast.Assign) and any(isinstance(t, ast.Name) and t.id == name for t in stmt.targets):
             return ast.literal_eval(stmt.value)
-    raise AssertionError("no %s in tests/blender/run.py" % name)
+    raise AssertionError("no %s in tests/blender/tables.py" % name)
 
 
 def _uv_layers(fixture, mesh):
@@ -263,16 +263,16 @@ def _uv_layers(fixture, mesh):
 
 
 def _extruded_nodes():
-    """(fixture, node name) of every oracle node tests/blender/run.py's check_extruded runs on: a shape under an
-    Extrude (an Extrude that is off leaves no eval_verts; test_counts_equal_the_oracle holds that rule to the node
-    kinds). The tables are keyed by node name: an extruded object with instances would need its mesh's name."""
+    """(fixture, node name) of every oracle node check_extruded (tests/blender/checks_objects.py) runs on: a shape
+    under an Extrude (an Extrude that is off leaves no eval_verts; test_counts_equal_the_oracle holds that rule to the
+    node kinds). The tables are keyed by node name: an extruded object with instances would need its mesh's name."""
     return [(_name(p), o["name"]) for p in FIXTURES for o in _oracle(p)["nodes"]
             if o["shape"] is not None and o["eval_verts"] is not None]
 
 
 class FixtureTables(unittest.TestCase):
-    """Every committed fixture has an entry in the per-fixture tables, here and in tests/blender/run.py, and every
-    extruded object one in run.py's per-object extrude tables, so a new fixture or object fails the plain suite
+    """Every committed fixture has an entry in the per-fixture tables, here and in tests/blender/tables.py, and every
+    extruded object one in tables.py's per-object extrude tables, so a new fixture or object fails the plain suite
     instead of only the Blender run."""
 
     def _same_names(self, table, where):
@@ -285,7 +285,7 @@ class FixtureTables(unittest.TestCase):
         self._same_names(UV_LAYERS, "UV_LAYERS of tests/unit/test_convert_scene.py")
 
     def test_blender_run_uv_layers_lists_every_fixture(self):
-        self._same_names(_run_py_table("UV_LAYERS"), "UV_LAYERS of tests/blender/run.py")
+        self._same_names(_run_py_table("UV_LAYERS"), "UV_LAYERS of tests/blender/tables.py")
 
     def test_blender_run_extrude_tables_list_every_extruded_object(self):
         nodes = _extruded_nodes()
@@ -295,17 +295,17 @@ class FixtureTables(unittest.TestCase):
         for table in ("EXTRUDE_EULER", "EXTRUDE_SHARP_EDGES"):  # indexed by check_extruded
             keys = set(_run_py_table(table))
             self.assertEqual(sorted(names - keys), [], "extruded objects without an entry in %s of "
-                             "tests/blender/run.py" % table)
+                             "tests/blender/tables.py" % table)
             self.assertEqual(sorted(keys - names), [], "entries without an extruded object in %s of "
-                             "tests/blender/run.py" % table)
+                             "tests/blender/tables.py" % table)
         self.assertEqual(_run_py_table("EXTRUDE_SHARP_EDGES"), SHARP_EDGES_EXTRUDE,
-                         "EXTRUDE_SHARP_EDGES of tests/blender/run.py differs from SHARP_EDGES_EXTRUDE")
+                         "EXTRUDE_SHARP_EDGES of tests/blender/tables.py differs from SHARP_EDGES_EXTRUDE")
         uv = _run_py_table("EXTRUDE_UV_LAYERS")  # read with .get(name, []): no entry is no UV layer
         self.assertEqual(sorted(set(uv) - names), [], "entries without an extruded object in EXTRUDE_UV_LAYERS "
-                         "of tests/blender/run.py")
+                         "of tests/blender/tables.py")
         for fixture, name in nodes:
             self.assertEqual(uv.get(name, []), _uv_layers(fixture, name),
-                             "%s: EXTRUDE_UV_LAYERS of tests/blender/run.py differs from UV_LAYERS" % name)
+                             "%s: EXTRUDE_UV_LAYERS of tests/blender/tables.py differs from UV_LAYERS" % name)
 
 
 @unittest.skipIf(numpy is None, "numpy missing")
