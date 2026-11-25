@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Tests of maxdrop/convert/materials.py, the material rules: no Blender. vray_basic's IR against values computed by
+"""Tests of maxdrop/convert/materials/, the material rules: no Blender. vray_basic's IR against values computed by
 hand from its authoring script (tools/fixtures/vray_basic.ms), vray_maps' map slots, vray_wrappers' peels, vray_more's
 VRayLightMtl, VRayFastSSS2, car paints and other wrappers, and each rule on synthetic parameters. standard_physical's
 Standard and Physical Material, box_poly_standard's Standard, standard_shaders' Standard shaders and Physical map slots
@@ -120,14 +120,15 @@ def _convert(*objects, index=0):
 
 
 def _build_constant(name):
-    """A module-level constant of maxdrop/build/materials.py, which imports bpy: read from its source."""
-    path = os.path.join(ROOT, "maxdrop", "build", "materials.py")
+    """A module-level constant of maxdrop/build/materials/sockets.py, whose package imports bpy: read from its
+    source."""
+    path = os.path.join(ROOT, "maxdrop", "build", "materials", "sockets.py")
     with open(path, encoding="utf-8") as f:
         tree = ast.parse(f.read(), path)
     for stmt in tree.body:
         if isinstance(stmt, ast.Assign) and any(isinstance(t, ast.Name) and t.id == name for t in stmt.targets):
             return ast.literal_eval(stmt.value)
-    raise AssertionError("no %s in maxdrop/build/materials.py" % name)
+    raise AssertionError("no %s in maxdrop/build/materials/sockets.py" % name)
 
 
 class Close:
@@ -197,7 +198,7 @@ class VRayMtlRules(unittest.TestCase, Close):
         self.assertEqual(ir.source, "VRayMtl")
 
     def test_reflection_color_is_the_specular_weight(self):
-        """A white reflection is 1, the full Fresnel reflection at the IOR, which build/materials.py halves into
+        """A white reflection is 1, the full Fresnel reflection at the IOR, which build/materials/ halves into
         Blender's Specular IOR Level 0.5 (the IOR unchanged): V-Ray 5.2 and Cycles both reflect 0.053 facing the
         camera at IOR 1.6 (maxdrop-em3.34). A grey reflection is its linear mean."""
         for refl, want in (((1.0, 1.0, 1.0), 1.0), ((0.502, 0.502, 0.502), 0.502), ((0.2, 0.4, 0.9), 0.5),
@@ -340,7 +341,7 @@ class VRayMtlRules(unittest.TestCase, Close):
         self.close(ir.metallic.value, 1.0)
 
     def test_fresnel_flag(self):
-        """reflection_fresnel reaches the IR: off, the weight is a mirror's at every angle (build/materials.py draws
+        """reflection_fresnel reaches the IR: off, the weight is a mirror's at every angle (build/materials/ draws
         a white metal mixed by it, maxdrop-em3.120); a dim swatch keeps its mean as the weight, no metal."""
         conv, ir = _convert(_vray(0, b1={1: (1.0, 0.0, 0.0), 2: (0.2, 0.2, 0.2), 8: 0}))
         self.assertFalse(ir.fresnel)

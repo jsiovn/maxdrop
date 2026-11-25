@@ -31,7 +31,7 @@ PACKS = os.path.join(ROOT, "tests", "fixtures", "packs")
 
 
 # Under a package whose path is maxdrop/ (`import maxdrop` would pull bpy), not tests/test_intake.py's: that one
-# keeps a zip-only archive.py. archive.py installs the external backends of this package itself.
+# keeps a zip-only archive/. archive/ installs the external backends of this package itself.
 _PKG = "maxdrop_intake_ext_test"
 if _PKG not in sys.modules:
     _pkg = types.ModuleType(_PKG)
@@ -1056,7 +1056,7 @@ class RealToolTests(TempCase):
         self.assertEqual(os.listdir(self.tmp), ["pwhead.rar"])
 
     def test_discovered_chain(self):
-        """The backends archive.py really registers: the first usable program of the chain."""
+        """The backends archive/ really registers: the first usable program of the chain."""
         if not REAL:
             say("discovered chain: normal.rar", False, "no unpacker here")
             if REQUIRED:
@@ -1076,7 +1076,7 @@ class RegistrationTests(unittest.TestCase):
         self.assertIsInstance(archive._BACKENDS[archive.KIND_ZIP], archive.ZipBackend)
 
     def test_archive_registers_in_its_package(self):
-        """Imported as maxdrop.intake.archive (without maxdrop/__init__.py, which needs bpy), archive.py registers
+        """Imported as maxdrop.intake.archive (without maxdrop/__init__.py, which needs bpy), archive/ registers
         the external backends itself."""
         code = ("import importlib.util, sys, types\n"
                 "pkg = types.ModuleType('mdpkg'); pkg.__path__ = [%r]; sys.modules['mdpkg'] = pkg\n"

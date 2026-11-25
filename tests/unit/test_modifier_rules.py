@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Tests of maxdrop/convert/modifiers.py and its place in convert/scene.py: TurboSmooth, MeshSmooth, Shell and
+"""Tests of maxdrop/convert/modifiers.py and its place in convert/scene/: TurboSmooth, MeshSmooth, Shell and
 Symmetry as Blender modifiers, no Blender. The stack_convert fixture: each node's converted modifiers in order with
 the settings its script set (tools/fixtures/stack_convert.ms), the mirror frames, the mesh shading a smoother sets,
 a TurboSmooth above a Bend not converted, nothing converted with the option off, the report's counts; stack_basic's
@@ -645,12 +645,12 @@ class Rim(unittest.TestCase):
         self.assertGreaterEqual(len(calls), 2)
         # past MAX_MIRRORED_CORNERS with the copies: not tested, a line
         cap = conv.MAX_MIRRORED_CORNERS
-        conv.MAX_MIRRORED_CORNERS = 16
+        conv.rims.MAX_MIRRORED_CORNERS = 16
         try:
             self.assertEqual(conv.lowered(quarter, (), (sym, y), 1.0), (1, conv.SEAM_UNTESTED))
             self.assertEqual(conv.lowered(quarter, (sym,), (y,), 1.0), (0, conv.SEAM_UNTESTED))
         finally:
-            conv.MAX_MIRRORED_CORNERS = cap
+            conv.rims.MAX_MIRRORED_CORNERS = cap
 
     def test_face_normals(self):
         # a triangle, a non-planar quad (its area vector), a face of no area
@@ -733,11 +733,11 @@ class Rim(unittest.TestCase):
         self.assertEqual(conv.rim_issues(half, over, mirrors=(_mirror_md(),)), want)  # the top's rim stays
         # the mesh with its copies past MAX_MIRRORED_CORNERS: not counted, a line instead
         cap = conv.MAX_MIRRORED_CORNERS
-        conv.MAX_MIRRORED_CORNERS = 8
+        conv.rims.MAX_MIRRORED_CORNERS = 8
         try:
             got = conv.rim_issues(half, auto, mirrors=(_mirror_md(), _mirror_md(axis=1)))
         finally:
-            conv.MAX_MIRRORED_CORNERS = cap
+            conv.rims.MAX_MIRRORED_CORNERS = cap
         self.assertEqual(got, ["auto smooth: the rim's corners not counted: with its copies under 2 Symmetries the "
                                "mesh would pass 8 face corners"])
         # forty Symmetries at distinct planes: the copies tested stop doubling (MAX_MIRROR_IMAGES), quickly

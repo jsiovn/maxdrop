@@ -231,7 +231,7 @@ oracle).
 
 ## Transform controllers
 
-`maxdrop/reader/controllers.py` turns a node's slot-0 controller into matrices at frame 0;
+`maxdrop/reader/controllers/` turns a node's slot-0 controller into matrices at frame 0;
 `tests/unit/test_controllers.py` checks every node of every fixture against the oracle's `transform` and
 `object_transform` (within 1e-4, per element).
 
@@ -650,7 +650,7 @@ The parametric shapes are made by the reader the way 3ds Max makes them, fitted 
 
 ## Extrude
 
-The Extrude modifier (ClassID `(0xA0, 0)`, superclass `0x810`; `convert/extrude.py`, `tests/unit/test_extrude.py`
+The Extrude modifier (ClassID `(0xA0, 0)`, superclass `0x810`; `convert/extrude/`, `tests/unit/test_extrude.py`
 against the extrude fixture's oracle) keeps its parameters in an old ParamBlock at reference slot 0:
 
 | Index | Parameter | extrude fixture |
@@ -958,7 +958,7 @@ What 3ds Max 2020 makes, against Blender's evaluated meshes (`tests/blender/run.
   shading on Blender 4.2, 4.5 and 5.2 (FixtureShellUnderSym; FixtureShellUnderSymTurbo, a TurboSmooth above: 130
   vertices, 256 triangles, (0, 1, 0); FixtureShellBetweenSym, a Symmetry on each side; FixtureShellUnderSymExtrude, an
   open Line under an Extrude: 24, 48, (0, 10, 32); the probe also: inner 1 outer 0, a closed half, a quarter under two
-  Symmetries, the gizmo 1e-5 off or turned 1e-4 degrees). The rule (convert/scene.py lowered()): per Symmetry right
+  Symmetries, the gizmo 1e-5 off or turned 1e-4 degrees). The rule (convert/scene/rims.py lowered()): per Symmetry right
   above the lowest Shell (only Symmetries below it), on the mesh with the copies of those below, the open edges with
   both ends within 1e-4 units of its plane (at most 1 mm, Blender's bisect distance; float32 positions some 1000 units
   from the origin along the axis pass 1e-4, and keep the order); none: it stays; moved when it slices and welds those
@@ -984,7 +984,7 @@ converted; 6 TurboSmooth sit above an FFD(box).
 ## Primitives
 
 The standard primitives, superclass `0x10`, keep one ParamBlock2 in reference slot 0 and no mesh: 3ds Max builds
-the mesh from the parameters each time (`convert/primitives.py`; ids read on scratch scenes of 3ds Max 2020 with
+the mesh from the parameters each time (`convert/primitives/`; ids read on scratch scenes of 3ds Max 2020 with
 every parameter set apart, the meshes compared vertex for vertex with `o.baseObject.mesh` on about 80 of them, then
 the primitives fixture and its `primitives.mesh.jsonl`). Lengths in file units, angles in radians:
 
@@ -1091,7 +1091,7 @@ any number of segments.
 
 ## VRayLight
 
-VRayLight `(0x3C5575A1, 0x5FD602DF)`, superclass `0x30` (light), V-Ray 5.2 in 3ds Max 2020 (`convert/lights.py`;
+VRayLight `(0x3C5575A1, 0x5FD602DF)`, superclass `0x30` (light), V-Ray 5.2 in 3ds Max 2020 (`convert/lights/`;
 ids read through the SDK's .NET wrapper on a scratch scene, then the vray_lights fixture read back by the reader).
 Reference 0 is a ParamBlock2 (block id 0), reference 2 the viewport icon object. Parameter ids, lengths in file
 units:
@@ -1234,7 +1234,7 @@ V-Ray as in Cycles.
 
 ## Standard and photometric lights
 
-`convert/lights.py`, 3ds Max 2020 + V-Ray 5.2; ids read through the SDK's .NET wrapper (ParamBlock2 descriptors) and
+`convert/lights/`, 3ds Max 2020 + V-Ray 5.2; ids read through the SDK's .NET wrapper (ParamBlock2 descriptors) and
 by changing one setting at a time on scratch scenes, then the lights_standard and lights_photometric fixtures read
 back by the reader. All superclass `0x30`; every one shines along its local -Z.
 
@@ -1549,7 +1549,7 @@ picker and Material Editor switches off).
   both modes, an image decoded by its gamma with the gamma on. In a color graph with the gamma off the result is
   display-referred (Blender needs `srgb_to_linear` of it): a mask between black and white is the decoded number,
   a mask between two colors mixes display values (target 0.225 linear for the 0.511 above, a decoded mask gives
-  0.171). The rules are in `maxdrop/convert/texmaps.py` (MASK, colorspace, `_swatch`).
+  0.171). The rules are in `maxdrop/convert/texmaps/` (MASK, colorspace, `_swatch`).
 - A Corona opacity color (maxdrop-6n0.6.35), Corona 12 renders of a self-illuminated white CoronaLegacyMtl and
   CoronaPhysicalMtl over black, 64 passes, gamma on and off alike: white 1.0, grey 64 0.251, red (255, 0, 0)
   1.0 / 0.0 / 0.0, (200, 100, 50) 0.784 / 0.392 / 0.196 (0.785 / 0.393 / 0.197 for the physical one), black 0:
@@ -1595,7 +1595,7 @@ picker and Material Editor switches off).
   So with the gamma off V-Ray computes a Mix or Composite on the stored values (the swatch as stored, an image by its
   own decode, the mask as stored) and the display shows the result decoded; decoded sides mixed in Blender were off
   by up to 0.27 (the colored pair), 16 of 24 planes by more than 0.02. A product commutes with a power law, so a
-  decoded RGB Multiply is within 0.005. The rule is in `maxdrop/convert/texmaps.py` (STORED, Decode); Blender 5.2
+  decoded RGB Multiply is within 0.005. The rule is in `maxdrop/convert/texmaps/` (STORED, Decode); Blender 5.2
   renders of the probe scenes agree with V-Ray within 0.0085 on every plane. Falloff and the wrappers: below
   (maxdrop-6n0.6.18); CoronaMix in Corona 12: below (maxdrop-em3.165).
 - Corona maps with the gamma off (maxdrop-em3.165), Corona 12 renders of CoronaLightMtl planes (color white,
@@ -1648,7 +1648,7 @@ picker and Material Editor switches off).
   stored there too (maxdrop-6n0.6.19, below). V-Ray bends a normal tilted over
   about 44 degrees back toward the surface: the tilted map decoded renders 44.2 degrees for 59.2, and so does that
   decoded normal stored in a file read at 1.0 (V-Ray's limit, not the decode; MaxDrop draws it unbent). The rule is
-  in `maxdrop/convert/texmaps.py` (colorspace, `_vray_image`, `_add_gamma`). Blender 5.2 renders (EEVEE and Cycles)
+  in `maxdrop/convert/texmaps/` (colorspace, `_vray_image`, `_add_gamma`). Blender 5.2 renders (EEVEE and Cycles)
   of the V-Ray probe scenes imported by MaxDrop: every normal plane within 0.32 degrees of V-Ray except those tilted
   past that limit; every height plane with V-Ray's stored or decoded slope pattern except the one above.
 - A dome texture as a light (maxdrop-em3.166), V-Ray 5.2 renders of a scene lit only by a VRayLight dome (multiplier
@@ -1674,7 +1674,7 @@ picker and Material Editor switches off).
   lights the sun's floor 1664 times the target; its own decode is 2.3 times the target at 0.5, 0.16 times at 4.0 and
   0.05 times with the sun, as a dome's multiplier already is (the untextured row). Neither is within a factor 2 of
   the target on every float row (the plan's gate); a float dome texture keeps its own decode, the smaller worst case
-  (about 21 times against 1664; `convert/lights.py`, `dome_texture`; a line in the report), and the display-referred
+  (about 21 times against 1664; `convert/lights/`, `dome_texture`; a line in the report), and the display-referred
   light is maxdrop-6n0.6.20 (below). On an 8-bit display a value above 1 is white
   in both. An 8-bit dome texture keeps the material rule (within 0.007 of the target). A rule that sees the sky
   decoded only from the camera needs the World's nodes (a Light Path): drawn since maxdrop-6n0.6.21 (below).
@@ -1984,8 +1984,9 @@ translucent color), 10 bump, 11 reflection, 12 refraction, 13 displacement. Mult
 diffuse level, 3 diffuse roughness, 4-8 specular color, level, glossiness, anisotropy, orientation of the first
 layer, 9-13 of the second, 14 self-illumination, 15 opacity, 16 filter color, 17 bump, 18 reflection, 19 refraction,
 20 displacement. Strauss: 0 color, 1 glossiness, 2 metalness, 3 opacity, 4 refraction filter, 5 bump, 6 reflection,
-7 refraction, 8 displacement. MaxDrop reads each shader's own channels (`STD_SLOTS` in `convert/materials.py`; a
-shader without a rule with Blinn's); on Strauss the metalness map drives the metallic input.
+7 refraction, 8 displacement. MaxDrop reads each shader's own channels (`STD_SLOTS` in
+`convert/materials/standard.py`; a shader without a rule with Blinn's); on Strauss the metalness map drives the
+metallic input.
 
 The tables (maps, mapEnables, mapAmounts) can keep the layout the material was created with (Blinn's: bump 0.3 at 8)
 while 3ds Max answers its shader's: an amount not set after the shader switch, with or without a map (standard_maps
@@ -2043,7 +2044,7 @@ or constant level map at amount 100 gives the decoded level exactly (a constant 
 swatch); a colored image is decoded per channel before the mean, so a saturated one is too bright with the gamma
 off (pure red: 1/3, where the decoded mean is 0.09), as an image mask between two colors already is.
 
-The maps of texmap_rules (block 0 each; `convert/texmaps.py`):
+The maps of texmap_rules (block 0 each; `convert/texmaps/`):
 
 | Class (ClassID) | Parameters |
 |---|---|
@@ -2487,7 +2488,7 @@ Not shown by any fixture yet, so not stated above:
     in the low bits (edge visibility 1/2/4; not decoded);
   - other Editable Poly chunks (`0x0200`, `0x0210`, `0x0300`) and Editable Mesh selection chunks (`0x092C`-`0x092E`):
     not read.
-- Controllers seen only in the corpus (scenes A and B, compared with their oracle; `controllers.py` relies on
+- Controllers seen only in the corpus (scenes A and B, compared with their oracle; `reader/controllers/` relies on
   them):
   - a Bezier Float with its `0x2501` directly in the object, not in `0x7127` (under ScaleXYZ, list weights);
   - list weights held by controllers (Bezier Float) in the list block's reference slots, with weights 1 and 0;
@@ -2498,8 +2499,8 @@ Not shown by any fixture yet, so not stated above:
     transform's: what 3ds Max makes of it is not known;
   - Look At `(0x2006, 0)` on a camera and a light of each scene: evaluated as [Look At](#look-at) says, their
     world matrices equal the oracle's (all 662 nodes without modifiers of scene A, all 2,042 of scene B).
-- Controllers no file shows yet (`controllers.py` assumes them): a controller without `0x2500` (none in the corpus or
-  the fixtures; its value chunk is used, with an issue when several keys animate it); a free Bezier handle of a
+- Controllers no file shows yet (`reader/controllers/` assumes them): a controller without `0x2500` (none in the corpus
+  or the fixtures; its value chunk is used, with an issue when several keys animate it); a free Bezier handle of a
   negative length (3ds Max turns a third into frames when a handle is freed: linear, an issue); a frame rate other
   than 30 fps in a fixture (a probe at 25 fps shows it) and one that does not divide 4800 (seen: 24, 25, 30 and 60;
   ticks per frame taken as 4800 // fps); scale keys whose axis quaternions point apart (no probe

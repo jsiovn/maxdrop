@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Tests of maxdrop/convert/extrude.py, the Extrude modifier on a shape: no Blender. Every extruded node of the
+"""Tests of maxdrop/convert/extrude/, the Extrude modifier on a shape: no Blender. Every extruded node of the
 extrude fixture against its 3ds Max oracle (world bounding box within 1e-3, vertex count, triangle count), closed
 manifolds with outward normals for the capped ones, the hole of the holed cap, the open one without caps; material
 IDs by the way a face looks and map channel 1's vertex count, range and every corner against the oracle's eval_mesh;
@@ -12,6 +12,7 @@ clipping of outlines with holes; damaged and hostile parameters.
     python -I -m unittest discover tests
 """
 import importlib
+import importlib.util
 import json
 import math
 import os
@@ -42,6 +43,10 @@ pblock = importlib.import_module(_PKG + ".reader.pblock")
 classids = importlib.import_module(_PKG + ".reader.classids")
 reader_modifiers = importlib.import_module(_PKG + ".reader.modifiers")
 rules = importlib.import_module(_PKG + ".convert.modifiers")
+_spec_patching = importlib.util.spec_from_file_location("maxdrop_test_patching",
+                                                        os.path.join(ROOT, "tests", "patching.py"))
+patching = importlib.util.module_from_spec(_spec_patching)
+_spec_patching.loader.exec_module(patching)  # patch_all(): a split package's modules read their own names
 
 CAPPED = ("FixtureExtRect", "FixtureExtL", "FixtureExtHole", "FixtureExtIsland", "FixtureExtMirror",
           "FixtureExtAdaptive", "FixtureExtShapeIDs", "FixtureExtShapeIDsRect", "FixtureExtGrid")
@@ -129,7 +134,7 @@ def _read_meshes(path):
         data[name] = d
         return real(key, name, d, *args, **kw)
 
-    with mock.patch.object(conv, "mesh_description", describing):
+    with patching.patch_all(conv, "mesh_description", describing):
         desc = conv.read(path)
     return desc, data
 
@@ -278,14 +283,14 @@ class Fixture(unittest.TestCase):
             alive.append(sum(r() is not None for r in made))
             return real_description(*args, **kw)
 
-        with mock.patch.object(extrude, "extrude", extruding), mock.patch.object(conv, "mesh_description",
-                                                                                 describing):
+        with mock.patch.object(extrude, "extrude", extruding), patching.patch_all(conv, "mesh_description",
+                                                                                  describing):
             conv.read(FIXTURE)
         self.assertEqual(len(made), 13)
         self.assertEqual(alive, [1] * 13)  # only the extrusion being described
 
     def test_a_scene_wide_budget_keeps_the_rest_curves(self):
-        with mock.patch.object(conv, "MAX_BUILT_CORNERS", 1):
+        with patching.patch_all(conv, "MAX_BUILT_CORNERS", 1):
             desc = conv.read(FIXTURE)
         self.assertEqual(sorted(n.kind for n in desc.nodes), [conv.CURVE] * 13 + [conv.MESH])
         spent = [r for _i, r in desc.issues if r.startswith("extrude: not made: the primitives and extrusions ")]
@@ -327,7 +332,7 @@ class Fixture(unittest.TestCase):
                 raise extrude.ExtrudeError("refused")
             return real_read(scene, m)
 
-        patches = (mock.patch.object(conv, "_evaluated", evaluated),
+        patches = (patching.patch_all(conv, "_evaluated", evaluated),
                    mock.patch.object(rules, "is_convertible", lambda m: m is shared),
                    mock.patch.object(rules, "convert", converting),
                    mock.patch.object(extrude, "read_params", failing_first))
@@ -361,7 +366,7 @@ class Fixture(unittest.TestCase):
             return rules.ModifierDescription(m.index, rules.SOLIDIFY, "Shell", "Shell", True, (), None, None,
                                              rules.RimRule(False, 45.0, None)), []
 
-        with mock.patch.object(conv, "_evaluated", evaluated),                 mock.patch.object(rules, "is_convertible", lambda m: m is shared),                 mock.patch.object(rules, "convert", converting):
+        with patching.patch_all(conv, "_evaluated", evaluated),                 mock.patch.object(rules, "is_convertible", lambda m: m is shared),                 mock.patch.object(rules, "convert", converting):
             desc = conv.read(FIXTURE)
         meshes = [n for n in desc.nodes if n.kind == conv.MESH]
         self.assertTrue(meshes)
@@ -1166,11 +1171,11 @@ class Synthetic(unittest.TestCase):
         data, _issues = extrude.extrude(many, self.params())
         self.assertEqual(len(data.positions), 2000)
         loop = _shape([_segment((0, 0, 0), (10, 30, 0), (0, 30, 0), (10, 0, 0))], adaptive=True)  # 17 points
-        with mock.patch.object(extrude, "MAX_VERTICES", 33):
+        with patching.patch_all(extrude, "MAX_VERTICES", 33):
             with self.assertRaises(extrude.ExtrudeError) as caught:
                 extrude.extrude(loop, self.params(segments=2))
         self.assertEqual((str(caught.exception), caught.exception.spent), ("more than 33 vertices", 11 * 2 * 4))
-        with mock.patch.object(extrude, "MAX_VERTICES", 34):
+        with patching.patch_all(extrude, "MAX_VERTICES", 34):
             data, _issues = extrude.extrude(loop, self.params())
         self.assertEqual(len(data.positions), 34)
 
@@ -1179,16 +1184,16 @@ class Synthetic(unittest.TestCase):
         self.assertEqual(len(issues), 1)
 
     def test_hostile_sizes(self):
-        with mock.patch.object(extrude, "MAX_VERTICES", 10):
+        with patching.patch_all(extrude, "MAX_VERTICES", 10):
             with self.assertRaises(extrude.ExtrudeError):
                 extrude.extrude(_shape([self.square(4), self.square(2)]), self.params(segments=2))
         holed = _shape([self.square(10), shapes.Spline(_knots([(2, 2, 0), (2, 4, 0), (4, 4, 0), (4, 2, 0)]),
                                                        True)])
-        with mock.patch.object(extrude, "MAX_CAP_POINTS", 6):
+        with patching.patch_all(extrude, "MAX_CAP_POINTS", 6):
             data, issues = extrude.extrude(holed, self.params())
         self.assertEqual(len(issues), 1)
         self.assertEqual(set(_mats(data).tolist()), {extrude.SIDE_ID})  # the cap is left open
-        with mock.patch.object(extrude, "MAX_LOOPS", 1):
+        with patching.patch_all(extrude, "MAX_LOOPS", 1):
             _data, issues = extrude.extrude(holed, self.params())
         self.assertEqual(len(issues), 1)
 
@@ -1206,7 +1211,7 @@ class Synthetic(unittest.TestCase):
             tested.append(len(poly))
             return real(p, poly)
 
-        with mock.patch.object(extrude, "MAX_NEST_TESTS", 1000), mock.patch.object(extrude, "_inside", inside):
+        with patching.patch_all(extrude, "MAX_NEST_TESTS", 1000), patching.patch_all(extrude, "_inside", inside):
             data, issues = extrude.extrude(_shape(rings), self.params())
         self.assertLessEqual(sum(tested), 1000)
         self.assertEqual(issues, ["30 closed splines take more than 1000 tests to nest: no caps"])
@@ -1219,7 +1224,7 @@ class Synthetic(unittest.TestCase):
         extrude.triangulate(pts, [0, 1, 2, 3], [[4, 5, 6, 7]], budget)
         one = 10 ** 9 - budget[0]
         two = _shape([self.square(10), self.rect(2, 2, 4, 4), self.rect(20, 0, 30, 10), self.rect(22, 2, 24, 4)])
-        with mock.patch.object(extrude, "MAX_CLIP_STEPS", one + one // 2):
+        with patching.patch_all(extrude, "MAX_CLIP_STEPS", one + one // 2):
             data, issues = extrude.extrude(two, self.params())
         self.assertEqual(issues, ["a cap with holes is left open: more than %d steps to triangulate the caps" %
                                   (one + one // 2)])
@@ -1234,8 +1239,8 @@ class Synthetic(unittest.TestCase):
         rings = [self.square(10), self.rect(2, 2, 4, 4)]
         for x in (20, 40, 60):
             rings += [self.rect(x, 0, x + 10, 10), self.rect(x + 2, 2, x + 4, 4)]
-        with mock.patch.object(extrude, "MAX_CLIP_STEPS", one + one // 2), \
-                mock.patch.object(extrude, "triangulate", wraps=extrude.triangulate) as tried:
+        with patching.patch_all(extrude, "MAX_CLIP_STEPS", one + one // 2), \
+                patching.patch_all(extrude, "triangulate", wraps=extrude.triangulate) as tried:
             data, issues = extrude.extrude(_shape(rings), self.params())
         self.assertEqual(tried.call_count, 2)
         self.assertEqual(issues, ["a cap with holes is left open: more than %d steps to triangulate the caps" %
@@ -1246,7 +1251,7 @@ class Synthetic(unittest.TestCase):
         knots = _knots([(k, k % 3, 0) for k in range(3000)], kind=shapes.CORNER)
         many = shapes.Shape(shapes.classids.LINE, (shapes.Spline(knots, False),), 100, False, False,
                             shapes.DEFAULT_RENDER, ())
-        with mock.patch.object(extrude, "_polyline", side_effect=AssertionError("interpolated")):
+        with patching.patch_all(extrude, "_polyline", side_effect=AssertionError("interpolated")):
             with self.assertRaises(extrude.ExtrudeError):
                 extrude.extrude(many, self.params(segments=10))
 
@@ -1605,12 +1610,12 @@ class GridCaps(unittest.TestCase):
         for patch, value, reason in (("MAX_GRID_TESTS", 10, "more than 10 tests"),
                                      ("MAX_VERTICES", 200, "past 200 vertices"),
                                      ("MAX_CAP_POINTS", 3, "more than 3 outline points")):
-            with mock.patch.object(extrude, patch, value):
+            with patching.patch_all(extrude, patch, value):
                 data, issues = self.make("Rect30x20")
             self.assertEqual(len(data.positions), len(morph.positions), patch)
             self.assertEqual(len(issues), 1, patch)
             self.assertIn("1 grid cap made as morph cap: " + reason, issues[0], patch)
-        with mock.patch.object(extrude, "MAX_GRID_TESTS", 10):
+        with patching.patch_all(extrude, "MAX_GRID_TESTS", 10):
             data, issues = self.make("TwoSquares")
         self.assertEqual(issues, ["2 grid caps made as morph caps: more than 10 tests to lay out the grids"])
 
@@ -1668,13 +1673,13 @@ class GridCaps(unittest.TestCase):
             tris = real(xy, outer, holes, budget)
             return tris[:-1] + [tris[-1][::-1]]
 
-        with mock.patch.object(extrude, "triangulate", folded):
+        with patching.patch_all(extrude, "triangulate", folded):
             data, issues = self.make("Rect30x20")
         self.assertEqual(len(data.positions), 8)
         self.assertEqual(issues, ["1 grid cap made as morph cap: its band does not triangulate"])
 
     def test_a_refused_grid_on_a_holed_cap_left_open_is_named_once(self):
-        with mock.patch.object(extrude, "MAX_CAP_POINTS", 5):
+        with patching.patch_all(extrude, "MAX_CAP_POINTS", 5):
             _data, issues = self.make("HoleRect")
         self.assertEqual(len(issues), 1, issues)
         self.assertIn("left open", issues[0])
@@ -1955,7 +1960,7 @@ class SelfCrossing(unittest.TestCase):
         n = 2000
         ring = [(100 * math.cos(2 * math.pi * k / n), 100 * math.sin(2 * math.pi * k / n)) for k in range(n)]
         for chunk in (1, 7, extrude.CROSS_CHUNK):
-            with mock.patch.object(extrude, "CROSS_CHUNK", chunk):
+            with patching.patch_all(extrude, "CROSS_CHUNK", chunk):
                 self.assertIs(extrude._crosses(numpy, ring, [10 ** 9]), False, chunk)
                 for at in (3, n // 2, n - 2):  # a knot pulled across the far side
                     bent = list(ring)
@@ -1964,7 +1969,7 @@ class SelfCrossing(unittest.TestCase):
         self.assertIs(extrude._crosses(numpy, [(0, 0), (4, 0), (8, 0)], [0]), False)  # every edge adjacent
 
     def test_past_the_budget_the_cap_is_made_unchecked(self):
-        with mock.patch.object(extrude, "MAX_CROSS_TESTS", 1):
+        with patching.patch_all(extrude, "MAX_CROSS_TESTS", 1):
             data, issues = self.make([_bowtie()])
         self.assertEqual(issues, ["1 closed spline not checked for crossings (more than 1 tests): capped"])
         self.assertEqual(len(data.loop_totals), 6)  # four sides, two caps as before

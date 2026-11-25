@@ -100,7 +100,7 @@ def forbidden_imports(path, root=ROOT):
 class NoBpy(unittest.TestCase):
     def test_reader_convert_and_intake_never_import_bpy(self):
         paths = list(modules())
-        for seen in (("reader", "cfb.py"), ("intake", "archive.py"), ("pathnames.py",)):  # the scan saw each part
+        for seen in (("reader", "cfb.py"), ("intake", "archive", "__init__.py"), ("pathnames.py",)):  # the scan saw each part
             self.assertIn(os.path.join(ROOT, ADDON, *seen), paths)
         found = [hit for p in paths for hit in forbidden_imports(p)]
         self.assertEqual(found, [])

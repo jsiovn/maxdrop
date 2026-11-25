@@ -3,7 +3,7 @@
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
 -- Arcs with pie and reverse both on, for the knot order of reader/shapes.py and the Extrude built on it
--- (convert/extrude.py: the side U starts at the first point, or at the last of an outline it turns):
+-- (convert/extrude/: the side U starts at the first point, or at the last of an outline it turns):
 -- FixturePieRev: an Arc of radius 12 from 20 to 130 degrees, pie and reverse.
 -- FixturePieRevWrap: an Arc of radius 10 from 300 to 60 degrees (across 0), pie and reverse.
 -- FixturePieRevExt, FixturePieRevWrapExt: the same two under an Extrude of 10 in 2 segments, with mapping

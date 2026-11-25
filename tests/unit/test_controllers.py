@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Tests of maxdrop/reader/controllers.py, the transforms at frame 0: no Blender. The matrix conventions, synthetic
+"""Tests of maxdrop/reader/controllers/, the transforms at frame 0: no Blender. The matrix conventions, synthetic
 controller trees (PRS, the XYZ controllers, saved values and keys, lists with weights, unknown classes, damaged
 input) and every committed fixture's world and object transforms against its 3ds Max oracle.
 

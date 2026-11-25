@@ -58,7 +58,7 @@ EDITABLE_POLY = ClassId(0x1BF8338D, 0x192F6098)
 DUMMY = ClassId(0x00876234, 0)
 TARGET_OBJECT = ClassId(0x00001020, 0)  # the node a Look At controller aims at (a target camera's, light's)
 
-# Lights (convert/lights.py).
+# Lights (convert/lights/).
 VRAY_LIGHT = ClassId(0x3C5575A1, 0x5FD602DF)
 VRAY_SUN = ClassId(0x732C0383, 0x7D993776)
 VRAY_IES = ClassId(0x2EAF2F07, 0x7EC44F31)
@@ -90,7 +90,7 @@ TARGET_CAMERA = ClassId(0x00001002, 0)  # its class directory names it "Target",
 PHYSICAL_CAMERA = ClassId(0x46697218, 0x28E8008D)
 VRAY_PHYSICAL_CAMERA = ClassId(0x405E3FEE, 0x4F6513BE)
 
-# Primitives (convert/primitives.py).
+# Primitives (convert/primitives/).
 BOX = ClassId(0x00000010, 0)
 SPHERE = ClassId(0x00000011, 0)
 CYLINDER = ClassId(0x00000012, 0)

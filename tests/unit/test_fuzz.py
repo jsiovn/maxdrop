@@ -57,7 +57,7 @@ class CasesTest(unittest.TestCase):
 
     def test_a_reader_defect_escapes(self):
         """The operator reports a TypeError, KeyError or AttributeError of the reading as not imported
-        (ops._DEFECTS); the harness's reader path does not mirror that net: such an error raised inside the reader
+        (packs._DEFECTS); the harness's reader path does not mirror that net: such an error raised inside the reader
         leaves _Reader.read and is a case that escapes."""
         seed = fuzz.seeds("max", {"box_poly_standard.max"})[0]
         reader = fuzz._Reader()

@@ -41,16 +41,23 @@ powershell -ExecutionPolicy Bypass -File build.ps1    # dist\ (git-ignored): zip
 - `maxdrop/__init__.py`: thin aggregator. `_NAMES` is the register order (a module comes after the ones it
   imports); each module has `register()` / `unregister()` and its classes in a module-level `_classes` tuple,
   which `tests/smoke_register.py` reads. Re-enabling after an upgrade re-runs `__init__` while old submodules
-  stay in `sys.modules`: those of `_NAMES` are reloaded, every other module of the package (imported on demand)
-  is dropped by `_purge()`, its name on the package included.
+  stay in `sys.modules`: those of `_NAMES` are reloaded, every other module of the package (imported by them, as
+  `options`, `packs` and `pipeline` with `ops`, or on demand) is dropped by `_purge()`, its name on the package
+  included.
 - `maxdrop/ops.py`: operator `import_scene.maxdrop` (options popup through `ImportHelper.invoke_popup`), file
   handler `IO_FH_maxdrop`, the *File › Import* entry. Was upstream's `__init__.py`. An import runs reader ->
   convert (scene description, material and texture-map rules, texture lookup) -> build (objects, collections,
   materials) -> the report. The pipeline is a step generator (`_Run`): scripts drain it at once; from a window the internal
   modal `maxdrop.import_progress` steps it on a timer (unpack and read in a worker thread), Esc closes it and
   everything the run made is removed. Upstream's engine (`import_max.py`) is deleted: nothing of it is left to call.
-- `maxdrop/build/materials.py`: a MaterialIR and its texture graphs as a Principled BSDF node tree, one material
-  per 3ds Max material, images reused per file and color space.
+  `ops.py` keeps the operators, the panels, the file handler and the registration; beside it, loaded with it:
+  `options.py` (the enums' choices, `ImportOptions`), `packs.py` (pack listings, the target folder, the pre-flight)
+  and `pipeline.py` (`_read_file`, `_scene_steps`, `_Run`, the worker threads). Not a package: `ops` is kept and
+  reloaded, and a kept package would go on using stale submodules after an upgrade.
+- `maxdrop/build/materials/`: a MaterialIR and its texture graphs as a Principled BSDF node tree, one material
+  per 3ds Max material, images reused per file and color space. `MaterialBuilder` is in `builder.py`; `_Tree`
+  (`tree.py`, one material's tree) takes its methods also from the mixins `_Surface`, `_Textures` and `_MapNodes`
+  (`surface.py`, `textures.py`, `map_nodes.py`).
 - `maxdrop/prefs.py`: add-on preferences: version, Check for Updates, the texture search folders
   (`texture_dirs()`, read by the texture lookup).
 - `maxdrop/update.py`: reads the published `index.json`, compares with the manifest version, adds the remote
@@ -60,8 +67,12 @@ powershell -ExecutionPolicy Bypass -File build.ps1    # dist\ (git-ignored): zip
   nodes, controllers, geometry, parameter blocks, assets, units) and `maxdrop/convert/` (scene description in
   meters, Z up, linear color; material, light and camera rules; the report) **never import `bpy` or
   `mathutils`**, so they run under plain Python; `maxdrop/build/` is the only part that creates Blender data.
-  Dispatch on ClassID, never on class-name strings.
-- `maxdrop/intake/`: what a scene was downloaded as, turned into a `.max` on disk. `archive.py` lists a scene
+  Dispatch on ClassID, never on class-name strings. Packages that were one module (split 2026-11-25):
+  `convert/texmaps/` (a new family of map rules is a new `maps_*.py`), `convert/scene/`, `convert/materials/`
+  (layered materials in `layered.py`), `convert/primitives/`, `convert/lights/`, `convert/extrude/`,
+  `reader/controllers/`; their `__init__.py` keeps every name the module held. A test that replaces a name of such
+  a package does it with `patch_all` (`tests/patching.py`): each module of the package reads its own binding.
+- `maxdrop/intake/`: what a scene was downloaded as, turned into a `.max` on disk. `archive/` lists a scene
   pack (`.zip` through `zipfile`; `.rar` and `.7z` through backends of the same interface) and unpacks the
   chosen `.max` with its maps into a flat folder. Imported on demand, **never imports `bpy` or `mathutils`**.
 - `maxdrop/pathnames.py`: name rules reader/, convert/ and intake/ share (`base_name()`, the reserved Windows
@@ -90,6 +101,9 @@ powershell -ExecutionPolicy Bypass -File build.ps1    # dist\ (git-ignored): zip
   - `Material.surface_render_method` only; `shadow_method` exists only in 4.2 and `blend_method` is legacy.
   - EEVEE is `BLENDER_EEVEE_NEXT` in 4.x and `BLENDER_EEVEE` in 5.x: tests pick the engine by version.
   - `poll_file_object_drop` comes from `compat.py`. Any other difference goes there too.
+- **No code file over 1000 lines** (source or tests; the test files still over it are split next, in a pull
+  request of their own): a change that would pass it splits the file by responsibility first; a module becomes a
+  package whose `__init__.py` keeps its names, a test file gets siblings named after it.
 - **No commercial assets in git, ever.** The history is public. Bought scenes, their textures, their names and
   anything dumped from them stay outside the repo (the corpus folder is local; `*.max` is git-ignored except
   `tests/fixtures/`). Fixtures are self-authored, tiny, saved under a neutral path, and committed only when a

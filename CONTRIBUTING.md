@@ -71,14 +71,14 @@ the same extension enabled from two repositories clashes.
 
 | Path | What it is |
 |------|------------|
-| `maxdrop/__init__.py` | Thin aggregator: registers the modules of `_NAMES`, reloads them, and drops the modules imported on demand. |
-| `maxdrop/ops.py` | The import operator, its options popup (with the scene of a pack), the file handler for `.max`, `.rar` and `.7z`, and the *File › Import* entry. |
+| `maxdrop/__init__.py` | Thin aggregator: registers the modules of `_NAMES`, reloads them, and drops every other module of the add-on. |
+| `maxdrop/ops.py` | The import operator, its options popup (with the scene of a pack), the file handler for `.max`, `.rar` and `.7z`, and the *File › Import* entry; beside it `options.py` (the options' choices), `packs.py` (scene packs in the popup, the pre-flight line) and `pipeline.py` (the import run: read, describe, build, cancel). |
 | `maxdrop/reader/`, `maxdrop/convert/` | The `.max` file read into plain Python objects, then the scene description, the material and texture-map rules, the texture lookup and the import report. No `bpy`. |
-| `maxdrop/build/` | The only part that creates Blender data: objects and meshes, collections, materials (`materials.py`: Principled BSDF node trees), the report's text. Imported only when a file is imported. |
+| `maxdrop/build/` | The only part that creates Blender data: objects and meshes, collections, materials (`materials/`: Principled BSDF node trees), the report's text. Imported only when a file is imported. |
 | `maxdrop/prefs.py` | The add-on preferences: version, Check for Updates, where scene packs are unpacked, texture search folders. |
 | `maxdrop/update.py` | Check for Updates. The only code that goes online. |
 | `maxdrop/compat.py` | What differs between Blender 4.2 and 5.2. |
-| `maxdrop/intake/` | Scene packs: `archive.py` lists a `.zip`, `.rar` or `.7z` and unpacks the chosen `.max` with its maps into a flat folder; `external.py` runs the unpacker found on the computer for `.rar` and `.7z`. Plain Python, no `bpy`. |
+| `maxdrop/intake/` | Scene packs: `archive/` lists a `.zip`, `.rar` or `.7z` and unpacks the chosen `.max` with its maps into a flat folder; `external.py` runs the unpacker found on the computer for `.rar` and `.7z`. Plain Python, no `bpy`. |
 | `site/index.html`, `tools/make_site.py` | The landing page and the script that fills it from `dist/index.json`. |
 | `tools/baseline.py`, `tools/baseline_import.py` | Measure one import: time, peak memory, counts ([docs/BASELINE.md](docs/BASELINE.md)). |
 | `tools/census.py` | Class census of one `.max`, no Blender: the objects per class, the nodes per base-object class and the modifier classes (`--json` for a machine-readable form). It names classes only, never a node, material, layer or the file, so its output from a scene that is not ours can be kept in notes ([docs/FORMAT.md](docs/FORMAT.md)). |

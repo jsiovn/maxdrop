@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Tests of maxdrop/convert/lights.py: VRayLights as light descriptions, no Blender.
+"""Tests of maxdrop/convert/lights/: VRayLights as light descriptions, no Blender.
 
 The ported formulas (watts per units mode and type, the Kelvin color) against values computed by hand; the
 vray_lights fixture (tools/fixtures/vray_lights.ms) read through convert.scene against what 3ds Max 2020 + V-Ray 5.2
@@ -18,6 +18,7 @@ an object offset, one holding its own mesh (Replace mesh with light) with a Shel
 hand-made areas, an Extrude on a shape source (the extrude fixture, tools/fixtures/extrude.ms).
 """
 import importlib
+import importlib.util
 import math
 import os
 import sys
@@ -43,6 +44,10 @@ colors = importlib.import_module(_PKG + ".convert.colors")
 texmaps = importlib.import_module(_PKG + ".convert.texmaps")
 pblock = importlib.import_module(_PKG + ".reader.pblock")
 classids = importlib.import_module(_PKG + ".reader.classids")
+_spec_patching = importlib.util.spec_from_file_location("maxdrop_test_patching",
+                                                        os.path.join(ROOT, "tests", "patching.py"))
+patching = importlib.util.module_from_spec(_spec_patching)
+_spec_patching.loader.exec_module(patching)  # patch_all(): a split package's modules read their own names
 try:
     import numpy  # noqa: F401  convert.scene needs it for meshes
     conv = importlib.import_module(_PKG + ".convert.scene")
@@ -526,7 +531,7 @@ class MeshLightFixture(unittest.TestCase):
     def test_own_mesh_creased_by_its_smoother(self):
         """A converted smoother that separates by smoothing groups (CREASE) creases the emitter's mesh, as a mesh
         node's (md.creases): only FixtureEmitterOwn's, whose node has converted modifiers."""
-        with mock.patch.object(conv, "_shading", lambda converted: conv.rules.CREASE if converted else None):
+        with patching.patch_all(conv, "_shading", lambda converted: conv.rules.CREASE if converted else None):
             desc = conv.read(MESH_FIXTURE)
         creased = sorted(n.name for n in desc.nodes if n.emitter is not None and desc.meshes[n.mesh].creases)
         self.assertEqual(creased, ["FixtureEmitterOwn"])
@@ -752,10 +757,10 @@ class MeshLightFixture(unittest.TestCase):
                 return made[-1]
 
             patches = (mock.patch.object(conv.extrude, "extrude", counted),
-                       mock.patch.object(conv, "_Extrusions", captured),
+                       patching.patch_all(conv, "_Extrusions", captured),
                        mock.patch.object(conv.shapes, "is_shape", lambda s, i: i != light_base and real_is_shape(s, i)),
-                       mock.patch.object(L, "light_class", lambda s, i: L.VRAY if i == light_base else
-                                         real_class(s, i)),
+                       patching.patch_all(L, "light_class", lambda s, i: L.VRAY if i == light_base else
+                                          real_class(s, i)),
                        mock.patch.object(L, "read_params", lambda s, i, *a, **kw: (dict(light_values), [])
                                          if i == light_base else real_read(s, i, *a, **kw)))
             wants = {(light, rect): (1, light), (rect, light): (2, rect), (rect, light, rect): (1, rect),
@@ -807,8 +812,8 @@ class MeshLightFixture(unittest.TestCase):
                 with mock.patch.object(conv.shapes, "read_shape", refused), \
                         mock.patch.object(conv.shapes, "is_shape",
                                           lambda s, i: i != light_base and real_is_shape(s, i)), \
-                        mock.patch.object(L, "light_class", lambda s, i: L.VRAY if i == light_base else
-                                          real_class(s, i)), \
+                        patching.patch_all(L, "light_class", lambda s, i: L.VRAY if i == light_base else
+                                           real_class(s, i)), \
                         mock.patch.object(L, "read_params", lambda s, i, *a, **kw: (dict(light_values), [])
                                           if i == light_base else real_read(s, i, *a, **kw)), \
                         mock.patch.object(sc, "walk", return_value=list(order)):
