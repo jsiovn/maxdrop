@@ -392,7 +392,7 @@ def no_free_folder(ops, zip_path, folder, scene):
     with open(os.path.join(taken, "notes.txt"), "wb"):
         pass
     remember_target(ops, zip_path, folder)
-    saved, archive._CANDIDATES = archive._CANDIDATES, 1
+    saved, archive.folders._CANDIDATES = archive._CANDIDATES, 1
     # The preview's message is no .max path: it must never be read as one (ops._ON_DISK gates both reads).
     asked = []
     remember, preflight_of = ops._remember_preflight, ops._preflight_of
@@ -406,7 +406,7 @@ def no_free_folder(ops, zip_path, folder, scene):
         preview = ops._target_of(zip_path)[2].get(scene)
     finally:
         ops._remember_preflight, ops._preflight_of = remember, preflight_of
-        archive._CANDIDATES = saved
+        archive.folders._CANDIDATES = saved
         ops._TARGETS.pop(ops._norm(zip_path), None)
         shutil.rmtree(taken)
     check("Scene Pack panel: no free folder name is said, with an error icon, the folder on its own line",

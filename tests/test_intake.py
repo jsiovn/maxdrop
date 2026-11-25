@@ -12,6 +12,7 @@ import ast
 import contextlib
 import errno
 import importlib
+import importlib.util
 import json
 import os
 import shutil
@@ -37,6 +38,10 @@ if _PKG not in sys.modules:
     _pkg.__path__ = [os.path.join(ROOT, "maxdrop")]
     sys.modules[_PKG] = _pkg
 archive = importlib.import_module(_PKG + ".intake.archive")
+_spec_patching = importlib.util.spec_from_file_location("maxdrop_test_patching",
+                                                        os.path.join(ROOT, "tests", "patching.py"))
+patching = importlib.util.module_from_spec(_spec_patching)
+_spec_patching.loader.exec_module(patching)  # patch_all(): a split package's modules read their own names
 for _kind in (archive.KIND_RAR, archive.KIND_7Z):
     archive._BACKENDS.pop(_kind, None)
 
@@ -148,7 +153,7 @@ def rename_through_os():
     """Folder renames through os.rename, as the look-then-rename fallback does: a test that patches os.rename to
     see or fail them would otherwise miss them on Linux and macOS, where the rename that never replaces is ctypes'
     (on Windows it is os.rename itself)."""
-    return mock.patch.object(archive, "_noreplace", lambda: None)
+    return patching.patch_all(archive, "_noreplace", lambda: None)
 
 
 class Base(unittest.TestCase):
@@ -867,7 +872,7 @@ class Destination(Base):
         for name in ("pack", "pack (2)", "pack (3)"):
             os.mkdir(os.path.join(self.out, name))
             write(os.path.join(self.out, name, "notes.txt"))
-        with mock.patch.object(archive, "_CANDIDATES", 3):
+        with patching.patch_all(archive, "_CANDIDATES", 3):
             before = files_under(self.tmp)
             with self.assertRaisesRegex(PackError, "No free folder for pack.zip") as previewed:
                 archive.preview(path, scene, several, self.out)
@@ -890,7 +895,7 @@ class Destination(Base):
         archive.unpack(path, "two.max", dest_parent=self.out)
         os.mkdir(os.path.join(self.out, "pack", "one"))
         write(os.path.join(self.out, "pack", "one", "notes.txt"))
-        with mock.patch.object(archive, "_CANDIDATES", 1):
+        with patching.patch_all(archive, "_CANDIDATES", 1):
             before = files_under(self.tmp)
             with self.assertRaisesRegex(PackError, "No free folder for pack.zip") as previewed:
                 archive.preview(path, "one.max", True, self.out)
@@ -1124,7 +1129,7 @@ class StaleStaging(Base):
         self.addCleanup(os.rmdir, link)
         stale = os.path.join(self.out, archive.STAGING_PREFIX + "old")
         os.mkdir(stale)
-        with mock.patch.object(archive, "_STALE_SECONDS", -60):  # everything counts as old
+        with patching.patch_all(archive, "_STALE_SECONDS", -60):  # everything counts as old
             archive._remove_stale_staging(self.out, archive.Limits(seconds=-60))
         self.assertFalse(os.path.lexists(stale))
         self.assertTrue(archive._is_link(link))
@@ -1167,7 +1172,7 @@ class Race(Base):
                 os.mkdir(os.path.join(self.out, "pack"))
             calls.append(found[0])
             return found
-        with mock.patch.object(archive, "_destination", racing):
+        with patching.patch_all(archive, "_destination", racing):
             r = archive.unpack(path, "two.max", dest_parent=self.out)
         self.assertEqual(r.folder, os.path.join(self.out, "pack (2)", "two"))
         self.assertEqual(calls, ["free", "free"])
@@ -1183,7 +1188,7 @@ class Race(Base):
                 done.append(None)
                 done[0] = archive.unpack(path, "two.max", dest_parent=self.out)
             return found
-        with mock.patch.object(archive, "_destination", racing):
+        with patching.patch_all(archive, "_destination", racing):
             r = archive.unpack(path, "two.max", dest_parent=self.out)
         self.assertEqual((done[0].mode, r.mode, r.folder), ("unpacked", "reused", done[0].folder))
         self.assertEqual(self.listing(os.path.join(self.out, "pack")), sorted([archive.MARKER, "two"]))
@@ -1236,7 +1241,7 @@ class Race(Base):
     def test_no_free_name_left(self):
         path = self.pack([("room.max", b"MAX")])
         self.racing_backend(os.path.join(self.out, "pack"), False)
-        with mock.patch.object(archive, "_CANDIDATES", 1):
+        with patching.patch_all(archive, "_CANDIDATES", 1):
             before = files_under(self.tmp)
             with self.assertRaisesRegex(PackError, "No free folder"):
                 archive.unpack(path, dest_parent=self.out)
@@ -1268,7 +1273,7 @@ class RenameNew(Base):
         def racing(s, d):
             os.mkdir(d)  # empty: what a POSIX rename replaces
             return real(s, d)
-        with mock.patch.object(archive, "_noreplace", lambda: racing):
+        with patching.patch_all(archive, "_noreplace", lambda: racing):
             self.assertFalse(archive._rename_new(src, dst))
         self.assert_kept(src, dst)
 
@@ -1286,7 +1291,7 @@ class RenameNew(Base):
         for unsupported in (False, True):
             with self.subTest(unsupported=unsupported), contextlib.ExitStack() as stack:
                 if unsupported:  # the file system has no such rename: the fallback renames
-                    stack.enter_context(mock.patch.object(archive, "_noreplace", lambda: lambda s, d: False))
+                    stack.enter_context(patching.patch_all(archive, "_noreplace", lambda: lambda s, d: False))
                 src, dst = self.folders()
                 self.assertTrue(archive._rename_new(src, dst))
                 self.assertFalse(os.path.lexists(src))
@@ -1379,8 +1384,8 @@ class Reservation(Base):
             if moves is None and scene_name is not None:
                 raise Crash()
             return real_marker(folder, ident, scene_name, *args)
-        with mock.patch.object(archive.os, "rename", rename), mock.patch.object(archive, "_write_marker", marker), \
-                mock.patch.object(archive, "_reserve", reserve), mock.patch.object(archive.shutil, "rmtree"):
+        with mock.patch.object(archive.os, "rename", rename), patching.patch_all(archive, "_write_marker", marker), \
+                patching.patch_all(archive, "_reserve", reserve), mock.patch.object(archive.shutil, "rmtree"):
             with self.assertRaises(Crash):
                 archive.unpack(path, scene, dest_parent=out)
         for parent, dirs, _files in os.walk(out):
@@ -1552,7 +1557,7 @@ class Reservation(Base):
                     other[0] = archive.unpack(path, dest_parent=self.out)
             return found
         r = None
-        with mock.patch.object(archive, "_stale_reservation", judged):
+        with patching.patch_all(archive, "_stale_reservation", judged):
             r = archive.unpack(path, dest_parent=self.out)
         self.assertEqual((other[0].folder, r.folder), (folder, folder + " (2)"))
         complete = sorted([archive.MARKER, "room.max", "stone.png", "wood.jpg"])
@@ -1626,7 +1631,7 @@ class Reservation(Base):
             stack.enter_context(rename_through_os())
             stack.enter_context(mock.patch.object(archive.shutil, "rmtree"))
             if at_marker:
-                stack.enter_context(mock.patch.object(archive, "_write_marker", marker))
+                stack.enter_context(patching.patch_all(archive, "_write_marker", marker))
             with self.assertRaises(Crash):
                 archive.unpack(path, scene, dest_parent=self.out)
         for parent, dirs, files in os.walk(self.out):
@@ -1684,12 +1689,12 @@ class Reservation(Base):
                 os.mkdir(folder)
                 write(os.path.join(folder, "third.jpg"), b"T")
             return real(f, i)
-        with mock.patch.object(archive, "_stale_reservation", judged):
+        with patching.patch_all(archive, "_stale_reservation", judged):
             self.assertFalse(archive._clear_stale_reservation(folder, ident))
         self.assertEqual(os.listdir(folder), ["third.jpg"])
         kept = [n for n in os.listdir(self.out) if n.startswith(archive.RECLAIM_PREFIX)]
         self.assertEqual(len(kept), 1)
-        with mock.patch.object(archive, "_STALE_SECONDS", -60):  # everything counts as old
+        with patching.patch_all(archive, "_STALE_SECONDS", -60):  # everything counts as old
             archive._remove_stale_staging(self.out, archive.Limits(seconds=-60))
         self.assertEqual(self.listing(self.out), sorted(["pack", kept[0]]))
         self.assertIn("room.max", os.listdir(os.path.join(self.out, kept[0])))
@@ -1711,13 +1716,13 @@ class Reservation(Base):
             if dst == folder:
                 raise PermissionError("a file in it is open")
             return real_rename(src, dst)
-        with mock.patch.object(archive, "_stale_reservation", judged), \
+        with patching.patch_all(archive, "_stale_reservation", judged), \
                 mock.patch.object(archive.os, "rename", rename), rename_through_os():
             self.assertFalse(archive._clear_stale_reservation(folder, ident))
         self.assertFalse(os.path.lexists(folder))
         kept = [n for n in os.listdir(self.out) if n.startswith(archive.RECLAIM_PREFIX)]
         self.assertEqual(len(kept), 1)
-        with mock.patch.object(archive, "_STALE_SECONDS", -60):
+        with patching.patch_all(archive, "_STALE_SECONDS", -60):
             archive._remove_stale_staging(self.out, archive.Limits(seconds=-60))
         self.assertIn("room.max", os.listdir(os.path.join(self.out, kept[0])))
 
@@ -1744,8 +1749,8 @@ class Reservation(Base):
 
         out = tempfile.mkdtemp(dir=self.tmp)
         before = files_under(self.tmp)
-        failing = mock.patch.object(archive, "_write_reservation",
-                                    side_effect=[None, OSError("disk gone")])  # fine in staging, not in place
+        failing = patching.patch_all(archive, "_write_reservation",
+                                     side_effect=[None, OSError("disk gone")])  # fine in staging, not in place
         with mock.patch.object(archive.os, "rename", rename), failing, rename_through_os():
             with self.assertRaisesRegex(PackError, "disk gone"):
                 archive.unpack(path, dest_parent=out)
@@ -1760,7 +1765,7 @@ class Reservation(Base):
         with mock.patch.object(archive.os, "remove", side_effect=PermissionError("in use")):
             self.assertTrue(archive._clear_stale_reservation(folder, ident))
         self.assert_only_staging(self.out)
-        with mock.patch.object(archive, "_STALE_SECONDS", -60):
+        with patching.patch_all(archive, "_STALE_SECONDS", -60):
             archive._remove_stale_staging(self.out, archive.Limits(seconds=-60))
         self.assertEqual(os.listdir(self.out), [])
 
@@ -1783,12 +1788,12 @@ class Reservation(Base):
 
                 def crash(*args):
                     raise Crash()
-                with mock.patch.object(archive, "_stale_reservation", judged), \
-                        mock.patch.object(archive, "_rename_new", crash):
+                with patching.patch_all(archive, "_stale_reservation", judged), \
+                        patching.patch_all(archive, "_rename_new", crash):
                     with self.assertRaises(Crash):
                         archive._clear_stale_reservation(folder, ident)
                 self.assert_only_staging(out)
-                with mock.patch.object(archive, "_STALE_SECONDS", -60):  # everything counts as old
+                with patching.patch_all(archive, "_STALE_SECONDS", -60):  # everything counts as old
                     archive._remove_stale_staging(out, archive.Limits(seconds=-60))
                 # The unpack's own staging (holding the scene it never moved) is removed; the refilled one is kept.
                 left = self.listing(out)
@@ -1861,8 +1866,9 @@ class Reservation(Base):
 
 class NoBlender(unittest.TestCase):
     def test_intake_never_imports_bpy_or_mathutils(self):
-        files = [os.path.join(INTAKE, n) for n in sorted(os.listdir(INTAKE)) if n.endswith(".py")]
-        self.assertIn(os.path.join(INTAKE, "archive.py"), files)
+        files = sorted(os.path.join(folder, n) for folder, _dirs, names in os.walk(INTAKE) for n in names
+                       if n.endswith(".py"))  # archive/ is a package
+        self.assertIn(os.path.join(INTAKE, "archive", "__init__.py"), files)
         for path in files:
             with open(path, encoding="utf-8") as f:
                 tree = ast.parse(f.read(), path)
