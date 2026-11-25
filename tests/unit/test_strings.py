@@ -192,8 +192,9 @@ class TestText(unittest.TestCase):
         self.assertNotIn(65001, strings.CODE_PAGES)
 
     def test_operator_offers_every_choice(self):
-        """maxdrop/ops.py (bpy: read with ast) maps each Text Encoding item but Auto to a codec of CHOICES."""
-        with open(os.path.join(ROOT, "maxdrop", "ops.py"), encoding="utf-8") as f:
+        """maxdrop/options.py (read with ast: the add-on imports bpy) maps each Text Encoding item but Auto to a
+        codec of CHOICES."""
+        with open(os.path.join(ROOT, "maxdrop", "options.py"), encoding="utf-8") as f:
             tree = ast.parse(f.read())
         found = {}
         for stmt in tree.body:

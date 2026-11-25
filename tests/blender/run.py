@@ -759,10 +759,10 @@ def run_fixture(path, modules):
               bpy.data.objects["FixtureDiscScaled"].data, "%s, %d lights" % (lit, len(bpy.data.lights)))
         world = bpy.context.scene.world
         strength = world.node_tree.nodes.get("Background").inputs["Strength"].default_value if world else None
-        from maxdrop import ops
+        from maxdrop import options
         check("vray_lights: its dome (white, multiplier 1 in the default units) is the World, strength 1500 / (683 pi) "
               "x Light Strength", world is not None and world.name == "FixtureDome" and strength is not None and
-              abs(strength - 1500.0 / (683.0 * math.pi) * ops.LIGHT_STRENGTH) < 1e-5 and
+              abs(strength - 1500.0 / (683.0 * math.pi) * options.LIGHT_STRENGTH) < 1e-5 and
               bpy.data.worlds.get(USER_WORLD) is not None, "%s %s" % (world and world.name, strength))
         check_light_strength(path)
     if name == "vray_dome":
@@ -1051,7 +1051,7 @@ def check_emitter(label, ob, ed, o, meters, spread=False):
     flip says; double-sided: the Emission alone; its flags (EMITTER_FLAGS: double-sided, flip, camera, shadow,
     diffuse, glossy). spread: its node has converted modifiers, so the radiance is the evaluated mesh's
     (build.emitters.spread), not the description's (convert.scene.read's, of the mesh below them)."""
-    from maxdrop import ops
+    from maxdrop import options
     check(label + ": an emitter mesh object", ob.type == 'MESH', ob.type)
     if ob.type != 'MESH':
         return
@@ -1072,10 +1072,10 @@ def check_emitter(label, ob, ed, o, meters, spread=False):
     nodes = mats[0].node_tree.nodes
     out = next((n for n in nodes if n.bl_idname == "ShaderNodeOutputMaterial"), None)
     lit = [n for n in nodes if n.bl_idname == "ShaderNodeEmission" and n.inputs["Strength"].default_value > 0]
-    want = EMITTER_RADIANCE.get(name, -1.0) * ops.LIGHT_STRENGTH
+    want = EMITTER_RADIANCE.get(name, -1.0) * options.LIGHT_STRENGTH
     got = lit[0].inputs["Strength"].default_value if len(lit) == 1 else None
     check(label + ": Emission strength = the radiance x Light Strength", got is not None and
-          abs(got - want) <= want * 1e-5 and (spread or abs(got - ed.radiance * ops.LIGHT_STRENGTH) <= want * 1e-6),
+          abs(got - want) <= want * 1e-5 and (spread or abs(got - ed.radiance * options.LIGHT_STRENGTH) <= want * 1e-6),
           "%s vs %g" % (got, want))
     check(label + ": Emission color = the light's", len(lit) == 1 and
           close(tuple(lit[0].inputs["Color"].default_value)[:3], ed.color, 1e-6), str(ed.color))
@@ -1125,10 +1125,10 @@ def check_light(label, ob, ld, o):
     z = Vector(rows[6:9]).normalized()
     got = -(ob.matrix_world.to_3x3() @ Vector((0.0, 0.0, 1.0))).normalized()
     check(label + ": shines along the oracle's -Z", (got + z).length < 1e-5, "%s vs %s" % (tuple(got), tuple(-z)))
-    from maxdrop import ops
+    from maxdrop import options
     watts = VRAY_LIGHT_WATTS[o["name"]] * VRAY_LIGHT_POWER.get(o["name"], 1.0)
-    check(label + ": power = 3ds Max's watts x Light Strength", abs(light.energy - watts * ops.LIGHT_STRENGTH) <=
-          watts * ops.LIGHT_STRENGTH * 1e-5, "%g vs %g" % (light.energy, watts * ops.LIGHT_STRENGTH))
+    check(label + ": power = 3ds Max's watts x Light Strength", abs(light.energy - watts * options.LIGHT_STRENGTH) <=
+          watts * options.LIGHT_STRENGTH * 1e-5, "%g vs %g" % (light.energy, watts * options.LIGHT_STRENGTH))
     color = VRAY_LIGHT_COLORS.get(o["name"], (1.0, 1.0, 1.0))
     check(label + ": color", close(tuple(light.color), color, 1e-5) and close(tuple(light.color), ld.color, 1e-6),
           str(tuple(light.color)))
@@ -1144,7 +1144,7 @@ def check_stock_light(label, ob, ld, o):
     """lights_standard, lights_photometric, lookat's target spot: the light's type, spot cone, size or radius as the
     description says, energy the watts of STOCK_LIGHTS times the default Light Strength, color, flags, shadows
     (STOCK_SHADOWS); its -Z axis (where a spot, an area light and a sun shine in both programs) along the oracle's."""
-    from maxdrop import ops
+    from maxdrop import options
     light = ob.data
     kind, cone, blend, watts = STOCK_LIGHTS[o["name"]]
     check(label + ": type", light.type == kind == ld.kind, "%s vs %s" % (light.type, kind))
@@ -1159,7 +1159,7 @@ def check_stock_light(label, ob, ld, o):
         check(label + ": sun angle", abs(light.angle - ld.angle) < 1e-7, "%g" % light.angle)
     else:
         check(label + ": radius", abs(light.shadow_soft_size - ld.radius) < 1e-7, "%g" % light.shadow_soft_size)
-    want = watts * ops.LIGHT_STRENGTH
+    want = watts * options.LIGHT_STRENGTH
     check(label + ": power = the rules' watts x Light Strength", abs(light.energy - want) <= max(want, 1.0) * 1e-5,
           "%g vs %g" % (light.energy, want))
     rgb = STOCK_COLORS.get(o["name"], (180, 180, 180) if o["name"] in STOCK_GREY else (255, 255, 255))
@@ -1184,7 +1184,7 @@ def check_dome(desc):
     1; turned 60 degrees about Z: -30 of the VRayBitmap's horizontal rotation, then the mirrored dome turned 90 about Z)
     and the hemisphere's (the dome's -90 about Z), camera rays off, diffuse and glossy on. The two spheres share one
     light, the scaled one has its own. The report says the World and the one it replaced, which is kept."""
-    from maxdrop import ops
+    from maxdrop import options
     world = bpy.context.scene.world
     user = bpy.data.worlds.get(USER_WORLD)
     check("vray_dome: FixtureDome is the World, UserWorld kept with a fake user", world is not None and
@@ -1197,7 +1197,7 @@ def check_dome(desc):
     above = next((n for n in nodes if n.bl_idname == "ShaderNodeMath" and n.operation == 'GREATER_THAN'), None)
     maps = {tuple(round(v, 6) for v in n.inputs["Scale"].default_value): n for n in nodes
             if n.bl_idname == "ShaderNodeMapping"}
-    want = 2.0 * 1500.0 / (683.0 * math.pi) * ops.LIGHT_STRENGTH
+    want = 2.0 * 1500.0 / (683.0 * math.pi) * options.LIGHT_STRENGTH
     check("vray_dome: hemisphere strength = 2 x 1500 / (683 pi) x Light Strength, masked by Z > 0",
           times is not None and above is not None and abs(times.inputs[1].default_value - want) < 1e-5 and
           times.inputs[0].links and times.inputs[0].links[0].from_node == above,
@@ -1237,7 +1237,7 @@ def check_dome_undo(path):
     """vray_dome: the report names the World and the one it replaced; undo() of a finished modal run (the World is
     made at the end of the build), and a build that fails after making the World, put the scene's World back and
     remove the new one with everything else the run made."""
-    from maxdrop import ops
+    from maxdrop import pipeline
     empty_scene()
     result = bpy.ops.import_scene.maxdrop(filepath=path)
     text = bpy.data.texts.get("MaxDrop Report")
@@ -1260,13 +1260,13 @@ def check_dome_undo(path):
     for img in list(bpy.data.images):
         bpy.data.images.remove(img)
     before = _state()
-    original = ops._make_world
+    original = pipeline._make_world
 
     def failing(*args, **kwargs):
         original(*args, **kwargs)
         raise RuntimeError("maxdrop test: build fails after the World")
 
-    ops._make_world = failing
+    pipeline._make_world = failing
     try:
         steps = _cancel_run([path]).steps()
         failed = False
@@ -1278,7 +1278,7 @@ def check_dome_undo(path):
         except Exception as e:  # the runner may wrap it
             failed = "maxdrop test" in str(e)
     finally:
-        ops._make_world = original
+        pipeline._make_world = original
     check("dome undo: a build that fails after the World puts the World before back, nothing made",
           failed and _state() == before and not bpy.data.worlds[USER_WORLD].use_fake_user,
           "%s | %s" % (_state(), before))
@@ -2844,23 +2844,24 @@ def _state():
 
 
 def _cancel_run(paths):
-    from maxdrop import ops
-    opts = ops.ImportOptions(units='AUTO', scale_objects=1.0, use_image_search=True, object_filter={'MATERIAL', 'UV'},
-                             modifiers='KEEP', light_strength=ops.LIGHT_STRENGTH, keep_targets=False,
-                             axis_forward='Y', axis_up='Z')
-    return ops._Run(opts, list(paths), {}, bpy.context)
+    from maxdrop import options, pipeline
+    opts = options.ImportOptions(units='AUTO', scale_objects=1.0, use_image_search=True,
+                                 object_filter={'MATERIAL', 'UV'}, modifiers='KEEP',
+                                 light_strength=options.LIGHT_STRENGTH, keep_targets=False, axis_forward='Y',
+                                 axis_up='Z')
+    return pipeline._Run(opts, list(paths), {}, bpy.context)
 
 
 def _advance(steps, until, limit=100000):
     """next() on steps until until() holds (a short sleep while a worker thread reads); whether it held before the
     run ended."""
     import time
-    from maxdrop import ops
+    from maxdrop import pipeline
     for _ in range(limit):
         if until():
             return True
         try:
-            if next(steps) is ops._WAIT:
+            if next(steps) is pipeline._WAIT:
                 time.sleep(0.005)
         except StopIteration:
             return False
@@ -2901,8 +2902,8 @@ def check_cancel(textured, other):
           _state() == before, "%s | %s" % (_state(), before))
 
     import time
-    from maxdrop import ops
-    real_read, saw = ops._read_scene, []
+    from maxdrop import pipeline
+    real_read, saw = pipeline._read_scene, []
 
     def held_read(max_path, opts, dirs, cancel=None):
         # the worker stays in the read until close() stops it: a small file read to its end before the first step
@@ -2914,18 +2915,18 @@ def check_cancel(textured, other):
         return real_read(max_path, opts, dirs, cancel)
 
     run = _cancel_run([textured])
-    ops._read_scene = held_read  # _scene_steps looks it up when the read starts
+    pipeline._read_scene = held_read  # _scene_steps looks it up when the read starts
     try:
         steps = run.steps(threaded=True)
-        waited = next(steps) is ops._WAIT
+        waited = next(steps) is pipeline._WAIT
         steps.close()
     finally:
-        ops._read_scene = real_read
-        for worker in list(ops._WORKERS):  # close() waits only _READ_WAIT: here until the read has ended
+        pipeline._read_scene = real_read
+        for worker in list(pipeline._WORKERS):  # close() waits only _READ_WAIT: here until the read has ended
             worker.join(60)
     check("cancel: threaded, closed while the worker reads: nothing made",
-          waited and saw == [True] and ops._busy() == "" and _state() == before,
-          "waited %s, stop seen %s, busy %r" % (waited, saw, ops._busy()))
+          waited and saw == [True] and pipeline._busy() == "" and _state() == before,
+          "waited %s, stop seen %s, busy %r" % (waited, saw, pipeline._busy()))
     run = _cancel_run([other, textured])
     steps = run.steps(threaded=True)
     held = _advance(steps, lambda: len(run._made) == 1 and len(bpy.data.objects) > len(before[0]["objects"]) + 1)
@@ -2962,14 +2963,14 @@ def check_run_guards(textured):
     keeps the next import waiting (ops._busy)."""
     import threading
     import types
-    from maxdrop import ops
+    from maxdrop import ops, pipeline
     empty_scene()
     before = _state()
     run = _cancel_run([textured])
     steps = run.steps()
     run.close = steps.close
     held = _advance(steps, lambda: len(bpy.data.objects) > 0)
-    ops._ACTIVE.append(run)
+    pipeline._ACTIVE.append(run)
     ops._guard(True)
     try:
         guarded = all(ops._stop_active in getattr(bpy.app.handlers, n) for n in ops._GUARDED)
@@ -2985,10 +2986,10 @@ def check_run_guards(textured):
         runner = types.SimpleNamespace(_run=run, _timer=object())
         ops.MAXDROP_OT_import_progress._teardown(runner, context)
         check("guards: teardown with a failing window manager: no run active, the handlers removed",
-              not ops._ACTIVE and not any(ops._stop_active in getattr(bpy.app.handlers, n) for n in ops._GUARDED)
-              and runner._timer is None and not ops._busy())
+              not pipeline._ACTIVE and not any(ops._stop_active in getattr(bpy.app.handlers, n) for n in ops._GUARDED)
+              and runner._timer is None and not pipeline._busy())
     finally:
-        ops._ACTIVE.clear()
+        pipeline._ACTIVE.clear()
         ops._guard(False)
 
     source = types.SimpleNamespace(units='CENTIMETERS', scale_objects=2.0, light_strength=2.5, keep_targets=True,
@@ -3005,22 +3006,22 @@ def check_run_guards(textured):
         last.property_unset(name)
 
     release = threading.Event()
-    steps = ops._in_thread(release.wait, 30)
-    waited = next(steps) is ops._WAIT
+    steps = pipeline._in_thread(release.wait, 30)
+    waited = next(steps) is pipeline._WAIT
     steps.close()
-    busy = ops._busy()
+    busy = pipeline._busy()
     release.set()
-    for worker in list(ops._WORKERS):
+    for worker in list(pipeline._WORKERS):
         worker.join(10)
     check("guards: a cancelled read still running keeps the next import waiting, until it ends",
-          waited and "still reading" in busy and ops._busy() == "", busy)
+          waited and "still reading" in busy and pipeline._busy() == "", busy)
 
 
 def check_read_cancel(path):
     """Esc while a threaded run reads: the reading stops at the next node (convert.scene.describe's cancel check), so
     close() ends the worker and the next import is not refused (ops._busy). The read is slowed per node."""
     import time
-    from maxdrop import ops
+    from maxdrop import pipeline
     from maxdrop.convert import scene as convert_scene
     empty_scene()
     before = _state()
@@ -3039,23 +3040,23 @@ def check_read_cancel(path):
         start = time.perf_counter()
         steps.close()
         closed = time.perf_counter() - start
-        while ops._busy() and time.perf_counter() - start < 1.0:
+        while pipeline._busy() and time.perf_counter() - start < 1.0:
             time.sleep(0.01)
-        free = ops._busy() == ""
+        free = pipeline._busy() == ""
         seen = len(calls)
         time.sleep(0.5)
         check("read cancel: closed while the worker reads, it stops at the next node: close() within 1 s, the next "
               "import not refused within 1 s, nothing made",
               held and closed < 1.0 and free and len(calls) == seen and _state() == before,
-              "close %.2f s, busy %r, %d -> %d calls" % (closed, ops._busy(), seen, len(calls)))
+              "close %.2f s, busy %r, %d -> %d calls" % (closed, pipeline._busy(), seen, len(calls)))
     finally:
-        for worker in list(ops._WORKERS):
+        for worker in list(pipeline._WORKERS):
             worker.join(60)
         convert_scene.walk.blender_matrix = original
 
     # around the material conversion: before it (which is then not run) and after it
     opts, converted = _cancel_run([path]).opts, []
-    real_slots = ops._material_slots
+    real_slots = pipeline._material_slots
 
     def counting(after):
         calls = []
@@ -3069,22 +3070,22 @@ def check_read_cancel(path):
         converted.append(None)
         return real_slots(*args, **kwargs)
 
-    ops._material_slots = slots
+    pipeline._material_slots = slots
     try:
         cancel, calls = counting(10 ** 9)
-        ops._read_scene(path, opts, (), cancel)
+        pipeline._read_scene(path, opts, (), cancel)
         total, outcomes = len(calls), []
         for after in (total - 2, total - 1):
             converted.clear()
             try:
-                ops._read_scene(path, opts, (), counting(after)[0])
+                pipeline._read_scene(path, opts, (), counting(after)[0])
                 outcomes.append(None)
             except convert_scene.Cancelled:
                 outcomes.append(len(converted))
         check("read cancel: asked just before the material conversion (not run then) and just after it",
               outcomes == [0, 1], "%d calls, %s" % (total, outcomes))
     finally:
-        ops._material_slots = real_slots
+        pipeline._material_slots = real_slots
 
 
 def _mesh_arrays(mesh):
@@ -3181,11 +3182,11 @@ def check_mesh_steps(paths, cancel_path):
 def check_worker_errors():
     """ops._in_thread() hands the worker's outcome to the main thread: its value; an Exception unchanged; a SystemExit
     as a RuntimeError caused by it, so that the modal runner's except Exception still tears the run down."""
-    from maxdrop import ops
+    from maxdrop import pipeline
 
     def outcome(fn):
         try:
-            return ops._drain(ops._in_thread(fn))
+            return pipeline._drain(pipeline._in_thread(fn))
         except BaseException as e:  # a SystemExit let through must fail this check, not end Blender
             return e
 
@@ -3212,8 +3213,8 @@ def check_pack_cancel(fixture):
     run to its end, the unpack's summary is reported."""
     import time
     import zipfile
-    from maxdrop import ops
-    archive = ops._archive()
+    from maxdrop import packs, pipeline
+    archive = packs._archive()
     empty_scene()
     before = _state()
     scratch = tempfile.mkdtemp(prefix="maxdrop-pack-cancel-")
@@ -3243,21 +3244,21 @@ def check_pack_cancel(fixture):
             return original(*args, watch=holding, **kwargs)
 
         archive.unpack = held
-        run = ops._Run(_cancel_run([pack]).opts, [pack], {pack: scene}, bpy.context)
+        run = pipeline._Run(_cancel_run([pack]).opts, [pack], {pack: scene}, bpy.context)
         try:
             steps = run.steps(threaded=True)
-            waited = next(steps) is ops._WAIT
+            waited = next(steps) is pipeline._WAIT
             steps.close()
         finally:
             archive.unpack = original
-            for worker in list(ops._WORKERS):  # close() waits _STOP_WAIT at most: here until the unpack has ended
+            for worker in list(pipeline._WORKERS):  # close() waits _STOP_WAIT at most: here until the unpack has ended
                 worker.join(60)
         check("pack cancel: closed while it unpacks: only the archive is left, nothing in Blender",
-              waited and saw == [True] and ops._busy() == "" and os.listdir(scratch) == ["pack.zip"]
+              waited and saw == [True] and pipeline._busy() == "" and os.listdir(scratch) == ["pack.zip"]
               and _state() == before, "waited %s, stop seen %s, busy %r, %s %s" % (
-                  waited, saw, ops._busy(), os.listdir(scratch), run.text))
+                  waited, saw, pipeline._busy(), os.listdir(scratch), run.text))
 
-        run = ops._Run(_cancel_run([pack]).opts, [pack], {pack: scene}, bpy.context)
+        run = pipeline._Run(_cancel_run([pack]).opts, [pack], {pack: scene}, bpy.context)
         steps = run.steps(threaded=True)
         held = _advance(steps, lambda: len(bpy.data.objects) > 0)
         steps.close()
@@ -3267,7 +3268,7 @@ def check_pack_cancel(fixture):
               and os.path.isfile(os.path.join(folder, archive.MARKER)) and _state() == before,
               "%s %s" % (sorted(os.listdir(scratch)), held))
 
-        run = ops._Run(_cancel_run([pack]).opts, [pack], {pack: scene}, bpy.context)
+        run = pipeline._Run(_cancel_run([pack]).opts, [pack], {pack: scene}, bpy.context)
         ended = not _advance(run.steps(threaded=True), lambda: False)
         check("pack cancel: run to its end: the unpack's summary reported, the scene imported",
               ended and any(level == 'INFO' and line.startswith("pack.zip: ") for level, line in run.lines)
@@ -5374,18 +5375,18 @@ def check_builder_clipped_normal():
 
 def check_conversion_failure(max_path):
     """The material conversion raises: the operator imports the scene without materials and the report says so."""
-    import maxdrop.ops as ops
+    from maxdrop import pipeline
     empty_scene()
-    original = ops._material_slots
+    original = pipeline._material_slots
 
     def failing(*args, **kwargs):
         raise RuntimeError("maxdrop test: conversion fails")
 
-    ops._material_slots = failing
+    pipeline._material_slots = failing
     try:
         result = bpy.ops.import_scene.maxdrop(filepath=max_path)
     finally:
-        ops._material_slots = original
+        pipeline._material_slots = original
     text = bpy.data.texts.get("MaxDrop Report")
     body = text.as_string() if text is not None else ""
     check("conversion failure: the scene imported without materials, the report says why",
@@ -5399,19 +5400,19 @@ def check_conversion_failure(max_path):
 def check_light_note_on_failure(max_path):
     """A file with lights whose gamma setting is not found and whose material conversion raises: the swatch note of
     the light colors is still in the report (with converted materials it comes through them)."""
-    import maxdrop.ops as ops
+    from maxdrop import pipeline
     from maxdrop.convert import colors
     empty_scene()
-    original_slots, original_rule = ops._material_slots, colors.of_scene
+    original_slots, original_rule = pipeline._material_slots, colors.of_scene
 
     def failing(*args, **kwargs):
         raise RuntimeError("maxdrop test: conversion fails")
 
-    ops._material_slots, colors.of_scene = failing, lambda source: colors.UNKNOWN
+    pipeline._material_slots, colors.of_scene = failing, lambda source: colors.UNKNOWN
     try:
         result = bpy.ops.import_scene.maxdrop(filepath=max_path)
     finally:
-        ops._material_slots, colors.of_scene = original_slots, original_rule
+        pipeline._material_slots, colors.of_scene = original_slots, original_rule
     text = bpy.data.texts.get("MaxDrop Report")
     body = text.as_string() if text is not None else ""
     check("conversion failure: the light colors' swatch note is still reported",
@@ -5452,7 +5453,7 @@ def check_ies_header(max_path):
     """max_path (lights_photometric) copied beside a self-authored fixture_web.ies, rated 500 lm, 100 cd in every
     direction: the import finds it, IesPower (1500, override off) gets 1500 x 400 pi / 500 lm, IesOverride (override
     on) keeps 300 lm; the report has no rated-lumens line for it."""
-    from maxdrop import ops
+    from maxdrop import options
     from maxdrop.convert import lights
     empty_scene()
     scratch = tempfile.mkdtemp(prefix="maxdrop-ies-")
@@ -5464,8 +5465,8 @@ def check_ies_header(max_path):
                     b"100 100 100\n")
         result = bpy.ops.import_scene.maxdrop(filepath=dst)
         energy = {n: bpy.data.objects[n].data.energy for n in ("IesPower", "IesOverride") if n in bpy.data.objects}
-        want = {"IesPower": 1500.0 * 400.0 * math.pi / 500.0 / 683.0 * ops.LIGHT_STRENGTH,
-                "IesOverride": 300.0 / 683.0 * ops.LIGHT_STRENGTH}
+        want = {"IesPower": 1500.0 * 400.0 * math.pi / 500.0 / 683.0 * options.LIGHT_STRENGTH,
+                "IesOverride": 300.0 / 683.0 * options.LIGHT_STRENGTH}
         check("ies header: IesPower is power x the file's flux / its rated lumens, IesOverride its power",
               result == {'FINISHED'} and set(energy) == set(want)
               and all(abs(energy[n] - w) <= w * 1e-5 for n, w in want.items()), "%s %s vs %s" % (result, energy, want))
@@ -5483,7 +5484,7 @@ def check_ies_search_stopped(max_path):
     cut to 2 entries per rule: the IES file is not found, so IesPower (1500, override off) takes its power as its
     flux and its line says the search stopped; the report's stop line is there once, with materials and without
     (only the IES lookup walks then)."""
-    from maxdrop import ops
+    from maxdrop import options
     from maxdrop.convert import lights, textures
     original = textures.TextureIndex
 
@@ -5510,7 +5511,7 @@ def check_ies_search_stopped(max_path):
                 result = bpy.ops.import_scene.maxdrop(filepath=dst, **kwargs)
                 ob = bpy.data.objects.get("IesPower")
                 energy = ob.data.energy if ob is not None else None
-                want = 1500.0 / 683.0 * ops.LIGHT_STRENGTH
+                want = 1500.0 / 683.0 * options.LIGHT_STRENGTH
                 text = bpy.data.texts.get("MaxDrop Report")
                 body = text.as_string() if text is not None else ""
                 line = next((x for x in body.splitlines() if "IesPower" in x and "rated lumens" in x), "")
@@ -5536,7 +5537,7 @@ def check_reader_defect(first, second):
     imported; the pre-flight line says it is not readable."""
     import contextlib
     import io
-    from maxdrop import ops
+    from maxdrop import packs
     from maxdrop.reader import assets
     from maxdrop.reader import scene as reader_scene
     name = os.path.basename(first)
@@ -5588,7 +5589,7 @@ def check_reader_defect(first, second):
               result == {'CANCELLED'} and "Nothing imported. %s: %s" % (name, reason) in message
               and not bpy.data.objects, "%s %r" % (result, message))
         reader_scene.Scene.from_file = classmethod(no_scene)
-        line = ops._preflight(first)
+        line = packs._preflight(first)
         reader_scene.Scene.from_file = original_scene
         check("reader defect: the pre-flight line of a KeyError says the file is not readable",
               line == "Not readable as a .max file (a defect in MaxDrop's reader (KeyError: 'maxdrop test'), see "
@@ -5605,7 +5606,7 @@ def check_reader_defect(first, second):
             return original_table.__func__(cls, cf)
 
         reader_scene.Scene.from_file = classmethod(attribute_scene)
-        line = ops._preflight(first)
+        line = packs._preflight(first)
         reader_scene.Scene.from_file = original_scene
         check("reader defect: the pre-flight line of an AttributeError says the file is not readable",
               line == "Not readable as a .max file (a defect in MaxDrop's reader (AttributeError: maxdrop test: "

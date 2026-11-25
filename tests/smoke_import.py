@@ -284,6 +284,7 @@ def damage(zip_path):
 
 
 def as_pack(max_path, scratch, images_of_max, archive, ops):
+    from maxdrop import packs
     name = os.path.basename(max_path)
     stem = os.path.splitext(name)[0]
     folder = os.path.join(scratch, "one")
@@ -306,7 +307,7 @@ def as_pack(max_path, scratch, images_of_max, archive, ops):
     outside = [img.filepath for img in bpy.data.images
                if img.filepath and not inside(bpy.path.abspath(img.filepath), pack)]
     check("%s in a .zip: every image comes from the pack folder" % name, not outside, ", ".join(outside[:5]))
-    referenced = ops._referenced_maps(max_path)
+    referenced = packs._referenced_maps(max_path)
     if referenced is None:
         if argv:
             print("NOTE %s in a .zip: no readable asset list, every map unpacked: unused-map check skipped" % name)
@@ -336,6 +337,7 @@ def attempt(**options):
 
 
 def two_scenes(max_path, scratch, ops):
+    from maxdrop import packs
     name = os.path.basename(max_path)
     folder = os.path.join(scratch, "two")
     zip_path = make_zip(os.path.join(folder, "two.zip"), [("a/" + name, max_path), ("b/" + SECOND, max_path)])
@@ -366,7 +368,7 @@ def two_scenes(max_path, scratch, ops):
         FIXTURE["issues"] -= extra
     check("two scenes in a .zip: the named scene is unpacked into its own folder",
           os.path.isfile(os.path.join(folder, "two", "second", SECOND)))
-    check("two scenes in a .zip: the unpack drops the popup's previews", ops._norm(zip_path) not in ops._TARGETS)
+    check("two scenes in a .zip: the unpack drops the popup's previews", packs._norm(zip_path) not in packs._TARGETS)
     remember_target(ops, zip_path, folder)
     labels = pack_panel(ops, zip_path, SECOND)
     check("Scene Pack panel: the scene unpacked before is read from its folder",
@@ -377,16 +379,18 @@ def two_scenes(max_path, scratch, ops):
     labels = pack_panel(ops, zip_path, SECOND)
     check("Scene Pack panel: a pack replaced at the same path since invoke() keeps none of the old previews",
           labels[-1] == "Unpacks into a folder named after the archive", str(labels))
-    ops._TARGETS.pop(ops._norm(zip_path), None)
+    packs._TARGETS.pop(packs._norm(zip_path), None)
 
 
 def remember_target(ops, zip_path, folder):
-    ops._TARGETS[ops._norm(zip_path)] = (ops._key(zip_path), folder, None, {})
+    from maxdrop import packs
+    packs._TARGETS[packs._norm(zip_path)] = (packs._key(zip_path), folder, None, {})
 
 
 def no_free_folder(ops, zip_path, folder, scene):
     """Every name the pack folder could take is someone else's folder: the panel says so, as the unpack would."""
-    archive = ops._archive()
+    from maxdrop import packs
+    archive = packs._archive()
     taken = os.path.join(folder, "two")
     os.makedirs(taken)
     with open(os.path.join(taken, "notes.txt"), "wb"):
@@ -395,19 +399,21 @@ def no_free_folder(ops, zip_path, folder, scene):
     saved, archive.folders._CANDIDATES = archive._CANDIDATES, 1
     # The preview's message is no .max path: it must never be read as one (ops._ON_DISK gates both reads).
     asked = []
-    remember, preflight_of = ops._remember_preflight, ops._preflight_of
-    ops._remember_preflight = lambda path: asked.append(path) or remember(path)
+    remember, preflight_of = packs._remember_preflight, packs._preflight_of
+    # the first is read in packs.py (the preview) and ops.py (invoke), the second in ops.py (the File panel)
+    packs._remember_preflight = ops._remember_preflight = lambda path: asked.append(path) or remember(path)
     ops._preflight_of = lambda path: asked.append(path) or preflight_of(path)
     try:
         layout = FakeLayout()
         operator = FakeOperator(zip_path, scene)
-        ops.import_pack(layout, operator, [(zip_path, ops._listing(zip_path))])
+        ops.import_pack(layout, operator, [(zip_path, packs._listing(zip_path))])
         ops.import_files(FakeLayout(), operator)
-        preview = ops._target_of(zip_path)[2].get(scene)
+        preview = packs._target_of(zip_path)[2].get(scene)
     finally:
-        ops._remember_preflight, ops._preflight_of = remember, preflight_of
+        packs._remember_preflight = ops._remember_preflight = remember
+        ops._preflight_of = preflight_of
         archive.folders._CANDIDATES = saved
-        ops._TARGETS.pop(ops._norm(zip_path), None)
+        packs._TARGETS.pop(packs._norm(zip_path), None)
         shutil.rmtree(taken)
     check("Scene Pack panel: no free folder name is said, with an error icon, the folder on its own line",
           layout.labels[-3:] == ["No free folder for two.zip in", folder, "Too many folders of that name exist."]
@@ -420,22 +426,23 @@ def no_free_folder(ops, zip_path, folder, scene):
 def parent_problem(ops, zip_path):
     """The archive's folder cannot be written and no other is chosen: the panel says so, the folder on its own
     line."""
+    from maxdrop import packs
     prefs = ops.prefs
     saved, prefs.writable = prefs.writable, lambda folder: False
     try:
-        parent, problem = ops._target(zip_path, bpy.context)
+        parent, problem = packs._target(zip_path, bpy.context)
     finally:
         prefs.writable = saved
     beside = os.path.dirname(os.path.abspath(zip_path))
     check("a folder that cannot be written: no parent, the reason as labels",
           parent is None and problem == ("Cannot write into", beside) + prefs._CHOOSE_LINES,
           "%s %s" % (parent, problem))
-    ops._TARGETS[ops._norm(zip_path)] = (ops._key(zip_path), parent, problem, {})
+    packs._TARGETS[packs._norm(zip_path)] = (packs._key(zip_path), parent, problem, {})
     try:
         layout = FakeLayout()
-        ops.import_pack(layout, FakeOperator(zip_path), [(zip_path, ops._listing(zip_path))])
+        ops.import_pack(layout, FakeOperator(zip_path), [(zip_path, packs._listing(zip_path))])
     finally:
-        ops._TARGETS.pop(ops._norm(zip_path), None)
+        packs._TARGETS.pop(packs._norm(zip_path), None)
     check("Scene Pack panel: a folder that cannot be written is said line by line, the first with an error icon",
           layout.labels[-4:] == list(problem) and layout.icons[-4:] == ['ERROR', 'NONE', 'NONE', 'NONE'],
           str(list(zip(layout.labels, layout.icons))))
@@ -522,24 +529,27 @@ class FakeOperator:
 
 def pack_panel(ops, zip_path, scene):
     """The labels of the Scene Pack panel, as draw() shows them for the Scene field set to scene."""
+    from maxdrop import packs
     layout = FakeLayout()
-    ops.import_pack(layout, FakeOperator(zip_path, scene), [(zip_path, ops._listing(zip_path))])
+    ops.import_pack(layout, FakeOperator(zip_path, scene), [(zip_path, packs._listing(zip_path))])
     return layout.labels
 
 
 def preflight_panel(ops, path):
     """The File panel of the popup: invoke() remembers the line of a dropped .max, draw shows it."""
-    ops._PREFLIGHT.clear()
+    from maxdrop import packs
+    packs._PREFLIGHT.clear()
     layout = FakeLayout()
     ops.import_files(layout, FakeOperator(path))
     check("File panel: nothing before invoke() read the file", layout.labels == [], str(layout.labels))
-    ops._remember_preflight(path)
+    packs._remember_preflight(path)
     ops.import_files(layout, FakeOperator(path))
     check("File panel: the file name, then its pre-flight line",
-          layout.labels == ["File", os.path.basename(path), ops._preflight(path)], str(layout.labels))
+          layout.labels == ["File", os.path.basename(path), packs._preflight(path)], str(layout.labels))
 
 
 def units_and_preflight(ops):
+    from maxdrop import packs
     fixtures_dir = os.path.join(ROOT, "tests", "fixtures")
     box = (10.0, 20.0, 30.0)
     sizes = {}
@@ -562,20 +572,20 @@ def units_and_preflight(ops):
     got = box_size()
     check("units_mm, Up Y: the top-level object is turned, Y up becomes Z up",
           close(got, [0.01, 0.03, 0.02]), str(got))
-    meters, note = ops._meters('AUTO', None, 0.5)
+    meters, note = packs._meters('AUTO', None, 0.5)
     check("a file without a unit: Scale is the meters per unit, with a note", meters == 0.5 and "0.5" in note, note)
-    check("Units Feet ignores the file's unit", ops._meters('FEET', None, 1.0) == (0.3048, ""))
-    line = ops._preflight(os.path.join(fixtures_dir, "hierarchy.max"))
+    check("Units Feet ignores the file's unit", packs._meters('FEET', None, 1.0) == (0.3048, ""))
+    line = packs._preflight(os.path.join(fixtures_dir, "hierarchy.max"))
     check("pre-flight line: 3ds Max version, object count, unit",
           line.startswith("3ds Max 2020, ") and ", 5 objects, millimeters" in line, line)
-    line = ops._preflight(os.path.join(fixtures_dir, "units_in.max"))
+    line = packs._preflight(os.path.join(fixtures_dir, "units_in.max"))
     check("pre-flight line of units_in: 1 object, inches", line.endswith(", 1 object, inches"), line)
     preflight_panel(ops, os.path.join(fixtures_dir, "hierarchy.max"))
     with open(os.path.join(tempfile.gettempdir(), "maxdrop-not-a-max.max"), "wb") as f:
         f.write(b"not a 3ds Max file")
         bad = f.name
     try:
-        line = ops._preflight(bad)
+        line = packs._preflight(bad)
     finally:
         os.remove(bad)
     check("pre-flight line of a file that is not a .max: says so", line.startswith("Not readable as a .max file"),

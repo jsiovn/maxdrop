@@ -15,9 +15,9 @@ _NAMES = ("update", "prefs", "ops")
 
 
 def _purge():
-    # Everything else of the package is imported on demand (compat, the reader / convert / build sub-packages,
-    # the intake). A re-run of this file must not leave the old ones cached, nor their names
-    # on the package: `from . import x` returns such a name without importing anything.
+    # Everything else of the package is imported by these (options, packs and pipeline with ops) or on demand
+    # (compat, the reader / convert / build sub-packages, the intake). A re-run of this file must not leave the old
+    # ones cached, nor their names on the package: `from . import x` returns such a name without importing anything.
     prefix = __name__ + "."
     keep = {prefix + name for name in _NAMES}
     for full in [m for m in sys.modules if m.startswith(prefix) and m not in keep]:
