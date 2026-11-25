@@ -20,7 +20,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INTAKE = os.path.join(ROOT, "maxdrop", "intake")
 
 # Under a package of its own whose path is maxdrop/: `import maxdrop` would pull bpy, and archive/ imports
-# pathnames. Zip only: the .rar and .7z backends archive/ registers are tests/test_intake_external.py's.
+# pathnames. Zip only: the .rar and .7z backends archive/ registers are tests/test_intake_external*.py's.
 _PKG = "maxdrop_intake_zip_test"
 if _PKG not in sys.modules:
     _pkg = types.ModuleType(_PKG)

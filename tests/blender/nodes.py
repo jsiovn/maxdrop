@@ -407,7 +407,7 @@ def _reaches_image(socket, depth=4):
     return n.bl_idname == "ShaderNodeTexImage" or any(_reaches_image(i, depth - 1) for i in n.inputs)
 
 
-CLIP_LABEL = "Clip"  # build.materials' CLIP_LABEL (the package is imported inside the checks)
+CLIP_LABEL = "Clip"  # the CLIP_LABEL of build/materials/ (the package is imported inside the checks)
 
 
 def _clip_mask_input(node):

@@ -417,7 +417,7 @@ def check_builder_blend_modes():
 def check_builder_gamma_magnitude():
     """A ColorCorrect gamma that takes the magnitude (a CoronaMix gamma in sRGB mode, maxdrop-6n0.6.40): a Vector Math
     ABSOLUTE between the image and the Gamma node, also beside another step; without the flag none; at a gamma of 1
-    the ABSOLUTE alone. Structural, as the other builder checks (the values: test_texmaps and the probe)."""
+    the ABSOLUTE alone. Structural, as the other builder checks (the values: test_texmaps_more and the probe)."""
     from maxdrop.build import materials as build_materials
     from maxdrop.convert import materials as cm
     from maxdrop.convert import texmaps as tx

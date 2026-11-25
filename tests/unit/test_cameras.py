@@ -21,7 +21,7 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 FIXTURES = os.path.join(ROOT, "tests", "fixtures")
 
-_PKG = "maxdrop_lights_test"  # the package test_lights.py makes: maxdrop/__init__.py (bpy) never runs
+_PKG = "maxdrop_lights_test"  # the package lights_support.py makes: maxdrop/__init__.py (bpy) never runs
 if _PKG not in sys.modules:
     _pkg = types.ModuleType(_PKG)
     _pkg.__path__ = [os.path.join(ROOT, "maxdrop")]

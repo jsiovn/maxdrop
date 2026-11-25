@@ -17,7 +17,7 @@ INTAKE = os.path.join(ROOT, "maxdrop", "intake")
 PACKS = os.path.join(ROOT, "tests", "fixtures", "packs")
 
 
-# Under a package whose path is maxdrop/ (`import maxdrop` would pull bpy), not tests/test_intake.py's: that one
+# Under a package whose path is maxdrop/ (`import maxdrop` would pull bpy), not tests/intake_support.py's: that one
 # keeps a zip-only archive/. archive/ installs the external backends of this package itself.
 _PKG = "maxdrop_intake_ext_test"
 if _PKG not in sys.modules:

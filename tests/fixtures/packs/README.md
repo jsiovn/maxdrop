@@ -1,6 +1,6 @@
 # Test packs
 
-Self-made, tiny, dummy content only; read by `tests/test_intake_external.py`. Every file holds the same tree
+Self-made, tiny, dummy content only; read by `tests/test_intake_external*.py`. Every file holds the same tree
 (`TREE` in that test), all dates 2020-01-01:
 
 ```

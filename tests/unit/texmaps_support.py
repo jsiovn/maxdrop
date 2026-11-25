@@ -18,7 +18,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 FIXTURE_DIR = os.path.join(ROOT, "tests", "fixtures")
 TOLERANCE = 1e-5
 
-_PKG = "maxdrop_convert_test"  # the package test_convert_materials.py makes: maxdrop/__init__.py never runs
+_PKG = "maxdrop_convert_test"  # the package convert_materials_support.py makes: maxdrop/__init__.py never runs
 if _PKG not in sys.modules:
     _pkg = types.ModuleType(_PKG)
     _pkg.__path__ = [os.path.join(ROOT, "maxdrop")]

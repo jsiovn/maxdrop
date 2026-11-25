@@ -24,7 +24,7 @@
 -- curve as 3ds Max evaluates it (ICurve.GetValue, x = 0, 1/64 ... 1); per Mix with Use Curve the factor it mixes
 -- by (renderMap of a copy over a constant mask, or without one at its mix amount, x = 0, 1/64 ... 1); a Mix with a
 -- mask also its factor at its own mix amount without the mask ("amount").
--- tests/unit/test_texmaps.py compares MaxDrop's curves with it. The bitmaps name files that do not exist, by a
+-- tests/unit/test_texmaps_more.py compares MaxDrop's curves with it. The bitmaps name files that do not exist, by a
 -- bare file name.
 -- Authored for MaxDrop's tests (see CONTRIBUTING.md, "Test files"): it resets the scene, so run it in a 3ds Max
 -- session with nothing to keep, then sanitize and check the saved file before it goes into tests/fixtures/.

@@ -232,7 +232,7 @@ oracle).
 ## Transform controllers
 
 `maxdrop/reader/controllers/` turns a node's slot-0 controller into matrices at frame 0;
-`tests/unit/test_controllers.py` checks every node of every fixture against the oracle's `transform` and
+`tests/unit/test_controllers_fixtures.py` checks every node of every fixture against the oracle's `transform` and
 `object_transform` (within 1e-4, per element).
 
 - Matrices are in Max's row-vector convention: a point times the matrix, row 4 = translation, `A * B` applies `A`
@@ -422,9 +422,10 @@ up node and a scale of its own; Y axis rolled 15°) and boxes with a LookAt Cons
 Y axis flipped with a scale of its own; an up node looked at; an up node's X axis aligned with, under the Dummy;
 Keep Initial Offset under the Dummy, Set Orientation, both, Set Orientation turned off after the box was turned;
 an animated weight, the second of two and the one of a constraint with an up node).
-Every node's world and object transform equals the oracle within 1e-4 (`test_controllers.py`). The frames were
-found on scratch files saved by 3ds Max 2020 (one setting changed per file, compared with `tools/maxdiff.py`, and
-`node.transform` read in MAXScript); `look_frame` and `constraint_frame` are tested against those numbers.
+Every node's world and object transform equals the oracle within 1e-4 (`test_controllers_fixtures.py`). The frames
+were found on scratch files saved by 3ds Max 2020 (one setting changed per file, compared with `tools/maxdiff.py`,
+and `node.transform` read in MAXScript); `look_frame` and `constraint_frame` are tested against those numbers
+(`test_controllers_aim.py`).
 
 **Look At controller** `(0x2006, 0)`, superclass `0x9008`, a target camera's or light's transform controller (and a
 node's whose controller is set to `lookat()`):
@@ -711,7 +712,7 @@ What 3ds Max 2020 makes of it (`snapshotAsMesh`, probed on scratch scenes and ch
   End off: its grid cap at z -4, facing -Z, ID 2; FixtureExtDownStart, amount -6, Cap End off: at z -6;
   FixtureExtDownEndReal, Cap Start off: at z 0). The maxdrop-6n0.6.10 probe (3ds Max 2020, a 20 x 10 rectangle at
   -5, its hole, clockwise and at z 3, morph and grid caps; the grid points at the cap's level too).
-- **Grid caps** (cap type 1; probed on about 60 shapes, `tests/unit/test_extrude.py` GRID_PROBES holds their counts;
+- **Grid caps** (cap type 1; probed on about 60 shapes, `test_extrude_caps.py` GRID_PROBES holds their counts;
   FixtureExtGrid, FixtureExtGridCircle): each solid (an outline with its holes; an island and an overlapping outline
   are solids of their own) gets a grid over the box of its outline's interpolated points, W x H. Divisions per axis:
   20, raised by each hole of the solid to floor(0.95 x W / (s / 2)), s the hole's extent on that axis, at most 50 (a
@@ -729,7 +730,7 @@ What 3ds Max 2020 makes of it (`snapshotAsMesh`, probed on scratch scenes and ch
   points lie at z 0 and the levels' heights whatever the shape's z (a rectangle at z 3: its outline at 3 and 5, its
   grid at 0 and 2); their map is the cap's box mapping. Every interior edge is hidden: 3ds Max shows the cap as one
   polygon. No local scene has grid caps (443 scenes, 95 Extrudes, the corpus included, 2026-11-21).
-- **Self-crossing outlines** (maxdrop-em3.140; 3ds Max 2020 probes, `tests/unit/test_extrude.py` CROSS_PROBES holds
+- **Self-crossing outlines** (maxdrop-em3.140; 3ds Max 2020 probes, `test_extrude_caps.py` CROSS_PROBES holds
   their counts): a closed spline with two edges that do not follow each other and meet (cross, touch at a knot or
   on an edge, or run over each other: a bowtie, a pentagram, a slit whose edges overlap along the top, an edge back
   over the one before, a Bezier rectangle whose knot moved without its vectors) gets no cap, morph or grid: the
@@ -788,7 +789,7 @@ What 3ds Max 2020 makes of it (`snapshotAsMesh`, probed on scratch scenes and ch
   Bezier knot with both vectors off its point never (also kinked by line segments); one with a vector on its point
   always (kinked or straight, curve or line segments, an open spline too), a vector 1e-6 off at x 10 or 1e-9 off at
   the origin is not on it. 3ds Max keeps a Bezier knot's vectors in line (`setInVec` / `setOutVec` out of line come
-  back in line): a Bezier knot with its vectors out of line is not made there. `tests/unit/test_extrude.py` has the
+  back in line): a Bezier knot with its vectors out of line is not made there. `test_extrude_shapes.py` has the
   cases. The group bits differ (a pie's sides: MaxDrop 1, 2, 4; 3ds Max 1 to 4 or 5, overlapping along the arc), the
   hard edges do not: `tests/unit/test_extrude.py` compares them by position with `arc_pie_reverse.maps.jsonl`.
 - **Mapping**: the sides U along each spline by length (0 to 1, the seam at its first point), V up the levels; the
