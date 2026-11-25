@@ -16,6 +16,7 @@ the hemispheres closed and with hostile values.
 """
 import collections
 import importlib
+import importlib.util
 import json
 import math
 import os
@@ -47,6 +48,10 @@ classids = importlib.import_module(_PKG + ".reader.classids")
 cfb = importlib.import_module(_PKG + ".reader.cfb")
 reader_scene = importlib.import_module(_PKG + ".reader.scene")
 pblock = importlib.import_module(_PKG + ".reader.pblock")
+_spec_patching = importlib.util.spec_from_file_location("maxdrop_test_patching",
+                                                        os.path.join(ROOT, "tests", "patching.py"))
+patching = importlib.util.module_from_spec(_spec_patching)
+_spec_patching.loader.exec_module(patching)  # patch_all(): a split package's modules read their own names
 
 DEG = math.pi / 180.0
 # what tools/fixtures/primitives.ms sets, by node (lengths in the file's units, angles in radians)
@@ -441,7 +446,7 @@ class HandMadeTest(unittest.TestCase):
                 return own if i == 0 else None
 
         scene = Scene()
-        with mock.patch.object(prim, "is_primitive", return_value=True), \
+        with patching.patch_all(prim, "is_primitive", return_value=True), \
                 mock.patch.object(prim.pblock.ParamBlock2, "from_chunk", return_value=Block({})), \
                 mock.patch.object(prim.realworld, "flag", return_value=True) as flag:
             p, _issues = prim.read_params(scene, 0)
@@ -469,7 +474,7 @@ class HandMadeTest(unittest.TestCase):
             def chunk(self, i):
                 return damaged if i == 0 else None
 
-        with mock.patch.object(prim, "is_primitive", return_value=True), \
+        with patching.patch_all(prim, "is_primitive", return_value=True), \
                 mock.patch.object(prim.pblock.ParamBlock2, "from_chunk", return_value=Block({})):
             p, _issues = prim.read_params(Scene(), 0)
         self.assertEqual((p.class_id, p.real_world), (classids.SPHERE, False))
