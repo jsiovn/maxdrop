@@ -135,7 +135,7 @@ def image_has_data(path):
 
 
 def uv_layer_name(channel):
-    """The UV layer build.objects made for a 3ds Max map channel (convert.scene's names)."""
+    """The UV layer build.objects made for a 3ds Max map channel (names from convert/scene/)."""
     return convert_scene.UV_FIRST if channel == 1 else convert_scene.UV_NAME % channel
 
 

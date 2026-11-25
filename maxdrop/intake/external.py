@@ -9,7 +9,7 @@ script or a file inside the pack's folder) and only at or above the version that
 traversal and link problems (FLOORS). It runs with an argument list (no shell), stdin closed, no console window,
 the program's own folder as working directory, a reduced environment, a timeout and a capped output.
 
-The listing only builds archive's plan. Extraction asks for the exact archive paths of that plan, into a
+The listing only builds the plan of archive/. Extraction asks for the exact archive paths of that plan, into a
 private work folder inside the staging folder; a non-zero exit, a timeout or a limit discards that folder. Then
 every file is checked (a regular file with one link, inside the work folder, no link or reparse point, a name the
 policy accepts, exactly the planned names) and moved flat into staging. archive/ registers these backends
