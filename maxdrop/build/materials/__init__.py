@@ -21,13 +21,13 @@ Emission Color and Strength, Coat Weight, Roughness, IOR and Tint, Subsurface We
 channel) and Scale (its radius in meters), Sheen Weight, Tint and Roughness, Thin Wall, Normal. A material with layers
 (a CoronaLayeredMtl) has a Principled BSDF per layer, each mixed over the ones below by a Mix Shader (factor: the
 layer's amount times its mask); the render method follows every one of them. A color graph on a float input (specular,
-transmission) goes through the mean of its channels, the measure convert/materials.py uses.
+transmission) goes through the mean of its channels, the measure convert/materials/ uses.
 
 Medium (MaterialIR.medium, the Corona volumes, maxdrop-em3.163): on the Material Output's Volume socket, the sum (Add
 Shader) of a Volume Scatter (density the largest scattering coefficient, color each channel's share of it, anisotropy),
 a Volume Absorption (density the largest absorption coefficient, color 1 - each channel's share) and an Emission
 (color the emission over its largest channel, strength that channel), each where it is above 0: Cycles takes the
-coefficients per meter of world space, which convert/materials.py gives. A volume-only material (CoronaVolumeMtl:
+coefficients per meter of world space, which convert/materials/ gives. A volume-only material (CoronaVolumeMtl:
 a medium, alpha 0 without a map, no layers) leaves the Surface unlinked once its Volume is (maxdrop-6n0.6.29): Cycles
 then crosses the box as a volume boundary, where an Alpha-0 Principled BSDF spends two of the 8 transparent bounces
 per box (six stacked boxes render black); its viewport color is VOLUME_VIEWPORT_ALPHA opaque, so Solid view shows the
@@ -108,7 +108,7 @@ Corona's materials. A Multiply of two maps in a float graph is the product of th
 product: measured on V-Ray 5.2 (bead maxdrop-em3.124, an RGB Multiply as a Mix mask and a reflection glossiness map,
 a CoronaMix Multiply as a Mix mask), red x green gives 1/9 (not 0) and yellow x cyan 4/9 (not 1/3).
 
-Texture graphs (convert/texmaps.py) become nodes, a node of the IR shared by several inputs once per material: Image
+Texture graphs (convert/texmaps/) become nodes, a node of the IR shared by several inputs once per material: Image
 -> Image Texture (its image datablock reused per file and color space: one file used in two color spaces is two
 datablocks; see Images below), with its placement as a Mapping node and a UV Map node for a map channel other than
 1; Invert, Decode (a Gamma node of 2.2, a constant through the sRGB curve; a mean: the sRGB curve in Math nodes), Mix,

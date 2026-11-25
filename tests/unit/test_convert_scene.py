@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Tests of maxdrop/convert/scene.py, the scene description: no Blender. The smoothing-group rule, the loop reversal
+"""Tests of maxdrop/convert/scene/, the scene description: no Blender. The smoothing-group rule, the loop reversal
 of a mirrored object offset, and every committed fixture against its 3ds Max oracle (order, parents, world
 matrices, world bounding boxes, counts, shared meshes, units) and its authoring script (UV channels, smoothing
 groups), the shapes' curves against the oracle's knots and segment midpoints.
@@ -180,7 +180,7 @@ SHARP_EDGES_PRIMITIVES = {"FixtureBox": 36, "FixtureBoxDown": 12, "FixtureBoxNoM
                           "FixtureCylinderSlice": 30, "FixtureCylinderSliceDown": 19, "FixtureConeSlice": 26,
                           "FixtureTubeSlice": 36, "FixtureTorusSlice": 60}
 FLAT_MESHES = {"FixtureGeoOcta"}
-# the oracle's base_class_id of the primitives MaxDrop builds (convert/primitives.py)
+# the oracle's base_class_id of the primitives MaxDrop builds (convert/primitives/)
 PRIMITIVE_CLASSES = {("0x00000010", "0x00000000"), ("0x00000011", "0x00000000"), ("0x00000012", "0x00000000"),
                      ("0x00000020", "0x00000000"), ("0xa86c23dd", "0x00000000"), ("0x00007b21", "0x00000000"),
                      ("0x00000000", "0x00007f9e"), ("0x081f1dfc", "0x77566f65"), ("0x76bf318a", "0x4bf37b10")}

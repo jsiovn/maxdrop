@@ -2,7 +2,7 @@
 --
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
--- Extruded shapes, for the Extrude modifier (convert/extrude.py):
+-- Extruded shapes, for the Extrude modifier (convert/extrude/):
 -- FixtureExtRect: a Rectangle 30 x 20, extruded 10 in 2 segments, with mapping coordinates.
 -- FixtureExtL: an L-shaped closed Line of corner knots, extruded -15 (downwards), its pivot moved (an object
 -- offset), the node turned 30 degrees about Z.

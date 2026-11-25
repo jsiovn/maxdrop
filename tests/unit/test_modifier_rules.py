@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Tests of maxdrop/convert/modifiers.py and its place in convert/scene.py: TurboSmooth, MeshSmooth, Shell and
+"""Tests of maxdrop/convert/modifiers.py and its place in convert/scene/: TurboSmooth, MeshSmooth, Shell and
 Symmetry as Blender modifiers, no Blender. The stack_convert fixture: each node's converted modifiers in order with
 the settings its script set (tools/fixtures/stack_convert.ms), the mirror frames, the mesh shading a smoother sets,
 a TurboSmooth above a Bend not converted, nothing converted with the option off, the report's counts; stack_basic's

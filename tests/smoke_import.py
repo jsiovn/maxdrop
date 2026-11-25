@@ -92,7 +92,7 @@ def oracle_modifiers(path):
     """How many modifiers the report of path names as not applied (each class once per node whose stack holds it),
     from path's oracle (tests/fixtures/<name>.oracle.json); 0 without one. The rule is gather() in
     maxdrop/convert/report.py. A shape whose lowest modifier that renders is an Extrude has it applied
-    (convert/extrude.py), and so are the UVW Maps that render right above it, or right above a mesh
+    (convert/extrude/), and so are the UVW Maps that render right above it, or right above a mesh
     (convert/uvwmap.py), and the run of TurboSmooth, MeshSmooth, Shell and Symmetry right above those is converted
     to Blender modifiers (convert/modifiers.py): those are not counted."""
     try:
@@ -290,7 +290,7 @@ def as_pack(max_path, scratch, images_of_max, archive, ops):
     folder = os.path.join(scratch, "one")
     entries = [(stem + "/" + name, max_path)]
     entries += [(stem + "/" + arc, full) for arc, full in maps_of(max_path, archive.ASSET_EXTENSIONS)]
-    # An image no scene names: the operator's filter (ops._referenced_maps) must leave it in the zip.
+    # An image no scene names: the operator's filter (packs._referenced_maps) must leave it in the zip.
     unused = os.path.join(scratch, UNUSED)
     os.makedirs(scratch, exist_ok=True)
     with open(unused, "wb") as f:
@@ -397,7 +397,7 @@ def no_free_folder(ops, zip_path, folder, scene):
         pass
     remember_target(ops, zip_path, folder)
     saved, archive.folders._CANDIDATES = archive._CANDIDATES, 1
-    # The preview's message is no .max path: it must never be read as one (ops._ON_DISK gates both reads).
+    # The preview's message is no .max path: it must never be read as one (packs._ON_DISK gates both reads).
     asked = []
     remember, preflight_of = packs._remember_preflight, packs._preflight_of
     # the first is read in packs.py (the preview) and ops.py (invoke), the second in ops.py (the File panel)

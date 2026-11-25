@@ -58,7 +58,7 @@ CORONA_BASE, CORONA_LAYERS, CORONA_AMOUNTS, CORONA_MASKS, CORONA_LAYERS_ON, CORO
     1000, 1001, 1002, 1003, 1004, 1005, 1006)
 MAX_LAYERS = 16  # layers mixed over a CoronaLayeredMtl's base (Corona offers 10)
 MAX_LAYER_BSDFS = 64  # Principled BSDFs one material may draw, its layers' layers counted at each use
-# (each may come with a twin without reflection, build/materials.py's reflection weight: at most twice as many nodes)
+# (each may come with a twin without reflection, build.materials' reflection weight: at most twice as many nodes)
 MAX_COMPLEX_IOR = 100.0  # n and k of a complex IOR are held within 0..this
 DEFAULT_METERS = 0.0254  # meters per system unit of a scene that does not say: 3ds Max's default, inches
 

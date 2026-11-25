@@ -2,7 +2,7 @@
 --
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
--- Falloff maps with an edited mix curve and Mix maps with Use Curve, for the curve rules of convert/texmaps.py.
+-- Falloff maps with an edited mix curve and Mix maps with Use Curve, for the curve rules of convert/texmaps/.
 -- One Editable Poly box per Standard material, its diffuse map the map named after the material:
 -- FixtureCurveBezier: Perpendicular / Parallel, a Bezier point (0.4, 0.8), in handle (-0.1, -0.05), out (0.2, 0.1).
 -- FixtureCurveCorner: Towards / Away, corner points (0.3, 0.6) and (0.7, 0.2) without handles.

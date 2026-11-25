@@ -14,7 +14,7 @@ ChunkError = chunks.ChunkError
 SLOT_BLOCK = 0
 # Face corners one primitive may make (a file can ask for any number of segments): 524,288 quads, measured at the
 # cap in 0.1 to 0.4 s (Box, Plane and GeoSphere the slowest; a GeoSphere's hemisphere slerps its lower half too, about
-# twice a full GeoSphere's lattice) and a few hundred MB at most, of the order of convert/extrude.py's budget.
+# twice a full GeoSphere's lattice) and a few hundred MB at most, of the order of convert.extrude's budget.
 MAX_CORNERS = 1 << 21
 _TAU = 2.0 * math.pi
 _SEAM = 1e-6

@@ -40,7 +40,7 @@ Shell rims, a weld); under a Solidify its triangles facing up, down and sideways
 stack_basic, modifier_pivot; not FixtureOrder, whose seam 3ds Max leaves unwelded, nor FixtureShellUnderSymNoWeld,
 whose cut it leaves open: EVAL_COUNT_DIFFERS); stack_convert
 imported with Modifiers: Ignore gets none.
-primitives (convert/primitives.py): each node a mesh with 3ds Max's vertex and triangle counts (eval_verts, eval_faces)
+primitives (convert/primitives/): each node a mesh with 3ds Max's vertex and triangle counts (eval_verts, eval_faces)
 and world box, its UV layer (none without Generate Mapping Coords), sharp edges, the unsmoothed GeoSphere flat, normals
 outward but for the Planes (up, or down for the one of negative width) and the Box of negative width (in, as 3ds Max
 makes it); the instance shares FixtureBox's mesh; the TurboSmooth over a Box evaluates to 3ds Max's counts.
@@ -365,7 +365,7 @@ STOCK_FLAGS = {"StdOmniNoDiffuse": (True, False, True, 0.0, 1.0), "StdSpotRect":
 STOCK_SHADOWS = {"StdOmni", "StdOmniInst", "StdSpot", "StdTargetDirect", "StdSun", "PhPoint", "PhPointInst",
                  "PhSpot", "IesPower"}
 # hollow: a tube's inner side and a torus's inner half face the box center; closed, they enclose a positive volume
-# the oracle's base_class_id of the primitives MaxDrop builds (convert/primitives.py)
+# the oracle's base_class_id of the primitives MaxDrop builds (convert/primitives/)
 PRIMITIVE_CLASSES = {("0x00000010", "0x00000000"), ("0x00000011", "0x00000000"), ("0x00000012", "0x00000000"),
                      ("0x00000020", "0x00000000"), ("0xa86c23dd", "0x00000000"), ("0x00007b21", "0x00000000"),
                      ("0x00000000", "0x00007f9e"), ("0x081f1dfc", "0x77566f65"), ("0x76bf318a", "0x4bf37b10")}
@@ -1022,7 +1022,7 @@ def check_spread_steps(scene, view_layer):
 
 
 def check_spread_cancel(path):
-    """vray_mesh_light through the run's steps (ops._Run), closed while it measures its mesh lights (their copies
+    """vray_mesh_light through the run's steps (pipeline._Run), closed while it measures its mesh lights (their copies
     linked to the scene's collection, the run's text saying so): nothing is left, the copies neither."""
     empty_scene()
     before = _state()
@@ -2869,7 +2869,7 @@ def _advance(steps, until, limit=100000):
 
 
 def check_cancel(textured, other):
-    """The modal import's step generator (ops._Run.steps), driven without a window: closed early (Esc) it leaves
+    """The modal import's step generator (pipeline._Run.steps), driven without a window: closed early (Esc) it leaves
     the datablocks, the scene camera and the render size as they were, the user's own material and image too. textured:
     a .max whose textures are found (materials and images are made); other: a .max with a camera (it sets the scene
     camera and render size)."""
@@ -2960,7 +2960,7 @@ def check_run_guards(textured):
     """The modal runner's safety nets without a window: an undo or file load elsewhere closes the active run
     (ops._stop_active), the runner's teardown never leaves a run active even when the window manager raises, the
     windowed import keeps its settings as the last-used ones (ops._store_last), and a cancelled read still running
-    keeps the next import waiting (ops._busy)."""
+    keeps the next import waiting (pipeline._busy)."""
     import threading
     import types
     from maxdrop import ops, pipeline
@@ -3019,7 +3019,7 @@ def check_run_guards(textured):
 
 def check_read_cancel(path):
     """Esc while a threaded run reads: the reading stops at the next node (convert.scene.describe's cancel check), so
-    close() ends the worker and the next import is not refused (ops._busy). The read is slowed per node."""
+    close() ends the worker and the next import is not refused (pipeline._busy). The read is slowed per node."""
     import time
     from maxdrop import pipeline
     from maxdrop.convert import scene as convert_scene
@@ -3180,8 +3180,8 @@ def check_mesh_steps(paths, cancel_path):
 
 
 def check_worker_errors():
-    """ops._in_thread() hands the worker's outcome to the main thread: its value; an Exception unchanged; a SystemExit
-    as a RuntimeError caused by it, so that the modal runner's except Exception still tears the run down."""
+    """pipeline._in_thread() hands the worker's outcome to the main thread: its value; an Exception unchanged; a
+    SystemExit as a RuntimeError caused by it, so that the modal runner's except Exception still tears the run down."""
     from maxdrop import pipeline
 
     def outcome(fn):
@@ -5098,7 +5098,7 @@ def _sample_image(tex, uv, mask=None):
     return xy
 
 
-CLIP_LABEL = "Clip"  # build/materials.py's CLIP_LABEL (the package is imported inside the checks)
+CLIP_LABEL = "Clip"  # build.materials' CLIP_LABEL (the package is imported inside the checks)
 
 
 def _clip_mask_input(node):

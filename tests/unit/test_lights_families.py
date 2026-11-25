@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Tests of maxdrop/convert/lights.py for the lights other than VRayLight: standard, photometric, VRaySun, VRayIES,
+"""Tests of maxdrop/convert/lights/ for the lights other than VRayLight: standard, photometric, VRaySun, VRayIES,
 Skylight. No Blender.
 
 The rules against values computed by hand from the measured V-Ray constants (docs/FORMAT.md, "Standard and

@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Tests of maxdrop/convert/primitives.py: the standard primitives built from their parameter blocks, no Blender.
+"""Tests of maxdrop/convert/primitives/: the standard primitives built from their parameter blocks, no Blender.
 
 The primitives fixture (tools/fixtures/primitives.ms): each node's parameters as the script set them; each mesh equal
 to the TriMesh 3ds Max built for it (tests/fixtures/primitives.mesh.jsonl, written by the same script): the same

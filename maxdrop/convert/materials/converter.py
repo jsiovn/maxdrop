@@ -170,7 +170,7 @@ class MaterialConverter:
         return out
 
     def bsdf_count(self, ir):
-        """The Principled BSDFs build/materials.py draws for ir: one, plus its layers' at each use (a reflection
+        """The Principled BSDFs build/materials/ draws for ir: one, plus its layers' at each use (a reflection
         weight's twin not counted: each BSDF draws at most one)."""
         k = id(ir)
         if k not in self._bsdfs:

@@ -20,7 +20,7 @@
 
 Each input of a MaterialIR is an Input: a value (a linear RGB tuple or a float) and, when a map drives it, a
 MapRef to the map object (the value is what the slot shows without it). With a TexmapConverter, ir.textures holds
-the TextureGraphIR of each input a usable map drives (convert/texmaps.py), its issues added to ir.issues. One
+the TextureGraphIR of each input a usable map drives (convert/texmaps/), its issues added to ir.issues. One
 MaterialIR per Max material object index; a wrapper converts to the IR of the material it peels to, so every node
 using either shares it.
 
@@ -29,7 +29,7 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
 - VRayMtl: base color = diffuse; roughness = reflection glossiness g, or 1 - g unless brdf_useRoughness (a
   glossiness map is then inverted); metallic = reflection_metalness; specular = the mean of the linear reflection
   color (as in every rule, a reflection weight: 1 is the full Fresnel reflection at the IOR, which
-  build/materials.py draws as Specular IOR Level 0.5, and a weight between 0 and 1 as a Mix Shader by it over a
+  build/materials/ draws as Specular IOR Level 0.5, and a weight between 0 and 1 as a Mix Shader by it over a
   twin without reflection, so the whole curve scales as V-Ray scales it; with Fresnel on a white and a grey one
   match V-Ray 5.2 at every angle, measured in the maxdrop-em3.34 and maxdrop-em3.119 plans);
   emission = self-illumination color times its multiplier; transmission = the mean of the refraction color,
@@ -54,7 +54,7 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   share counts (its mean times 1 - the map amount): a map at full amount hides the swatch, so it never makes a metal
   (the map itself is not judged), a map at 0 % amount is left out (the swatch alone, as V-Ray renders it).
   Fresnel off sets fresnel False; outside the metal rule the weight (a swatch below 1, or a reflection map such as the
-  black to white Falloff) is then reflected as it is at every angle, which build/materials.py draws as a metal of
+  black to white Falloff) is then reflected as it is at every angle, which build/materials/ draws as a metal of
   mirror_color (white, or the tint above) mixed by it over the material without reflection (V-Ray 5.2: a 0.2 swatch
   reflects 0.200 facing the camera, maxdrop-em3.120).
   The Fresnel IOR is the refraction IOR when the material refracts or locks the IOR, else the reflection IOR.
@@ -121,7 +121,7 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
 - CoronaScannedMtl, CoronaSlicerMtl -> the grey material with a named issue (CORONA_GREY), not counted as a class
   without a rule.
 - CoronaLayeredMtl with a base and a layer that is on -> the base's IR with its layers (Layer: IR, amount, mask
-  with its mask amount; at most MAX_LAYERS), which build/materials.py mixes over it; the weight is the amount times
+  with its mask amount; at most MAX_LAYERS), which build/materials/ mixes over it; the weight is the amount times
   lerp(1, mask, mask amount), as Corona 12 renders it (maxdrop-em3.115: amount 0.6, mask 0.25, mask amount 0.5 gives
   0.375), the mask taking the value the same map gives a color input.
 - Wrappers (VRay2SidedMtl, VRayBlendMtl, VRayOverrideMtl, VRayMtlWrapper, Double Sided, Shellac, CoronaLayeredMtl

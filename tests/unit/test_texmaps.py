@@ -2,10 +2,10 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Tests of maxdrop/convert/texmaps.py, the texture-map rules: no Blender. vray_maps' slots against the values its
+"""Tests of maxdrop/convert/texmaps/, the texture-map rules: no Blender. vray_maps' slots against the values its
 authoring script sets (tools/fixtures/vray_maps.ms), texmap_rules' peels, kept wrappers, normal maps and Bitmap
 placement against tools/fixtures/texmap_rules.ms, the ClassIDs against that fixture's class directory, the wiring
-into materials.py, and the guards on synthetic maps.
+into materials/, and the guards on synthetic maps.
 
     python -I -m unittest discover tests
 """

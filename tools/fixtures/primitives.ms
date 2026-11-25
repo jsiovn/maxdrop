@@ -2,7 +2,7 @@
 --
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
--- The standard primitives MaxDrop builds from their parameters (convert/primitives.py), one of each with
+-- The standard primitives MaxDrop builds from their parameters (convert/primitives/), one of each with
 -- non-default segments, left as primitives (not collapsed):
 -- FixtureBox: length 20, width 30, height 40; 3 x 2 x 4 segments (width, length, height).
 -- FixtureBoxDown: length 10, width 12, height -15 (dragged down), Real-World Map Size.

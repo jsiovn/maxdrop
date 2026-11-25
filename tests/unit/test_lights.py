@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Tests of maxdrop/convert/lights.py: VRayLights as light descriptions, no Blender.
+"""Tests of maxdrop/convert/lights/: VRayLights as light descriptions, no Blender.
 
 The ported formulas (watts per units mode and type, the Kelvin color) against values computed by hand; the
 vray_lights fixture (tools/fixtures/vray_lights.ms) read through convert.scene against what 3ds Max 2020 + V-Ray 5.2

@@ -9,11 +9,11 @@ script or a file inside the pack's folder) and only at or above the version that
 traversal and link problems (FLOORS). It runs with an argument list (no shell), stdin closed, no console window,
 the program's own folder as working directory, a reduced environment, a timeout and a capped output.
 
-The listing only builds archive.py's plan. Extraction asks for the exact archive paths of that plan, into a
+The listing only builds archive's plan. Extraction asks for the exact archive paths of that plan, into a
 private work folder inside the staging folder; a non-zero exit, a timeout or a limit discards that folder. Then
 every file is checked (a regular file with one link, inside the work folder, no link or reparse point, a name the
-policy accepts, exactly the planned names) and moved flat into staging. archive.py registers these backends
-through install(); this file never imports archive.py, so it loads on its own.
+policy accepts, exactly the planned names) and moved flat into staging. archive/ registers these backends
+through install(); this file never imports archive/, so it loads on its own.
 """
 
 import dataclasses
@@ -28,7 +28,7 @@ import threading
 import time
 import unicodedata
 
-_archive = None  # archive.py, given by install()
+_archive = None  # the archive package, given by install()
 
 UNRAR = "unrar"
 SEVENZIP = "7z"
@@ -80,7 +80,7 @@ MESSAGE_OUTPUT_CAP = 64 << 10
 _WATCH_EVERY = 0.5
 _POLL = 0.05
 _MESSAGE_CHARS = 300
-# A copy of archive._BY_HAND_TAIL: archive.py is still loading when it imports this module.
+# A copy of archive._BY_HAND_TAIL: archive/ is still loading when it imports this module.
 _BY_YOURSELF = "Extract the archive by hand and import the .max from that folder."
 WORK_PREFIX = ".maxdrop-work-"
 
@@ -89,7 +89,7 @@ _FILE_ATTRIBUTE_REPARSE_POINT = 0x400
 
 
 def install(archive):
-    """Register the .rar and .7z backends in archive.py (the module object)."""
+    """Register the .rar and .7z backends in archive/ (the package object)."""
     global _archive
     _archive = archive
     archive._BACKENDS[archive.KIND_RAR] = ExternalBackend(archive.KIND_RAR)
@@ -828,7 +828,7 @@ def _normal(name):
 
 
 class ExternalBackend:
-    """The archive.py backend of one archive kind ("rar" or "7z"), through the first usable program."""
+    """The archive/ backend of one archive kind ("rar" or "7z"), through the first usable program."""
 
     def __init__(self, kind, tools=None):
         self.kind = kind

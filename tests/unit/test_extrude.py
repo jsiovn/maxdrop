@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Tests of maxdrop/convert/extrude.py, the Extrude modifier on a shape: no Blender. Every extruded node of the
+"""Tests of maxdrop/convert/extrude/, the Extrude modifier on a shape: no Blender. Every extruded node of the
 extrude fixture against its 3ds Max oracle (world bounding box within 1e-3, vertex count, triangle count), closed
 manifolds with outward normals for the capped ones, the hole of the holed cap, the open one without caps; material
 IDs by the way a face looks and map channel 1's vertex count, range and every corner against the oracle's eval_mesh;

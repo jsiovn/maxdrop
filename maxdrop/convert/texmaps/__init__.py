@@ -40,7 +40,7 @@ With the gamma off an image read as stored as a mask in a color graph is the mea
 (_stored_mask; V-Ray 5.2, maxdrop-6n0.6.36): a (200, 100, 50) PNG 0.4575 internal, not the mean of its decoded channels.
 Constants are linear, a swatch made so by the scene's swatch rule (convert/colors.py: linear with the gamma on, the
 sRGB curve with it off): in a COLOR graph always linear RGB (also when the input itself is a float, as specular and
-transmission are: the builder takes the mean of the graph's color there, the measure materials.py uses); in a MASK
+transmission are: the builder takes the mean of the graph's color there, the measure materials/ uses); in a MASK
 graph a float, the scene's rule applied to the mean of the swatch (V-Ray 5.2 renders a red mask as 1 / 3 before any
 gamma; TexmapConverter._swatch); in a DATA or BUMP graph the mean of the swatch as stored, whatever the gamma (a grey
 64 VRayColor renders glossiness 0.251 in both modes); the mean of the color for one that is not a swatch

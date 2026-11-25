@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Tests of maxdrop/intake/archive.py, the scene pack reader: no Blender, no network. Every archive is built here,
+"""Tests of maxdrop/intake/archive/, the scene pack reader: no Blender, no network. Every archive is built here,
 in a temp folder; where zipfile cannot write a case (encryption, Deflate64, raw non-UTF-8 names, a lying size,
 several disks) its bytes are patched.
 
@@ -30,8 +30,8 @@ from unittest import mock
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INTAKE = os.path.join(ROOT, "maxdrop", "intake")
 
-# Under a package of its own whose path is maxdrop/: `import maxdrop` would pull bpy, and archive.py imports
-# ..pathnames. Zip only: the .rar and .7z backends archive.py registers are tests/test_intake_external.py's.
+# Under a package of its own whose path is maxdrop/: `import maxdrop` would pull bpy, and archive/ imports
+# pathnames. Zip only: the .rar and .7z backends archive/ registers are tests/test_intake_external.py's.
 _PKG = "maxdrop_intake_zip_test"
 if _PKG not in sys.modules:
     _pkg = types.ModuleType(_PKG)
