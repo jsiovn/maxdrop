@@ -18,6 +18,7 @@ an object offset, one holding its own mesh (Replace mesh with light) with a Shel
 hand-made areas, an Extrude on a shape source (the extrude fixture, tools/fixtures/extrude.ms).
 """
 import importlib
+import importlib.util
 import math
 import os
 import sys
@@ -43,6 +44,10 @@ colors = importlib.import_module(_PKG + ".convert.colors")
 texmaps = importlib.import_module(_PKG + ".convert.texmaps")
 pblock = importlib.import_module(_PKG + ".reader.pblock")
 classids = importlib.import_module(_PKG + ".reader.classids")
+_spec_patching = importlib.util.spec_from_file_location("maxdrop_test_patching",
+                                                        os.path.join(ROOT, "tests", "patching.py"))
+patching = importlib.util.module_from_spec(_spec_patching)
+_spec_patching.loader.exec_module(patching)  # patch_all(): a split package's modules read their own names
 try:
     import numpy  # noqa: F401  convert.scene needs it for meshes
     conv = importlib.import_module(_PKG + ".convert.scene")
@@ -754,8 +759,8 @@ class MeshLightFixture(unittest.TestCase):
             patches = (mock.patch.object(conv.extrude, "extrude", counted),
                        mock.patch.object(conv, "_Extrusions", captured),
                        mock.patch.object(conv.shapes, "is_shape", lambda s, i: i != light_base and real_is_shape(s, i)),
-                       mock.patch.object(L, "light_class", lambda s, i: L.VRAY if i == light_base else
-                                         real_class(s, i)),
+                       patching.patch_all(L, "light_class", lambda s, i: L.VRAY if i == light_base else
+                                          real_class(s, i)),
                        mock.patch.object(L, "read_params", lambda s, i, *a, **kw: (dict(light_values), [])
                                          if i == light_base else real_read(s, i, *a, **kw)))
             wants = {(light, rect): (1, light), (rect, light): (2, rect), (rect, light, rect): (1, rect),
@@ -807,8 +812,8 @@ class MeshLightFixture(unittest.TestCase):
                 with mock.patch.object(conv.shapes, "read_shape", refused), \
                         mock.patch.object(conv.shapes, "is_shape",
                                           lambda s, i: i != light_base and real_is_shape(s, i)), \
-                        mock.patch.object(L, "light_class", lambda s, i: L.VRAY if i == light_base else
-                                          real_class(s, i)), \
+                        patching.patch_all(L, "light_class", lambda s, i: L.VRAY if i == light_base else
+                                           real_class(s, i)), \
                         mock.patch.object(L, "read_params", lambda s, i, *a, **kw: (dict(light_values), [])
                                           if i == light_base else real_read(s, i, *a, **kw)), \
                         mock.patch.object(sc, "walk", return_value=list(order)):

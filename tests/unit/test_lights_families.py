@@ -383,22 +383,22 @@ class Params(unittest.TestCase):
                 return types.SimpleNamespace(class_id=classids.FREE_DISC_LIGHT)
 
         orig = L._blocks
-        L._blocks = lambda scene, i: (blocks, [])
+        L.reading._blocks = lambda scene, i: (blocks, [])
         try:
             values, issues = L._read_blocks(Scene(), 0, L.PHOTOMETRIC, None)
         finally:
-            L._blocks = orig
+            L.reading._blocks = orig
         self.assertEqual((values["intensity"], values["distribution"], values["shape"], values["file"]),
                          (1500.0, 2, L.SHAPE_DISC, None))
         self.assertEqual(issues, ["intensity is animated: 1500.0 is used",
                                   "parameter block 2 is missing: its defaults are used",
                                   "parameter block 4 is missing: its defaults are used"])
-        L._blocks = lambda scene, i: ({}, ["damaged"])
+        L.reading._blocks = lambda scene, i: ({}, ["damaged"])
         try:
             with self.assertRaises(L.LightError):
                 L._read_blocks(Scene(), 0, L.SUN, None)
         finally:
-            L._blocks = orig
+            L.reading._blocks = orig
 
 
 class _Chunk:
