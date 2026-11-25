@@ -2,8 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""No code file over MAX_LINES lines (CLAUDE.md): the Python files under ROOTS. tests/ joins ROOTS once its last
-files over the limit are split.
+"""No code file over MAX_LINES lines (CLAUDE.md): the Python files under ROOTS, the tests included.
 
     python -I -m unittest discover tests
 """
@@ -11,7 +10,7 @@ import os
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ROOTS = ("maxdrop", "tools")
+ROOTS = ("maxdrop", "tools", "tests")
 MAX_LINES = 1000
 
 
