@@ -120,14 +120,15 @@ def _convert(*objects, index=0):
 
 
 def _build_constant(name):
-    """A module-level constant of maxdrop/build/materials.py, which imports bpy: read from its source."""
-    path = os.path.join(ROOT, "maxdrop", "build", "materials.py")
+    """A module-level constant of maxdrop/build/materials/sockets.py, whose package imports bpy: read from its
+    source."""
+    path = os.path.join(ROOT, "maxdrop", "build", "materials", "sockets.py")
     with open(path, encoding="utf-8") as f:
         tree = ast.parse(f.read(), path)
     for stmt in tree.body:
         if isinstance(stmt, ast.Assign) and any(isinstance(t, ast.Name) and t.id == name for t in stmt.targets):
             return ast.literal_eval(stmt.value)
-    raise AssertionError("no %s in maxdrop/build/materials.py" % name)
+    raise AssertionError("no %s in maxdrop/build/materials/sockets.py" % name)
 
 
 class Close:

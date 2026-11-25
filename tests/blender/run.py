@@ -4617,7 +4617,7 @@ def check_linear_fallback():
         png = os.path.join(scratch, "linear.png")
         _write_png(png)
         found = ct.Found(png, ct.SCENE)
-        build_materials._input_colorspaces = lambda: frozenset((tx.SRGB, tx.NON_COLOR))
+        build_materials.builder._input_colorspaces = lambda: frozenset((tx.SRGB, tx.NON_COLOR))
         ir = cm.MaterialIR(40, "LinearFallback", "test", base_color=cm.Input((0.5, 0.5, 0.5), cm.MapRef(1)),
                            roughness=cm.Input(0.5, cm.MapRef(2)))
         ir.textures = {
@@ -4639,7 +4639,7 @@ def check_linear_fallback():
               and len(bpy.data.images) == 1,
               "%s %s" % (getattr(gam, "bl_idname", None), [i.colorspace_settings.name for i in bpy.data.images]))
     finally:
-        build_materials._input_colorspaces = stock
+        build_materials.builder._input_colorspaces = stock
         empty_scene()
         for img in list(bpy.data.images):
             bpy.data.images.remove(img)
