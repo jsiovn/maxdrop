@@ -531,7 +531,7 @@ class MeshLightFixture(unittest.TestCase):
     def test_own_mesh_creased_by_its_smoother(self):
         """A converted smoother that separates by smoothing groups (CREASE) creases the emitter's mesh, as a mesh
         node's (md.creases): only FixtureEmitterOwn's, whose node has converted modifiers."""
-        with mock.patch.object(conv, "_shading", lambda converted: conv.rules.CREASE if converted else None):
+        with patching.patch_all(conv, "_shading", lambda converted: conv.rules.CREASE if converted else None):
             desc = conv.read(MESH_FIXTURE)
         creased = sorted(n.name for n in desc.nodes if n.emitter is not None and desc.meshes[n.mesh].creases)
         self.assertEqual(creased, ["FixtureEmitterOwn"])
@@ -757,7 +757,7 @@ class MeshLightFixture(unittest.TestCase):
                 return made[-1]
 
             patches = (mock.patch.object(conv.extrude, "extrude", counted),
-                       mock.patch.object(conv, "_Extrusions", captured),
+                       patching.patch_all(conv, "_Extrusions", captured),
                        mock.patch.object(conv.shapes, "is_shape", lambda s, i: i != light_base and real_is_shape(s, i)),
                        patching.patch_all(L, "light_class", lambda s, i: L.VRAY if i == light_base else
                                           real_class(s, i)),

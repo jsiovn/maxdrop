@@ -13,6 +13,7 @@ import ast
 import collections
 import glob
 import importlib
+import importlib.util
 import json
 import math
 import os
@@ -43,6 +44,10 @@ geometry = importlib.import_module(_PKG + ".reader.geometry")
 cfb = importlib.import_module(_PKG + ".reader.cfb")
 reader_scene = importlib.import_module(_PKG + ".reader.scene")
 shapes = importlib.import_module(_PKG + ".reader.shapes")
+_spec_patching = importlib.util.spec_from_file_location("maxdrop_test_patching",
+                                                        os.path.join(ROOT, "tests", "patching.py"))
+patching = importlib.util.module_from_spec(_spec_patching)
+_spec_patching.loader.exec_module(patching)  # patch_all(): a split package's modules read their own names
 
 # From the fixture scripts (tools/fixtures/*.ms: mapcoords:true gives channel 1); the oracle has no map channels or
 # smoothing groups.
@@ -862,7 +867,7 @@ class Curves(unittest.TestCase):
         """Two nodes sharing a curve key that does not fit: both EMPTY, one issue (on the first), described once."""
         desc = types.SimpleNamespace(curves={}, issues=[])
         shape_of, unbuilt = {7: self._ngon(1e308, 6)}, set()
-        with mock.patch.object(conv, "curve_description", wraps=conv.curve_description) as described:
+        with patching.patch_all(conv, "curve_description", wraps=conv.curve_description) as described:
             got = [conv._curve(None, desc, shape_of, unbuilt, 7, node, "n", conv.controllers.IDENTITY, 1.0)
                    for node in (3, 4)]
         self.assertEqual(got, [(conv.EMPTY, None)] * 2)
@@ -891,7 +896,7 @@ class Curves(unittest.TestCase):
         curve key only."""
         path = os.path.join(ROOT, "tests", "fixtures", "shapes.max")
         fresh = conv.read(path)
-        with mock.patch.object(conv, "curve_description", side_effect=conv.CurveError("its points do not fit")):
+        with patching.patch_all(conv, "curve_description", side_effect=conv.CurveError("its points do not fit")):
             desc = conv.read(path)
         self.assertEqual(desc.curves, {})
         users = sum(len(cd.users) for cd in fresh.curves.values())
@@ -1597,7 +1602,7 @@ class MeshRange(unittest.TestCase):
                 raise conv.MeshError("its points do not fit single precision")
             return real(key, *args, **kwargs)
 
-        with mock.patch.object(conv, "mesh_description", refuse):
+        with patching.patch_all(conv, "mesh_description", refuse):
             desc = conv.describe(sc, 0.001)
         self.assertEqual(desc.emitters, {})
         self.assertFalse(any(k[0] == conv.EMITTER for k in desc.meshes if isinstance(k, tuple)))
@@ -1620,7 +1625,7 @@ class MeshRange(unittest.TestCase):
             return self.data((float("nan"), 0.0, 0.0)) if i == refused_base else real(scene, i, check)
 
         with mock.patch.object(conv.geometry, "read_mesh", read), \
-                mock.patch.object(conv, "_converted", wraps=conv._converted) as converted:
+                patching.patch_all(conv, "_converted", wraps=conv._converted) as converted:
             desc = conv.describe(self.scene("stack_convert"), 0.001)
         told = converted.call_args_list[0].args[4]
         node = next(n for n in desc.nodes if n.name == "FixtureTurboOne")
@@ -1641,7 +1646,7 @@ class MeshRange(unittest.TestCase):
         fresh = conv.read(path)
         extruded = {n.index: n.mesh[:3] for n in fresh.nodes if n.kind == conv.MESH and "Extrude" in n.applied}
         self.assertTrue(extruded)
-        with mock.patch.object(conv, "_positions", side_effect=conv.MeshError("its points do not fit")):
+        with patching.patch_all(conv, "_positions", side_effect=conv.MeshError("its points do not fit")):
             desc = conv.read(path)
         self.assertEqual({n.kind for n in desc.nodes if n.index in extruded}, {conv.CURVE})
         refused = [i for i, r in desc.issues if r == "extrude: not made: its points do not fit"]
@@ -1655,7 +1660,7 @@ class MeshRange(unittest.TestCase):
         target = next(i for i in sc.node_indices if sc.node(i).name == "FixtureInstance02")
         big = ((1e42, 0, 0, 0), (0, 1e42, 0, 0), (0, 0, 1e42, 0), (0, 0, 0, 1))
         real = conv._offset
-        with mock.patch.object(conv, "_offset", lambda t, i: big if i == target else real(t, i)):
+        with patching.patch_all(conv, "_offset", lambda t, i: big if i == target else real(t, i)):
             desc = conv.describe(sc, 0.001)
         self.assertEqual([(n.name, n.kind) for n in desc.nodes],
                          [(n, conv.EMPTY if n == "FixtureInstance02" else conv.MESH) for n in
@@ -1679,7 +1684,7 @@ class MeshRange(unittest.TestCase):
                 raise conv.MeshError("its points do not fit single precision")
             return real(key, *args, **kwargs)
 
-        with mock.patch.object(conv, "mesh_description", refuse):
+        with patching.patch_all(conv, "mesh_description", refuse):
             desc = conv.describe(sc, 0.001)
         self.assertEqual(len(calls), len(set(calls)))  # each light and offset described once
         self.assertEqual([r for i, r in desc.issues if i == light],

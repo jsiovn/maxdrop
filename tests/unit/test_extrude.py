@@ -134,7 +134,7 @@ def _read_meshes(path):
         data[name] = d
         return real(key, name, d, *args, **kw)
 
-    with mock.patch.object(conv, "mesh_description", describing):
+    with patching.patch_all(conv, "mesh_description", describing):
         desc = conv.read(path)
     return desc, data
 
@@ -283,14 +283,14 @@ class Fixture(unittest.TestCase):
             alive.append(sum(r() is not None for r in made))
             return real_description(*args, **kw)
 
-        with mock.patch.object(extrude, "extrude", extruding), mock.patch.object(conv, "mesh_description",
-                                                                                 describing):
+        with mock.patch.object(extrude, "extrude", extruding), patching.patch_all(conv, "mesh_description",
+                                                                                  describing):
             conv.read(FIXTURE)
         self.assertEqual(len(made), 13)
         self.assertEqual(alive, [1] * 13)  # only the extrusion being described
 
     def test_a_scene_wide_budget_keeps_the_rest_curves(self):
-        with mock.patch.object(conv, "MAX_BUILT_CORNERS", 1):
+        with patching.patch_all(conv, "MAX_BUILT_CORNERS", 1):
             desc = conv.read(FIXTURE)
         self.assertEqual(sorted(n.kind for n in desc.nodes), [conv.CURVE] * 13 + [conv.MESH])
         spent = [r for _i, r in desc.issues if r.startswith("extrude: not made: the primitives and extrusions ")]
@@ -332,7 +332,7 @@ class Fixture(unittest.TestCase):
                 raise extrude.ExtrudeError("refused")
             return real_read(scene, m)
 
-        patches = (mock.patch.object(conv, "_evaluated", evaluated),
+        patches = (patching.patch_all(conv, "_evaluated", evaluated),
                    mock.patch.object(rules, "is_convertible", lambda m: m is shared),
                    mock.patch.object(rules, "convert", converting),
                    mock.patch.object(extrude, "read_params", failing_first))
@@ -366,7 +366,7 @@ class Fixture(unittest.TestCase):
             return rules.ModifierDescription(m.index, rules.SOLIDIFY, "Shell", "Shell", True, (), None, None,
                                              rules.RimRule(False, 45.0, None)), []
 
-        with mock.patch.object(conv, "_evaluated", evaluated),                 mock.patch.object(rules, "is_convertible", lambda m: m is shared),                 mock.patch.object(rules, "convert", converting):
+        with patching.patch_all(conv, "_evaluated", evaluated),                 mock.patch.object(rules, "is_convertible", lambda m: m is shared),                 mock.patch.object(rules, "convert", converting):
             desc = conv.read(FIXTURE)
         meshes = [n for n in desc.nodes if n.kind == conv.MESH]
         self.assertTrue(meshes)

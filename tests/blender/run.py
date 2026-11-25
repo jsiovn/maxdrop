@@ -3031,7 +3031,7 @@ def check_read_cancel(path):
         time.sleep(0.2)  # twice per node: the read of every node takes 0.4 s
         return original(*args, **kwargs)
 
-    convert_scene.blender_matrix = slow
+    convert_scene.walk.blender_matrix = slow
     try:
         run = _cancel_run([path])
         steps = run.steps(threaded=True)
@@ -3051,7 +3051,7 @@ def check_read_cancel(path):
     finally:
         for worker in list(ops._WORKERS):
             worker.join(60)
-        convert_scene.blender_matrix = original
+        convert_scene.walk.blender_matrix = original
 
     # around the material conversion: before it (which is then not run) and after it
     opts, converted = _cancel_run([path]).opts, []

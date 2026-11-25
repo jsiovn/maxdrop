@@ -283,7 +283,7 @@ class FixtureTest(unittest.TestCase):
 
     def test_a_scene_wide_budget_leaves_the_rest_placeholders(self):
         """Past convert.scene.MAX_BUILT_CORNERS the next primitive is not built: a placeholder with an issue."""
-        with mock.patch.object(conv, "MAX_BUILT_CORNERS", 1):
+        with patching.patch_all(conv, "MAX_BUILT_CORNERS", 1):
             desc = conv.read(FIXTURE)
         built = {n.mesh[0] for n in desc.nodes if n.kind == conv.MESH}
         self.assertEqual(len(built), 1)  # the first primitive, with its instance if it has one
