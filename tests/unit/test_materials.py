@@ -596,10 +596,11 @@ class MapParts(unittest.TestCase):
 
     def test_no_chunk_ids_in_convert(self):
         ids = ("0x9002", "0x9003", "0x9005", "0x9006", "0x900b", "0x1201", "0x5003", "0x5100")
-        for path in glob.glob(os.path.join(ROOT, "maxdrop", "convert", "*.py")):
+        convert = os.path.join(ROOT, "maxdrop", "convert")
+        for path in glob.glob(os.path.join(convert, "**", "*.py"), recursive=True):  # its packages too
             with open(path, encoding="utf-8") as f:
                 text = f.read().lower()
-            with self.subTest(path=os.path.basename(path)):
+            with self.subTest(path=os.path.relpath(path, convert)):
                 self.assertEqual([i for i in ids if i in text], [])
 
 
