@@ -171,7 +171,8 @@ blocker, never as a pass. The corpus lines print a number, never the path. Ruff 
 powershell -ExecutionPolicy Bypass -File build.ps1
 ```
 
-Pass: exit 0 and `Built ...\dist\maxdrop-<manifest version>.zip, ...\dist\index.json and ...\dist\index.html`.
+Pass: exit 0 and `Built ...\dist\maxdrop-<manifest version>.zip, ...\dist\index.json, ...\dist\index.html and
+...\dist\vi.html`.
 The script empties `dist\` and `maxdrop\**\__pycache__`, builds, runs `extension validate`, `tools/check_zip.py`
 (the zip carries `maxdrop/LICENSE`), `server-generate` and `tools/make_site.py`. Another Blender:
 `-Blender <path>`.
