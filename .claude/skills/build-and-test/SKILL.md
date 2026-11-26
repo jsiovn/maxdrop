@@ -19,9 +19,13 @@ or the bead's `notes`). The blocks below are the standard pieces those sections 
 this session, never swap in a lighter check. No usable `## Verification` section -> stop and send the plan back
 to `writing-plans`.
 
+A run goes: **Change scope** (what changed) -> **Feature map** (which blocks that selects) -> **Doctor** (are
+their prerequisites here) -> **Launch** (build, serve) -> **Drive** (the checks) -> **Evidence** (the report) ->
+**Cleanup**. The blocks keep the numbers 1 to 8 that plans cite, under the section they belong to.
+
 ## Environment
 
-Check before running anything; report a missing piece as a blocker instead of guessing. **User- and machine-specific
+Report a missing piece as a blocker instead of guessing (Doctor checks them). **User- and machine-specific
 paths never go into a committed file** (the repository is public): the portable Blenders, the fixture, the corpus
 and the scratchpad come from the bead notes or the session.
 
@@ -62,19 +66,38 @@ PowerShell 7 is the primary shell. Shell state (variables) does not carry betwee
 - Logs as UTF-8 (`Out-File -Encoding utf8`). The importer prints object and texture names: logs of a corpus
   scene stay in `S` and are never quoted in a commit, a bead or a PR.
 
-## Changed paths -> checks
+## Change scope
 
-The base is where the branch left its parent: `origin/main`, or `origin/epic/<epic-id>` for a bead of an epic
-branch (local `main` can lag: fetch first). Block 1 is cheap: run it for every change.
+**Change scope:** every file in `git diff --name-only <BASE>..HEAD` plus every path in `git status --porcelain`; never `git diff HEAD` alone, which is empty once the work is committed. `<BASE>` = `git merge-base HEAD origin/<branch this work merges into>` (the PR base: the default branch or `epic/<id>`), unless the task prompt, or the `Base-SHA:` note of the bead this session is executing, names a commit between that merge-base and HEAD: then that commit.
+
+- Use the caller's file list when one is given (`writing-plans`, `requesting-code-review` and
+  `address-pr-comments` pass one). Otherwise compute it (below).
+- The branch is the one the executor names, else the open PR's base (`gh pr view --json baseRefName`), else the default branch. With no `origin/<branch>` ref, use the local branch.
+- A named commit is "between" only when `git merge-base --is-ancestor <merge-base> <sha>` and `git merge-base --is-ancestor <sha> HEAD` both succeed. Anything else is stale (the branch was rebased since) and is ignored.
+- An empty change list means the base is wrong: recompute it. Never skip validation because the list is empty.
 
 ```powershell
 git fetch origin
-$base = git merge-base HEAD origin/main    # epic bead: origin/epic/<epic-id>
-git diff --name-only "$base...HEAD"; git status --short
+$mb = git merge-base HEAD origin/main    # epic bead: origin/epic/<epic-id>
+$sha = ""                                # the Base-SHA: of the task prompt or of this bead's notes, if any
+$base = $mb
+if ($sha) {
+    git merge-base --is-ancestor $mb $sha; $after = $LASTEXITCODE -eq 0
+    git merge-base --is-ancestor $sha HEAD; $before = $LASTEXITCODE -eq 0
+    if ($after -and $before) { $base = $sha } else { "stale Base-SHA $sha ignored" }
+}
+"base $base"; git diff --name-only "$base..HEAD"; git status --porcelain
 ```
+
+Pass: a base line and at least one path. The Feature map turns the paths into blocks.
+
+## Feature map
+
+Block 1 is cheap: run it for every change.
 
 | Changed | Run |
 |---|---|
+| Nothing (empty change list) | the base is wrong: recompute it (Change scope). Never "nothing to run" |
 | Docs only (`*.md`, `docs/`, `.claude/`, `.beads` metadata) | 1 (the site and license tests read some of these files) |
 | `maxdrop/*.py` (operator, prefs, compat) | 1, 2, 5 (= 3 and 4 on all three versions), 6 for a fix |
 | `maxdrop/__init__.py` (`_NAMES`, `_purge`, reload), `maxdrop/update.py` | the row above, plus 7 on 5.2 and 4.2 |
@@ -110,23 +133,39 @@ Select-String -SimpleMatch "## [$v]" CHANGELOG.md
 
 Pass: one line `## [<version>] - <date>`.
 
-## 1. Plain tests (no Blender)
+## Doctor
+
+Before the first Blender block, check what the selected blocks need. Fill in the session's values; leave
+`$corpus` empty unless the plan measures a corpus scene:
 
 ```powershell
-python -I -m unittest discover tests
-python -I tools/lint.py
+$S = "<scratch>"; $B52 = "C:\Program Files\Blender Foundation\Blender 5.2\blender.exe"; $B42 = "<4.2 blender.exe>"; $B45 = "<4.5 blender.exe>"
+$fixture = "<local fixture .max>"; $corpus = @()    # e.g. @("<scene A .max>"), only when the plan measures it
+$script:miss = 0
+function Test-Need($what, $ok, $hint) { if ($ok) { "ok $what" } else { "MISSING ${what}: $hint"; $script:miss++ } }
+Test-Need "PowerShell 7" ($PSVersionTable.PSVersion.Major -ge 7) "run the blocks in pwsh, not Windows PowerShell 5 (see Process rules)"
+Test-Need "Python 3" ("$(python -I --version 2>&1)" -match '^Python 3\.(9|\d\d)\b') "Python 3.9 or later on PATH (CI runs 3.11 and 3.13)"
+Test-Need "origin/main" ($null -ne (git rev-parse --verify --quiet origin/main)) "git fetch origin"
+Test-Need "scratch folder outside the repo" ((Test-Path $S) -and -not "$((Resolve-Path $S).Path)\".StartsWith("$((Resolve-Path .).Path)\")) "use the session's scratchpad"
+$env:BLENDER_USER_RESOURCES = "$S\profile-doctor"
+foreach ($b in @(@("5.2", $B52), @("4.2", $B42), @("4.5", $B45))) {
+    $ver = if (Test-Path $b[1]) { (& $b[1] --factory-startup --version 2>$null | Select-String '^Blender ').Line } else { "" }
+    Test-Need "Blender $($b[0]) ($ver)" ($ver -like "Blender $($b[0]).*") "see B42, B45 in Environment; path in the bead notes"
+}
+Test-Need "local fixture" (Test-Path $fixture) "path in the bead notes; without it block 4 imports only tests/fixtures (say so in the report)"
+for ($i = 0; $i -lt $corpus.Count; $i++) { Test-Need "corpus scene $($i + 1)" (Test-Path $corpus[$i]) "path in the bead notes; block 8 on it is skipped (report it)" }
+bd where *> $null; Test-Need "bd where" ($LASTEXITCODE -eq 0) "bd bootstrap --yes"
+if ($script:miss) { "DOCTOR FAILED: $($script:miss) missing" } else { "DOCTOR OK" }
 ```
 
-Pass: exit 0, last line `OK` or `OK (skipped=N)`. A skip is a real-tool case whose tool this machine lacks
-(the test prints why); a skip that is new for the change is reported. Then ruff, the check CI's Ruff step runs:
-exit 0 and `All checks passed!`. The version is `required-version` in `pyproject.toml`; `tools/lint.py` uses
-`ruff` on PATH at that version, else `uvx --offline ruff@<version>`, and adds an unreachable-code check (a
-statement after `return`, `raise`, `continue` or `break`, or after a `with` (return, continue, break),
-`if`/`else`, `try` or `match` that always exits; ruff has no rule for it). Exit 3 = no ruff of that version
-here: fetch it once (`uvx ruff@<version> --version`, network) and rerun, or report the lint as skipped.
-Exit 1 = findings: fix them, never commit past them. Exit 2 = ruff's own error (a bad argument, a config error).
+Pass: `DOCTOR OK`, every line `ok`. A `MISSING` line blocks the blocks that need it (Blender 4.2 / 4.5: block 5;
+the fixture: blocks 4 and 8 on it; PowerShell 7: every PowerShell block): fix it with the hint or report it as a
+blocker, never as a pass. The corpus lines print a number, never the path. Ruff is checked by block 1 itself
+(`tools/lint.py` exit 3).
 
-## 2. Build
+## Launch
+
+### 2. Build
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File build.ps1
@@ -137,62 +176,7 @@ The script empties `dist\` and `maxdrop\**\__pycache__`, builds, runs `extension
 (the zip carries `maxdrop/LICENSE`), `server-generate` and `tools/make_site.py`. Another Blender:
 `-Blender <path>`.
 
-## 3. Register smoke
-
-```powershell
-$S = "<scratch>"; $B = "<blender.exe>"; $tag = "52"
-$env:BLENDER_USER_RESOURCES = "$S\profile-$tag"
-& $B --background --factory-startup --python-exit-code 1 --python tests\smoke_register.py *>&1 | Out-File -Encoding utf8 "$S\register-$tag.log"
-"exit $LASTEXITCODE"; Select-String -Pattern "^SMOKE ", "^FAIL " "$S\register-$tag.log"
-```
-
-Pass: `exit 0`, `SMOKE PASSED`, no `FAIL` line. It imports the dev package from `ROOT` (or `-- <root>` after the
-script), checks it came from there, registers, checks every class of each module's `_classes`, the operators,
-the file handler, the File > Import entry, that the build package and the intake are not loaded yet and no
-io_scene_max engine is left, reloads like Reload Scripts, registers again and unregisters. A new module must keep
-its classes in a module-level `_classes` tuple and appear in `_NAMES` after the modules it imports.
-
-## 4. Import smoke
-
-```powershell
-$S = "<scratch>"; $B = "<blender.exe>"; $tag = "52"; $fixture = "<local fixture .max>"
-$env:BLENDER_USER_RESOURCES = "$S\profile-$tag"
-& $B --background --factory-startup --python-exit-code 1 --python tests\smoke_import.py -- $fixture *>&1 | Out-File -Encoding utf8 "$S\import-$tag.log"
-"exit $LASTEXITCODE"; Select-String -Pattern "^IMPORT ", "^FAIL ", "^COUNTS " "$S\import-$tag.log"
-```
-
-Pass: `exit 0`, `IMPORT PASSED`, no `FAIL` line. It imports the file through `import_scene.maxdrop` into an
-emptied scene, then as a `.zip` pack, a two-scene pack and the file-browser selections; `COUNTS` lines compare
-versions (they must be equal on all three). Arguments may be files or folders; a `.zip`, `.rar` or `.7z` argument
-is imported as it is. `IMPORT SKIPPED` (no file found) is **not** a pass for a change that touches the import.
-
-## 5. Three versions
-
-Blocks 3 and 4 run on `B52`, `B42` and `B45` (tags `52`, `42`, `45`), each with its own profile. The manifest
-claims 4.2.0, so a pass on 5.2 alone is not a pass. Version differences go into `maxdrop/compat.py`.
-
-## 6. Red check
-
-For a bug fix, prove the test fails without it; for a new or changed smoke script, prove it fails on broken
-code. Never `git stash` or revert in the real tree: build a scratch copy of the base and run the **new** tests on
-it (the smoke scripts and the plain tests find the package next to their own `tests\` folder).
-
-```bash
-# Git Bash: byte-exact export of the whole base tree (the plain tests also read LICENSE, site/, tools/), then
-# the new tests over it, with any fixture or helper under tests/ they need.
-S=$(cygpath -u '<scratch>'); base=$(git merge-base HEAD origin/main)   # epic bead: origin/epic/<epic-id>
-rm -rf "$S/red" && mkdir -p "$S/red"
-git archive "$base" | tar -x -C "$S/red"
-cp tests/<the new or changed test files> "$S/red/tests/"
-```
-
-Then run the test from `$S\red` in place of `ROOT`: `python -I -m unittest discover $S\red\tests`, or block 3/4
-with `--python $S\red\tests\smoke_<x>.py` (block 3 also takes `-- $S\red`). Pass: the run **fails** (`FAILED`,
-`SMOKE FAILED`, `IMPORT FAILED`, exit 1) on exactly the case the fix is about; record its `FAIL` lines. A test
-that passes on the unfixed code proves nothing. For a smoke script without a fix, break the scratch package
-on purpose (e.g. drop an entry from `filter_glob` in `$S\red\maxdrop\ops.py`) and show that check fails.
-
-## 7. Install and upgrade from a local repository
+### 7. Local repository (steps 1-3; the run is Drive block 7)
 
 Proves the zip installs from a repository, enables, and that Check for Updates upgrades it in place (the reload
 path real users take). On 5.2 and 4.2 (add 4.5 when the plan says so).
@@ -227,7 +211,7 @@ path real users take). On 5.2 and 4.2 (add 4.5 when the plan says so).
    Pass: `maxdrop-<v2>.zip` and `index.json` in `$S\v2`.
 
 3. Start the server (the real interpreter, not the shim) and keep its id. 8791 is an example: any free port, the
-   same one in step 5:
+   same one in Drive block 7 and in Cleanup:
 
    ```powershell
    $S = "<scratch>"; $port = 8791
@@ -240,6 +224,81 @@ path real users take). On 5.2 and 4.2 (add 4.5 when the plan says so).
    ```
 
    Pass: `200`, and the listener's id is the kept id.
+
+## Drive
+
+### 1. Plain tests (no Blender)
+
+```powershell
+python -I -m unittest discover tests
+python -I tools/lint.py
+```
+
+Pass: exit 0, last line `OK` or `OK (skipped=N)`. A skip is a real-tool case whose tool this machine lacks
+(the test prints why); a skip that is new for the change is reported. Then ruff, the check CI's Ruff step runs:
+exit 0 and `All checks passed!`. The version is `required-version` in `pyproject.toml`; `tools/lint.py` uses
+`ruff` on PATH at that version, else `uvx --offline ruff@<version>`, and adds an unreachable-code check (a
+statement after `return`, `raise`, `continue` or `break`, or after a `with` (return, continue, break),
+`if`/`else`, `try` or `match` that always exits; ruff has no rule for it). Exit 3 = no ruff of that version
+here: fetch it once (`uvx ruff@<version> --version`, network) and rerun, or report the lint as skipped.
+Exit 1 = findings: fix them, never commit past them. Exit 2 = ruff's own error (a bad argument, a config error).
+
+### 3. Register smoke
+
+```powershell
+$S = "<scratch>"; $B = "<blender.exe>"; $tag = "52"
+$env:BLENDER_USER_RESOURCES = "$S\profile-$tag"
+& $B --background --factory-startup --python-exit-code 1 --python tests\smoke_register.py *>&1 | Out-File -Encoding utf8 "$S\register-$tag.log"
+"exit $LASTEXITCODE"; Select-String -Pattern "^SMOKE ", "^FAIL " "$S\register-$tag.log"
+```
+
+Pass: `exit 0`, `SMOKE PASSED`, no `FAIL` line. It imports the dev package from `ROOT` (or `-- <root>` after the
+script), checks it came from there, registers, checks every class of each module's `_classes`, the operators,
+the file handler, the File > Import entry, that the build package and the intake are not loaded yet and no
+io_scene_max engine is left, reloads like Reload Scripts, registers again and unregisters. A new module must keep
+its classes in a module-level `_classes` tuple and appear in `_NAMES` after the modules it imports.
+
+### 4. Import smoke
+
+```powershell
+$S = "<scratch>"; $B = "<blender.exe>"; $tag = "52"; $fixture = "<local fixture .max>"
+$env:BLENDER_USER_RESOURCES = "$S\profile-$tag"
+& $B --background --factory-startup --python-exit-code 1 --python tests\smoke_import.py -- $fixture *>&1 | Out-File -Encoding utf8 "$S\import-$tag.log"
+"exit $LASTEXITCODE"; Select-String -Pattern "^IMPORT ", "^FAIL ", "^COUNTS " "$S\import-$tag.log"
+```
+
+Pass: `exit 0`, `IMPORT PASSED`, no `FAIL` line. It imports the file through `import_scene.maxdrop` into an
+emptied scene, then as a `.zip` pack, a two-scene pack and the file-browser selections; `COUNTS` lines compare
+versions (they must be equal on all three). Arguments may be files or folders; a `.zip`, `.rar` or `.7z` argument
+is imported as it is. `IMPORT SKIPPED` (no file found) is **not** a pass for a change that touches the import.
+
+### 5. Three versions
+
+Blocks 3 and 4 run on `B52`, `B42` and `B45` (tags `52`, `42`, `45`), each with its own profile. The manifest
+claims 4.2.0, so a pass on 5.2 alone is not a pass. Version differences go into `maxdrop/compat.py`.
+
+### 6. Red check
+
+For a bug fix, prove the test fails without it; for a new or changed smoke script, prove it fails on broken
+code. Never `git stash` or revert in the real tree: build a scratch copy of the base and run the **new** tests on
+it (the smoke scripts and the plain tests find the package next to their own `tests\` folder).
+
+```bash
+# Git Bash: byte-exact export of the whole base tree (the plain tests also read LICENSE, site/, tools/), then
+# the new tests over it, with any fixture or helper under tests/ they need. base = the Change scope base.
+S=$(cygpath -u '<scratch>'); base=$(git merge-base HEAD origin/main)   # epic bead: origin/epic/<epic-id>
+rm -rf "$S/red" && mkdir -p "$S/red"
+git archive "$base" | tar -x -C "$S/red"
+cp tests/<the new or changed test files> "$S/red/tests/"
+```
+
+Then run the test from `$S\red` in place of `ROOT`: `python -I -m unittest discover $S\red\tests`, or block 3/4
+with `--python $S\red\tests\smoke_<x>.py` (block 3 also takes `-- $S\red`). Pass: the run **fails** (`FAILED`,
+`SMOKE FAILED`, `IMPORT FAILED`, exit 1) on exactly the case the fix is about; record its `FAIL` lines. A test
+that passes on the unfixed code proves nothing. For a smoke script without a fix, break the scratch package
+on purpose (e.g. drop an entry from `filter_glob` in `$S\red\maxdrop\ops.py`) and show that check fails.
+
+### 7. Install and upgrade run (steps 4-5; Launch block 7 first)
 
 4. Write `$S\upgrade.py`:
 
@@ -313,13 +372,10 @@ path real users take). On 5.2 and 4.2 (add 4.5 when the plan says so).
 
    Pass: `exit 0`, `UPGRADE PASSED`, no `FAIL` line, no traceback.
 
-6. Stop **your** server: `Stop-Process -Id (Get-Content "$S\server.pid")`, then
-   `Get-NetTCPConnection -LocalPort <port> -State Listen -ErrorAction SilentlyContinue` returns nothing.
-
 To test the live repository instead (after a release), skip the server and use the public `index.json` with
 the real `REPO_URL`: Check for Updates must say `Up to date`.
 
-## 8. Measured import (`tools/baseline.py`)
+### 8. Measured import (`tools/baseline.py`)
 
 ```powershell
 $S = "<scratch>"; $B = "<blender.exe>"; $fixture = "<local fixture .max>"
@@ -337,13 +393,44 @@ index the file. `import_report` holds the counts of the operator's `Imported ...
 curves, materials, placeholders, modifiers not applied, textures missing, approximated, material problems,
 issues), `null` when the log has no such line.
 
-## Evidence and report
+## Evidence
 
-For each block: the command, the Blender version, the exit code and the pass line (`OK`, `Built ...`,
-`SMOKE PASSED`, `IMPORT PASSED`, `UPGRADE PASSED`, `"outcome": "finished"`) or the exact `FAIL` lines; for a red
-check, the failing lines on the base. Report the changed areas, the blocks run, pass/fail per block and version,
-skipped blocks with the reason, blockers. Never "mostly passed". No corpus scene name, texture name or user path
-in the report, the bead or the PR.
+For each section, what the report and the closeout note's `Verified:` line carry:
+
+| Section | Capture |
+|---|---|
+| Change scope | the base (and a stale `Base-SHA:` ignored, if any), the paths it listed |
+| Feature map | the blocks those paths selected, and any block the plan adds or a skip with its reason |
+| Doctor | `DOCTOR OK`, or each `MISSING` line and what it blocked |
+| Launch | `Built ...maxdrop-<version>.zip ...`; for 7, `v1 <x> -> v2 <y>`, the `200` and the kept server id |
+| Drive | per block and Blender version: the command, the exit code and the pass line (`OK`, `All checks passed!`, `SMOKE PASSED`, `IMPORT PASSED` with its `COUNTS`, `UPGRADE PASSED`, `"outcome": "finished"`) or the exact `FAIL` lines; for a red check, the failing lines on the base |
+| Cleanup | the server stopped (no `Listen` entry) and the scratch folders removed |
+
+Report pass/fail per block and version, skipped blocks with the reason, blockers. Never "mostly passed". No
+corpus scene name, texture name or user path in the report, the bead or the PR: corpus logs stay in `S`, only
+counts and measurements leave it.
+
+## Cleanup
+
+After the report (the logs are the evidence), stop what Launch started and remove this skill's scratch state.
+`dist\` stays (git-ignored; the next build empties it).
+
+```powershell
+$S = "<scratch>"; $port = 8791
+if (Test-Path "$S\server.pid") {
+    $id = [int](Get-Content "$S\server.pid")
+    # Only while that id still serves the port: a stopped server's id may belong to someone else's process now.
+    if ((Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue).OwningProcess -contains $id) { Stop-Process -Id $id }
+}
+foreach ($d in "red", "serve", "v2src", "v2", "baseline") { Remove-Item -Recurse -Force "$S\$d" -ErrorAction SilentlyContinue }
+Get-ChildItem $S -Directory -Filter "profile-*" | Remove-Item -Recurse -Force
+Get-ChildItem $S -File | Where-Object { $_.Extension -eq ".log" -or $_.Name -in "upgrade.py", "server.pid" } | Remove-Item
+"listen: $(@(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue).Count)"; Get-ChildItem $S -Name
+```
+
+Pass: `listen: 0`, and none of `red`, `serve`, `v2src`, `v2`, `baseline`, `profile-*`, `*.log`, `upgrade.py`,
+`server.pid` is listed. A run that stopped early still cleans up; a server whose id you did not keep is not
+yours to stop: report it.
 
 ## Fix-and-Retry Loop
 
@@ -351,7 +438,9 @@ in the report, the bead or the PR.
 implement -> build-and-test -> FAIL -> fix code (or the plan) -> build-and-test -> PASS -> verification
 ```
 
-Only proceed to `verification-before-completion` when every required block passes.
+Only proceed to `verification-before-completion` when every required block passes. Any edit after the last
+passing run voids that pass, a code-review fix included: run the blocks the Feature map selects for the whole
+change again (block 1 always).
 
 ## Skip Conditions
 
