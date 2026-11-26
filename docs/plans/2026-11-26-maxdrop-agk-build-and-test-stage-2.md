@@ -18,6 +18,11 @@ open PR #36 (`chore/refresh-workflow-scaffold`, commit `05d42bb`), which does no
 taken word for word from `git show 05d42bb:.claude/skills/verification-before-completion/SKILL.md` (Change Scope
 Gate; identical to the 1.5.0 template's stage-1 `build-and-test` step 2). This PR should merge after #36.
 
+
+**Revision (owner, after the first PR push):** the checks are renamed to ids of their section (`L1` build, `L2`
+local repository; `D1` plain tests ... `D7` measured import), with a table under Core Rule that maps the old
+block numbers 1-8 to them, so each section counts up on its own and older plans still resolve.
+
 ---
 
 ### Task 1: Change scope

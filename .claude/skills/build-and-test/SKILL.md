@@ -15,13 +15,21 @@ written per bead from the plan.
 ## Core Rule
 
 Run the **exact commands** of the current plan's `## Verification` section (`docs/plans/<date>-<bead-id>-*.md`,
-or the bead's `notes`). The blocks below are the standard pieces those sections are made of: adapt paths to
+or the bead's `notes`). The checks below are the standard pieces those sections are made of: adapt paths to
 this session, never swap in a lighter check. No usable `## Verification` section -> stop and send the plan back
 to `writing-plans`.
 
-A run goes: **Change scope** (what changed) -> **Feature map** (which blocks that selects) -> **Doctor** (are
+A run goes: **Change scope** (what changed) -> **Feature map** (which checks that selects) -> **Doctor** (are
 their prerequisites here) -> **Launch** (build, serve) -> **Drive** (the checks) -> **Evidence** (the report) ->
-**Cleanup**. The blocks keep the numbers 1 to 8 that plans cite, under the section they belong to.
+**Cleanup**. Each check has an id of its section: `L1`, `L2` in Launch, `D1` to `D7` in Drive.
+
+Plans written before 2026-11-26 cite the old block numbers. Read them as:
+
+| Old block | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+|---|---|---|---|---|---|---|---|---|
+| Now | D1 | L1 | D2 | D3 | D4 | D5 | L2 + D6 | D7 |
+
+Old block 7's steps: 1-3 = L2, 4-5 = D6 steps 1-2, 6 (stop the server) = Cleanup.
 
 ## Environment
 
@@ -91,28 +99,28 @@ if ($sha) {
 "base $base"; git diff --name-only "$base..HEAD"; git status --porcelain
 ```
 
-Pass: a base line and at least one path. The Feature map turns the paths into blocks.
+Pass: a base line and at least one path. The Feature map turns the paths into checks.
 
 ## Feature map
 
-Block 1 is cheap: run it for every change.
+D1 is cheap: run it for every change.
 
 | Changed | Run |
 |---|---|
 | Nothing (empty change list) | the base is wrong: recompute it (Change scope). Never "nothing to run" |
-| Docs only (`*.md`, `docs/`, `.claude/`, `.beads` metadata) | 1 (the site and license tests read some of these files) |
-| `maxdrop/*.py` (operator, prefs, compat) | 1, 2, 5 (= 3 and 4 on all three versions), 6 for a fix |
-| `maxdrop/__init__.py` (`_NAMES`, `_purge`, reload), `maxdrop/update.py` | the row above, plus 7 on 5.2 and 4.2 |
-| `maxdrop/intake/` | 1 (its tests load it without Blender), 2, 5, 6 for a fix |
-| `maxdrop/reader/`, `maxdrop/convert/`, `maxdrop/build/` | the `maxdrop/*.py` row, plus 8 when the plan measures (fixture, then the corpus scenes it names) |
-| `maxdrop/blender_manifest.toml` `version` | 1, 2, 3 on all three versions, and the CHANGELOG check below; `docs/SUPPORT.md` says what that version imports |
-| `maxdrop/blender_manifest.toml` other fields (permissions, `blender_version_min`, ...) | 1, 2, 5, and 7 on 5.2 and 4.2 |
-| `tests/smoke_*.py` | that script green on all three versions + 6 (a red run on a broken scratch package) |
-| `tests/fixtures/*` (a new or changed file) | the fixture scan below **before `git add`**, then 4 on all three versions with that file (and 1 for `packs/`) |
-| `tests/test_*.py`, `tools/check_zip.py`, `tools/make_site.py`, `site/` | 1, 2 |
-| `tools/baseline*.py` | 8 on the fixture |
-| `build.ps1` | 2, also with `-Blender $B42` |
-| `.github/workflows/*.yml` | 1, 2; the workflow itself is the PR's `Test` run (Publish runs only on `main`) |
+| Docs only (`*.md`, `docs/`, `.claude/`, `.beads` metadata) | D1 (the site and license tests read some of these files) |
+| `maxdrop/*.py` (operator, prefs, compat) | D1, L1, D4 (= D2 and D3 on all three versions), D5 for a fix |
+| `maxdrop/__init__.py` (`_NAMES`, `_purge`, reload), `maxdrop/update.py` | the row above, plus L2 + D6 on 5.2 and 4.2 |
+| `maxdrop/intake/` | D1 (its tests load it without Blender), L1, D4, D5 for a fix |
+| `maxdrop/reader/`, `maxdrop/convert/`, `maxdrop/build/` | the `maxdrop/*.py` row, plus D7 when the plan measures (fixture, then the corpus scenes it names) |
+| `maxdrop/blender_manifest.toml` `version` | D1, L1, D2 on all three versions, and the CHANGELOG check below; `docs/SUPPORT.md` says what that version imports |
+| `maxdrop/blender_manifest.toml` other fields (permissions, `blender_version_min`, ...) | D1, L1, D4, and L2 + D6 on 5.2 and 4.2 |
+| `tests/smoke_*.py` | that script green on all three versions + D5 (a red run on a broken scratch package) |
+| `tests/fixtures/*` (a new or changed file) | the fixture scan below **before `git add`**, then D3 on all three versions with that file (and D1 for `packs/`) |
+| `tests/test_*.py`, `tools/check_zip.py`, `tools/make_site.py`, `site/` | D1, L1 |
+| `tools/baseline*.py` | D7 on the fixture |
+| `build.ps1` | L1, also with `-Blender $B42` |
+| `.github/workflows/*.yml` | D1, L1; the workflow itself is the PR's `Test` run (Publish runs only on `main`) |
 
 Fixture scan (CLAUDE.md: a fixture is committed only when its bytes, ASCII and UTF-16LE, hold no user name,
 machine name or user path; 3ds Max writes the first two into every file it saves, `tools/sanitize_fixture.py`
@@ -137,7 +145,7 @@ Pass: one line `## [<version>] - <date>`.
 
 ## Doctor
 
-Before the first Blender block, check what the selected blocks need. Fill in the session's values; leave
+Before the first Blender check, check what the selected checks need. Fill in the session's values; leave
 `$corpus` empty unless the plan measures a corpus scene:
 
 ```powershell
@@ -153,21 +161,21 @@ foreach ($b in @(@("5.2", $B52), @("4.2", $B42), @("4.5", $B45))) {
     $ver = if (Test-Path $b[1]) { (& $b[1] --factory-startup --version 2>$null | Select-String '^Blender ').Line } else { "" }
     Test-Need "Blender $($b[0]) ($ver)" ($ver -like "Blender $($b[0]).*") "see B42, B45 in Environment; path in the bead notes"
 }
-Test-Need "local fixture" (Test-Path $fixture) "path in the bead notes; without it block 4 imports only tests/fixtures (say so in the report)"
-for ($i = 0; $i -lt $corpus.Count; $i++) { Test-Need "corpus scene $($i + 1)" (Test-Path $corpus[$i]) "path in the bead notes; block 8 on it is skipped (report it)" }
+Test-Need "local fixture" (Test-Path $fixture) "path in the bead notes; without it D3 imports only tests/fixtures (say so in the report)"
+for ($i = 0; $i -lt $corpus.Count; $i++) { Test-Need "corpus scene $($i + 1)" (Test-Path $corpus[$i]) "path in the bead notes; D7 on it is skipped (report it)" }
 $bdOk = $false; if (Get-Command bd -ErrorAction SilentlyContinue) { bd where *> $null; $bdOk = $LASTEXITCODE -eq 0 }
 Test-Need "bd where" $bdOk "bd on PATH, then bd bootstrap --yes"
 if ($script:miss) { "DOCTOR FAILED: $($script:miss) missing" } else { "DOCTOR OK" }
 ```
 
-Pass: `DOCTOR OK`, every line `ok`. A `MISSING` line blocks the blocks that need it (Blender 4.2 / 4.5: block 5;
-the fixture: blocks 4 and 8 on it; PowerShell 7: every PowerShell block): fix it with the hint or report it as a
-blocker, never as a pass. The corpus lines print a number, never the path. Ruff is checked by block 1 itself
+Pass: `DOCTOR OK`, every line `ok`. A `MISSING` line blocks the checks that need it (Blender 4.2 / 4.5: D4;
+the fixture: D3 and D7 on it; PowerShell 7: every PowerShell block): fix it with the hint or report it as a
+blocker, never as a pass. The corpus lines print a number, never the path. Ruff is checked by D1 itself
 (`tools/lint.py` exit 3).
 
 ## Launch
 
-### 2. Build
+### L1. Build
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File build.ps1
@@ -179,12 +187,12 @@ The script empties `dist\` and `maxdrop\**\__pycache__`, builds, runs `extension
 (the zip carries `maxdrop/LICENSE`), `server-generate` and `tools/make_site.py`. Another Blender:
 `-Blender <path>`.
 
-### 7. Local repository (steps 1-3; the run is Drive block 7)
+### L2. Local repository (the run is D6)
 
 Proves the zip installs from a repository, enables, and that Check for Updates upgrades it in place (the reload
 path real users take). On 5.2 and 4.2 (add 4.5 when the plan says so).
 
-1. Block 2 has built `dist\` (v1 = the manifest version). Serve a copy of its `index.json` and zip (files only:
+1. L1 has built `dist\` (v1 = the manifest version). Serve a copy of its `index.json` and zip (files only:
    the script swaps them for v2's):
 
    ```powershell
@@ -214,7 +222,7 @@ path real users take). On 5.2 and 4.2 (add 4.5 when the plan says so).
    Pass: `maxdrop-<v2>.zip` and `index.json` in `$S\v2`.
 
 3. Start the server (the real interpreter, not the shim) and keep its id. 8791 is an example: any free port, the
-   same one in Drive block 7 (Cleanup reads it from `server.port`):
+   same one in D6 (Cleanup reads it from `server.port`):
 
    ```powershell
    $S = "<scratch>"; $port = 8791
@@ -230,7 +238,7 @@ path real users take). On 5.2 and 4.2 (add 4.5 when the plan says so).
 
 ## Drive
 
-### 1. Plain tests (no Blender)
+### D1. Plain tests (no Blender)
 
 ```powershell
 python -I -m unittest discover tests
@@ -246,7 +254,7 @@ statement after `return`, `raise`, `continue` or `break`, or after a `with` (ret
 here: fetch it once (`uvx ruff@<version> --version`, network) and rerun, or report the lint as skipped.
 Exit 1 = findings: fix them, never commit past them. Exit 2 = ruff's own error (a bad argument, a config error).
 
-### 3. Register smoke
+### D2. Register smoke
 
 ```powershell
 $S = "<scratch>"; $B = "<blender.exe>"; $tag = "52"
@@ -261,7 +269,7 @@ the file handler, the File > Import entry, that the build package and the intake
 io_scene_max engine is left, reloads like Reload Scripts, registers again and unregisters. A new module must keep
 its classes in a module-level `_classes` tuple and appear in `_NAMES` after the modules it imports.
 
-### 4. Import smoke
+### D3. Import smoke
 
 ```powershell
 $S = "<scratch>"; $B = "<blender.exe>"; $tag = "52"; $fixture = "<local fixture .max>"
@@ -275,12 +283,12 @@ emptied scene, then as a `.zip` pack, a two-scene pack and the file-browser sele
 versions (they must be equal on all three). Arguments may be files or folders; a `.zip`, `.rar` or `.7z` argument
 is imported as it is. `IMPORT SKIPPED` (no file found) is **not** a pass for a change that touches the import.
 
-### 5. Three versions
+### D4. Three versions
 
-Blocks 3 and 4 run on `B52`, `B42` and `B45` (tags `52`, `42`, `45`), each with its own profile. The manifest
+D2 and D3 run on `B52`, `B42` and `B45` (tags `52`, `42`, `45`), each with its own profile. The manifest
 claims 4.2.0, so a pass on 5.2 alone is not a pass. Version differences go into `maxdrop/compat.py`.
 
-### 6. Red check
+### D5. Red check
 
 For a bug fix, prove the test fails without it; for a new or changed smoke script, prove it fails on broken
 code. Never `git stash` or revert in the real tree: build a scratch copy of the base and run the **new** tests on
@@ -295,15 +303,15 @@ git archive "$base" | tar -x -C "$S/red"
 cp tests/<the new or changed test files> "$S/red/tests/"
 ```
 
-Then run the test from `$S\red` in place of `ROOT`: `python -I -m unittest discover $S\red\tests`, or block 3/4
-with `--python $S\red\tests\smoke_<x>.py` (block 3 also takes `-- $S\red`). Pass: the run **fails** (`FAILED`,
+Then run the test from `$S\red` in place of `ROOT`: `python -I -m unittest discover $S\red\tests`, or D2/D3
+with `--python $S\red\tests\smoke_<x>.py` (D2 also takes `-- $S\red`). Pass: the run **fails** (`FAILED`,
 `SMOKE FAILED`, `IMPORT FAILED`, exit 1) on exactly the case the fix is about; record its `FAIL` lines. A test
 that passes on the unfixed code proves nothing. For a smoke script without a fix, break the scratch package
 on purpose (e.g. drop an entry from `filter_glob` in `$S\red\maxdrop\ops.py`) and show that check fails.
 
-### 7. Install and upgrade run (steps 4-5; Launch block 7 first)
+### D6. Install and upgrade run (L2 first)
 
-4. Write `$S\upgrade.py`:
+1. Write `$S\upgrade.py`:
 
    ```python
    """Install maxdrop from a local repository, then upgrade it through Check for Updates (MaxDrop build-and-test)."""
@@ -362,7 +370,7 @@ on purpose (e.g. drop an entry from `filter_glob` in `$S\red\maxdrop\ops.py`) an
    sys.exit(1 if failures else 0)
    ```
 
-5. Per Blender version, a fresh profile and the v1 files served again:
+2. Per Blender version, a fresh profile and the v1 files served again:
 
    ```powershell
    $S = "<scratch>"; $B = "<blender.exe>"; $tag = "52"; $port = 8791; $v1 = "<v1>"; $v2 = "<v2>"
@@ -378,7 +386,7 @@ on purpose (e.g. drop an entry from `filter_glob` in `$S\red\maxdrop\ops.py`) an
 To test the live repository instead (after a release), skip the server and use the public `index.json` with
 the real `REPO_URL`: Check for Updates must say `Up to date`.
 
-### 8. Measured import (`tools/baseline.py`)
+### D7. Measured import (`tools/baseline.py`)
 
 ```powershell
 $S = "<scratch>"; $B = "<blender.exe>"; $fixture = "<local fixture .max>"
@@ -403,13 +411,13 @@ For each section, what the report and the closeout note's `Verified:` line carry
 | Section | Capture |
 |---|---|
 | Change scope | the base (and a stale `Base-SHA:` ignored, if any), the paths it listed |
-| Feature map | the blocks those paths selected, and any block the plan adds or a skip with its reason |
+| Feature map | the checks those paths selected, and any check the plan adds or a skip with its reason |
 | Doctor | `DOCTOR OK`, or each `MISSING` line and what it blocked |
-| Launch | `Built ...maxdrop-<version>.zip ...`; for 7, `v1 <x> -> v2 <y>`, the `200` and the kept server id |
-| Drive | per block and Blender version: the command, the exit code and the pass line (`OK`, `All checks passed!`, `SMOKE PASSED`, `IMPORT PASSED` with its `COUNTS`, `UPGRADE PASSED`, `"outcome": "finished"`) or the exact `FAIL` lines; for a red check, the failing lines on the base |
+| Launch | `Built ...maxdrop-<version>.zip ...`; for L2, `v1 <x> -> v2 <y>`, the `200` and the kept server id |
+| Drive | per check and Blender version: the command, the exit code and the pass line (`OK`, `All checks passed!`, `SMOKE PASSED`, `IMPORT PASSED` with its `COUNTS`, `UPGRADE PASSED`, `"outcome": "finished"`) or the exact `FAIL` lines; for a red check, the failing lines on the base |
 | Cleanup | the server stopped (no `Listen` entry) and the scratch folders removed |
 
-Report pass/fail per block and version, skipped blocks with the reason, blockers. Never "mostly passed". No
+Report pass/fail per check and version, skipped checks with the reason, blockers. Never "mostly passed". No
 corpus scene name, texture name or user path in the report, the bead or the PR: corpus logs stay in `S`, only
 counts and measurements leave it.
 
@@ -434,7 +442,7 @@ if ($port) { "listen: $(@(Get-NetTCPConnection -LocalPort $port -State Listen -E
 Remove-Item "$S\server.pid", "$S\server.port" -ErrorAction SilentlyContinue; Get-ChildItem $S -Name
 ```
 
-Pass: `listen: 0` (when block 7 ran), and none of `red`, `serve`, `v2src`, `v2`, `baseline`, `profile-*`,
+Pass: `listen: 0` (when L2 ran), and none of `red`, `serve`, `v2src`, `v2`, `baseline`, `profile-*`,
 `register-*.log`, `import-*.log`, `upgrade-*.log`, `upgrade.py`, `server.pid`, `server.port` is listed. A run that stopped early still cleans up; a server whose id you did not keep is not
 yours to stop: report it.
 
@@ -444,9 +452,9 @@ yours to stop: report it.
 implement -> build-and-test -> FAIL -> fix code (or the plan) -> build-and-test -> PASS -> verification
 ```
 
-Only proceed to `verification-before-completion` when every required block passes. Any edit after the last
-passing run voids that pass, a code-review fix included: run the blocks the Feature map selects for the whole
-change again (block 1 always).
+Only proceed to `verification-before-completion` when every required check passes. Any edit after the last
+passing run voids that pass, a code-review fix included: run the checks the Feature map selects for the whole
+change again (D1 always).
 
 ## Skip Conditions
 
