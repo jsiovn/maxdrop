@@ -79,7 +79,7 @@ PowerShell 7 is the primary shell. Shell state (variables) does not carry betwee
 ```powershell
 git fetch origin
 $ref = "origin/main"                     # epic bead: origin/epic/<epic-id>
-if (-not (git rev-parse --verify --quiet $ref)) { throw "no $ref: git fetch origin, or name the PR base" }
+if (-not (git rev-parse --verify --quiet $ref)) { throw "no ${ref}: git fetch origin, or name the PR base" }
 $mb = git merge-base HEAD $ref
 $sha = ""                                # the Base-SHA: of the task prompt or of this bead's notes, if any
 $base = $mb
