@@ -101,9 +101,13 @@ powershell -ExecutionPolicy Bypass -File build.ps1    # dist\ (git-ignored): zip
   - `Material.surface_render_method` only; `shadow_method` exists only in 4.2 and `blend_method` is legacy.
   - EEVEE is `BLENDER_EEVEE_NEXT` in 4.x and `BLENDER_EEVEE` in 5.x: tests pick the engine by version.
   - `poll_file_object_drop` comes from `compat.py`. Any other difference goes there too.
-- **No code file over 1000 lines** (source or tests; the test files still over it are split next, in a pull
-  request of their own): a change that would pass it splits the file by responsibility first; a module becomes a
-  package whose `__init__.py` keeps its names, a test file gets siblings named after it.
+- **No code file over 1000 lines** (source or tests; `tests/test_file_size.py` checks it): a change that would pass
+  it splits the file by responsibility first; a module becomes a package whose `__init__.py` keeps its names, a test
+  file gets siblings named after it (`test_texmaps_corona.py` beside `test_texmaps.py`) and what they share goes
+  into `<name>_support.py` (no `test` prefix: discover skips it), which each loads through the stub package of its
+  folder (`maxdrop_unit_tests` in `tests/unit/`). No test class with tests is imported into another file: it would
+  run twice. `tests/blender/run.py` stays the entry script; its checks are the `checks_*.py` beside it, its tables
+  `tables.py`.
 - **No commercial assets in git, ever.** The history is public. Bought scenes, their textures, their names and
   anything dumped from them stay outside the repo (the corpus folder is local; `*.max` is git-ignored except
   `tests/fixtures/`). Fixtures are self-authored, tiny, saved under a neutral path, and committed only when a

@@ -18,7 +18,7 @@ _spec = importlib.util.spec_from_file_location("first_open", os.path.join(ROOT, 
 first_open = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(first_open)
 
-_PKG = "maxdrop_convert_test"  # as in tests/unit/test_convert_scene.py: maxdrop/__init__.py (and bpy) never runs
+_PKG = "maxdrop_convert_test"  # as in tests/unit/convert_scene_support.py: maxdrop/__init__.py (and bpy) never runs
 if _PKG not in sys.modules:
     _pkg = types.ModuleType(_PKG)
     _pkg.__path__ = [os.path.join(ROOT, "maxdrop")]

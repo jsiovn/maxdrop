@@ -9,8 +9,8 @@
 Run alone, headless with an isolated profile so your own preferences are never touched:
   $env:BLENDER_USER_RESOURCES="<scratch>\\profile"
   & blender --background --factory-startup --python-exit-code 1 --python tests\\blender\\bench.py
-It prints `BENCH PASSED` (exit 0) or `BENCH FAILED` (exit 1). tests/blender/run.py calls run(check) too, so CI's
-fixture step runs it.
+It prints `BENCH PASSED` (exit 0) or `BENCH FAILED` (exit 1). tests/blender/run.py (suite.py) calls run(check) too,
+so CI's fixture step runs it.
 
 As in tests/unit/test_perf.py, no limit is a number of seconds: each time is the best of a few runs divided by the
 best time of a reference in the same process, and the limit is about twice the ratio measured on Blender 4.2, 4.5

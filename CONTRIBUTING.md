@@ -86,7 +86,7 @@ the same extension enabled from two repositories clashes.
 | `LICENSE`, `maxdrop/LICENSE` | The GPL v3 text, and the same file again so that it is in every zip. `tools/check_zip.py` checks a built zip for it. |
 | `tools/fixtures/*.ms`, `tools/sanitize_fixture.py`, `tools/check_fixture.py`, `tools/cfb.py` | The test files: the MAXScript that authors each one, the tool that blanks the user and computer name 3ds Max writes into a file, the check that refuses names and paths, and the compound-file reader both use. |
 | `tools/oracle/dump_scene.ms` | Writes what 3ds Max itself says about a scene as JSON: the `tests/fixtures/*.oracle.json` files the reader is checked against ([docs/ORACLE.md](docs/ORACLE.md)). |
-| `tests/` | `test_site.py`, `test_license.py`, `test_intake*.py`, `test_fixtures.py`, `test_oracle.py` and `unit/` (the reader and the no-bpy guard) in plain Python, `smoke_register.py`, `smoke_import.py` (inside Blender); `fixtures/` holds the test `.max` files with their 3ds Max oracle (`.oracle.json`) and `fixtures/packs/` the test scene packs. |
+| `tests/` | `test_site.py`, `test_license.py`, `test_intake*.py`, `test_fixtures.py`, `test_oracle.py` and `unit/` (the reader and the no-bpy guard) in plain Python, `smoke_register.py`, `smoke_import.py` and `blender/` (inside Blender: `run.py` runs the fixture tests, whose checks are the `checks_*.py` beside it and whose expectations are in `tables.py`); `fixtures/` holds the test `.max` files with their 3ds Max oracle (`.oracle.json`) and `fixtures/packs/` the test scene packs. A test file too long to keep has siblings named after it (`test_texmaps*.py`), with what they share in a `*_support.py` beside them. |
 
 ## Test files
 
