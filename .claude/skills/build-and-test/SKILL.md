@@ -78,7 +78,9 @@ PowerShell 7 is the primary shell. Shell state (variables) does not carry betwee
 
 ```powershell
 git fetch origin
-$mb = git merge-base HEAD origin/main    # epic bead: origin/epic/<epic-id>
+$ref = "origin/main"                     # epic bead: origin/epic/<epic-id>
+if (-not (git rev-parse --verify --quiet $ref)) { throw "no $ref: git fetch origin, or name the PR base" }
+$mb = git merge-base HEAD $ref
 $sha = ""                                # the Base-SHA: of the task prompt or of this bead's notes, if any
 $base = $mb
 if ($sha) {
@@ -145,8 +147,7 @@ $script:miss = 0
 function Test-Need($what, $ok, $hint) { if ($ok) { "ok $what" } else { "MISSING ${what}: $hint"; $script:miss++ } }
 Test-Need "PowerShell 7" ($PSVersionTable.PSVersion.Major -ge 7) "run the blocks in pwsh, not Windows PowerShell 5 (see Process rules)"
 Test-Need "Python 3" ("$(python -I --version 2>&1)" -match '^Python 3\.(9|\d\d)\b') "Python 3.9 or later on PATH (CI runs 3.11 and 3.13)"
-Test-Need "origin/main" ($null -ne (git rev-parse --verify --quiet origin/main)) "git fetch origin"
-Test-Need "scratch folder outside the repo" ((Test-Path $S) -and -not "$((Resolve-Path $S).Path)\".StartsWith("$((Resolve-Path .).Path)\")) "use the session's scratchpad"
+Test-Need "scratch folder outside the repo" ((Test-Path $S) -and -not "$((Resolve-Path $S).Path)\".StartsWith("$((Resolve-Path .).Path)\", [StringComparison]::OrdinalIgnoreCase)) "use the session's scratchpad"
 $env:BLENDER_USER_RESOURCES = "$S\profile-doctor"
 foreach ($b in @(@("5.2", $B52), @("4.2", $B42), @("4.5", $B45))) {
     $ver = if (Test-Path $b[1]) { (& $b[1] --factory-startup --version 2>$null | Select-String '^Blender ').Line } else { "" }
@@ -154,7 +155,8 @@ foreach ($b in @(@("5.2", $B52), @("4.2", $B42), @("4.5", $B45))) {
 }
 Test-Need "local fixture" (Test-Path $fixture) "path in the bead notes; without it block 4 imports only tests/fixtures (say so in the report)"
 for ($i = 0; $i -lt $corpus.Count; $i++) { Test-Need "corpus scene $($i + 1)" (Test-Path $corpus[$i]) "path in the bead notes; block 8 on it is skipped (report it)" }
-bd where *> $null; Test-Need "bd where" ($LASTEXITCODE -eq 0) "bd bootstrap --yes"
+$bdOk = $false; if (Get-Command bd -ErrorAction SilentlyContinue) { bd where *> $null; $bdOk = $LASTEXITCODE -eq 0 }
+Test-Need "bd where" $bdOk "bd on PATH, then bd bootstrap --yes"
 if ($script:miss) { "DOCTOR FAILED: $($script:miss) missing" } else { "DOCTOR OK" }
 ```
 
@@ -212,14 +214,14 @@ path real users take). On 5.2 and 4.2 (add 4.5 when the plan says so).
    Pass: `maxdrop-<v2>.zip` and `index.json` in `$S\v2`.
 
 3. Start the server (the real interpreter, not the shim) and keep its id. 8791 is an example: any free port, the
-   same one in Drive block 7 and in Cleanup:
+   same one in Drive block 7 (Cleanup reads it from `server.port`):
 
    ```powershell
    $S = "<scratch>"; $port = 8791
    if (Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue) { throw "port $port is taken" }
    $py = python -c "import sys; print(sys.executable)"
    $srv = Start-Process $py -ArgumentList "-m", "http.server", $port, "--bind", "127.0.0.1", "--directory", "`"$S\serve`"" -PassThru -WindowStyle Hidden
-   $srv.Id | Out-File "$S\server.pid"
+   $srv.Id | Out-File "$S\server.pid"; $port | Out-File "$S\server.port"
    Start-Sleep 1; (Invoke-WebRequest "http://127.0.0.1:$port/index.json" -UseBasicParsing).StatusCode
    "pid $($srv.Id), listener $((Get-NetTCPConnection -LocalPort $port -State Listen).OwningProcess)"
    ```
@@ -287,7 +289,7 @@ it (the smoke scripts and the plain tests find the package next to their own `te
 ```bash
 # Git Bash: byte-exact export of the whole base tree (the plain tests also read LICENSE, site/, tools/), then
 # the new tests over it, with any fixture or helper under tests/ they need. base = the Change scope base.
-S=$(cygpath -u '<scratch>'); base=$(git merge-base HEAD origin/main)   # epic bead: origin/epic/<epic-id>
+S=$(cygpath -u '<scratch>'); base='<the Change scope base>'   # its $base: the merge-base or a valid Base-SHA
 rm -rf "$S/red" && mkdir -p "$S/red"
 git archive "$base" | tar -x -C "$S/red"
 cp tests/<the new or changed test files> "$S/red/tests/"
@@ -417,20 +419,23 @@ After the report (the logs are the evidence), stop what Launch started and remov
 `dist\` stays (git-ignored; the next build empties it).
 
 ```powershell
-$S = "<scratch>"; $port = 8791
+$S = "<scratch>"
 if (Test-Path "$S\server.pid") {
-    $id = [int](Get-Content "$S\server.pid")
+    $id = [int](Get-Content "$S\server.pid"); $port = [int](Get-Content "$S\server.port")
     # Only while that id still serves the port: a stopped server's id may belong to someone else's process now.
-    if ((Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue).OwningProcess -contains $id) { Stop-Process -Id $id }
+    if ((Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue).OwningProcess -contains $id) {
+        Stop-Process -Id $id; Wait-Process -Id $id -Timeout 10 -ErrorAction SilentlyContinue
+    }
 }
 foreach ($d in "red", "serve", "v2src", "v2", "baseline") { Remove-Item -Recurse -Force "$S\$d" -ErrorAction SilentlyContinue }
 Get-ChildItem $S -Directory -Filter "profile-*" | Remove-Item -Recurse -Force
-Get-ChildItem $S -File | Where-Object { $_.Extension -eq ".log" -or $_.Name -in "upgrade.py", "server.pid" } | Remove-Item
-"listen: $(@(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue).Count)"; Get-ChildItem $S -Name
+Get-ChildItem $S -File | Where-Object { $_.Name -match '^(register|import|upgrade)-.+\.log$' -or $_.Name -in "upgrade.py" } | Remove-Item
+if ($port) { "listen: $(@(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue).Count)" }
+Remove-Item "$S\server.pid", "$S\server.port" -ErrorAction SilentlyContinue; Get-ChildItem $S -Name
 ```
 
-Pass: `listen: 0`, and none of `red`, `serve`, `v2src`, `v2`, `baseline`, `profile-*`, `*.log`, `upgrade.py`,
-`server.pid` is listed. A run that stopped early still cleans up; a server whose id you did not keep is not
+Pass: `listen: 0` (when block 7 ran), and none of `red`, `serve`, `v2src`, `v2`, `baseline`, `profile-*`,
+`register-*.log`, `import-*.log`, `upgrade-*.log`, `upgrade.py`, `server.pid`, `server.port` is listed. A run that stopped early still cleans up; a server whose id you did not keep is not
 yours to stop: report it.
 
 ## Fix-and-Retry Loop

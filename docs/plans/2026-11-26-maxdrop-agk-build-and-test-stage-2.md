@@ -24,35 +24,36 @@ Gate; identical to the 1.5.0 template's stage-1 `build-and-test` step 2). This P
 
 **Files:** Modify `.claude/skills/build-and-test/SKILL.md`
 
-- [ ] Add a `## Change scope` section: the `**Change scope:**` paragraph verbatim (the literal marker is what
+- [x] Add a `## Change scope` section: the `**Change scope:**` paragraph verbatim (the literal marker is what
       `agent-workflow-beads update` looks for), the branch bullet, the `--is-ancestor` "between" bullet (a stale
       `Base-SHA:` is ignored), "use the caller's file list when one is given", "an empty change list means the base
       is wrong: recompute it, never skip validation because of it".
-- [ ] Replace the old snippet (`"$base...HEAD"`, `git status --short`) with `git diff --name-only "$base..HEAD"`
+- [x] Replace the old snippet (`"$base...HEAD"`, `git status --short`) with `git diff --name-only "$base..HEAD"`
       and `git status --porcelain`.
 
 ### Task 2: Layout
 
-- [ ] Environment stays (the table of placeholders, the PowerShell note) and Process rules stay.
-- [ ] `## Doctor`: one PowerShell block, one line per prerequisite (`ok <what>` or `MISSING <what>: <fix hint>`),
-      exit 1 on any miss: PowerShell 7, Python 3 on PATH, git with `origin/main`, each Blender `$B52`, `$B42`,
+- [x] Environment stays (the table of placeholders, the PowerShell note) and Process rules stay.
+- [x] `## Doctor`: one PowerShell block, one line per prerequisite (`ok <what>` or `MISSING <what>: <fix hint>`),
+      `DOCTOR FAILED: <n> missing` on any miss: PowerShell 7, Python 3 on PATH, each Blender `$B52`, `$B42`,
       `$B45` answering `--version` with its series, the local fixture, the corpus scenes only when the plan
-      measures one, `bd where`. No machine path in the file: all from session variables.
-- [ ] `## Launch`: block 2 (build) and block 7 steps 1-3 (serve v1, build v2, start the server).
-- [ ] `## Drive`: blocks 1, 3, 4, 5, 6, 7 (steps 4-5: the upgrade run), 8.
-- [ ] `## Evidence`: the old "Evidence and report" (per-block capture, corpus privacy rule kept).
-- [ ] `## Cleanup`: stop the kept server id and check no `Listen` entry is left; remove the named scratch
+      measures one, `bd where` (also when `bd` is missing). The base ref check (`origin/main` or the epic branch)
+      fails fast in the Change scope snippet itself. No machine path in the file: all from session variables.
+- [x] `## Launch`: block 2 (build) and block 7 steps 1-3 (serve v1, build v2, start the server).
+- [x] `## Drive`: blocks 1, 3, 4, 5, 6, 7 (steps 4-5: the upgrade run), 8.
+- [x] `## Evidence`: the old "Evidence and report" (per-block capture, corpus privacy rule kept).
+- [x] `## Cleanup`: stop the kept server id and check no `Listen` entry is left; remove the named scratch
       folders and logs one by one (`red`, `serve`, `v2src`, `v2`, `profile-*`, `baseline`, `*.log`, `upgrade.py`,
       `server.pid`) after the report; corpus logs never leave `S`.
-- [ ] `## Feature map`: the old table (renamed), plus the row "change list empty -> the base is wrong"; the
+- [x] `## Feature map`: the old table (renamed), plus the row "change list empty -> the base is wrong"; the
       docs-only row keeps block 1; fixture scan and CHANGELOG check stay under it.
-- [ ] Fix-and-Retry: any edit after the last passing run voids that pass, a review fix included.
+- [x] Fix-and-Retry: any edit after the last passing run voids that pass, a review fix included.
 
 ### Task 3: Cleanup of this change
 
-- [ ] `grep -n "Changed paths\|Evidence and report" .claude/skills/build-and-test/SKILL.md` -> nothing; no other
+- [x] `grep -n "Changed paths\|Evidence and report" .claude/skills/build-and-test/SKILL.md` -> nothing; no other
       file cites the old headings (checked: `tests/`, `tools/` hold none).
-- [ ] Commit with the plan's boxes ticked.
+- [x] Commit with the plan's boxes ticked.
 
 ## Verification
 
