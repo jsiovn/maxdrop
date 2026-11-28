@@ -13,7 +13,7 @@ import bpy
 
 from .core import argv, check, ROOT
 from .checks_objects import check_ignore_option
-from .checks_lights import check_dome_undo, check_spread_cancel
+from .checks_lights import check_dome_undo, check_light_nodes, check_spread_cancel
 from .checks_maps import check_builder_volume, check_curve_step
 from .checks_operator import check_mesh_steps, check_read_cancel, check_worker_errors
 from .checks_builder import (
@@ -124,6 +124,7 @@ def main():
                                      os.path.join(ROOT, "tests", "fixtures", "lights_photometric.max"))),
                                  ("ies search stopped", lambda: check_ies_search_stopped(
                                      os.path.join(ROOT, "tests", "fixtures", "lights_photometric.max"))),
+                                 ("light nodes", check_light_nodes),
                                  ("spread cancel", lambda: check_spread_cancel(
                                      os.path.join(ROOT, "tests", "fixtures", "vray_mesh_light.max"))),
                                  ("benchmark", lambda: _bench().run(check))):

@@ -119,6 +119,8 @@ lights_photometric copied beside a self-authored fixture_web.ies (rated 500 lm, 
 is 1500 x 400 pi / 500 / 683 W x Light Strength, IesOverride's stays 300 / 683 W, no rated-lumens line in the report.
 The same beside filler files with a texture walk of 2 entries: IesPower takes its power as its flux and its line says
 where the search stopped, as the report does once, with materials and without.
+compat.light_nodes gives a new point and spot light its tree with an Emission linked into the Light Output, the same
+nodes on a second call, both back in an emptied tree.
 The performance budget of one big mesh (tests/blender/bench.py) runs last, without file arguments.
 Prints `FIXTURES PASSED` (exit 0) or `FIXTURES FAILED` (exit 1).
 """

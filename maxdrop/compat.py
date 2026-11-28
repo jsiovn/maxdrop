@@ -13,6 +13,23 @@ def node_tree(block):
     return block.node_tree
 
 
+def light_nodes(light):
+    """(tree, emission, output) of a Light: its node tree (4.x makes it when use_nodes is set, 5.x gives every light
+    one), the active Light Output and the Emission linked into its Surface, made and linked when missing. Nodes are
+    found by type, not by name (a name may be translated)."""
+    tree = node_tree(light)
+    outputs = [n for n in tree.nodes if n.bl_idname == "ShaderNodeOutputLight"]
+    output = next((n for n in outputs if n.is_active_output), outputs[0] if outputs else None)
+    if output is None:
+        output = tree.nodes.new("ShaderNodeOutputLight")
+    surface = output.inputs["Surface"]
+    emission = next((k.from_node for k in surface.links if k.from_node.bl_idname == "ShaderNodeEmission"), None)
+    if emission is None:
+        emission = tree.nodes.new("ShaderNodeEmission")
+        tree.links.new(emission.outputs["Emission"], surface)
+    return tree, emission, output
+
+
 try:
     from bpy_extras.io_utils import poll_file_object_drop
 except ImportError:

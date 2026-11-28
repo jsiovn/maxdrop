@@ -508,3 +508,32 @@ def check_light_strength(path):
     sphere = bpy.data.objects.get("FixtureSphere")
     check("vray_lights Light Strength 2: 40 W x 2", sphere is not None and abs(sphere.data.energy - 80.0) < 1e-4,
           str(sphere and sphere.data.energy))
+
+
+def check_light_nodes():
+    """compat.light_nodes on a new point and spot light (4.x: use_nodes off, no tree; 5.x: a tree at once): the
+    light's tree, a Light Output and an Emission linked into its Surface; a second call returns the same nodes and adds
+    none; a tree emptied of its nodes gets both back, linked."""
+    from maxdrop import compat
+    for kind in ('POINT', 'SPOT'):
+        light = bpy.data.lights.new("LightNodes" + kind.title(), kind)
+        try:
+            tree, emission, output = compat.light_nodes(light)
+            label = "light nodes (%s)" % kind.lower()
+            check(label + ": the light's tree, nodes enabled", tree is not None and tree == light.node_tree and
+                  getattr(light, "use_nodes", True), str(tree))
+            linked = [k.from_node for k in output.inputs["Surface"].links]
+            check(label + ": an Emission linked into the Light Output's Surface",
+                  output.bl_idname == "ShaderNodeOutputLight" and emission.bl_idname == "ShaderNodeEmission" and
+                  linked == [emission], "%s %s %s" % (output.bl_idname, emission.bl_idname, linked))
+            count = len(tree.nodes)
+            again = compat.light_nodes(light)
+            check(label + ": a second call returns the same nodes and adds none",
+                  again == (tree, emission, output) and len(tree.nodes) == count, "%d -> %d" % (count, len(tree.nodes)))
+            tree.nodes.clear()
+            tree, emission, output = compat.light_nodes(light)
+            linked = [k.from_node for k in output.inputs["Surface"].links]
+            check(label + ": an emptied tree gets both nodes back, linked", len(tree.nodes) == 2 and
+                  linked == [emission] and emission.bl_idname == "ShaderNodeEmission", str(len(tree.nodes)))
+        finally:
+            bpy.data.lights.remove(light)
