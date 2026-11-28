@@ -442,7 +442,7 @@ class Fixtures(unittest.TestCase):
                     cls.cases[name[:-4]] = (conv.read(os.path.join(FIXTURES, name)), oracle)
 
     def test_every_camera_has_the_oracles_fov(self):
-        self.assertEqual(sorted(self.cases), ["cameras", "controllers", "lookat"])
+        self.assertEqual(sorted(self.cases), ["cameras", "controllers", "exposure", "lookat"])
         for name, (desc, oracle) in self.cases.items():
             for node, o in zip(desc.nodes, oracle["nodes"]):
                 if o["camera"] is None:
@@ -508,6 +508,23 @@ class Fixtures(unittest.TestCase):
         lines = report.gather(desc, source="cameras.max").text().split("\n")
         self.assertIn("Objects built: 17, meshes: 1, cameras: 11", lines)
         self.assertIn("Render size: 800 x 450; scene camera: CamTarget", lines)
+
+    def test_exposure_fixture(self):
+        """tools/fixtures/exposure.ms: the render view locked on FixtureExpPhysical, the oracle's render camera; the
+        issue lines main gives (FixturePhysDof's depth of field, the exposure of every camera but FixtureExpOff)."""
+        desc, oracle = self.cases["exposure"]
+        handle = {n["name"]: n["handle"] for n in oracle["nodes"]}
+        scene_camera = next(n.name for n in desc.nodes if n.index == desc.camera)
+        self.assertEqual((scene_camera, handle[scene_camera]), ("FixtureExpPhysical", oracle["render"]["camera"]))
+        self.assertIsNone(desc.camera_note)
+        self.assertEqual(len(desc.cameras), 6)
+        names = {n.index: n.name for n in desc.nodes}
+        self.assertEqual(sorted((names[i], r) for i, r in desc.issues),
+                         [("FixtureExpPhysical", "camera: " + C.EXPOSURE), ("FixtureExpStored", "camera: " + C.EXPOSURE),
+                          ("FixtureExpTint", "camera: " + C.EXPOSURE), ("FixtureExpValue", "camera: " + C.EXPOSURE),
+                          ("FixturePhysDof", "camera: " + C.DOF)])
+        lines = report.gather(desc, source="exposure.max").text().split("\n")
+        self.assertIn("Render size: 800 x 450; scene camera: FixtureExpPhysical", lines)
 
 
 if __name__ == "__main__":

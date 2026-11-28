@@ -1430,6 +1430,33 @@ near / far clip (world).
 horizontal tilt, 4 distortion, 10 exposure (0 off), 32 clip on, 33 / 34 near / far clip (world). The film gate and
 focal length are typed as world units but stay millimeters in a centimeter scene (probed).
 
+**Exposure and f-number** (3ds Max 2020 + V-Ray 5.2: the ParamBlock2 descriptors through the .NET wrapper, maxdiff of
+saves that change one setting, V-Ray renders of a self-lit white plane with linear color mapping). VRayPhysicalCamera,
+block 0: 10 exposure (int: 0 off, 1 physical exposure, 2 exposure value; default 1), 2 f-number (float, 8), 12 shutter
+speed (float, the denominator in 1/s: 200 = 1/200 s), 16 ISO (float, 100), 56 exposure value (float, EV; default 13),
+11 vignetting (bool, off), 39 vignetting amount (float, 1), 37 white balance preset (int, default 4), 19 white balance
+(the color, stored as floats 0..1; default 0.999149 0.999506 1), 46 temperature (float, kelvin, 6500). Also in the
+block, not read: 14 shutter angle, 17 shutter offset, 15 latency, 36 legacy ISO, 38 system lighting units. V-Ray keeps
+the exposure value and the three settings in step: setting the f-number, the shutter speed or the ISO stores EV =
+log2(N² · shutter · 100 / ISO) again (maxdiff: param 56 changes with each), setting the exposure value stores a new
+ISO, and in mode 2 a new f-number or shutter speed keeps the exposure value and stores a new ISO. A new camera stores
+EV 13, not the 13.6439 of its defaults, until one of them is set. Mode 1 renders from the f-number, shutter speed and
+ISO, mode 2 from the stored exposure value (the defaults render 0.0199 in mode 1, 0.0311 in mode 2 at EV 13: 2^0.644
+apart; 3 EV lower renders 8 times brighter); mode 0 renders as if there were no exposure. The factor itself is not
+measured here. The white balance presets set the color (4 and the default: the color above; 5: 1 0.890094 0.755618);
+what each preset stands for is not read. **Physical**, block 0: 6 f-number (float, 8); its exposure (22 exposure gain
+type, 23 ISO, 24 exposure value) is for the exposure control of the RenderEnvironment, not read. The exposure fixture
+(`tools/fixtures/exposure.ms`, system unit millimeters; values read back through `maxdrop/reader`):
+
+| Camera | 10 | 2 | 12 | 16 | 56 | Other |
+|---|---|---|---|---|---|---|
+| FixtureExpPhysical (targeted; the render view) | 1 | 5.6 | 125 | 200 | 10.9366 | |
+| FixtureExpOff | 0 | 2.8 | 200 | 100 | 10.6147 | |
+| FixtureExpValue | 2 | 4 | 100 | 110.485 | 10.5 | |
+| FixtureExpTint | 1 | 8 | 200 | 100 | 13 | 11 on, 39 0.5, 37 5, 19 1 0.890094 0.755618 |
+| FixtureExpStored | 2 | 8 | 200 | 100 | 13 | |
+| FixturePhysDof (Physical) | | 6: 2.8 | | | | 11 depth of field on, 10 specify focus 1, 9 focus distance 2500, 8 target distance 5000 |
+
 **The field of view they render with.** Free / Target: the FOV parameter. Physical with a specified FOV: that FOV
 (neither zoom nor breathing; 74.9996° for 75° at zoom 1.25). Otherwise a thin lens focused at d, the focus distance
 when specified, else the target distance, in millimeters through the system unit (100 cm and 1000 mm give the same):

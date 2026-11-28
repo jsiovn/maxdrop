@@ -726,7 +726,8 @@ class TestFixtures(unittest.TestCase):
                  "PhTSphere.Target": 0x4800, "PhTCylinder.Target": 0x4800,
                  # cameras: the targets of the targeted cameras
                  "CamTarget.Target": 0x4800, "CamTargetOrtho.Target": 0x4800, "CamPhysShift.Target": 0x4800,
-                 "CamVRayShift.Target": 0x4800, "CamVRayTarget.Target": 0x4800}
+                 "CamVRayShift.Target": 0x4800, "CamVRayTarget.Target": 0x4800,
+                 "FixtureExpPhysical.Target": 0x4800}  # exposure: its targeted camera's target
         heads = {"Node": 16, "RootNode": 16, "Texmaps": 48, "Bezier Float": 2, "Bezier Scale": 2, "Bezier Color": 2,
                  "Bezier Position": 2, "Smooth Rotation": 2, "Linear Float": 2, "Linear Position": 2,
                  "Linear Rotation": 2, "Linear Scale": 2, "TCB Float": 2, "TCB Position": 2, "TCB Rotation": 2,

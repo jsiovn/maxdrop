@@ -78,7 +78,8 @@ FIXTURE_ISSUES = {"uvwmap.max": 2, "stack_convert.max": 1, "vray_lights.max": 3,
                   "shapes_more.max": 1,  # shapes_more: FixtureCurveMixed's spline mixes material IDs
                   "layers_flags.max": 1,  # layers_flags: FixtureNoReceiveShadow (no such switch in Blender)
                   "layers_render.max": 1,  # layers_render: FixtureByLayerNoReceive (its layer)
-                  "vray_mesh_light.max": 1}  # vray_mesh_light: a mesh light without a mesh
+                  "vray_mesh_light.max": 1,  # vray_mesh_light: a mesh light without a mesh
+                  "exposure.max": 5}  # exposure: FixturePhysDof's depth of field, four cameras' exposure
 # issues a fixture adds when imported from a pack without its maps (two_scenes): vray_dome's dome texture not found
 MAPLESS_ISSUES = {"vray_dome.max": 1}
 # placeholders of classes MaxDrop does not build yet: lookat's Point
