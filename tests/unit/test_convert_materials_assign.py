@@ -47,7 +47,7 @@ class Assign(unittest.TestCase):
         self.assertEqual(self.names(ms.slots), [["FixtureSubOne"], [None]])
         self.assertEqual(ms.indices.tolist(), [1, 0, 1, 1, 1, 1])  # face IDs 2 1 5 4 6 3: only ID 1 has a material
         two = next(n for n in desc.nodes if n.name == "FixtureTwoSidedBox")
-        self.assertEqual(self.names(plan[two.mesh].slots), [["FixtureFront"]])
+        self.assertEqual(self.names(plan[two.mesh].slots), [["FixtureTwoSided"]])
         self.assertEqual(plan[two.mesh].indices.tolist(), [0] * 6)
         self.assertEqual(plan[two.mesh].indices.dtype.name, "int32")
 

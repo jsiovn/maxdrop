@@ -11,7 +11,9 @@ from ..params import finite as _finite, flag as _flag, num as _num
 from .ids import (
     ChunkError, CORONA_BASE, CORONA_LAYERS, CORONA_LAYERS_ON, CORONA_SELECT_INDEX, CORONA_SELECT_LIST,
     DOUBLE_SIDED_FACING_ON, GREY_SRGB, MAX_PEEL, MULTI_ENABLED, MULTI_IDS, MULTI_MATERIALS, SHELL_RENDER_INDEX,
-    SHELL_SUBS, VRAY_BLEND_BASE, VRAY_BLEND_COATS, VRAY_BLEND_COATS_ON, WRAPPER_STOPS, WRAPPERS,
+    SHELL_SUBS, VRAY_2SIDED_BACK, VRAY_2SIDED_BACK_ON, VRAY_2SIDED_FRONT, VRAY_2SIDED_MAP, VRAY_2SIDED_MAP_ON,
+    VRAY_2SIDED_MULTIPLIER, VRAY_2SIDED_TRANSLUCENCY, VRAY_BLEND_BASE, VRAY_BLEND_COATS, VRAY_BLEND_COATS_ON,
+    WRAPPER_STOPS, WRAPPERS,
 )
 from .ir import ConvertStats, Input, MapRef, MaterialIR
 from .values import _scene_meters, class_name, mean
@@ -147,6 +149,10 @@ class MaterialConverter:
                     if key == classids.DOUBLE_SIDED_MTL and pid == 0 and not _flag(m, DOUBLE_SIDED_FACING_ON, 0, True):
                         self._issue_once(m.index, "%s: facing material switched off: drawn all the same, as V-Ray "
                                          "renders it (the scanline renders it black)" % name)
+                    if (key == classids.VRAY_2SIDED_MTL and pid == pids[0]
+                            and (self.two_sided_translucent(m) or self.two_sided_back(m) is not None)):
+                        self._issue_once(m.index, "%s: front material is a Multi/Sub-Object: drawn by face ID, its "
+                                         "translucency and back material not drawn" % name)
                     if key == classids.VRAY_BLEND_MTL and pid != pids[0]:
                         self._issue_once(m.index, "%s: base material empty: drawn as its coat, which V-Ray renders "
                                          "over nothing (transparent where the blend is below white)" % name)
@@ -192,6 +198,29 @@ class MaterialConverter:
             out.append((k, v.index))
         return out
 
+    def two_sided_back(self, m):
+        """The object index of a VRay2SidedMtl's back material when it is set, switched on (backMtlOn, off where it
+        says nothing), a material and not the front object; else None."""
+        back, front = m.param(VRAY_2SIDED_BACK, 0), m.param(VRAY_2SIDED_FRONT, 0)
+        if not _flag(m, VRAY_2SIDED_BACK_ON, 0, False) or not isinstance(back, pblock.Reference) or back.index is None:
+            return None
+        if self.graph.superclass(back.index) != classids.SC_MATERIAL:
+            return None
+        if isinstance(front, pblock.Reference) and front.index == back.index:
+            return None
+        return back.index
+
+    def two_sided_translucent(self, m):
+        """Whether a VRay2SidedMtl's translucency is not black: its color (a missing or unusable one black), or a
+        translucency map set, on and at a multiplier above 0."""
+        v = m.param(VRAY_2SIDED_TRANSLUCENCY, 0)
+        if isinstance(v, tuple) and len(v) >= 3 and all(_finite(c) for c in v[:3]) and max(v[:3]) > 0.0:
+            return True
+        ref = m.param(VRAY_2SIDED_MAP, 0)
+        return (_flag(m, VRAY_2SIDED_MAP_ON, 0, True) and _num(m, VRAY_2SIDED_MULTIPLIER, 0, 100.0) > 0.0
+                and isinstance(ref, pblock.Reference) and ref.index is not None
+                and self.graph.superclass(ref.index) == classids.SC_TEXMAP)
+
     def bsdf_count(self, ir):
         """The Principled BSDFs build/materials/ draws for ir: one, plus its layers' at each use (a reflection
         weight's twin not counted: each BSDF draws at most one)."""
@@ -202,7 +231,14 @@ class MaterialConverter:
 
     def _mixes_layers(self, m, key):
         """A CoronaLayeredMtl with a base and a layer on, or a VRayBlendMtl with a base and a coat set and on, is a
-        material of its own (corona_layered_mtl, vray_blend_mtl); without either it is a wrapper of the one it has."""
+        material of its own (corona_layered_mtl, vray_blend_mtl); without either it is a wrapper of the one it has. So
+        is a VRay2SidedMtl with a front (not itself a Multi/Sub-Object: the peel keeps its face IDs) that lets light
+        through or shows a back material (vray_2sided_mtl)."""
+        if key == classids.VRAY_2SIDED_MTL:
+            front = m.param(VRAY_2SIDED_FRONT, 0)
+            return (isinstance(front, pblock.Reference) and front.index is not None
+                    and not self.is_class(front.index, classids.SC_MATERIAL, classids.MULTI_SUB_MTL)
+                    and (self.two_sided_translucent(m) or self.two_sided_back(m) is not None))
         if key == classids.CORONA_LAYERED_MTL:
             base, layers = m.param(CORONA_BASE, 0), self.corona_layers
         elif key == classids.VRAY_BLEND_MTL:

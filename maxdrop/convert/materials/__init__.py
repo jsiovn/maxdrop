@@ -128,7 +128,13 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   the same limits), mixed over it or, in additive mode, added (Layer.mode ADD); the weight is the blend color as a
   swatch on a mask (the scene's rule on the mean of its channels), with a blend map that and the map mixed by the map
   multiplier (a MASK graph). Not measured against V-Ray (maxdrop-o53.3.2); a colored blend color is an issue.
-- Wrappers (VRay2SidedMtl, VRayBlendMtl without a coat set and on, VRayOverrideMtl, VRayMtlWrapper, Double Sided,
+- VRay2SidedMtl with a front (not a Multi/Sub-Object itself) whose translucency is not black, or with a back material
+  set, on and not the front -> the front's IR with translucency (vray_2sided_mtl: the translucency color as a swatch
+  on a mask, with a translucency map that and the map mixed by its multiplier, a DATA graph) and translucency_color
+  (the back's base color, else the front's), which build/materials/ draws as a Translucent BSDF mixed in by it; the
+  back material a Layer (BACK) shown on back faces with the same translucency in the front's color. V-Ray's
+  documented rule, not measured (maxdrop-o53.3.2); a colored translucency color is an issue.
+- Wrappers (VRay2SidedMtl with a black translucency and no back material shown, VRayBlendMtl without a coat set and on, VRayOverrideMtl, VRayMtlWrapper, Double Sided,
   Shellac, CoronaLayeredMtl without a base or without a layer on: base, then its layers that are on; CoronaRaySwitchMtl:
   direct, GI, reflect, refract) -> the first set sub-material in 3ds Max's getSubMtl order (VRayOverrideMtl's and
   Double Sided's whatever their switches say: V-Ray 5.2 renders the base and the facing material switched off all the
@@ -196,9 +202,10 @@ from .ids import (
     CORONA_LAYERS, CORONA_AMOUNTS, CORONA_MASKS, CORONA_LAYERS_ON, CORONA_MASKS_ON, CORONA_MASK_AMOUNTS, MAX_LAYERS,
     MAX_LAYER_BSDFS, MAX_COMPLEX_IOR, DEFAULT_METERS, LUMENS_PER_WATT, MULTI_MATERIALS, MULTI_ENABLED, MULTI_IDS,
     VRAY_BLEND_BASE, VRAY_BLEND_COATS, VRAY_BLEND_COLORS, VRAY_BLEND_MAPS, VRAY_BLEND_MULTIPLIERS, VRAY_BLEND_ADDITIVE,
-    VRAY_BLEND_COATS_ON, VRAY_BLEND_COLOR,
+    VRAY_BLEND_COATS_ON, VRAY_BLEND_COLOR, VRAY_2SIDED_FRONT, VRAY_2SIDED_BACK, VRAY_2SIDED_BACK_ON, VRAY_2SIDED_MAP,
+    VRAY_2SIDED_MAP_ON, VRAY_2SIDED_MULTIPLIER, VRAY_2SIDED_TRANSLUCENCY, VRAY_2SIDED_MULT_DIFFUSE,
 )
-from .ir import MapRef, DiffuseLevel, Input, Medium, MaterialIR, Layer, ConvertStats, MIX, ADD
+from .ir import MapRef, DiffuseLevel, Input, Medium, MaterialIR, Layer, ConvertStats, MIX, ADD, BACK
 from .values import (
     mean, class_name, _clamp01, _mix, _ior, ior_from_reflectance, _roughness, corona_legacy_roughness, _scene_meters,
     f0_from_complex_ior, class_label, MAX_CLASS_NAME,
@@ -217,6 +224,6 @@ from .corona import (
     HAIR_PRINCIPLED_SPECULAR, HAIR_UNREAD, hair_color, corona_hair_mtl, corona_shadow_catcher_mtl, corona_medium,
     _corona_volume, _medium_issues, corona_volume_mtl, CORONA_GREY, corona_named_grey,
 )
-from .layered import corona_layered_mtl, vray_blend_mtl
+from .layered import corona_layered_mtl, vray_blend_mtl, vray_2sided_mtl
 from .rules import RULES
 from .slots import MeshSlots, shadow_catcher_users, Slots, node_materials, _group, _mixed, assign

@@ -63,6 +63,11 @@ CORONA_BASE, CORONA_LAYERS, CORONA_AMOUNTS, CORONA_MASKS, CORONA_LAYERS_ON, CORO
 VRAY_BLEND_BASE, VRAY_BLEND_COATS, VRAY_BLEND_COLORS, VRAY_BLEND_MAPS, VRAY_BLEND_MULTIPLIERS, VRAY_BLEND_ADDITIVE = (
     0, 1, 2, 3, 4, 5)
 VRAY_BLEND_COATS_ON = 6
+# VRay2SidedMtl, block 0 (docs/FORMAT.md, the vray_wrappers oracle): 0 frontMtl, 1 backMtl, 3 backMtlOn, 4
+# texmap_translucency, 5 texmap_translucency_on, 6 texmap_translucency_multiplier (percent), 7 translucency (a color),
+# 9 mult_by_front_diffuse
+(VRAY_2SIDED_FRONT, VRAY_2SIDED_BACK, VRAY_2SIDED_BACK_ON, VRAY_2SIDED_MAP, VRAY_2SIDED_MAP_ON, VRAY_2SIDED_MULTIPLIER,
+ VRAY_2SIDED_TRANSLUCENCY, VRAY_2SIDED_MULT_DIFFUSE) = (0, 1, 3, 4, 5, 6, 7, 9)
 VRAY_BLEND_COLOR = (0.5, 0.5, 0.5)  # a blend color as created (the oracles: 0.5 grey)
 MAX_LAYERS = 16  # layers mixed over a CoronaLayeredMtl's base (Corona offers 10; a VRayBlendMtl holds 9 coats)
 MAX_LAYER_BSDFS = 64  # Principled BSDFs one material may draw, its layers' layers counted at each use

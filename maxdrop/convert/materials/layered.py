@@ -2,18 +2,20 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""The layered materials: CoronaLayeredMtl (a base and its layers) and VRayBlendMtl (a base and its coats)."""
+"""The layered materials: CoronaLayeredMtl (a base and its layers), VRayBlendMtl (a base and its coats) and
+VRay2SidedMtl (a front, its translucency and a back)."""
 import dataclasses
 
 from ...reader import classids
 from .. import texmaps as _texmaps
-from ..params import finite as _finite
+from ..params import finite as _finite, flag as _flag
 from .ids import (
     CORONA_AMOUNTS, CORONA_BASE, CORONA_MASK_AMOUNTS, CORONA_MASKS, CORONA_MASKS_ON, MAX_LAYER_BSDFS, MAX_LAYERS,
-    VRAY_BLEND_ADDITIVE, VRAY_BLEND_BASE, VRAY_BLEND_COLOR, VRAY_BLEND_COLORS, VRAY_BLEND_MAPS,
-    VRAY_BLEND_MULTIPLIERS,
+    VRAY_2SIDED_FRONT, VRAY_2SIDED_MAP, VRAY_2SIDED_MAP_ON, VRAY_2SIDED_MULT_DIFFUSE, VRAY_2SIDED_MULTIPLIER,
+    VRAY_2SIDED_TRANSLUCENCY, VRAY_BLEND_ADDITIVE, VRAY_BLEND_BASE, VRAY_BLEND_COLOR, VRAY_BLEND_COLORS,
+    VRAY_BLEND_MAPS, VRAY_BLEND_MULTIPLIERS,
 )
-from .ir import ADD, Layer, MIX
+from .ir import ADD, BACK, Input, Layer, MIX
 from .values import mean
 from .corona import _flag_tab, _num_tab
 
@@ -107,3 +109,68 @@ def vray_blend_mtl(conv, m, ir):
 
     return _layered(conv, m, ir, m.param(VRAY_BLEND_BASE, 0).index, conv.blend_coats(m), weigh, "coat",
                     "coat object %d")
+
+
+
+def _translucent(side, weight, ref, graph, other):
+    """A copy of IR side letting through the share weight of the light arriving on the other side, colored by IR
+    other's base color: translucency the Input of the weight and its map (ref; graph: its DATA graph, None without
+    one), translucency_color other's base color with its graph."""
+    out = dataclasses.replace(side, textures=dict(side.textures), issues=list(side.issues), layers=list(side.layers),
+                              translucency=Input(weight, ref), translucency_color=other.base_color)
+    for key, g in (("translucency", graph), ("translucency_color", other.textures.get("base_color"))):
+        out.textures.pop(key, None)
+        if g is not None:
+            out.textures[key] = g
+    return out
+
+
+def vray_2sided_mtl(conv, m, ir):
+    """VRay2SidedMtl that lets light through or shows a back material (block 0, VRAY_2SIDED_*; the peel keeps any
+    other: MaterialConverter._mixes_layers): its front's IR, named after it, with a translucency t, the share of the
+    light arriving on the other side, drawn as a Translucent BSDF in the other side's base color (the back material's
+    where it is shown, else the front's) mixed in by t: V-Ray's documented rule (t of that light, 1 - t of the side's
+    own), not measured (maxdrop-o53.3.2 calibrates it). t: the translucency color taken as a swatch on a mask (the
+    scene's swatch rule on the mean of its channels, each clamped to 0..1: what V-Ray 5.2 was measured to render for a
+    constant mask, TexmapConverter._swatch; a missing one black); with a translucency map on, that weight and the map
+    mixed by the multiplier (percent), a DATA graph. A colored translucency color where it counts is an issue (V-Ray
+    mixes per channel), and so is Mult by front diffuse. A back material that is set, on and not the front
+    (two_sided_back) is a Layer (BACK) shown on back faces, with the same t in the front's base color."""
+    name = m.name or conv._class_name(m)
+    front_index = m.param(VRAY_2SIDED_FRONT, 0).index
+    front = conv.convert(front_index)
+    if front is None:  # not a material (the peel checks only that it is set)
+        return conv._grey(m.index, "%s: front material is not a material" % name)
+    out = dataclasses.replace(front, index=ir.index, name=ir.name, source=ir.source, unknown=False,
+                              shadow_catcher=False, textures=dict(front.textures), issues=list(front.issues),
+                              layers=list(front.layers))
+    v = m.param(VRAY_2SIDED_TRANSLUCENCY, 0)
+    if not (isinstance(v, tuple) and len(v) >= 3 and all(_finite(c) for c in v[:3])):
+        v = (0.0, 0.0, 0.0)
+    stored = tuple(min(1.0, max(0.0, c)) for c in v[:3])
+    weight = conv.swatches.channel(mean(stored))
+    ref = conv.map_ref(m, VRAY_2SIDED_MAP, VRAY_2SIDED_MAP_ON, VRAY_2SIDED_MULTIPLIER, 0, ir=out)
+    graph = conv.texmaps.convert(ref, _texmaps.DATA, weight) if ref is not None and conv.texmaps is not None else None
+    if graph is not None:
+        out.issues.extend(r for r in graph.issues if r not in out.issues)
+    if (graph is None or ref.amount < 1.0) and max(stored) - min(stored) > 0.5 / 255:
+        conv.issue(m.index, "%s: translucency color (%.3f, %.3f, %.3f) drawn as its mean, not per channel"
+                   % ((name,) + stored), out)
+    if _flag(m, VRAY_2SIDED_MULT_DIFFUSE, 0, False):
+        conv.issue(m.index, "%s: Mult by front diffuse not drawn: the translucency is not tinted by the front's diffuse"
+                   % name, out)
+    back_index = conv.two_sided_back(m)
+    for sub in (front_index, back_index):
+        peeled = conv.peel(sub)[0] if sub is not None else None
+        if peeled is not None and conv.is_class(peeled, classids.SC_MATERIAL, classids.MULTI_SUB_MTL):
+            conv.issue(m.index, "%s: Multi/Sub-Object %d drawn as its first entry" % (name, sub), out)
+    back = conv.convert(back_index) if back_index is not None else None
+    if back is not None and conv.bsdf_count(front) + conv.bsdf_count(back) > MAX_LAYER_BSDFS:
+        conv.issue(m.index, "%s: back material not drawn: past %d Principled BSDFs" % (name, MAX_LAYER_BSDFS), out)
+        back = None
+    if back is not None and back.medium is not None:
+        conv.issue(m.index, "%s: back material's medium not converted" % name, out)
+    out = _translucent(out, weight, ref, graph, front if back is None else back)
+    if back is not None:
+        out.layers.append(Layer(_translucent(back, weight, ref, graph, front), mode=BACK))
+    return out

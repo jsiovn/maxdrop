@@ -81,6 +81,8 @@ class MaterialIR:
     sheen_weight: float = 0.0
     sheen_color: tuple = (1.0, 1.0, 1.0)
     sheen_roughness: float = 0.5
+    translucency: Input = Input(0.0)  # VRay2SidedMtl: the share of the light from the other side (a Translucent BSDF)
+    translucency_color: Input = Input((0.8, 0.8, 0.8))  # that light's color: the other side's base color
     two_sided: bool = False  # Standard's twoSided: 3ds Max renders the back faces too
     shadow_catcher: bool = False  # CoronaShadowCatcherMtl: an object with nothing else is a shadow catcher
     medium: object = None  # Medium inside the mesh (Corona volumes), None without one
@@ -90,16 +92,17 @@ class MaterialIR:
     layers: list = dataclasses.field(default_factory=list)  # [Layer] mixed over this one, bottom first
 
 
-MIX, ADD = "mix", "add"  # Layer.mode
+MIX, ADD, BACK = "mix", "add", "back"  # Layer.mode
 
 
 @dataclasses.dataclass
 class Layer:
-    """A material over the ones below it (CoronaLayeredMtl, a VRayBlendMtl's coat): its MaterialIR, its amount, its
-    mask (a MapRef, or None) and the mask's TextureGraphIR (MASK) when a TexmapConverter made one. Its weight is amount
+    """A material over the ones below it (CoronaLayeredMtl, a VRayBlendMtl's coat, a VRay2SidedMtl's back): its
+    MaterialIR, its amount, its mask (a MapRef, or None) and the mask's TextureGraphIR (MASK) when a TexmapConverter made one. Its weight is amount
     x the mask graph: a CoronaLayeredMtl's graph is lerp(1, mask, mask amount) (Corona 12 renders), a VRayBlendMtl's
     lerp(blend, blend map, multiplier). mode: MIX mixes it over what is below by the weight; ADD adds it, scaled by
-    the weight, over what is below (VRayBlendMtl's additive mode). fallback: the weight drawn when the graph comes to
+    the weight, over what is below (VRayBlendMtl's additive mode); BACK shows it on back faces instead of what is
+    below, its weight unused (a VRay2SidedMtl's back material). fallback: the weight drawn when the graph comes to
     nothing at build (its map's file not found), as a slot shows its swatch then; None: the amount."""
     ir: MaterialIR
     amount: float = 1.0

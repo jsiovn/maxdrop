@@ -24,4 +24,4 @@ _PEEL = {VRAY_DIRT: _vray_dirt}
 
 # MaterialIR input -> its kind (normal and bump: MapRefs of their own)
 SLOT_KINDS = (("base_color", COLOR), ("metallic", DATA), ("roughness", DATA), ("specular", COLOR),
-              ("transmission", COLOR), ("emission_color", COLOR), ("alpha", DATA))
+              ("transmission", COLOR), ("emission_color", COLOR), ("alpha", DATA), ("translucency", DATA))
