@@ -387,8 +387,8 @@ def add_materials(rep, materials_built, classes=(), conv_stats=None, tex_stats=N
     materials converted by a rule} and sockets {Principled input name: materials that needed it} from
     build.materials; conv_stats (peeled, unknown, issues), tex_stats (peeled, unsupported, approximated, issues) and
     lookup (a TextureReport: found, missing, truncated) from the converters; blender: the version the sockets are
-    missing from; swatches: the converters' convert.colors.Swatches (its line; its note, set when the scene's gamma was not
-    found, an issue); build_issues: build.materials' [(Blender material label, reason)], material issues too.
+    missing from; swatches: the converters' convert.colors.Swatches (its line; its note, set when the scene's gamma
+    was not found, an issue); build_issues: build.materials' [(Blender material label, reason)], material issues too.
     """
     rep.materials_built, rep.blender = materials_built, blender
     if swatches is not None:
