@@ -1243,11 +1243,11 @@ a disc of size0 100; a Freecamera of identity rotation 0.5 m above the floor, FO
 440 float bitmap (5 mm per pixel; a self-lit marker at +X 1000 mm checked the mapping); the mean of the 8 × 8 pixels
 centered 0, 270, 575 and 1000 mm from the point below the light, 0°, 15.1°, 29.9° and 45° seen from the light (along
 +X, −X, +Y and −Y: the four agree within 0.2 %). The flux: a second Freecamera 2 m above the floor, FOV 2 · atan(4.5),
-180 × 180 (100 mm per pixel, ± 9 m, where a Lambertian emitter puts 98.8 % of its flux), the sum of its pixels.
+180 × 180 (100 mm per pixel, ± 9 m, where a Lambertian emitter puts 99.0 % of its flux), the sum of its pixels.
 Blender: the directional-0 scenes imported by MaxDrop (Light Strength 1: an area light 0.2 m square or a 0.2 m disc)
 with the floor a Diffuse BSDF of 1.0, cameras of the same placement, Cycles 512 samples, no denoising, no bounces,
 Standard view transform; spread set on the imported light. At directional 0 and spread 180° V-Ray / Cycles is 1.4298
-(plane), 1.4305 (disc) on-axis and 1.4297 in flux, as the calibration says.
+(plane), 1.4305 (disc) on-axis and 1.4297 in flux (the calibration's orthographic camera: 1.431).
 
 V-Ray (the plane; the disc's profile within 0.01 of it):
 
@@ -1264,7 +1264,7 @@ V-Ray (the plane; the disc's profile within 0.01 of it):
 | 0.99 | 159.31, 202.09 | 0, 0, 0 | 2.021 |
 | 1 | 159.33, 202.10 | 0, 0, 0 | 2.021 |
 
-V-Ray does not keep the flux: it grows with directional to twice the Lambertian one (the frame misses 1.2 % at
+V-Ray does not keep the flux: it grows with directional to twice the Lambertian one (the frame misses 1.0 % at
 directional 0), and directional 1 is a beam straight down (on-axis 159 and 202 × directional 0; a beam of twice the
 flux over the light's area gives π / area × 2: 157 and 200). Its profile is close to cos^n θ (n 1.9, 4.6 and 18.6 at
 0.25, 0.5 and 0.75, from the 30° point); from directional 0.9 on nothing reaches 30°. The plane in the default
@@ -1286,18 +1286,19 @@ Cycles (the plane; the disc's profile within 0.02 of it; spread 0° is a beam st
 | 10° | 79.61, 100.83 | 0, 0, 0 | 1.020 |
 | 0° | 79.63, 101.05 | 0, 0, 0 | 1.013 |
 
-Cycles keeps the total power when the spread narrows (the flux stays within 1 %; spread 180° loses 1.2 % outside the
-frame), so the on-axis intensity rises; nothing reaches past half the spread from the normal (a hard edge, softened
-only by the light's size). Blender 4.2.23 and 4.5.16 render the same values as 5.2 (spread 180°, 106.9° and 23.04°:
-within 0.001 %). EEVEE ignores spread: on 4.2.23, 4.5.16 and 5.2 the four points are the same at spread 180°, 90°
+Cycles keeps the total power when the spread narrows (the flux stays within 1 % down to 40°, spread 180° losing 1.0 % outside the
+frame; below 40° a beam a few wide-frame pixels across, within 2.7 %), so the on-axis intensity rises; nothing reaches past half the spread from the normal (a hard edge, softened
+only by the light's size). Blender 4.2.23 and 4.5.16 render the same values as 5.2 (the plane at spread 180°, 106.9° and
+23.04°: within 0.001 %). EEVEE ignores spread: for the plane on 4.2.23, 4.5.16 and 5.2 the four points are the same at spread 180°, 90°
 and 20° (0.9799 on-axis on 5.2 and 4.5.16, 0.9792 on 4.2.23).
 
 The rule: spread = 180° · (1 − d^1.3) and the light's power × (1 + d^0.85), d the directional; directional 0 gives
-spread 180° and factor 1 (the import as it is), directional 1 spread 0° and factor 2. Per directional, the spread
+spread 180° and factor 1 (the import as it is), directional 1 spread 0° (settable: the property's hard minimum is 0 on all three versions) and factor 2. Per
+directional, the spread
 whose normalized profile (every 20 mm from 0 to 1000 mm) is closest to V-Ray's in least squares, interpolated in a
 Cycles sweep of 27 spreads (151.3°, 106.7°, 56.6° and 23.5° at 0.25, 0.5, 0.75 and 0.9), and the factor that gives
-V-Ray's on-axis value there (1.345, 1.548, 1.778, 1.906); the two exponents fit both, and Cycles renders at the
-rule's spreads check it (the plane; on-axis also the disc):
+V-Ray's on-axis value there (1.345, 1.548, 1.778, 1.906; the plane); the two exponents chosen from a grid by the
+worst residual against those, and Cycles renders at the rule's spreads check it (the plane; on-axis also the disc):
 
 | Directional | Spread | Factor | On-axis: rule / V-Ray − 1 (plane, disc) | 15°, 30°, 45°: (rule − V-Ray) / V-Ray's on-axis |
 |---|---|---|---|---|
@@ -1315,10 +1316,11 @@ On-axis and 45° within 5 % at directional 0, 0.5 (45°: +1.5 %) and 0.9 (45°: 
 to 0.95 for the plane (the disc +5.7 % at 0.95). Where it cannot: the shapes differ, V-Ray's soft tail against
 Cycles' hard edge, so a side point is off by up to 0.035 of the on-axis value (relative: −4 % at 15° for 0.5; at 45°
 for 0.6 Cycles has a tenth of V-Ray's 2.7 % of the on-axis value, at 30° for 0.75 a quarter of its 4.6 %; at 15° for
-0.9, 1.9 against 4.9). Other sizes, the plane at directional 0.5, 0.75
+0.9, 1.6 % against 4.0 % of the on-axis value). Other sizes, the plane at directional 0.5, 0.75
 and 0.9: 50 × 50 mm on-axis +2.9 %, +5.4 %, +3.4 %, 1 × 1 m −1.9 %, −0.3 %, −3.5 %, the side points within 0.04 of
 the on-axis value. MaxDrop does not import directional yet (the issue line); EEVEE would render such a light with
-the factor and without the narrowing.
+the factor and without the narrowing. Not measured: a double-sided plane or disc, the lm, lm/m²/sr and W/m²/sr
+units, other distances than 1 m, and the directional values between those of the tables.
 
 ## Standard and photometric lights
 
