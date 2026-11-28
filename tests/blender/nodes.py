@@ -9,7 +9,10 @@ import math
 import bpy
 
 from .core import _mirror_inputs, close
-from .tables import DEG, MIRROR_LABEL, TIR_LABEL, TWIN_LABEL, VALUE_TOLERANCE, WEIGHT_LABEL
+from .tables import (
+    DEG, MIRROR_LABEL, THIN_LABEL, TIR_LABEL, TRANSLUCENCY_ALPHA_LABEL, TRANSLUCENCY_LABEL, TWIN_LABEL, VALUE_TOLERANCE,
+    WEIGHT_LABEL,
+)
 
 
 def _irs(path):
@@ -35,9 +38,9 @@ def _bsdfs(material):
 
 
 def _shaders(material):
-    """The Mix Shaders of a material's layers (a reflection weight's and its twin's left out)."""
+    """The Mix Shaders of a material's layers (a reflection weight's and its twin's, a translucency's left out)."""
     return [n for n in material.node_tree.nodes if n.bl_idname == "ShaderNodeMixShader"
-            and n.label not in (WEIGHT_LABEL, TWIN_LABEL)]
+            and n.label not in (WEIGHT_LABEL, TWIN_LABEL, TRANSLUCENCY_LABEL, TRANSLUCENCY_ALPHA_LABEL)]
 
 
 def _principled(material):
@@ -127,6 +130,18 @@ def _refracting(p):
 def _thin(p):
     s = p.inputs.get("Thin Wall")
     return s is not None and not s.is_linked and bool(s.default_value)
+
+
+def _output_of(material):
+    return next(n for n in material.node_tree.nodes if n.bl_idname == "ShaderNodeOutputMaterial")
+
+
+def _thickness_zero(material):
+    """The Value node (THIN_LABEL) of 0 on the Material Output's Thickness (EEVEE's thin surface), else None."""
+    s = _output_of(material).inputs["Thickness"]
+    node = s.links[0].from_node if s.is_linked else None
+    ok = node is not None and node.bl_idname == "ShaderNodeValue" and node.label == THIN_LABEL
+    return node if ok and node.outputs[0].default_value == 0.0 else None
 
 
 def _same_source(a, b):
@@ -241,7 +256,7 @@ def _fold(n, present):
     if isinstance(n, (tx.Adjust, tx.Tint)):  # made only when they change something: nodes
         v = _fold(n.input, present)
         return LOST if v is LOST else MAP
-    if isinstance(n, tx.Facing):
+    if isinstance(n, (tx.Facing, tx.Checker, tx.Noise)):  # a pattern of its own: nodes, no image
         return MAP
     if isinstance(n, (tx.Remap, tx.Smoothstep)):  # a float through a curve: a node over its input
         v = _fold(n.input, present)
@@ -367,11 +382,12 @@ CANCEL_KINDS = ("objects", "meshes", "curves", "lights", "cameras", "materials",
 
 def _state():
     """What a cancelled run must leave as it found it: the datablocks of each kind, the scene camera, render size,
-    the scene's World."""
+    the scene's World and view exposure."""
     r = bpy.context.scene.render
     return ({kind: sorted(b.as_pointer() for b in getattr(bpy.data, kind)) for kind in CANCEL_KINDS},
             bpy.context.scene.camera, (r.resolution_x, r.resolution_y, r.resolution_percentage, r.pixel_aspect_x,
-                                       r.pixel_aspect_y), bpy.context.scene.world)
+                                       r.pixel_aspect_y), bpy.context.scene.world,
+            bpy.context.scene.view_settings.exposure)
 
 
 def _cancel_run(paths):

@@ -217,12 +217,12 @@ def check_material_slots(modules):
     check("material slots: the Shell box renders its original material on every face",
           _faces(shell) == ["FixtureShellOriginal"] * 6, str(_faces(shell)))
     two = obs["FixtureTwoSidedBox"]
-    check("material slots: a wrapper gives one slot on the mesh",
-          [m.name for m in two.data.materials] == ["FixtureFront"] and two.material_slots[0].link == 'DATA'
-          and _faces(two) == ["FixtureFront"] * 6, str(_faces(two)))
+    check("material slots: a translucent VRay2SidedMtl gives one slot on the mesh, named after it",
+          [m.name for m in two.data.materials] == ["FixtureTwoSided"] and two.material_slots[0].link == 'DATA'
+          and _faces(two) == ["FixtureTwoSided"] * 6, str(_faces(two)))
     names = sorted(m.name for m in bpy.data.materials)
     check("material slots: one Blender material per Max material",
-          names == sorted(["FixtureFront", "FixtureBlendBase", "FixtureShellOriginal", "FixtureSubOne",
+          names == sorted(["FixtureTwoSided", "FixtureBlend", "FixtureShellOriginal", "FixtureSubOne",
                            "FixtureSubSeven"]) and len(built.materials) == 5, str(names))
 
     empty_scene()

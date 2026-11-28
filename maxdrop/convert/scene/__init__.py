@@ -89,8 +89,9 @@ stay placed), not a placeholder: the first dome node that is on (in walk order) 
 (lights.describe_dome), the World build/ makes; any other dome node, an instance of it too, and one that is off are
 an issue each (Blender has one World). A VRaySky as the environment map is an issue labelled ENVIRONMENT.
 describe(..., assets) takes the scene's reader.assets.AssetTable for the names of the web and IES files (read()
-reads it); describe(..., files), a convert.textures.TextureIndex, finds the IES file of a VRayIES whose power depends
-on it, read once per file (convert.ies.Lookup); without it the power is taken as the flux (an issue).
+reads it); describe(..., files), a convert.textures.TextureIndex, finds the IES file of a VRayIES or a photometric
+web light, read once per file (convert.ies.Lookup): the light's profile, and a VRayIES's power when it depends on it;
+without it the power is taken as the flux (an issue) and no light has a profile.
 
 A camera (Free, Target, Physical, VRayPhysicalCamera) becomes a CAMERA (convert.cameras): the lens, sensor, shift,
 clipping and orthographic width that frame what 3ds Max renders. It is keyed by its base object index and, when its

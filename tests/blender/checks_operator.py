@@ -50,9 +50,9 @@ def check_failed_build_cleanup(max_path):
 
 def check_cancel(textured, other):
     """The modal import's step generator (pipeline._Run.steps), driven without a window: closed early (Esc) it leaves
-    the datablocks, the scene camera and the render size as they were, the user's own material and image too. textured:
-    a .max whose textures are found (materials and images are made); other: a .max with a camera (it sets the scene
-    camera and render size)."""
+    the datablocks, the scene camera, the render size and view exposure as they were, the user's own material and
+    image too. textured: a .max whose textures are found (materials and images are made); other: a .max with a camera
+    (it sets the scene camera and render size)."""
     empty_scene()
     for img in list(bpy.data.images):
         bpy.data.images.remove(img)

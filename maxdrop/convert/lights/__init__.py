@@ -106,10 +106,11 @@ watts at 683 lm/W: 4 pi I / 683 for a point or spot light of on-axis intensity I
   0 W (an issue).
 - Photometric (Free / Target Light in its six shapes, one class each; ParamBlock2s 0, 2, 3, 4): the intensity is
   always cd, times the dimmer. Isotropic -> POINT, spotlight -> SPOT (block 2's cone), web -> SPOT of WEB_CONE
-  (the rules source's wide spot, falloff 170 and hotspot 100 degrees; the web file named in an issue), uniform
-  diffuse -> AREA (a rectangle or disc as it is; a line a rectangle LINE_WIDTH wide, a point a disc LINE_WIDTH
-  across, a sphere or cylinder a disc of its diameter). A point or spot light gets the radius of a disc, sphere or
-  cylinder. The color is white, or in Kelvin mode kelvin_rgb decoded from sRGB, times the filter color.
+  (the rules source's wide spot, falloff 170 and hotspot 100 degrees; the web file named in an issue; with the
+  file found and read its Profile, the web's X, Y, Z rotation of block 3 as stored, and it shines with it: below),
+  uniform diffuse -> AREA (a rectangle or disc as it is; a line a rectangle LINE_WIDTH wide, a point a disc
+  LINE_WIDTH across, a sphere or cylinder a disc of its diameter). A point or spot light gets the radius of a disc,
+  sphere or cylinder. The color is white, or in Kelvin mode kelvin_rgb decoded from sRGB, times the filter color.
 - VRaySun -> SUN of SUN_IRRADIANCE W/m^2 per unit of its multiplier (the rules source's 100 klx / 683; V-Ray 5.2
   measured 102.7 klx at the zenith), angle SUN_ANGLE x its size multiplier, its filter color; the sky model's
   dimming and color are not imported (issues).
@@ -119,9 +120,18 @@ watts at 683 lm/W: 4 pi I / 683 for a point or spot light of on-axis intensity I
   header: flux times the candela multiplier and the ballast factor, rated lumens times the number of lamps; the
   power itself for rated lumens of 0 or below); a file not found or not read, the power, an issue) -> SPOT of
   WEB_CONE, power lm / 683, its color or temperature, the IES file named in an issue; a power of 0 (dark in V-Ray
-  too) is 0 W, an issue. With its light shape used and overridden, the spot's radius is half the largest
-  size the shape uses (IES_SHAPES: a sphere's diameter exactly, any other shape an issue); without the override
-  V-Ray takes the file's shape, which is not read: radius 0.
+  too) is 0 W, an issue. The file is looked up whatever the override and the power: found and read, the light has
+  its Profile (the file's distribution, convert.ies), else None. With its light shape used and overridden, the
+  spot's radius is half the largest size the shape uses (IES_SHAPES: a sphere's diameter exactly, any other shape
+  an issue); without the override V-Ray takes the file's shape, which is not read: radius 0.
+- A light with a Profile (docs/FORMAT.md, "The IES Texture node in Blender, measured") shines with it: a POINT light
+  (a spot cuts the profile at half its size and above its horizon), power s x IES_WATTS over the file's ballast-lamp
+  factor, s the factor on the file's candelas: a VRayIES's lumens over the file's flux (V-Ray's measured rule); a
+  web's cd over the file's peak (not measured: maxdrop-o53.3.5). Its watts stay the flux it sheds, what EEVEE's
+  plain point light gets (build/ puts the rest on the node's Strength). Its issue line is WEB_PROFILE or IES_PROFILE
+  in place of WEB_FILE or IES_FILE, ROTATION appended for a web with a rotation (not applied yet), UPWARD when the
+  file sends light upward; a file without light, also with the override on, IES_DARK and 0 W. A file whose
+  ballast-lamp factor is not above 0 gives no Profile.
 - Skylight: not built (the reason; its World is later work). environment_sky finds a VRaySky as the environment map
   (RenderEnvironment reference ENVIRONMENT_MAP_SLOT) for convert.scene's report line.
 
@@ -166,12 +176,13 @@ from .ids import (
     DOME_SWITCH, DOME_PLACEMENT, DOME_OUTPUT, DOME_GAMMA, DOME_FLOAT_OFF, DOME_CROP, DOME_SHADOW, SKY, NO_DECAY,
     INVERSE, ZERO_START, BEAM, RECTANGLE_CONE, OVERSHOOT, AMBIENT, FAR, NEGATIVE, SHAPE, WEB_FILE, IES_FILE, IES_ZERO,
     IES_RATED, IES_UNREAD, IES_DARK, IES_SHAPE, NO_FILE, SUN_ZENITH, SUN_COLOR, MISSING, DOUBLE_SIDED, TEXMAP,
-    DIRECTIONAL, GLOSSY, NOT_FINITE, OUT_OF_RANGE, MAX_FLOAT, MAX_POWER, CONTRIBUTION,
+    DIRECTIONAL, GLOSSY, NOT_FINITE, OUT_OF_RANGE, MAX_FLOAT, MAX_POWER, CONTRIBUTION, _WEB_ROTATION, IES_NODE_CD,
+    IES_WATTS, WEB_PROFILE, IES_PROFILE, UPWARD, ROTATION,
 )
 from .families import (
     LightDescription, light_class, environment_sky, area, area_scale, watts, light_color, is_dome, is_mesh_light,
     not_built, describe, _rays, _nonnegative, _cone, WEB_CONE, WEB_BLEND, point_watts, _describe_standard,
-    _describe_photometric, _describe_sun, _describe_ies, _ies_radius, _DESCRIBE,
+    _describe_photometric, _describe_sun, _describe_ies, _ies_radius, _DESCRIBE, Profile, _profile, _shine,
 )
 from .reading import _value, read_params, _blocks, _asset, _file_name, _read_blocks, _u16, _read_standard
 from .emitters import EmitterDescription, emitter_radiance, _emitter_strength, spread, describe_emitter

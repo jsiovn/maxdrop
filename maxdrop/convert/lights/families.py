@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """LightDescription and describe(): the rules of each light family (VRayLight, standard, photometric, sun, IES)."""
+import collections
 import math
 
 from ...reader import classids
@@ -10,16 +11,59 @@ from .. import colors, texmaps
 from .ids import (
     _FAMILIES, _PHOTOMETRIC, _STANDARD, AMBIENT, AREA, BEAM, ChunkError, CLASS, CONTRIBUTION, DECAY_NONE, DECAY_SQUARE,
     DIFFUSE_DISTRIBUTION, DIRECT, DIRECTIONAL, DISC, DISK, DOME, DOUBLE_SIDED, EMITTER, ENVIRONMENT_MAP_SLOT, FAR,
-    GLOSSY, IES, IES_DARK, IES_FILE, IES_RATED, IES_SHAPE, IES_SHAPES, IES_SPHERE, IES_UNREAD, IES_ZERO, IMAGE_UNIT,
-    INVERSE, ISOTROPIC, LINE_WIDTH, LUMENS_PER_WATT, LUX_PER_UNIT, MAX_FLOAT, MAX_POWER, MESH, MIN_CONE, NEGATIVE,
-    NO_DECAY, NO_FILE, NOT_FINITE, NOT_SKYLIGHT, OUT_OF_RANGE, OVERSHOOT, P_AFFECT_DIFFUSE, P_AFFECT_REFLECTIONS,
-    P_AFFECT_SPECULAR, P_COLOR, P_COLOR_MODE, P_DIFFUSE, P_DIRECTIONAL, P_DOUBLE_SIDED, P_INVISIBLE, P_MULTIPLIER, P_ON,
-    P_SHADOW, P_SIZE0, P_SIZE1, P_SPECULAR, P_TEMPERATURE, P_TEXMAP, P_TEXMAP_ON, P_TYPE, P_UNITS, PHOTOMETRIC, PLANE,
-    POINT, RECTANGLE, RECTANGLE_CONE, REFERENCE_DISTANCE, SHAPE, SHAPE_CYLINDER, SHAPE_DISC, SHAPE_LINE, SHAPE_POINT,
-    SHAPE_RECTANGLE, SHAPE_SPHERE, SKYLIGHT, SPHERE, SPOT, SPOT_DISTRIBUTION, SPOTLIGHT, STANDARD, SUN, SUN_ANGLE,
-    SUN_COLOR, SUN_IRRADIANCE, SUN_LIGHT, SUN_ZENITH, TEXMAP, TYPE_NAMES, UNITS_DEFAULT, UNITS_LM, UNITS_LM_M2_SR,
-    UNITS_W, UNITS_W_M2_SR, VRAY, WEB_FALLOFF, WEB_FILE, WEB_HOTSPOT, ZERO_START,
+    GLOSSY, IES, IES_DARK, IES_FILE, IES_PROFILE, IES_RATED, IES_SHAPE, IES_SHAPES, IES_SPHERE, IES_UNREAD, IES_WATTS,
+    IES_ZERO, IMAGE_UNIT, INVERSE, ISOTROPIC, LINE_WIDTH, LUMENS_PER_WATT, LUX_PER_UNIT, MAX_FLOAT, MAX_POWER, MESH,
+    MIN_CONE, NEGATIVE, NO_DECAY, NO_FILE, NOT_FINITE, NOT_SKYLIGHT, OUT_OF_RANGE, OVERSHOOT, P_AFFECT_DIFFUSE,
+    P_AFFECT_REFLECTIONS, P_AFFECT_SPECULAR, P_COLOR, P_COLOR_MODE, P_DIFFUSE, P_DIRECTIONAL, P_DOUBLE_SIDED,
+    P_INVISIBLE, P_MULTIPLIER, P_ON, P_SHADOW, P_SIZE0, P_SIZE1, P_SPECULAR, P_TEMPERATURE, P_TEXMAP, P_TEXMAP_ON,
+    P_TYPE, P_UNITS, PHOTOMETRIC, PLANE, POINT, RECTANGLE, RECTANGLE_CONE, REFERENCE_DISTANCE, SHAPE, SHAPE_CYLINDER,
+    SHAPE_DISC, SHAPE_LINE, SHAPE_POINT, SHAPE_RECTANGLE, SHAPE_SPHERE, SKYLIGHT, SPHERE, SPOT, SPOT_DISTRIBUTION,
+    SPOTLIGHT, STANDARD, SUN, SUN_ANGLE, SUN_COLOR, SUN_IRRADIANCE, SUN_LIGHT, SUN_ZENITH, TEXMAP, TYPE_NAMES,
+    UNITS_DEFAULT, UNITS_LM, UNITS_LM_M2_SR, UNITS_W, UNITS_W_M2_SR, UPWARD, ROTATION, VRAY, WEB_FALLOFF, WEB_FILE, WEB_HOTSPOT,
+    WEB_PROFILE, ZERO_START,
 )
+
+
+class Profile(collections.namedtuple("Profile", "file photometry rotation")):
+    """The IES file a light shines with: file the base name of the file found; photometry its convert.ies.Photometry
+    (one per file, shared); rotation a photometric web's X, Y, Z rotation as stored ((0, 0, 0) for a VRayIES; not
+    applied yet, its unit and order not measured: maxdrop-o53.3.5). text, peak, nadir, flux and up are the
+    photometry's."""
+    __slots__ = ()
+
+    text = property(lambda self: self.photometry.text)
+    peak = property(lambda self: self.photometry.peak)
+    nadir = property(lambda self: self.photometry.nadir)
+    flux = property(lambda self: self.photometry.flux)
+    up = property(lambda self: self.photometry.up)
+
+    def __repr__(self):  # the text can be megabytes
+        return "Profile(%r, peak %g cd, rotation %r)" % (self.file, self.peak, self.rotation)
+
+
+def _profile(v, rotation=(0.0, 0.0, 0.0)):
+    """The Profile of a light's values (read_params: "photometry" and "ies_name" of the file found), None without,
+    and None for a file whose ballast-lamp factor is not above 0 (Cycles multiplies the candelas by it, V-Ray does
+    not: the light would be dark or negative)."""
+    photometry = v.get("photometry")
+    if photometry is None or not photometry.ballast_lamp > 0:
+        return None
+    return Profile(v.get("ies_name"), photometry, rotation)
+
+
+def _shine(ld, s, line, file, issues):
+    """ld shines with its profile (docs/FORMAT.md, "The IES Texture node in Blender, measured"): a point light, since a
+    spot cuts the profile at half its size and above its horizon; its power s x IES_WATTS over the file's ballast-lamp
+    factor (Cycles applies that factor, V-Ray does not), s the factor on the file's candelas; build/ divides by the
+    gain Blender 4.x reads a file with. ld.watts stays the flux it sheds. The issue line, ROTATION appended for a web
+    with a rotation, UPWARD when the file sends light upward."""
+    p = ld.profile
+    ld.kind, ld.spot_size, ld.spot_blend = POINT, 0.0, 0.0
+    ld.power = s * IES_WATTS / p.photometry.ballast_lamp
+    line = line % file
+    if any(p.rotation):
+        line += ROTATION % tuple(p.rotation)
+    issues.append(line + (UPWARD % ("%.3g" % (100.0 * p.up)) if p.up > 0 else ""))
 
 
 class LightDescription:
@@ -28,21 +72,22 @@ class LightDescription:
     angle (radians) a SUN's; watts the total flux of the rules (a SUN's irradiance in W/m^2), power what Blender's
     light gets before the Light Strength (half of watts for a double-sided area); color linear RGB; on, invisible (to
     the camera); diffuse_rays and glossy_rays whether diffuse and glossy rays see it (Cycles); diffuse and specular
-    Blender's factors (EEVEE); shadow whether it casts shadows; users the object indices of the nodes that share
-    it, in walk order."""
+    Blender's factors (EEVEE); shadow whether it casts shadows; profile the Profile of the IES file it shines with
+    (a photometric web or a VRayIES whose file is found and read: it then is a POINT light, _shine), else None;
+    users the object indices of the nodes that share it, in walk order."""
     __slots__ = ("key", "name", "kind", "shape", "size", "size_y", "radius", "spot_size", "spot_blend", "angle",
                  "watts", "power", "color", "on", "invisible", "diffuse_rays", "glossy_rays", "diffuse", "specular",
-                 "shadow", "users")
+                 "shadow", "profile", "users")
 
     def __init__(self, key, name, kind, shape=None, size=0.0, size_y=0.0, radius=0.0, watts=0.0, power=0.0,
                  color=(1.0, 1.0, 1.0), on=True, invisible=False, diffuse_rays=True, glossy_rays=True, diffuse=1.0,
-                 specular=1.0, spot_size=0.0, spot_blend=0.0, angle=0.0, shadow=True):
+                 specular=1.0, spot_size=0.0, spot_blend=0.0, angle=0.0, shadow=True, profile=None):
         self.key, self.name, self.kind, self.shape = key, name, kind, shape
         self.size, self.size_y, self.radius = size, size_y, radius
         self.spot_size, self.spot_blend, self.angle = spot_size, spot_blend, angle
         self.watts, self.power, self.color = watts, power, color
         self.on, self.invisible, self.diffuse_rays, self.glossy_rays = on, invisible, diffuse_rays, glossy_rays
-        self.diffuse, self.specular, self.shadow = diffuse, specular, shadow
+        self.diffuse, self.specular, self.shadow, self.profile = diffuse, specular, shadow, profile
         self.users = []
 
     def __repr__(self):
@@ -168,7 +213,7 @@ def describe(key, name, values, meters, swatches, scale=1.0):
             ld = _DESCRIBE[family](key, name, values, meters, swatches, issues)
         except OverflowError:  # a size or intensity near the float range
             ld = None
-        if ld is None or not abs(ld.watts) <= MAX_POWER:  # also NaN
+        if ld is None or not (abs(ld.watts) <= MAX_POWER and abs(ld.power) <= MAX_POWER):  # also NaN
             if ld is None:
                 ld = LightDescription(key, name, POINT)
             issues.append(OUT_OF_RANGE)
@@ -323,7 +368,16 @@ def _describe_photometric(key, name, v, meters, swatches, issues):
         elif dist != ISOTROPIC:
             ld.kind = SPOT
             ld.spot_size, ld.spot_blend = WEB_CONE, WEB_BLEND
-            issues.append(WEB_FILE % (v["file"] or NO_FILE))
+            ld.profile = _profile(v, v.get("rotation", (0.0, 0.0, 0.0)))
+            if ld.profile is None:
+                issues.append(WEB_FILE % (v["file"] or NO_FILE))
+            else:
+                # Not measured (maxdrop-o53.3.5 calibrates it): the light's intensity is taken as the file's peak
+                # (times its multiplier; the file's ballast factor, which Cycles applies, stays on).
+                peak = ld.profile.peak
+                s = cd / peak if peak > 0 else 0.0
+                ld.watts = s * ld.profile.flux / LUMENS_PER_WATT
+                _shine(ld, s, WEB_PROFILE, v["file"] or NO_FILE, issues)
     if v["far"]:
         issues.append(FAR)
     if v["ambient"]:
@@ -365,9 +419,17 @@ def _describe_ies(key, name, v, meters, swatches, issues):
     color = colors.GAMMA_OFF.color(texmaps.kelvin_rgb(v["temperature"])) if v["color_mode"] == 1 else \
         swatches.color(v["color"])
     ld = LightDescription(key, name, SPOT, watts=lm / LUMENS_PER_WATT, power=lm / LUMENS_PER_WATT, color=color,
-                          on=bool(v["on"]), spot_size=WEB_CONE, spot_blend=WEB_BLEND, shadow=bool(v["shadow"]))
+                          on=bool(v["on"]), spot_size=WEB_CONE, spot_blend=WEB_BLEND, shadow=bool(v["shadow"]),
+                          profile=_profile(v))
     _rays(ld, bool(v["diffuse"]), bool(v["specular"]), v["diffuse_contribution"], v["specular_contribution"], issues)
-    issues.append(IES_FILE % file)
+    if ld.profile is None:
+        issues.append(IES_FILE % file)
+    else:  # lm is the flux V-Ray renders: the file's candelas times lm / its flux
+        flux = ld.profile.flux
+        if flux <= 0 and lm > 0:  # the node gives no light (with the override on; without it lm is 0 already)
+            issues.append(IES_DARK % file)
+            ld.watts = 0.0
+        _shine(ld, lm / flux if flux > 0 else 0.0, IES_PROFILE, file, issues)
     ld.radius = _ies_radius(v, meters, issues)
     return ld
 

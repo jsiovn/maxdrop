@@ -83,8 +83,9 @@ oracle's, and scene.camera the oracle's render camera (cameras: CamTarget, the l
 camera (lookat: FixtureCam); cameras holds eleven camera objects with a Camera each. Without a camera the scene's render
 size and camera stay as they were.
 Each fixture's import report is published (build.report) and must say nothing was left out; the one the
-operator published for vray_wrappers lists its three peeled wrappers by class. layers_nested: the objects below a
-hidden parent layer (one and two levels down) are out of the view layer, the one below a frozen parent layer cannot
+operator published for vray_wrappers lists its peeled wrapper by class (its VRayBlendMtl's coats are layers, its
+VRay2SidedMtl lets light through).
+layers_nested: the objects below a hidden parent layer (one and two levels down) are out of the view layer, the one below a frozen parent layer cannot
 be selected, as the oracle's inherited layer flags say; only the flagged layers' own collections carry a flag.
 A hand-made
 description with sheared local matrices (top-level and parented, hidden, a zero scale) checks that Blender's world
@@ -108,17 +109,26 @@ untextured, FixtureCurveJump's two points at one x in the convert side's order, 
 through the curve);
 hand-made IRs check shared images, a missing file, the materials counted by class, Thin Wall (set on 5.x, counted on
 4.x), a name clash, BLENDED / DITHERED and every node kind, the wrappers' links and values (Facing, blend modes and
-masks, rewiring, Adjust, Tint); a crop repeating per axis (wrap, ping-pong, clip), a mirrored axis drawn as
+masks, rewiring, Adjust, Tint), layers mixed by a Mix Shader and added layers by an Add Shader over a Mix Shader from
+nothing (VRayBlendMtl's additive coats), a translucency as a Translucent BSDF under a Mix Shader by its weight (cut
+by the alpha, on the BSDF's normal) and a back layer by a Mix Shader driven by Geometry > Backfacing (VRay2SidedMtl);
+a crop repeating per axis (wrap, ping-pong, clip), a mirrored axis drawn as
 3ds Max renders it (two copies per tile, the nodes evaluated at its sample points), map channel 0 drawn on
 channel 1 and reported, a texture file without image data reported, a material whose build raises removed and
 reported; a material conversion that raises leaves the scene imported without materials, the report says why.
 A normal map over a clipped image reads it black outside the image, never mixed toward flat, as 3ds Max renders it.
 Images already in the file (an earlier import's) are reused by file and color space, unless modified, packed,
 generated or linked from a library; vray_maps imported twice with its textures adds no image the second time.
-lights_photometric copied beside a self-authored fixture_web.ies (rated 500 lm, 100 cd everywhere): IesPower's energy
-is 1500 x 400 pi / 500 / 683 W x Light Strength, IesOverride's stays 300 / 683 W, no rated-lumens line in the report.
+lights_photometric copied beside a self-authored fixture_web.ies (rated 500 lm, 100 cd everywhere): IesPower,
+IesOverride and PhWeb shine with it, point lights sharing one Text, of the flux they shed (EEVEE's plain light) times
+the node's Strength, together the file's candelas times 3, 300 / 400 pi and 4 (x 0.2604 W x Light Strength, over
+4.x's one-plane gain), no rated-lumens line in the report; through the run's steps,
+undo() and a build that fails after the lights leave no Text. Hand-made IES lights: one IES Texture of the profile's
+Text into the Emission's Strength, one Text per file, no node without a profile.
 The same beside filler files with a texture walk of 2 entries: IesPower takes its power as its flux and its line says
 where the search stopped, as the report does once, with materials and without.
+compat.light_nodes gives a new point and spot light its tree with an Emission linked into the Light Output, the same
+nodes on a second call, both back in an emptied tree.
 The performance budget of one big mesh (tests/blender/bench.py) runs last, without file arguments.
 Prints `FIXTURES PASSED` (exit 0) or `FIXTURES FAILED` (exit 1).
 """

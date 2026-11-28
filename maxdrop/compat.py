@@ -13,6 +13,53 @@ def node_tree(block):
     return block.node_tree
 
 
+def light_nodes(light):
+    """(tree, emission, output) of a Light: its node tree (4.x makes it when use_nodes is set, 5.x gives every light
+    one), the active Light Output and the Emission linked into its Surface, made and linked when missing (a link of
+    another node into that Surface is replaced). Nodes are found by type, not by name (a name may be translated)."""
+    tree = node_tree(light)
+    outputs = [n for n in tree.nodes if n.bl_idname == "ShaderNodeOutputLight"]
+    output = next((n for n in outputs if n.is_active_output), outputs[0] if outputs else None)
+    if output is None:
+        output = tree.nodes.new("ShaderNodeOutputLight")
+    surface = output.inputs["Surface"]
+    emission = next((k.from_node for k in surface.links if k.from_node.bl_idname == "ShaderNodeEmission"), None)
+    if emission is None:
+        emission = tree.nodes.new("ShaderNodeEmission")
+        tree.links.new(emission.outputs["Emission"], surface)
+    return tree, emission, output
+
+
+def thin_surface(material, output):
+    """A Value node of 0 linked into output's Thickness (a Material Output of material), so that EEVEE takes the
+    surface as infinitely thin and a Translucent BSDF lets the light from behind through as Cycles does; None on a
+    Blender without the socket. A node, because the socket hides its value: unlinked, EEVEE takes a thickness of its
+    own whatever default_value says. EEVEE without it, a 4 m plane lit from behind: 2.8 times Cycles on 4.2 and 4.5,
+    0.07 times on 5.2; with it within 1 % of Cycles at alpha 1 and 5 % at alpha 0.5 on 4.2.23, 4.5.16 and 5.2
+    (docs/FORMAT.md, "Two-sided in both engines"). Thickness mode (Sphere or Slab) changes nothing then and is left as it is. Not measured: what
+    EEVEE's refraction and subsurface on the same material make of the thickness 0."""
+    thickness = output.inputs.get("Thickness")
+    if thickness is None:
+        return None
+    tree = node_tree(material)
+    node = tree.nodes.new("ShaderNodeValue")
+    node.outputs[0].default_value = 0.0
+    tree.links.new(node.outputs[0], thickness)
+    return node
+
+
+def ies_gain(horizontal):
+    """The gain at which Cycles' IES Texture node reads a file of these horizontal angles over its candelas, at 10 to
+    90 degrees from the axis (docs/FORMAT.md, "The IES Texture node in Blender, measured"): on 4.2 and 4.5 35/32 for
+    one plane (0, or 0 and 360), 17/16 for planes 0 and 180, 1 for the other layouts (other layouts of 0 to 180 and
+    4.3, 4.4, 5.0 and 5.1 not measured); 1 on 5.x."""
+    import bpy
+    if bpy.app.version >= (5, 0, 0):
+        return 1.0
+    planes = {h % 360.0 for h in horizontal}
+    return 35.0 / 32.0 if planes == {0.0} else 17.0 / 16.0 if planes == {0.0, 180.0} else 1.0
+
+
 try:
     from bpy_extras.io_utils import poll_file_object_drop
 except ImportError:

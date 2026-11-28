@@ -25,7 +25,8 @@ from .packs import (
 # What a build makes besides objects and collections, in the order a failed build removes them. Addresses, not
 # names: a new datablock could reuse the address of one freed meanwhile, but the build frees none.
 _MADE = ("meshes", "curves", "lights", "cameras", "materials", "worlds", "images")
-# The render settings build.cameras.set_render() changes, put back when a run is cancelled.
+# The render settings build.cameras.set_render() changes, put back when a run is cancelled (with the scene camera and
+# scene.view_settings.exposure).
 _RENDER = ("resolution_x", "resolution_y", "resolution_percentage", "pixel_aspect_x", "pixel_aspect_y")
 # A modal run: seconds of work per timer event, the timer's interval, the steps of the progress shown in the cursor,
 # the share of a scene's progress its reading takes (scene B: 9 s of reading and describing, 7 s of building), how
@@ -58,7 +59,8 @@ def _material_slots(sc, desc, table, index, meters=None, renderer=None):
     from .reader import materials as reader_materials
     graph = reader_materials.MaterialGraph(sc)
     swatches = convert_colors.of_scene(sc)
-    tex = convert_texmaps.TexmapConverter(graph, table, textures=index, swatches=swatches, renderer=renderer)
+    tex = convert_texmaps.TexmapConverter(graph, table, textures=index, swatches=swatches, renderer=renderer,
+                                          meters=meters)
     conv = convert_materials.MaterialConverter(graph, texmaps=tex, swatches=swatches, meters=meters)
     slots = convert_materials.assign(desc, convert_materials.node_materials(sc, desc), conv)
     return slots, (conv.stats, tex.stats, index.report, swatches)
@@ -138,9 +140,9 @@ def _restore_world(scene, world, state=None):
 
 
 def _remove(cols, before):
-    """Remove what a failed build left: the objects of the file's collection tree, the collections, and the meshes,
+    """Remove what a failed build left: the objects of the file's collection tree, the collections, the meshes,
     curves, lights, cameras, materials and images made since before ({kind: the as_pointer() of each datablock before
-    the build}) that nothing uses."""
+    the build}) that nothing uses, and every Text made since (an IES light's: a new Text has a fake user)."""
     for ob in list(cols.root.all_objects):
         bpy.data.objects.remove(ob)
     for col in list(cols.layers.values()) + [cols.root]:
@@ -149,6 +151,8 @@ def _remove(cols, before):
         blocks = getattr(bpy.data, kind)
         for block in [b for b in blocks if b.as_pointer() not in before[kind] and not b.users]:
             blocks.remove(block)
+    for text in [t for t in bpy.data.texts if t.as_pointer() not in before["texts"]]:
+        bpy.data.texts.remove(text)
 
 
 def _summary(path, result):
@@ -318,7 +322,7 @@ def _scene_steps(opts, scene, view_layer, max_path, pack=None, pack_name="", dir
     and the text "MaxDrop Report"). pack: archive.unpack()'s result when the scene came from a scene pack, pack_name
     the archive's file name. Returns ([(report level, line)], the convert.report.Report), the report's summary last;
     raises one of _UNREADABLE when the file cannot be read. A build that fails or is closed early is removed again
-    (objects, collections, meshes, curves, lights, cameras, materials, images) before the exception goes on.
+    (objects, collections, meshes, curves, lights, cameras, materials, images, texts) before the exception goes on.
     threaded: the reading in a worker thread (_in_thread), yielding _WAIT meanwhile, stopped when closed;
     progress(text, fraction of the scene) is told what it does; made: a list the scene's build.collections.Collections
     is appended to once built; world: the run's world state (_world_state; None: a run of this file alone): a dome
@@ -340,7 +344,7 @@ def _scene_steps(opts, scene, view_layer, max_path, pack=None, pack_name="", dir
     else:
         read = _read_scene(max_path, opts, dirs)
     desc, slots, counts, failed = read.desc, read.slots, read.counts, read.failed
-    before = {kind: {d.as_pointer() for d in getattr(bpy.data, kind)} for kind in _MADE}
+    before = {kind: {d.as_pointer() for d in getattr(bpy.data, kind)} for kind in _MADE + ("texts",)}
     cols = build_collections.make(desc, view_layer.active_layer_collection.collection, os.path.splitext(name)[0])
     builder = build_materials.MaterialBuilder()
     axis = axis_conversion(from_forward=opts.axis_forward, from_up=opts.axis_up).to_4x4()
@@ -439,8 +443,8 @@ class _Run:
 
     The steps raise _Stop with the message to report when the run ends without importing. Closing them early
     (Esc) removes everything the run made in Blender (undo()): the scene being built, the scenes it finished, a
-    "MaxDrop Report" text it created; the scene camera and render size are put back. A pack folder it unpacked
-    stays."""
+    "MaxDrop Report" text it created; the scene camera, render size and view exposure are put back. A pack folder it
+    unpacked stays."""
 
     def __init__(self, opts, paths, chosen, context, import_scene=None):
         self.opts, self.paths, self.chosen = opts, paths, chosen
@@ -478,7 +482,8 @@ class _Run:
         archive = _archive()
         self._before = {kind: {d.as_pointer() for d in getattr(bpy.data, kind)} for kind in _MADE + ("texts",)}
         render = self.scene.render
-        self._render = (self.scene.camera, [getattr(render, name) for name in _RENDER], self.scene.world)
+        self._render = (self.scene.camera, [getattr(render, name) for name in _RENDER], self.scene.world,
+                        self.scene.view_settings.exposure)
         try:
             resolved, summaries, written = [], [], []  # resolved: [(.max path, unpack result, archive path)]
             for index, path in enumerate(self.paths):
@@ -560,7 +565,7 @@ class _Run:
             for col in list(cols.layers.values()) + [cols.root]:
                 bpy.data.collections.remove(col)
         self._made = []
-        camera, values, world = self._render
+        camera, values, world, exposure = self._render
         _restore_world(self.scene, world, self.world)  # before the removal: a World the run made then has no user
         for kind in _MADE:  # meshes and curves first: they free their materials, a removed material its images
             blocks = getattr(bpy.data, kind)
@@ -574,3 +579,4 @@ class _Run:
             self.scene.camera = None
         for name, value in zip(_RENDER, values):
             setattr(self.scene.render, name, value)
+        self.scene.view_settings.exposure = exposure

@@ -12,12 +12,13 @@ import traceback
 import bpy
 
 from .core import argv, check, ROOT
-from .checks_objects import check_ignore_option
-from .checks_lights import check_dome_undo, check_spread_cancel
+from .checks_objects import check_camera_settings, check_ignore_option
+from .checks_lights import check_dome_undo, check_ies_cleanup, check_ies_light, check_light_nodes, check_spread_cancel
 from .checks_maps import check_builder_volume, check_curve_step
 from .checks_operator import check_mesh_steps, check_read_cancel, check_worker_errors
 from .checks_builder import (
-    check_builder, check_builder_blend, check_builder_blend_modes, check_builder_gamma_magnitude, check_builder_weight,
+    check_builder, check_builder_added_layers, check_builder_blend, check_builder_blend_modes,
+    check_builder_gamma_magnitude, check_builder_weight,
     check_found_textures,
 )
 from .checks_builder_inputs import (
@@ -28,12 +29,16 @@ from .checks_builder_more import (
     check_builder_debt, check_builder_diffuse_level, check_builder_multiply, check_builder_wrapper_constants,
     check_double_import, check_image_reuse, check_linear_fallback,
 )
-from .checks_placement import check_builder_clip_mask, check_builder_clipped_normal, check_builder_mirror
+from .checks_placement import (
+    check_builder_checker, check_builder_clip_mask, check_builder_clipped_normal, check_builder_mirror,
+    check_builder_noise, check_import_noise_meters,
+)
 from .checks_failures import (
     check_asset_table_once, check_conversion_failure, check_ies_header, check_ies_search_stopped,
     check_light_note_on_failure, check_reader_defect, check_renderer_reaches_converters,
 )
 from .checks_layers import check_crease_open_edges, check_material_slots, check_shear
+from .checks_two_sided import check_builder_two_sided
 from .fixture import run_fixture
 
 
@@ -81,6 +86,8 @@ def main():
                                  ("found textures", check_found_textures), ("builder", check_builder),
                                  ("builder debt", check_builder_debt), ("builder mirror", check_builder_mirror),
                                  ("builder blend", check_builder_blend), ("builder mono", check_builder_mono),
+                                 ("builder added layers", check_builder_added_layers),
+                                 ("builder two-sided", check_builder_two_sided),
                                  ("builder blend modes", check_builder_blend_modes),
                                  ("builder gamma magnitude", check_builder_gamma_magnitude),
                                  ("builder multiply", check_builder_multiply),
@@ -92,6 +99,9 @@ def main():
                                  ("builder fresnel off", check_builder_fresnel_off),
                                  ("builder clip mask", check_builder_clip_mask),
                                  ("builder clipped normal", check_builder_clipped_normal),
+                                 ("builder checker", check_builder_checker),
+                                 ("builder noise", check_builder_noise),
+                                 ("import noise meters", check_import_noise_meters),
                                  ("builder mask mean", check_builder_mask_mean),
                                  ("builder saturation", check_builder_saturation),
                                  ("world shown sky", check_world_shown_sky),
@@ -101,6 +111,9 @@ def main():
                                  ("linear fallback", check_linear_fallback),
                                  ("image reuse", check_image_reuse), ("double import", check_double_import),
                                  ("worker errors", check_worker_errors),
+                                 ("camera settings", lambda: check_camera_settings(
+                                     os.path.join(ROOT, "tests", "fixtures", "cameras.max"),
+                                     os.path.join(ROOT, "tests", "fixtures", "primitives.max"))),
                                  ("read cancel", lambda: check_read_cancel(
                                      os.path.join(ROOT, "tests", "fixtures", "primitives.max"))),
                                  ("mesh steps", lambda: check_mesh_steps(
@@ -123,6 +136,10 @@ def main():
                                  ("ies header", lambda: check_ies_header(
                                      os.path.join(ROOT, "tests", "fixtures", "lights_photometric.max"))),
                                  ("ies search stopped", lambda: check_ies_search_stopped(
+                                     os.path.join(ROOT, "tests", "fixtures", "lights_photometric.max"))),
+                                 ("light nodes", check_light_nodes),
+                                 ("ies light", check_ies_light),
+                                 ("ies cleanup", lambda: check_ies_cleanup(
                                      os.path.join(ROOT, "tests", "fixtures", "lights_photometric.max"))),
                                  ("spread cancel", lambda: check_spread_cancel(
                                      os.path.join(ROOT, "tests", "fixtures", "vray_mesh_light.max"))),

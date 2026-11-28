@@ -6,7 +6,7 @@
 import collections
 import dataclasses
 
-from .ids import EXPLICIT, NORMAL_BLEND, PERPENDICULAR, REWIRE_NONE, SRGB
+from .ids import EXPLICIT, NORMAL_BLEND, OBJECT_XYZ, PERPENDICULAR, REGULAR, REWIRE_NONE, SRGB
 
 
 @dataclasses.dataclass(frozen=True)
@@ -162,6 +162,39 @@ class Facing:
 
 
 @dataclasses.dataclass(frozen=True)
+class Checker:
+    """A Checker map's pattern, a float: 0 on the squares of its color 1, 1 on those of color 2 (checker_value), on
+    the UV its Mapping places; soften as stored (drawn as 0). A leaf: the Mix above it holds the two sides."""
+    mapping: Mapping = Mapping()
+    soften: float = 0.0
+
+
+@dataclasses.dataclass(frozen=True)
+class Coordinates:
+    """How a 3D map (an XYZGen part) is laid in space: source (OBJECT_XYZ, the one drawn), map channel, offset (meters),
+    tiling and angle (X, Y, Z in radians)."""
+    source: int = OBJECT_XYZ
+    channel: int = 1
+    offset: tuple = (0.0, 0.0, 0.0)
+    tiling: tuple = (1.0, 1.0, 1.0)
+    angle: tuple = (0.0, 0.0, 0.0)
+
+
+@dataclasses.dataclass(frozen=True)
+class Noise:
+    """A Noise map's pattern, a float 0..1: Blender's Noise Texture on its Coordinates at its size (meters), phase,
+    levels, kind (REGULAR, FRACTAL, TURBULENCE) and thresholds low < high (noise_placement, noise_detail). A leaf: the
+    Mix above it holds the two sides."""
+    coords: Coordinates = Coordinates()
+    size: float = 0.635
+    phase: float = 0.0
+    levels: float = 3.0
+    low: float = 0.0
+    high: float = 1.0
+    kind: str = REGULAR
+
+
+@dataclasses.dataclass(frozen=True)
 class Remap:
     """A float input through a curve: points, (x, y) pairs with x ascending, joined by straight lines and flat past
     the ends (a Falloff's mix curve, curve_samples; flat is assumed, a Falloff's ratio stays within 0..1). Its result
@@ -227,11 +260,13 @@ class TextureGraphIR:
 
 class TexmapStats:
     """peeled {class name: map objects peeled}, unsupported {class name: map objects without a usable map below},
-    issues [(object index, reason)]."""
-    __slots__ = ("peeled", "unsupported", "issues")
+    approximated {class name: procedural map objects drawn with Blender's own pattern}, issues [(object index,
+    reason)]."""
+    __slots__ = ("peeled", "unsupported", "approximated", "issues")
 
     def __init__(self):
         self.peeled, self.unsupported, self.issues = collections.Counter(), collections.Counter(), []
+        self.approximated = collections.Counter()
 
 
 class _Walk:

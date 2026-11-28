@@ -29,6 +29,7 @@ EXPLICIT, OBJECT_XYZ, VERTEX_COLOR, WORLD_XYZ = (  # Placement coordinate source
     reader_materials.UV_EXPLICIT, reader_materials.UV_OBJECT_XYZ, reader_materials.UV_VERTEX_COLOR,
     reader_materials.UV_WORLD_XYZ)
 MAX_DEPTH = 8
+DEFAULT_METERS = 0.0254  # meters per system unit of a scene that does not say: 3ds Max's default, inches
 MAX_NODES = 256  # nodes of one graph drawn as a tree
 SRGB_GAMMA, GAMMA_TOLERANCE = 2.2, 0.05
 # With the gamma off a map whose own decode is the sRGB curve shows decoded once more (_shown): the sRGB curve
@@ -45,6 +46,8 @@ MIX = classids.MIX
 RGB_MULTIPLY = classids.RGB_MULTIPLY
 COLOR_CORRECTION = classids.COLOR_CORRECTION
 COMPOSITE = classids.COMPOSITE
+CHECKER = classids.CHECKER
+NOISE = classids.NOISE
 NORMAL_BUMP = classids.NORMAL_BUMP
 CORONA_NORMAL = classids.CORONA_NORMAL
 IMAGES = (classids.BITMAP_TEX, classids.CORONA_BITMAP, classids.VRAY_BITMAP)  # map classes that are an image file
@@ -148,6 +151,14 @@ FALLOFF_TYPES = {0: TOWARDS, 1: PERPENDICULAR, 2: FRESNEL}
 CURVE_STEPS, CURVE_IDENTITY, MAX_CURVE_SAMPLES = 32, 1e-6, 256
 # Mix, block 0: 1 lower, 2 upper (Use Curve's transition zone, 3ds Max's defaults 0.3 and 0.7)
 MIX_LOWER, MIX_UPPER = 1, 2
+# Checker, block 0: 0 soften, 1 / 2 color1 / 2, 3 / 4 map1 / 2, 5 / 6 their switches, 7 coords (its UVGen, a part)
+CK_SOFTEN, CK_COLOR1, CK_COLOR2, CK_MAP1, CK_MAP2, CK_ON1, CK_ON2 = range(7)
+# Noise, block 0 (the pblock_animated oracle): 0 / 1 color1 / 2, 2 / 3 map1 / 2, 4 / 5 their switches, 6 size, 7 phase,
+# 8 levels, 9 / 10 thresholds low / high, 11 type (0 regular, 1 fractal, 2 turbulence), 12 coords (its XYZGen, a part)
+(NZ_COLOR1, NZ_COLOR2, NZ_MAP1, NZ_MAP2, NZ_ON1, NZ_ON2, NZ_SIZE, NZ_PHASE, NZ_LEVELS, NZ_LOW, NZ_HIGH,
+ NZ_TYPE) = range(12)
+REGULAR, FRACTAL, TURBULENCE = "regular", "fractal", "turbulence"  # Noise kinds
+NOISE_TYPES = {0: REGULAR, 1: FRACTAL, 2: TURBULENCE}
 # Composite blend modes (blendMode, per layer); measured with renderMap: result = lerp(below, blend(below, layer),
 # opacity x mask). 7 linear burn, 15 soft light (Photoshop's), 17 pin light and 18 hard mix are not drawn: peeled
 (NORMAL_BLEND, AVERAGE, ADDITION, SUBTRACT, DARKEN, MULTIPLY_BLEND, COLOR_BURN, LINEAR_BURN, LIGHTEN, SCREEN,
@@ -166,9 +177,11 @@ TINT_RED, TINT_GREEN, TINT_BLUE = 0, 1, 2
 UV_U_OFFSET, UV_V_OFFSET, UV_U_TILING, UV_V_TILING, UV_U_ANGLE, UV_V_ANGLE, UV_W_ANGLE, UV_BLUR = range(8)
 # Output (TexOutput) old ParamBlock indices (its flags: reader_materials.output_invert)
 OUT_LEVEL, OUT_OFFSET, OUT_AMOUNT = 0, 1, 2
+# Coordinates (XYZGen) old ParamBlock indices: Point3 offset, tiling and angle; its coordinate source is not decoded
+XYZ_OFFSET, XYZ_TILING, XYZ_ANGLE = 0, 1, 2
 
 
 # the maps computed on the values the renderer holds in a gamma-off scene: at a color root in STORED under a Decode
 # (_convert_node), and those not a wrapper of their own (_wrapper_input) in a mask the mean of it decoded
-MASK_MIXES = (MIX, COMPOSITE, classids.CORONA_MIX, FALLOFF)
+MASK_MIXES = (MIX, COMPOSITE, classids.CORONA_MIX, FALLOFF, NOISE)
 DISPLAY_MIXES = MASK_MIXES + (COLOR_CORRECTION, OUTPUT, RGB_TINT)

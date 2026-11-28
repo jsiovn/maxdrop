@@ -33,7 +33,7 @@ and the other named in a warning; that file alone: cancelled with its name in th
 After every import the text "MaxDrop Report" exists and its first line names the .max (and the archive of a pack);
 for the fixtures the operator reported INFO with the report's summary, nothing left out, or WARNING when the
 only things listed are on the material side: wrappers and maps approximated, map classes without a map below
-(vray_texmaps' Noise), texture files not found (the fixtures carry no images), material issues or, on
+(none since Noise is drawn), texture files not found (the fixtures carry no images), material issues or, on
 Blender 4, Principled inputs that Blender lacks; and the modifiers not applied, as many as the oracle lists, in a
 fixture whose oracle lists some (modifier_pivot; the ones converted to Blender modifiers are not counted), the
 issues a fixture is made to raise (uvwmap, stack_convert, stack_shell, vray_lights) and the placeholders of classes
@@ -202,7 +202,7 @@ def _block_heads(lines, title):
 
 def only_known_gaps(body):
     """True when the report's only gaps are on the material side, which the fixtures have on purpose: wrappers and
-    maps approximated, map classes without a map below (vray_texmaps has Noise), material classes without a rule
+    maps approximated, map classes without a map below (none since Noise is drawn), material classes without a rule
     (none in the fixtures), texture files not found (the fixtures carry no images), material issues and,
     on Blender 4, the Principled inputs it lacks (vray_basic is thin-walled: Thin Wall exists from Blender 5);
     modifiers only in a fixture whose oracle lists

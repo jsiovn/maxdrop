@@ -10,7 +10,7 @@ from .corona import (
     corona_hair_mtl, corona_legacy_mtl, corona_light_mtl, corona_named_grey, corona_physical_mtl,
     corona_shadow_catcher_mtl, corona_skin_mtl, corona_volume_mtl,
 )
-from .layered import corona_layered_mtl
+from .layered import corona_layered_mtl, vray_2sided_mtl, vray_blend_mtl
 
 
 # (superclass, ClassId) -> rule(converter, MtlBase, MaterialIR): fills the IR in place, or returns the IR it made
@@ -26,6 +26,8 @@ RULES = {
     (classids.SC_MATERIAL, classids.CORONA_LEGACY_MTL): corona_legacy_mtl,
     (classids.SC_MATERIAL, classids.CORONA_LIGHT_MTL): corona_light_mtl,
     (classids.SC_MATERIAL, classids.CORONA_LAYERED_MTL): corona_layered_mtl,  # a wrapper without a layer on
+    (classids.SC_MATERIAL, classids.VRAY_BLEND_MTL): vray_blend_mtl,  # a wrapper without a coat set and on
+    (classids.SC_MATERIAL, classids.VRAY_2SIDED_MTL): vray_2sided_mtl,  # a wrapper without translucency or a back
     (classids.SC_MATERIAL, classids.CORONA_SKIN_MTL): corona_skin_mtl,
     (classids.SC_MATERIAL, classids.CORONA_HAIR_MTL): corona_hair_mtl,
     (classids.SC_MATERIAL, classids.CORONA_SHADOW_CATCHER_MTL): corona_shadow_catcher_mtl,

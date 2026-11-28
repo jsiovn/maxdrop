@@ -2,14 +2,16 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""The photometry of an IES file (IESNA LM-63): its rated lumens and the flux its candela table gives.
+"""The photometry of an IES file (IESNA LM-63): its rated lumens, the flux its candela table gives and its profile.
 
     p = read(path)                      # Photometry, IesError (a ValueError) and the reason when it is not read
     p = parse(data)                     # the same from the file's bytes
     p.scale                             # what V-Ray's power is multiplied by to give the flux it renders
+    p.text, p.peak, p.nadir, p.up       # the profile: the text parsed, peak and nadir candela, the upward share
     lookup = Lookup(index)              # index: a convert.textures.TextureIndex; one per scene description
     p, why = lookup.photometry(path, resolved)   # (Photometry, None), (None, why it is not read), (None, None)
                                         # why also when it is not found and the texture search stopped short
+    name, p, why = lookup.found(path, resolved)  # the same and the base name of the file found (None: not found)
 
 A VRayIES with its intensity override off scales the file's candelas by its power over the file's rated lumens
 (measured, docs/FORMAT.md "VRayIES power, measured"), so it renders power x flux / rated lumens; rated lumens of 0 or
@@ -35,15 +37,26 @@ lower half black otherwise (not read); a run that varies is read only with a fir
 isotropic file of I cd gives 4 pi I exactly (type C), 2 pi I (types A and B). Other ranges of type A and B (V-Ray
 renders them by no rule found) are not read.
 
+The profile, for a light that shines with the file's distribution (Blender's IES Texture node reads the text): the
+text up to the last candela, the largest candela of the table and the one at the nadir (both times the multiplier
+only: Blender's node applies the ballast factors itself, measured, docs/FORMAT.md "The IES Texture node in Blender,
+measured"), the share of the flux above the horizontal, the ballast-lamp factor and the horizontal angles. Type C's
+nadir is vertical 0 (the mean of its planes there; 0 when the table starts past 0, as Blender's node gives it). Types
+A and B, not measured in Blender: the nadir is vertical 0 at horizontal 0, the axis V-Ray aims down; no flux goes
+above the horizontal (V-Ray renders horizontal angles from -90 to 90 only); the peak is the whole table's, which
+V-Ray's render can pass (a run going on below 0) or leave out (planes past +-90, type A from 0 to 90).
+
 The file comes from anywhere: at most MAX_BYTES are read (a larger file is refused), MAX_ANGLES per axis and
 MAX_VALUES candelas, counts checked against the numbers there are before any list is made; the numbers are read
 one at a time, none split off before its turn (numbers past the table are never read); every number finite, the
 angles in order and in range, the candelas, the multiplier and the ballast factor not negative. No bpy, no add-on
 import.
 """
+import bisect
 import collections
 import itertools
 import math
+import os
 import re
 
 MAX_BYTES = 4 << 20
@@ -60,10 +73,17 @@ class IesError(ValueError):
     pass
 
 
-class Photometry(collections.namedtuple("Photometry", "lamps rated multiplier flux")):
+class Photometry(collections.namedtuple("Photometry",
+                                         "lamps rated multiplier flux ballast_lamp horizontal peak nadir up text")):
     """lamps: the number of lamps; rated: lumens per lamp (-1: absolute photometry); multiplier: the candela
-    multiplier; flux: lumens of the candela table times the multiplier and the ballast factor."""
+    multiplier; flux: lumens of the candela table times the multiplier and the ballast factor; ballast_lamp: the
+    ballast-lamp photometric factor; horizontal: the horizontal angles (a tuple); peak, nadir: the largest candela
+    and the one at the nadir, times the multiplier; up: the share of the flux above the horizontal, 0 to 1; text: the
+    file up to its last candela (Latin-1: a character per byte)."""
     __slots__ = ()
+
+    def __repr__(self):  # the text can be megabytes
+        return "Photometry(%d x %g lm, flux %g lm, peak %g cd)" % (self.lamps, self.rated, self.flux, self.peak)
 
     @property
     def scale(self):
@@ -162,7 +182,7 @@ def parse(data):
     ballast = n.number("ballast factor")
     if ballast < 0:
         raise IesError("its ballast factor %g is negative" % ballast)
-    n.numbers(2, "header")  # ballast-lamp photometric factor (V-Ray leaves it out, measured), input watts
+    ballast_lamp = n.numbers(2, "header")[0]  # and input watts; V-Ray leaves the factor out, Cycles not (measured)
     if nv * nh > MAX_VALUES:
         raise IesError("%d x %d candelas are more than %d" % (nv, nh, MAX_VALUES))
     if not n.has(nv + nh + nv * nh):
@@ -176,11 +196,38 @@ def parse(data):
         raise IesError("its horizontal angles are not in order" + (" from 0 to 360 degrees" if kind == TYPE_C else ""))
     if any(c < 0 for c in candelas):
         raise IesError("a candela value is negative")
-    flux = (_flux(vertical, horizontal, candelas) if kind == TYPE_C else
-            _flux_ab(vertical, horizontal, candelas, kind)) * multiplier * ballast
+    table = _flux(vertical, horizontal, candelas) if kind == TYPE_C else \
+        _flux_ab(vertical, horizontal, candelas, kind)
+    flux = table * multiplier * ballast
     if not math.isfinite(flux):
         raise IesError("its flux is out of range")
-    return Photometry(lamps, rated, multiplier, flux)
+    peak, nadir = max(candelas) * multiplier, _nadir(vertical, horizontal, candelas, kind) * multiplier
+    if not (math.isfinite(peak) and math.isfinite(nadir)):  # a narrow first zone keeps the flux finite
+        raise IesError("its candelas are out of range")
+    up = 0.0
+    if kind == TYPE_C and table > 0:
+        up = min(1.0, max(0.0, _flux(vertical, horizontal, candelas, above=90.0) / table))
+    return Photometry(lamps, rated, multiplier, flux, ballast_lamp, tuple(horizontal), peak, nadir, up,
+                      data[:n.at].decode("latin-1"))
+
+
+def _at(xs, ys, x):
+    """ys linear in xs (in order, x inside them) at x; a repeated angle takes its first value."""
+    i = bisect.bisect_left(xs, x)
+    if xs[i] == x:
+        return ys[i]
+    return ys[i - 1] + (ys[i] - ys[i - 1]) * (x - xs[i - 1]) / (xs[i] - xs[i - 1])
+
+
+def _nadir(vertical, horizontal, candelas, kind):
+    """The candela straight down: type C at vertical 0 (the mean of the planes; 0 when the table starts past it),
+    types A and B at vertical 0 and horizontal 0 (inside every range read)."""
+    nv = len(vertical)
+    if kind == TYPE_C:
+        nh = len(horizontal)
+        return sum(c / nh for c in candelas[0::nv]) if vertical[0] == 0 else 0.0  # divided first: no overflow
+    planes = [_at(vertical, candelas[j * nv:(j + 1) * nv], 0.0) for j in range(len(horizontal))]
+    return _at(horizontal, planes, 0.0)
 
 
 def _c_zone(a, b, ia, ib):
@@ -193,15 +240,23 @@ def _ab_zone(a, b, ia, ib):
     return ib * math.sin(b) - ia * math.sin(a) + (ib - ia) * (math.cos(b) - math.cos(a)) / (b - a) if b > a else 0.0
 
 
-def _planes(vertical, horizontal, candelas, zone):
-    """Per horizontal plane the integral over its vertical angles (the candelas linear in angle between them)."""
+def _planes(vertical, horizontal, candelas, zone, above=None):
+    """Per horizontal plane the integral over its vertical angles (the candelas linear in angle between them); above:
+    over the angles past that one (degrees) only."""
     nv = len(vertical)
     rad = [math.radians(a) for a in vertical]
-    planes = []
-    for j in range(len(horizontal)):
-        row = candelas[j * nv:(j + 1) * nv]
-        planes.append(sum(zone(rad[i], rad[i + 1], row[i], row[i + 1]) for i in range(nv - 1)))
-    return planes
+
+    def segment(row, i):
+        ra, ia, ib = rad[i], row[i], row[i + 1]
+        if above is not None and vertical[i] < above:
+            if vertical[i + 1] <= above:
+                return 0.0
+            ia += (ib - ia) * (above - vertical[i]) / (vertical[i + 1] - vertical[i])
+            ra = math.radians(above)
+        return zone(ra, rad[i + 1], ia, ib)
+
+    # sum(), as before: Python 3.12 and later sum floats compensated, so the flux stays the same on each Blender
+    return [sum(segment(candelas[j * nv:(j + 1) * nv], i) for i in range(nv - 1)) for j in range(len(horizontal))]
 
 
 def _trapezoid(planes, horizontal):
@@ -209,8 +264,9 @@ def _trapezoid(planes, horizontal):
                for p, q, a, b in zip(planes, planes[1:], horizontal, horizontal[1:]))
 
 
-def _flux(vertical, horizontal, candelas):
-    """Lumens of a type C candela table (candelas: one run of len(vertical) per horizontal angle)."""
+def _flux(vertical, horizontal, candelas, above=None):
+    """Lumens of a type C candela table (candelas: one run of len(vertical) per horizontal angle); above: those of
+    the vertical angles past that one (degrees) only."""
     if vertical[0] < 0 or vertical[-1] > 180:
         raise IesError("its vertical angles are not in order from 0 to 180 degrees")
     if horizontal[0] < 0 or horizontal[-1] > 360:
@@ -223,7 +279,7 @@ def _flux(vertical, horizontal, candelas):
     if horizontal[0] not in (0, 90) or span not in _SPANS or (len(horizontal) > 1) != (span > 0):
         raise IesError("its horizontal angles run from %g to %g degrees: not one of LM-63's symmetries"
                        % (horizontal[0], horizontal[-1]))
-    planes = _planes(vertical, horizontal, candelas, _c_zone)
+    planes = _planes(vertical, horizontal, candelas, _c_zone, above)
     if len(planes) == 1:
         return 2.0 * math.pi * planes[0]
     return _trapezoid(planes, horizontal) * 360.0 / span
@@ -296,13 +352,17 @@ class Lookup:
         """(Photometry, None) of the file a stored path names; (None, why) when it is found but not read, or not
         found where the walk of the texture folders stopped short (it may be past that); (None, None) when it is not
         found."""
+        return self.found(path, resolved)[1:]
+
+    def found(self, path, resolved=""):
+        """(the base name of the file found, or None, then photometry()'s pair)."""
         found = self.index.find(path, resolved)
         if found is None:
             stopped = self.index.stopped_for(path, resolved)  # each rule was walked for this name
-            return (None, "not found: " + "; ".join(stopped)) if stopped else (None, None)
+            return (None, None, "not found: " + "; ".join(stopped)) if stopped else (None, None, None)
         if found.path not in self._read:
             try:
                 self._read[found.path] = read(found.path), None
             except IesError as e:
                 self._read[found.path] = None, str(e)
-        return self._read[found.path]
+        return (os.path.basename(found.path),) + self._read[found.path]

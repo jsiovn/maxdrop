@@ -8,6 +8,36 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ## [Unreleased]
 
+### Added
+
+- Maps: a Checker is drawn as nodes in color, data and bump slots (its two colors or maps mixed by the pattern on its
+  placement), instead of "no bitmap below"; in a normal map's normal slot it is left out, a line in the report. The
+  size of its squares, which color is at the UV origin and soften are not measured against 3ds Max yet.
+- Maps: a Noise is drawn with Blender's own Noise Texture on the object's coordinates at 3ds Max's size, levels and
+  thresholds (its two colors or maps mixed by it, the pattern as the height in a bump slot), instead of "no bitmap
+  below", and counted under Approximated in the report; Blender's noise is another pattern than 3ds Max's, and its
+  scale and contrast are not measured against 3ds Max yet.
+- Materials: a VRayBlendMtl with coats is drawn as its base with each coat that is on over it (a Principled BSDF per
+  coat, mixed, or added in additive mode, by its blend color or blend map), instead of its base alone; the weights are
+  not measured against V-Ray yet, and a colored blend color is drawn as its mean (a line in the report).
+- Materials: a VRay2SidedMtl whose translucency is not black lets light through: its front material with a
+  Translucent BSDF mixed in by the translucency (its color or map), and its back material, when switched on (also at
+  a black translucency), on back faces, instead of its front material alone; the weight follows V-Ray's documented rule, not measured against V-Ray
+  yet, and a colored translucency is drawn as its mean (a line in the report).
+
+### Changed
+
+- Report: a material class MaxDrop has no rule for is named as the file's class directory names it (a Blend material
+  is "Blend"), not by a bare ClassID; the Approximated block has a line for procedural maps drawn with Blender's own
+  pattern, by class (none is drawn that way yet).
+- Lights: a VRayIES or photometric web light whose IES file is found and read shines with the file's distribution in
+  Cycles (an IES Texture node on a point light, the file kept inside the .blend), instead of a spot of 170 degrees; a
+  VRayIES as bright as V-Ray 5.2 lights it (V-Ray's and Blender's rules measured apart), a web light's strength and
+  azimuth not measured yet. EEVEE draws a plain point light of the light's flux.
+- Materials: a material that lets light through from behind (a VRay2SidedMtl's translucency) shows that light in EEVEE
+  as in Cycles, on Blender 4.2, 4.5 and 5.2 (a thickness of 0 on its Material Output, measured); it renders Dithered,
+  also at an opacity below 1, as EEVEE's Blended method lets no light through from behind.
+
 ## [1.0.2] - 2026-11-25
 
 ### Added

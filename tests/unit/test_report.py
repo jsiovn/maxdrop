@@ -28,9 +28,11 @@ if _PKG not in sys.modules:
     sys.modules[_PKG] = _pkg
 conv = importlib.import_module(_PKG + ".convert.scene")
 report = importlib.import_module(_PKG + ".convert.report")
+texmaps = importlib.import_module(_PKG + ".convert.texmaps")
 textures = importlib.import_module(_PKG + ".convert.textures")
 colors = importlib.import_module(_PKG + ".convert.colors")
 units = importlib.import_module(_PKG + ".reader.units")
+cameras = importlib.import_module(_PKG + ".convert.cameras")
 
 IDENTITY = ((1.0, 0.0, 0.0, 0.0), (0.0, 1.0, 0.0, 0.0), (0.0, 0.0, 1.0, 0.0), (0.0, 0.0, 0.0, 1.0))
 
@@ -176,6 +178,36 @@ class TestSynthetic(unittest.TestCase):
         self.assertIn("Render size: not stored, Blender's kept; scene camera: Cam, the first camera: the view 3ds Max "
                       "renders (viewport 4) looks through no camera", rep.text().split("\n"))
 
+    def test_render_line_names_the_applied_exposure_and_the_others(self):
+        def cam(name, users, exposure=None):
+            cd = cameras.CameraDescription((users[0], None), name, exposure=exposure)
+            cd.users = list(users)
+            return cd
+
+        def render_line(*cds, camera=2):
+            desc = conv.SceneDescription(1.0)
+            desc.nodes = [node(i, cd.name, conv.CAMERA) for cd in cds for i in cd.users]
+            desc.cameras = {cd.key: cd for cd in cds}
+            desc.camera = camera
+            return [x for x in report.gather(desc).text().split("\n") if x.startswith("Render size: ")]
+
+        self.assertEqual(render_line(cam("Cam", [2]), cam("Side", [3])),
+                         ["Render size: not stored, Blender's kept; scene camera: Cam"])
+        self.assertEqual(render_line(cam("Cam", [2], 1.5), cam("Side", [3, 4], 1.5)),
+                         ["Render size: not stored, Blender's kept; scene camera: Cam; exposure: 1.5"])
+        self.assertEqual(render_line(cam("Cam", [2], 1.5), cam("Side", [3], 0.5), cam("Top", [4])),
+                         ["Render size: not stored, Blender's kept; scene camera: Cam; exposure: 1.5; other cameras' "
+                          "exposures, not applied: Side 0.5, Top none"])
+        self.assertEqual(render_line(cam("Cam", [2]), cam("Side", [3], -1.0)),
+                         ["Render size: not stored, Blender's kept; scene camera: Cam; other cameras' exposures, "
+                          "not applied: Side -1"])
+        self.assertEqual(render_line(cam("Side", [3], -1.0), camera=None), [])
+        self.assertEqual(render_line(cam("Cam", [2], 1.5), cam("Side", [3], 1.5000001)),
+                         ["Render size: not stored, Blender's kept; scene camera: Cam; exposure: 1.5"])
+        self.assertEqual(render_line(cam("Cam", [2], 1.5), cam("", [3], 0.5)),
+                         ["Render size: not stored, Blender's kept; scene camera: Cam; exposure: 1.5; other cameras' "
+                          "exposures, not applied: object 3 0.5"])
+
     def test_emitters_are_counted_with_the_lights(self):
         desc = conv.SceneDescription(1.0)
         desc.nodes = [node(1, "Box"), node(2, "Strip")]
@@ -224,7 +256,7 @@ class TestMaterials(unittest.TestCase):
             conv_stats=stats(peeled=collections.Counter({"VRay2SidedMtl": 1, "Shell Material": 1}),
                              unknown=collections.Counter({"FooMtl": 2}), issues=[(7, "wrapper: no sub-material")]),
             tex_stats=stats(peeled=collections.Counter({"Falloff": 3}), unsupported=collections.Counter({"BarMap": 1}),
-                            issues=[(9, "Mix 'm': its mix curve not converted")]),
+                            issues=[(9, "Mix 'm': its mix curve not converted")], approximated=collections.Counter()),
             lookup=lookup(found=("wood.jpg",), missing=("b.png", "A.png")),
             sockets=collections.Counter({"Thin Wall": 2}), blender="4.2.23")
 
@@ -295,6 +327,23 @@ class TestMaterials(unittest.TestCase):
         self.assertEqual(lines[-2:], ["Approximated:",
                                       "  Wrappers peeled to their sub-material, by class: Shell Material 1"])
         self.assertNotIn("Not converted:", lines)
+
+    def test_maps_drawn_with_blenders_pattern(self):
+        """Procedural maps drawn with Blender's own pattern: a third line of the Approximated block, counted in
+        approximated; an empty counter adds no line (test_text)."""
+        rep = report.gather(box(), source="box.max")
+        report.add_materials(rep, 1, {"VRayMtl": 1}, tex_stats=stats(
+            peeled=collections.Counter(), unsupported=collections.Counter(), issues=[],
+            approximated=collections.Counter({"Noise": 2})))
+        self.assertEqual((rep.approximated, dict(rep.maps_approximated)), (2, {"Noise": 2}))
+        self.assertEqual(rep.summary(), ("WARNING", "Imported box.max: 1 object, 1 mesh, 1 material; "
+                                                    "2 approximated. See the text MaxDrop Report."))
+        self.assertEqual(rep.text().split("\n")[-2:], [
+            "Approximated:", "  Procedural maps drawn with Blender's own pattern, by class: Noise 2"])
+        self.assertFalse(any("Blender's own pattern" in line for line in self.rep.text().split("\n")))
+
+    def test_texmap_stats_start_empty(self):
+        self.assertEqual(texmaps.TexmapStats().approximated, collections.Counter())
 
     def test_nothing_left_out(self):
         rep = report.gather(box(), source="box.max")

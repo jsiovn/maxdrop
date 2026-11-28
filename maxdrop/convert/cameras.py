@@ -122,15 +122,18 @@ NOT_A_CAMERA = "the first camera: the view 3ds Max renders (viewport %d) looks t
 class CameraDescription:
     """One camera: kind PERSP or ORTHO; lens and sensor (mm; sensor_fit HORIZONTAL), fov the horizontal field of view
     (radians); shift_x, shift_y in image widths; clip_start, clip_end in meters (None: Blender's own); ortho_scale the
-    orthographic width in meters; users the object indices of the nodes that share it, in walk order."""
+    orthographic width in meters; users the object indices of the nodes that share it, in walk order. exposure: stops
+    for the scene's view exposure (None: the camera has none); dof_distance: the focus distance in meters (None: depth
+    of field off) and fstop its f-number (None: Blender's). describe() leaves these three None."""
     __slots__ = ("key", "name", "kind", "lens", "sensor", "fov", "shift_x", "shift_y", "clip_start", "clip_end",
-                 "ortho_scale", "users")
+                 "ortho_scale", "users", "exposure", "dof_distance", "fstop")
 
     def __init__(self, key, name, kind=PERSP, lens=50.0, sensor=STANDARD_SENSOR, fov=0.0, shift_x=0.0, shift_y=0.0,
-                 clip_start=None, clip_end=None, ortho_scale=1.0):
+                 clip_start=None, clip_end=None, ortho_scale=1.0, exposure=None, dof_distance=None, fstop=None):
         self.key, self.name, self.kind, self.lens, self.sensor, self.fov = key, name, kind, lens, sensor, fov
         self.shift_x, self.shift_y, self.clip_start, self.clip_end = shift_x, shift_y, clip_start, clip_end
         self.ortho_scale = ortho_scale
+        self.exposure, self.dof_distance, self.fstop = exposure, dof_distance, fstop
         self.users = []
 
     def __repr__(self):

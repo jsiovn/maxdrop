@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Checks of texture placement: mirror tiling, clip masks and a clipped normal map."""
+"""Checks of texture placement: mirror tiling, clip masks, a clipped normal map, a Checker's and a Noise's pattern."""
 import math
 import os
 import shutil
@@ -11,7 +11,7 @@ import tempfile
 import bpy
 from mathutils import Vector
 
-from .core import check, close, empty_scene
+from .core import check, close, empty_scene, ROOT
 from .nodes import (
     _clip_axes_of, _clip_mask_input, _from, _image_of, _input, _meaned, _principled, _write_png, CLIP_LABEL,
 )
@@ -100,6 +100,7 @@ def _sample_vector(socket, uv):
         return {'PINGPONG': lambda: _pingpong(a, b), 'FLOOR': lambda: math.floor(a),
                 'WRAP': lambda: a - (b - c) * math.floor((a - c) / (b - c)), 'MULTIPLY_ADD': lambda: a * b + c,
                 'COMPARE': lambda: float(abs(a - b) <= max(c, 1e-5)), 'MULTIPLY': lambda: a * b,
+                'ADD': lambda: a + b,
                 }[n.operation]()
     v = _sample_vector(n.inputs["Vector"], uv)
     if n.bl_idname == "ShaderNodeVectorMath":
@@ -372,3 +373,175 @@ def check_builder_clipped_normal():
         for img in list(bpy.data.images):
             bpy.data.images.remove(img)
         shutil.rmtree(scratch, ignore_errors=True)
+
+
+def check_builder_checker():
+    """MaterialBuilder on hand-made IRs (bead maxdrop-o53.1.4): a Checker leaf is Math nodes on the placed UV that the
+    node evaluator reads as texmaps.checker_value on a 12 x 12 grid of UVs (tiling 2 x 3; tiled, offset and turned;
+    on UV channel 2), 0 or 1 and both; the Mix between the two colors by it; in a bump input the Bump's height."""
+    from maxdrop.build import materials as build_materials
+    from maxdrop.build.materials.sockets import uv_layer_name
+    from maxdrop.convert import materials as cm
+    from maxdrop.convert import texmaps as tx
+    empty_scene()
+    builder = build_materials.MaterialBuilder()
+    red, blue, grid = (1.0, 0.0, 0.0), (0.0, 0.0, 1.0), 12
+
+    def sampled(socket, pattern):
+        """The (i, j, node value, checker_value) where they differ on the grid, and the values the nodes gave."""
+        bad, seen = [], set()
+        for i in range(grid):
+            for j in range(grid):
+                uv = ((i + 0.5) / grid, (j + 0.5) / grid)
+                got, want = _sample_value(socket, uv), tx.checker_value(pattern, *uv)
+                seen.add(got)
+                if abs(got - want) > 1e-6:
+                    bad.append((i, j, got, want))
+        return bad, seen
+
+    try:
+        cases = (("tiling 2 x 3", tx.Mapping(tiling=(2.0, 3.0))),
+                 ("tiled, offset and turned", tx.Mapping(tiling=(1.5, 1.0), offset=(0.1, -0.2),
+                                                         angle=(0.0, 0.0, math.radians(30.0)))),
+                 ("UV channel 2", tx.Mapping(channel=2)))
+        for k, (label, mapping) in enumerate(cases):
+            pattern = tx.Checker(mapping)
+            ir = cm.MaterialIR(80 + k, "Checker%d" % k, "test", base_color=cm.Input((0.5, 0.5, 0.5), cm.MapRef(1)))
+            ir.textures = {"base_color": tx.TextureGraphIR(
+                tx.Mix(tx.Constant(red), tx.Constant(blue), 0.0, pattern), tx.COLOR)}
+            m = builder.make(ir)
+            mix = _from(_principled(m).inputs["Base Color"])
+            ok = mix is not None and mix.bl_idname == "ShaderNodeMix" and mix.data_type == 'RGBA'
+            check("builder checker (%s): a Mix of the two colors drives the base color" % label,
+                  ok and close(list(_input(mix, "A_Color").default_value)[:3], list(red), 1e-6)
+                  and close(list(_input(mix, "B_Color").default_value)[:3], list(blue), 1e-6),
+                  getattr(mix, "bl_idname", None))
+            if not ok:
+                continue
+            factor = _input(mix, "Factor_Float")
+            bad, seen = sampled(factor, pattern)
+            check("builder checker (%s): the nodes give the pattern texmaps.checker_value gives, 0 and 1" % label,
+                  not bad and seen == {0.0, 1.0}, "%s %s" % (bad[:4], sorted(seen)))
+            if mapping.channel != 1:
+                uvs = [(n.bl_idname, getattr(n, "uv_map", "")) for n in m.node_tree.nodes
+                       if n.bl_idname in ("ShaderNodeUVMap", "ShaderNodeTexCoord")]
+                check("builder checker (%s): on that UV layer" % label,
+                      uvs == [("ShaderNodeUVMap", uv_layer_name(2))], str(uvs))
+        pattern = tx.Checker(tx.Mapping(tiling=(2.0, 3.0)))
+        ir = cm.MaterialIR(90, "CheckerBump", "test")
+        ir.bump = cm.MapRef(1)
+        ir.textures = {"bump": tx.TextureGraphIR(tx.Bump(pattern, 0.5), tx.BUMP)}
+        bump = _from(_principled(builder.make(ir)).inputs["Normal"])
+        ok = bump is not None and bump.bl_idname == "ShaderNodeBump"
+        bad, seen = sampled(_input(bump, "Height"), pattern) if ok else ([None], set())
+        check("builder checker (bump): a Bump whose height is the pattern",
+              ok and not bad and seen == {0.0, 1.0} and abs(_input(bump, "Strength").default_value - 0.5) < 1e-6,
+              "%s %s" % (getattr(bump, "bl_idname", None), bad[:4]))
+    finally:
+        empty_scene()
+
+
+def check_builder_noise():
+    """MaterialBuilder on hand-made IRs (bead maxdrop-o53.1.5): a Noise leaf is the object's coordinates through a
+    POINT Mapping node of texmaps.noise_placement, a Noise Texture (fBm, normalized, Scale 1, Detail
+    texmaps.noise_detail, Roughness 0.5, Lacunarity 2; 4D with W the phase), for turbulence |2 fac - 1|, then a
+    clamped Map Range from the thresholds: the Mix factor between the two colors; in a bump input the Bump's
+    height. The committed tests render nothing: the structure and the copied numbers are checked."""
+    from maxdrop.build import materials as build_materials
+    from maxdrop.convert import materials as cm
+    from maxdrop.convert import texmaps as tx
+    empty_scene()
+    builder = build_materials.MaterialBuilder()
+    red, blue = (1.0, 0.0, 0.0), (0.0, 0.0, 1.0)
+
+    def chain(socket, noise, label):
+        """Check the nodes from a Map Range feeding socket back to the Texture Coordinate node."""
+        ramp = _from(socket)
+        ok = ramp is not None and ramp.bl_idname == "ShaderNodeMapRange"
+        check("builder noise (%s): a clamped linear Map Range from the thresholds" % label,
+              ok and ramp.clamp and ramp.interpolation_type == 'LINEAR'
+              and close([_input(ramp, k).default_value for k in ("From Min", "From Max", "To Min", "To Max")],
+                        [noise.low, noise.high, 0.0, 1.0], 1e-6), getattr(ramp, "bl_idname", None))
+        if not ok:
+            return
+        node = _from(_input(ramp, "Value"))
+        if noise.kind == tx.TURBULENCE:
+            ok = node is not None and node.bl_idname == "ShaderNodeMath" and node.operation == 'ABSOLUTE'
+            fold = _from(_input(node, "Value")) if ok else None
+            ok = ok and fold is not None and fold.operation == 'MULTIPLY_ADD' and close(
+                [_input(fold, "Value_001").default_value, _input(fold, "Value_002").default_value], [2.0, -1.0], 1e-6)
+            check("builder noise (%s): the turbulence folded, |2 fac - 1|" % label, ok)
+            if not ok:
+                return
+            node = _from(_input(fold, "Value"))
+        ok = node is not None and node.bl_idname == "ShaderNodeTexNoise"
+        want = [noise.phase, 1.0, tx.noise_detail(noise), 0.5, 2.0, 0.0]
+        check("builder noise (%s): a Noise Texture, fBm, normalized, its inputs set" % label,
+              ok and node.noise_type == 'FBM' and node.normalize
+              and node.noise_dimensions == ('4D' if noise.phase else '3D')
+              and close([_input(node, k).default_value for k in ("W", "Scale", "Detail", "Roughness", "Lacunarity",
+                                                                 "Distortion")], want, 1e-6),
+              getattr(node, "bl_idname", None))
+        if not ok:
+            return
+        mapping = _from(_input(node, "Vector"))
+        location, rotation, scale = tx.noise_placement(noise)
+        ok = mapping is not None and mapping.bl_idname == "ShaderNodeMapping" and mapping.vector_type == 'POINT'
+        check("builder noise (%s): a POINT Mapping node of texmaps.noise_placement" % label,
+              ok and close(list(_input(mapping, "Location").default_value), list(location), 1e-6)
+              and close(list(_input(mapping, "Rotation").default_value), list(rotation), 1e-6)
+              and close(list(_input(mapping, "Scale").default_value), list(scale), 1e-5),
+              getattr(mapping, "bl_idname", None))
+        if not ok:
+            return
+        link = _input(mapping, "Vector").links[0] if _input(mapping, "Vector").is_linked else None
+        check("builder noise (%s): on the object's coordinates" % label,
+              link is not None and link.from_node.bl_idname == "ShaderNodeTexCoord"
+              and link.from_socket.identifier == "Object")
+
+    try:
+        coords = tx.Coordinates(offset=(0.1, 0.0, -0.2), tiling=(2.0, 1.0, 0.5), angle=(0.0, 0.0, math.radians(30.0)))
+        cases = (("regular, size 0.25 m", tx.Noise(size=0.25)),
+                 ("fractal, placed, phase", tx.Noise(coords, 0.5, 1.5, 4.0, 0.2, 0.7, tx.FRACTAL)),
+                 ("turbulence", tx.Noise(size=0.1, levels=2.5, kind=tx.TURBULENCE)))
+        for k, (label, noise) in enumerate(cases):
+            ir = cm.MaterialIR(100 + k, "Noise%d" % k, "test", base_color=cm.Input((0.5, 0.5, 0.5), cm.MapRef(1)))
+            ir.textures = {"base_color": tx.TextureGraphIR(
+                tx.Mix(tx.Constant(red), tx.Constant(blue), 0.0, noise), tx.COLOR, True)}
+            mix = _from(_principled(builder.make(ir)).inputs["Base Color"])
+            ok = mix is not None and mix.bl_idname == "ShaderNodeMix" and mix.data_type == 'RGBA'
+            check("builder noise (%s): a Mix of the two colors drives the base color" % label,
+                  ok and close(list(_input(mix, "A_Color").default_value)[:3], list(red), 1e-6)
+                  and close(list(_input(mix, "B_Color").default_value)[:3], list(blue), 1e-6),
+                  getattr(mix, "bl_idname", None))
+            if ok:
+                chain(_input(mix, "Factor_Float"), noise, label)
+        noise = tx.Noise(size=0.25)
+        ir = cm.MaterialIR(110, "NoiseBump", "test")
+        ir.bump = cm.MapRef(1)
+        ir.textures = {"bump": tx.TextureGraphIR(tx.Bump(noise, 0.5), tx.BUMP, True)}
+        bump = _from(_principled(builder.make(ir)).inputs["Normal"])
+        ok = bump is not None and bump.bl_idname == "ShaderNodeBump"
+        check("builder noise (bump): a Bump of strength 0.5", ok and abs(_input(bump, "Strength").default_value - 0.5)
+              < 1e-6, getattr(bump, "bl_idname", None))
+        if ok:
+            chain(_input(bump, "Height"), noise, "bump")
+    finally:
+        empty_scene()
+
+
+def check_import_noise_meters():
+    """The import hands its meters per file unit to the texture maps (pipeline._material_slots, bead maxdrop-o53.1.5):
+    vray_texmaps' Noise (size 635 in a millimeter file) gets a Mapping scale of 1 / 0.635 per meter at Scale 1 and
+    of 1 / 1.27 at Scale 2, the object's coordinates being in meters as built."""
+    path = os.path.join(ROOT, "tests", "fixtures", "vray_texmaps.max")
+    for scale in (1.0, 2.0):
+        empty_scene()
+        result = bpy.ops.import_scene.maxdrop(filepath=path, scale_objects=scale)
+        mappings = [_from(_input(n, "Vector")) for m in bpy.data.materials if m.node_tree is not None
+                    for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeTexNoise"]
+        want = 1.0 / (0.635 * scale)
+        got = [list(_input(mp, "Scale").default_value) for mp in mappings if mp is not None]
+        check("import noise meters (Scale %g): the Noise's Mapping scale is 1 / (size x meters)" % scale,
+              result == {'FINISHED'} and len(got) == 1 and close(got[0], [want] * 3, 1e-5), "%s %s" % (result, got))
+    empty_scene()

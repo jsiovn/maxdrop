@@ -6,11 +6,13 @@
 import bpy
 
 from .core import _mirror_inputs, check, close
-from .tables import MIRROR_LABEL, REFRACTION_LABEL, SPECULAR_LEVEL, TIR_LABEL, TWIN_LABEL
+from .tables import (
+    COAT_WEIGHT_LABEL, MIRROR_LABEL, REFRACTION_LABEL, SPECULAR_LEVEL, TIR_LABEL, TRANSLUCENCY_LABEL, TWIN_LABEL,
+)
 from .nodes import (
     _alpha_of, _bsdfs, _color_into_float, _constant_one, _fold, _from, _images_of, _layers_of, _mean, _medium_of,
-    _normal_linked, _on, _refracting, _same_inputs, _same_source, _shaders, _thin, _value_ok, _weight_factor,
-    _weight_mix, LOST, MAP,
+    _normal_linked, _on, _output_of, _refracting, _same_inputs, _same_source, _shaders, _thickness_zero, _thin,
+    _value_ok, _weight_factor, _weight_mix, LOST, MAP,
 )
 
 
@@ -190,7 +192,9 @@ def check_principled(label, material, ir, present=False):
     from maxdrop.build import materials as build_materials
     output = next(n for n in material.node_tree.nodes if n.bl_idname == "ShaderNodeOutputMaterial")
     volume_only = build_materials._volume_only(ir) and output.inputs["Volume"].is_linked  # no surface: maxdrop-6n0.6.29
-    method = 'DITHERED' if volume_only or any(linked for linked, _v in alphas) else \
+    want, driven = _translucencies([ir] + [layer.ir for layer in layers], present)
+    translucent = bool(want) or driven > 0  # DITHERED: EEVEE's blended surface shows no back light (maxdrop-o53.1.10)
+    method = 'DITHERED' if volume_only or translucent or any(linked for linked, _v in alphas) else \
         'BLENDED' if any(v is not None and v < 1.0 for _l, v in alphas) else 'DITHERED'
     check(label + ": surface_render_method", material.surface_render_method == method,
           "%s vs %s" % (material.surface_render_method, method))
@@ -205,6 +209,42 @@ def check_principled(label, material, ir, present=False):
     check(label + ": no color output linked into a float input (a data map is the mean of its channels)",
           mixed == [], str(mixed))
     check_medium(label, material, ir)
+    check_translucency(label, material, [ir] + [layer.ir for layer in layers], present)
+
+
+def _translucencies(irs, present):
+    """(the constant translucencies above 0 of irs, rounded; how many of them a node drives)."""
+    want, linked = [], 0
+    for ir in irs:
+        graph = ir.textures.get("translucency")
+        folded = _fold(graph.root, present) if graph is not None else LOST
+        if folded is MAP:
+            linked += 1
+            continue
+        weight = min(1.0, max(0.0, _mean(ir.translucency.value if folded is LOST else folded)))
+        if weight > 0.0:
+            want.append(round(weight, 5))
+    return want, linked
+
+
+def check_translucency(label, material, irs, present):
+    """A Translucent BSDF under a Mix Shader (TRANSLUCENCY_LABEL) for each of irs (the material's and its layers'
+    IRs) whose translucency is above 0 or driven by a node: the factor linked when a node drives it, else the
+    translucency (the graph's constant, or the IR's value when its images are missing). With any of them, a Value of
+    0 (THIN_LABEL) on the Material Output's Thickness, EEVEE's thin surface (maxdrop-o53.1.10); none without."""
+    want, linked = _translucencies(irs, present)
+    nodes = material.node_tree.nodes
+    mixes = [n for n in nodes if n.bl_idname == "ShaderNodeMixShader" and n.label == TRANSLUCENCY_LABEL]
+    translucent = [n for n in nodes if n.bl_idname == "ShaderNodeBsdfTranslucent"]
+    check(label + ": a Translucent BSDF under a Mix Shader per translucency", len(mixes) == len(translucent)
+          == len(want) + linked, "%d Mix, %d Translucent for %d" % (len(mixes), len(translucent), len(want) + linked))
+    got = sorted(round(m.inputs[0].default_value, 5) for m in mixes if not m.inputs[0].is_linked)
+    check(label + ": the translucency on its Mix Shader's factor, linked where a node drives it",
+          got == sorted(want) and sum(1 for m in mixes if m.inputs[0].is_linked) == linked,
+          "%s vs %s, %d linked" % (got, sorted(want), linked))
+    thin = _thickness_zero(material)
+    check(label + ": a Value of 0 on the output's Thickness iff a translucency", (thin is not None) == bool(
+        want or linked) and (thin is not None or not _output_of(material).inputs["Thickness"].is_linked), str(thin))
 
 
 def check_medium(label, material, ir):
@@ -228,22 +268,38 @@ def check_medium(label, material, ir):
 
 
 def check_layers(label, material, layers, present=False):
-    """A layered material: a Mix Shader per layer, the last one into the output; a layer whose mask graph a node
-    drives has a linked factor, any other its amount (times the mask's constant)."""
+    """A layered material: a Mix Shader per layer, the last one (or an added layer's Add Shader) into the output; an
+    added layer (mode "add") an Add Shader over a Mix Shader from nothing (COAT_WEIGHT_LABEL); a layer whose mask graph
+    a node drives has a linked factor, any other its amount (times the mask's constant)."""
     nodes = material.node_tree.nodes
     mixes = _shaders(material)
     check(label + ": a Mix Shader per layer", len(mixes) == len(layers), "%d for %d" % (len(mixes), len(layers)))
+    adds = [n for n in nodes if n.bl_idname == "ShaderNodeAddShader" and _from(n.inputs[1]) in mixes
+            and _from(n.inputs[1]).label == COAT_WEIGHT_LABEL and not _from(n.inputs[1]).inputs[1].is_linked]
+    added = sum(1 for layer in layers if getattr(layer, "mode", "mix") == "add")
+    check(label + ": an Add Shader per added layer, over its layer scaled from nothing", len(adds) == added
+          and sum(1 for m in mixes if m.label == COAT_WEIGHT_LABEL) == added, "%d for %d" % (len(adds), added))
     out = next(n for n in nodes if n.bl_idname == "ShaderNodeOutputMaterial")
     surface = out.inputs["Surface"]
-    check(label + ": the top Mix Shader is the surface",
-          surface.is_linked and surface.links[0].from_node in mixes)
-    plain = []
+    check(label + ": the top Mix Shader (Add Shader for an added layer) is the surface",
+          surface.is_linked and surface.links[0].from_node in mixes + adds)
+    plain, backs = [], []
     for layer in layers:
+        if getattr(layer, "mode", "mix") == "back":  # its factor: Geometry > Backfacing
+            backs.append(layer)
+            continue
         folded = _fold(layer.graph.root, present) if layer.graph is not None else LOST
-        if folded is not MAP:
+        fallback = getattr(layer, "fallback", None)
+        if folded is LOST and layer.graph is not None and fallback is not None:  # its map lost: the fallback weight
+            plain.append(round(min(1.0, max(0.0, fallback)), 5))
+        elif folded is not MAP:
             plain.append(round(min(1.0, layer.amount * (1.0 if folded is LOST else _mean(folded))), 5))
     plain.sort()
     got = sorted(round(m.inputs[0].default_value, 5) for m in mixes if not m.inputs[0].is_linked)
     linked = sum(1 for m in mixes if m.inputs[0].is_linked)
     check(label + ": the layers' amounts, masks linked", got == plain and linked == len(layers) - len(plain),
           "%s vs %s, %d linked" % (got, plain, linked))
+    facing = [m for m in mixes if m.inputs[0].is_linked and _from(m.inputs[0]).bl_idname == "ShaderNodeNewGeometry"
+              and m.inputs[0].links[0].from_socket.identifier == "Backfacing"]
+    check(label + ": a back layer's Mix Shader driven by Geometry > Backfacing", len(facing) == len(backs),
+          "%d for %d" % (len(facing), len(backs)))

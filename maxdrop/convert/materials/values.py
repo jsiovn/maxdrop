@@ -4,12 +4,13 @@
 
 """Value helpers of the rules: means, clamps, IOR and roughness conversions."""
 import math
+import unicodedata
 
-from ...reader import classids, units
-from ...reader import scene as reader_scene
+from ...reader import classids
 from ...reader.classdir import ClassId
 from ..params import finite as _finite
-from .ids import CORONA_LEGACY_GLOSS, DEFAULT_METERS, MAX_COMPLEX_IOR
+from ..texmaps.converter import _scene_meters as _scene_meters  # the texture maps' rule: one for both
+from .ids import CORONA_LEGACY_GLOSS, MAX_COMPLEX_IOR
 
 
 def mean(rgb):
@@ -17,11 +18,24 @@ def mean(rgb):
     return sum(rgb[:3]) / 3.0
 
 
-def class_name(superclass, class_id):
-    """The class name for the report: the class directory's for a known class (without the blanks around it:
-    CoronaPhysicalMtl's starts with a carriage return), else the ClassID."""
+MAX_CLASS_NAME = 64  # characters of a class-directory name the report shows: the name comes from the file
+_HIDDEN = frozenset(("Cc", "Cf", "Cs", "Zl", "Zp"))  # control, format, surrogate, line and paragraph separators
+
+
+def class_label(text):
+    """A class-directory name as the report shows it: each hidden character a blank, the blanks collapsed and
+    stripped, cut to MAX_CLASS_NAME characters ("..." at the end); "" for a name of nothing else."""
+    text = " ".join("".join(" " if unicodedata.category(c) in _HIDDEN else c for c in text).split())
+    return text if len(text) <= MAX_CLASS_NAME else text[:MAX_CLASS_NAME - 3] + "..."
+
+
+def class_name(superclass, class_id, directory=""):
+    """The class name for the report: classids' for a known class (without the blanks around it: CoronaPhysicalMtl's
+    starts with a carriage return), else directory (the name the file's class directory gives the class, through
+    class_label), else the ClassID."""
     cid = ClassId(*class_id)
-    return (classids.name_of(superclass, cid) or "ClassID%s" % (cid,)).strip()
+    known = classids.name_of(superclass, cid)
+    return known.strip() if known else class_label(directory) or "ClassID%s" % (cid,)
 
 
 def _clamp01(v):
@@ -54,13 +68,6 @@ def corona_legacy_roughness(gloss):
     i = min(int(g * step), step - 1)
     t = g * step - i
     return CORONA_LEGACY_GLOSS[i] * (1.0 - t) + CORONA_LEGACY_GLOSS[i + 1] * t
-
-
-def _scene_meters(graph):
-    """Meters per system unit of a MaterialGraph's scene: what the file says, else DEFAULT_METERS."""
-    s = getattr(graph, "scene", None)
-    unit = units.system_unit(s) if isinstance(s, reader_scene.Scene) else None
-    return unit.meters if unit is not None else DEFAULT_METERS
 
 
 def f0_from_complex_ior(n, k):

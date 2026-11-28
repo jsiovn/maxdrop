@@ -159,6 +159,7 @@ CAMERA_SHIFTS = {"CamPhysShift": (-0.1, 0.15), "CamVRayShift": (-0.1, -0.25)}
 CAMERA_SENSORS = {"CamVRayTarget": 30.0}
 FOV_TOLERANCE = 0.05  # degrees
 KEPT_SIZE = (1234, 567, 50)  # the scene's render size before each import (empty_scene)
+KEPT_EXPOSURE = -0.25  # the scene's view exposure before each import (empty_scene): no fixture's camera has one
 USER_WORLD = "UserWorld"  # the scene's World before each import (empty_scene)
 BARE_MESHES = {"FixtureMeshSource", "FixtureEmitterSource"}  # meshes a fixture leaves without a material: the
 # mesh lights' sources (vray_dome, vray_mesh_light)
@@ -274,4 +275,8 @@ MIRROR_LABEL = "Mirror reflection"  # the metal (white, or tinted) of a weight w
 MIRROR_INPUTS = {"Metallic": 1.0, "Base Color": (1.0, 1.0, 1.0, 1.0), "Specular IOR Level": SPECULAR_LEVEL}
 REFRACTION_LABEL = "Refraction without reflection"  # refracting glass's twin (maxdrop-em3.135)
 TIR_LABEL = "Total internal reflection"  # the weight's mask where glass reflects totally (maxdrop-em3.135)
+COAT_WEIGHT_LABEL = "Coat weight"  # an added layer's Mix Shader from nothing by its weight (maxdrop-o53.1.6)
+TRANSLUCENCY_LABEL = "Translucency"  # the Translucent BSDF's Mix Shader by the translucency (maxdrop-o53.1.7)
+TRANSLUCENCY_ALPHA_LABEL = "Translucency alpha"  # its Mix Shader from a Transparent BSDF by the alpha (maxdrop-o53.1.7)
+THIN_LABEL = "Thin surface"  # a Value of 0 on the Material Output's Thickness: EEVEE's thin surface (maxdrop-o53.1.10)
 DEG = math.pi / 180.0

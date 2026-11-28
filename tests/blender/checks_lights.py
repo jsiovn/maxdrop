@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """Checks of lights: emitters spread over their meshes, VRayLights, standard lights, the dome and its undo,
-Light Strength."""
+Light Strength, a light's node tree, IES lights."""
 import math
 import os
 
@@ -508,3 +508,178 @@ def check_light_strength(path):
     sphere = bpy.data.objects.get("FixtureSphere")
     check("vray_lights Light Strength 2: 40 W x 2", sphere is not None and abs(sphere.data.energy - 80.0) < 1e-4,
           str(sphere and sphere.data.energy))
+
+
+def check_light_nodes():
+    """compat.light_nodes on a new point and spot light (4.x: use_nodes off, no tree; 5.x: a tree at once): the
+    light's tree, a Light Output and an Emission linked into its Surface; a second call returns the same nodes and adds
+    none; a tree emptied of its nodes gets both back, linked; with a second Light Output made active, its Emission
+    renamed and a loose Emission named "Emission", the active output and the Emission linked into it."""
+    from maxdrop import compat
+    for kind in ('POINT', 'SPOT'):
+        light = bpy.data.lights.new("LightNodes" + kind.title(), kind)
+        try:
+            tree, emission, output = compat.light_nodes(light)
+            label = "light nodes (%s)" % kind.lower()
+            check(label + ": the light's tree, nodes enabled", tree is not None and tree == light.node_tree and
+                  (bpy.app.version >= (5, 0, 0) or light.use_nodes), str(tree))
+            linked = [k.from_node for k in output.inputs["Surface"].links]
+            check(label + ": an Emission linked into the Light Output's Surface",
+                  output.bl_idname == "ShaderNodeOutputLight" and emission.bl_idname == "ShaderNodeEmission" and
+                  linked == [emission], "%s %s %s" % (output.bl_idname, emission.bl_idname, linked))
+            count = len(tree.nodes)
+            again = compat.light_nodes(light)
+            check(label + ": a second call returns the same nodes and adds none",
+                  again == (tree, emission, output) and len(tree.nodes) == count, "%d -> %d" % (count, len(tree.nodes)))
+            tree.nodes.clear()
+            tree, emission, output = compat.light_nodes(light)
+            linked = [k.from_node for k in output.inputs["Surface"].links]
+            check(label + ": an emptied tree gets both nodes back, linked", len(tree.nodes) == 2 and
+                  linked == [emission] and emission.bl_idname == "ShaderNodeEmission", str(len(tree.nodes)))
+            emission.name, output.name = "Lamp", "Out"
+            active = tree.nodes.new("ShaderNodeOutputLight")
+            glow = tree.nodes.new("ShaderNodeEmission")
+            glow.name = "Glow"
+            tree.links.new(glow.outputs["Emission"], active.inputs["Surface"])
+            tree.nodes.new("ShaderNodeEmission").name = "Emission"
+            active.is_active_output = True
+            found = compat.light_nodes(light)
+            check(label + ": the active Light Output and the Emission linked into it, by type",
+                  output.is_active_output is False and found == (tree, glow, active) and len(tree.nodes) == 5,
+                  "%s %s %d" % (found[1].name, found[2].name, len(tree.nodes)))
+        finally:
+            bpy.data.lights.remove(light)
+
+
+# fixture_web.ies as the checks write it beside lights_photometric: rated 500 lm, 100 cd in every direction, one plane
+FIXTURE_WEB = (b"IESNA:LM-63-2002\n[TEST] MaxDrop test\nTILT=NONE\n1 500 1 3 1 1 2 0 0 0\n1 1 0\n0 90 180\n0\n"
+               b"100 100 100\n")
+
+
+def _ies_nodes(light):
+    """The IES Texture nodes of a light's tree (none without a tree)."""
+    tree = light.node_tree
+    return [n for n in tree.nodes if n.bl_idname == "ShaderNodeTexIES"] if tree is not None else []
+
+
+def _layout_gain(planes):
+    """The gain docs/FORMAT.md measured for Blender 4.2 and 4.5 ("The IES Texture node in Blender, measured"): 35/32
+    for one plane, 17/16 for planes 0 and 180; 1 on 5.x."""
+    if bpy.app.version >= (5, 0, 0):
+        return 1.0
+    return {1: 35.0 / 32.0, 2: 17.0 / 16.0}[planes]
+
+
+def check_ies_light():
+    """Hand-made VRayIES descriptions (convert.lights.describe on test-written files): a light with a profile is a
+    point light whose tree has one IES Texture in internal mode, its Text the profile's text (a CRLF file kept as it
+    is, a NUL a space), its output into the Strength of the Emission on the active Light Output; its energy the
+    description's watts x Light Strength (what EEVEE draws), the node's Strength input its power over its watts and
+    4.x's layout gain (35/32 for one plane, 17/16 for planes 0 and 180), so that Cycles gets power x Light Strength over
+    that gain; two lights of one file share its Text, another file has its own; a light without a profile is the wide
+    spot without an IES node (4.x: no nodes)."""
+    from maxdrop import compat, options
+    from maxdrop.build import lights as build_lights
+    from maxdrop.convert import colors, ies
+    from maxdrop.convert import lights as L
+    files = {"down.ies": (b"IESNA:LM-63-2002\r\n[TEST] MaxDrop test\r\nTILT=NONE\r\n1 -1 1 5 1 1 2 0 0 0\r\n1 1 0\r\n"
+                          b"0 45 90 135 180\r\n0\r\n100 50 0 0 0\r\n", 1),
+             "two.ies": (b"IESNA:LM-63-2002\n[TEST] Max\x00Drop\nTILT=NONE\n1 500 1 3 2 1 2 0 0 0\n1 1 0\n0 90 180\n"
+                         b"0 180\n100 100 100\n100 100 100\n", 2)}
+
+    def described(name, file):
+        v = {L.CLASS: L.IES, "file": file or ""}
+        v.update({n: default for n, (_b, _p, default) in L._IES_PARAMS.items()})
+        v.update(power=1000.0, photometry=ies.parse(files[file][0]) if file else None, ies_name=file,
+                 photometry_issue=None)
+        return L.describe(1, name, v, 0.001, colors.GAMMA_ON)[0]
+
+    empty_scene()
+    texts = {}
+    lds = [described("IesDownA", "down.ies"), described("IesDownB", "down.ies"), described("IesTwo", "two.ies"),
+           described("IesNone", None)]
+    made = [build_lights.make_light(ld, options.LIGHT_STRENGTH, texts) for ld in lds]
+    try:
+        for light, ld in zip(made[:3], lds[:3]):
+            label = "ies light %s" % ld.name
+            planes = files[ld.profile.file][1]
+            nodes = _ies_nodes(light)
+            want = ld.watts * options.LIGHT_STRENGTH
+            cycles = ld.power * options.LIGHT_STRENGTH / _layout_gain(planes)
+            got = light.energy * nodes[0].inputs["Strength"].default_value if nodes else None
+            check(label + ": a point light of its watts x Light Strength, times the node's Strength its power over "
+                  "4.x's layout gain",
+                  light.type == 'POINT' and ld.power > 0 and abs(light.energy - want) <= want * 1e-6 and
+                  got is not None and abs(got - cycles) <= cycles * 1e-6,
+                  "%s %g vs %g, %s vs %g" % (light.type, light.energy, want, got, cycles))
+            _tree, emission, _output = compat.light_nodes(light)
+            node = nodes[0] if len(nodes) == 1 else None
+            linked = node is not None and [k.to_socket for k in node.outputs[0].links] == [emission.inputs["Strength"]]
+            text = node.ies if node is not None else None
+            check(label + ": one IES Texture, internal, its Text the profile's text, into the Emission's Strength",
+                  node is not None and node.mode == 'INTERNAL' and linked and text is not None and
+                  text.as_string() == ld.profile.text.replace("\0", " "),
+                  "%d nodes, %s" % (len(nodes), text and repr(text.as_string()[:60])))
+        texts_of = [_ies_nodes(light)[0].ies for light in made[:3]]
+        check("ies light: two lights of one file share its Text, another file has its own",
+              texts_of[0] == texts_of[1] != texts_of[2] and len(texts) == 2 and
+              texts_of[0].name == "down.ies" and "\r\n" in texts_of[0].as_string() and
+              "Max Drop" in texts_of[2].as_string(), str([t.name for t in texts_of]))
+        light = made[3]
+        check("ies light: no profile, the wide spot without an IES node",
+              lds[3].profile is None and light.type == 'SPOT' and not _ies_nodes(light) and
+              (bpy.app.version >= (5, 0, 0) or not light.use_nodes), "%s %s" % (light.type, _ies_nodes(light)))
+    finally:
+        for light in made:
+            bpy.data.lights.remove(light)
+        empty_scene()
+
+
+def check_ies_cleanup(max_path):
+    """max_path (lights_photometric) copied beside fixture_web.ies through the run's steps (pipeline._Run): the lights
+    with its profile share one Text "fixture_web.ies"; undo() removes it with everything else the run made; a build
+    that fails after making it (build.cameras.set_render raising) leaves nothing either."""
+    import shutil
+    import tempfile
+    from maxdrop.build import cameras as build_cameras
+    empty_scene()
+    scratch = tempfile.mkdtemp(prefix="maxdrop-ies-cleanup-")
+    try:
+        dst = os.path.join(scratch, os.path.basename(max_path))
+        shutil.copy(max_path, dst)
+        with open(os.path.join(scratch, "fixture_web.ies"), "wb") as f:
+            f.write(FIXTURE_WEB)
+        before = _state()
+        run = _cancel_run([dst])
+        for _ in run.steps():
+            pass
+        text = bpy.data.texts.get("fixture_web.ies")
+        shared = [_ies_nodes(bpy.data.objects[n].data)[0].ies if n in bpy.data.objects and
+                  _ies_nodes(bpy.data.objects[n].data) else None for n in ("IesPower", "IesOverride", "PhWeb")]
+        run.undo()
+        check("ies cleanup: the run's lights share the Text fixture_web.ies; undo() leaves nothing",
+              text is not None and shared == [text] * 3 and _state() == before, "%s %s | %s | %s" % (
+                  text, shared, _state(), before))
+        empty_scene()
+        before = _state()
+        original, seen = build_cameras.set_render, []
+
+        def failing(*args, **kwargs):
+            seen.append(bpy.data.texts.get("fixture_web.ies") is not None)
+            raise RuntimeError("maxdrop test: build fails after the lights")
+
+        build_cameras.set_render = failing
+        try:
+            failed = False
+            try:
+                for _ in _cancel_run([dst]).steps():
+                    pass
+            except Exception as e:  # the runner may wrap it
+                failed = "maxdrop test" in str(e)
+        finally:
+            build_cameras.set_render = original
+        check("ies cleanup: a build that fails after making the Text leaves nothing",
+              failed and seen == [True] and _state() == before, "%s %s | %s | %s" % (failed, seen, _state(), before))
+    finally:
+        empty_scene()
+        shutil.rmtree(scratch, ignore_errors=True)

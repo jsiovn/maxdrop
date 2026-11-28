@@ -1304,9 +1304,10 @@ isotropic, spotlight or uniform diffuse, 0.667; a Free Rectangle 100 × 100 mm o
 lm with an isotropic IES file 0.0531; an Omni, a Free Spot and a Direct of multiplier 1 without decay 1.0 (the same
 at any distance), an Omni with inverse-square decay from 1 m 1.0, from 0.5 m 0.25, with inverse decay from 0.5 m
 0.5; a VRaySun of multiplier 1 at the zenith 68.5 (102.7 klx). Cycles (Blender 5.2, a Diffuse BSDF of 1.0): a
-point or spot light of 1 W at 1 m 0.02526 (1 / 4π²), a disk area light of 1 W 0.1010 (1 / π² on its axis), a sun
-of strength 1 0.3176 (1 / π). So Light Strength 1.43 is π · 683 / 1500 (1.4305), and with it these powers render
-as bright as V-Ray:
+point or spot light of 1 W at 1 m 0.02526 (1 / 4π², which is 0.02533: 0.02526 is the pixel this scene rendered; the
+setup of "The IES Texture node in Blender, measured" below renders 0.02533), a disk area light of 1 W 0.1010 (1 / π²
+on its axis), a sun of strength 1 0.3176 (1 / π). So Light Strength 1.43 is π · 683 / 1500 (1.4305), and with it
+these powers render as bright as V-Ray:
 
 - a point or spot light of on-axis intensity I cd: 4π I / 683 W (the rules source's for photometric lights); a
   uniform diffuse one: π I / 683 W on an area light;
@@ -1398,9 +1399,94 @@ as V-Ray renders it). Other ranges of type A and B (partial: V-Ray renders them 
 and a file larger than 4 MiB, of more than 4096 angles per axis or 2^20 candelas, or with a
 number out of range or out of order, are not read (a line in the report).
 
+**IES profile** (maxdrop-o53.1.2, `convert/ies.py`, `LightDescription.profile`): every VRayIES (whatever its
+override and power) and every photometric web light (block 3: 0 the file, 1 to 3 its X, Y, Z rotation, kept as
+stored; their unit and order are not measured, maxdrop-o53.3.5 applies them) looks its file up as the texture rules
+find maps (never a UNC path or a link), each file read once per import. A file found and read gives the light a
+profile: the base name of the file found; the text up to the last candela (Latin-1, a character per byte; the bytes
+after the table are never read); the largest candela of the table and the one at the nadir, both times the candela
+multiplier only (Blender's node applies the ballast factors itself: "The IES Texture node in Blender, measured");
+the flux as above; the share of the flux above the horizontal; the ballast-lamp factor and the horizontal angles
+(the watts rule below needs them). Type C: the nadir is the planes' mean at vertical 0, 0 when the table starts past
+0 (as Blender's node gives it; not measured in V-Ray); the upward share integrates the vertical angles past 90 (a
+zone split at 90 linearly) with the flux's planes and symmetries. Types A and B, not measured in Blender: the nadir is
+vertical 0 at horizontal 0 (the axis V-Ray aims down), the upward share 0 (V-Ray renders horizontal angles from −90
+to 90 only), the peak the whole table's (V-Ray's render can pass it, a run going on below 0, or leave it out, planes
+past ±90 and type A from 0 to 90). A file not found or not read: no profile, the report's lines as before.
+
 **Spot cones.** Blender's spot size is the falloff; its blend is set so that full intensity ends at the hotspot, as in
 3ds Max: Blender blends in cosine space (full intensity where cos θ ≥ cos(size / 2) + (1 − cos(size / 2)) · blend),
 so blend = (cos(hotspot / 2) − cos(falloff / 2)) / (1 − cos(falloff / 2)), 0.636 for 30° in 50°.
+
+**The IES Texture node in Blender, measured** (maxdrop-o53.1.9; Blender 4.2.23, 4.5.16 and 5.2.0, headless, scratch
+scripts not committed). The node tree: a new light on 4.2 and 4.5 has `use_nodes` off and no tree (setting it makes
+an Emission into a Light Output), on 5.2 a tree at once (`use_nodes` reads True and warns: removed in 6.0);
+`compat.light_nodes` gives the tree, the active Light Output and the Emission on its Surface on all three (every
+render below was built with it). The node, `ShaderNodeTexIES`: `mode` `'INTERNAL'` (the Text in `ies`) or
+`'EXTERNAL'` (`filepath`), inputs Vector and Strength, the same on the three; its output is `Fac` on 4.2 and 4.5,
+`Factor` on 5.2 (a probe of the node's sockets on each; take `outputs[0]`). A Text and a file of the same content
+render the same. Setup: Cycles CPU, no bounces, a black World, a Diffuse BSDF floor of 1.0, the light 1 m above it
+(radius 0, unseen by the camera), an orthographic camera 0.05 m wide looking down, a float EXR, the mean of the 8 × 8
+center pixels; LM-63 type C files written by the script, the node's output into the Emission's Strength. A light
+turned about its object's X or Y axis puts another direction of the file on the floor point below it at 1 m: the
+lookup follows the object, and on/off at that pixel is the file's value there.
+
+| Measured | 4.2.23 | 4.5.16 | 5.2.0 |
+|---|---|---|---|
+| 1 W point, node off (1 / 4π²) | 0.02533 | 0.02533 | 0.02533 |
+| isotropic 100 cd, node on / off, at the nadir | 7.656 | 7.656 | 7.060 |
+| the same at 10° to 90° from the axis | 7.729 | 7.729 | 7.066 |
+| the same at 135° / 170° / 180° | 8.212 / 8.068 / 7.551 | 8.212 / 8.068 / 7.536 | 7.066 |
+| isotropic 100 cd of 5 planes (0 to 360), at 10° to 90° | 7.066 | 7.066 | 7.066 |
+| downlight on / off over 7.066 (100 cd at k), turned about Y, at 0°, 22.5°, 45°, 67.5°, 90°, 180° (table 1, 0.8, 0.5, 0.2, 0.1, 0.25) | 1.083, 0.875, 0.547, 0.219, 0.109, 0.267 | the same | 0.999, 0.800, 0.500, 0.200, 0.100, 0.2495 |
+| downlight at 45° over its nadir (table 0.5): turned / the floor 1 m off-axis | 0.5047 / 0.5047 | the same | 0.5005 / 0.5005 |
+
+The downlight file: 100, 80, 50, 20, 10, 10, 10, 10, 25 cd at 0 to 180° in 22.5° steps, one plane. So the node's
+output is k × the file's candelas, **k = 0.070665 per cd** on 5.2 (0.07060 at the nadir itself) whatever the file's
+planes, also on a light of radius 0.1 m; Cycles multiplies them by the candela multiplier, the ballast factor and the
+ballast-lamp photometric factor (each: 0.5 halves, 2 doubles; V-Ray leaves the last one out), and by the node's
+Strength input and the light's energy; the rated lumens (500, 1256.6, −1), input watts, units and dimensions change
+nothing (no normalization by the file's flux or peak: 200 cd renders twice 100 cd). Vertical 0° is the light's −Z;
+past a file's last vertical angle, or before its first, the node gives 0 (a file of 0 to 90°: 1.000 of 100 cd at 85°,
+0 at 95°; one of 90 to 180°: 0 at 85° and at the nadir, 1.000 at 95°; at 90° itself the 8 × 8 pixels straddle the
+edge, half). Horizontal 0° is along the light's local −Y, 90° along −X, 180° along +Y, 270° along +X (a 0 to 360°
+file of four plane values, the light turned 90° about X or Y; the same on the three versions).
+
+4.2 and 4.5 read the file with a gain that depends on its planes, over 5.2's k (4.5 as 4.2 but at 180°):
+
+| A constant file of planes | nadir | 10° to 90° | 135° | 170° | 180° (4.2 / 4.5) |
+|---|---|---|---|---|---|
+| one (0, or 0 and 360) | 1.083 | 1.0938 (35/32) | 1.162 | 1.142 | 1.069 / 1.066 |
+| 0 and 180 (or 0, 180, 360) | 1.043 | 1.0625 (17/16) | 1.129 | 1.109 | 1.028 / 1.026 |
+| two to five (0 and 90; 90 to 270; 0 to 270; 0 to 360) | 1.023 | 1.000 | 1.0625 | 1.044 | 1.008 / 1.006 |
+
+The downlight (one plane) has the same 35/32 at every table angle from 22.5° to 135°, so its ratios to its own
+nadir or to a constant one-plane file are the table's; a one-plane file of 0 to 90° 1.162 at 45° and 1.121 at 85°.
+That is 4.x's own reading of the file; 5.2 renders the table.
+
+**Spot or point.** Inside its cone a spot with the file renders as the point light with it (nadir, 45° and the
+floor 1 m off-axis: the same pixels, blend 0); a spot of 170° is dark past 85° (84° lit, 86° dark, with the file or
+without), one of 180° lit to 89°; both are dark above their horizon (the downlight turned 180°: 0, the point light
+0.25 of its nadir, the file's 25 cd at 180°). **Watts:** a light's energy is still watts on 4.5 and 5.2 with the
+defaults of the properties they add (exposure 0, normalize on: the 1 W point 0.02533, one of radius 0.1 m 0.02508 as
+on 4.2); normalize off multiplies by 4 at radius 0 and by 4π r² at radius 0.1 (0.00315, a spot the same), exposure 1
+by 2. **EEVEE** (`BLENDER_EEVEE_NEXT` on 4.x, `BLENDER_EEVEE` on 5.x) ignores the light's node tree: a point light
+with the isotropic file, the downlight (upright or turned 180°) or none, and a spot of 170° with the isotropic file,
+the downlight or none, render the plain light (0.02531 on 4.2, 0.02533 on 4.5 and 5.2; the spot turned 180° 0, as
+without the file). Measured with the Light Threshold 0: with its default 0.01 this 1 W point light 1 m away renders 0
+on all three.
+
+The two rules maxdrop-o53.1.3 implements:
+
+- **Watts with the node:** an isotropic file of I cd lights as a point light of 4π I / 683 W when the light's energy
+  is 4π / (683 k) = **0.2604 W** (Light Strength aside), whatever I; a light whose file's candelas V-Ray scales by s
+  (power / rated lumens, "VRayIES power, measured") gets s × 0.2604 W, divided by the file's ballast-lamp factor
+  (Cycles applies it, V-Ray does not). On 4.2 and 4.5 also divided by 35/32 for a file of one plane and by 17/16 for
+  one of planes 0 and 180 (other layouts: 1): exact at 10° to 90° from the axis, where a downlight sends its light;
+  the rest of 4.x's gain (the nadir, the upper half, up to 1.162 / 1.094 = 1.0625 more) stays. Other layouts of 0 to
+  180° (more planes than two) are not measured. Measured at radius 0 and 0.1 m.
+- **The light kind:** a point light keeps the whole profile; a spot cuts it at half its size and above its horizon
+  even at 180°, so an IES light is a point light.
 
 ## Cameras
 
@@ -1947,7 +2033,7 @@ values by the fixture scripts or read by the tests):
 | | 2 BRDF | 10 brdf_type (4 = GGX), 54 anisotropy, 58 anisotropy_rotation (stored in degrees, as shown), 69 soften, 86 gtr_gamma, 89 brdf_useRoughness |
 | | 3 options | 11 option_traceReflection, 13 option_doubleSided, 22 option_cutOff, 84 option_opacityMode |
 | | 4 maps | map, on, multiplier: 100 / 150 / 200 diffuse, 101 / 151 / 201 reflection, 102 / 152 / 202 refraction, 103 / 153 / 203 bump, 104 / 154 / 204 reflectionGlossiness, 105 refractionGlossiness, 106 displacement, 109 refractionIOR, 110 hilightGlossiness, 111 reflectionIOR, 112 / 162 / 212 opacity, 113 roughness, 117 self_illumination, 119 metalness (multipliers in percent: 63.0 = 63 %) |
-| VRay2SidedMtl `(0x6066686A, 0x11731B4B)` | 0 | 0 frontMtl, 1 backMtl, 7 translucency, 3 backMtlOn, 4 texmap_translucency, 8 force1SidedSubMtls; V-Ray 5.2 renders an empty frontMtl's side not at all at translucency black (the back shows backMtl when backMtlOn, nothing otherwise); at the default translucency (0.5) the front is half transparent, with no front or back color (maxdrop-6n0.6.4) |
+| VRay2SidedMtl `(0x6066686A, 0x11731B4B)` | 0 | 0 frontMtl, 1 backMtl, 7 translucency, 3 backMtlOn, 4 texmap_translucency, 5 texmap_translucency_on, 6 texmap_translucency_multiplier (percent), 8 force1SidedSubMtls, 9 mult_by_front_diffuse (vray_wrappers' oracle; 2 an unnamed float, 0.5, not read); V-Ray 5.2 renders an empty frontMtl's side not at all at translucency black (the back shows backMtl when backMtlOn, nothing otherwise); at the default translucency (0.5) the front is half transparent, with no front or back color (maxdrop-6n0.6.4) |
 | VRayBlendMtl `(0x3DA0041B, 0x0F436E31)` | 0 | 0 baseMtl, 1 coatMtl (table), 2 blend (color table), 3 texmap_blend, 4 texmap_blend_multiplier, 6 coatMtl_enable, 5 additiveMode; V-Ray 5.2 renders an empty baseMtl as nothing below the coats (a coat at blend grey: alpha 0.5; blend black: not rendered) (maxdrop-6n0.6.4) |
 | Shell Material `(0x255, 0)` | 0 | 2 originalMaterial, 3 bakedMaterial, 0 viewportMtlIndex, 1 renderMtlIndex |
 | VRayOverrideMtl `(0x15D20E6B, 0x54E217EB)` | 0 | 0 baseMtl, 2 giMtl, 4 reflectMtl, 6 refractMtl, 8 shadowMtl (getSubMtl order), each followed by its switch (1 baseMtl_on ... 9 shadowMtl_on); V-Ray 5.2 renders baseMtl for the camera whatever baseMtl_on says, and an empty baseMtl black (maxdrop-em3.136) (vray_more) |
@@ -2062,6 +2148,37 @@ The maps of texmap_rules (block 0 each; `convert/texmaps/`):
 | Composite `(0x280, 0)` | tables: 1 mapEnabled, 3 maskEnabled, 5 blendMode (0 normal, 1 average, 2 addition, 3 subtract, 4 darken, 5 multiply, 6 color burn, 7 linear burn, 8 lighten, 9 screen, 10 color dodge, 11 linear dodge, 12 spotlight, 13 spotlight blend, 14 overlay, 15 soft light, 16 hard light, 17 pin light, 18 hard mix, 19 difference, 20 exclusion, 21 hue, 22 saturation, 23 color, 24 value: measured with renderMap), 6 layerName, 8 opacity (%), 9 mapList, 10 mask; 0, 2 and 4 have no name and are empty tables, not saved. As a constructor keyword `name` is the layer names; assigned afterwards it is the map's name (texmap_wrappers names its three) |
 | Normal Bump `(0x243E22C6, 0x63F6A014)` | 0 mult_spin, 1 bump_spin, 2 normal_map, 3 bump_map, 4 / 5 their switches, 6 method (0 tangent), 7 flipred, 8 flipgreen, 9 swap_rg |
 | CoronaNormal `(0x2870CEAA, 0xCC18437C)` | 500 normalMap, 501 multiplier, 502 addGamma, 503 flipRed, 504 flipGreen, 505 swapRedGreen, 507 additionalBump, 508 additionalBumpStrength, 509 additionalBumpOn |
+| Checker `(0x200, 0)` (pblock_animated, standard_shaders, standard_maps, vray_more) | 0 soften, 1 color1, 2 color2, 3 map1, 4 map2, 5 / 6 map1Enabled / map2Enabled, 7 coords (its UVGen, a Placement part as a Bitmap's) |
+
+Checker (maxdrop-o53.1.4) is a Mix of its two sides (map k when set and on, else color k) by a pattern leaf: 0 or 1
+by the parity of floor(2x) + floor(2y), (x, y) the UV placed as a Bitmap's (tiled and turned about the tile center).
+Provisional, not measured until maxdrop-o53.3.9 has 3ds Max's samples: 2 squares per tile and axis, color 1 on the
+square at the placed origin, soften drawn as 0 (a soften above 0 is a line in the report). The pattern repeats
+whatever the UVGen's tile and mirror flags (a line when they are off / on). With the gamma off the sides keep the
+input's kind (a 0 / 1 mask picks one side: decoded before or after, the same). In a bump input the Mix of the sides'
+heights (black to white: the pattern itself), in a normal map's normal slot nothing (a line). The builder draws it with
+Math nodes (Mapping, Separate XYZ, FLOOR, ADD, WRAP to 0..2), which the Blender tests' node evaluator reads.
+
+| Class (ClassID) | Parameters |
+|---|---|
+| Noise `(0x234, 0)` (pblock_animated, standard_shaders, vray_more, vray_texmaps) | 0 color1, 1 color2, 2 map1, 3 map2, 4 / 5 map1Enabled / map2Enabled, 6 size (file units; 635 in the millimeter fixtures, whose scripts create the Noise without a size: 3ds Max's default, 25 inches), 7 phase, 8 levels, 9 thresholdLow, 10 thresholdHigh, 11 type (0 regular, 1 fractal, 2 turbulence), 12 coords (its XYZGen, a part), 13 output (its Output part) |
+| XYZGen `(0x100, 0)`, superclass `0x0C30` (a Noise's coords) | old ParamBlock: 0 offset (Point3, file units), 1 tiling (Point3), 2 angle (Point3), 3 / 4 floats (1 and 0 in every fixture; assumed blur and blur offset, not read); its u32 leaves `0x0002`, `0x0010`, `0x0004` hold 0, 1, 1 in every fixture Noise: the coordinate source is among them, not decoded (maxdrop-o53.2.6) |
+
+Noise (maxdrop-o53.1.5) is a Mix of its two sides by a Noise leaf, approximated (counted as a procedural map drawn
+with Blender's own pattern): a Noise Texture (fBm, normalized, roughness 0.5, lacunarity 2) on Blender's object
+coordinates p (meters) through a Mapping node, q = R(angle) (tiling * (p - offset)) / size, the offset and size in
+meters (file units times the import's meters per unit), the angle in radians (as a UVGen's old ParamBlock).
+Provisional, not measured until maxdrop-o53.3.10 fits them against 3ds Max's samples: that scale (one Blender noise
+unit per size), the order offset, tiling, angle; Detail = levels - 1 for fractal and turbulence (a level an octave),
+0 for regular (3ds Max uses levels only for those two); turbulence as |2 fBm - 1|; phase as the 4D noise's W (3D
+at phase 0: another function, so the spots change as soon as the phase leaves 0); the
+thresholds as a clamped Map Range from low to high (high at least 0.001 above low). The coordinate source is drawn
+as Object XYZ (maxdrop-o53.3.3 applies the others), on Blender's object coordinates, which hold the pivot offset
+the build bakes into the mesh (3ds Max's Object XYZ may not: with an offset rotation or scale and a tiling not the
+same on every axis the pattern may turn). With the gamma off it is computed on the stored values, as a
+Falloff (MASK_MIXES; not measured); its Output part an Adjust. In a bump input with black and white sides the leaf
+itself, in a normal map's normal slot nothing (a line). Blender's noise is another function than 3ds Max's: only
+the scale, the octaves and the contrast can match.
 
 Empty wrappers, measured (maxdrop-em3.76; 3ds Max 2020, gamma off, renderMap and V-Ray 5.2 renders with linear
 color mapping, a plane under an orthographic camera). An Output or RGB Tint with map1 unset or map1Enabled off renders
@@ -2395,6 +2512,67 @@ the default) the sRGB curve; multiplier scales the color, renderMultiplier does 
 when V-Ray renders). Not measured: whether the multipliers come before or after the Output's invert and offset
 (MaxDrop folds them into its amount), Auto on a float file (taken as linear) and V-Ray's crop origin (taken as a
 Bitmap's).
+
+VRayBlendMtl as layers (maxdrop-o53.1.6, no render in this bead): a base with a coat that is set (coatMtl, 1) and on
+(coatMtl_enable, 6) converts to the base with each such coat as a layer over it, bottom first; additiveMode (5) adds a
+coat over what is below (an Add Shader over the coat scaled by its weight), else it is mixed (a Mix Shader). The weight
+of coat k is its blend color (2) taken as a swatch on a mask (the scene's swatch rule on the mean of its channels, each
+clamped to 0..1, as V-Ray 5.2 was measured to render a constant mask: maxdrop-em3.36); with a blend map (3), that
+weight and the map mixed by texmap_blend_multiplier (4, percent), as a slot mixes its swatch and its map, the map as a
+mask. The ids 1000-1035 an oracle lists are transient aliases of the table elements, not stored. Not measured: the
+weights against V-Ray (maxdrop-o53.3.2), additive mode's sum (a coat with opacity below 1 adds its Transparent BSDF
+too, so the sum lets the base be seen through), V-Ray's per-channel blend of a colored blend color (MaxDrop takes the
+mean, a line in the report) and the multiplier above 100 %. A base without a coat set and on is peeled to it, an
+empty base to its first coat that is on (V-Ray's render of an empty base under a coat switched off not measured). A
+blend map whose file is not found draws the blend color's weight, as a slot whose map is lost shows its swatch.
+Blender side, measured (maxdrop-o53.1.6, a scratch script, 16 x 16 plane under a black world, Standard view, the
+builder's own nodes): a base emitting 0.2 with a coat emitting 1.0 at weight 0.6 renders 0.798 (Cycles, 8 samples) /
+0.800 (EEVEE) added, 0.679 / 0.680 mixed, alpha 1, on Blender 4.2.23 and 5.2: the Mix Shader from an unlinked input
+scales the coat (0.2 + 0.6 and lerp(0.2, 1, 0.6) = 0.68).
+
+VRay2SidedMtl translucency (maxdrop-o53.1.7, no render in this bead): a front that is set (frontMtl, 0) and not itself
+a Multi/Sub-Object, with a translucency that is not black (7, or texmap_translucency 4 set, on (5) and at a multiplier
+(6) above 0) or a back material set (1), on (backMtlOn, 3) and not the front, converts to the front with a
+translucency t: V-Ray's documented rule, t of the light arriving on the other side and 1 - t of the side's own,
+drawn as a Translucent BSDF mixed in by t over the front's surface. t is the translucency color taken as a swatch on
+a mask (the scene's swatch rule on the mean of its channels, as VRayBlendMtl's blend color: vray_wrappers'
+FixtureTwoSided, 64 96 128 with the gamma off, gives 0.117, not the raw mean 0.376); with a translucency map, that
+weight and the map mixed by the multiplier, a data graph. The Translucent BSDF's color is the back material's base
+color where it is shown, else the front's; a back material that is shown is drawn on back faces (a Mix Shader by
+Geometry > Backfacing) with the same t in the front's color. A missing translucency is black (1.0.2's peel). A front
+that is itself a Multi/Sub-Object keeps the peel and its face IDs (translucency and back not drawn, a line); one
+reached through a wrapper (a VRayMtlWrapper over a Multi/Sub-Object) is drawn as its first entry, a line: unlike
+1.0.2, which kept its face IDs. A front with layers of its own gets the translucency below them (a line). Not
+measured: the weight against V-Ray (maxdrop-o53.3.2); the gamma of a translucency map: the map is a data graph (read
+as stored with the gamma off) while the color goes through the swatch rule of a mask (decoded with the gamma off), so
+with the gamma off a 128 grey map gives 0.502 and the 128 grey color 0.216 (whether V-Ray reads the map as a mask,
+as VRayBlendMtl's blend map is taken, is maxdrop-o53.3.2's); V-Ray's per-channel mix of a colored translucency
+(MaxDrop takes the mean, a line in the report), mult_by_front_diffuse (a line in the report) and force1SidedSubMtls
+(not read). The engines' settings for thin surfaces are maxdrop-o53.1.10's.
+
+Two-sided in both engines (maxdrop-o53.1.10, measured, a scratch script outside the repository, Blender headless):
+a 4 x 4 m plane (front +Z), a 2 m square area light of 100 W 1 m behind it shining at its back, an orthographic camera
+(1 m across) 2 m in front of it, a black world, 8 x 8 px, Standard view; Cycles 256 samples (CPU, no denoising), EEVEE
+32 samples; the builder's material of base color 0.8, translucency color 0.8, translucency 0.5 against 0: the mean
+red. Translucency 0 renders 0.0000 everywhere. "Without" is the same material with its Thickness link removed, at
+alpha 0.5 still Dithered (maxdrop-o53.1.7 built it Blended there: 0.0506 on 4.5.16 and 5.2, 0.2023 on 4.2.23):
+
+| Blender | Cycles | EEVEE, the builder's | EEVEE without | Cycles, alpha 0.5 | EEVEE, alpha 0.5 | EEVEE without, alpha 0.5 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 4.2.23 | 1.6435 | 1.6287 | 4.5939 | 0.8222 | 0.7882 | 0.0793 |
+| 4.5.16 | 1.6435 | 1.6479 | 4.6515 | 0.8222 | 0.7936 | 0.0802 |
+| 5.2.0 | 1.6435 | 1.6486 | 0.1213 | 0.8222 | 0.7940 | 0.0803 |
+
+The setting is a Value of 0 (THIN_LABEL) on the Material Output's Thickness (compat.thin_surface; the socket and the
+material's Thickness Mode exist on all three versions): EEVEE then takes the surface as infinitely thin. Thickness
+Mode changes nothing once the thickness is 0 (Sphere and Slab gave the same numbers), so it is left at Sphere; Slab
+alone, or Thickness From Shadow, does not do it (Slab: 0.6560 / 4.7345 / 0.3817). With a constant alpha below 1 the
+builder's Blended method shows no light from behind with the thickness 0 (0.0000 on each version): a material with a
+translucency renders Dithered, as with an alpha map. Lit from the front instead (a sun of 3 W/m2 at 45 degrees),
+translucency 0.5: Cycles 0.2675, EEVEE 0.2676 / 0.2678 / 0.2681 (without the setting 0.3162 / 0.3164 / 0.3167);
+translucency 0: 0.5350 and 0.5352 / 0.5352 / 0.5356. Not measured: what EEVEE's refraction and subsurface make of
+the thickness 0 on the same material, and 4.3, 4.4, 5.0 and 5.1. Provisional until maxdrop-o53.3.2 has V-Ray's
+numbers for the same plane.
 
 ## Asset metadata
 

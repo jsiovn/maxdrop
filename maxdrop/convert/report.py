@@ -60,8 +60,9 @@ class Report:
                  "modifiers_applied", "modifiers_converted",
                  "dropped_uv_layers", "unknown_controller_nodes", "geometry_errors", "issues", "pack", "pack_name",
                  "materials_built", "materials", "wrappers", "grey_materials", "maps_peeled", "maps_unsupported",
+                 "maps_approximated",
                  "sockets_skipped", "blender", "textures_found", "textures_missing", "texture_search_stopped",
-                 "material_issues", "swatches", "world")
+                 "material_issues", "swatches", "world", "exposure", "exposure_others")
 
     def __init__(self, source=""):
         self.source, self.unit, self.meters = source, None, 1.0
@@ -69,6 +70,8 @@ class Report:
         self.curves_built = self.lights_built = self.cameras_built = 0
         self.scene_camera = self.render_size = None  # the scene camera's name; "W x H" or NO_RENDER_SIZE
         self.scene_camera_note = None  # why the scene camera is the first one, when that is no issue
+        self.exposure = None  # the scene camera's exposure (stops), applied as the scene's view exposure
+        self.exposure_others = []  # [(camera name, its exposure or None)] of the cameras whose exposure differs
         self.hidden = self.unrenderable = self.frozen = self.groups = self.dropped_uv_layers = 0
         self.unknown_controller_nodes = 0  # their issues, listed by class in unknown_controllers instead
         self.placeholders = collections.Counter()
@@ -84,6 +87,7 @@ class Report:
         self.grey_materials = collections.Counter()  # class name -> materials without a rule, made grey
         self.maps_peeled = collections.Counter()  # class name -> map objects peeled to the map below
         self.maps_unsupported = collections.Counter()  # class name -> map objects without a usable map below
+        self.maps_approximated = collections.Counter()  # class name -> map objects drawn with Blender's own pattern
         self.sockets_skipped = collections.Counter()  # Principled input name -> materials that needed it
         self.textures_found = []  # [(lookup rule name, files found)] in lookup order
         self.textures_missing, self.texture_search_stopped, self.material_issues = [], [], []
@@ -98,8 +102,9 @@ class Report:
 
     @property
     def approximated(self):
-        """How many things were converted only in part: wrappers peeled to a sub-material, maps to the map below."""
-        return sum(self.wrappers.values()) + sum(self.maps_peeled.values())
+        """How many things were converted only in part: wrappers peeled to a sub-material, maps to the map below,
+        procedural maps drawn with Blender's own pattern."""
+        return sum(self.wrappers.values()) + sum(self.maps_peeled.values()) + sum(self.maps_approximated.values())
 
     @property
     def material_problems(self):
@@ -165,7 +170,11 @@ class Report:
         if self.render_size is not None or self.scene_camera is not None:
             lines.append("Render size: %s; scene camera: %s" % (self.render_size or NO_RENDER_SIZE,
                                                                 self.scene_camera or "none")
-                         + (", " + self.scene_camera_note if self.scene_camera_note else ""))
+                         + (", " + self.scene_camera_note if self.scene_camera_note else "")
+                         + ("; exposure: " + _stops(self.exposure) if self.exposure is not None else "")
+                         + ("; other cameras' exposures, not applied: " + _names(
+                             ["%s %s" % (n, _stops(e)) for n, e in self.exposure_others])
+                            if self.exposure_others else ""))
         if self.world:
             lines.append("World: " + self.world)
         lines.append("Layers: %d (%d hidden)" % (self.layers, self.hidden_layers))
@@ -192,6 +201,9 @@ class Report:
                 lines.append("  Wrappers peeled to their sub-material, by class: " + _counts(self.wrappers))
             if self.maps_peeled:
                 lines.append("  Maps peeled to the map below them, by class: " + _counts(self.maps_peeled))
+            if self.maps_approximated:
+                lines.append("  Procedural maps drawn with Blender's own pattern, by class: "
+                             + _counts(self.maps_approximated))
         if not self.left_out:
             if not self.approximated:
                 lines.append("Nothing was left out.")
@@ -284,6 +296,10 @@ def _counts(counter):
     return shown
 
 
+def _stops(exposure):
+    return "none" if exposure is None else "%g" % exposure
+
+
 def _names(items):
     shown = ", ".join(str(x) for x in items[:MAX_LISTED])
     if len(items) > MAX_LISTED:
@@ -358,6 +374,12 @@ def gather(desc, source="", objects_built=None, meshes_built=None, dropped_uv_la
     if camera is not None:
         rep.scene_camera = labels.get(camera, "object %d" % camera)
         rep.scene_camera_note = getattr(desc, "camera_note", None)
+        cds = list(getattr(desc, "cameras", {}).values())
+        own = next((cd for cd in cds if camera in cd.users), None)
+        rep.exposure = own.exposure if own is not None else None
+        shown = _stops(rep.exposure)  # compared as printed: a difference the line cannot show is none
+        rep.exposure_others = [(labels.get(cd.users[0], "object %d" % cd.users[0]) if cd.users else cd.name,
+                                cd.exposure) for cd in cds if cd is not own and _stops(cd.exposure) != shown]
     for index, reason in desc.issues:
         label = index if isinstance(index, str) else SCENE if index is None else labels.get(index, "object %d" % index)
         if reason == UNKNOWN_CONTROLLER and desc.unknown_controllers:  # counted by class already
@@ -379,10 +401,10 @@ def add_materials(rep, materials_built, classes=(), conv_stats=None, tex_stats=N
                   blender="", swatches=None, build_issues=()):
     """Add what the material import did to rep: materials_built (Blender materials made), classes {class name:
     materials converted by a rule} and sockets {Principled input name: materials that needed it} from
-    build.materials; conv_stats (peeled, unknown, issues), tex_stats (peeled, unsupported, issues) and lookup (a
-    TextureReport: found, missing, truncated) from the converters; blender: the version the sockets are missing
-    from; swatches: the converters' convert.colors.Swatches (its line; its note, set when the scene's gamma was not
-    found, an issue); build_issues: build.materials' [(Blender material label, reason)], material issues too.
+    build.materials; conv_stats (peeled, unknown, issues), tex_stats (peeled, unsupported, approximated, issues) and
+    lookup (a TextureReport: found, missing, truncated) from the converters; blender: the version the sockets are
+    missing from; swatches: the converters' convert.colors.Swatches (its line; its note, set when the scene's gamma
+    was not found, an issue); build_issues: build.materials' [(Blender material label, reason)], material issues too.
     """
     rep.materials_built, rep.blender = materials_built, blender
     if swatches is not None:
@@ -398,6 +420,7 @@ def add_materials(rep, materials_built, classes=(), conv_stats=None, tex_stats=N
     if tex_stats is not None:
         rep.maps_peeled.update(tex_stats.peeled)
         rep.maps_unsupported.update(tex_stats.unsupported)
+        rep.maps_approximated.update(tex_stats.approximated)
         rep.material_issues.extend(("object %d" % index, reason) for index, reason in tex_stats.issues)
     if lookup is not None:
         rep.textures_found = [(textures.RULE_NAMES[r], lookup.found.get(r, 0)) for r in textures.RULES]

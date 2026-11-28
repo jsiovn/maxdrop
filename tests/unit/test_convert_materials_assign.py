@@ -47,7 +47,7 @@ class Assign(unittest.TestCase):
         self.assertEqual(self.names(ms.slots), [["FixtureSubOne"], [None]])
         self.assertEqual(ms.indices.tolist(), [1, 0, 1, 1, 1, 1])  # face IDs 2 1 5 4 6 3: only ID 1 has a material
         two = next(n for n in desc.nodes if n.name == "FixtureTwoSidedBox")
-        self.assertEqual(self.names(plan[two.mesh].slots), [["FixtureFront"]])
+        self.assertEqual(self.names(plan[two.mesh].slots), [["FixtureTwoSided"]])
         self.assertEqual(plan[two.mesh].indices.tolist(), [0] * 6)
         self.assertEqual(plan[two.mesh].indices.dtype.name, "int32")
 
@@ -392,7 +392,8 @@ class FrameZeroParams(unittest.TestCase, Close):
 
     def test_normal_map_multipliers(self):
         """FixtureAnimNormal: normal_map_multiplier and bump_map_multiplier animated, read as the normal map rule reads
-        them (its Checker and Noise convert to nothing, so no NormalMap node is drawn here)."""
+        them (its Checker in the normal slot is left out and its bump Noise is a Bump of the pattern, so no NormalMap
+        node is drawn here)."""
         ids = texmaps.NORMAL_MAPS[classids.VRAY_NORMAL_MAP]
         m = self.tex.graph.get(self.by_name["FixtureAnimNormal"])
         self.close(texmaps._num(m, ids.strength, 1.0), self.want("FixtureAnimNormal", 0, ids.strength))
@@ -486,7 +487,7 @@ class FrameZeroParams(unittest.TestCase, Close):
                                              {0: Typed(0, {1: pblock.Animated(9)})}, {})
         std.refs = {}  # no Texmaps object: the maps from block 3
         graph = FakeGraph(std)
-        graph.scene = object()
+        graph.scene = types.SimpleNamespace(entry=lambda i: None)  # no class directory: the class names of classids
         unknown = controllers.Issue(None, 9, None, None, controllers.UNKNOWN_CLASS)
         with mock.patch.object(controllers, "parameter_value", return_value=(None, [unknown])):
             conv = mat.MaterialConverter(graph)

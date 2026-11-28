@@ -11,7 +11,9 @@ from ..params import finite as _finite, flag as _flag, num as _num
 from .ids import (
     ChunkError, CORONA_BASE, CORONA_LAYERS, CORONA_LAYERS_ON, CORONA_SELECT_INDEX, CORONA_SELECT_LIST,
     DOUBLE_SIDED_FACING_ON, GREY_SRGB, MAX_PEEL, MULTI_ENABLED, MULTI_IDS, MULTI_MATERIALS, SHELL_RENDER_INDEX,
-    SHELL_SUBS, WRAPPER_STOPS, WRAPPERS,
+    SHELL_SUBS, VRAY_2SIDED_BACK, VRAY_2SIDED_BACK_ON, VRAY_2SIDED_FRONT, VRAY_2SIDED_MAP, VRAY_2SIDED_MAP_ON,
+    VRAY_2SIDED_MULTIPLIER, VRAY_2SIDED_TRANSLUCENCY, VRAY_BLEND_BASE, VRAY_BLEND_COATS, VRAY_BLEND_COATS_ON,
+    WRAPPER_STOPS, WRAPPERS,
 )
 from .ir import ConvertStats, Input, MapRef, MaterialIR
 from .values import _scene_meters, class_name, mean
@@ -52,8 +54,15 @@ class MaterialConverter:
         v = tuple(min(1.0, max(0.0, c)) for c in v[:3])
         if ir is not None and max(v) - min(v) > 0.5 / 255:
             self.issue(m.index, "%s %r: opacity color (%.3f, %.3f, %.3f) drawn as its mean %.3f: Corona renders it per "
-                       "channel" % ((class_name(m.superclass, m.class_id), m.name) + v + (mean(v),)), ir)
+                       "channel" % ((self._class_name(m), m.name) + v + (mean(v),)), ir)
         return mean(v)
+
+    def _class_name(self, m):
+        """The report's name of material m's class (values.class_name), the class directory of the graph's scene
+        naming a class classids does not know."""
+        scene = getattr(self.graph, "scene", None)
+        entry = scene.entry(m.index) if scene is not None else None  # m came from graph.get: an object of the scene
+        return class_name(m.superclass, m.class_id, entry.name if entry is not None else "")
 
     def issue(self, index, reason, ir=None):
         self.stats.issues.append((index, reason))
@@ -116,7 +125,7 @@ class MaterialConverter:
         else:
             pids = WRAPPERS[key]
         block = m.block(0)
-        name = m.name or class_name(m.superclass, key)
+        name = m.name or self._class_name(m)
         if key in WRAPPER_STOPS:
             slot, switch, shows = WRAPPER_STOPS[key]
             first = block.value(pids[0]) if block is not None else None
@@ -127,8 +136,11 @@ class MaterialConverter:
         for pid in pids:
             values = block.value(pid) if block is not None else None
             for k, v in enumerate(values if isinstance(values, list) else [values]):
-                if key == classids.CORONA_LAYERED_MTL and pid == CORONA_LAYERS:
-                    on = m.param(CORONA_LAYERS_ON, 0, tab=k)
+                if (key, pid) in ((classids.CORONA_LAYERED_MTL, CORONA_LAYERS), (classids.VRAY_BLEND_MTL,
+                                                                                 VRAY_BLEND_COATS)):
+                    # a VRayBlendMtl without a base: its first coat that is on, as vray_blend_mtl skips one switched
+                    # off (V-Ray's render of an empty base under a coat switched off not measured)
+                    on = m.param(CORONA_LAYERS_ON if pid == CORONA_LAYERS else VRAY_BLEND_COATS_ON, 0, tab=k)
                     if _finite(on) and not on:
                         continue
                 if isinstance(v, pblock.Reference) and v.index is not None:
@@ -137,6 +149,11 @@ class MaterialConverter:
                     if key == classids.DOUBLE_SIDED_MTL and pid == 0 and not _flag(m, DOUBLE_SIDED_FACING_ON, 0, True):
                         self._issue_once(m.index, "%s: facing material switched off: drawn all the same, as V-Ray "
                                          "renders it (the scanline renders it black)" % name)
+                    if (key == classids.VRAY_2SIDED_MTL and pid == pids[0]
+                            and self.is_class(v.index, classids.SC_MATERIAL, classids.MULTI_SUB_MTL)
+                            and (self.two_sided_translucent(m) or self.two_sided_back(m) is not None)):
+                        self._issue_once(m.index, "%s: front material is a Multi/Sub-Object: drawn by face ID, its "
+                                         "translucency and back material not drawn" % name)
                     if key == classids.VRAY_BLEND_MTL and pid != pids[0]:
                         self._issue_once(m.index, "%s: base material empty: drawn as its coat, which V-Ray renders "
                                          "over nothing (transparent where the blend is below white)" % name)
@@ -169,6 +186,49 @@ class MaterialConverter:
             out.append((k, v.index))
         return out
 
+    def blend_coats(self, m):
+        """The coats of a VRayBlendMtl that are set and on (coatMtl_enable, on where it says nothing): [(table
+        position, object index)]."""
+        block = m.block(0)
+        values = block.value(VRAY_BLEND_COATS) if block is not None else None
+        out = []
+        for k, v in enumerate(values if isinstance(values, list) else []):
+            on = m.param(VRAY_BLEND_COATS_ON, 0, tab=k)
+            if (_finite(on) and not on) or not isinstance(v, pblock.Reference) or v.index is None:
+                continue
+            out.append((k, v.index))
+        return out
+
+    def two_sided_back(self, m):
+        """The object index of a VRay2SidedMtl's back material when it is set, switched on (backMtlOn, off where it
+        says nothing), a material and not the front object; else None."""
+        back, front = m.param(VRAY_2SIDED_BACK, 0), m.param(VRAY_2SIDED_FRONT, 0)
+        if not _flag(m, VRAY_2SIDED_BACK_ON, 0, False) or not isinstance(back, pblock.Reference) or back.index is None:
+            return None
+        if self.graph.superclass(back.index) != classids.SC_MATERIAL:
+            return None
+        if isinstance(front, pblock.Reference) and front.index == back.index:
+            return None
+        return back.index
+
+    def two_sided_color(self, m):
+        """A VRay2SidedMtl's translucency color as stored, each channel clamped to 0..1; a missing or unusable one
+        black (the peel of 1.0.2)."""
+        v = m.param(VRAY_2SIDED_TRANSLUCENCY, 0)
+        if not (isinstance(v, tuple) and len(v) >= 3 and all(_finite(c) for c in v[:3])):
+            return (0.0, 0.0, 0.0)
+        return tuple(min(1.0, max(0.0, c)) for c in v[:3])
+
+    def two_sided_translucent(self, m):
+        """Whether a VRay2SidedMtl's translucency is not black: its color (two_sided_color), or a translucency map
+        set, on and at a multiplier above 0."""
+        if max(self.two_sided_color(m)) > 0.0:
+            return True
+        ref = m.param(VRAY_2SIDED_MAP, 0)
+        return (_flag(m, VRAY_2SIDED_MAP_ON, 0, True) and _num(m, VRAY_2SIDED_MULTIPLIER, 0, 100.0) > 0.0
+                and isinstance(ref, pblock.Reference) and ref.index is not None
+                and self.graph.superclass(ref.index) == classids.SC_TEXMAP)
+
     def bsdf_count(self, ir):
         """The Principled BSDFs build/materials/ draws for ir: one, plus its layers' at each use (a reflection
         weight's twin not counted: each BSDF draws at most one)."""
@@ -177,17 +237,29 @@ class MaterialConverter:
             self._bsdfs[k] = (ir, 1 + sum(self.bsdf_count(layer.ir) for layer in ir.layers))
         return self._bsdfs[k][1]
 
-    def _mixes_layers(self, m):
-        """A CoronaLayeredMtl with a base and a layer on is a material of its own (corona_layered_mtl); without either
-        it is a wrapper of the one it has."""
-        base = m.param(CORONA_BASE, 0)
-        return isinstance(base, pblock.Reference) and base.index is not None and bool(self.corona_layers(m))
+    def _mixes_layers(self, m, key):
+        """A CoronaLayeredMtl with a base and a layer on, or a VRayBlendMtl with a base and a coat set and on, is a
+        material of its own (corona_layered_mtl, vray_blend_mtl); without either it is a wrapper of the one it has. So
+        is a VRay2SidedMtl with a front (not itself a Multi/Sub-Object: the peel keeps its face IDs) that lets light
+        through or shows a back material (vray_2sided_mtl)."""
+        if key == classids.VRAY_2SIDED_MTL:
+            front = m.param(VRAY_2SIDED_FRONT, 0)
+            return (isinstance(front, pblock.Reference) and front.index is not None
+                    and not self.is_class(front.index, classids.SC_MATERIAL, classids.MULTI_SUB_MTL)
+                    and (self.two_sided_translucent(m) or self.two_sided_back(m) is not None))
+        if key == classids.CORONA_LAYERED_MTL:
+            base, layers = m.param(CORONA_BASE, 0), self.corona_layers
+        elif key == classids.VRAY_BLEND_MTL:
+            base, layers = m.param(VRAY_BLEND_BASE, 0), self.blend_coats
+        else:
+            return False
+        return isinstance(base, pblock.Reference) and base.index is not None and bool(layers(m))
 
     def _is_wrapper(self, m, key):
         """Material object m (ClassId key) stands for another one: peel() and source_for walk through it, stopping on
-        anything else (not a material, not in WRAPPERS or the Shell, a CoronaLayeredMtl that mixes its layers)."""
+        anything else (not a material, not in WRAPPERS or the Shell, a layered material that mixes its layers)."""
         return m.superclass == classids.SC_MATERIAL and (key in WRAPPERS or key == classids.SHELL_MTL) and not (
-            key == classids.CORONA_LAYERED_MTL and self._mixes_layers(m))
+            self._mixes_layers(m, key))
 
     def peel(self, index):
         """(object index of the material a wrapper stands for, None), the index itself for an object that is no
@@ -212,7 +284,7 @@ class MaterialConverter:
                 break
             if i not in self._counted:
                 self._counted.add(i)
-                self.stats.peeled[class_name(m.superclass, key)] += 1
+                self.stats.peeled[self._class_name(m)] += 1
             chain.append(i)
             sub, reason = self._sub(m, key)
             if sub is None:
@@ -379,7 +451,7 @@ class MaterialConverter:
         """The grey material for an object no rule converts, named after it."""
         try:
             m = self.graph.get(index)
-            name, source = m.name, class_name(m.superclass, m.class_id)
+            name, source = m.name, self._class_name(m)
         except ChunkError:
             name, source = "", ""
         g = colors.srgb_to_linear(GREY_SRGB)
@@ -393,14 +465,14 @@ class MaterialConverter:
             m = self.graph.get(index)
         except ChunkError as e:
             return self._grey(index, "object %d: %s" % (index, e))
-        source = class_name(m.superclass, m.class_id)
+        source = self._class_name(m)
         rule = RULES.get((m.superclass, ClassId(*m.class_id)))
         if rule is None:
             self.stats.unknown[source] += 1
             return self._grey(index, "")
         ir = MaterialIR(index, m.name, source)
         made = rule(self, m, ir)
-        if made is not None:  # a rule that builds its IR from others' (corona_layered_mtl): textures done
+        if made is not None:  # a rule that builds its IR from others' (the layered ones): textures done
             return made
         if self.texmaps is not None:
             ir.textures = _texmaps.texture_graphs(ir, self.texmaps)
