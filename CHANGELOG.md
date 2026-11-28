@@ -13,6 +13,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Maps: a Checker is drawn as nodes in color, data and bump slots (its two colors or maps mixed by the pattern on its
   placement), instead of "no bitmap below"; in a normal map's normal slot it is left out, a line in the report. The
   size of its squares, which color is at the UV origin and soften are not measured against 3ds Max yet.
+- Maps: a Noise is drawn with Blender's own Noise Texture on the object's coordinates at 3ds Max's size, levels and
+  thresholds (its two colors or maps mixed by it, the pattern as the height in a bump slot), instead of "no bitmap
+  below", and counted under Approximated in the report; Blender's noise is another pattern than 3ds Max's, and its
+  scale and contrast are not measured against 3ds Max yet.
 
 ### Changed
 
