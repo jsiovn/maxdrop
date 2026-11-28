@@ -38,10 +38,11 @@ made only when needed and listed in built.helpers. It is not baked into the mesh
 are empties (placeholders) and the object's own world matrix would stay off.
 An EMPTY node becomes a plain-axes empty with the custom property maxdrop_class; a CURVE node an object of its
 Curve, with the slot of slots.curves (a rectangular section's hidden bevel object goes into collection, without a
-material: build.curves); a LIGHT node an object of its Light (build.lights, power times light_strength), with the
-light's object flags; a CAMERA node an object of its Camera (build.cameras). A mesh light's node (node.emitter) is a
-MESH of its emitter mesh, whose every face gets the emitter's Emission material (build.emitters, strength times
-light_strength), its only slot whatever the slots say, with the emitter's object flags. An object whose every
+material: build.curves); a LIGHT node an object of its Light (build.lights, power times light_strength; a light
+with an IES profile its node tree, one Text per IES file in built.texts), with the light's object flags; a CAMERA
+node an object of its Camera (build.cameras). A mesh light's node (node.emitter) is a MESH of its emitter mesh,
+whose every face gets the emitter's Emission material (build.emitters, strength times light_strength), its only
+slot whatever the slots say, with the emitter's object flags. An object whose every
 slot holds a shadow-catcher material (convert.materials.shadow_catcher_users: CoronaShadowCatcherMtl) gets
 is_shadow_catcher (Cycles; EEVEE has no shadow catcher and draws its grey material).
 
@@ -84,13 +85,15 @@ class Built:
     """objects {node index: Object}, meshes {mesh key: Mesh}, curves {curve key: Curve}, lights {light key:
     Light}, cameras {camera key: Camera}, dropped_uv_layers
     (channels Blender had no room for), helpers (objects that are no node: the shear helper), materials {Max
-    material object index: Material}, emitters {emitter key: its Emission Material}."""
+    material object index: Material}, emitters {emitter key: its Emission Material}, texts {(IES file name, text):
+    Text} (build.lights: one per file)."""
     __slots__ = ("objects", "meshes", "curves", "lights", "cameras", "dropped_uv_layers", "helpers", "materials",
-                 "emitters")
+                 "emitters", "texts")
 
     def __init__(self):
         self.objects, self.meshes, self.dropped_uv_layers, self.helpers = {}, {}, 0, []
         self.curves, self.materials, self.lights, self.cameras, self.emitters = {}, {}, {}, {}, {}
+        self.texts = {}
 
     def roots(self):
         """The objects without a parent, helpers included: what a change of axes turns."""
@@ -329,7 +332,7 @@ def build_steps(desc, collection, collections=None, view_layer=None, slots=None,
         done += 1
         yield done, total
     for key, ld in desc.lights.items():
-        built.lights[key] = build_lights.make_light(ld, light_strength)
+        built.lights[key] = build_lights.make_light(ld, light_strength, built.texts)
         done += 1
         yield done, total
     for key, ed in desc.emitters.items():

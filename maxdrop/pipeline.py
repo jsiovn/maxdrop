@@ -138,9 +138,9 @@ def _restore_world(scene, world, state=None):
 
 
 def _remove(cols, before):
-    """Remove what a failed build left: the objects of the file's collection tree, the collections, and the meshes,
+    """Remove what a failed build left: the objects of the file's collection tree, the collections, the meshes,
     curves, lights, cameras, materials and images made since before ({kind: the as_pointer() of each datablock before
-    the build}) that nothing uses."""
+    the build}) that nothing uses, and every Text made since (an IES light's: a new Text has a fake user)."""
     for ob in list(cols.root.all_objects):
         bpy.data.objects.remove(ob)
     for col in list(cols.layers.values()) + [cols.root]:
@@ -149,6 +149,8 @@ def _remove(cols, before):
         blocks = getattr(bpy.data, kind)
         for block in [b for b in blocks if b.as_pointer() not in before[kind] and not b.users]:
             blocks.remove(block)
+    for text in [t for t in bpy.data.texts if t.as_pointer() not in before["texts"]]:
+        bpy.data.texts.remove(text)
 
 
 def _summary(path, result):
@@ -318,7 +320,7 @@ def _scene_steps(opts, scene, view_layer, max_path, pack=None, pack_name="", dir
     and the text "MaxDrop Report"). pack: archive.unpack()'s result when the scene came from a scene pack, pack_name
     the archive's file name. Returns ([(report level, line)], the convert.report.Report), the report's summary last;
     raises one of _UNREADABLE when the file cannot be read. A build that fails or is closed early is removed again
-    (objects, collections, meshes, curves, lights, cameras, materials, images) before the exception goes on.
+    (objects, collections, meshes, curves, lights, cameras, materials, images, texts) before the exception goes on.
     threaded: the reading in a worker thread (_in_thread), yielding _WAIT meanwhile, stopped when closed;
     progress(text, fraction of the scene) is told what it does; made: a list the scene's build.collections.Collections
     is appended to once built; world: the run's world state (_world_state; None: a run of this file alone): a dome
@@ -340,7 +342,7 @@ def _scene_steps(opts, scene, view_layer, max_path, pack=None, pack_name="", dir
     else:
         read = _read_scene(max_path, opts, dirs)
     desc, slots, counts, failed = read.desc, read.slots, read.counts, read.failed
-    before = {kind: {d.as_pointer() for d in getattr(bpy.data, kind)} for kind in _MADE}
+    before = {kind: {d.as_pointer() for d in getattr(bpy.data, kind)} for kind in _MADE + ("texts",)}
     cols = build_collections.make(desc, view_layer.active_layer_collection.collection, os.path.splitext(name)[0])
     builder = build_materials.MaterialBuilder()
     axis = axis_conversion(from_forward=opts.axis_forward, from_up=opts.axis_up).to_4x4()

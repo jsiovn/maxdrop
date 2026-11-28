@@ -95,6 +95,37 @@ def ies_bytes(rated=500, candela=100, lamps=1, ballast=1):
             "%s %s %s\n" % (lamps, rated, ballast, candela, candela, candela)).encode("ascii")
 
 
+def downlight_bytes(ballast_lamp=1, planes=1):
+    """A self-authored absolute type C file that sends nothing upward: 100, 50, 0, 0, 0 cd at 0, 45, 90, 135, 180
+    degrees (peak 100 at the nadir), in planes 0 (one), 0 and 180 (two) or 0 to 360 by 90 (five); CRLF lines."""
+    horizontal = {1: "0", 2: "0 180", 5: "0 90 180 270 360"}[planes]
+    return ("IESNA:LM-63-2002\r\n[TEST] MaxDrop unit test\r\nTILT=NONE\r\n1 -1 1 5 %d 1 2 0 0 0\r\n1 %s 0\r\n"
+            "0 45 90 135 180\r\n%s\r\n%s\r\n" % (planes, ballast_lamp, horizontal,
+                                                 "\r\n".join(["100 50 0 0 0"] * planes))).encode("ascii")
+
+
+UPLIGHT = b"IESNA:LM-63-2002\nTILT=NONE\n1 -1 1 3 1 1 2 0 0 0\n1 1 0\n0 90 180\n0\n100 100 50\n"
+
+
+def shines(line, file, up="50"):
+    """The issue line of a light that shines with its profile; up: the UPWARD share (an isotropic file's 50)."""
+    return line % file + (L.UPWARD % up if up else "")
+
+
+ISO = shines(L.IES_PROFILE, "a.ies")  # a VRayIES of a.ies shining with an isotropic file
+
+
+def shining(issue):
+    """A light's (who, line) issue with its WEB_FILE or IES_FILE line as the light shining with an isotropic file
+    says it (the others as they are)."""
+    who, line = issue
+    for old, new in ((L.IES_FILE, L.IES_PROFILE), (L.WEB_FILE, L.WEB_PROFILE)):
+        head, tail = ("light: " + old).split("%s")
+        if line.startswith(head) and line.endswith(tail):
+            return who, "light: " + shines(new, line[len(head):len(line) - len(tail)])
+    return issue
+
+
 def with_file(v, data=None, issue=None):
     """VRayIES values with the photometry read_params gives for an IES file of these bytes (or why it is not read)."""
     v["photometry"] = ies_mod.parse(data) if data is not None else None
@@ -238,14 +269,14 @@ class Photometric(unittest.TestCase):
         self.assertEqual(issues, [L.WEB_FILE % L.NO_FILE])
 
     def test_web_profile(self):
-        """A web light whose file is read has its profile with its stored rotation; one whose file is missing or not
-        read none; both today's spot and issue line. Another distribution has none."""
+        """A web light whose file is read has its profile with its stored rotation and shines with it; one whose
+        file is missing or not read has none, the wide spot and its line. Another distribution has none."""
         found = dict(distribution=L.WEB, file="lamp.ies", rotation=(10.0, 20.0, 30.0), ies_name="Lamp.IES",
                      photometry=ies_mod.parse(ies_bytes()), photometry_issue=None)
         ld, issues = describe(photometric(**found))
         self.assertEqual((ld.profile.file, ld.profile.rotation, ld.profile.photometry), ("Lamp.IES", (10.0, 20.0, 30.0),
                                                                                          found["photometry"]))
-        self.assertEqual((ld.kind, ld.spot_size, issues), ("SPOT", L.WEB_CONE, [L.WEB_FILE % "lamp.ies"]))
+        self.assertEqual((ld.kind, ld.spot_size, issues), ("POINT", 0.0, [shines(L.WEB_PROFILE, "lamp.ies")]))
         for missing in ({"photometry": None, "ies_name": None}, {"photometry": None, "photometry_issue": "bad"}):
             ld, issues = describe(photometric(**dict(found, **missing)))
             self.assertEqual((ld.profile, ld.spot_size, issues), (None, L.WEB_CONE, [L.WEB_FILE % "lamp.ies"]))
@@ -308,26 +339,26 @@ class SunAndIes(unittest.TestCase):
         power, measured"): a rated-500 isotropic 100 cd file at power 1000 is 200 cd."""
         ld, issues = describe(with_file(ies(power=1000.0), ies_bytes()))
         self.assertAlmostEqual(ld.watts, 4.0 * math.pi * 200.0 / 683.0, delta=1e-9)
-        self.assertEqual(issues, [L.IES_FILE % "a.ies"])
+        self.assertEqual(issues, [ISO])
         ld, issues = describe(with_file(ies(power=1000.0), ies_bytes(rated=-1)))  # absolute: the power is the flux
         self.assertAlmostEqual(ld.watts, 1000.0 / 683.0, delta=1e-12)
-        self.assertEqual(issues, [L.IES_FILE % "a.ies"])
+        self.assertEqual(issues, [ISO])
         ld, issues = describe(with_file(ies(power=1000.0), ies_bytes(lamps=2)))  # rated 2 x 500 lm (measured)
         self.assertAlmostEqual(ld.watts, 4.0 * math.pi * 100.0 / 683.0, delta=1e-9)
-        self.assertEqual(issues, [L.IES_FILE % "a.ies"])
+        self.assertEqual(issues, [ISO])
         ld, issues = describe(with_file(ies(power=1000.0), ies_bytes(rated=-1, lamps=2)))  # lumens per lamp unused
         self.assertAlmostEqual(ld.watts, 1000.0 / 683.0, delta=1e-12)
-        self.assertEqual(issues, [L.IES_FILE % "a.ies"])
+        self.assertEqual(issues, [ISO])
         ld, issues = describe(with_file(ies(power=1000.0), ies_bytes(ballast=0.5)))  # the ballast factor applies
         self.assertAlmostEqual(ld.watts, 4.0 * math.pi * 100.0 / 683.0, delta=1e-9)
-        self.assertEqual(issues, [L.IES_FILE % "a.ies"])
+        self.assertEqual(issues, [ISO])
         ld, issues = describe(with_file(ies(power=1000.0), ies_bytes(rated=0)))  # 0 lm: the power is the flux
         self.assertAlmostEqual(ld.watts, 1000.0 / 683.0, delta=1e-12)
         for rated in (500, -1):  # V-Ray renders a table without light black, also when absolute (measured)
             ld, issues = describe(with_file(ies(power=1000.0), ies_bytes(candela=0, rated=rated)))
-            self.assertEqual((ld.watts, issues), (0.0, [L.IES_DARK % "a.ies", L.IES_FILE % "a.ies"]), rated)
+            self.assertEqual((ld.watts, issues), (0.0, [L.IES_DARK % "a.ies", L.IES_PROFILE % "a.ies"]), rated)
         ld, issues = describe(with_file(ies(power=1000.0), ies_bytes(rated="1e-300")))
-        self.assertEqual((ld.watts, ld.power, issues), (0.0, 0.0, [L.IES_FILE % "a.ies", L.OUT_OF_RANGE]))
+        self.assertEqual((ld.watts, ld.power, issues), (0.0, 0.0, [ISO, L.OUT_OF_RANGE]))
 
     def test_ies_file_not_read(self):
         ld, issues = describe(with_file(ies(power=1000.0), issue="a candela value is negative"))
@@ -347,7 +378,8 @@ class SunAndIes(unittest.TestCase):
             self.assertEqual(p.text, ies_bytes().rstrip(b"\n").decode("ascii"), changes)
             self.assertAlmostEqual(p.flux, 4.0 * math.pi * 100.0, delta=1e-9)
             _ld, plain = describe(ies(**changes))
-            self.assertEqual(issues, [x for x in plain if x != L.IES_RATED], changes)
+            self.assertEqual(issues, [ISO if x == L.IES_FILE % "a.ies" else x for x in plain if x != L.IES_RATED],
+                             changes)
         self.assertNotIn("TILT", repr(ld.profile))  # the repr leaves the text out: it can be megabytes
         for v in (ies(power=1000.0), with_file(ies(power=1000.0)), with_file(ies(), issue="a candela value is "
                                                                                           "negative")):
@@ -356,7 +388,62 @@ class SunAndIes(unittest.TestCase):
     def test_ies_override_ignores_the_file(self):
         ld, issues = describe(with_file(ies(power=300.0, override=1), ies_bytes()))
         self.assertAlmostEqual(ld.watts, 300.0 / 683.0, delta=1e-12)
-        self.assertEqual(issues, [L.IES_FILE % "a.ies"])
+        self.assertEqual(issues, [ISO])
+
+    def test_ies_profile_light(self):
+        """A VRayIES shining with its profile (docs/FORMAT.md, "The IES Texture node in Blender, measured") is a point
+        light of s x IES_WATTS over the file's ballast-lamp factor, s = its lumens over the file's flux; its watts stay
+        its lumens / 683; its line is IES_PROFILE, with UPWARD for a file that sends light upward."""
+        self.assertAlmostEqual(L.IES_WATTS, 4.0 * math.pi / (683.0 * 0.070665), delta=1e-12)
+        self.assertAlmostEqual(L.IES_WATTS, 0.2604, delta=5e-5)
+        ld, issues = describe(with_file(ies(power=1000.0), ies_bytes()))  # rated 500: 200 cd, s = 2
+        self.assertEqual((ld.kind, ld.spot_size, ld.spot_blend, issues), ("POINT", 0.0, 0.0, [ISO]))
+        self.assertAlmostEqual(ld.power, 2.0 * L.IES_WATTS, delta=1e-12)
+        self.assertAlmostEqual(ld.watts, 4.0 * math.pi * 200.0 / 683.0, delta=1e-9)
+        ld, issues = describe(with_file(ies(power=300.0, override=1), ies_bytes()))  # the power is the flux
+        self.assertAlmostEqual(ld.power, 300.0 / (400.0 * math.pi) * L.IES_WATTS, delta=1e-12)
+        down = ies_mod.parse(downlight_bytes())  # absolute: power 1000 is the flux
+        ld, issues = describe(with_file(ies(power=1000.0), downlight_bytes()))
+        self.assertEqual((ld.kind, issues, ld.profile.up), ("POINT", [L.IES_PROFILE % "a.ies"], 0.0))
+        self.assertAlmostEqual(ld.power, 1000.0 / down.flux * L.IES_WATTS, delta=1e-12)
+        ld, _ = describe(with_file(ies(power=1000.0), downlight_bytes(ballast_lamp=0.5)))  # Cycles applies it
+        self.assertAlmostEqual(ld.power, 2000.0 / down.flux * L.IES_WATTS, delta=1e-12)
+        for factor in (0, -1):  # Cycles would render it dark or negative: no profile, the wide spot
+            ld, issues = describe(with_file(ies(power=1000.0), downlight_bytes(ballast_lamp=factor)))
+            self.assertEqual((ld.profile, ld.kind, ld.spot_size, issues),
+                             (None, "SPOT", L.WEB_CONE, [L.IES_FILE % "a.ies"]), factor)
+            self.assertAlmostEqual(ld.power, 1000.0 / 683.0, delta=1e-12)
+        ld, issues = describe(with_file(ies(power=1000.0), ies_bytes(candela=0)))  # no light: 0 W, no upward share
+        self.assertEqual((ld.kind, ld.power, issues), ("POINT", 0.0, [L.IES_DARK % "a.ies", L.IES_PROFILE % "a.ies"]))
+        ld, issues = describe(with_file(ies(power=1000.0), downlight_bytes(ballast_lamp="1e-320")))  # past the range
+        self.assertEqual((ld.watts, ld.power, issues), (0.0, 0.0, [L.IES_PROFILE % "a.ies", L.OUT_OF_RANGE]))
+        ld, issues = describe(with_file(ies(power=1000.0, override_shape=1, shape_type=L.IES_SPHERE, use_shape=2,
+                                            diameter=100.0), ies_bytes()))  # the radius stays, on the point light
+        self.assertEqual((ld.kind, ld.radius), ("POINT", 0.05))
+        up = ies_mod.parse(UPLIGHT).up  # 100, 100, 50 cd at 0, 90, 180 degrees: neither 0 nor half upward
+        self.assertTrue(0.0 < up < 0.5, up)
+        _ld, issues = describe(with_file(ies(power=1000.0), UPLIGHT))
+        self.assertEqual(issues, [shines(L.IES_PROFILE, "a.ies", "%.3g" % (100.0 * up))])
+
+    def test_web_shines_with_its_profile(self):
+        """A web light of 400 cd with a file read is a point light whose intensity is the file's peak (not measured:
+        maxdrop-o53.3.5): s = 400 / the peak, power s x IES_WATTS over the ballast-lamp factor, watts s x the file's
+        flux / 683; its line is WEB_PROFILE, with UPWARD for a file that sends light upward; a file without light 0 W."""
+        for data, factor in ((downlight_bytes(), 1.0), (downlight_bytes(ballast_lamp=0.5), 0.5),
+                             (ies_bytes(candela=40), 1.0)):
+            photometry = ies_mod.parse(data)
+            ld, issues = describe(photometric(distribution=L.WEB, intensity=400.0, file="lamp.ies",
+                                              ies_name="Lamp.ies", photometry=photometry, photometry_issue=None))
+            s = 400.0 / photometry.peak
+            self.assertEqual(ld.kind, "POINT")
+            self.assertAlmostEqual(ld.power, s * L.IES_WATTS / factor, delta=1e-12)
+            self.assertAlmostEqual(ld.watts, s * photometry.flux / 683.0, delta=1e-9)
+            self.assertEqual(issues, [shines(L.WEB_PROFILE, "lamp.ies", "50" if photometry.up else None)])
+        down = ies_mod.parse(downlight_bytes())
+        self.assertNotAlmostEqual(down.flux / (4.0 * math.pi), down.peak, delta=1.0)  # the peak, not a mean
+        ld, issues = describe(photometric(distribution=L.WEB, intensity=400.0, file="lamp.ies", ies_name="Lamp.ies",
+                                          photometry=ies_mod.parse(ies_bytes(candela=0)), photometry_issue=None))
+        self.assertEqual((ld.kind, ld.power, ld.watts, issues), ("POINT", 0.0, 0.0, [L.WEB_PROFILE % "lamp.ies"]))
 
     def test_ies_shadow_switch(self):
         self.assertEqual(L._IES_PARAMS["shadow"], (0, 4, 1))
@@ -663,7 +750,8 @@ class Fixtures(unittest.TestCase):
         """lights_photometric copied beside a self-authored fixture_web.ies rated 500 lm, 100 cd everywhere: IesPower
         (1500, override off) gets 1500 x 400 pi / 500 lm, looked up once; IesOverride (300 lm, override on) keeps its
         power; the file is read once. IesPower, IesOverride and PhWeb (the same file) share its profile, PhWeb with
-        its rotation as stored; the report keeps its lines but the rated-lumens one. Without the file the issues are
+        its rotation as stored, and shine with it: point lights, their lines reworded one for one; the report keeps
+        its other lines but the rated-lumens one. Without the file the issues are
         those of a read without a lookup and no light has a profile."""
         scratch = tempfile.mkdtemp(prefix="maxdrop-ies-")
         self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
@@ -687,7 +775,9 @@ class Fixtures(unittest.TestCase):
         self.assertAlmostEqual(by_name["IesOverride"].watts, 300.0 / 683.0, delta=1e-12)
         self.assertAlmostEqual(by_name["PhWeb"].watts, 400.0 * CD, delta=1e-9)
         self.assertEqual(len(reads), 1, reads)
-        self.assertEqual(desc.issues, [x for x in plain.issues if x[1] != "light: " + L.IES_RATED])
+        self.assertEqual(desc.issues, [shining(x) for x in plain.issues if x[1] != "light: " + L.IES_RATED])
+        self.assertEqual(sum(shining(x) != x for x in plain.issues), 3)  # one line each, reworded
+        self.assertEqual({by_name[n].kind for n in ("IesPower", "IesOverride", "PhWeb")}, {"POINT"})
         with_profile = {name for name, ld in by_name.items() if ld.profile is not None}
         self.assertEqual(with_profile, {"IesPower", "IesOverride", "PhWeb"})
         profiles = [by_name[name].profile for name in sorted(with_profile)]

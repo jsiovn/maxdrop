@@ -11,15 +11,16 @@ from .. import colors, texmaps
 from .ids import (
     _FAMILIES, _PHOTOMETRIC, _STANDARD, AMBIENT, AREA, BEAM, ChunkError, CLASS, CONTRIBUTION, DECAY_NONE, DECAY_SQUARE,
     DIFFUSE_DISTRIBUTION, DIRECT, DIRECTIONAL, DISC, DISK, DOME, DOUBLE_SIDED, EMITTER, ENVIRONMENT_MAP_SLOT, FAR,
-    GLOSSY, IES, IES_DARK, IES_FILE, IES_RATED, IES_SHAPE, IES_SHAPES, IES_SPHERE, IES_UNREAD, IES_ZERO, IMAGE_UNIT,
-    INVERSE, ISOTROPIC, LINE_WIDTH, LUMENS_PER_WATT, LUX_PER_UNIT, MAX_FLOAT, MAX_POWER, MESH, MIN_CONE, NEGATIVE,
-    NO_DECAY, NO_FILE, NOT_FINITE, NOT_SKYLIGHT, OUT_OF_RANGE, OVERSHOOT, P_AFFECT_DIFFUSE, P_AFFECT_REFLECTIONS,
-    P_AFFECT_SPECULAR, P_COLOR, P_COLOR_MODE, P_DIFFUSE, P_DIRECTIONAL, P_DOUBLE_SIDED, P_INVISIBLE, P_MULTIPLIER, P_ON,
-    P_SHADOW, P_SIZE0, P_SIZE1, P_SPECULAR, P_TEMPERATURE, P_TEXMAP, P_TEXMAP_ON, P_TYPE, P_UNITS, PHOTOMETRIC, PLANE,
-    POINT, RECTANGLE, RECTANGLE_CONE, REFERENCE_DISTANCE, SHAPE, SHAPE_CYLINDER, SHAPE_DISC, SHAPE_LINE, SHAPE_POINT,
-    SHAPE_RECTANGLE, SHAPE_SPHERE, SKYLIGHT, SPHERE, SPOT, SPOT_DISTRIBUTION, SPOTLIGHT, STANDARD, SUN, SUN_ANGLE,
-    SUN_COLOR, SUN_IRRADIANCE, SUN_LIGHT, SUN_ZENITH, TEXMAP, TYPE_NAMES, UNITS_DEFAULT, UNITS_LM, UNITS_LM_M2_SR,
-    UNITS_W, UNITS_W_M2_SR, VRAY, WEB_FALLOFF, WEB_FILE, WEB_HOTSPOT, ZERO_START,
+    GLOSSY, IES, IES_DARK, IES_FILE, IES_PROFILE, IES_RATED, IES_SHAPE, IES_SHAPES, IES_SPHERE, IES_UNREAD, IES_WATTS,
+    IES_ZERO, IMAGE_UNIT, INVERSE, ISOTROPIC, LINE_WIDTH, LUMENS_PER_WATT, LUX_PER_UNIT, MAX_FLOAT, MAX_POWER, MESH,
+    MIN_CONE, NEGATIVE, NO_DECAY, NO_FILE, NOT_FINITE, NOT_SKYLIGHT, OUT_OF_RANGE, OVERSHOOT, P_AFFECT_DIFFUSE,
+    P_AFFECT_REFLECTIONS, P_AFFECT_SPECULAR, P_COLOR, P_COLOR_MODE, P_DIFFUSE, P_DIRECTIONAL, P_DOUBLE_SIDED,
+    P_INVISIBLE, P_MULTIPLIER, P_ON, P_SHADOW, P_SIZE0, P_SIZE1, P_SPECULAR, P_TEMPERATURE, P_TEXMAP, P_TEXMAP_ON,
+    P_TYPE, P_UNITS, PHOTOMETRIC, PLANE, POINT, RECTANGLE, RECTANGLE_CONE, REFERENCE_DISTANCE, SHAPE, SHAPE_CYLINDER,
+    SHAPE_DISC, SHAPE_LINE, SHAPE_POINT, SHAPE_RECTANGLE, SHAPE_SPHERE, SKYLIGHT, SPHERE, SPOT, SPOT_DISTRIBUTION,
+    SPOTLIGHT, STANDARD, SUN, SUN_ANGLE, SUN_COLOR, SUN_IRRADIANCE, SUN_LIGHT, SUN_ZENITH, TEXMAP, TYPE_NAMES,
+    UNITS_DEFAULT, UNITS_LM, UNITS_LM_M2_SR, UNITS_W, UNITS_W_M2_SR, UPWARD, VRAY, WEB_FALLOFF, WEB_FILE, WEB_HOTSPOT,
+    WEB_PROFILE, ZERO_START,
 )
 
 
@@ -41,9 +42,24 @@ class Profile(collections.namedtuple("Profile", "file photometry rotation")):
 
 
 def _profile(v, rotation=(0.0, 0.0, 0.0)):
-    """The Profile of a light's values (read_params: "photometry" and "ies_name" of the file found), None without."""
+    """The Profile of a light's values (read_params: "photometry" and "ies_name" of the file found), None without,
+    and None for a file whose ballast-lamp factor is not above 0 (Cycles multiplies the candelas by it, V-Ray does
+    not: the light would be dark or negative)."""
     photometry = v.get("photometry")
-    return Profile(v.get("ies_name"), photometry, rotation) if photometry is not None else None
+    if photometry is None or not photometry.ballast_lamp > 0:
+        return None
+    return Profile(v.get("ies_name"), photometry, rotation)
+
+
+def _shine(ld, s, line, file, issues):
+    """ld shines with its profile (docs/FORMAT.md, "The IES Texture node in Blender, measured"): a point light, since a
+    spot cuts the profile at half its size and above its horizon; its power s x IES_WATTS over the file's ballast-lamp
+    factor (Cycles applies that factor, V-Ray does not), s the factor on the file's candelas; build/ divides by the
+    gain Blender 4.x reads a file with. The issue line, UPWARD appended when the file sends light upward."""
+    p = ld.profile
+    ld.kind, ld.spot_size, ld.spot_blend = POINT, 0.0, 0.0
+    ld.power = s * IES_WATTS / p.photometry.ballast_lamp
+    issues.append(line % file + (UPWARD % ("%.3g" % (100.0 * p.up)) if p.up > 0 else ""))
 
 
 class LightDescription:
@@ -193,7 +209,7 @@ def describe(key, name, values, meters, swatches, scale=1.0):
             ld = _DESCRIBE[family](key, name, values, meters, swatches, issues)
         except OverflowError:  # a size or intensity near the float range
             ld = None
-        if ld is None or not abs(ld.watts) <= MAX_POWER:  # also NaN
+        if ld is None or not (abs(ld.watts) <= MAX_POWER and abs(ld.power) <= MAX_POWER):  # also NaN
             if ld is None:
                 ld = LightDescription(key, name, POINT)
             issues.append(OUT_OF_RANGE)
@@ -349,7 +365,14 @@ def _describe_photometric(key, name, v, meters, swatches, issues):
             ld.kind = SPOT
             ld.spot_size, ld.spot_blend = WEB_CONE, WEB_BLEND
             ld.profile = _profile(v, v.get("rotation", (0.0, 0.0, 0.0)))
-            issues.append(WEB_FILE % (v["file"] or NO_FILE))
+            if ld.profile is None:
+                issues.append(WEB_FILE % (v["file"] or NO_FILE))
+            else:
+                # Not measured (maxdrop-o53.3.5 calibrates it): the light's intensity is taken as the file's peak.
+                peak = ld.profile.peak
+                s = cd / peak if peak > 0 else 0.0
+                ld.watts = s * ld.profile.flux / LUMENS_PER_WATT
+                _shine(ld, s, WEB_PROFILE, v["file"] or NO_FILE, issues)
     if v["far"]:
         issues.append(FAR)
     if v["ambient"]:
@@ -394,7 +417,11 @@ def _describe_ies(key, name, v, meters, swatches, issues):
                           on=bool(v["on"]), spot_size=WEB_CONE, spot_blend=WEB_BLEND, shadow=bool(v["shadow"]),
                           profile=_profile(v))
     _rays(ld, bool(v["diffuse"]), bool(v["specular"]), v["diffuse_contribution"], v["specular_contribution"], issues)
-    issues.append(IES_FILE % file)
+    if ld.profile is None:
+        issues.append(IES_FILE % file)
+    else:  # lm is the flux V-Ray renders: the file's candelas times lm / its flux
+        flux = ld.profile.flux
+        _shine(ld, lm / flux if flux > 0 else 0.0, IES_PROFILE, file, issues)
     ld.radius = _ies_radius(v, meters, issues)
     return ld
 

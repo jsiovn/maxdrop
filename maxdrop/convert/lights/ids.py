@@ -48,6 +48,11 @@ REFERENCE_DISTANCE = 1.0  # m: where a standard light without decay is as bright
 SUN_IRRADIANCE = 146.4  # W/m^2 per unit of a VRaySun's multiplier (the rules source's 100 klx / 683)
 SUN_ANGLE = math.radians(0.53)  # the sun's angular diameter at size multiplier 1
 WEB_FALLOFF, WEB_HOTSPOT = 170.0, 100.0  # degrees: the rules source's wide spot for a web or IES
+# The IES Texture node's output per candela of its file in Cycles (Blender 5.2, measured: docs/FORMAT.md, "The IES
+# Texture node in Blender, measured"), and the energy that makes a file of I cd light as a point light of
+# 4 pi I / 683 W: a light shining with its profile gets s x IES_WATTS, s the factor on the file's candelas.
+IES_NODE_CD = 0.070665
+IES_WATTS = 4.0 * math.pi / (LUMENS_PER_WATT * IES_NODE_CD)
 LINE_WIDTH = 0.01  # m: the width of the area light of a diffuse line, the diameter of a diffuse point
 MIN_CONE = math.radians(1.0)  # Blender's smallest spot size
 # a dome's radiance in W/m^2/sr per unit of its multiplier, per units mode: V-Ray 5.2 white-floor renders against
@@ -174,6 +179,13 @@ NEGATIVE = "%s %g is negative: 0 W"
 SHAPE = "its %s shape is %s"
 WEB_FILE = "its photometric web %s is approximated by a spot of 170 degrees"
 IES_FILE = "its IES file %s is approximated by a spot of 170 degrees"
+# the lines of WEB_FILE and IES_FILE for a light that shines with its profile (one for one), UPWARD appended when the
+# file sends light above the horizontal
+WEB_PROFILE = ("its photometric web %s shines through an IES Texture on a point light in Cycles (EEVEE draws the "
+               "plain point light); its strength and azimuth are not measured")
+IES_PROFILE = ("its IES file %s shines through an IES Texture on a point light in Cycles (EEVEE draws the plain "
+               "point light)")
+UPWARD = "; the file sends %s%% of its light upward, which the point light keeps"
 IES_ZERO = "power 0: it gives no light, in V-Ray too: 0 W"
 IES_RATED = ("its power is taken as its flux: V-Ray scales the IES file's candelas by the power over the file's "
              "rated lumens, which are not read (the file is not found: beside the scene, in its maps or textures "

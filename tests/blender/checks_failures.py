@@ -12,6 +12,7 @@ import tempfile
 
 import bpy
 
+from .checks_lights import FIXTURE_WEB
 from .core import check, empty_scene
 from .nodes import _advance, _cancel_run
 
@@ -94,8 +95,10 @@ def check_renderer_reaches_converters(max_path):
 
 def check_ies_header(max_path):
     """max_path (lights_photometric) copied beside a self-authored fixture_web.ies, rated 500 lm, 100 cd in every
-    direction: the import finds it, IesPower (1500, override off) gets 1500 x 400 pi / 500 lm, IesOverride (override
-    on) keeps 300 lm; the report has no rated-lumens line for it."""
+    direction, one plane: the import finds it, and IesPower, IesOverride and PhWeb shine with it, point lights sharing
+    one Text "fixture_web.ies" (the profile's text): IesPower (1500, override off) as 1500 x 400 pi / 500 lm (s = 3),
+    IesOverride (override on) as 300 lm (s = 300 / 400 pi), PhWeb (400 cd) as the file's peak at 400 cd (s = 4), each
+    s x IES_WATTS x Light Strength over 4.x's one-plane gain 35/32; the report has no rated-lumens line for it."""
     from maxdrop import options
     from maxdrop.convert import lights
     empty_scene()
@@ -104,15 +107,23 @@ def check_ies_header(max_path):
         dst = os.path.join(scratch, os.path.basename(max_path))
         shutil.copy(max_path, dst)
         with open(os.path.join(scratch, "fixture_web.ies"), "wb") as f:
-            f.write(b"IESNA:LM-63-2002\n[TEST] MaxDrop test\nTILT=NONE\n1 500 1 3 1 1 2 0 0 0\n1 1 0\n0 90 180\n0\n"
-                    b"100 100 100\n")
+            f.write(FIXTURE_WEB)
         result = bpy.ops.import_scene.maxdrop(filepath=dst)
-        energy = {n: bpy.data.objects[n].data.energy for n in ("IesPower", "IesOverride") if n in bpy.data.objects}
-        want = {"IesPower": 1500.0 * 400.0 * math.pi / 500.0 / 683.0 * options.LIGHT_STRENGTH,
-                "IesOverride": 300.0 / 683.0 * options.LIGHT_STRENGTH}
-        check("ies header: IesPower is power x the file's flux / its rated lumens, IesOverride its power",
-              result == {'FINISHED'} and set(energy) == set(want)
+        names = ("IesPower", "IesOverride", "PhWeb")
+        lights_of = {n: bpy.data.objects[n].data for n in names if n in bpy.data.objects}
+        energy = {n: light.energy for n, light in lights_of.items()}
+        gain = 1.0 if bpy.app.version >= (5, 0, 0) else 35.0 / 32.0
+        want = {n: s * lights.IES_WATTS * options.LIGHT_STRENGTH / gain
+                for n, s in (("IesPower", 3.0), ("IesOverride", 300.0 / (400.0 * math.pi)), ("PhWeb", 4.0))}
+        check("ies header: IesPower, IesOverride and PhWeb point lights of the file's candelas x s x IES_WATTS",
+              result == {'FINISHED'} and set(energy) == set(want) and
+              all(light.type == 'POINT' for light in lights_of.values())
               and all(abs(energy[n] - w) <= w * 1e-5 for n, w in want.items()), "%s %s vs %s" % (result, energy, want))
+        texts = [n.ies for light in lights_of.values() for n in (light.node_tree.nodes if light.node_tree else ())
+                 if n.bl_idname == "ShaderNodeTexIES"]
+        check("ies header: the three share one Text fixture_web.ies, the file's text",
+              len(texts) == 3 and len(set(texts)) == 1 and texts[0].name == "fixture_web.ies" and
+              texts[0].as_string() == FIXTURE_WEB.rstrip(b"\n").decode("ascii"), str(texts))
         text = bpy.data.texts.get("MaxDrop Report")
         body = text.as_string() if text is not None else ""
         check("ies header: no rated-lumens line in the report", text is not None and lights.IES_RATED not in body,
@@ -145,8 +156,7 @@ def check_ies_search_stopped(max_path):
             with open(os.path.join(scratch, "a%d.txt" % n), "wb") as f:
                 f.write(b"x")
         with open(os.path.join(scratch, "fixture_web.ies"), "wb") as f:
-            f.write(b"IESNA:LM-63-2002\n[TEST] MaxDrop test\nTILT=NONE\n1 500 1 3 1 1 2 0 0 0\n1 1 0\n0 90 180\n0\n"
-                    b"100 100 100\n")
+            f.write(FIXTURE_WEB)
         stop = "Texture search of the scene's folder stopped after 2 files and folders, in " + scratch
         textures.TextureIndex = Small
         try:
