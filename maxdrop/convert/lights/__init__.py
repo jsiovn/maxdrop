@@ -109,8 +109,8 @@ watts at 683 lm/W: 4 pi I / 683 for a point or spot light of on-axis intensity I
   (the rules source's wide spot, falloff 170 and hotspot 100 degrees; the web file named in an issue; with the
   file found and read its Profile, the web's X, Y, Z rotation of block 3 as stored, and it shines with it: below),
   uniform diffuse -> AREA (a rectangle or disc as it is; a line a rectangle LINE_WIDTH wide, a point a disc
-  LINE_WIDTH across, a sphere or cylinder a disc of its diameter). A point or spot light gets the radius of a disc, sphere or
-  cylinder. The color is white, or in Kelvin mode kelvin_rgb decoded from sRGB, times the filter color.
+  LINE_WIDTH across, a sphere or cylinder a disc of its diameter). A point or spot light gets the radius of a disc,
+  sphere or cylinder. The color is white, or in Kelvin mode kelvin_rgb decoded from sRGB, times the filter color.
 - VRaySun -> SUN of SUN_IRRADIANCE W/m^2 per unit of its multiplier (the rules source's 100 klx / 683; V-Ray 5.2
   measured 102.7 klx at the zenith), angle SUN_ANGLE x its size multiplier, its filter color; the sky model's
   dimming and color are not imported (issues).

@@ -428,7 +428,8 @@ class SunAndIes(unittest.TestCase):
     def test_web_shines_with_its_profile(self):
         """A web light of 400 cd with a file read is a point light whose intensity is the file's peak (not measured:
         maxdrop-o53.3.5): s = 400 / the peak, power s x IES_WATTS over the ballast-lamp factor, watts s x the file's
-        flux / 683; its line is WEB_PROFILE, with UPWARD for a file that sends light upward; a file without light 0 W."""
+        flux / 683; its line is WEB_PROFILE, with UPWARD for a file that sends light upward; a file without light
+        0 W."""
         for data, factor in ((downlight_bytes(), 1.0), (downlight_bytes(ballast_lamp=0.5), 0.5),
                              (ies_bytes(candela=40), 1.0)):
             photometry = ies_mod.parse(data)

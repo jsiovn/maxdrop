@@ -69,8 +69,8 @@ class LightDescription:
     light gets before the Light Strength (half of watts for a double-sided area); color linear RGB; on, invisible (to
     the camera); diffuse_rays and glossy_rays whether diffuse and glossy rays see it (Cycles); diffuse and specular
     Blender's factors (EEVEE); shadow whether it casts shadows; profile the Profile of the IES file it shines with
-    (a photometric web or a VRayIES whose file is found and read), else None; users the object indices of the nodes
-    that share it, in walk order."""
+    (a photometric web or a VRayIES whose file is found and read: it then is a POINT light, _shine), else None;
+    users the object indices of the nodes that share it, in walk order."""
     __slots__ = ("key", "name", "kind", "shape", "size", "size_y", "radius", "spot_size", "spot_blend", "angle",
                  "watts", "power", "color", "on", "invisible", "diffuse_rays", "glossy_rays", "diffuse", "specular",
                  "shadow", "profile", "users")
