@@ -1398,6 +1398,21 @@ as V-Ray renders it). Other ranges of type A and B (partial: V-Ray renders them 
 and a file larger than 4 MiB, of more than 4096 angles per axis or 2^20 candelas, or with a
 number out of range or out of order, are not read (a line in the report).
 
+**IES profile** (maxdrop-o53.1.2, `convert/ies.py`, `LightDescription.profile`): every VRayIES (whatever its
+override and power) and every photometric web light (block 3: 0 the file, 1 to 3 its X, Y, Z rotation, kept as
+stored; their unit and order are not measured, maxdrop-o53.3.5 applies them) looks its file up as the texture rules
+find maps (never a UNC path or a link), each file read once per import. A file found and read gives the light a
+profile: the base name of the file found; the text up to the last candela (Latin-1, a character per byte; the bytes
+after the table are never read); the largest candela of the table and the one at the nadir, both times the candela
+multiplier only (Blender's node applies the ballast factors itself: "The IES Texture node in Blender, measured");
+the flux as above; the share of the flux above the horizontal; the ballast-lamp factor and the horizontal angles
+(the watts rule below needs them). Type C: the nadir is the planes' mean at vertical 0, 0 when the table starts past
+0 (as Blender's node gives it; not measured in V-Ray); the upward share integrates the vertical angles past 90 (a
+zone split at 90 linearly) with the flux's planes and symmetries. Types A and B, not measured in Blender: the nadir is
+vertical 0 at horizontal 0 (the axis V-Ray aims down), the upward share 0 (V-Ray renders horizontal angles from −90
+to 90 only), the peak the whole table's (V-Ray's render can pass it, a run going on below 0, or leave it out, planes
+past ±90 and type A from 0 to 90). A file not found or not read: no profile, the report's lines as before.
+
 **Spot cones.** Blender's spot size is the falloff; its blend is set so that full intensity ends at the hotspot, as in
 3ds Max: Blender blends in cosine space (full intensity where cos θ ≥ cos(size / 2) + (1 − cos(size / 2)) · blend),
 so blend = (cos(hotspot / 2) − cos(falloff / 2)) / (1 − cos(falloff / 2)), 0.636 for 30° in 50°.

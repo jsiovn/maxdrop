@@ -9,9 +9,9 @@ from ..params import finite
 from .ids import (
     _AMBIENT, _CONE, _DECAY, _IES_FILE, _IES_PARAMS, _NAMES, _NO_DIFFUSE, _NO_SPECULAR, _OLD_COLOR, _OLD_DEFAULTS,
     _OLD_FALLOFF, _OLD_HOTSPOT, _OLD_MULTIPLIER, _OLD_NAMES, _OLD_START, _ON, _OVERSHOOT, _PHOTOMETRIC,
-    _PHOTOMETRIC_FILE, _PHOTOMETRIC_PARAMS, _SHADOW, _STANDARD, _SUN_PARAMS, ChunkError, CLASS, DECAY_NONE, DEFAULTS,
-    DIRECT, IES, LightError, MESH_OBJECT, MISSING, OMNI, P_MESH_SOURCE, P_TEXMAP, PHOTOMETRIC, SKYLIGHT, SLOT_BLOCK,
-    SLOT_MESH, STANDARD, SUN,
+    _PHOTOMETRIC_FILE, _PHOTOMETRIC_PARAMS, _SHADOW, _STANDARD, _SUN_PARAMS, _WEB_ROTATION, ChunkError, CLASS,
+    DECAY_NONE, DEFAULTS, DIFFUSE_DISTRIBUTION, DIRECT, IES, ISOTROPIC, LightError, MESH_OBJECT, MISSING, OMNI,
+    P_MESH_SOURCE, P_TEXMAP, PHOTOMETRIC, SKYLIGHT, SLOT_BLOCK, SLOT_MESH, SPOT_DISTRIBUTION, STANDARD, SUN,
 )
 from .families import light_class
 
@@ -34,9 +34,10 @@ def _value(block, pid, issues, default=None, name=None):
 def read_params(scene, i, assets=None, ies_files=None):
     """(values of light object i, issues); LightError without its block. A VRayLight's are {parameter id: value} of
     every id of DEFAULTS, the others' {name: value} with CLASS; assets (reader.assets.AssetTable) names the file of
-    a web or IES light; ies_files (convert.ies.Lookup) reads the IES file of a VRayIES whose power depends on it
-    (override off, power above 0): values "photometry" (convert.ies.Photometry, or None) and "photometry_issue" (why
-    a file found is not read, or None)."""
+    a web or IES light; ies_files (convert.ies.Lookup) reads the IES file of a VRayIES and of a photometric web
+    light: values "ies_name" (the base name of the file found, or None), "photometry" (convert.ies.Photometry, or
+    None) and "photometry_issue" (why a file found is not read, or None); a web light's also "rotation" (block 3,
+    parameters 1 to 3, as stored)."""
     family = light_class(scene, i)
     if family == STANDARD:
         return _read_standard(scene, i)
@@ -114,10 +115,17 @@ def _read_blocks(scene, i, family, assets, ies_files=None):
         values["shape"] = _PHOTOMETRIC[scene.entry(i).class_id]
     entry = _asset(blocks, where, assets) if where else None
     values["file"] = _file_name(entry)
-    if family == IES:
-        values["photometry"] = values["photometry_issue"] = None
-        if ies_files is not None and entry is not None and not values["override"] and values["power"] > 0:
-            values["photometry"], values["photometry_issue"] = ies_files.photometry(entry.path, entry.resolved)
+    web = family == PHOTOMETRIC and values["distribution"] not in (ISOTROPIC, SPOT_DISTRIBUTION, DIFFUSE_DISTRIBUTION)
+    if web:
+        # read quietly: not applied yet (maxdrop-o53.3.5 applies and reports it); an animated one is 0
+        block = blocks.get(_WEB_ROTATION[0][0])
+        values["rotation"] = tuple(0.0 if block is None else _value(block, pid, [], 0.0, "web rotation")
+                                   for _bid, pid in _WEB_ROTATION)
+    if family == IES or web:
+        values["ies_name"] = values["photometry"] = values["photometry_issue"] = None
+        if ies_files is not None and entry is not None:
+            values["ies_name"], values["photometry"], values["photometry_issue"] = ies_files.found(entry.path,
+                                                                                                   entry.resolved)
     return values, issues
 
 

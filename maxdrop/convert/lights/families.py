@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """LightDescription and describe(): the rules of each light family (VRayLight, standard, photometric, sun, IES)."""
+import collections
 import math
 
 from ...reader import classids
@@ -22,27 +23,51 @@ from .ids import (
 )
 
 
+class Profile(collections.namedtuple("Profile", "file photometry rotation")):
+    """The IES file a light shines with: file the base name of the file found; photometry its convert.ies.Photometry
+    (one per file, shared); rotation a photometric web's X, Y, Z rotation as stored ((0, 0, 0) for a VRayIES; not
+    applied yet, its unit and order not measured: maxdrop-o53.3.5). text, peak, nadir, flux and up are the
+    photometry's."""
+    __slots__ = ()
+
+    text = property(lambda self: self.photometry.text)
+    peak = property(lambda self: self.photometry.peak)
+    nadir = property(lambda self: self.photometry.nadir)
+    flux = property(lambda self: self.photometry.flux)
+    up = property(lambda self: self.photometry.up)
+
+    def __repr__(self):  # the text can be megabytes
+        return "Profile(%r, peak %g cd, rotation %r)" % (self.file, self.peak, self.rotation)
+
+
+def _profile(v, rotation=(0.0, 0.0, 0.0)):
+    """The Profile of a light's values (read_params: "photometry" and "ies_name" of the file found), None without."""
+    photometry = v.get("photometry")
+    return Profile(v.get("ies_name"), photometry, rotation) if photometry is not None else None
+
+
 class LightDescription:
     """One light in meters: kind AREA, POINT, SPOT or SUN; shape RECTANGLE or DISK (AREA), size and size_y the area's
     extents (a disk's diameter in size), radius a POINT's or SPOT's; spot_size (radians) and spot_blend a SPOT's cone,
     angle (radians) a SUN's; watts the total flux of the rules (a SUN's irradiance in W/m^2), power what Blender's
     light gets before the Light Strength (half of watts for a double-sided area); color linear RGB; on, invisible (to
     the camera); diffuse_rays and glossy_rays whether diffuse and glossy rays see it (Cycles); diffuse and specular
-    Blender's factors (EEVEE); shadow whether it casts shadows; users the object indices of the nodes that share
-    it, in walk order."""
+    Blender's factors (EEVEE); shadow whether it casts shadows; profile the Profile of the IES file it shines with
+    (a photometric web or a VRayIES whose file is found and read), else None; users the object indices of the nodes
+    that share it, in walk order."""
     __slots__ = ("key", "name", "kind", "shape", "size", "size_y", "radius", "spot_size", "spot_blend", "angle",
                  "watts", "power", "color", "on", "invisible", "diffuse_rays", "glossy_rays", "diffuse", "specular",
-                 "shadow", "users")
+                 "shadow", "profile", "users")
 
     def __init__(self, key, name, kind, shape=None, size=0.0, size_y=0.0, radius=0.0, watts=0.0, power=0.0,
                  color=(1.0, 1.0, 1.0), on=True, invisible=False, diffuse_rays=True, glossy_rays=True, diffuse=1.0,
-                 specular=1.0, spot_size=0.0, spot_blend=0.0, angle=0.0, shadow=True):
+                 specular=1.0, spot_size=0.0, spot_blend=0.0, angle=0.0, shadow=True, profile=None):
         self.key, self.name, self.kind, self.shape = key, name, kind, shape
         self.size, self.size_y, self.radius = size, size_y, radius
         self.spot_size, self.spot_blend, self.angle = spot_size, spot_blend, angle
         self.watts, self.power, self.color = watts, power, color
         self.on, self.invisible, self.diffuse_rays, self.glossy_rays = on, invisible, diffuse_rays, glossy_rays
-        self.diffuse, self.specular, self.shadow = diffuse, specular, shadow
+        self.diffuse, self.specular, self.shadow, self.profile = diffuse, specular, shadow, profile
         self.users = []
 
     def __repr__(self):
@@ -323,6 +348,7 @@ def _describe_photometric(key, name, v, meters, swatches, issues):
         elif dist != ISOTROPIC:
             ld.kind = SPOT
             ld.spot_size, ld.spot_blend = WEB_CONE, WEB_BLEND
+            ld.profile = _profile(v, v.get("rotation", (0.0, 0.0, 0.0)))
             issues.append(WEB_FILE % (v["file"] or NO_FILE))
     if v["far"]:
         issues.append(FAR)
@@ -365,7 +391,8 @@ def _describe_ies(key, name, v, meters, swatches, issues):
     color = colors.GAMMA_OFF.color(texmaps.kelvin_rgb(v["temperature"])) if v["color_mode"] == 1 else \
         swatches.color(v["color"])
     ld = LightDescription(key, name, SPOT, watts=lm / LUMENS_PER_WATT, power=lm / LUMENS_PER_WATT, color=color,
-                          on=bool(v["on"]), spot_size=WEB_CONE, spot_blend=WEB_BLEND, shadow=bool(v["shadow"]))
+                          on=bool(v["on"]), spot_size=WEB_CONE, spot_blend=WEB_BLEND, shadow=bool(v["shadow"]),
+                          profile=_profile(v))
     _rays(ld, bool(v["diffuse"]), bool(v["specular"]), v["diffuse_contribution"], v["specular_contribution"], issues)
     issues.append(IES_FILE % file)
     ld.radius = _ies_radius(v, meters, issues)

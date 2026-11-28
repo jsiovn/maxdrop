@@ -98,6 +98,7 @@ def ies_bytes(rated=500, candela=100, lamps=1, ballast=1):
 def with_file(v, data=None, issue=None):
     """VRayIES values with the photometry read_params gives for an IES file of these bytes (or why it is not read)."""
     v["photometry"] = ies_mod.parse(data) if data is not None else None
+    v["ies_name"] = "found.ies" if data is not None or issue is not None else None
     v["photometry_issue"] = issue
     return v
 
@@ -236,6 +237,23 @@ class Photometric(unittest.TestCase):
         _ld, issues = describe(photometric(distribution=L.WEB))
         self.assertEqual(issues, [L.WEB_FILE % L.NO_FILE])
 
+    def test_web_profile(self):
+        """A web light whose file is read has its profile with its stored rotation; one whose file is missing or not
+        read none; both today's spot and issue line. Another distribution has none."""
+        found = dict(distribution=L.WEB, file="lamp.ies", rotation=(10.0, 20.0, 30.0), ies_name="Lamp.IES",
+                     photometry=ies_mod.parse(ies_bytes()), photometry_issue=None)
+        ld, issues = describe(photometric(**found))
+        self.assertEqual((ld.profile.file, ld.profile.rotation, ld.profile.photometry), ("Lamp.IES", (10.0, 20.0, 30.0),
+                                                                                         found["photometry"]))
+        self.assertEqual((ld.kind, ld.spot_size, issues), ("SPOT", L.WEB_CONE, [L.WEB_FILE % "lamp.ies"]))
+        for missing in ({"photometry": None, "ies_name": None}, {"photometry": None, "photometry_issue": "bad"}):
+            ld, issues = describe(photometric(**dict(found, **missing)))
+            self.assertEqual((ld.profile, ld.spot_size, issues), (None, L.WEB_CONE, [L.WEB_FILE % "lamp.ies"]))
+        ld, _issues = describe(photometric(distribution=L.WEB, file="lamp.ies"))  # read without a lookup
+        self.assertIsNone(ld.profile)
+        for dist in (L.ISOTROPIC, L.SPOT_DISTRIBUTION, L.DIFFUSE_DISTRIBUTION):
+            self.assertIsNone(describe(photometric(**dict(found, distribution=dist)))[0].profile, dist)
+
     def test_color_is_kelvin_or_white_times_the_filter(self):
         ld, _ = describe(photometric(use_kelvin=1, kelvin=3000.0, filter=(1.0, 0.5, 1.0)))
         want = decoded(KELVIN[3000])
@@ -318,6 +336,23 @@ class SunAndIes(unittest.TestCase):
         ld, issues = describe(with_file(ies(power=1000.0)))  # not found
         self.assertEqual(issues, [L.IES_RATED, L.IES_FILE % "a.ies"])
 
+    def test_ies_profile(self):
+        """A VRayIES whose file is read has its profile whatever its override and power, with the issue lines it has
+        without one; a file not found or not read gives none."""
+        for changes in ({"power": 1000.0}, {"power": 300.0, "override": 1}, {"power": 0.0}, {"power": -5.0}):
+            ld, issues = describe(with_file(ies(**changes), ies_bytes()))
+            p = ld.profile
+            self.assertEqual((p.file, p.rotation, p.photometry.rated, round(p.peak, 9), round(p.nadir, 9),
+                              round(p.up, 9)), ("found.ies", (0.0, 0.0, 0.0), 500.0, 100.0, 100.0, 0.5), changes)
+            self.assertEqual(p.text, ies_bytes().rstrip(b"\n").decode("ascii"), changes)
+            self.assertAlmostEqual(p.flux, 4.0 * math.pi * 100.0, delta=1e-9)
+            _ld, plain = describe(ies(**changes))
+            self.assertEqual(issues, [x for x in plain if x != L.IES_RATED], changes)
+        self.assertNotIn("TILT", repr(ld.profile))  # the repr leaves the text out: it can be megabytes
+        for v in (ies(power=1000.0), with_file(ies(power=1000.0)), with_file(ies(), issue="a candela value is "
+                                                                                          "negative")):
+            self.assertIsNone(describe(v)[0].profile)
+
     def test_ies_override_ignores_the_file(self):
         ld, issues = describe(with_file(ies(power=300.0, override=1), ies_bytes()))
         self.assertAlmostEqual(ld.watts, 300.0 / 683.0, delta=1e-12)
@@ -397,6 +432,55 @@ class Params(unittest.TestCase):
         try:
             with self.assertRaises(L.LightError):
                 L._read_blocks(Scene(), 0, L.SUN, None)
+        finally:
+            L.reading._blocks = orig
+
+    def test_the_lookup_runs_for_every_web_and_vrayies(self):
+        """A web light's file (block 3 parameter 0) and rotation (1 to 3, as stored; an animated one 0, without a
+        line: not applied yet) and a VRayIES's file whatever its override and power go to the lookup; a photometric
+        light of another distribution is not looked up."""
+        asked = []
+
+        class Lookup:
+            def found(self, path, resolved=""):
+                asked.append((path, resolved))
+                return "lamp.ies", "photometry", None
+
+        class Assets:
+            def entry(self, ref):
+                return types.SimpleNamespace(path="maps\\lamp.ies", resolved="C:\\x\\lamp.ies") if ref == 7 else None
+
+        class Scene:
+            def entry(self, i):
+                return types.SimpleNamespace(class_id=classids.FREE_DISC_LIGHT)
+
+        orig = L._blocks
+        try:
+            for dist, looked_up in ((L.WEB, True), (7, True), (L.ISOTROPIC, False), (L.SPOT_DISTRIBUTION, False),
+                                    (L.DIFFUSE_DISTRIBUTION, False)):
+                blocks = {0: _Block(0, {1: dist}), 2: _Block(2, {}), 4: _Block(4, {}),
+                          3: _Block(3, {0: 7, 1: 10.0, 2: pblock.Animated(3), 3: 30})}
+                L.reading._blocks = lambda scene, i: (blocks, [])
+                del asked[:]
+                values, issues = L._read_blocks(Scene(), 0, L.PHOTOMETRIC, Assets(), Lookup())
+                self.assertEqual((values["file"], issues), ("lamp.ies", []), dist)
+                if looked_up:
+                    self.assertEqual((values["rotation"], values["ies_name"], values["photometry"], asked),
+                                     ((10.0, 0.0, 30.0), "lamp.ies", "photometry",
+                                      [("maps\\lamp.ies", "C:\\x\\lamp.ies")]), dist)
+                else:
+                    self.assertEqual((asked, "rotation" in values, "photometry" in values), ([], False, False), dist)
+            blocks = {0: _Block(0, {1: L.WEB})}  # no block 3: no file, rotation 0, nothing to look up
+            L.reading._blocks = lambda scene, i: (blocks, [])
+            values, _issues = L._read_blocks(Scene(), 0, L.PHOTOMETRIC, Assets(), Lookup())
+            self.assertEqual((values["rotation"], values["photometry"], asked), ((0.0, 0.0, 0.0), None, []))
+            for override, power in ((0, 1000.0), (1, 1000.0), (0, 0.0), (0, -5.0)):
+                blocks = {0: _Block(0, {1: 7, 10: power, 34: override})}
+                L.reading._blocks = lambda scene, i: (blocks, [])
+                del asked[:]
+                values, _issues = L._read_blocks(Scene(), 0, L.IES, Assets(), Lookup())
+                self.assertEqual((values["ies_name"], len(asked), "rotation" in values), ("lamp.ies", 1, False),
+                                 (override, power))
         finally:
             L.reading._blocks = orig
 
@@ -578,24 +662,37 @@ class Fixtures(unittest.TestCase):
     def test_a_found_ies_file_scales_the_power(self):
         """lights_photometric copied beside a self-authored fixture_web.ies rated 500 lm, 100 cd everywhere: IesPower
         (1500, override off) gets 1500 x 400 pi / 500 lm, looked up once; IesOverride (300 lm, override on) keeps its
-        power and is not looked up; the report keeps no rated-lumens line."""
+        power; the file is read once. IesPower, IesOverride and PhWeb (the same file) share its profile, PhWeb with
+        its rotation as stored; the report keeps its lines but the rated-lumens one. Without the file the issues are
+        those of a read without a lookup and no light has a profile."""
         scratch = tempfile.mkdtemp(prefix="maxdrop-ies-")
         self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
         dst = os.path.join(scratch, "lights_photometric.max")
         shutil.copy(os.path.join(FIXTURES, "lights_photometric.max"), dst)
+        plain = self.descs["lights_photometric"]
+        missing = conv.read(dst, files=textures.TextureIndex(dst))
+        self.assertEqual(missing.issues, plain.issues)
+        self.assertEqual([ld.profile for ld in missing.lights.values()], [None] * len(missing.lights))
         with open(os.path.join(scratch, "fixture_web.ies"), "wb") as f:
             f.write(ies_bytes())
-        index = textures.TextureIndex(dst)
-        asked = []
-        find = index.find
-        index.find = lambda path, resolved="": asked.append(path) or find(path, resolved)
-        desc = conv.read(dst, files=index)
+        reads = []
+        read = ies_mod.read
+        ies_mod.read = lambda path: reads.append(path) or read(path)
+        try:
+            desc = conv.read(dst, files=textures.TextureIndex(dst))
+        finally:
+            ies_mod.read = read
         by_name = {n.name: desc.lights[n.light] for n in desc.nodes if n.kind == conv.LIGHT}
         self.assertAlmostEqual(by_name["IesPower"].watts, 1500.0 * 400.0 * math.pi / 500.0 / 683.0, delta=1e-9)
         self.assertAlmostEqual(by_name["IesOverride"].watts, 300.0 / 683.0, delta=1e-12)
         self.assertAlmostEqual(by_name["PhWeb"].watts, 400.0 * CD, delta=1e-9)
-        self.assertEqual(len(asked), 1, asked)
-        self.assertNotIn("light: " + L.IES_RATED, [r for _i, r in desc.issues])
+        self.assertEqual(len(reads), 1, reads)
+        self.assertEqual(desc.issues, [x for x in plain.issues if x[1] != "light: " + L.IES_RATED])
+        with_profile = {name for name, ld in by_name.items() if ld.profile is not None}
+        self.assertEqual(with_profile, {"IesPower", "IesOverride", "PhWeb"})
+        profiles = [by_name[name].profile for name in sorted(with_profile)]
+        self.assertEqual({(p.file, p.photometry) for p in profiles}, {("fixture_web.ies", profiles[0].photometry)})
+        self.assertEqual([p.rotation for p in profiles], [(0.0, 0.0, 0.0)] * 3)  # the script leaves the web's at 0
 
     def test_the_vraysky_is_named(self):
         desc = self.descs["lights_standard"]

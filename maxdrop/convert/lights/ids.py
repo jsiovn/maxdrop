@@ -76,6 +76,7 @@ _PHOTOMETRIC_PARAMS = {"distribution": (0, 1, ISOTROPIC), "on": (0, 2, 1), "filt
                        "ambient": (4, 6, 0), "length": (4, 11, 1220.0), "width": (4, 12, 610.0),
                        "radius": (4, 13, 130.0)}
 _PHOTOMETRIC_FILE = (3, 0)
+_WEB_ROTATION = ((3, 1), (3, 2), (3, 3))  # the web's X, Y, Z rotation, as stored (its unit is not measured)
 _SUN_PARAMS = {"on": (0, 0, 1), "multiplier": (0, 2, 1.0), "size": (0, 3, 1.0), "invisible": (0, 9, 0),
                "diffuse": (0, 14, 1), "diffuse_contribution": (0, 19, 1.0), "specular": (0, 15, 1),
                "specular_contribution": (0, 20, 1.0), "filter": (0, 17, (1.0, 1.0, 1.0)), "color_mode": (0, 18, 0)}
