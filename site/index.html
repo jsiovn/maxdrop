@@ -262,7 +262,7 @@ footer p { margin: 0; }
             <li><strong>Position, rotation, scale and the whole hierarchy</strong> of the objects; groups and Dummy helpers become empties.</li>
             <li><strong>Scene units</strong>: a scene saved in millimeters, centimeters, inches or feet arrives at its real size.</li>
             <li><strong>Layers</strong> as collections, with their hidden, frozen and non-rendering flags.</li>
-            <li><strong>Materials</strong>, as a Principled BSDF with their maps as nodes (tiling, offset, rotation, cropping, Mix, Color Correction, Falloff, Composite, normal and bump maps): VRayMtl and the other V-Ray materials and wrappers, Standard, Physical, Multi/Sub-Object, CoronaPhysicalMtl, CoronaMtl, CoronaLightMtl, CoronaLayeredMtl, CoronaSkinMtl and CoronaHairMtl (simplified), CoronaVolumeMtl as a volume.</li>
+            <li><strong>Materials</strong>, as a Principled BSDF with their maps as nodes (tiling, offset, rotation, cropping, Mix, Color Correction, Falloff, Composite, Checker, normal and bump maps; Noise with Blender's own noise, approximately): VRayMtl and the other V-Ray materials and wrappers, Standard, Physical, Multi/Sub-Object, CoronaPhysicalMtl, CoronaMtl, CoronaLightMtl, CoronaLayeredMtl, CoronaSkinMtl and CoronaHairMtl (simplified), CoronaVolumeMtl as a volume.</li>
             <li><strong>Textures</strong> that are plain image files, next to the <code>.max</code> file, in a <code>maps</code> or <code>textures</code> folder beside it, or in folders you add in the preferences.</li>
             <li><strong>Lights and cameras</strong>: V-Ray plane, disc and sphere lights, V-Ray mesh lights as glowing meshes, the V-Ray dome light as the World, standard and photometric lights, VRaySun and VRayIES, as bright as V-Ray renders them; Free, Target, Physical and VRayPhysicalCamera cameras with 3ds Max's framing, the one the file renders as the scene camera.</li>
           </ul>
@@ -275,7 +275,7 @@ footer p { margin: 0; }
             <li><strong>Teapot</strong>: it arrives as an empty until a later version.</li>
             <li><strong>Star, Text, Helix, Donut</strong> and NURBS curves.</li>
             <li><strong>Animation</strong>: objects arrive as they stand at frame 0.</li>
-            <li><strong>Procedural maps</strong> (Noise, Gradient, VRayDirt…): simplified to the image below them, or the channel keeps its plain color.</li>
+            <li><strong>Other procedural maps</strong> (Gradient, VRayDirt…): simplified to the image below them, or the channel keeps its plain color.</li>
             <li><strong>Other materials</strong> (Arnold Standard Surface, Raytrace, Architectural, Corona Scanned and Slicer…): a grey material that keeps its name.</li>
             <li>Proxies, particles, hair and bones.</li>
           </ul>
@@ -391,7 +391,7 @@ footer p { margin: 0; }
       </details>
       <details>
         <summary>Materials arrive without textures</summary>
-        <p>Put the texture files in the folder of the <code>.max</code> file, in a <code>maps</code> or <code>textures</code> folder beside it, or add their folder under <strong>Texture Search Folders</strong> in the MaxDrop preferences. <strong>Image Search</strong> also searches the subfolders of the scene's folder. Mix, Color Correction, Falloff, Composite and normal maps arrive as nodes; other procedural maps (Noise, Gradient, VRayDirt…) are simplified to the image below them, and a channel with no image below keeps its plain color.</p>
+        <p>Put the texture files in the folder of the <code>.max</code> file, in a <code>maps</code> or <code>textures</code> folder beside it, or add their folder under <strong>Texture Search Folders</strong> in the MaxDrop preferences. <strong>Image Search</strong> also searches the subfolders of the scene's folder. Mix, Color Correction, Falloff, Composite, Checker and normal maps arrive as nodes, a Noise as Blender's own noise (approximately); other procedural maps (Gradient, VRayDirt…) are simplified to the image below them, and a channel with no image below keeps its plain color.</p>
       </details>
       <details>
         <summary>Dropping a <code>.zip</code> opens Blender's extension installer</summary>

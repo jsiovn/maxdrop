@@ -262,7 +262,7 @@ footer p { margin: 0; }
             <li><strong>Vị trí, góc xoay, tỉ lệ và toàn bộ phân cấp</strong> của các đối tượng; group và helper Dummy thành empty.</li>
             <li><strong>Đơn vị cảnh</strong>: cảnh lưu bằng milimét, centimét, inch hay feet được nhập đúng kích thước thật.</li>
             <li><strong>Layer</strong> thành collection, kèm các cờ ẩn, đóng băng (frozen) và không render.</li>
-            <li><strong>Vật liệu</strong>, dưới dạng Principled BSDF với các map thành node (lặp, dịch, xoay, cắt, Mix, Color Correction, Falloff, Composite, normal map và bump map): VRayMtl cùng các vật liệu và wrapper V-Ray khác, Standard, Physical, Multi/Sub-Object, CoronaPhysicalMtl, CoronaMtl, CoronaLightMtl, CoronaLayeredMtl, CoronaSkinMtl và CoronaHairMtl (đơn giản hóa), CoronaVolumeMtl dưới dạng volume.</li>
+            <li><strong>Vật liệu</strong>, dưới dạng Principled BSDF với các map thành node (lặp, dịch, xoay, cắt, Mix, Color Correction, Falloff, Composite, Checker, normal map và bump map; Noise bằng noise của chính Blender, gần đúng): VRayMtl cùng các vật liệu và wrapper V-Ray khác, Standard, Physical, Multi/Sub-Object, CoronaPhysicalMtl, CoronaMtl, CoronaLightMtl, CoronaLayeredMtl, CoronaSkinMtl và CoronaHairMtl (đơn giản hóa), CoronaVolumeMtl dưới dạng volume.</li>
             <li><strong>Texture</strong> là tệp ảnh thường, nằm cạnh tệp <code>.max</code>, trong thư mục <code>maps</code> hay <code>textures</code> bên cạnh, hoặc trong các thư mục bạn thêm ở phần preferences.</li>
             <li><strong>Đèn và camera</strong>: đèn V-Ray dạng plane, disc và sphere, đèn mesh của V-Ray thành lưới phát sáng, đèn dome của V-Ray thành World, đèn standard và photometric, VRaySun và VRayIES, sáng đúng như V-Ray render; camera Free, Target, Physical và VRayPhysicalCamera với khung hình của 3ds Max, và camera mà tệp dùng để render trở thành camera của cảnh.</li>
           </ul>
@@ -275,7 +275,7 @@ footer p { margin: 0; }
             <li><strong>Teapot</strong>: được nhập thành empty cho đến một phiên bản sau.</li>
             <li><strong>Star, Text, Helix, Donut</strong> và curve NURBS.</li>
             <li><strong>Hoạt ảnh</strong>: đối tượng được nhập như ở khung hình 0.</li>
-            <li><strong>Map thủ tục</strong> (Noise, Gradient, VRayDirt…): đơn giản hóa thành ảnh bên dưới, hoặc kênh giữ màu đơn sắc.</li>
+            <li><strong>Các map thủ tục khác</strong> (Gradient, VRayDirt…): đơn giản hóa thành ảnh bên dưới, hoặc kênh giữ màu đơn sắc.</li>
             <li><strong>Vật liệu khác</strong> (Arnold Standard Surface, Raytrace, Architectural, Corona Scanned và Slicer…): một vật liệu xám giữ nguyên tên.</li>
             <li>Proxy, hạt (particle), tóc và xương.</li>
           </ul>
@@ -391,7 +391,7 @@ footer p { margin: 0; }
       </details>
       <details>
         <summary>Vật liệu không có texture</summary>
-        <p>Đặt các tệp texture vào thư mục của tệp <code>.max</code>, vào thư mục <code>maps</code> hay <code>textures</code> bên cạnh, hoặc thêm thư mục của chúng vào <strong>Texture Search Folders</strong> trong preferences của MaxDrop. <strong>Image Search</strong> tìm cả trong các thư mục con của thư mục cảnh. Mix, Color Correction, Falloff, Composite và normal map được nhập thành node; các map thủ tục khác (Noise, Gradient, VRayDirt…) được đơn giản hóa thành ảnh bên dưới, và kênh không có ảnh bên dưới giữ màu đơn sắc.</p>
+        <p>Đặt các tệp texture vào thư mục của tệp <code>.max</code>, vào thư mục <code>maps</code> hay <code>textures</code> bên cạnh, hoặc thêm thư mục của chúng vào <strong>Texture Search Folders</strong> trong preferences của MaxDrop. <strong>Image Search</strong> tìm cả trong các thư mục con của thư mục cảnh. Mix, Color Correction, Falloff, Composite, Checker và normal map được nhập thành node, Noise thành noise của chính Blender (gần đúng); các map thủ tục khác (Gradient, VRayDirt…) được đơn giản hóa thành ảnh bên dưới, và kênh không có ảnh bên dưới giữ màu đơn sắc.</p>
       </details>
       <details>
         <summary>Thả tệp <code>.zip</code> lại mở trình cài tiện ích của Blender</summary>
