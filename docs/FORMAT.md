@@ -1402,6 +1402,62 @@ number out of range or out of order, are not read (a line in the report).
 3ds Max: Blender blends in cosine space (full intensity where cos θ ≥ cos(size / 2) + (1 − cos(size / 2)) · blend),
 so blend = (cos(hotspot / 2) − cos(falloff / 2)) / (1 − cos(falloff / 2)), 0.636 for 30° in 50°.
 
+**The IES Texture node in Blender, measured** (maxdrop-o53.1.9; Blender 4.2.23, 4.5.16 and 5.2.0, headless, scratch
+scripts not committed). The node tree: a new light on 4.2 and 4.5 has `use_nodes` off and no tree (setting it makes
+an Emission into a Light Output), on 5.2 a tree at once (`use_nodes` reads True and warns: removed in 6.0);
+`compat.light_nodes` gives the tree, the active Light Output and the Emission on its Surface on all three. The node,
+`ShaderNodeTexIES`: `mode` `'INTERNAL'` (the Text in `ies`) or `'EXTERNAL'` (`filepath`), inputs Vector and
+Strength, the same on the three; its output is `Fac` on 4.2 and 4.5, `Factor` on 5.2 (take `outputs[0]`). A Text and
+a file of the same content render the same. Setup: Cycles CPU, no bounces, a black World, a Diffuse BSDF floor of
+1.0, the light 1 m above it (radius 0, unseen by the camera), an orthographic camera 0.05 m wide looking down, a
+float EXR, the mean of the 8 × 8 center pixels; LM-63 type C files written by the script, the node's output into
+the Emission's Strength. A light turned about its object's X or Y axis puts another direction of the file on the
+floor point below it at 1 m: the lookup follows the object, and on/off at that pixel is the file's value there.
+
+| Measured | 4.2.23 | 4.5.16 | 5.2.0 |
+|---|---|---|---|
+| 1 W point, node off (1 / 4π²) | 0.02533 | 0.02533 | 0.02533 |
+| isotropic 100 cd, node on / off, at the nadir | 7.656 | 7.656 | 7.060 |
+| the same at 10° to 90° from the axis | 7.729 | 7.729 | 7.066 |
+| the same at 135° / 170° / 180° | 8.212 / 8.068 / 7.551 | 8.212 / 8.068 / 7.536 | 7.066 |
+| isotropic 100 cd of 5 planes (0 to 360), at 10° to 90° | 7.066 | 7.066 | 7.066 |
+| downlight on / off over 7.066 (100 cd at k) at 0°, 22.5°, 45°, 67.5°, 90°, 180° (table 1, 0.8, 0.5, 0.2, 0.1, 0.25) | 1.083, 0.875, 0.547, 0.219, 0.109, 0.267 | the same | 0.999, 0.800, 0.500, 0.200, 0.100, 0.2495 |
+| downlight at 45° over its nadir (table 0.5): turned / the floor 1 m off-axis | 0.5048 / 0.5048 | the same | 0.5005 / 0.5005 |
+
+The downlight file: 100, 80, 50, 20, 10, 10, 10, 10, 25 cd at 0 to 180° in 22.5° steps, one plane. So the node's
+output is k × the file's candelas, **k = 0.07067 per cd** on 5.2 (0.07060 at the nadir itself) whatever the file's
+planes; Cycles multiplies them by the candela multiplier, the ballast factor and the ballast-lamp photometric factor
+(0.5 each halves, 2 doubles; V-Ray leaves the last one out), and by the node's Strength input and the light's energy;
+the rated lumens (500, 1256.6, −1), input watts, units and dimensions change nothing (no normalization by the file's
+flux or peak: 200 cd renders twice 100 cd). Vertical 0° is the light's −Z (a file of 90 to 180° only renders 0 at
+the nadir); horizontal 0° is along the light's local −Y, 90° along −X, 180° along +Y, 270° along +X (a 0 to 360°
+file of four plane values, the light turned 90° about X or Y; the same on the three versions). 4.2 and 4.5 render
+the same k where their interpolation is exact (a file of four or five planes at 10° to 90°) and brighter elsewhere:
+a constant file of one plane 8.3 % at the nadir, 9.4 % at 10° to 90°, 16 % at 135°; of planes 0, 180 6.3 % at 10° to
+90°; of four or five planes 2.3 % at the nadir, 6.3 % at 135°; the downlight 9.4 % at 22.5° to 135°. That is 4.x's
+own reading of the file; 5.2 renders the table.
+
+**Spot or point.** Inside its cone a spot with the file renders as the point light with it (nadir, 45° and the
+floor 1 m off-axis: the same pixels, blend 0); a spot of 170° is dark past 85° (84° lit, 86° dark, with the file or
+without), one of 180° lit to 89°; both are dark above their horizon (the downlight turned 180°: 0, the point light
+0.25 of its nadir, the file's 25 cd at 180°). **Watts:** a light's energy is still watts on 4.5 and 5.2 with the
+defaults of the properties they add (exposure 0, normalize on: the 1 W point 0.02533, one of radius 0.1 m 0.02508 as
+on 4.2); normalize off multiplies by 4 at radius 0 and by 4π r² at radius 0.1 (0.00315, a spot the same), exposure 1
+by 2. **EEVEE** (`BLENDER_EEVEE_NEXT` on 4.x, `BLENDER_EEVEE` on 5.x) ignores the light's node tree: with the
+isotropic file, the downlight (upright or turned 180°) or none, a point and a spot of 170° render the plain light
+(0.02531 on 4.2, 0.02533 on 4.5 and 5.2; measured with the Light Threshold 0: its default 0.01 culls this 1 W light 1 m
+away on 5.2).
+
+The two rules maxdrop-o53.1.3 implements:
+
+- **Watts with the node:** an isotropic file of I cd lights as a point light of 4π I / 683 W when the light's energy
+  is 4π / (683 k) = **0.2604 W** (Light Strength aside), whatever I; a light whose file's candelas V-Ray scales by s
+  (power / rated lumens, "VRayIES power, measured") gets s × 0.2604 W, divided by the file's ballast-lamp factor
+  (Cycles applies it, V-Ray does not). On 4.2 and 4.5 the same energy renders the file up to 16 % brighter where
+  their interpolation overshoots (above): not corrected.
+- **The light kind:** a point light keeps the whole profile; a spot cuts it at half its size and above its horizon
+  even at 180°, so an IES light is a point light.
+
 ## Cameras
 
 `convert/cameras.py`, 3ds Max 2020 + V-Ray 5.2; ids read through the SDK's .NET wrapper and by changing one setting at
