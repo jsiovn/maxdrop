@@ -60,6 +60,7 @@ class Report:
                  "modifiers_applied", "modifiers_converted",
                  "dropped_uv_layers", "unknown_controller_nodes", "geometry_errors", "issues", "pack", "pack_name",
                  "materials_built", "materials", "wrappers", "grey_materials", "maps_peeled", "maps_unsupported",
+                 "maps_approximated",
                  "sockets_skipped", "blender", "textures_found", "textures_missing", "texture_search_stopped",
                  "material_issues", "swatches", "world")
 
@@ -84,6 +85,7 @@ class Report:
         self.grey_materials = collections.Counter()  # class name -> materials without a rule, made grey
         self.maps_peeled = collections.Counter()  # class name -> map objects peeled to the map below
         self.maps_unsupported = collections.Counter()  # class name -> map objects without a usable map below
+        self.maps_approximated = collections.Counter()  # class name -> map objects drawn with Blender's own pattern
         self.sockets_skipped = collections.Counter()  # Principled input name -> materials that needed it
         self.textures_found = []  # [(lookup rule name, files found)] in lookup order
         self.textures_missing, self.texture_search_stopped, self.material_issues = [], [], []
@@ -98,8 +100,9 @@ class Report:
 
     @property
     def approximated(self):
-        """How many things were converted only in part: wrappers peeled to a sub-material, maps to the map below."""
-        return sum(self.wrappers.values()) + sum(self.maps_peeled.values())
+        """How many things were converted only in part: wrappers peeled to a sub-material, maps to the map below,
+        procedural maps drawn with Blender's own pattern."""
+        return sum(self.wrappers.values()) + sum(self.maps_peeled.values()) + sum(self.maps_approximated.values())
 
     @property
     def material_problems(self):
@@ -192,6 +195,9 @@ class Report:
                 lines.append("  Wrappers peeled to their sub-material, by class: " + _counts(self.wrappers))
             if self.maps_peeled:
                 lines.append("  Maps peeled to the map below them, by class: " + _counts(self.maps_peeled))
+            if self.maps_approximated:
+                lines.append("  Procedural maps drawn with Blender's own pattern, by class: "
+                             + _counts(self.maps_approximated))
         if not self.left_out:
             if not self.approximated:
                 lines.append("Nothing was left out.")
@@ -379,9 +385,9 @@ def add_materials(rep, materials_built, classes=(), conv_stats=None, tex_stats=N
                   blender="", swatches=None, build_issues=()):
     """Add what the material import did to rep: materials_built (Blender materials made), classes {class name:
     materials converted by a rule} and sockets {Principled input name: materials that needed it} from
-    build.materials; conv_stats (peeled, unknown, issues), tex_stats (peeled, unsupported, issues) and lookup (a
-    TextureReport: found, missing, truncated) from the converters; blender: the version the sockets are missing
-    from; swatches: the converters' convert.colors.Swatches (its line; its note, set when the scene's gamma was not
+    build.materials; conv_stats (peeled, unknown, issues), tex_stats (peeled, unsupported, approximated, issues) and
+    lookup (a TextureReport: found, missing, truncated) from the converters; blender: the version the sockets are
+    missing from; swatches: the converters' convert.colors.Swatches (its line; its note, set when the scene's gamma was not
     found, an issue); build_issues: build.materials' [(Blender material label, reason)], material issues too.
     """
     rep.materials_built, rep.blender = materials_built, blender
@@ -398,6 +404,7 @@ def add_materials(rep, materials_built, classes=(), conv_stats=None, tex_stats=N
     if tex_stats is not None:
         rep.maps_peeled.update(tex_stats.peeled)
         rep.maps_unsupported.update(tex_stats.unsupported)
+        rep.maps_approximated.update(tex_stats.approximated)
         rep.material_issues.extend(("object %d" % index, reason) for index, reason in tex_stats.issues)
     if lookup is not None:
         rep.textures_found = [(textures.RULE_NAMES[r], lookup.found.get(r, 0)) for r in textures.RULES]

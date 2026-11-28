@@ -6,6 +6,7 @@
 import collections
 import importlib
 import importlib.util
+import json
 import os
 import shutil
 import sys
@@ -28,6 +29,7 @@ classids = importlib.import_module(_PKG + ".reader.classids")
 reader_scene = importlib.import_module(_PKG + ".reader.scene")
 chunks = importlib.import_module(_PKG + ".reader.chunks")
 convert_scene = importlib.import_module(_PKG + ".convert.scene")
+convert_report = importlib.import_module(_PKG + ".convert.report")
 try:
     import numpy
 except ImportError:  # the plain tests skip what needs numpy (mesh reading), as tests/unit/test_convert_scene.py does
@@ -246,6 +248,21 @@ class Accounting(unittest.TestCase):
         rep = report(material_issues=[("wood", "texture not loaded: a.jpg (no image data)")], **MODIFIERS)
         self.assertFalse(self.checks(rep)["textures"])
         self.assertFalse(self.checks(report(**MODIFIERS), missing_files=1)["textures"])
+
+
+class ReportCounts(unittest.TestCase):
+    def test_the_counters_of_a_report(self):
+        """The JSON report dict of a real convert.report.Report: its counters as dicts, the maps drawn with
+        Blender's own pattern among them and in approximated, the issue kinds most frequent first."""
+        rep = convert_report.Report("room.max")
+        rep.wrappers.update({"Shell Material": 1})
+        rep.maps_approximated.update({"Noise": 2})
+        rep.issues = [("Box", "transform: not read"), ("Ball", "transform: not read"), ("Cone", "camera: dropped")]
+        counts = first_open.report_counts(rep)
+        self.assertEqual((counts["maps_approximated"], counts["wrappers_peeled"], counts["approximated"]),
+                         ({"Noise": 2}, {"Shell Material": 1}, 3))
+        self.assertEqual(counts["issue_kinds"], {"transform: not read": 2, "camera: dropped": 1})
+        self.assertEqual(json.loads(json.dumps(counts)), counts)
 
 
 @unittest.skipIf(numpy is None, "numpy is not installed: convert.scene.read needs it")

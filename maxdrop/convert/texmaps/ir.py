@@ -227,11 +227,13 @@ class TextureGraphIR:
 
 class TexmapStats:
     """peeled {class name: map objects peeled}, unsupported {class name: map objects without a usable map below},
-    issues [(object index, reason)]."""
-    __slots__ = ("peeled", "unsupported", "issues")
+    approximated {class name: procedural map objects drawn with Blender's own pattern}, issues [(object index,
+    reason)]."""
+    __slots__ = ("peeled", "unsupported", "approximated", "issues")
 
     def __init__(self):
         self.peeled, self.unsupported, self.issues = collections.Counter(), collections.Counter(), []
+        self.approximated = collections.Counter()
 
 
 class _Walk:

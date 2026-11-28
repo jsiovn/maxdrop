@@ -8,6 +8,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ## [Unreleased]
 
+### Changed
+
+- Report: a material class MaxDrop has no rule for is named as the file's class directory names it (a Blend material
+  is "Blend"), not by a bare ClassID; the Approximated block has a line for procedural maps drawn with Blender's own
+  pattern, by class (none is drawn that way yet).
+
 ## [1.0.2] - 2026-11-25
 
 ### Added

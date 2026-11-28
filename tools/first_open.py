@@ -165,24 +165,7 @@ def inside(root, path, png, size, pack_scene=""):
     found["counts"] = {"objects": len(objects), "by_type": dict(sorted(types.items())),
                        "materials": len(bpy.data.materials), "images": len(bpy.data.images),
                        "image_files_missing": missing_files}
-    kinds = {}
-    for _label, reason in rep.issues + rep.geometry_errors + rep.material_issues:
-        kind = issue_kind(reason)
-        kinds[kind] = kinds.get(kind, 0) + 1
-    found["report"] = {
-        "unit": rep.unit, "meters_per_unit": rep.meters, "nodes": rep.nodes, "objects_built": rep.objects_built,
-        "meshes": rep.meshes_built, "curves": rep.curves_built, "lights": rep.lights_built,
-        "cameras": rep.cameras_built, "render_size": rep.render_size, "scene_camera": rep.scene_camera is not None,
-        "materials_built": rep.materials_built, "materials_by_class": dict(rep.materials),
-        "placeholders": dict(rep.placeholders), "modifiers_applied": dict(rep.modifiers_applied),
-        "modifiers_converted": dict(rep.modifiers_converted), "modifiers_ignored": dict(rep.modifiers),
-        "wrappers_peeled": dict(rep.wrappers), "maps_peeled": dict(rep.maps_peeled),
-        "maps_unsupported": dict(rep.maps_unsupported), "grey_materials": dict(rep.grey_materials),
-        "sockets_skipped": dict(rep.sockets_skipped), "textures_found": sum(n for _r, n in rep.textures_found),
-        "textures_missing": len(rep.textures_missing), "unknown_controllers": dict(rep.unknown_controllers),
-        "dropped_uv_layers": rep.dropped_uv_layers, "approximated": rep.approximated, "left_out": rep.left_out,
-        "issue_kinds": dict(sorted(kinds.items(), key=lambda kv: (-kv[1], kv[0]))),
-    }
+    found["report"] = report_counts(rep)
     pack = getattr(rep, "pack", None)  # a pack's .max is the one the operator unpacked
     source = pack.max_path if pack is not None and getattr(pack, "max_path", None) else path
     census = file_census(source, cfb, classids, reader_scene, ChunkError)
@@ -198,6 +181,30 @@ def inside(root, path, png, size, pack_scene=""):
         found["room_height_m"] = _room_height(scene, depsgraph, camera, Vector)
         found["image"] = _render(bpy, scene, png, size)
     return found
+
+
+def report_counts(rep):
+    """The counters of a convert.report.Report as the JSON result's "report": dicts and numbers, the issue kinds
+    (issue_kind) most frequent first."""
+    kinds = {}
+    for _label, reason in rep.issues + rep.geometry_errors + rep.material_issues:
+        kind = issue_kind(reason)
+        kinds[kind] = kinds.get(kind, 0) + 1
+    return {
+        "unit": rep.unit, "meters_per_unit": rep.meters, "nodes": rep.nodes, "objects_built": rep.objects_built,
+        "meshes": rep.meshes_built, "curves": rep.curves_built, "lights": rep.lights_built,
+        "cameras": rep.cameras_built, "render_size": rep.render_size, "scene_camera": rep.scene_camera is not None,
+        "materials_built": rep.materials_built, "materials_by_class": dict(rep.materials),
+        "placeholders": dict(rep.placeholders), "modifiers_applied": dict(rep.modifiers_applied),
+        "modifiers_converted": dict(rep.modifiers_converted), "modifiers_ignored": dict(rep.modifiers),
+        "wrappers_peeled": dict(rep.wrappers), "maps_peeled": dict(rep.maps_peeled),
+        "maps_unsupported": dict(rep.maps_unsupported), "maps_approximated": dict(rep.maps_approximated),
+        "grey_materials": dict(rep.grey_materials),
+        "sockets_skipped": dict(rep.sockets_skipped), "textures_found": sum(n for _r, n in rep.textures_found),
+        "textures_missing": len(rep.textures_missing), "unknown_controllers": dict(rep.unknown_controllers),
+        "dropped_uv_layers": rep.dropped_uv_layers, "approximated": rep.approximated, "left_out": rep.left_out,
+        "issue_kinds": dict(sorted(kinds.items(), key=lambda kv: (-kv[1], kv[0]))),
+    }
 
 
 def file_census(path, cfb, classids, reader_scene, chunk_error):

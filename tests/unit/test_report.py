@@ -28,6 +28,7 @@ if _PKG not in sys.modules:
     sys.modules[_PKG] = _pkg
 conv = importlib.import_module(_PKG + ".convert.scene")
 report = importlib.import_module(_PKG + ".convert.report")
+texmaps = importlib.import_module(_PKG + ".convert.texmaps")
 textures = importlib.import_module(_PKG + ".convert.textures")
 colors = importlib.import_module(_PKG + ".convert.colors")
 units = importlib.import_module(_PKG + ".reader.units")
@@ -224,7 +225,7 @@ class TestMaterials(unittest.TestCase):
             conv_stats=stats(peeled=collections.Counter({"VRay2SidedMtl": 1, "Shell Material": 1}),
                              unknown=collections.Counter({"FooMtl": 2}), issues=[(7, "wrapper: no sub-material")]),
             tex_stats=stats(peeled=collections.Counter({"Falloff": 3}), unsupported=collections.Counter({"BarMap": 1}),
-                            issues=[(9, "Mix 'm': its mix curve not converted")]),
+                            issues=[(9, "Mix 'm': its mix curve not converted")], approximated=collections.Counter()),
             lookup=lookup(found=("wood.jpg",), missing=("b.png", "A.png")),
             sockets=collections.Counter({"Thin Wall": 2}), blender="4.2.23")
 
@@ -295,6 +296,23 @@ class TestMaterials(unittest.TestCase):
         self.assertEqual(lines[-2:], ["Approximated:",
                                       "  Wrappers peeled to their sub-material, by class: Shell Material 1"])
         self.assertNotIn("Not converted:", lines)
+
+    def test_maps_drawn_with_blenders_pattern(self):
+        """Procedural maps drawn with Blender's own pattern: a third line of the Approximated block, counted in
+        approximated; an empty counter adds no line (test_text)."""
+        rep = report.gather(box(), source="box.max")
+        report.add_materials(rep, 1, {"VRayMtl": 1}, tex_stats=stats(
+            peeled=collections.Counter(), unsupported=collections.Counter(), issues=[],
+            approximated=collections.Counter({"Noise": 2})))
+        self.assertEqual((rep.approximated, dict(rep.maps_approximated)), (2, {"Noise": 2}))
+        self.assertEqual(rep.summary(), ("WARNING", "Imported box.max: 1 object, 1 mesh, 1 material; "
+                                                    "2 approximated. See the text MaxDrop Report."))
+        self.assertEqual(rep.text().split("\n")[-2:], [
+            "Approximated:", "  Procedural maps drawn with Blender's own pattern, by class: Noise 2"])
+        self.assertFalse(any("Blender's own pattern" in line for line in self.rep.text().split("\n")))
+
+    def test_texmap_stats_start_empty(self):
+        self.assertEqual(texmaps.TexmapStats().approximated, collections.Counter())
 
     def test_nothing_left_out(self):
         rep = report.gather(box(), source="box.max")
