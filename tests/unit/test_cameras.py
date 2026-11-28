@@ -143,6 +143,15 @@ class Rules(unittest.TestCase):
         _cd, issues = C.describe("k", "Cam", standard(multipass=1))
         self.assertEqual(issues, [C.MULTIPASS])
 
+    def test_exposure_and_depth_of_field_are_left_to_build(self):
+        cd = C.CameraDescription("k", "Cam")
+        self.assertEqual((cd.exposure, cd.dof_distance, cd.fstop), (None, None, None))
+        cd = C.CameraDescription("k", "Cam", exposure=1.5, dof_distance=2.5, fstop=4.0)
+        self.assertEqual((cd.exposure, cd.dof_distance, cd.fstop), (1.5, 2.5, 4.0))
+        cd, issues = C.describe("k", "Cam", vray(dof=1))
+        self.assertEqual((cd.exposure, cd.dof_distance, cd.fstop), (None, None, None))
+        self.assertEqual(issues, [C.DOF, C.EXPOSURE])
+
     def test_out_of_range_values_are_kept_in_blenders_range(self):
         cd, issues = C.describe("k", "Cam", standard(fov=math.radians(179.9)))
         self.assertEqual(cd.lens, C.MIN_LENS)

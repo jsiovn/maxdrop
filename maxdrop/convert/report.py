@@ -55,7 +55,8 @@ class Report:
     a material or map object ("object <index>"), a Blender material or a scene-level label ("scene", "environment",
     "color swatches"). materials_built is None when the import made no materials."""
     __slots__ = ("source", "unit", "meters", "nodes", "objects_built", "meshes_built", "curves_built",
-                 "lights_built", "cameras_built", "scene_camera", "scene_camera_note", "render_size", "layers",
+                 "lights_built", "cameras_built", "scene_camera", "scene_camera_note", "render_size", "exposure",
+                 "exposure_others", "layers",
                  "hidden_layers", "hidden", "unrenderable", "frozen", "groups", "placeholders", "unknown_controllers", "modifiers",
                  "modifiers_applied", "modifiers_converted",
                  "dropped_uv_layers", "unknown_controller_nodes", "geometry_errors", "issues", "pack", "pack_name",
@@ -70,6 +71,8 @@ class Report:
         self.curves_built = self.lights_built = self.cameras_built = 0
         self.scene_camera = self.render_size = None  # the scene camera's name; "W x H" or NO_RENDER_SIZE
         self.scene_camera_note = None  # why the scene camera is the first one, when that is no issue
+        self.exposure = None  # the scene camera's exposure (stops), applied as the scene's view exposure
+        self.exposure_others = []  # [(camera name, its exposure or None)] of the cameras whose exposure differs
         self.hidden = self.unrenderable = self.frozen = self.groups = self.dropped_uv_layers = 0
         self.unknown_controller_nodes = 0  # their issues, listed by class in unknown_controllers instead
         self.placeholders = collections.Counter()
@@ -168,7 +171,11 @@ class Report:
         if self.render_size is not None or self.scene_camera is not None:
             lines.append("Render size: %s; scene camera: %s" % (self.render_size or NO_RENDER_SIZE,
                                                                 self.scene_camera or "none")
-                         + (", " + self.scene_camera_note if self.scene_camera_note else ""))
+                         + (", " + self.scene_camera_note if self.scene_camera_note else "")
+                         + ("; exposure: %g" % self.exposure if self.exposure is not None else "")
+                         + ("; other cameras' exposures, not applied: " + _names(
+                             ["%s %s" % (n, "none" if e is None else "%g" % e) for n, e in self.exposure_others])
+                            if self.exposure_others else ""))
         if self.world:
             lines.append("World: " + self.world)
         lines.append("Layers: %d (%d hidden)" % (self.layers, self.hidden_layers))
@@ -364,6 +371,10 @@ def gather(desc, source="", objects_built=None, meshes_built=None, dropped_uv_la
     if camera is not None:
         rep.scene_camera = labels.get(camera, "object %d" % camera)
         rep.scene_camera_note = getattr(desc, "camera_note", None)
+        cds = list(getattr(desc, "cameras", {}).values())
+        own = next((cd for cd in cds if camera in cd.users), None)
+        rep.exposure = own.exposure if own is not None else None
+        rep.exposure_others = [(cd.name, cd.exposure) for cd in cds if cd is not own and cd.exposure != rep.exposure]
     for index, reason in desc.issues:
         label = index if isinstance(index, str) else SCENE if index is None else labels.get(index, "object %d" % index)
         if reason == UNKNOWN_CONTROLLER and desc.unknown_controllers:  # counted by class already
