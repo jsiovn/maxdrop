@@ -497,7 +497,7 @@ class Wrappers(unittest.TestCase):
             (classids.SHELLAC_MTL, {0: Ref(1), 1: Ref(2)}, 1),
             (classids.SHELLAC_MTL, {0: Ref(None), 1: Ref(2)}, 2),  # an empty base: V-Ray and the scanline draw the coat
             (classids.VRAY_2SIDED_MTL, {0: Ref(2), 1: Ref(1)}, 2),
-            (classids.VRAY_BLEND_MTL, {0: Ref(1), 1: [Ref(None), Ref(2)]}, 1),
+            (classids.VRAY_BLEND_MTL, {0: Ref(1), 1: [Ref(None), Ref(2)], 6: [1, 0]}, 1),  # its one coat off: no coat
             (classids.CORONA_RAY_SWITCH_MTL, {1600: Ref(1), 1603: Ref(2), 1613: 1}, 2),  # directMtl
             (classids.CORONA_RAY_SWITCH_MTL, {1600: Ref(None), 1603: Ref(2)}, 2),
             (classids.SHELL_MTL, {1: 1, 2: Ref(1), 3: Ref(2)}, 2),  # render index 1: baked

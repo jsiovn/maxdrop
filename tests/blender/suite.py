@@ -17,7 +17,8 @@ from .checks_lights import check_dome_undo, check_ies_cleanup, check_ies_light, 
 from .checks_maps import check_builder_volume, check_curve_step
 from .checks_operator import check_mesh_steps, check_read_cancel, check_worker_errors
 from .checks_builder import (
-    check_builder, check_builder_blend, check_builder_blend_modes, check_builder_gamma_magnitude, check_builder_weight,
+    check_builder, check_builder_added_layers, check_builder_blend, check_builder_blend_modes,
+    check_builder_gamma_magnitude, check_builder_weight,
     check_found_textures,
 )
 from .checks_builder_inputs import (
@@ -84,6 +85,7 @@ def main():
                                  ("found textures", check_found_textures), ("builder", check_builder),
                                  ("builder debt", check_builder_debt), ("builder mirror", check_builder_mirror),
                                  ("builder blend", check_builder_blend), ("builder mono", check_builder_mono),
+                                 ("builder added layers", check_builder_added_layers),
                                  ("builder blend modes", check_builder_blend_modes),
                                  ("builder gamma magnitude", check_builder_gamma_magnitude),
                                  ("builder multiply", check_builder_multiply),

@@ -19,8 +19,9 @@ Inputs: Base Color, Metallic, Roughness, IOR, Alpha, Specular IOR Level (the IR'
 1 being the full Fresnel reflection at the IOR, Blender's 0.5; see Reflection weight below), Transmission Weight,
 Emission Color and Strength, Coat Weight, Roughness, IOR and Tint, Subsurface Weight, Radius (the IR's subsurface color, per
 channel) and Scale (its radius in meters), Sheen Weight, Tint and Roughness, Thin Wall, Normal. A material with layers
-(a CoronaLayeredMtl) has a Principled BSDF per layer, each mixed over the ones below by a Mix Shader (factor: the
-layer's amount times its mask); the render method follows every one of them. A color graph on a float input (specular,
+(a CoronaLayeredMtl, a VRayBlendMtl with coats) has a Principled BSDF per layer, each mixed over the ones below by a
+Mix Shader (factor: the layer's amount times its mask), or for an added layer (VRayBlendMtl's additive mode) added
+over them by an Add Shader, the layer scaled by a Mix Shader from nothing; the render method follows every one of them. A color graph on a float input (specular,
 transmission) goes through the mean of its channels, the measure convert/materials/ uses.
 
 Medium (MaterialIR.medium, the Corona volumes, maxdrop-em3.163): on the Material Output's Volume socket, the sum (Add

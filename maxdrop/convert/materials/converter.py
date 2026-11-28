@@ -11,7 +11,7 @@ from ..params import finite as _finite, flag as _flag, num as _num
 from .ids import (
     ChunkError, CORONA_BASE, CORONA_LAYERS, CORONA_LAYERS_ON, CORONA_SELECT_INDEX, CORONA_SELECT_LIST,
     DOUBLE_SIDED_FACING_ON, GREY_SRGB, MAX_PEEL, MULTI_ENABLED, MULTI_IDS, MULTI_MATERIALS, SHELL_RENDER_INDEX,
-    SHELL_SUBS, WRAPPER_STOPS, WRAPPERS,
+    SHELL_SUBS, VRAY_BLEND_BASE, VRAY_BLEND_COATS, VRAY_BLEND_COATS_ON, WRAPPER_STOPS, WRAPPERS,
 )
 from .ir import ConvertStats, Input, MapRef, MaterialIR
 from .values import _scene_meters, class_name, mean
@@ -176,6 +176,19 @@ class MaterialConverter:
             out.append((k, v.index))
         return out
 
+    def blend_coats(self, m):
+        """The coats of a VRayBlendMtl that are set and on (coatMtl_enable, on where it says nothing): [(table
+        position, object index)]."""
+        block = m.block(0)
+        values = block.value(VRAY_BLEND_COATS) if block is not None else None
+        out = []
+        for k, v in enumerate(values if isinstance(values, list) else []):
+            on = m.param(VRAY_BLEND_COATS_ON, 0, tab=k)
+            if (_finite(on) and not on) or not isinstance(v, pblock.Reference) or v.index is None:
+                continue
+            out.append((k, v.index))
+        return out
+
     def bsdf_count(self, ir):
         """The Principled BSDFs build/materials/ draws for ir: one, plus its layers' at each use (a reflection
         weight's twin not counted: each BSDF draws at most one)."""
@@ -184,17 +197,22 @@ class MaterialConverter:
             self._bsdfs[k] = (ir, 1 + sum(self.bsdf_count(layer.ir) for layer in ir.layers))
         return self._bsdfs[k][1]
 
-    def _mixes_layers(self, m):
-        """A CoronaLayeredMtl with a base and a layer on is a material of its own (corona_layered_mtl); without either
-        it is a wrapper of the one it has."""
-        base = m.param(CORONA_BASE, 0)
-        return isinstance(base, pblock.Reference) and base.index is not None and bool(self.corona_layers(m))
+    def _mixes_layers(self, m, key):
+        """A CoronaLayeredMtl with a base and a layer on, or a VRayBlendMtl with a base and a coat set and on, is a
+        material of its own (corona_layered_mtl, vray_blend_mtl); without either it is a wrapper of the one it has."""
+        if key == classids.CORONA_LAYERED_MTL:
+            base, layers = m.param(CORONA_BASE, 0), self.corona_layers
+        elif key == classids.VRAY_BLEND_MTL:
+            base, layers = m.param(VRAY_BLEND_BASE, 0), self.blend_coats
+        else:
+            return False
+        return isinstance(base, pblock.Reference) and base.index is not None and bool(layers(m))
 
     def _is_wrapper(self, m, key):
         """Material object m (ClassId key) stands for another one: peel() and source_for walk through it, stopping on
-        anything else (not a material, not in WRAPPERS or the Shell, a CoronaLayeredMtl that mixes its layers)."""
+        anything else (not a material, not in WRAPPERS or the Shell, a layered material that mixes its layers)."""
         return m.superclass == classids.SC_MATERIAL and (key in WRAPPERS or key == classids.SHELL_MTL) and not (
-            key == classids.CORONA_LAYERED_MTL and self._mixes_layers(m))
+            self._mixes_layers(m, key))
 
     def peel(self, index):
         """(object index of the material a wrapper stands for, None), the index itself for an object that is no
@@ -407,7 +425,7 @@ class MaterialConverter:
             return self._grey(index, "")
         ir = MaterialIR(index, m.name, source)
         made = rule(self, m, ir)
-        if made is not None:  # a rule that builds its IR from others' (corona_layered_mtl): textures done
+        if made is not None:  # a rule that builds its IR from others' (the layered ones): textures done
             return made
         if self.texmaps is not None:
             ir.textures = _texmaps.texture_graphs(ir, self.texmaps)

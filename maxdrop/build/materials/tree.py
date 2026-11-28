@@ -7,9 +7,10 @@ import bpy
 
 from ... import compat
 from ...convert import texmaps as tx
+from ...convert import materials as cm
 from .sockets import (
-    _as, _default, _in, _mean, _out, COLOR, FLOAT, MAX_LAYER_DEPTH, MISSING, VOLUME_BOUNCES, VOLUME_VIEWPORT_ALPHA,
-    X_STEP, Y_STEP,
+    _as, _default, _in, _mean, _out, COAT_WEIGHT_LABEL, COLOR, FLOAT, MAX_LAYER_DEPTH, MISSING, VOLUME_BOUNCES,
+    VOLUME_VIEWPORT_ALPHA, X_STEP, Y_STEP,
 )
 from .surface import _Surface
 from .textures import _Textures
@@ -126,7 +127,8 @@ class _Tree(_Surface, _Textures, _MapNodes):
     def build(self):
         """Fill the material from its IR: its Principled BSDF, then each layer (MaterialIR.layers, bottom first,
         their own layers within) as a Principled BSDF of its own over what is below, by a Mix Shader whose factor is
-        the layer's amount, times its mask graph."""
+        the layer's weight (its amount, times its mask graph), or for an added layer (Layer.mode ADD) by an Add Shader
+        over the layer scaled by its weight."""
         ir = self.ir
         alphas = []
         top = self.layered(self.bsdf, ir, alphas, 0)
@@ -186,8 +188,9 @@ class _Tree(_Surface, _Textures, _MapNodes):
         return True
 
     def layered(self, bsdf, ir, alphas, level):
-        """Fill bsdf from ir and mix ir's layers over it: the shader output on top. alphas gets (alpha linked, alpha
-        value or None) of every IR filled."""
+        """Fill bsdf from ir and mix (or add) ir's layers over it: the shader output on top. alphas gets (alpha linked,
+        alpha value or None) of every IR filled. An added layer is a Mix Shader (COAT_WEIGHT_LABEL) by its weight from
+        nothing (its first shader unlinked: no closure) to the layer, into an Add Shader over what is below."""
         below, alpha = self.fill(bsdf, ir)
         alphas.append(alpha)
         if not ir.layers or level >= MAX_LAYER_DEPTH:
@@ -212,9 +215,17 @@ class _Tree(_Surface, _Textures, _MapNodes):
             else:
                 weight = layer.amount * (1.0 if factor is MISSING else _mean(factor))
                 mix.inputs[0].default_value = min(1.0, max(0.0, weight))
-            self.links.new(below, mix.inputs[1])
             self.links.new(sub, mix.inputs[2])
-            below = mix.outputs[0]
+            if layer.mode == cm.ADD:
+                mix.label = COAT_WEIGHT_LABEL
+                add = self.nodes.new("ShaderNodeAddShader")
+                add.location = (X_STEP, node.location[1])
+                self.links.new(below, add.inputs[0])
+                self.links.new(mix.outputs[0], add.inputs[1])
+                below = add.outputs[0]
+            else:
+                self.links.new(below, mix.inputs[1])
+                below = mix.outputs[0]
         return below
 
     def fill(self, bsdf, ir):

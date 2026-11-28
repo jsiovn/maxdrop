@@ -6,7 +6,7 @@
 import bpy
 
 from .core import _mirror_inputs, check, close
-from .tables import MIRROR_LABEL, REFRACTION_LABEL, SPECULAR_LEVEL, TIR_LABEL, TWIN_LABEL
+from .tables import COAT_WEIGHT_LABEL, MIRROR_LABEL, REFRACTION_LABEL, SPECULAR_LEVEL, TIR_LABEL, TWIN_LABEL
 from .nodes import (
     _alpha_of, _bsdfs, _color_into_float, _constant_one, _fold, _from, _images_of, _layers_of, _mean, _medium_of,
     _normal_linked, _on, _refracting, _same_inputs, _same_source, _shaders, _thin, _value_ok, _weight_factor,
@@ -228,15 +228,21 @@ def check_medium(label, material, ir):
 
 
 def check_layers(label, material, layers, present=False):
-    """A layered material: a Mix Shader per layer, the last one into the output; a layer whose mask graph a node
-    drives has a linked factor, any other its amount (times the mask's constant)."""
+    """A layered material: a Mix Shader per layer, the last one (or an added layer's Add Shader) into the output; an
+    added layer (mode "add") an Add Shader over a Mix Shader from nothing (COAT_WEIGHT_LABEL); a layer whose mask graph
+    a node drives has a linked factor, any other its amount (times the mask's constant)."""
     nodes = material.node_tree.nodes
     mixes = _shaders(material)
     check(label + ": a Mix Shader per layer", len(mixes) == len(layers), "%d for %d" % (len(mixes), len(layers)))
+    adds = [n for n in nodes if n.bl_idname == "ShaderNodeAddShader" and _from(n.inputs[1]) in mixes
+            and _from(n.inputs[1]).label == COAT_WEIGHT_LABEL and not _from(n.inputs[1]).inputs[1].is_linked]
+    added = sum(1 for layer in layers if getattr(layer, "mode", "mix") == "add")
+    check(label + ": an Add Shader per added layer, over its layer scaled from nothing", len(adds) == added
+          and sum(1 for m in mixes if m.label == COAT_WEIGHT_LABEL) == added, "%d for %d" % (len(adds), added))
     out = next(n for n in nodes if n.bl_idname == "ShaderNodeOutputMaterial")
     surface = out.inputs["Surface"]
-    check(label + ": the top Mix Shader is the surface",
-          surface.is_linked and surface.links[0].from_node in mixes)
+    check(label + ": the top Mix Shader (Add Shader for an added layer) is the surface",
+          surface.is_linked and surface.links[0].from_node in mixes + adds)
     plain = []
     for layer in layers:
         folded = _fold(layer.graph.root, present) if layer.graph is not None else LOST

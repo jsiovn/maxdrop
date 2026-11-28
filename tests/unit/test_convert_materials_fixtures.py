@@ -106,7 +106,7 @@ class VRayWrappers(unittest.TestCase, Close):
         cf, graph, by_name = _fixture("vray_wrappers")
         with cf:
             conv = mat.MaterialConverter(graph)
-            expect = {"FixtureTwoSided": "FixtureFront", "FixtureBlend": "FixtureBlendBase",
+            expect = {"FixtureTwoSided": "FixtureFront",
                       "FixtureShell": "FixtureShellOriginal"}  # Shell renderMtlIndex 0: the original
             for wrapper, sub in expect.items():
                 with self.subTest(wrapper):
@@ -115,10 +115,12 @@ class VRayWrappers(unittest.TestCase, Close):
                     self.assertIs(ir, conv.convert(by_name[sub]))
                     self.assertEqual((ir.name, ir.index, ir.source), (sub, by_name[sub], "VRayMtl"))
             self.assertEqual(conv.peel(by_name["FixtureMulti"]), (by_name["FixtureMulti"], None))
+            self.assertEqual(conv.peel(by_name["FixtureBlend"]), (by_name["FixtureBlend"], None),
+                             "a VRayBlendMtl with coats mixes them: no wrapper (test_convert_materials_blend)")
             front = conv.convert(by_name["FixtureTwoSided"])
             self.close(front.base_color.value, (0.64448, 0.006995, 0.006995), "FixtureFront diffuse 210 20 20")
             self.close(front.roughness.value, 1.0 - 0.61, "glossiness 0.61")
-        self.assertEqual(dict(conv.stats.peeled), {"VRay2SidedMtl": 1, "VRayBlendMtl": 1, "Shell Material": 1})
+        self.assertEqual(dict(conv.stats.peeled), {"VRay2SidedMtl": 1, "Shell Material": 1})
         self.assertEqual(conv.stats.issues, [])
 
 

@@ -17,6 +17,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   thresholds (its two colors or maps mixed by it, the pattern as the height in a bump slot), instead of "no bitmap
   below", and counted under Approximated in the report; Blender's noise is another pattern than 3ds Max's, and its
   scale and contrast are not measured against 3ds Max yet.
+- Materials: a VRayBlendMtl with coats is drawn as its base with each coat that is on over it (a Principled BSDF per
+  coat, mixed, or added in additive mode, by its blend color or blend map), instead of its base alone; the weights are
+  not measured against V-Ray yet, and a colored blend color is drawn as its mean (a line in the report).
 
 ### Changed
 

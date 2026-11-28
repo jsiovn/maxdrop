@@ -83,7 +83,7 @@ oracle's, and scene.camera the oracle's render camera (cameras: CamTarget, the l
 camera (lookat: FixtureCam); cameras holds eleven camera objects with a Camera each. Without a camera the scene's render
 size and camera stay as they were.
 Each fixture's import report is published (build.report) and must say nothing was left out; the one the
-operator published for vray_wrappers lists its three peeled wrappers by class. layers_nested: the objects below a
+operator published for vray_wrappers lists its two peeled wrappers by class (its VRayBlendMtl's coats are layers). layers_nested: the objects below a
 hidden parent layer (one and two levels down) are out of the view layer, the one below a frozen parent layer cannot
 be selected, as the oracle's inherited layer flags say; only the flagged layers' own collections carry a flag.
 A hand-made
@@ -108,7 +108,8 @@ untextured, FixtureCurveJump's two points at one x in the convert side's order, 
 through the curve);
 hand-made IRs check shared images, a missing file, the materials counted by class, Thin Wall (set on 5.x, counted on
 4.x), a name clash, BLENDED / DITHERED and every node kind, the wrappers' links and values (Facing, blend modes and
-masks, rewiring, Adjust, Tint); a crop repeating per axis (wrap, ping-pong, clip), a mirrored axis drawn as
+masks, rewiring, Adjust, Tint), layers mixed by a Mix Shader and added layers by an Add Shader over a Mix Shader from
+nothing (VRayBlendMtl's additive coats); a crop repeating per axis (wrap, ping-pong, clip), a mirrored axis drawn as
 3ds Max renders it (two copies per tile, the nodes evaluated at its sample points), map channel 0 drawn on
 channel 1 and reported, a texture file without image data reported, a material whose build raises removed and
 reported; a material conversion that raises leaves the scene imported without materials, the report says why.

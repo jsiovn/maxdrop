@@ -376,15 +376,16 @@ def check_curve_step():
 
 def check_wrappers_report():
     """Right after the operator imported vray_wrappers: the text MaxDrop Report counts the materials and lists the
-    wrappers it peeled by class, and the summary warns about them."""
+    wrappers it peeled by class (not the VRayBlendMtl, whose coats are layers: maxdrop-o53.1.6), and the summary warns
+    about them."""
     text = bpy.data.texts.get("MaxDrop Report")
     lines = text.as_string().split("\n") if text else []
     check("vray_wrappers: the report counts the materials built",
           any(line.startswith("Materials built: ") for line in lines), "\n".join(lines))
     check("vray_wrappers: the report lists the peeled wrappers by class",
-          "  Wrappers peeled to their sub-material, by class: Shell Material 1, VRay2SidedMtl 1, VRayBlendMtl 1"
+          "  Wrappers peeled to their sub-material, by class: Shell Material 1, VRay2SidedMtl 1"
           in lines and lines.index("Approximated:") < lines.index(
-              "  Wrappers peeled to their sub-material, by class: Shell Material 1, VRay2SidedMtl 1, VRayBlendMtl 1"),
+              "  Wrappers peeled to their sub-material, by class: Shell Material 1, VRay2SidedMtl 1"),
           "\n".join(lines))
 
 

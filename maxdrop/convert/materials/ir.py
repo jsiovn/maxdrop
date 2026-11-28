@@ -90,15 +90,21 @@ class MaterialIR:
     layers: list = dataclasses.field(default_factory=list)  # [Layer] mixed over this one, bottom first
 
 
+MIX, ADD = "mix", "add"  # Layer.mode
+
+
 @dataclasses.dataclass
 class Layer:
-    """A material mixed over the ones below it (CoronaLayeredMtl): its MaterialIR, its amount, its mask (a MapRef
-    whose amount is the mask amount, or None) and the mask's TextureGraphIR (MASK) when a TexmapConverter made one.
-    Its weight is amount x the mask graph, the graph being lerp(1, mask, mask amount) (Corona 12 renders)."""
+    """A material over the ones below it (CoronaLayeredMtl, a VRayBlendMtl's coat): its MaterialIR, its amount, its
+    mask (a MapRef, or None) and the mask's TextureGraphIR (MASK) when a TexmapConverter made one. Its weight is amount
+    x the mask graph: a CoronaLayeredMtl's graph is lerp(1, mask, mask amount) (Corona 12 renders), a VRayBlendMtl's
+    lerp(blend, blend map, multiplier). mode: MIX mixes it over what is below by the weight; ADD adds it, scaled by
+    the weight, over what is below (VRayBlendMtl's additive mode)."""
     ir: MaterialIR
     amount: float = 1.0
     mask: object = None
     graph: object = None
+    mode: str = MIX
 
 
 class ConvertStats:

@@ -222,7 +222,7 @@ def check_material_slots(modules):
           and _faces(two) == ["FixtureFront"] * 6, str(_faces(two)))
     names = sorted(m.name for m in bpy.data.materials)
     check("material slots: one Blender material per Max material",
-          names == sorted(["FixtureFront", "FixtureBlendBase", "FixtureShellOriginal", "FixtureSubOne",
+          names == sorted(["FixtureFront", "FixtureBlend", "FixtureShellOriginal", "FixtureSubOne",
                            "FixtureSubSeven"]) and len(built.materials) == 5, str(names))
 
     empty_scene()

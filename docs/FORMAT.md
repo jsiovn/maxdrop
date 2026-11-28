@@ -2512,6 +2512,16 @@ when V-Ray renders). Not measured: whether the multipliers come before or after 
 (MaxDrop folds them into its amount), Auto on a float file (taken as linear) and V-Ray's crop origin (taken as a
 Bitmap's).
 
+VRayBlendMtl as layers (maxdrop-o53.1.6, no render in this bead): a base with a coat that is set (coatMtl, 1) and on
+(coatMtl_enable, 6) converts to the base with each such coat as a layer over it, bottom first; additiveMode (5) adds a
+coat over what is below (an Add Shader over the coat scaled by its weight), else it is mixed (a Mix Shader). The weight
+of coat k is its blend color (2) taken as a swatch on a mask (the scene's swatch rule on the mean of its channels, each
+clamped to 0..1, as V-Ray 5.2 was measured to render a constant mask: maxdrop-em3.36); with a blend map (3), that
+weight and the map mixed by texmap_blend_multiplier (4, percent), as a slot mixes its swatch and its map, the map as a
+mask. The ids 1000-1035 an oracle lists are transient aliases of the table elements, not stored. Not measured: the
+weights against V-Ray (maxdrop-o53.3.2), additive mode's sum, V-Ray's per-channel blend of a colored blend color
+(MaxDrop takes the mean, a line in the report) and the multiplier above 100 %.
+
 ## Asset metadata
 
 - The files a scene names are listed in the stream `FileAssetMetaData3` (every fixture; empty, 0 bytes, when the

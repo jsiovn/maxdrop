@@ -30,7 +30,7 @@ GREY_SRGB = 128 / 255  # the grey of a material without a rule: MaxDrop's own, n
 # A class of WRAPPER_STOPS is peeled to its first slot or not at all: its later slots are never read
 WRAPPERS = {
     classids.VRAY_2SIDED_MTL: (0, 1),  # frontMtl, backMtl
-    classids.VRAY_BLEND_MTL: (0, 1),  # baseMtl, coatMtl (table)
+    classids.VRAY_BLEND_MTL: (0, 1),  # baseMtl, coatMtl (table): a wrapper only without a coat set and on
     classids.VRAY_OVERRIDE_MTL: (0, 2, 4, 6, 8),  # baseMtl, giMtl, reflectMtl, refractMtl, shadowMtl
     classids.VRAY_MTL_WRAPPER: (0,),  # baseMtl
     classids.DOUBLE_SIDED_MTL: (0, 1),  # material1 (facing), material2 (back)
@@ -57,7 +57,14 @@ SHELL_RENDER_INDEX, SHELL_SUBS = 1, (2, 3)  # renderMtlIndex; originalMaterial, 
 # 1006 maskAmounts (each a table, one element per layer)
 CORONA_BASE, CORONA_LAYERS, CORONA_AMOUNTS, CORONA_MASKS, CORONA_LAYERS_ON, CORONA_MASKS_ON, CORONA_MASK_AMOUNTS = (
     1000, 1001, 1002, 1003, 1004, 1005, 1006)
-MAX_LAYERS = 16  # layers mixed over a CoronaLayeredMtl's base (Corona offers 10)
+# VRayBlendMtl, block 0 (docs/FORMAT.md): 0 baseMtl, 1 coatMtl, 2 blend (colors), 3 texmap_blend, 4
+# texmap_blend_multiplier (percent), 6 coatMtl_enable (each a table, one element per coat), 5 additiveMode; the ids
+# 1000-1035 an oracle shows are transient aliases of the table elements, not stored
+VRAY_BLEND_BASE, VRAY_BLEND_COATS, VRAY_BLEND_COLORS, VRAY_BLEND_MAPS, VRAY_BLEND_MULTIPLIERS, VRAY_BLEND_ADDITIVE = (
+    0, 1, 2, 3, 4, 5)
+VRAY_BLEND_COATS_ON = 6
+VRAY_BLEND_COLOR = (0.5, 0.5, 0.5)  # a blend color as created (the oracles: 0.5 grey)
+MAX_LAYERS = 16  # layers mixed over a CoronaLayeredMtl's base (Corona offers 10; a VRayBlendMtl holds 9 coats)
 MAX_LAYER_BSDFS = 64  # Principled BSDFs one material may draw, its layers' layers counted at each use
 # (each may come with a twin without reflection, the reflection weight of build/materials/: at most twice as many nodes)
 MAX_COMPLEX_IOR = 100.0  # n and k of a complex IOR are held within 0..this

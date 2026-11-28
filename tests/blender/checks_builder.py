@@ -11,7 +11,7 @@ import tempfile
 import bpy
 
 from .core import check, close, empty_scene, ROOT
-from .tables import SPECULAR_LEVEL, WEIGHT_LABEL
+from .tables import COAT_WEIGHT_LABEL, SPECULAR_LEVEL, WEIGHT_LABEL
 from .nodes import (
     _bsdfs, _clip_axes_of, _from, _images_of, _input, _irs, _principled, _reaches_image, _refracting, _shaders, _thin,
     _weight_factor, _weight_mix, _write_png,
@@ -286,6 +286,51 @@ def check_builder_blend():
         for img in list(bpy.data.images):
             bpy.data.images.remove(img)
         shutil.rmtree(scratch, ignore_errors=True)
+
+
+def check_builder_added_layers():
+    """VRayBlendMtl's coats (bead maxdrop-o53.1.6): a mixed coat and an added one over a base, one Principled BSDF
+    per layer; the mixed one joined by a Mix Shader at its weight, the added one by an Add Shader over a Mix Shader
+    from nothing (COAT_WEIGHT_LABEL) to the coat at its weight, a masked weight's graph linked into that factor."""
+    from maxdrop.build import materials as build_materials
+    from maxdrop.convert import materials as cm
+    from maxdrop.convert import texmaps as tx
+    empty_scene()
+    try:
+        base = cm.MaterialIR(30, "Blend", "test", base_color=cm.Input((0.0, 0.0, 1.0)))
+        mixed = cm.MaterialIR(31, "CoatA", "test", base_color=cm.Input((1.0, 1.0, 0.0)))
+        added = cm.MaterialIR(32, "CoatB", "test", base_color=cm.Input((0.0, 1.0, 1.0)))
+        mask = tx.TextureGraphIR(tx.Mix(tx.Constant(0.3), tx.Checker(tx.Mapping()), 0.4), tx.MASK)
+        base.layers = [cm.Layer(mixed, 0.25), cm.Layer(added, 0.6, mode=cm.ADD),
+                       cm.Layer(added, 1.0, cm.MapRef(1, 0.4), mask, cm.ADD)]
+        m = build_materials.MaterialBuilder().make(base)
+        nodes = m.node_tree.nodes
+        bsdfs, shaders = _bsdfs(m), _shaders(m)
+        adds = [n for n in nodes if n.bl_idname == "ShaderNodeAddShader"]
+        check("added layers: a Principled BSDF per layer, a Mix Shader per layer, an Add Shader per added one",
+              len(bsdfs) == 4 and len(shaders) == 3 and len(adds) == 2,
+              "%d BSDFs, %d Mix, %d Add" % (len(bsdfs), len(shaders), len(adds)))
+        out = next(n for n in nodes if n.bl_idname == "ShaderNodeOutputMaterial")
+        top = _from(out.inputs["Surface"])
+        check("added layers: the top Add Shader into the output", top in adds)
+        scaled = [_from(n.inputs[1]) for n in adds]
+        check("added layers: each Add Shader adds a Mix Shader from nothing to its coat",
+              all(s is not None and s.label == COAT_WEIGHT_LABEL and not s.inputs[1].is_linked
+                  and _from(s.inputs[2]) in bsdfs for s in scaled))
+        constant = [s for s in scaled if s is not None and not s.inputs[0].is_linked]
+        linked = [s for s in scaled if s is not None and s.inputs[0].is_linked]
+        check("added layers: the constant weight 0.6 on its factor, the masked one linked", len(constant) == 1
+              and abs(constant[0].inputs[0].default_value - 0.6) < 1e-6 and len(linked) == 1,
+              str([s.inputs[0].default_value for s in constant]))
+        chain = _from(top.inputs[0]) if top is not None else None  # below the top: the first added coat
+        plain = _from(chain.inputs[0]) if chain is not None else None  # below it: the mixed coat
+        check("added layers: bottom first, the base, the mixed coat by its Mix Shader, then the two Add Shaders",
+              chain in adds and plain in shaders and plain.label != COAT_WEIGHT_LABEL
+              and _from(plain.inputs[1]) == bsdfs[0], "%s %s" % tuple(n and n.name for n in (chain, plain)))
+        check("added layers: the mixed coat by its weight 0.25 over the base", plain is not None
+              and abs(plain.inputs[0].default_value - 0.25) < 1e-6 and _from(plain.inputs[2]) in bsdfs[1:])
+    finally:
+        empty_scene()
 
 
 def _blend_form(op, vms, t):
