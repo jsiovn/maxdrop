@@ -168,15 +168,13 @@ from .ids import (
     DOME_SWITCH, DOME_PLACEMENT, DOME_OUTPUT, DOME_GAMMA, DOME_FLOAT_OFF, DOME_CROP, DOME_SHADOW, SKY, NO_DECAY,
     INVERSE, ZERO_START, BEAM, RECTANGLE_CONE, OVERSHOOT, AMBIENT, FAR, NEGATIVE, SHAPE, WEB_FILE, IES_FILE, IES_ZERO,
     IES_RATED, IES_UNREAD, IES_DARK, IES_SHAPE, NO_FILE, SUN_ZENITH, SUN_COLOR, MISSING, DOUBLE_SIDED, TEXMAP,
-    DIRECTIONAL, GLOSSY, NOT_FINITE, OUT_OF_RANGE, MAX_FLOAT, MAX_POWER, CONTRIBUTION,
+    DIRECTIONAL, GLOSSY, NOT_FINITE, OUT_OF_RANGE, MAX_FLOAT, MAX_POWER, CONTRIBUTION, _WEB_ROTATION,
 )
 from .families import (
     LightDescription, light_class, environment_sky, area, area_scale, watts, light_color, is_dome, is_mesh_light,
     not_built, describe, _rays, _nonnegative, _cone, WEB_CONE, WEB_BLEND, point_watts, _describe_standard,
-    _describe_photometric, _describe_sun, _describe_ies, _ies_radius, _DESCRIBE,
+    _describe_photometric, _describe_sun, _describe_ies, _ies_radius, _DESCRIBE, Profile, _profile,
 )
-from .ids import _WEB_ROTATION
-from .families import Profile, _profile
 from .reading import _value, read_params, _blocks, _asset, _file_name, _read_blocks, _u16, _read_standard
 from .emitters import EmitterDescription, emitter_radiance, _emitter_strength, spread, describe_emitter
 from .dome import (

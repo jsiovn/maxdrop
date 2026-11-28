@@ -326,6 +326,13 @@ class Refused(unittest.TestCase):
     def test_flux_out_of_range(self):
         self.refused(ies_file(candela="1e300", multiplier="1e300"), "its flux is out of range")
         self.refused(ies_file(lamps=10, rated="1e308"), "its rated lumens are out of range")
+        # a narrow first zone keeps the flux finite (about 3e299 lm) while the peak and the nadir pass the range
+        narrow = dict(vertical=(0, 0.001, 180), candelas=["1e308", 0, 0])
+        self.refused(ies_file(multiplier=10, **narrow), "its candelas are out of range")
+        self.assertAlmostEqual(ies.parse(ies_file(**narrow)).nadir, 1e308, delta=1e293)
+        # two such planes: their mean at the nadir is 1e308, divided before it is summed (2e308 would be inf)
+        p = ies.parse(ies_file(vertical=(0, 0.001, 180), horizontal=(0, 90), candelas=["1e308", 0, 0] * 2))
+        self.assertAlmostEqual(p.nadir, 1e308, delta=1e293)
 
 
 class Profile(unittest.TestCase):
@@ -396,6 +403,7 @@ class Profile(unittest.TestCase):
         p = ies.parse(data + b"\n99 trailing \xff\n")
         self.assertEqual(p.text, data.rstrip(b"\n").decode("latin-1"))
         self.assertIn("caf\xe9", p.text)
+        self.assertNotIn("TILT", repr(p))  # the repr leaves the text out: it can be megabytes
 
 
 class Read(unittest.TestCase):

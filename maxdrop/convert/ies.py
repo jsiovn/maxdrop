@@ -82,6 +82,9 @@ class Photometry(collections.namedtuple("Photometry",
     file up to its last candela (Latin-1: a character per byte)."""
     __slots__ = ()
 
+    def __repr__(self):  # the text can be megabytes
+        return "Photometry(%d x %g lm, flux %g lm, peak %g cd)" % (self.lamps, self.rated, self.flux, self.peak)
+
     @property
     def scale(self):
         """V-Ray's power times this is the flux it renders: flux / (lamps x rated lumens); when they are not
@@ -198,11 +201,14 @@ def parse(data):
     flux = table * multiplier * ballast
     if not math.isfinite(flux):
         raise IesError("its flux is out of range")
+    peak, nadir = max(candelas) * multiplier, _nadir(vertical, horizontal, candelas, kind) * multiplier
+    if not (math.isfinite(peak) and math.isfinite(nadir)):  # a narrow first zone keeps the flux finite
+        raise IesError("its candelas are out of range")
     up = 0.0
     if kind == TYPE_C and table > 0:
         up = min(1.0, max(0.0, _flux(vertical, horizontal, candelas, above=90.0) / table))
-    return Photometry(lamps, rated, multiplier, flux, ballast_lamp, tuple(horizontal), max(candelas) * multiplier,
-                      _nadir(vertical, horizontal, candelas, kind) * multiplier, up, data[:n.at].decode("latin-1"))
+    return Photometry(lamps, rated, multiplier, flux, ballast_lamp, tuple(horizontal), peak, nadir, up,
+                      data[:n.at].decode("latin-1"))
 
 
 def _at(xs, ys, x):
@@ -218,7 +224,8 @@ def _nadir(vertical, horizontal, candelas, kind):
     types A and B at vertical 0 and horizontal 0 (inside every range read)."""
     nv = len(vertical)
     if kind == TYPE_C:
-        return sum(candelas[0::nv]) / len(horizontal) if vertical[0] == 0 else 0.0
+        nh = len(horizontal)
+        return sum(c / nh for c in candelas[0::nv]) if vertical[0] == 0 else 0.0  # divided first: no overflow
     planes = [_at(vertical, candelas[j * nv:(j + 1) * nv], 0.0) for j in range(len(horizontal))]
     return _at(horizontal, planes, 0.0)
 
@@ -238,20 +245,18 @@ def _planes(vertical, horizontal, candelas, zone, above=None):
     over the angles past that one (degrees) only."""
     nv = len(vertical)
     rad = [math.radians(a) for a in vertical]
-    planes = []
-    for j in range(len(horizontal)):
-        row = candelas[j * nv:(j + 1) * nv]
-        total = 0.0
-        for i in range(nv - 1):
-            ra, ia, ib = rad[i], row[i], row[i + 1]
-            if above is not None and vertical[i] < above:
-                if vertical[i + 1] <= above:
-                    continue
-                ia += (ib - ia) * (above - vertical[i]) / (vertical[i + 1] - vertical[i])
-                ra = math.radians(above)
-            total += zone(ra, rad[i + 1], ia, ib)
-        planes.append(total)
-    return planes
+
+    def segment(row, i):
+        ra, ia, ib = rad[i], row[i], row[i + 1]
+        if above is not None and vertical[i] < above:
+            if vertical[i + 1] <= above:
+                return 0.0
+            ia += (ib - ia) * (above - vertical[i]) / (vertical[i + 1] - vertical[i])
+            ra = math.radians(above)
+        return zone(ra, rad[i + 1], ia, ib)
+
+    # sum(), as before: Python 3.12 and later sum floats compensated, so the flux stays the same on each Blender
+    return [sum(segment(candelas[j * nv:(j + 1) * nv], i) for i in range(nv - 1)) for j in range(len(horizontal))]
 
 
 def _trapezoid(planes, horizontal):
