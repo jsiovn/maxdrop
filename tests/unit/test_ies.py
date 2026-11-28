@@ -328,6 +328,76 @@ class Refused(unittest.TestCase):
         self.refused(ies_file(lamps=10, rated="1e308"), "its rated lumens are out of range")
 
 
+class Profile(unittest.TestCase):
+    """What a light shining with the file's distribution needs: peak and nadir candela times the multiplier, the share
+    of the flux above the horizontal, the text parsed, the ballast-lamp factor and the horizontal angles."""
+
+    def profile(self, p):
+        return round(p.peak, 9), round(p.nadir, 9), round(p.up, 9)
+
+    def test_isotropic(self):
+        p = ies.parse(ies_file())
+        self.assertEqual(self.profile(p), (100.0, 100.0, 0.5))
+        self.assertAlmostEqual(p.flux, ISOTROPIC, delta=1e-9)
+        p = ies.parse(ies_file(multiplier=2, ballast=0.5, ballast_lamp=0.25))  # the ballast factors stay out
+        self.assertEqual(self.profile(p) + (p.ballast_lamp,), (200.0, 200.0, 0.5, 0.25))
+        self.assertAlmostEqual(p.flux, ISOTROPIC, delta=1e-9)
+
+    def test_a_downlight_sends_nothing_up(self):
+        p = ies.parse(ies_file(vertical=(0, 45, 90, 135, 180), candelas=[100, 50, 0, 0, 0]))
+        self.assertEqual(self.profile(p), (100.0, 100.0, 0.0))
+        p = ies.parse(ies_file(vertical=(0, 45, 90)))  # a lower hemisphere: nothing past 90
+        self.assertEqual(self.profile(p), (100.0, 100.0, 0.0))
+
+    def test_an_uplight(self):
+        """A table from 90 to 180 is 0 cd at the nadir (Blender's node gives 0 before the first angle) and sends all
+        up; one from 10 has no nadir value either, and 1 of 1 + cos 10 degrees up."""
+        self.assertEqual(self.profile(ies.parse(ies_file(vertical=(90, 135, 180)))), (100.0, 0.0, 1.0))
+        p = ies.parse(ies_file(vertical=(10, 90, 180)))
+        self.assertEqual(self.profile(p)[:2], (100.0, 0.0))
+        self.assertAlmostEqual(p.up, 1.0 / (1.0 + math.cos(math.radians(10))), delta=1e-12)
+
+    def test_a_zone_split_at_the_horizontal(self):
+        """100 cd at 0 falling linearly to 0 at 180: the integral of (1 - t / pi) sin t is 1 over [0, pi], 1 / pi
+        over [pi / 2, pi]."""
+        p = ies.parse(ies_file(vertical=(0, 180), candelas=[100, 0]))
+        self.assertAlmostEqual(p.up, 1.0 / math.pi, delta=1e-12)
+        self.assertAlmostEqual(p.flux, 2.0 * math.pi * 100.0, delta=1e-9)
+
+    def test_the_planes(self):
+        """The nadir is the planes' mean at vertical 0, the up share over their symmetries as the flux; the
+        horizontal angles are kept as stored (also those a closure adds to: 0 to 270). Planes 0 and 180 of 100, 0, 0
+        cd (100 (1 - 2 / pi) each, nothing up), 90 and 270 of 100 (200, 100 up): by the trapezoid 100 of 200 + 100 (1 -
+        2 / pi) go up."""
+        p = ies.parse(ies_file(horizontal=(0, 90), candelas=[100, 100, 100, 300, 300, 300]))
+        self.assertEqual(self.profile(p) + (p.horizontal,), (300.0, 200.0, 0.5, (0.0, 90.0)))
+        p = ies.parse(ies_file(horizontal=(0, 90, 180, 270), candelas=[100, 0, 0, 100, 100, 100, 100, 0, 0,
+                                                                         100, 100, 100]))
+        self.assertEqual(p.horizontal, (0.0, 90.0, 180.0, 270.0))
+        self.assertAlmostEqual(p.up, 100.0 / (200.0 + 100.0 * (1.0 - 2.0 / math.pi)), delta=1e-12)
+
+    def test_a_dark_table(self):
+        self.assertEqual(self.profile(ies.parse(ies_file(candela=0))), (0.0, 0.0, 0.0))
+
+    def test_type_a_and_b(self):
+        """The nadir at vertical 0, horizontal 0, linear between angles; nothing above the horizontal."""
+        p = ies.parse(ies_file(kind=2, vertical=(-90, 30, 90), horizontal=(-90, 0, 90), candelas=[0, 60, 0] * 3))
+        self.assertEqual(self.profile(p), (60.0, 45.0, 0.0))
+        p = ies.parse(ies_file(kind=3, vertical=(-90, 0, 90), horizontal=(-90, 30, 90),
+                               candelas=[0, 100, 0, 0, 40, 0, 0, 100, 0], multiplier=2))
+        self.assertEqual(self.profile(p), (200.0, 110.0, 0.0))  # 100 - 60 x 90 / 120 = 55 cd at H 0, times 2
+        p = ies.parse(ies_file(kind=2, vertical=(0, 90), horizontal=(0, 90)))
+        self.assertEqual(self.profile(p), (100.0, 100.0, 0.0))
+
+    def test_the_text_is_what_was_parsed(self):
+        """Up to the last candela: the bytes after it are never read, so never handed on; Latin-1 keeps every
+        byte."""
+        data = ies_file(header="IESNA:LM-63-2002\n[TEST] caf\xe9 °\n")
+        p = ies.parse(data + b"\n99 trailing \xff\n")
+        self.assertEqual(p.text, data.rstrip(b"\n").decode("latin-1"))
+        self.assertIn("caf\xe9", p.text)
+
+
 class Read(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp(prefix="maxdrop-ies-")
@@ -375,6 +445,9 @@ class Read(unittest.TestCase):
             self.assertEqual(lookup.photometry("good.ies")[0], p)
             self.assertEqual(lookup.photometry("bad.ies"), (None, "the file ends before its number of lamps"))
             self.assertEqual(lookup.photometry("gone.ies"), (None, None))
+            self.assertEqual(lookup.found("good.ies"), ("good.ies", p, None))  # the base name of the file found
+            self.assertEqual(lookup.found("bad.ies"), ("bad.ies", None, "the file ends before its number of lamps"))
+            self.assertEqual(lookup.found("gone.ies"), (None, None, None))
         finally:
             ies.read = original
         self.assertEqual(reads, [good, bad])
@@ -393,6 +466,7 @@ class Read(unittest.TestCase):
                                                          "stopped after 2 files and folders, in {0}; texture search of "
                                                          "maps or textures folders stopped after 2 files and folders, "
                                                          "in {0}".format(os.path.abspath(self.dir))))
+        self.assertEqual(lookup.found("lamp.ies"), (None,) + lookup.photometry("lamp.ies"))
         self.assertEqual(lookup.photometry("a:b.ies"), (None, None))  # a refused name is not searched
         roomy = ies.Lookup(textures.TextureIndex(scene, is_local_drive=lambda path: False))
         self.assertAlmostEqual(roomy.photometry("lamp.ies")[0].flux, ISOTROPIC, delta=1e-9)
