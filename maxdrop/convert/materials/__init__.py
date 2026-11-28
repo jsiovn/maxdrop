@@ -134,19 +134,19 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   (the back's base color, else the front's), which build/materials/ draws as a Translucent BSDF mixed in by it; the
   back material a Layer (BACK) shown on back faces with the same translucency in the front's color. V-Ray's
   documented rule, not measured (maxdrop-o53.3.2); a colored translucency color is an issue.
-- Wrappers (VRay2SidedMtl with a black translucency and no back material shown, VRayBlendMtl without a coat set and
-  on, VRayOverrideMtl, VRayMtlWrapper, Double Sided, Shellac, CoronaLayeredMtl without a base or without a layer on:
-  base, then its layers that are on; CoronaRaySwitchMtl: direct, GI, reflect, refract) -> the first set sub-material
-  in 3ds Max's getSubMtl order (VRayOverrideMtl's and Double Sided's whatever their switches say: V-Ray 5.2 renders the base and the facing material switched off all the
-  same, measured in maxdrop-em3.136; the scanline renders a Double Sided side switched off black: an issue for the
-  facing one). Where the renderer draws no sub-material for an empty first slot the peel ends there, with a reason
-  (WRAPPER_STOPS, rendered in maxdrop-em3.136 and maxdrop-6n0.6.4): VRayOverrideMtl's base (V-Ray renders black),
-  Double Sided's facing material and VRay2SidedMtl's front (that side is not rendered), CoronaRaySwitchMtl's direct
-  material, empty or switched off (Corona renders nothing to the camera). An empty VRayBlendMtl base gives its first
-  set coat that is on and an issue (V-Ray renders the coat over nothing); an empty Shellac base its coat, as rendered;
-  CoronaSelectMtl -> its selected material (zero-based: the default is 0); Shell Material -> its render sub-material.
-  Peeling stops at any other class (a Multi/Sub-Object included), at most MAX_PEEL wrappers deep; each wrapper object
-  peeled counts once.
+- Wrappers (VRay2SidedMtl with a black translucency and no back material shown, VRayBlendMtl without a coat set and on,
+  VRayOverrideMtl, VRayMtlWrapper, Double Sided, Shellac, CoronaLayeredMtl without a base or without a layer on: base,
+  then its layers that are on; CoronaRaySwitchMtl: direct, GI, reflect, refract) -> the first set sub-material in 3ds
+  Max's getSubMtl order (VRayOverrideMtl's and Double Sided's whatever their switches say: V-Ray 5.2 renders the base
+  and the facing material switched off all the same, measured in maxdrop-em3.136; the scanline renders a Double Sided
+  side switched off black: an issue for the facing one). Where the renderer draws no sub-material for an empty first
+  slot the peel ends there, with a reason (WRAPPER_STOPS, rendered in maxdrop-em3.136 and maxdrop-6n0.6.4):
+  VRayOverrideMtl's base (V-Ray renders black), Double Sided's facing material and VRay2SidedMtl's front (that side is
+  not rendered), CoronaRaySwitchMtl's direct material, empty or switched off (Corona renders nothing to the camera). An
+  empty VRayBlendMtl base gives its first set coat that is on and an issue (V-Ray renders the coat over nothing); an
+  empty Shellac base its coat, as rendered; CoronaSelectMtl -> its selected material (zero-based: the default is 0);
+  Shell Material -> its render sub-material. Peeling stops at any other class (a Multi/Sub-Object included), at most
+  MAX_PEEL wrappers deep; each wrapper object peeled counts once.
 - Multi/Sub-Object: entry k has the material ID materialIDList[k] (zero-based, as the faces store it), the
   material materialList[k] and the switch mapEnabled[k]; the first entry with an ID wins. A face ID without an
   entry wraps as 3ds Max renders it: to ID modulo (the highest ID of the list + 1), every entry counted. A face ID
