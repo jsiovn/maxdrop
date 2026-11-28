@@ -9,8 +9,8 @@ from ... import compat
 from ...convert import texmaps as tx
 from ...convert import materials as cm
 from .sockets import (
-    _as, _default, _in, _mean, _out, COAT_WEIGHT_LABEL, COLOR, FLOAT, MAX_LAYER_DEPTH, MISSING, VOLUME_BOUNCES,
-    VOLUME_VIEWPORT_ALPHA, X_STEP, Y_STEP,
+    _as, _default, _in, _mean, _out, COAT_WEIGHT_LABEL, COLOR, FLOAT, MAX_LAYER_DEPTH, MISSING, THIN_LABEL,
+    VOLUME_BOUNCES, VOLUME_VIEWPORT_ALPHA, X_STEP, Y_STEP,
 )
 from .surface import _Surface
 from .textures import _Textures
@@ -30,6 +30,7 @@ class _Tree(_Surface, _Textures, _MapNodes):
         self.builder, self.material, self.ir = builder, material, ir
         self.label = "material %s" % (material.name,)
         self.skipped = set()  # the Principled inputs the IR needs that this Blender lacks
+        self.thin = False  # a Translucent BSDF is mixed in (translucent()): build() makes the surface thin
         tree = compat.node_tree(material)
         self.nodes, self.links = tree.nodes, tree.links
         self.nodes.clear()
@@ -137,9 +138,14 @@ class _Tree(_Surface, _Textures, _MapNodes):
         m = self.material
         linked = ir.medium is not None and self.volume(ir.medium, out)
         volume_only = linked and _volume_only(ir)
+        if self.thin:
+            thickness = compat.thin_surface(m, out)
+            if thickness is not None:
+                thickness.label = THIN_LABEL
+                thickness.location = (X_STEP * 0.5, -Y_STEP)
         if volume_only:  # a volume boundary, no surface (see Medium above)
             self.links.remove(surface)
-        elif any(linked for linked, _v in alphas):
+        elif self.thin or any(linked for linked, _v in alphas):  # EEVEE: a blended surface shows no light from behind
             m.surface_render_method = 'DITHERED'
         elif any(v is not None and v < 1.0 for _l, v in alphas):
             m.surface_render_method = 'BLENDED'

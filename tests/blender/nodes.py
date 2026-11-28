@@ -10,7 +10,8 @@ import bpy
 
 from .core import _mirror_inputs, close
 from .tables import (
-    DEG, MIRROR_LABEL, TIR_LABEL, TRANSLUCENCY_ALPHA_LABEL, TRANSLUCENCY_LABEL, TWIN_LABEL, VALUE_TOLERANCE, WEIGHT_LABEL,
+    DEG, MIRROR_LABEL, THIN_LABEL, TIR_LABEL, TRANSLUCENCY_ALPHA_LABEL, TRANSLUCENCY_LABEL, TWIN_LABEL, VALUE_TOLERANCE,
+    WEIGHT_LABEL,
 )
 
 
@@ -129,6 +130,18 @@ def _refracting(p):
 def _thin(p):
     s = p.inputs.get("Thin Wall")
     return s is not None and not s.is_linked and bool(s.default_value)
+
+
+def _output_of(material):
+    return next(n for n in material.node_tree.nodes if n.bl_idname == "ShaderNodeOutputMaterial")
+
+
+def _thickness_zero(material):
+    """The Value node (THIN_LABEL) of 0 on the Material Output's Thickness (EEVEE's thin surface), else None."""
+    s = _output_of(material).inputs["Thickness"]
+    node = s.links[0].from_node if s.is_linked else None
+    ok = node is not None and node.bl_idname == "ShaderNodeValue" and node.label == THIN_LABEL
+    return node if ok and node.outputs[0].default_value == 0.0 else None
 
 
 def _same_source(a, b):

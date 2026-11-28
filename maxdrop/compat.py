@@ -30,6 +30,23 @@ def light_nodes(light):
     return tree, emission, output
 
 
+def thin_surface(material, output):
+    """A Value node of 0 linked into output's Thickness (a Material Output of material), so that EEVEE takes the
+    surface as infinitely thin and a Translucent BSDF lets the light from behind through as Cycles does; None on a
+    Blender without the socket. EEVEE without it, a 4 m plane lit from behind: 2.8 times Cycles on 4.2 and 4.5, 0.07
+    times on 5.2; with it within 1 % of Cycles on 4.2.23, 4.5.16 and 5.2 (docs/FORMAT.md, "VRay2SidedMtl
+    translucency"). Thickness mode (Sphere or Slab) changes nothing then and is left as it is. Not measured: what
+    EEVEE's refraction and subsurface on the same material make of the thickness 0."""
+    thickness = output.inputs.get("Thickness")
+    if thickness is None:
+        return None
+    tree = node_tree(material)
+    node = tree.nodes.new("ShaderNodeValue")
+    node.outputs[0].default_value = 0.0
+    tree.links.new(node.outputs[0], thickness)
+    return node
+
+
 def ies_gain(horizontal):
     """The gain at which Cycles' IES Texture node reads a file of these horizontal angles over its candelas, at 10 to
     90 degrees from the axis (docs/FORMAT.md, "The IES Texture node in Blender, measured"): on 4.2 and 4.5 35/32 for

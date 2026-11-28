@@ -277,4 +277,5 @@ TIR_LABEL = "Total internal reflection"  # the weight's mask where glass reflect
 COAT_WEIGHT_LABEL = "Coat weight"  # an added layer's Mix Shader from nothing by its weight (maxdrop-o53.1.6)
 TRANSLUCENCY_LABEL = "Translucency"  # the Translucent BSDF's Mix Shader by the translucency (maxdrop-o53.1.7)
 TRANSLUCENCY_ALPHA_LABEL = "Translucency alpha"  # its Mix Shader from a Transparent BSDF by the alpha (maxdrop-o53.1.7)
+THIN_LABEL = "Thin surface"  # a Value of 0 on the Material Output's Thickness: EEVEE's thin surface (maxdrop-o53.1.10)
 DEG = math.pi / 180.0

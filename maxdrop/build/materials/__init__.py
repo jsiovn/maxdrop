@@ -26,6 +26,9 @@ back material) shown on back faces by a Mix Shader whose factor is Geometry > Ba
 every one of them. A translucency (a VRay2SidedMtl's) mixes a Translucent BSDF (its color translucency_color, the
 BSDF's normal; through the BSDF's alpha by a Mix Shader from a Transparent BSDF) over the BSDF by a Mix Shader
 (TRANSLUCENCY_LABEL) whose factor is the translucency.
+A material with a translucency (its own or a layer's) has a Value of 0 (THIN_LABEL) on the Material Output's Thickness
+(compat.thin_surface: EEVEE then lets the light from behind through as Cycles does) and renders DITHERED, also at a
+constant alpha below 1 (EEVEE's blended surface shows no light from behind; maxdrop-o53.1.10, docs/FORMAT.md).
 A color graph on a float input (specular, transmission) goes through the mean of its channels, the measure convert/materials/ uses.
 
 Medium (MaterialIR.medium, the Corona volumes, maxdrop-em3.163): on the Material Output's Volume socket, the sum (Add

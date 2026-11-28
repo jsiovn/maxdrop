@@ -4,7 +4,7 @@
 
 """Checks of the material builder on VRay2SidedMtl: its translucency and its back material (maxdrop-o53.1.7)."""
 from .core import check, empty_scene
-from .nodes import _bsdfs, _from, _shaders
+from .nodes import _bsdfs, _from, _output_of, _shaders, _thickness_zero
 from .tables import TRANSLUCENCY_ALPHA_LABEL, TRANSLUCENCY_LABEL
 
 
@@ -17,15 +17,16 @@ def _kind(m, idname):
 
 
 def _surface(m):
-    out = next(n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeOutputMaterial")
-    return _from(out.inputs["Surface"])
+    return _from(_output_of(m).inputs["Surface"])
 
 
 def check_builder_two_sided():
     """A translucency: a Translucent BSDF (its color translucency_color) under a Mix Shader (TRANSLUCENCY_LABEL) whose
     factor is the weight, over the Principled BSDF, into the output; none at 0; a weight graph linked into the factor;
     an alpha below 1 or linked cuts the Translucent BSDF by a Mix Shader from a Transparent BSDF; the normal is the
-    BSDF's. A back layer: a Mix Shader driven by Geometry > Backfacing from the front to the back."""
+    BSDF's. A back layer: a Mix Shader driven by Geometry > Backfacing from the front to the back. A material with a
+    translucency (its own or a layer's) has one Value of 0 on its output's Thickness and renders DITHERED, also at a
+    constant alpha 0.5; one without keeps Thickness unlinked and BLENDED (maxdrop-o53.1.10)."""
     from maxdrop.build import materials as build_materials
     from maxdrop.convert import materials as cm
     from maxdrop.convert import texmaps as tx
@@ -45,11 +46,16 @@ def check_builder_two_sided():
               and tuple(translucent[0].inputs["Color"].default_value)[:3] == (0.0, 1.0, 0.0))
         check("two-sided: no alpha cut at alpha 1", not _labelled(m, TRANSLUCENCY_ALPHA_LABEL)
               and not _kind(m, "ShaderNodeBsdfTransparent"))
+        check("two-sided: a Value of 0 on the output's Thickness (EEVEE's thin surface), the mode left as it is",
+              _thickness_zero(m) is not None and m.thickness_mode == 'SPHERE', str(_thickness_zero(m)))
 
         empty_scene()
-        m = make(cm.MaterialIR(41, "Opaque", "test", translucency=cm.Input(0.0)))
+        m = make(cm.MaterialIR(41, "Opaque", "test", translucency=cm.Input(0.0), alpha=cm.Input(0.5)))
         check("two-sided: no Translucent BSDF at translucency 0", not _kind(m, "ShaderNodeBsdfTranslucent")
               and not _labelled(m, TRANSLUCENCY_LABEL))
+        check("two-sided: at translucency 0 Thickness unlinked, alpha 0.5 BLENDED",
+              not _output_of(m).inputs["Thickness"].is_linked and not _kind(m, "ShaderNodeValue")
+              and m.surface_render_method == 'BLENDED', m.surface_render_method)
 
         empty_scene()
         graphed = cm.MaterialIR(42, "Graphed", "test", alpha=cm.Input(0.5), translucency=cm.Input(0.3, cm.MapRef(1)))
@@ -63,6 +69,9 @@ def check_builder_two_sided():
               and not cut.inputs[0].is_linked and abs(cut.inputs[0].default_value - 0.5) < 1e-6
               and _from(cut.inputs[1]).bl_idname == "ShaderNodeBsdfTransparent"
               and _from(cut.inputs[2]).bl_idname == "ShaderNodeBsdfTranslucent" and _from(mixes[0].inputs[2]) == cut)
+        check("two-sided: a constant alpha 0.5 with a translucency DITHERED (EEVEE's blended surface shows no back "
+              "light), its Thickness 0", m.surface_render_method == 'DITHERED' and _thickness_zero(m) is not None,
+              m.surface_render_method)
 
         empty_scene()
         leaf = cm.MaterialIR(43, "Leaf", "test", alpha=cm.Input(1.0, cm.MapRef(1)), translucency=cm.Input(0.4),
@@ -106,5 +115,14 @@ def check_builder_two_sided():
         check("two-sided: front and back each with their Translucent BSDF, the front's below", len(_bsdfs(m)) == 2
               and len(mixes) == 2 and facing is not None and _from(facing.inputs[1]) in mixes
               and _from(facing.inputs[2]) in mixes and _from(facing.inputs[1]) != _from(facing.inputs[2]))
+        check("two-sided: one Thickness Value for the material's two translucencies", _thickness_zero(m) is not None
+              and len(_kind(m, "ShaderNodeValue")) == 1)
+
+        empty_scene()
+        opaque = cm.MaterialIR(46, "OpaqueFront", "test", base_color=cm.Input((1.0, 0.0, 0.0)))
+        opaque.layers = [cm.Layer(cm.MaterialIR(47, "LayerOnly", "test", translucency=cm.Input(0.3)), mode=cm.BACK)]
+        m = make(opaque)
+        check("two-sided: a translucency on a layer alone gives the material its Thickness 0",
+              _thickness_zero(m) is not None and len(_labelled(m, TRANSLUCENCY_LABEL)) == 1)
     finally:
         empty_scene()

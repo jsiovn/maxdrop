@@ -76,6 +76,7 @@ class _Surface:
             self.links.new(transparent.outputs[0], cut.inputs[1])
             self.links.new(shader, cut.inputs[2])
             shader = cut.outputs[0]
+        self.thin = True
         mix = self.nodes.new("ShaderNodeMixShader")
         mix.label = TRANSLUCENCY_LABEL
         mix.location = (x + X_STEP * 0.75, y + Y_STEP * 0.5)

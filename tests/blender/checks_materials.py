@@ -11,8 +11,8 @@ from .tables import (
 )
 from .nodes import (
     _alpha_of, _bsdfs, _color_into_float, _constant_one, _fold, _from, _images_of, _layers_of, _mean, _medium_of,
-    _normal_linked, _on, _refracting, _same_inputs, _same_source, _shaders, _thin, _value_ok, _weight_factor,
-    _weight_mix, LOST, MAP,
+    _normal_linked, _on, _output_of, _refracting, _same_inputs, _same_source, _shaders, _thickness_zero, _thin,
+    _value_ok, _weight_factor, _weight_mix, LOST, MAP,
 )
 
 
@@ -192,7 +192,9 @@ def check_principled(label, material, ir, present=False):
     from maxdrop.build import materials as build_materials
     output = next(n for n in material.node_tree.nodes if n.bl_idname == "ShaderNodeOutputMaterial")
     volume_only = build_materials._volume_only(ir) and output.inputs["Volume"].is_linked  # no surface: maxdrop-6n0.6.29
-    method = 'DITHERED' if volume_only or any(linked for linked, _v in alphas) else \
+    want, driven = _translucencies([ir] + [layer.ir for layer in layers], present)
+    translucent = bool(want) or driven > 0  # DITHERED: EEVEE's blended surface shows no back light (maxdrop-o53.1.10)
+    method = 'DITHERED' if volume_only or translucent or any(linked for linked, _v in alphas) else \
         'BLENDED' if any(v is not None and v < 1.0 for _l, v in alphas) else 'DITHERED'
     check(label + ": surface_render_method", material.surface_render_method == method,
           "%s vs %s" % (material.surface_render_method, method))
@@ -210,10 +212,8 @@ def check_principled(label, material, ir, present=False):
     check_translucency(label, material, [ir] + [layer.ir for layer in layers], present)
 
 
-def check_translucency(label, material, irs, present):
-    """A Translucent BSDF under a Mix Shader (TRANSLUCENCY_LABEL) for each of irs (the material's and its layers'
-    IRs) whose translucency is above 0 or driven by a node: the factor linked when a node drives it, else the
-    translucency (the graph's constant, or the IR's value when its images are missing)."""
+def _translucencies(irs, present):
+    """(the constant translucencies above 0 of irs, rounded; how many of them a node drives)."""
     want, linked = [], 0
     for ir in irs:
         graph = ir.textures.get("translucency")
@@ -224,6 +224,15 @@ def check_translucency(label, material, irs, present):
         weight = min(1.0, max(0.0, _mean(ir.translucency.value if folded is LOST else folded)))
         if weight > 0.0:
             want.append(round(weight, 5))
+    return want, linked
+
+
+def check_translucency(label, material, irs, present):
+    """A Translucent BSDF under a Mix Shader (TRANSLUCENCY_LABEL) for each of irs (the material's and its layers'
+    IRs) whose translucency is above 0 or driven by a node: the factor linked when a node drives it, else the
+    translucency (the graph's constant, or the IR's value when its images are missing). With any of them, a Value of
+    0 (THIN_LABEL) on the Material Output's Thickness, EEVEE's thin surface (maxdrop-o53.1.10); none without."""
+    want, linked = _translucencies(irs, present)
     nodes = material.node_tree.nodes
     mixes = [n for n in nodes if n.bl_idname == "ShaderNodeMixShader" and n.label == TRANSLUCENCY_LABEL]
     translucent = [n for n in nodes if n.bl_idname == "ShaderNodeBsdfTranslucent"]
@@ -233,6 +242,9 @@ def check_translucency(label, material, irs, present):
     check(label + ": the translucency on its Mix Shader's factor, linked where a node drives it",
           got == sorted(want) and sum(1 for m in mixes if m.inputs[0].is_linked) == linked,
           "%s vs %s, %d linked" % (got, sorted(want), linked))
+    thin = _thickness_zero(material)
+    check(label + ": a Value of 0 on the output's Thickness iff a translucency", (thin is not None) == bool(
+        want or linked) and (thin is not None or not _output_of(material).inputs["Thickness"].is_linked), str(thin))
 
 
 def check_medium(label, material, ir):
