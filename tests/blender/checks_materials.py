@@ -246,7 +246,10 @@ def check_layers(label, material, layers, present=False):
     plain = []
     for layer in layers:
         folded = _fold(layer.graph.root, present) if layer.graph is not None else LOST
-        if folded is not MAP:
+        fallback = getattr(layer, "fallback", None)
+        if folded is LOST and layer.graph is not None and fallback is not None:  # its map lost: the fallback weight
+            plain.append(round(min(1.0, max(0.0, fallback)), 5))
+        elif folded is not MAP:
             plain.append(round(min(1.0, layer.amount * (1.0 if folded is LOST else _mean(folded))), 5))
     plain.sort()
     got = sorted(round(m.inputs[0].default_value, 5) for m in mixes if not m.inputs[0].is_linked)

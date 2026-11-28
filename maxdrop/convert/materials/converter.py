@@ -136,6 +136,8 @@ class MaterialConverter:
             for k, v in enumerate(values if isinstance(values, list) else [values]):
                 if (key, pid) in ((classids.CORONA_LAYERED_MTL, CORONA_LAYERS), (classids.VRAY_BLEND_MTL,
                                                                                  VRAY_BLEND_COATS)):
+                    # a VRayBlendMtl without a base: its first coat that is on, as vray_blend_mtl skips one switched
+                    # off (V-Ray's render of an empty base under a coat switched off not measured)
                     on = m.param(CORONA_LAYERS_ON if pid == CORONA_LAYERS else VRAY_BLEND_COATS_ON, 0, tab=k)
                     if _finite(on) and not on:
                         continue

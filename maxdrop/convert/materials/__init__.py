@@ -137,7 +137,7 @@ Rules (the decisions of an earlier 3ds Max -> FBX exporter, without its FBX work
   (WRAPPER_STOPS, rendered in maxdrop-em3.136 and maxdrop-6n0.6.4): VRayOverrideMtl's base (V-Ray renders black),
   Double Sided's facing material and VRay2SidedMtl's front (that side is not rendered), CoronaRaySwitchMtl's direct
   material, empty or switched off (Corona renders nothing to the camera). An empty VRayBlendMtl base gives its first
-  set coat and an issue (V-Ray renders the coat over nothing); an empty Shellac base its coat, as rendered;
+  set coat that is on and an issue (V-Ray renders the coat over nothing); an empty Shellac base its coat, as rendered;
   CoronaSelectMtl -> its selected material (zero-based: the default is 0); Shell Material -> its render sub-material.
   Peeling stops at any other class (a Multi/Sub-Object included), at most MAX_PEEL wrappers deep; each wrapper object
   peeled counts once.

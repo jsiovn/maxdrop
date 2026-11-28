@@ -149,6 +149,7 @@ class BlendSynthetic(unittest.TestCase, Close):
         self.close(tuple(v for _r, _k, v in fake.calls), (0.4, 0.2, 0.3))
         one, two, three = ir.layers
         self.close((one.amount, two.amount, three.amount), (1.0, 0.2, 1.0))
+        self.close((one.fallback, two.fallback, three.fallback), (0.4, 0.2, 0.3), "a lost map's weight: the color's")
         self.assertIsInstance(one.graph, FakeTexmaps.Graph)
         self.assertIsNone(two.graph)
         self.assertEqual(two.mask, mat.MapRef(9, 0.4))

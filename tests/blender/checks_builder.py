@@ -329,6 +329,16 @@ def check_builder_added_layers():
               and _from(plain.inputs[1]) == bsdfs[0], "%s %s" % tuple(n and n.name for n in (chain, plain)))
         check("added layers: the mixed coat by its weight 0.25 over the base", plain is not None
               and abs(plain.inputs[0].default_value - 0.25) < 1e-6 and _from(plain.inputs[2]) in bsdfs[1:])
+        lost = tx.Image(1, "lost.png", "lost.png")  # its file not found: no image
+        for name, root in (("alone", lost), ("in its Mix", tx.Mix(tx.Constant(0.3), lost, 0.4))):
+            empty_scene()
+            base.layers = [cm.Layer(mixed, 1.0, cm.MapRef(1, 1.0), tx.TextureGraphIR(root, tx.MASK), cm.MIX, 0.3)]
+            m = build_materials.MaterialBuilder().make(base)
+            shader = _shaders(m)
+            factor = shader[0].inputs[0] if len(shader) == 1 else None
+            check("added layers: a blend map %s whose file is lost: the blend color's weight 0.3, not 1" % name,
+                  factor is not None and not factor.is_linked and abs(factor.default_value - 0.3) < 1e-6,
+                  str(factor.default_value if factor is not None else None))
     finally:
         empty_scene()
 

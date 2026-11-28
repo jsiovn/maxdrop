@@ -2522,7 +2522,8 @@ mask. The ids 1000-1035 an oracle lists are transient aliases of the table eleme
 weights against V-Ray (maxdrop-o53.3.2), additive mode's sum (a coat with opacity below 1 adds its Transparent BSDF
 too, so the sum lets the base be seen through), V-Ray's per-channel blend of a colored blend color (MaxDrop takes the
 mean, a line in the report) and the multiplier above 100 %. A base without a coat set and on is peeled to it, an
-empty base to its first coat that is on.
+empty base to its first coat that is on (V-Ray's render of an empty base under a coat switched off not measured). A
+blend map whose file is not found draws the blend color's weight, as a slot whose map is lost shows its swatch.
 Blender side, measured (maxdrop-o53.1.6, a scratch script, 16 x 16 plane under a black world, Standard view, the
 builder's own nodes): a base emitting 0.2 with a coat emitting 1.0 at weight 0.6 renders 0.798 (Cycles, 8 samples) /
 0.800 (EEVEE) added, 0.679 / 0.680 mixed, alpha 1, on Blender 4.2.23 and 5.2: the Mix Shader from an unlinked input

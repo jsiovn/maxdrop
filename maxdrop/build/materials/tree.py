@@ -213,7 +213,10 @@ class _Tree(_Surface, _Textures, _MapNodes):
                     factor.node.use_clamp = True
                 self.links.new(factor, mix.inputs[0])
             else:
-                weight = layer.amount * (1.0 if factor is MISSING else _mean(factor))
+                if factor is MISSING and layer.graph is not None and layer.fallback is not None:
+                    weight = layer.fallback  # its map lost (no file): the blend color's weight, as a slot's swatch
+                else:
+                    weight = layer.amount * (1.0 if factor is MISSING else _mean(factor))
                 mix.inputs[0].default_value = min(1.0, max(0.0, weight))
             self.links.new(sub, mix.inputs[2])
             if layer.mode == cm.ADD:

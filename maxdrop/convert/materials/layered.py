@@ -83,7 +83,8 @@ def vray_blend_mtl(conv, m, ir):
     taken as a swatch on a mask (the scene's swatch rule on the mean of its channels, each clamped to 0..1: what V-Ray
     5.2 was measured to render for a constant mask, TexmapConverter._swatch); with a blend map, that weight and the
     map mixed by the map multiplier (percent) as a slot mixes its swatch and its map, a MASK graph. Without a graph
-    (no TexmapConverter, an unusable map) the weight is the blend color's. A colored blend color where it counts is an
+    (no TexmapConverter, an unusable map), or a graph whose map's file is not found at build (Layer.fallback), the
+    weight is the blend color's. A colored blend color where it counts is an
     issue: V-Ray blends per channel (coats numbered from 1, as 3ds Max shows them). The weights are not measured
     (maxdrop-o53.3.2 calibrates them)."""
     mode = ADD if _finite(m.param(VRAY_BLEND_ADDITIVE, 0)) and m.param(VRAY_BLEND_ADDITIVE, 0) else MIX
@@ -102,7 +103,7 @@ def vray_blend_mtl(conv, m, ir):
         if (graph is None or multiplier < 1.0) and max(stored) - min(stored) > 0.5 / 255:
             conv.issue(m.index, "%s: coat %d's blend color (%.3f, %.3f, %.3f) drawn as its mean, not per channel"
                        % ((name, k + 1) + stored), out)
-        return Layer(layer, 1.0 if graph is not None else weight, mask, graph, mode)
+        return Layer(layer, 1.0 if graph is not None else weight, mask, graph, mode, weight)
 
     return _layered(conv, m, ir, m.param(VRAY_BLEND_BASE, 0).index, conv.blend_coats(m), weigh, "coat",
                     "coat object %d")
