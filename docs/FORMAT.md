@@ -2539,7 +2539,7 @@ changes nothing on this one plane (translucency 128 from the front and from behi
 | VRay2SidedMtl, white front, no back material, translucency grey t = 0 / 0.251 / 0.502 / 0.749 / 1: front light only; back light only; both | 1 - t; t; 1 |
 | green front, red back material (backMtlOn), t = 0.251 / 0.502 / 0.749: front light; back light | (0, 1 - t, 0); (t, 0, 0) |
 | white front, translucency (64, 96, 128) (vray_wrappers' FixtureTwoSided): front light; back light | (0.749, 0.624, 0.498); (0.251, 0.376, 0.502) |
-| mult_by_front_diffuse on (default off), back light, t 128: front (128, 255, 64) over a white back; the same front without a back material; green over red | (0.252, 0.502, 0.126); (0.127, 0.502, 0.0316); 0 |
+| mult_by_front_diffuse on (default off), back light, t 128: front (128, 255, 64) over a white back; the same front without a back material; green over red | (0.252, 0.502, 0.126); (0.126, 0.502, 0.0316); 0 |
 | force1SidedSubMtls off (default on; FixtureTwoSided has it off), t 128, white VRayMtl double-sided (its default): back light; front light | 0; 0.498 |
 | the same with the VRayMtl's Double-sided option off: back light; front light | 0.502; 0.498 |
 | translucency white with the PNG as its map, multiplier 60 / 0 %; translucency black with the PNG at 100 %; texmap_translucency_on off, white with the PNG at 100 %; all back light | off 0.7012, on 0.5317 / 1; off 0.502, on 0.2195; off 0.502, on 0.2195 |
@@ -2548,44 +2548,51 @@ changes nothing on this one plane (translucency 128 from the front and from behi
 | Use Curve, lower 0.3, upper 0.7: amount 20 / 35 / 40 / 50 / 65 / 80 %; a mask of 0.349 / 0.4 / 0.502 / 0.651 at amount 0 (without the curve: as stored) | green 0.2 / 0.35 / 0.4 / 0.5 / 0.65 / 0.8; green 0.0414 / 0.1563 / 0.5074 / 0.9586 |
 | Use Curve, lower 0.7, upper 0.3: a mask of 0.502 / 0.651 / 0.749 | green 0 / 0 / 1 |
 | amount 30 % with map1Enabled off; with map2Enabled off | (0, 1, 0); (1, 0, 0) |
+| colored maps and masks, VRayColor (255, 128, 0): VRayBlendMtl blend map at 100 % over blend black (black base, white coat); VRay2SidedMtl translucency map at 100 % over black (white front, back light); Blend mask at amount 30 % | (1, 0.502, 0); (1, 0.502, 0); green 0.5007 (red 0.4993) |
+| VRay2SidedMtl green front, red backMtl with backMtlOn off, t 128: back light; front light | (0, 0.502, 0); (0, 0.498, 0) |
 
-The rules, per channel, each in V-Ray's internal values. A scratch script recomputes all 104 rows of each gamma mode
+The rules, per channel, each in V-Ray's internal values. A scratch script recomputes all 109 rows of each gamma mode
 from them within 0.01 %.
 
 - **VRayBlendMtl.** Start from the base material's shading. Then, for each coat k in table order (coat 1 first, the
   last one on top) that is set and enabled, w_k = clamp(lerp(blend_k, map_k, multiplier_k / 100), 0, 1), or blend_k
   when it has no map. The multiplier is the percent as stored, the blend color is each of its channels as stored
-  (not their mean), and the map is its value. Normal mode: out = out (1 - w_k) + coat_k w_k. Additive: out = out +
-  coat_k w_k, not clamped (a white coat over a white base at 255: 2.0).
+  (not their mean), and the map is its value, per channel too. Normal mode: out = out (1 - w_k) + coat_k w_k.
+  Additive: out = out + coat_k w_k, not clamped (a white coat over a white base at 255: 2.0).
 - **VRay2SidedMtl,** seen from the front: (1 - t) x the front material's shading of the light on its own side + t x
-  the back's shading of the light on the other side. The back is backMtl when backMtlOn is set, else frontMtl; with
-  mult_by_front_diffuse on it is multiplied by the front's diffuse. Here t = lerp(translucency, map,
-  multiplier / 100), the translucency's channels as stored. V-Ray 5.2 renders the map whatever
-  texmap_translucency_on says. With force1SidedSubMtls off, a double-sided sub-material lets no light through from
-  the other side, so with VRayMtl's default the back light is lost while the front keeps its 1 - t. From behind and
-  with GI from other objects: not measured.
-- **Blend** `(0x250, 0)`, 3ds Max's Blend material rendered by V-Ray: w = the mask's value when a mask is set and
-  maskEnabled is on, else the mix amount (a fraction). Use Curve runs the mask through smoothstep of (w - lower) /
-  (upper - lower), a step at lower when lower is at or above upper (the Mix map's curve, above); it leaves the mix
-  amount alone. out = material1 (1 - w) + material2 w, so a white mask is material2. With map1Enabled or
-  map2Enabled off, the other material is rendered whole.
+  the back's shading of the light on the other side. The back is backMtl when backMtlOn is set, else frontMtl (also
+  with a backMtl assigned); with mult_by_front_diffuse on it is multiplied by the front's diffuse. Here t =
+  lerp(translucency, map, multiplier / 100), per channel, the translucency's channels as stored. V-Ray 5.2 renders
+  the map whatever texmap_translucency_on says. With force1SidedSubMtls off, a double-sided sub-material lets no
+  light through from the other side, so with VRayMtl's default the back light is lost while the front keeps its
+  1 - t. From behind and with GI from other objects: not measured.
+- **Blend** `(0x250, 0)`, 3ds Max's Blend material rendered by V-Ray: w = the mask's value, the mean of its channels
+  for a colored mask (one weight for all three), when a mask is set and maskEnabled is on, else the mix amount (a
+  fraction). Use Curve runs the mask through smoothstep of (w - lower) / (upper - lower), a step at lower when lower
+  is at or above upper (the Mix map's curve, above); it leaves the mix amount alone. out = material1 (1 - w) +
+  material2 w, so a white mask is material2. With map1Enabled or map2Enabled off, the other material is rendered
+  whole.
 
-**The weight and the scene's gamma.** V-Ray takes a blend color, a translucency and a swatch-valued mask as stored,
-per channel, in both gamma modes, and an image by its own decode (0.2195 with the gamma on, 0.502 off). With the
-gamma on, a swatch is linear (`colors.GAMMA_ON`), so the stored value is also the scene's rule. With the gamma off
-the scene is display-referred: Blender shows srgb_to_linear of the internal value, here of the material's mix, not
-of its sides. Red under green at a grey 128 blend shows (0.212, 0.216, 0). A mix of the decoded sides (1, 0, 0)
-and (0, 1, 0) by one weight w gives (1 - w, w, 0), so no weight shows both channels: the stored 0.502 gives a red
-of 0.498, and the scene's rule on it (0.216) gives 0.784. Only with one side black is one weight exact:
-srgb_to_linear(w) on a white side, and on another color c within 0.0052 (srgb_to_linear(w c) against
-srgb_to_linear(w) srgb_to_linear(c) over 0..1, computed, as for an RGB Multiply above). The
-grey-64 and grey-191 blends show (0.521, 0.0513, 0) and (0.0513, 0.521, 0). So the assumption that a coat's
-weight is the scene's rule on the mean of its blend color holds for a grey blend with the gamma on, and with the
-gamma off only for a coat over a black base (or a black coat). A colored blend weighs each channel by its own
-value. vray_wrappers' FixtureTwoSided translucency (64, 96, 128) has a stored mean of 0.376 and a mean of 0.117 under
-the scene's rule. V-Ray weighs its channels 0.251 / 0.376 / 0.502, and with the gamma off its back light shows
-(0.0513, 0.117, 0.216) and its front light (0.521, 0.347, 0.212). Its force1SidedSubMtls is off and its VRayMtl
-sub-materials are double-sided, so V-Ray lets none of the back light through there.
+**The weight and the scene's gamma.** V-Ray takes a blend color, a translucency and a swatch-valued map or mask as
+stored, per channel (a Blend mask: their mean), in both gamma modes, and an image by its own decode (0.2195 with the
+gamma on, 0.502 off). With the gamma on, a swatch is linear (`colors.GAMMA_ON`), so the stored value is also the
+scene's rule. With the gamma off the scene is display-referred: Blender shows srgb_to_linear of the internal value,
+here of the material's mix, not of its sides. Red under green at a grey 128 blend shows (0.212, 0.216, 0). A mix of
+the decoded sides (1, 0, 0) and (0, 1, 0) by one weight w gives (1 - w, w, 0), so no weight shows both channels: the
+stored 0.502 gives a red of 0.498, and the scene's rule on it (0.216) gives 0.784. Only with one side black is one
+weight exact. A coat over a black base shows srgb_to_linear(w c): the weight srgb_to_linear(w) on a white coat, and
+on another color c within 0.0052 (srgb_to_linear(w c) against srgb_to_linear(w) srgb_to_linear(c) over 0..1,
+computed, as for an RGB Multiply above). A black coat over a base shows srgb_to_linear((1 - w) c): the weight is
+1 - srgb_to_linear(1 - w), not srgb_to_linear(w) (the white base under a black coat at 128 shows 0.212; the scene's
+rule would show 0.784). The grey-64 and grey-191 blends show (0.521, 0.0513, 0) and (0.0513, 0.521, 0). So the
+assumption that a coat's weight is the scene's rule on the mean of its blend color holds for a grey blend with the
+gamma on, and with the gamma off only for a coat over a black base. A colored blend weighs each channel by its own
+value. vray_wrappers' FixtureTwoSided translucency (64, 96, 128) has a stored mean of 0.376 and a mean of 0.117
+under the scene's rule. V-Ray weighs its channels 0.251 / 0.376 / 0.502: on a white front with force1SidedSubMtls
+on, with the gamma off, its back light shows (0.0513, 0.117, 0.216) and its front light (0.521, 0.347, 0.212). The
+fixture itself has force1SidedSubMtls off and double-sided VRayMtl sub-materials, so V-Ray lets none of the back
+light through there; its backMtl is assigned with backMtlOn off (the default), so V-Ray shades the back with its
+frontMtl.
 
 ## Asset metadata
 
