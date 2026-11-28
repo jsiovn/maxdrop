@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Checks of texture placement: mirror tiling, clip masks, a clipped normal map and a Checker's pattern."""
+"""Checks of texture placement: mirror tiling, clip masks, a clipped normal map, a Checker's and a Noise's pattern."""
 import math
 import os
 import shutil
@@ -437,5 +437,94 @@ def check_builder_checker():
         check("builder checker (bump): a Bump whose height is the pattern",
               ok and not bad and seen == {0.0, 1.0} and abs(_input(bump, "Strength").default_value - 0.5) < 1e-6,
               "%s %s" % (getattr(bump, "bl_idname", None), bad[:4]))
+    finally:
+        empty_scene()
+
+
+def check_builder_noise():
+    """MaterialBuilder on hand-made IRs (bead maxdrop-o53.1.5): a Noise leaf is the object's coordinates through a
+    POINT Mapping node of texmaps.noise_placement, a Noise Texture (fBm, normalized, Scale 1, Detail
+    texmaps.noise_detail, Roughness 0.5, Lacunarity 2; 4D with W the phase), for turbulence |2 fac - 1|, then a
+    clamped Map Range from the thresholds: the Mix factor between the two colors; in a bump input the Bump's
+    height. The committed tests render nothing: the structure and the copied numbers are checked."""
+    from maxdrop.build import materials as build_materials
+    from maxdrop.convert import materials as cm
+    from maxdrop.convert import texmaps as tx
+    empty_scene()
+    builder = build_materials.MaterialBuilder()
+    red, blue = (1.0, 0.0, 0.0), (0.0, 0.0, 1.0)
+
+    def chain(socket, noise, label):
+        """Check the nodes from a Map Range feeding socket back to the Texture Coordinate node."""
+        ramp = _from(socket)
+        ok = ramp is not None and ramp.bl_idname == "ShaderNodeMapRange"
+        check("builder noise (%s): a clamped linear Map Range from the thresholds" % label,
+              ok and ramp.clamp and ramp.interpolation_type == 'LINEAR'
+              and close([_input(ramp, k).default_value for k in ("From Min", "From Max", "To Min", "To Max")],
+                        [noise.low, noise.high, 0.0, 1.0], 1e-6), getattr(ramp, "bl_idname", None))
+        if not ok:
+            return
+        node = _from(_input(ramp, "Value"))
+        if noise.kind == tx.TURBULENCE:
+            ok = node is not None and node.bl_idname == "ShaderNodeMath" and node.operation == 'ABSOLUTE'
+            fold = _from(_input(node, "Value")) if ok else None
+            ok = ok and fold is not None and fold.operation == 'MULTIPLY_ADD' and close(
+                [_input(fold, "Value_001").default_value, _input(fold, "Value_002").default_value], [2.0, -1.0], 1e-6)
+            check("builder noise (%s): the turbulence folded, |2 fac - 1|" % label, ok)
+            if not ok:
+                return
+            node = _from(_input(fold, "Value"))
+        ok = node is not None and node.bl_idname == "ShaderNodeTexNoise"
+        want = [noise.phase, 1.0, tx.noise_detail(noise), 0.5, 2.0, 0.0]
+        check("builder noise (%s): a Noise Texture, fBm, normalized, its inputs set" % label,
+              ok and node.noise_type == 'FBM' and node.normalize
+              and node.noise_dimensions == ('4D' if noise.phase else '3D')
+              and close([_input(node, k).default_value for k in ("W", "Scale", "Detail", "Roughness", "Lacunarity",
+                                                                 "Distortion")], want, 1e-6),
+              getattr(node, "bl_idname", None))
+        if not ok:
+            return
+        mapping = _from(_input(node, "Vector"))
+        location, rotation, scale = tx.noise_placement(noise)
+        ok = mapping is not None and mapping.bl_idname == "ShaderNodeMapping" and mapping.vector_type == 'POINT'
+        check("builder noise (%s): a POINT Mapping node of texmaps.noise_placement" % label,
+              ok and close(list(_input(mapping, "Location").default_value), list(location), 1e-6)
+              and close(list(_input(mapping, "Rotation").default_value), list(rotation), 1e-6)
+              and close(list(_input(mapping, "Scale").default_value), list(scale), 1e-5),
+              getattr(mapping, "bl_idname", None))
+        if not ok:
+            return
+        link = _input(mapping, "Vector").links[0] if _input(mapping, "Vector").is_linked else None
+        check("builder noise (%s): on the object's coordinates" % label,
+              link is not None and link.from_node.bl_idname == "ShaderNodeTexCoord"
+              and link.from_socket.identifier == "Object")
+
+    try:
+        coords = tx.Coordinates(offset=(0.1, 0.0, -0.2), tiling=(2.0, 1.0, 0.5), angle=(0.0, 0.0, math.radians(30.0)))
+        cases = (("regular, size 0.25 m", tx.Noise(size=0.25)),
+                 ("fractal, placed, phase", tx.Noise(coords, 0.5, 1.5, 4.0, 0.2, 0.7, tx.FRACTAL)),
+                 ("turbulence", tx.Noise(size=0.1, levels=2.5, kind=tx.TURBULENCE)))
+        for k, (label, noise) in enumerate(cases):
+            ir = cm.MaterialIR(100 + k, "Noise%d" % k, "test", base_color=cm.Input((0.5, 0.5, 0.5), cm.MapRef(1)))
+            ir.textures = {"base_color": tx.TextureGraphIR(
+                tx.Mix(tx.Constant(red), tx.Constant(blue), 0.0, noise), tx.COLOR, True)}
+            mix = _from(_principled(builder.make(ir)).inputs["Base Color"])
+            ok = mix is not None and mix.bl_idname == "ShaderNodeMix" and mix.data_type == 'RGBA'
+            check("builder noise (%s): a Mix of the two colors drives the base color" % label,
+                  ok and close(list(_input(mix, "A_Color").default_value)[:3], list(red), 1e-6)
+                  and close(list(_input(mix, "B_Color").default_value)[:3], list(blue), 1e-6),
+                  getattr(mix, "bl_idname", None))
+            if ok:
+                chain(_input(mix, "Factor_Float"), noise, label)
+        noise = tx.Noise(size=0.25)
+        ir = cm.MaterialIR(110, "NoiseBump", "test")
+        ir.bump = cm.MapRef(1)
+        ir.textures = {"bump": tx.TextureGraphIR(tx.Bump(noise, 0.5), tx.BUMP, True)}
+        bump = _from(_principled(builder.make(ir)).inputs["Normal"])
+        ok = bump is not None and bump.bl_idname == "ShaderNodeBump"
+        check("builder noise (bump): a Bump of strength 0.5", ok and abs(_input(bump, "Strength").default_value - 0.5)
+              < 1e-6, getattr(bump, "bl_idname", None))
+        if ok:
+            chain(_input(bump, "Height"), noise, "bump")
     finally:
         empty_scene()

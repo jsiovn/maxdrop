@@ -298,6 +298,8 @@ class _Tree(_Surface, _Textures, _MapNodes):
             return self.facing(n, depth)
         if isinstance(n, tx.Checker):
             return self.checker(n, depth)
+        if isinstance(n, tx.Noise):
+            return self.noise(n, depth)
         if isinstance(n, tx.Remap):
             return self.remap(n, depth)
         if isinstance(n, tx.Smoothstep):

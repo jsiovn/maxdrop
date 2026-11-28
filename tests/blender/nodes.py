@@ -241,7 +241,7 @@ def _fold(n, present):
     if isinstance(n, (tx.Adjust, tx.Tint)):  # made only when they change something: nodes
         v = _fold(n.input, present)
         return LOST if v is LOST else MAP
-    if isinstance(n, (tx.Facing, tx.Checker)):  # a pattern of its own: nodes, no image
+    if isinstance(n, (tx.Facing, tx.Checker, tx.Noise)):  # a pattern of its own: nodes, no image
         return MAP
     if isinstance(n, (tx.Remap, tx.Smoothstep)):  # a float through a curve: a node over its input
         v = _fold(n.input, present)

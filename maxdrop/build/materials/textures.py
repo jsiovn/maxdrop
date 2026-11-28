@@ -185,6 +185,40 @@ class _Textures:
         _in(wrap, "Value_001").default_value, _in(wrap, "Value_002").default_value = 2.0, 0.0
         return _out(wrap, "Value")
 
+    def noise(self, n, depth):
+        """A Noise leaf's pattern, a float socket: the object's coordinates (meters) through a POINT Mapping node
+        (texmaps.noise_placement), a Noise Texture (fBm, normalized, Scale 1, Detail texmaps.noise_detail, Roughness
+        0.5, Lacunarity 2, no distortion; 4D with W the phase when there is one), a turbulence folded (|2 fac - 1|),
+        then a clamped Map Range from the thresholds to 0..1. Every input set: the node's defaults are not 3ds
+        Max's (Scale 5, Detail 2)."""
+        if "object" not in self.uvs:
+            self.uvs["object"] = _out(self.node("ShaderNodeTexCoord", depth + 5), "Object")
+        vector = self.placement(self.uvs["object"], tx.noise_placement(n), depth + 4)
+        tex = self.node("ShaderNodeTexNoise", depth + 3)
+        tex.noise_dimensions = '4D' if n.phase else '3D'
+        tex.noise_type = 'FBM'
+        tex.normalize = True
+        self.links.new(vector, _in(tex, "Vector"))
+        for identifier, value in (("W", n.phase), ("Scale", 1.0), ("Detail", tx.noise_detail(n)), ("Roughness", 0.5),
+                                  ("Lacunarity", 2.0), ("Distortion", 0.0)):
+            _in(tex, identifier).default_value = value
+        value = _out(tex, "Fac")
+        if n.kind == tx.TURBULENCE:
+            fold = self.node("ShaderNodeMath", depth + 2)
+            fold.operation = 'MULTIPLY_ADD'  # inputs: value, multiplier, addend
+            self.links.new(value, _in(fold, "Value"))
+            _in(fold, "Value_001").default_value, _in(fold, "Value_002").default_value = 2.0, -1.0
+            folded = self.node("ShaderNodeMath", depth + 1)
+            folded.operation = 'ABSOLUTE'
+            self.links.new(_out(fold, "Value"), _in(folded, "Value"))
+            value = _out(folded, "Value")
+        ramp = self.node("ShaderNodeMapRange", depth)
+        ramp.data_type, ramp.interpolation_type, ramp.clamp = 'FLOAT', 'LINEAR', True
+        self.links.new(value, _in(ramp, "Value"))
+        for identifier, v in (("From Min", n.low), ("From Max", n.high), ("To Min", 0.0), ("To Max", 1.0)):
+            _in(ramp, identifier).default_value = v
+        return _out(ramp, "Result")
+
     def clip_mask(self, vector, axes, depth):
         """1 where the image coordinate lies in 0..1 on each of the axes, else 0 (Math COMPARE, |x - 0.5| <= 0.5)."""
         sep = self.node("ShaderNodeSeparateXYZ", depth + 1)
