@@ -111,7 +111,6 @@ def vray_blend_mtl(conv, m, ir):
                     "coat object %d")
 
 
-
 def _translucent(side, weight, ref, graph, other):
     """A copy of IR side letting through the share weight of the light arriving on the other side, colored by IR
     other's base color: translucency the Input of the weight and its map (ref; graph: its DATA graph, None without

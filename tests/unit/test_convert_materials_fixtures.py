@@ -117,7 +117,7 @@ class VRayWrappers(unittest.TestCase, Close):
             self.assertEqual(conv.peel(by_name["FixtureBlend"]), (by_name["FixtureBlend"], None),
                              "a VRayBlendMtl with coats mixes them: no wrapper (test_convert_materials_blend)")
             self.assertEqual(conv.peel(by_name["FixtureTwoSided"]), (by_name["FixtureTwoSided"], None),
-                             "a VRay2SidedMtl with translucency is drawn so: no wrapper (test_convert_materials_two_sided)")
+                             "a translucent VRay2SidedMtl: no wrapper (test_convert_materials_two_sided)")
             front = conv.convert(by_name["FixtureTwoSided"])
             self.close(front.base_color.value, (0.64448, 0.006995, 0.006995), "FixtureFront diffuse 210 20 20")
             self.close(front.roughness.value, 1.0 - 0.61, "glossiness 0.61")

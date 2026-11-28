@@ -25,7 +25,8 @@ over them by an Add Shader, the layer scaled by a Mix Shader from nothing, or fo
 back material) shown on back faces by a Mix Shader whose factor is Geometry > Backfacing; the render method follows
 every one of them. A translucency (a VRay2SidedMtl's) mixes a Translucent BSDF (its color translucency_color, the
 BSDF's normal; through the BSDF's alpha by a Mix Shader from a Transparent BSDF) over the BSDF by a Mix Shader
-(TRANSLUCENCY_LABEL) whose factor is the translucency. A color graph on a float input (specular, transmission) goes through the mean of its channels, the measure convert/materials/ uses.
+(TRANSLUCENCY_LABEL) whose factor is the translucency.
+A color graph on a float input (specular, transmission) goes through the mean of its channels, the measure convert/materials/ uses.
 
 Medium (MaterialIR.medium, the Corona volumes, maxdrop-em3.163): on the Material Output's Volume socket, the sum (Add
 Shader) of a Volume Scatter (density the largest scattering coefficient, color each channel's share of it, anisotropy),
