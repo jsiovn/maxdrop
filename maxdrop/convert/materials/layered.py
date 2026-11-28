@@ -18,12 +18,13 @@ from .values import mean
 from .corona import _flag_tab, _num_tab
 
 
-def _layered(conv, m, ir, base_index, layers, weigh):
+def _layered(conv, m, ir, base_index, layers, weigh, noun="layer", item="layer %d"):
     """The base's IR, named after layered material m, with a Layer for each of layers ([(table position, object
     index)], bottom first): at most MAX_LAYERS, and no more than MAX_LAYER_BSDFS Principled BSDFs in all (the rest left
     out, an issue). A base or layer that is a Multi/Sub-Object gives its first entry (an issue); a shadow-catcher base
     mixes as its grey, not making the object a shadow catcher. weigh(k, layer IR, out) gives the Layer of table
-    position k. Returns the IR: the textures are the base's, the weights' graphs made by weigh."""
+    position k. Returns the IR: the textures are the base's, the weights' graphs made by weigh. The issues name a
+    layer by noun (its plural by an s) and a layer object by item (its object index)."""
     base = conv.convert(base_index)
     if base is None:  # not a material (the peel checks only that it is set)
         return conv._grey(m.index, "%s: base is not a material" % (m.name or conv._class_name(m),))
@@ -34,19 +35,19 @@ def _layered(conv, m, ir, base_index, layers, weigh):
         if peeled is not None and conv.is_class(peeled, classids.SC_MATERIAL, classids.MULTI_SUB_MTL):
             conv.issue(m.index, "%s: Multi/Sub-Object %d mixed as its first entry" % (out.name, sub), out)
     if len(layers) > MAX_LAYERS:
-        conv.issue(m.index, "%s: %d layers, only the first %d mixed" % (out.name, len(layers), MAX_LAYERS), out)
+        conv.issue(m.index, "%s: %d %ss, only the first %d mixed" % (out.name, len(layers), noun, MAX_LAYERS), out)
     total = 1 + sum(conv.bsdf_count(layer.ir) for layer in out.layers)
     for k, index in layers[:MAX_LAYERS]:
         layer = conv.convert(index)
         if layer is None:
-            conv.issue(m.index, "%s: layer %d is not a material" % (out.name, index), out)
+            conv.issue(m.index, "%s: %s is not a material" % (out.name, item % index), out)
             continue
         total += conv.bsdf_count(layer)
         if total > MAX_LAYER_BSDFS:
-            conv.issue(m.index, "%s: layers past %d Principled BSDFs not mixed" % (out.name, MAX_LAYER_BSDFS), out)
+            conv.issue(m.index, "%s: %ss past %d Principled BSDFs not mixed" % (out.name, noun, MAX_LAYER_BSDFS), out)
             break
         if layer.medium is not None:
-            conv.issue(m.index, "%s: layer %d's medium not converted" % (out.name, index), out)
+            conv.issue(m.index, "%s: %s's medium not converted" % (out.name, item % index), out)
         out.layers.append(weigh(k, layer, out))
     return out
 
@@ -83,9 +84,10 @@ def vray_blend_mtl(conv, m, ir):
     5.2 was measured to render for a constant mask, TexmapConverter._swatch); with a blend map, that weight and the
     map mixed by the map multiplier (percent) as a slot mixes its swatch and its map, a MASK graph. Without a graph
     (no TexmapConverter, an unusable map) the weight is the blend color's. A colored blend color where it counts is an
-    issue: V-Ray blends per channel (coats numbered from 1, as 3ds Max shows them). The weights are not measured (maxdrop-o53.3.2 calibrates them)."""
+    issue: V-Ray blends per channel (coats numbered from 1, as 3ds Max shows them). The weights are not measured
+    (maxdrop-o53.3.2 calibrates them)."""
     mode = ADD if _finite(m.param(VRAY_BLEND_ADDITIVE, 0)) and m.param(VRAY_BLEND_ADDITIVE, 0) else MIX
-    name = m.name or "VRayBlendMtl"
+    name = m.name or conv._class_name(m)
 
     def weigh(k, layer, out):
         v = m.param(VRAY_BLEND_COLORS, 0, tab=k)
@@ -98,8 +100,9 @@ def vray_blend_mtl(conv, m, ir):
         mask = conv.to_map(m, ref, "coat %d blend map" % (k + 1), multiplier, ir=out)
         graph = _mask_graph(conv, mask, weight, out)
         if (graph is None or multiplier < 1.0) and max(stored) - min(stored) > 0.5 / 255:
-            conv.issue(m.index, "%s: coat %d's blend color (%.3f, %.3f, %.3f) drawn as its mean: V-Ray blends per "
-                       "channel" % ((name, k + 1) + stored), out)
+            conv.issue(m.index, "%s: coat %d's blend color (%.3f, %.3f, %.3f) drawn as its mean, not per channel"
+                       % ((name, k + 1) + stored), out)
         return Layer(layer, 1.0 if graph is not None else weight, mask, graph, mode)
 
-    return _layered(conv, m, ir, m.param(VRAY_BLEND_BASE, 0).index, conv.blend_coats(m), weigh)
+    return _layered(conv, m, ir, m.param(VRAY_BLEND_BASE, 0).index, conv.blend_coats(m), weigh, "coat",
+                    "coat object %d")

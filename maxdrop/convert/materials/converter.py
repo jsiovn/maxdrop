@@ -134,8 +134,9 @@ class MaterialConverter:
         for pid in pids:
             values = block.value(pid) if block is not None else None
             for k, v in enumerate(values if isinstance(values, list) else [values]):
-                if key == classids.CORONA_LAYERED_MTL and pid == CORONA_LAYERS:
-                    on = m.param(CORONA_LAYERS_ON, 0, tab=k)
+                if (key, pid) in ((classids.CORONA_LAYERED_MTL, CORONA_LAYERS), (classids.VRAY_BLEND_MTL,
+                                                                                 VRAY_BLEND_COATS)):
+                    on = m.param(CORONA_LAYERS_ON if pid == CORONA_LAYERS else VRAY_BLEND_COATS_ON, 0, tab=k)
                     if _finite(on) and not on:
                         continue
                 if isinstance(v, pblock.Reference) and v.index is not None:

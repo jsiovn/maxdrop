@@ -83,8 +83,8 @@ oracle's, and scene.camera the oracle's render camera (cameras: CamTarget, the l
 camera (lookat: FixtureCam); cameras holds eleven camera objects with a Camera each. Without a camera the scene's render
 size and camera stay as they were.
 Each fixture's import report is published (build.report) and must say nothing was left out; the one the
-operator published for vray_wrappers lists its two peeled wrappers by class (its VRayBlendMtl's coats are layers). layers_nested: the objects below a
-hidden parent layer (one and two levels down) are out of the view layer, the one below a frozen parent layer cannot
+operator published for vray_wrappers lists its two peeled wrappers by class (its VRayBlendMtl's coats are layers).
+layers_nested: the objects below a hidden parent layer (one and two levels down) are out of the view layer, the one below a frozen parent layer cannot
 be selected, as the oracle's inherited layer flags say; only the flagged layers' own collections carry a flag.
 A hand-made
 description with sheared local matrices (top-level and parented, hidden, a zero scale) checks that Blender's world

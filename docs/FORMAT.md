@@ -2519,8 +2519,14 @@ of coat k is its blend color (2) taken as a swatch on a mask (the scene's swatch
 clamped to 0..1, as V-Ray 5.2 was measured to render a constant mask: maxdrop-em3.36); with a blend map (3), that
 weight and the map mixed by texmap_blend_multiplier (4, percent), as a slot mixes its swatch and its map, the map as a
 mask. The ids 1000-1035 an oracle lists are transient aliases of the table elements, not stored. Not measured: the
-weights against V-Ray (maxdrop-o53.3.2), additive mode's sum, V-Ray's per-channel blend of a colored blend color
-(MaxDrop takes the mean, a line in the report) and the multiplier above 100 %.
+weights against V-Ray (maxdrop-o53.3.2), additive mode's sum (a coat with opacity below 1 adds its Transparent BSDF
+too, so the sum lets the base be seen through), V-Ray's per-channel blend of a colored blend color (MaxDrop takes the
+mean, a line in the report) and the multiplier above 100 %. A base without a coat set and on is peeled to it, an
+empty base to its first coat that is on.
+Blender side, measured (maxdrop-o53.1.6, a scratch script, 16 x 16 plane under a black world, Standard view, the
+builder's own nodes): a base emitting 0.2 with a coat emitting 1.0 at weight 0.6 renders 0.798 (Cycles, 8 samples) /
+0.800 (EEVEE) added, 0.679 / 0.680 mixed, alpha 1, on Blender 4.2.23 and 5.2: the Mix Shader from an unlinked input
+scales the coat (0.2 + 0.6 and lerp(0.2, 1, 0.6) = 0.68).
 
 ## Asset metadata
 

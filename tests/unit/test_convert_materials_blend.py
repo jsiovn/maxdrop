@@ -29,6 +29,11 @@ def _weight(rule, *rgb):
     return rule.channel(sum(rgb) / 3.0 / 255.0)
 
 
+def _colored(name, k, rgb):
+    """The report line of coat k's colored blend color, rgb its channels as the line prints them."""
+    return "%s: coat %d's blend color (%s) drawn as its mean, not per channel" % (name, k, rgb)
+
+
 class FakeTexmaps:
     """A TexmapConverter stand-in: records each convert(ref, kind, value) and gives a graph, None for map 9."""
 
@@ -65,16 +70,14 @@ class BlendFixtures(unittest.TestCase, Close):
         self.assertEqual([la.ir.name for la in ir.layers], ["FixtureCoatA", "FixtureCoatB"])
         self.assertEqual([la.mode for la in ir.layers], [mat.ADD, mat.ADD])
         one, two = ir.layers
-        self.close((one.amount, two.amount), (_weight(colors.GAMMA_OFF, 40, 50, 60), _weight(colors.GAMMA_OFF, 70, 80,
-                                                                                               90)))
+        want = (_weight(colors.GAMMA_OFF, 40, 50, 60), _weight(colors.GAMMA_OFF, 70, 80, 90))
+        self.close((one.amount, two.amount), want)
         self.assertNotAlmostEqual(one.amount, 50 / 255, places=3)
         self.assertEqual((one.mask, one.graph, two.mask, two.graph), (None, None, None, None))
         self.assertEqual(base.layers, [], "the base itself is untouched")
         self.assertNotIn("VRayBlendMtl", conv.stats.peeled)
-        self.assertEqual(ir.issues, ["FixtureBlend: coat 1's blend color (0.157, 0.196, 0.235) drawn as its mean: V-Ray "
-                                     "blends per channel",
-                                     "FixtureBlend: coat 2's blend color (0.275, 0.314, 0.353) drawn as its mean: V-Ray "
-                                     "blends per channel"])
+        self.assertEqual(ir.issues, [_colored("FixtureBlend", 1, "0.157, 0.196, 0.235"),
+                                     _colored("FixtureBlend", 2, "0.275, 0.314, 0.353")])
 
     def test_checker_mask(self):
         """pblock_animated's FixtureAnimBlend: mixed (not additive); coat A's blend map a Checker at its multiplier 37 %
@@ -104,6 +107,10 @@ class BlendFixtures(unittest.TestCase, Close):
         self.assertIn("Checker", found, "the weight graph holds the Checker")
         self.assertIsNone(two.graph)
         self.close(two.amount, _weight(rule, 70, 80, 90))
+        colored = [r for r in ir.issues if "blend color" in r]
+        self.assertEqual(colored, [_colored("FixtureAnimBlend", 1, "0.157, 0.196, 0.235"),
+                                   _colored("FixtureAnimBlend", 2, "0.275, 0.314, 0.353")],
+                         "both colors count: coat 1's map at 37 %, coat 2 without a map")
 
 
 class BlendSynthetic(unittest.TestCase, Close):
@@ -118,6 +125,8 @@ class BlendSynthetic(unittest.TestCase, Close):
     def test_without_a_base_it_still_peels_to_its_coat(self):
         conv, ir = _blend({0: Ref(None), 1: [Ref(2)]}, _vray(2, "Coat"))
         self.assertEqual((conv.peel(0), ir.name), ((2, None), "Coat"))
+        conv, ir = _blend({0: Ref(None), 1: [Ref(2), Ref(3)], 6: [0, 1]}, _vray(2, "Off"), _vray(3, "On"))
+        self.assertEqual((conv.peel(0), ir.name), ((3, None), "On"), "its first coat that is on")
 
     def test_mix_and_switches(self):
         """Coats 1 and 3 on (2 switched off), mixed: the default blend color 0.5 for a missing one."""
@@ -160,15 +169,14 @@ class BlendSynthetic(unittest.TestCase, Close):
                            4: [-50.0]}, _vray(1, "Base"), _vray(2, "A"), _map(5), texmaps_=FakeTexmaps())
         self.assertEqual(len(ir.layers), 1)
         self.close(ir.layers[0].mask.amount, 0.0)
-        self.assertIn("Blend: layer 5 is not a material", ir.issues)
-        self.assertIn("Blend: coat 1's blend color (1.000, 0.000, 0.500) drawn as its mean: V-Ray blends per channel",
-                      ir.issues)
+        self.assertIn("Blend: coat object 5 is not a material", ir.issues)
+        self.assertIn(_colored("Blend", 1, "1.000, 0.000, 0.500"), ir.issues)
 
     def test_caps_its_coats(self):
         n = mat.MAX_LAYERS + 2
         conv, ir = _blend({0: Ref(1), 1: [Ref(1)] * n}, _vray(1, "Base"))
         self.assertEqual(len(ir.layers), mat.MAX_LAYERS)
-        self.assertTrue(any("only the first" in r for r in ir.issues))
+        self.assertIn("Blend: %d coats, only the first %d mixed" % (n, mat.MAX_LAYERS), ir.issues)
 
     def test_base_not_a_material(self):
         conv, ir = _blend({0: Ref(5), 1: [Ref(2)]}, _vray(2, "A"), _map(5))
