@@ -1443,8 +1443,8 @@ log2(N² · shutter · 100 / ISO) again (maxdiff: param 56 changes with each), s
 ISO, and in mode 2 a new f-number or shutter speed keeps the exposure value and stores a new ISO. A new camera stores
 EV 13, not the 13.6439 of its defaults, until one of them is set. Mode 1 renders from the f-number, shutter speed and
 ISO, mode 2 from the stored exposure value (the defaults render 0.0199 in mode 1, 0.0311 in mode 2 at EV 13: 2^0.644
-apart; 3 EV lower renders 8 times brighter); mode 0 renders as if there were no exposure. The factor itself is not
-measured here. A white balance preset stores its color in 19 (FixtureExpTint's preset 5 stores its own). Set one after the
+apart; 3 EV lower renders 8 times brighter); mode 0 renders as if there were no exposure. The factor: **Exposure
+factor** below. A white balance preset stores its color in 19 (FixtureExpTint's preset 5 stores its own). Set one after the
 other from the default 4: 1 white, 2 0.75 0.886365 1, 3 0.816122 0.889125 1, 4 the color above, 5 1 0.890094 0.755618, 6
 1 0.825353 0.628004, 7 white; 0 (after 4), 8 and 9 (after 7) left the color as it was, whether they set or keep one is
 not measured (maxdiff of 4 -> 0 changes 37 only). What each preset stands for is not read. **Physical**, block 0: 6 f-number (float, 8); its exposure (22 exposure gain
@@ -1461,6 +1461,85 @@ are VRayPhysicalCamera's ids, the Physical row names its own):
 | FixtureExpTint | 1 | 8 | 200 | 100 | 13 | 11 on, 39 0.5, 37 5, 19 1 0.890094 0.755618 |
 | FixtureExpStored | 2 | 8 | 200 | 100 | 13 | |
 | FixturePhysDof (Physical) | | 6: 2.8 | | | | 11 depth of field on, 10 specify focus 1, 9 focus distance 2500, 8 target distance 5000 |
+
+**Exposure factor** (maxdrop-o53.2.2; 3dsmaxbatch, V-Ray 5.2). The calibration floor of [VRayLight](#vraylight) in
+meters: a white VRayMtl floor (diffuse 255, no reflection) 20 m square, a standard Omni of multiplier 1 without decay
+1 m above it, V-Ray color mapping linear, gamma 1, clamp output off, no GI, no default lights, 3ds Max's gamma off;
+a free VRayPhysicalCamera 0.9 m above the floor looking down (FOV 60° specified, target distance 200 m, vignetting
+off, white balance 255 255 255, the still camera type), rendered into a 64 × 64 float bitmap; the mean of the 8 × 8
+center pixels. Exposure off renders 0.704897, as a Target camera does (the Omni at multiplier 2: 1.40979, so nothing
+clamps; "Power, measured" gives this Omni 1.0: maxdrop-o53.2.9). The ratio on / off does not depend on the light: a
+1 W VRayLight sphere (0.0361 off, as "Power, measured") and a self-lit plane (1.0 off) give the Omni's ratio in
+meters, centimeters, millimeters and inches. Mode 1 unless the row says otherwise:
+
+| Setting (f-number, shutter speed, ISO) | Pixel | On / off | Formula | Stops |
+|---|---|---|---|---|
+| exposure off (mode 0) | 0.704897 | 1 | 1 | 0 |
+| 8, 200, 100 (the defaults) | 0.0219049 | 0.0310753 | 0.0310753 | −5.0081 |
+| 8, 200, 200 | 0.0438097 | 0.0621505 | 0.0621505 | −4.0081 |
+| 8, 200, 400 | 0.0876194 | 0.124301 | 0.124301 | −3.0081 |
+| 8, 200, 1600 | 0.350478 | 0.497205 | 0.497204 | −1.0081 |
+| 8, 50, 100 | 0.0876194 | 0.124301 | 0.124301 | −3.0081 |
+| 8, 400, 100 | 0.0109524 | 0.0155376 | 0.0155376 | −6.0081 |
+| 8, 30, 100 | 0.146032 | 0.207168 | 0.207168 | −2.2711 |
+| 8, 4, 100 | 1.09524 | 1.55376 | 1.55376 | +0.6358 |
+| 4, 200, 100 | 0.0876194 | 0.124301 | 0.124301 | −3.0081 |
+| 5.6, 200, 100 | 0.0447038 | 0.0634189 | 0.0634189 | −3.9789 |
+| 16, 200, 100 | 0.00547621 | 0.00776881 | 0.00776882 | −7.0081 |
+| 1.4, 200, 100 | 0.715261 | 1.0147 | 1.0147 | +0.0211 |
+| 5.6, 125, 200 (FixtureExpPhysical's) | 0.143052 | 0.20294 | 0.20294 | −2.3009 |
+| 2.8, 30, 800 | 9.53658 | 13.529 | 13.5294 | +3.7580 |
+| mode 2, EV 10.5 | 0.193613 | 0.274668 | 0.274669 | −1.8642 |
+| mode 2, EV 9 | 0.547621 | 0.776881 | 0.776882 | −0.3642 |
+| mode 2, EV 0 | 280.376 | 397.755 | 397.763 | +8.6358 |
+| mode 2, EV −2 | 1121.5 | 1591.01 | 1591.05 | +10.6358 |
+| 8, 200, 100 in millimeters (target distance 200 mm) | 0.0164001 | 0.023266 | 0.023266 | −5.4256 |
+| 5.6, 125, 200 in millimeters | 0.107103 | 0.151941 | 0.151941 | −2.7184 |
+
+The formula: factor = (12.5 / π) · ISO · t / N² · (f / v)² in mode 1, (1250 / π) · 2^−EV · (f / v)² in mode 2 (EV
+the stored 56), 1 in mode 0. N is the f-number as stored (5.6², not 32); t the exposure time in seconds: for the
+still camera (`type` 0) 1 / shutter speed, the cinematic one (1) shutter angle / 360 / the scene's frame rate (180°
+at 30 fps: 1/60 s), the video one (2) 1 / frame rate + latency (s). (f / v)² is the thin lens of the next paragraph:
+f the focal length, d the focus distance (the specified focus distance, else the target distance, for a targeted
+camera its distance to its target node), in millimeters through the system unit, v = 1 / (1/f − 1/d), so (f / v)² =
+(1 − f / d)²; with a specified FOV v = film / (2 tan(FOV / 2)) and f / v = d / (d + v). Zoom and film width leave
+it as it is. Mode 1 reads the three settings and ignores 56 (FixtureExpTint renders from its 8, 200, 100, not from
+its stale 13), mode 2 reads 56 and ignores them; for the still camera mode 1 is mode 2 at EV = log2(N² · shutter
+speed · 100 / ISO). Every row above and below is within 0.01 % of the formula. The lens and camera type, measured on
+a self-lit plane at the defaults 8, 200, 100 (pixel = factor):
+
+| Lens (millimeters) | Pixel | (f / v)² |
+|---|---|---|
+| focal 20, 40, 80 at d 200 000 | 0.0310787, 0.0310725, 0.0310601 | 0.9998, 0.9996, 0.9992 |
+| specified FOV 30°, 90° at d 200 000 | 0.0310641, 0.0310793 | 0.99932, 0.99982 |
+| focal 17.9963 at d 200, 500, 1000, 5000 (target distance; a specified focus at 200 and 1000 the same) | 0.0257425, 0.0288876, 0.0299762, 0.0308616 | 0.8281, 0.9293, 0.9643, 0.9928 |
+| specified FOV 60° at d 200 | 0.0232675 | 0.7485 |
+| focal 20, 40, 80 at d 200 | 0.0251788, 0.0198944, 0.0111906 | 0.81, 0.64, 0.36 |
+| focal 40, targeted, 1000 and 5000 from the target (stored target distance 200) | 0.0286479, 0.0305896 | 0.9216, 0.9841 |
+| focal 40 at d 1000: cinematic 180° at 30 fps, 90° at 30 fps, 180° at 60 fps | 0.095493, 0.0477465, 0.0477465 | 0.9216 |
+| focal 40 at d 1000: video at 30 fps, latency 0 and 0.01 | 0.190986, 0.248282 | 0.9216 |
+
+**In Blender.** MaxDrop's lights render as bright as V-Ray's unexposed pixel (Light Strength 1.43, "Power,
+measured"), so the camera's exposure is `scene.view_settings.exposure` = log2(factor) = 1.9924 + log2(ISO · t / N²)
++ 2 log2(f / v), in mode 2 8.6362 − EV + 2 log2(f / v), in mode 0 0 stops. The exposure fixture: FixtureExpPhysical
+−2.3308 (focused at its target, 3816.08 mm), FixtureExpValue −2.5076, FixtureExpTint −5.6515, FixtureExpStored
+−5.0076 (these three at the 200 mm target distance), FixtureExpOff 0; renders of the fixture's box under V-Ray's
+default lights, on / off, give these factors within 0.7 % (FixtureExpOff's view misses the box).
+
+Left out of the factor:
+
+- Vignetting (11, 39): a pixel θ off the axis is multiplied by 1 − amount · (1 − cos⁴ θ) (amount 1 and 0.5, four
+  pixels from the center to the corner of the 60° view, within 0.3 %; the 8 × 8 center mean is 0.993 of the
+  unvignetted one at amount 1, 0.997 at 0.5).
+- White balance (19): with exposure on, channel c is multiplied by (1 / wb_c) / the mean of the three 1 / wb, so a
+  grey keeps its mean (preset 5: 0.870, 0.978, 1.152; 255 128 64: 0.430, 0.857, 1.713; the default preset 4's color
+  within 0.05 %); with exposure off it does nothing.
+
+Not measured: legacy ISO (36) at an ISO other than 100 (at 100 it changes nothing), system lighting units (38) other
+than in this setup (off changes nothing), shutter offset, optical vignetting, the bitmap aperture's affect exposure,
+distortion, a lens file. A 1 W VRayLight sphere 1 m above the floor of a millimeter scene renders 0 exposed at the
+defaults (0.0361 off; 0.00112 exposed in meters): consistent with V-Ray's light cut-off threshold (0.001 by default)
+applied to the exposed contribution, not checked.
 
 **The field of view they render with.** Free / Target: the FOV parameter. Physical with a specified FOV: that FOV
 (neither zoom nor breathing; 74.9996° for 75° at zoom 1.25). Otherwise a thin lens focused at d, the focus distance
