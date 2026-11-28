@@ -95,6 +95,7 @@ UV_LAYERS = {
                                                           "FixtureUVWTwo": ["UVMap", "UVChannel_3"]}),
     "uvwmap_oblique": ["UVMap"],
     "uvwmap_pole": ["UVMap"],
+    "exposure": [],  # its box, without Generate Mapping Coords; the cameras are no mesh
 }
 SHARP_EDGES_POLY_BOX = 12  # one smoothing group per side: every edge of the box
 SHARP_EDGES_EDITABLE_MESH = 8  # group 1 on top and bottom, 2 on the sides: the rims of top and bottom
@@ -223,7 +224,10 @@ ISSUES = {"uvwmap": ["uvw map: a UVW Map above Bend is not evaluated",
                           "imported"],
           "vray_dome": ["light: a second dome light: not imported (Blender has one World, FixtureDome's)"],
           "vray_mesh_light": ["light: not built: a mesh light without a mesh (none picked, or its node deleted): not "
-                              "imported"]}  # FixtureEmitterOwn's Shell: a Solidify on its emitter
+                              "imported"],  # FixtureEmitterOwn's Shell: a Solidify on its emitter
+          # FixturePhysDof; the four VRayPhysicalCameras whose exposure is on (FixtureExpOff's is off)
+          "exposure": ["camera: depth of field is not imported"] + [
+              "camera: its exposure is not imported: Blender renders as if the camera had none"] * 4}
 # the oracle's base_class_id of the lights MaxDrop builds: VRayLight, VRaySun, VRayIES, the standard and the
 # photometric lights
 LIGHT_CLASSES = {("0x3c5575a1", "0x5fd602df"), ("0x732c0383", "0x7d993776"), ("0x2eaf2f07", "0x7ec44f31"),

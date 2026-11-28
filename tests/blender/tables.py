@@ -70,6 +70,7 @@ UV_LAYERS = {  # mapcoords:true in the script gives channel 1; kept literal: tes
     "uvwmap": {"FixtureUVWGizmo": ["UVMap", "UVChannel_2"], "FixtureUVWTwo": ["UVMap", "UVChannel_3"]},  # else UVMap
     "uvwmap_oblique": ["UVMap"],
     "uvwmap_pole": ["UVMap"],
+    "exposure": [],  # its box, without Generate Mapping Coords
 }
 # editable_mesh: group 1 on top and bottom, 2 on the sides; a box with a group per side: 12; modifier_pivot's box of
 # four height segments: 4 x 4 vertical side edges and both rims

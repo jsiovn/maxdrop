@@ -1233,6 +1233,95 @@ discs, 1.448 and 1.470 for its two small spheres. The default Light Strength is 
 diffuse and specular factors (EEVEE uses them): the fixture's disc with diffuse contribution 0.5 is half as bright in
 V-Ray as in Cycles.
 
+**Directional, measured** (maxdrop-o53.2.8; 3dsmaxbatch, V-Ray 5.2; Blender 4.2.23, 4.5.16 and 5.2 headless).
+Parameter 36 (`lightDistribution`, 0 to 1) narrows a plane's or a disc's emission around its normal; Blender's area
+light has `spread` (0 to 180°, in the Cycles light panel). Setup: the calibration floor above in millimeters (white
+VRayMtl 20 m square, V-Ray linear color mapping, gamma 1, clamp off, no GI, no default lights, 3ds Max's gamma off;
+image filter off, bucket sampler of fine subdivs 32 and threshold 0.002, local subdivs on); an invisible VRayLight
+1 m above the floor shining down, in W, multiplier 10, subdivs 64: a plane of size0 = size1 = 100 (200 × 200 mm) and
+a disc of size0 100; a Freecamera of identity rotation 0.5 m above the floor, FOV 2 · atan(2.2) (131.1°), a 440 ×
+440 float bitmap (5 mm per pixel; a self-lit marker at +X 1000 mm checked the mapping); the mean of the 8 × 8 pixels
+centered 0, 270, 575 and 1000 mm from the point below the light, 0°, 15.1°, 29.9° and 45° seen from the light (along
++X, −X, +Y and −Y: the four agree within 0.2 %). The flux: a second Freecamera 2 m above the floor, FOV 2 · atan(4.5),
+180 × 180 (100 mm per pixel, ± 9 m, where a Lambertian emitter puts 99.0 % of its flux), the sum of its pixels.
+Blender: the directional-0 scenes imported by MaxDrop (Light Strength 1: an area light 0.2 m square or a 0.2 m disc)
+with the floor a Diffuse BSDF of 1.0, cameras of the same placement, Cycles 512 samples, no denoising, no bounces,
+Standard view transform; spread set on the imported light. At directional 0 and spread 180° V-Ray / Cycles is 1.4298
+(plane), 1.4305 (disc) on-axis and 1.4297 in flux (the calibration's orthographic camera: 1.431).
+
+V-Ray (the plane; the disc's profile within 0.01 of it):
+
+| Directional | On-axis / directional 0 (plane, disc) | 15°, 30°, 45° / on-axis | Flux / directional 0 |
+|---|---|---|---|
+| 0 | 1.00, 1.00 | 0.872, 0.571, 0.2544 | 1.000 |
+| 0.25 | 1.99, 1.99 | 0.843, 0.497, 0.1811 | 1.344 |
+| 0.35 | 2.73, 2.74 | 0.822, 0.448, 0.1404 | 1.479 |
+| 0.5 | 4.76, 4.77 | 0.767, 0.338, 0.0697 | 1.673 |
+| 0.6 | 7.49, 7.53 | 0.699, 0.230, 0.0268 | 1.788 |
+| 0.75 | 18.75, 19.03 | 0.475, 0.046, 0.0005 | 1.925 |
+| 0.9 | 85.40, 92.88 | 0.040, 0, 0 | 2.004 |
+| 0.95 | 149.69, 182.71 | 0.0001, 0, 0 | 2.012 |
+| 0.99 | 159.31, 202.09 | 0, 0, 0 | 2.021 |
+| 1 | 159.33, 202.10 | 0, 0, 0 | 2.021 |
+
+V-Ray does not keep the flux: it grows with directional to twice the Lambertian one (the frame misses 1.0 % at
+directional 0), and directional 1 is a beam straight down (on-axis 159 and 202 × directional 0; a beam of twice the
+flux over the light's area gives π / area × 2: 157 and 200). Its profile is close to cos^n θ (n 1.9, 4.6 and 18.6 at
+0.25, 0.5 and 0.75, from the 30° point); from directional 0.9 on nothing reaches 30°. The plane in the default
+units at directional 0.5 and 0.9: on-axis 4.755 and 85.36 × its directional 0, its profile within 0.001 of the W
+plane's, so the factor below serves both units families.
+
+Cycles (the plane; the disc's profile within 0.02 of it; spread 0° is a beam straight down):
+
+| Spread | On-axis / spread 180° (plane, disc) | 15°, 30°, 45° / on-axis | Flux / spread 180° |
+|---|---|---|---|
+| 180° | 1.00, 1.00 | 0.872, 0.571, 0.2543 | 1.000 |
+| 150° | 1.51, 1.51 | 0.825, 0.494, 0.1905 | 1.010 |
+| 120° | 2.42, 2.43 | 0.769, 0.400, 0.1133 | 1.010 |
+| 105° | 3.17, 3.19 | 0.733, 0.341, 0.0640 | 1.010 |
+| 90° | 4.30, 4.34 | 0.687, 0.265, 0.0077 | 1.010 |
+| 60° | 9.30, 9.48 | 0.530, 0.032, 0 | 1.010 |
+| 40° | 19.23, 19.87 | 0.278, 0, 0 | 1.009 |
+| 20° | 55.13, 60.47 | 0.002, 0, 0 | 1.018 |
+| 10° | 79.61, 100.83 | 0, 0, 0 | 1.020 |
+| 0° | 79.63, 101.05 | 0, 0, 0 | 1.013 |
+
+Cycles keeps the total power when the spread narrows (the flux stays within 1 % down to 40°, spread 180° losing 1.0 % outside the
+frame; below 40° a beam a few wide-frame pixels across, within 2.7 %), so the on-axis intensity rises; nothing reaches past half the spread from the normal (a hard edge, softened
+only by the light's size). Blender 4.2.23 and 4.5.16 render the same values as 5.2 (the plane at spread 180°, 106.9° and
+23.04°: within 0.001 %). EEVEE ignores spread: for the plane on 4.2.23, 4.5.16 and 5.2 the four points are the same at spread 180°, 90°
+and 20° (0.9799 on-axis on 5.2 and 4.5.16, 0.9792 on 4.2.23).
+
+The rule: spread = 180° · (1 − d^1.3) and the light's power × (1 + d^0.85), d the directional; directional 0 gives
+spread 180° and factor 1 (the import as it is), directional 1 spread 0° (settable: the property's hard minimum is 0 on all three versions) and factor 2. Per
+directional, the spread
+whose normalized profile (every 20 mm from 0 to 1000 mm) is closest to V-Ray's in least squares, interpolated in a
+Cycles sweep of 27 spreads (151.3°, 106.7°, 56.6° and 23.5° at 0.25, 0.5, 0.75 and 0.9), and the factor that gives
+V-Ray's on-axis value there (1.345, 1.548, 1.778, 1.906; the plane); the two exponents chosen from a grid by the
+worst residual against those, and Cycles renders at the rule's spreads check it (the plane; on-axis also the disc):
+
+| Directional | Spread | Factor | On-axis: rule / V-Ray − 1 (plane, disc) | 15°, 30°, 45°: (rule − V-Ray) / V-Ray's on-axis |
+|---|---|---|---|---|
+| 0.25 | 150.31° | 1.308 | −1.5 %, −1.3 % | −0.030, −0.010, +0.007 |
+| 0.35 | 134.02° | 1.410 | −1.0 %, −0.7 % | −0.033, −0.006, +0.010 |
+| 0.5 | 106.9° | 1.555 | −0.1 %, +0.3 % | −0.031, +0.011, +0.001 |
+| 0.6 | 87.34° | 1.648 | +0.2 %, +0.8 % | −0.020, +0.020, −0.024 |
+| 0.75 | 56.16° | 1.783 | −0.1 %, +0.5 % | +0.022, −0.034, 0 |
+| 0.9 | 23.04° | 1.914 | +2.9 %, +1.8 % | −0.024, 0, 0 |
+| 0.95 | 11.61° | 1.957 | +3.2 %, +5.7 % | 0, 0, 0 |
+| 0.99 | 2.34° | 1.991 | −0.4 %, −0.4 % | 0, 0, 0 |
+| 1 | 0° | 2.000 | 0, 0 | 0, 0, 0 |
+
+On-axis and 45° within 5 % at directional 0, 0.5 (45°: +1.5 %) and 0.9 (45°: 0 in both); on-axis within 3.2 % up
+to 0.95 for the plane (the disc +5.7 % at 0.95). Where it cannot: the shapes differ, V-Ray's soft tail against
+Cycles' hard edge, so a side point is off by up to 0.035 of the on-axis value (relative: −4 % at 15° for 0.5; at 45°
+for 0.6 Cycles has a tenth of V-Ray's 2.7 % of the on-axis value, at 30° for 0.75 a quarter of its 4.6 %; at 15° for
+0.9, 1.6 % against 4.0 % of the on-axis value). Other sizes, the plane at directional 0.5, 0.75
+and 0.9: 50 × 50 mm on-axis +2.9 %, +5.4 %, +3.4 %, 1 × 1 m −1.9 %, −0.3 %, −3.5 %, the side points within 0.04 of
+the on-axis value. MaxDrop does not import directional yet (the issue line); EEVEE would render such a light with
+the factor and without the narrowing. Not measured: a double-sided plane or disc, the lm, lm/m²/sr and W/m²/sr
+units, other distances than 1 m, and the directional values between those of the tables.
+
 ## Standard and photometric lights
 
 `convert/lights/`, 3ds Max 2020 + V-Ray 5.2; ids read through the SDK's .NET wrapper (ParamBlock2 descriptors) and
@@ -1301,8 +1390,11 @@ object of its own (no node). **Skylight** `(0x7BF61478, 0x522E4705)`: not built.
 pointing down, V-Ray linear, gamma off, no GI, the mean of the 8 × 8 center pixels): V-Ray's pixel is the floor's
 illuminance in lx / 1500 for every class: a 1 W VRayLight sphere 0.0362 (683 / 4π lx); a Free Light of 1000 cd,
 isotropic, spotlight or uniform diffuse, 0.667; a Free Rectangle 100 × 100 mm of 1000 cd 0.651; a VRayIES of 1000
-lm with an isotropic IES file 0.0531; an Omni, a Free Spot and a Direct of multiplier 1 without decay 1.0 (the same
-at any distance), an Omni with inverse-square decay from 1 m 1.0, from 0.5 m 0.25, with inverse decay from 0.5 m
+lm with an isotropic IES file 0.0531; an Omni, a Free Spot and a Direct of multiplier 1, color white, without decay
+1.0 (the same at any distance; the color multiplies: the 180 grey that MAXScript's `Omnilight`, `Freespot` and
+`Directionallight` give a new light, in batch and in an interactive session alike, renders 0.705 = 180 / 255, what
+maxdrop-o53.2.2's probes measured),
+an Omni with inverse-square decay from 1 m 1.0, from 0.5 m 0.25, with inverse decay from 0.5 m
 0.5; a VRaySun of multiplier 1 at the zenith 68.5 (102.7 klx). Cycles (Blender 5.2, a Diffuse BSDF of 1.0): a
 point or spot light of 1 W at 1 m 0.02526 (1 / 4π²), a disk area light of 1 W 0.1010 (1 / π² on its axis), a sun
 of strength 1 0.3176 (1 / π). So Light Strength 1.43 is π · 683 / 1500 (1.4305), and with it these powers render
@@ -1315,6 +1407,31 @@ as bright as V-Ray:
 - a standard Direct: a sun of 1500 m / 683 W/m²; a VRaySun: 146.4 m W/m² (the rules source's 100 klx / 683);
 - a VRayIES: its lumens / 683 W, on a spot of 170° and hotspot 100° (the rules source's wide spot), as a
   photometric web.
+
+**Power and the exposure control, measured** (maxdrop-o53.2.9; 3dsmaxbatch, the same scene, a Target camera 0.9 m
+up with FOV 60°, a 64 × 64 float bitmap; a new scene, in batch or in an interactive session, has no exposure
+control). The RenderEnvironment's exposure control, a reset scene and a fresh control and light per render, at
+physical scale 1500 and 3000; a white Omni of multiplier 1 at 1 m, a Free Light of 1000 cd, a 1 W VRayLight
+sphere and a self-lit plane (VRayMtl self-illumination 255):
+
+| Exposure control | Omni | Free Light | Sphere | Self-lit |
+|---|---|---|---|---|
+| none; Linear, Automatic, Physical Camera or V-Ray's inactive; Linear or Automatic at 1500 | 0.9986 | 0.6639 | 0.03608 | 1.0 |
+| Linear or Automatic at 3000 | 0.9986 | 0.3319 | 0.01804 | 1.0 |
+| Logarithmic at 1500, active or not, and at 3000 inactive | 0.8459 | 0.7999 | 0.2091 | 0.8460 |
+| Logarithmic at 3000 | 0.8971 | 0.7999 | 0.2091 | 0.8972 |
+| Physical Camera (its defaults: global EV 6) at 1500 | 8.2147 | 5.4610 | 0.2969 | 8.2264 |
+| Physical Camera at 3000 | 16.429 | 10.922 | 0.2969 | 16.453 |
+| V-Ray's (its defaults; the red channel) | 0.03559 | 0.02366 | 0.001286 | 0.03564 |
+
+So the 1500 of V-Ray's lx / 1500 is the physical scale P of an active Linear or Automatic control: a Free Light and
+a VRayLight render lx / P, a standard light and a self-lit material keep their pixel, and a white standard light of
+multiplier m stands for P · m cd (Omni / Free Light 1.504 at 1500, 3.008 at 3000). An active Physical Camera
+control exposes the image (its 1500 row, about 8.23 times the unexposed pixel) and P multiplies that row by P / 1500,
+except the VRayLight's pixel, which stays at its 1500 value (Omni / Free Light 1.504 at both); Logarithmic tone-maps
+(not linear) and its active switch does not stop it. Pseudo Color shows false colors when active (not a row) and
+nothing when inactive. 3ds Max gamma 2.2 changes nothing here (Omni 180 grey 0.7049, white
+0.9986). MaxDrop reads no exposure control: its rules are those of a scene without one.
 
 **VRayIES power, measured** (the same scene, an isotropic LM-63 file of 100 cd, whose flux is 1256.6 lm, with rated
 lumens of 1256.6, 500 or -1 in its header): with the intensity override off V-Ray scales the file's candelas by power /
@@ -1402,6 +1519,102 @@ number out of range or out of order, are not read (a line in the report).
 3ds Max: Blender blends in cosine space (full intensity where cos θ ≥ cos(size / 2) + (1 − cos(size / 2)) · blend),
 so blend = (cos(hotspot / 2) − cos(falloff / 2)) / (1 − cos(falloff / 2)), 0.636 for 30° in 50°.
 
+**Photometric web, measured** (maxdrop-o53.2.7; 3dsmaxbatch, 3ds Max 2020 + V-Ray 5.2). One self-authored LM-63 file
+without symmetry through a Free Light of distribution 3 (photometric web) and through a VRayIES. The file, type C, is
+written from
+
+    I(θ, φ) = 400 · max(0, cos θ) · (1 + sin θ · cos(φ − 30°))² · (1 + 0.5 · sin θ · cos(2 · (φ − 75°)))  cd
+
+θ the vertical angle (0 at the nadir), φ the horizontal one: 400 cd at the nadir, nothing above the horizontal, its
+largest grid value 960.46 cd at θ 45°, φ 60° (the formula itself peaks off the grid); at θ 26.57° (the four side points
+below) 555.22, 639.39, 108.30 and 257.42 cd at φ 0, 90, 180 and 270°. The first factor alone is mirror-symmetric about φ
+30°, so a mirrored azimuth looks like a turned one; the second factor breaks that. Grid: vertical angles 0 to 180 in
+steps of 5° (37), horizontal 0 to 360 in steps of 15° (25; 0 and 360 the same plane). The file, byte for byte (ASCII,
+every line ended by CR LF, the last included; numbers one space apart):
+
+    IESNA:LM-63-2002
+    [TEST] MaxDrop asymmetric reference
+    TILT=NONE
+    1 1000 1 37 25 1 2 0 0 0
+    1 1 0
+    <the 37 vertical angles, each written as %g>
+    <the 25 horizontal angles, each written as %g>
+    <25 lines, one per horizontal angle in order: its 37 candelas from θ 0 to 180, each written as %.2f>
+
+That is 5718 bytes, SHA-256 `b4e79c77de5d2bf4929587610ff075ad5f7e15313133dd5efda6abc4759a8890`; `convert/ies.py` reads
+it (rated 1000 lm, flux 1569.0 lm). The variants below change one header field: candela multiplier 2 (line 4: `1 1000 2
+...`), rated 500 lm (`1 500 1 ...`), ballast factor 0.5 (line 5: `0.5 1 0`).
+
+Setup: the calibration floor of "Power, measured" in millimeters (a VRayIES's shadow bias of 0.2 world units moves the
+shaded point in meters, "VRayIES header, measured"): a white VRayMtl floor 20 m square, the light 1 m above it with its
+node rotation identity (its local axes are the world's), V-Ray linear color mapping, gamma 1, clamp output off, no GI,
+no default lights, 3ds Max's gamma off; a Freecamera of identity rotation 0.9 m above the floor looking down, FOV 90°, a
+360 × 360 float bitmap: 5 mm per pixel, image right +X and up +Y (checked with self-lit markers at +X 600 mm and +Y 300
+mm); the mean of the 4 × 4 pixels centered on each floor point. The pixel is the illuminance in lx / 1500: an isotropic
+Free Light of 1000 cd renders 0.6666 below it and 0.4770 at 0.5 m (1000 · cos θ / r² / 1500). The candela a point sees
+is pixel · 1500 · r² / cos θ: r² 1.25 m² and cos θ 0.8944 at the side points. The five points (0.5 m toward the light's
+local +X, −X, +Y and −Y):
+
+| Light | Below | +X | −X | +Y | −Y |
+|---|---|---|---|---|---|
+| the file's candelas at φ 0 → +X, 90 → +Y (formula) | 0.2667 | 0.2649 | 0.0517 | 0.3050 | 0.1228 |
+| VRayIES, power 1000 lm (= rated: the file's candelas) | 0.2666 | 0.2649 | 0.0517 | 0.3053 | 0.1228 |
+| web, intensity 960.46 cd (what loading the file sets) | 0.2666 | 0.2648 | 0.0517 | 0.1229 | 0.3050 |
+| web, 1000 cd | 0.2776 | 0.2757 | 0.0538 | 0.1279 | 0.3175 |
+| web, 2000 cd | 0.5552 | 0.5515 | 0.1076 | 0.2557 | 0.6350 |
+| web, 1000 cd, multiplier 2 / rated 500 / ballast 0.5 | 0.2776 | 0.2757 | 0.0538 | 0.1279 | 0.3175 |
+| web, ballast 0.5, 480.23 cd (what loading it sets) | 0.1333 | 0.1324 | 0.0258 | 0.0614 | 0.1525 |
+
+The web rotation (block 3, parameters 1, 2, 3: X, Y, Z in degrees), the web light at 960.46 cd; the error is the largest
+difference over nine points (the five and the four at ±0.5 m, ±0.5 m) over the row's brightest; "rule" is the rule below
+on the formula, "linear" the same on the file's candelas interpolated linearly in angle, "other" the best of every other
+assignment of a turn about local ±X, ±Y or ±Z to each non-zero parameter in any order, "order" the rule's turns in
+another order:
+
+| X, Y, Z | Below | +X | −X | +Y | −Y | Rule | Linear | Other | Order |
+|---|---|---|---|---|---|---|---|---|---|
+| 30, 0, 0 | 0.1580 | 0.1685 | 0.0259 | 0.0487 | 0.1841 | 0.11 % | 0.44 % | 53.6 % | |
+| −30, 0, 0 | 0.4389 | 0.4441 | 0.0870 | 0.2065 | 0.2875 | 0.17 % | 0.53 % | 38.8 % | |
+| 90, 0, 0 | 0.0002 | 0.0002 | 0.0000 | 0.0000 | 0.0362 | 0.43 % | 0.88 % | 84.8 % | |
+| 0, 30, 0 | 0.3717 | 0.1992 | 0.2047 | 0.1685 | 0.4442 | 0.14 % | 0.40 % | 27.4 % | |
+| 0, 0, 60 | 0.2665 | 0.3920 | 0.0765 | 0.2061 | 0.0830 | 0.04 % | 0.12 % | 35.9 % | |
+| 0, 0, 90 | 0.2665 | 0.3049 | 0.1227 | 0.2650 | 0.0517 | 0.06 % | 0.19 % | 91.9 % | |
+| 45, 45, 0 | 0.1428 | 0.0305 | 0.1105 | 0.0281 | 0.1694 | 0.17 % | 0.80 % | 34.3 % | 52.0 % |
+| 30, 0, 60 | 0.2827 | 0.3228 | 0.1197 | 0.1349 | 0.1965 | 0.08 % | 0.87 % | 20.9 % | 55.7 % |
+| 0, 30, 60 | 0.5766 | 0.4247 | 0.2150 | 0.3229 | 0.2319 | 0.21 % | 0.26 % | 23.9 % | 35.6 % |
+| 30, 45, 60 | 0.4528 | 0.1791 | 0.2581 | 0.1301 | 0.4612 | 0.11 % | 1.28 % | 9.4 % | 20.5 % |
+| 30, 45, 60 at 1000 cd, saved, reset and loaded | 0.4714 | 0.1865 | 0.2687 | 0.1355 | 0.4802 | 0.11 % | 1.28 % | 9.4 % | 20.5 % |
+
+The rules, d a direction from the light in its local frame (it shines along local −Z), R_x, R_y, R_z right-handed turns
+of a column vector:
+
+- **Azimuth.** A web light reads the file at θ = acos(−u_z), φ = atan2(−u_y, u_x), u = d without a web rotation: φ 0
+  toward local +X, 90 toward local −Y (clockwise seen from above). Proved by the web rows of the five-point table: +Y
+  sees φ 270 and −Y φ 90, the mirror of the VRayIES. A VRayIES reads φ = atan2(u_y, u_x) (90 toward +Y); its own
+  `rotation_Z` of 90 turns the profile 90° about local +Z (0.04 %), its `rotation_X` of 30 turns it by R_x(−30) (the +Y
+  / −Y mirror of the web light's X −30; one case, 1.0 %); its `rotation_Y` is not measured.
+- **Rotation.** With the web rotation a, b, c: u = R_z(−c) · R_y(−b) · R_x(a) · d. The profile is turned by R_x(−a) ·
+  R_y(b) · R_z(c) about the light's local axes: Z first, then Y, then X, X with the opposite sign. In the file's own
+  frame (x local +X, y local −Y, z local −Z; θ from +z, φ from +x toward +y) that is u_f = R_z(c) · R_y(b) · R_x(a) ·
+  d_f, the lookup of a direction (the inverse of the profile's turn): X first, then Y, then Z, all positive. Proved by
+  the one-parameter rows (axis and sign: every other axis misses by 27 % or more; the node turned +30° about its X
+  renders as web X −30, 0.17 %) and the 30, 45, 60 row (the order: 20.5 % for the next). The node's own rotation comes
+  on top: a node turned 90° about Z with web X 30 renders within 0.10 % of the rule in the light's frame, 139 % off with
+  X taken about the world's axis.
+- **Intensity.** The web light's intensity (block 0, parameter 6, cd) is the file's largest candela: it renders table
+  value × intensity / the largest table value (960.46 here) for every direction. Loading a file sets the intensity to
+  that peak times the candela multiplier and the ballast factor (960.46; with multiplier 2 1920.92; with ballast 0.5
+  480.23), so as loaded the base and the ballast file render their own candelas times the ballast factor (rendered; the
+  multiplier file as loaded is not). At a given intensity the candela multiplier, the rated lumens and the ballast
+  factor change nothing (the 1000 cd rows are equal to 7 digits); 2000 cd renders twice 1000 (1.9990 to 2.0004 over the
+  nine points). Scaled so that the nadir were the intensity, 1000 cd would miss by 140 %. The dimmer is not measured
+  here. Saved, reset and loaded, the scene renders the same pixels (within 2 · 10⁻⁵): the stored intensity and rotation
+  carry it (3ds Max also stores the peak as `originalIntensity`; MaxDrop takes it from the file).
+
+The web light renders within 0.43 % of the formula in every row, closer than the file's candelas interpolated linearly
+in angle (up to 1.28 %): between the grid angles it interpolates more smoothly than linearly (not ruled here; the linear
+rule of "IES files" is the VRayIES's flux, measured). The VRayIES unrotated: 0.07 % from the formula.
+
 ## Cameras
 
 `convert/cameras.py`, 3ds Max 2020 + V-Ray 5.2; ids read through the SDK's .NET wrapper and by changing one setting at
@@ -1429,6 +1642,121 @@ near / far clip (world).
 25 use depth of field, 41 / 42 horizontal / vertical shift (a fraction of the film width), 18 / 40 vertical /
 horizontal tilt, 4 distortion, 10 exposure (0 off), 32 clip on, 33 / 34 near / far clip (world). The film gate and
 focal length are typed as world units but stay millimeters in a centimeter scene (probed).
+
+**Exposure and f-number** (3ds Max 2020 + V-Ray 5.2: the ParamBlock2 descriptors through the .NET wrapper, maxdiff of
+saves that change one setting, V-Ray renders of a self-lit white plane filling a 32 x 32 view, linear color mapping,
+gamma off, no GI, the mean of the 8 x 8 center pixels: a camera-side ratio, not the calibration floor). VRayPhysicalCamera,
+block 0: 10 exposure (int: 0 off, 1 physical exposure, 2 exposure value; default 1), 2 f-number (float, 8), 12 shutter
+speed (float, the denominator in 1/s: 200 = 1/200 s), 16 ISO (float, 100), 56 exposure value (float, EV; default 13),
+11 vignetting (bool, off), 39 vignetting amount (float, 1), 37 white balance preset (int, default 4), 19 white balance
+(the color, stored as floats 0..1; default 0.999149 0.999506 1), 46 temperature (float, kelvin, 6500). Also in the
+block, not read: 14 shutter angle, 17 shutter offset, 15 latency, 36 legacy ISO, 38 system lighting units. V-Ray keeps
+the exposure value and the three settings in step: setting the f-number, the shutter speed or the ISO stores EV =
+log2(N² · shutter · 100 / ISO) again (maxdiff: param 56 changes with each), setting the exposure value stores a new
+ISO, and in mode 2 a new f-number or shutter speed keeps the exposure value and stores a new ISO. A new camera stores
+EV 13, not the 13.6439 of its defaults, until one of them is set. Mode 1 renders from the f-number, shutter speed and
+ISO, mode 2 from the stored exposure value (the defaults render 0.0199 in mode 1, 0.0311 in mode 2 at EV 13: 2^0.644
+apart; 3 EV lower renders 8 times brighter); mode 0 renders as if there were no exposure. The factor: **Exposure
+factor** below. A white balance preset stores its color in 19 (FixtureExpTint's preset 5 stores its own). Set one after the
+other from the default 4: 1 white, 2 0.75 0.886365 1, 3 0.816122 0.889125 1, 4 the color above, 5 1 0.890094 0.755618, 6
+1 0.825353 0.628004, 7 white; 0 (after 4), 8 and 9 (after 7) left the color as it was, whether they set or keep one is
+not measured (maxdiff of 4 -> 0 changes 37 only). What each preset stands for is not read. **Physical**, block 0: 6 f-number (float, 8); its exposure (22 exposure gain
+type, 23 ISO, 24 exposure value: descriptor names only, not checked by maxdiff) is for the exposure control of the
+RenderEnvironment, not read. The exposure fixture
+(`tools/fixtures/exposure.ms`, system unit millimeters; values read back through `maxdrop/reader`; the column heads
+are VRayPhysicalCamera's ids, the Physical row names its own):
+
+| Camera | 10 | 2 | 12 | 16 | 56 | Other |
+|---|---|---|---|---|---|---|
+| FixtureExpPhysical (targeted; the render view) | 1 | 5.6 | 125 | 200 | 10.9366 | |
+| FixtureExpOff | 0 | 2.8 | 200 | 100 | 10.6147 | |
+| FixtureExpValue | 2 | 4 | 100 | 110.485 | 10.5 | |
+| FixtureExpTint | 1 | 8 | 200 | 100 | 13 | 11 on, 39 0.5, 37 5, 19 1 0.890094 0.755618 |
+| FixtureExpStored | 2 | 8 | 200 | 100 | 13 | |
+| FixturePhysDof (Physical) | | 6: 2.8 | | | | 11 depth of field on, 10 specify focus 1, 9 focus distance 2500, 8 target distance 5000 |
+
+**Exposure factor** (maxdrop-o53.2.2; 3dsmaxbatch, V-Ray 5.2). The calibration floor of [VRayLight](#vraylight) in
+meters: a white VRayMtl floor (diffuse 255, no reflection) 20 m square, a standard Omni of multiplier 1 without decay
+1 m above it, V-Ray color mapping linear, gamma 1, clamp output off, no GI, no default lights, 3ds Max's gamma off;
+a free VRayPhysicalCamera 0.9 m above the floor looking down (FOV 60° specified, target distance 200 m, vignetting
+off, white balance 255 255 255, the still camera type), rendered into a 64 × 64 float bitmap; the mean of the 8 × 8
+center pixels. Exposure off renders 0.704897, as a Target camera does (the Omni at multiplier 2: 1.40979, so nothing
+clamps; the Omni has MAXScript's 180 grey, 180 / 255 of the white Omni's 1.0 in "Power, measured").
+The ratio on / off does not depend on the light: a
+1 W VRayLight sphere (0.0360797 off; "Power, measured" says 0.0362) and a self-lit plane (1.0 off) give the Omni's
+ratio in meters, centimeters and inches, the plane also in millimeters (the sphere there: "Not measured" below). In
+centimeters and inches the ratio (0.030138, 0.0307069) is the formula's at the default target distance, 200 cm and
+200 in (2000 and 5080 mm). Mode 1 unless the row says otherwise:
+
+| Setting (f-number, shutter speed, ISO) | Pixel | On / off | Formula | Stops |
+|---|---|---|---|---|
+| exposure off (mode 0) | 0.704897 | 1 | 1 | 0 |
+| 8, 200, 100 (the defaults) | 0.0219049 | 0.0310753 | 0.0310753 | −5.0081 |
+| 8, 200, 200 | 0.0438097 | 0.0621505 | 0.0621505 | −4.0081 |
+| 8, 200, 400 | 0.0876194 | 0.124301 | 0.124301 | −3.0081 |
+| 8, 200, 1600 | 0.350478 | 0.497205 | 0.497204 | −1.0081 |
+| 8, 50, 100 | 0.0876194 | 0.124301 | 0.124301 | −3.0081 |
+| 8, 400, 100 | 0.0109524 | 0.0155376 | 0.0155376 | −6.0081 |
+| 8, 30, 100 | 0.146032 | 0.207168 | 0.207168 | −2.2711 |
+| 8, 4, 100 | 1.09524 | 1.55376 | 1.55376 | +0.6358 |
+| 4, 200, 100 | 0.0876194 | 0.124301 | 0.124301 | −3.0081 |
+| 5.6, 200, 100 | 0.0447038 | 0.0634189 | 0.0634189 | −3.9789 |
+| 16, 200, 100 | 0.00547621 | 0.00776881 | 0.00776882 | −7.0081 |
+| 1.4, 200, 100 | 0.715261 | 1.0147 | 1.0147 | +0.0211 |
+| 5.6, 125, 200 (FixtureExpPhysical's) | 0.143052 | 0.20294 | 0.20294 | −2.3009 |
+| 2.8, 30, 800 | 9.53658 | 13.529 | 13.5294 | +3.7580 |
+| mode 2, EV 10.5 | 0.193613 | 0.274668 | 0.274669 | −1.8642 |
+| mode 2, EV 9 | 0.547621 | 0.776881 | 0.776882 | −0.3642 |
+| mode 2, EV 0 | 280.376 | 397.755 | 397.763 | +8.6358 |
+| mode 2, EV −2 | 1121.5 | 1591.01 | 1591.05 | +10.6358 |
+| 8, 200, 100 in millimeters (target distance 200 mm) | 0.0164001 | 0.023266 | 0.023266 | −5.4256 |
+| 5.6, 125, 200 in millimeters | 0.107103 | 0.151941 | 0.151941 | −2.7184 |
+
+The formula: factor = (12.5 / π) · ISO · t / N² · (f / v)² in mode 1, (1250 / π) · 2^−EV · (f / v)² in mode 2 (EV the
+stored 56), 1 in mode 0. N is the f-number as stored (5.6², not 32); t the exposure time in seconds: for the still
+camera (MAXScript `type` 0; its block id is not read) 1 / shutter speed, the cinematic one (1) shutter angle / 360 /
+the scene's frame rate (180° at 30 fps: 1/60 s), the video one (2) 1 / frame rate + latency (s). (f / v)² is the thin
+lens of the next paragraph: f the focal length, d the focus distance (the specified focus distance, else the target
+distance, for a targeted camera its distance to its target node), in millimeters through the system unit, v = 1 /
+(1/f − 1/d), so (f / v)² = (1 − f / d)²; with a specified FOV v = film / (2 tan(FOV / 2)) and f / v = d / (d + v).
+Zoom, and the film width at a given focal length, leave it as it is. Mode 1 reads the three settings and ignores 56
+(FixtureExpTint renders from its 8, 200, 100, not from its stale 13), mode 2 reads 56 and ignores them; for the still
+camera mode 1 is mode 2 at EV = log2(N² · shutter speed · 100 / ISO). Every row above and below is within 0.01 % of
+the formula. The lens and camera type, measured on a self-lit plane at the defaults 8, 200, 100 (pixel = factor):
+
+| Lens (millimeters) | Pixel | (f / v)² |
+|---|---|---|
+| focal 20, 40, 80 at d 200 000 | 0.0310787, 0.0310725, 0.0310601 | 0.9998, 0.9996, 0.9992 |
+| specified FOV 30°, 90° at d 200 000 | 0.0310641, 0.0310793 | 0.99933, 0.99982 |
+| focal 17.9963 at d 200, 500, 1000, 5000 (target distance; a specified focus at 200 and 1000 the same) | 0.0257425, 0.0288876, 0.0299762, 0.0308616 | 0.8281, 0.9293, 0.9643, 0.9928 |
+| specified FOV 60° at d 200 | 0.0232675 | 0.7485 |
+| focal 20, 40, 80 at d 200 | 0.0251788, 0.0198944, 0.0111906 | 0.81, 0.64, 0.36 |
+| focal 40, targeted, 1000 and 5000 from the target (stored target distance 200) | 0.0286479, 0.0305896 | 0.9216, 0.9841 |
+| focal 40 at d 1000: cinematic 180° at 30 fps, 90° at 30 fps, 180° at 60 fps | 0.095493, 0.0477465, 0.0477465 | 0.9216 |
+| focal 40 at d 1000: video at 30 fps, latency 0 and 0.01 | 0.190986, 0.248282 | 0.9216 |
+
+**In Blender.** MaxDrop's lights render as bright as V-Ray's unexposed pixel (Light Strength 1.43, "Power, measured";
+the standard Omni, Spot and Direct included: the 0.705 above is the light's color), so the camera's exposure is
+`scene.view_settings.exposure` = log2(factor) = 1.9924 + log2(ISO · t / N²) + 2 log2(f / v), in mode 2 8.6362 − EV +
+2 log2(f / v), in mode 0 0 stops. The exposure fixture: FixtureExpPhysical −2.3308 (focused at its target, 3816.08
+mm), FixtureExpValue −2.5076, FixtureExpTint −5.6515, FixtureExpStored −5.0076 (these three at the 200 mm target
+distance), FixtureExpOff 0; renders of the fixture's box under V-Ray's default lights, on / off, give these factors
+within 0.7 % (FixtureExpOff's view misses the box).
+
+Left out of the factor:
+
+- Vignetting (11, 39): a pixel θ off the axis is multiplied by 1 − amount · (1 − cos⁴ θ) (amount 1 and 0.5, four
+  pixels from the center to the corner of the 60° view, within 0.3 %; the 8 × 8 center mean is 0.993 of the
+  unvignetted one at amount 1, 0.997 at 0.5).
+- White balance (19): with exposure on, channel c is multiplied by (1 / wb_c) / the mean of the three 1 / wb, so a
+  grey keeps its mean (preset 5: 0.870, 0.978, 1.152; 255 128 64: 0.430, 0.857, 1.713; the default preset 4's color
+  within 0.05 %); with exposure off it does nothing.
+
+Not measured: legacy ISO (36) at an ISO other than 100 (at 100 it changes nothing), system lighting units (38) other
+than in this setup (off changes nothing), shutter offset, optical vignetting, the bitmap aperture's affect exposure,
+distortion, a lens file. A 1 W VRayLight sphere 1 m above the floor of a millimeter scene renders 0 exposed at the
+defaults (0.0361 off; 0.00112 exposed in meters): consistent with V-Ray's light cut-off threshold (0.001 by default)
+applied to the exposed contribution, not checked.
 
 **The field of view they render with.** Free / Target: the FOV parameter. Physical with a specified FOV: that FOV
 (neither zoom nor breathing; 74.9996° for 75° at zoom 1.25). Otherwise a thin lens focused at d, the focus distance
@@ -2395,6 +2723,92 @@ the default) the sRGB curve; multiplier scales the color, renderMultiplier does 
 when V-Ray renders). Not measured: whether the multipliers come before or after the Output's invert and offset
 (MaxDrop folds them into its amount), Auto on a float file (taken as linear) and V-Ray's crop origin (taken as a
 Bitmap's).
+
+### The mix rules of VRayBlendMtl, VRay2SidedMtl and Blend, measured
+
+maxdrop-o53.2.4, V-Ray 5.2 in `3dsmaxbatch` (probe scenes, not committed). A 20 m Plane carries the material under
+test; standard Omnis of multiplier 1 without decay sit 1 m in front of it (+Z, the side the camera sees) and 1 m
+behind it, each switched on as the case says; a Freecamera at 0.9 m looks down. Color mapping linear, gamma 1, clamp
+output off, no GI, no default lights, a black background; an HDR bitmap read with `getPixels ... linear:true`, the
+mean of the 8 x 8 center pixels. Every sub-material is a VRayMtl of reflection 0. A white one lit from the front
+reads E = 0.704897 (the Omni's floor: MAXScript's 180 grey, maxdrop-o53.2.9); the controls are a VRayLightMtl
+white at 1.0 and one at grey
+128 at 0.502. The table gives shares of E as R / G / B (one number: a grey). Each case was rendered twice, with the
+scene's gamma off (as the fixtures are saved) and on (input 2.2). Both modes give the same internal value on every
+row except those with an image, a self-authored 8-bit 128 grey PNG as a Bitmap with automatic gamma: 0.502 with the
+gamma off and 0.2195 with it on, as for a mask ([Scene gamma](#scene-gamma)). GI on (the renderer's defaults)
+changes nothing on this one plane (translucency 128 from the front and from behind, a coat at 128).
+
+| Case | Internal value (shares of E) |
+|---|---|
+| VRayBlendMtl, red base, green coat, blend grey 64 / 128 / 191 | (0.749, 0.251, 0) / (0.498, 0.502, 0) / (0.251, 0.749, 0) |
+| blend (255, 128, 0): black base under a white coat; white base under a black coat; red under green | (1, 0.502, 0); (0, 0.498, 1); (0, 0.502, 0) |
+| black base, white coat, blend 51 (0.2) with a VRayColor 230 (0.902) blend map, multiplier 0 / 60 / 100 / 150 % | 0.2 / 0.6212 / 0.902 / 1.0 |
+| the same, blend 0 / 255 with that map at 60 %; 255 with a black map at 60 % | 0.5412 / 0.9412; 0.4 |
+| blend 230 with a black map at 150 % (lerp -0.451): black base under white; white base under black | 0; 1 |
+| blend 51 with the PNG at 60 %; blend 0 with the PNG at 100 % | gamma off 0.3812, on 0.2117; off 0.502, on 0.2195 |
+| additive, blend 128: red under green; grey 128 under grey 128 (normal mode: 0.502); white under white, at 255 | (1, 0.502, 0); 0.754; 1.502, 2.0 |
+| two coats over a red base: green at 128, then blue at 64 | (0.373, 0.376, 0.251) |
+| vray_wrappers' FixtureBlend stack (base 20 / 20 / 210; coats 200 / 200 / 20 at 40 / 50 / 60 and 20 / 200 / 200 at 70 / 80 / 90), additive; normal | (0.2230, 0.4783, 1.1188); (0.1588, 0.3949, 0.6963) |
+| a coat with coatMtl_enable off | the base |
+| VRay2SidedMtl, white front, no back material, translucency grey t = 0 / 0.251 / 0.502 / 0.749 / 1: front light only; back light only; both | 1 - t; t; 1 |
+| green front, red back material (backMtlOn), t = 0.251 / 0.502 / 0.749: front light; back light | (0, 1 - t, 0); (t, 0, 0) |
+| white front, translucency (64, 96, 128) (vray_wrappers' FixtureTwoSided): front light; back light | (0.749, 0.624, 0.498); (0.251, 0.376, 0.502) |
+| mult_by_front_diffuse on (default off), back light, t 128: front (128, 255, 64) over a white back; the same front without a back material; green over red | (0.252, 0.502, 0.126); (0.126, 0.502, 0.0316); 0 |
+| force1SidedSubMtls off (default on; FixtureTwoSided has it off), t 128, white VRayMtl double-sided (its default): back light; front light | 0; 0.498 |
+| the same with the VRayMtl's Double-sided option off: back light; front light | 0.502; 0.498 |
+| translucency white with the PNG as its map, multiplier 60 / 0 %; translucency black with the PNG at 100 %; texmap_translucency_on off, white with the PNG at 100 %; all back light | off 0.7012, on 0.5317 / 1; off 0.502, on 0.2195; off 0.502, on 0.2195 |
+| Blend (material1 red, material2 green), mix amount 0 / 30 / 100 % | (1, 0, 0) / (0.7, 0.3, 0) / (0, 1, 0) |
+| amount 30 % with a mask: VRayColor 64 / 255 / 0; the PNG; a VRayColor 64 mask with maskEnabled off | green 0.251 / 1 / 0; off 0.502, on 0.2195; green 0.3 |
+| Use Curve, lower 0.3, upper 0.7: amount 20 / 35 / 40 / 50 / 65 / 80 %; a mask of 0.349 / 0.4 / 0.502 / 0.651 at amount 0 (without the curve: as stored) | green 0.2 / 0.35 / 0.4 / 0.5 / 0.65 / 0.8; green 0.0414 / 0.1563 / 0.5074 / 0.9586 |
+| Use Curve, lower 0.7, upper 0.3: a mask of 0.502 / 0.651 / 0.749 | green 0 / 0 / 1 |
+| amount 30 % with map1Enabled off; with map2Enabled off | (0, 1, 0); (1, 0, 0) |
+| colored maps and masks, VRayColor (255, 128, 0): VRayBlendMtl blend map at 100 % over blend black (black base, white coat); VRay2SidedMtl translucency map at 100 % over black (white front, back light); Blend mask at amount 30 % | (1, 0.502, 0); (1, 0.502, 0); green 0.5007 (red 0.4993) |
+| VRay2SidedMtl green front, red backMtl with backMtlOn off, t 128: back light; front light | (0, 0.502, 0); (0, 0.498, 0) |
+
+The rules, per channel, each in V-Ray's internal values. A scratch script recomputes all 109 rows of each gamma mode
+from them within 0.01 %.
+
+- **VRayBlendMtl.** Start from the base material's shading. Then, for each coat k in table order (coat 1 first, the
+  last one on top) that is set and enabled, w_k = clamp(lerp(blend_k, map_k, multiplier_k / 100), 0, 1), or blend_k
+  when it has no map. The multiplier is the percent as stored, the blend color is each of its channels as stored
+  (not their mean), and the map is its value, per channel too. Normal mode: out = out (1 - w_k) + coat_k w_k.
+  Additive: out = out + coat_k w_k, not clamped (a white coat over a white base at 255: 2.0).
+- **VRay2SidedMtl,** seen from the front: (1 - t) x the front material's shading of the light on its own side + t x
+  the back's shading of the light on the other side. The back is backMtl when backMtlOn is set, else frontMtl (also
+  with a backMtl assigned); with mult_by_front_diffuse on it is multiplied by the front's diffuse. Here t =
+  lerp(translucency, map, multiplier / 100), per channel, the translucency's channels as stored. V-Ray 5.2 renders
+  the map whatever texmap_translucency_on says (set off by script and read back off: 0.502, as on; without the map:
+  1). With force1SidedSubMtls off, a double-sided sub-material lets no light through from the other side, so with
+  VRayMtl's default the back light is lost while the front keeps its 1 - t. From behind and with GI from other
+  objects: not measured.
+- **Blend** `(0x250, 0)`, 3ds Max's Blend material rendered by V-Ray: w = the mask's value, the mean of its channels
+  for a colored mask (one weight for all three), when a mask is set and maskEnabled is on, else the mix amount (a
+  fraction). Use Curve runs the mask through smoothstep of (w - lower) / (upper - lower), a step at lower when lower
+  is at or above upper (the Mix map's curve, above); it leaves the mix amount alone. out = material1 (1 - w) +
+  material2 w, so a white mask is material2. With map1Enabled or map2Enabled off, the other material is rendered
+  whole.
+
+**The weight and the scene's gamma.** V-Ray takes a blend color, a translucency and a swatch-valued map or mask as
+stored, per channel (a Blend mask: their mean), in both gamma modes, and an image by its own decode (0.2195 with the
+gamma on, 0.502 off). With the gamma on, a swatch is linear (`colors.GAMMA_ON`), so the stored value is also the
+scene's rule. With the gamma off the scene is display-referred: Blender shows srgb_to_linear of the internal value,
+here of the material's mix, not of its sides. Red under green at a grey 128 blend shows (0.212, 0.216, 0). A mix of
+the decoded sides (1, 0, 0) and (0, 1, 0) by one weight w gives (1 - w, w, 0), so no weight shows both channels: the
+stored 0.502 gives a red of 0.498, and the scene's rule on it (0.216) gives 0.784. Only with one side black is one
+weight exact. A coat over a black base shows srgb_to_linear(w c): the weight srgb_to_linear(w) on a white coat, and
+on another color c within 0.0052 (srgb_to_linear(w c) against srgb_to_linear(w) srgb_to_linear(c) over 0..1,
+computed, as for an RGB Multiply above). A black coat over a base shows srgb_to_linear((1 - w) c): the weight is
+1 - srgb_to_linear(1 - w), not srgb_to_linear(w) (the white base under a black coat at 128 shows 0.212; the scene's
+rule would show 0.784). The grey-64 and grey-191 blends show (0.521, 0.0513, 0) and (0.0513, 0.521, 0). So the
+assumption that a coat's weight is the scene's rule on the mean of its blend color holds for a grey blend with the
+gamma on, and with the gamma off only for a coat over a black base. A colored blend weighs each channel by its own
+value. vray_wrappers' FixtureTwoSided translucency (64, 96, 128) has a stored mean of 0.376 and a mean of 0.117
+under the scene's rule. V-Ray weighs its channels 0.251 / 0.376 / 0.502: on a white front with force1SidedSubMtls
+on, with the gamma off, its back light shows (0.0513, 0.117, 0.216) and its front light (0.521, 0.347, 0.212). The
+fixture itself has force1SidedSubMtls off and double-sided VRayMtl sub-materials, so V-Ray lets none of the back
+light through there; its backMtl is assigned with backMtlOn off (the default), so V-Ray shades the back with its
+frontMtl.
 
 ## Asset metadata
 

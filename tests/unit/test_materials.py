@@ -48,7 +48,7 @@ FLOORS = {"vray_lights": 0, "vray_dome": 0, "lights_standard": 0, "lights_photom
           "standard_maps": 1900,
           "texmap_rules": 1570, "texmap_wrappers": 1690, "units_cm": 120, "units_in": 120, "units_mm": 120, "uvwmap": 120,
           "uvwmap_oblique": 120, "uvwmap_pole": 120, "vray_basic": 190, "vray_maps": 630, "vray_more": 2500,
-          "vray_texmaps": 2900, "vray_wrappers": 2000}
+          "vray_texmaps": 2900, "vray_wrappers": 2000, "exposure": 190}
 
 
 _PKG = "maxdrop_convert_test"  # the package the convert tests make: maxdrop/__init__.py (bpy) never runs
