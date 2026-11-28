@@ -13,6 +13,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Report: a material class MaxDrop has no rule for is named as the file's class directory names it (a Blend material
   is "Blend"), not by a bare ClassID; the Approximated block has a line for procedural maps drawn with Blender's own
   pattern, by class (none is drawn that way yet).
+- Lights: a VRayIES or photometric web light whose IES file is found and read shines with the file's distribution in
+  Cycles (an IES Texture node on a point light, the file kept inside the .blend), instead of a spot of 170 degrees; a
+  VRayIES as bright as V-Ray 5.2 lights it (V-Ray's and Blender's rules measured apart), a web light's strength and
+  azimuth not measured yet. EEVEE draws the plain point light.
 
 ## [1.0.2] - 2026-11-25
 
