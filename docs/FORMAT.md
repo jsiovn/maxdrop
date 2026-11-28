@@ -1304,9 +1304,10 @@ isotropic, spotlight or uniform diffuse, 0.667; a Free Rectangle 100 × 100 mm o
 lm with an isotropic IES file 0.0531; an Omni, a Free Spot and a Direct of multiplier 1 without decay 1.0 (the same
 at any distance), an Omni with inverse-square decay from 1 m 1.0, from 0.5 m 0.25, with inverse decay from 0.5 m
 0.5; a VRaySun of multiplier 1 at the zenith 68.5 (102.7 klx). Cycles (Blender 5.2, a Diffuse BSDF of 1.0): a
-point or spot light of 1 W at 1 m 0.02526 (1 / 4π²), a disk area light of 1 W 0.1010 (1 / π² on its axis), a sun
-of strength 1 0.3176 (1 / π). So Light Strength 1.43 is π · 683 / 1500 (1.4305), and with it these powers render
-as bright as V-Ray:
+point or spot light of 1 W at 1 m 0.02526 (1 / 4π², which is 0.02533: 0.02526 is the pixel this scene rendered; the
+setup of "The IES Texture node in Blender, measured" below renders 0.02533), a disk area light of 1 W 0.1010 (1 / π²
+on its axis), a sun of strength 1 0.3176 (1 / π). So Light Strength 1.43 is π · 683 / 1500 (1.4305), and with it
+these powers render as bright as V-Ray:
 
 - a point or spot light of on-axis intensity I cd: 4π I / 683 W (the rules source's for photometric lights); a
   uniform diffuse one: π I / 683 W on an area light;
