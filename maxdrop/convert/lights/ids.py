@@ -179,12 +179,13 @@ NEGATIVE = "%s %g is negative: 0 W"
 SHAPE = "its %s shape is %s"
 WEB_FILE = "its photometric web %s is approximated by a spot of 170 degrees"
 IES_FILE = "its IES file %s is approximated by a spot of 170 degrees"
-# the lines of WEB_FILE and IES_FILE for a light that shines with its profile (one for one), UPWARD appended when the
-# file sends light above the horizontal
-WEB_PROFILE = ("its photometric web %s shines through an IES Texture on a point light in Cycles (EEVEE draws the "
-               "plain point light); its strength and azimuth are not measured")
-IES_PROFILE = ("its IES file %s shines through an IES Texture on a point light in Cycles (EEVEE draws the plain "
-               "point light)")
+# the lines of WEB_FILE and IES_FILE for a light that shines with its profile (one for one), ROTATION appended for a
+# web with a rotation, UPWARD when the file sends light above the horizontal
+WEB_PROFILE = ("its photometric web %s shines through an IES Texture on a point light in Cycles (EEVEE draws a "
+               "plain point light of its flux); its strength and azimuth are not measured")
+IES_PROFILE = ("its IES file %s shines through an IES Texture on a point light in Cycles (EEVEE draws a plain point "
+               "light of its flux); its azimuth is not measured")
+ROTATION = "; its rotation (%g, %g, %g) is not applied"
 UPWARD = "; the file sends %s%% of its light upward, which the point light keeps"
 IES_ZERO = "power 0: it gives no light, in V-Ray too: 0 W"
 IES_RATED = ("its power is taken as its flux: V-Ray scales the IES file's candelas by the power over the file's "

@@ -19,7 +19,7 @@ from .ids import (
     P_TYPE, P_UNITS, PHOTOMETRIC, PLANE, POINT, RECTANGLE, RECTANGLE_CONE, REFERENCE_DISTANCE, SHAPE, SHAPE_CYLINDER,
     SHAPE_DISC, SHAPE_LINE, SHAPE_POINT, SHAPE_RECTANGLE, SHAPE_SPHERE, SKYLIGHT, SPHERE, SPOT, SPOT_DISTRIBUTION,
     SPOTLIGHT, STANDARD, SUN, SUN_ANGLE, SUN_COLOR, SUN_IRRADIANCE, SUN_LIGHT, SUN_ZENITH, TEXMAP, TYPE_NAMES,
-    UNITS_DEFAULT, UNITS_LM, UNITS_LM_M2_SR, UNITS_W, UNITS_W_M2_SR, UPWARD, VRAY, WEB_FALLOFF, WEB_FILE, WEB_HOTSPOT,
+    UNITS_DEFAULT, UNITS_LM, UNITS_LM_M2_SR, UNITS_W, UNITS_W_M2_SR, UPWARD, ROTATION, VRAY, WEB_FALLOFF, WEB_FILE, WEB_HOTSPOT,
     WEB_PROFILE, ZERO_START,
 )
 
@@ -55,11 +55,15 @@ def _shine(ld, s, line, file, issues):
     """ld shines with its profile (docs/FORMAT.md, "The IES Texture node in Blender, measured"): a point light, since a
     spot cuts the profile at half its size and above its horizon; its power s x IES_WATTS over the file's ballast-lamp
     factor (Cycles applies that factor, V-Ray does not), s the factor on the file's candelas; build/ divides by the
-    gain Blender 4.x reads a file with. The issue line, UPWARD appended when the file sends light upward."""
+    gain Blender 4.x reads a file with. ld.watts stays the flux it sheds. The issue line, ROTATION appended for a web
+    with a rotation, UPWARD when the file sends light upward."""
     p = ld.profile
     ld.kind, ld.spot_size, ld.spot_blend = POINT, 0.0, 0.0
     ld.power = s * IES_WATTS / p.photometry.ballast_lamp
-    issues.append(line % file + (UPWARD % ("%.3g" % (100.0 * p.up)) if p.up > 0 else ""))
+    line = line % file
+    if any(p.rotation):
+        line += ROTATION % tuple(p.rotation)
+    issues.append(line + (UPWARD % ("%.3g" % (100.0 * p.up)) if p.up > 0 else ""))
 
 
 class LightDescription:
@@ -368,7 +372,8 @@ def _describe_photometric(key, name, v, meters, swatches, issues):
             if ld.profile is None:
                 issues.append(WEB_FILE % (v["file"] or NO_FILE))
             else:
-                # Not measured (maxdrop-o53.3.5 calibrates it): the light's intensity is taken as the file's peak.
+                # Not measured (maxdrop-o53.3.5 calibrates it): the light's intensity is taken as the file's peak
+                # (times its multiplier; the file's ballast factor, which Cycles applies, stays on).
                 peak = ld.profile.peak
                 s = cd / peak if peak > 0 else 0.0
                 ld.watts = s * ld.profile.flux / LUMENS_PER_WATT
@@ -421,6 +426,9 @@ def _describe_ies(key, name, v, meters, swatches, issues):
         issues.append(IES_FILE % file)
     else:  # lm is the flux V-Ray renders: the file's candelas times lm / its flux
         flux = ld.profile.flux
+        if flux <= 0 and lm > 0:  # the node gives no light (with the override on; without it lm is 0 already)
+            issues.append(IES_DARK % file)
+            ld.watts = 0.0
         _shine(ld, lm / flux if flux > 0 else 0.0, IES_PROFILE, file, issues)
     ld.radius = _ies_radius(v, meters, issues)
     return ld

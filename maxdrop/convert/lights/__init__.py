@@ -127,9 +127,11 @@ watts at 683 lm/W: 4 pi I / 683 for a point or spot light of on-axis intensity I
 - A light with a Profile (docs/FORMAT.md, "The IES Texture node in Blender, measured") shines with it: a POINT light
   (a spot cuts the profile at half its size and above its horizon), power s x IES_WATTS over the file's ballast-lamp
   factor, s the factor on the file's candelas: a VRayIES's lumens over the file's flux (V-Ray's measured rule); a
-  web's cd over the file's peak (not measured: maxdrop-o53.3.5). Its issue line is WEB_PROFILE or IES_PROFILE in
-  place of WEB_FILE or IES_FILE, UPWARD appended when the file sends light upward. A file whose ballast-lamp factor
-  is not above 0 gives no Profile.
+  web's cd over the file's peak (not measured: maxdrop-o53.3.5). Its watts stay the flux it sheds, what EEVEE's
+  plain point light gets (build/ puts the rest on the node's Strength). Its issue line is WEB_PROFILE or IES_PROFILE
+  in place of WEB_FILE or IES_FILE, ROTATION appended for a web with a rotation (not applied yet), UPWARD when the
+  file sends light upward; a file without light, also with the override on, IES_DARK and 0 W. A file whose
+  ballast-lamp factor is not above 0 gives no Profile.
 - Skylight: not built (the reason; its World is later work). environment_sky finds a VRaySky as the environment map
   (RenderEnvironment reference ENVIRONMENT_MAP_SLOT) for convert.scene's report line.
 
@@ -175,7 +177,7 @@ from .ids import (
     INVERSE, ZERO_START, BEAM, RECTANGLE_CONE, OVERSHOOT, AMBIENT, FAR, NEGATIVE, SHAPE, WEB_FILE, IES_FILE, IES_ZERO,
     IES_RATED, IES_UNREAD, IES_DARK, IES_SHAPE, NO_FILE, SUN_ZENITH, SUN_COLOR, MISSING, DOUBLE_SIDED, TEXMAP,
     DIRECTIONAL, GLOSSY, NOT_FINITE, OUT_OF_RANGE, MAX_FLOAT, MAX_POWER, CONTRIBUTION, _WEB_ROTATION, IES_NODE_CD,
-    IES_WATTS, WEB_PROFILE, IES_PROFILE, UPWARD,
+    IES_WATTS, WEB_PROFILE, IES_PROFILE, UPWARD, ROTATION,
 )
 from .families import (
     LightDescription, light_class, environment_sky, area, area_scale, watts, light_color, is_dome, is_mesh_light,

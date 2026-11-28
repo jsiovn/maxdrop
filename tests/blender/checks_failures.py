@@ -97,8 +97,9 @@ def check_ies_header(max_path):
     """max_path (lights_photometric) copied beside a self-authored fixture_web.ies, rated 500 lm, 100 cd in every
     direction, one plane: the import finds it, and IesPower, IesOverride and PhWeb shine with it, point lights sharing
     one Text "fixture_web.ies" (the profile's text): IesPower (1500, override off) as 1500 x 400 pi / 500 lm (s = 3),
-    IesOverride (override on) as 300 lm (s = 300 / 400 pi), PhWeb (400 cd) as the file's peak at 400 cd (s = 4), each
-    s x IES_WATTS x Light Strength over 4.x's one-plane gain 35/32; the report has no rated-lumens line for it."""
+    IesOverride (override on) as 300 lm (s = 300 / 400 pi), PhWeb (400 cd) as the file's peak at 400 cd (s = 4): each
+    light's energy the flux it sheds x Light Strength (EEVEE's plain light), times its IES node's Strength input s x
+    IES_WATTS x Light Strength over 4.x's one-plane gain 35/32; the report has no rated-lumens line for it."""
     from maxdrop import options
     from maxdrop.convert import lights
     empty_scene()
@@ -112,15 +113,24 @@ def check_ies_header(max_path):
         names = ("IesPower", "IesOverride", "PhWeb")
         lights_of = {n: bpy.data.objects[n].data for n in names if n in bpy.data.objects}
         energy = {n: light.energy for n, light in lights_of.items()}
+        texts = [n.ies for light in lights_of.values() for n in (light.node_tree.nodes if light.node_tree else ())
+                 if n.bl_idname == "ShaderNodeTexIES"]
+        strength = {n: [k.inputs["Strength"].default_value for k in light.node_tree.nodes
+                        if k.bl_idname == "ShaderNodeTexIES"][0] for n, light in lights_of.items() if light.node_tree}
         gain = 1.0 if bpy.app.version >= (5, 0, 0) else 35.0 / 32.0
-        want = {n: s * lights.IES_WATTS * options.LIGHT_STRENGTH / gain
-                for n, s in (("IesPower", 3.0), ("IesOverride", 300.0 / (400.0 * math.pi)), ("PhWeb", 4.0))}
-        check("ies header: IesPower, IesOverride and PhWeb point lights of the file's candelas x s x IES_WATTS",
+        flux = 400.0 * math.pi  # the file's
+        sheds = {"IesPower": 3.0 * flux, "IesOverride": 300.0, "PhWeb": 4.0 * flux}  # lm
+        want = {n: lm / 683.0 * options.LIGHT_STRENGTH for n, lm in sheds.items()}
+        check("ies header: IesPower, IesOverride and PhWeb point lights of the flux they shed x Light Strength",
               result == {'FINISHED'} and set(energy) == set(want) and
               all(light.type == 'POINT' for light in lights_of.values())
               and all(abs(energy[n] - w) <= w * 1e-5 for n, w in want.items()), "%s %s vs %s" % (result, energy, want))
-        texts = [n.ies for light in lights_of.values() for n in (light.node_tree.nodes if light.node_tree else ())
-                 if n.bl_idname == "ShaderNodeTexIES"]
+        cycles = {n: s * lights.IES_WATTS * options.LIGHT_STRENGTH / gain for n, s in
+                  (("IesPower", 3.0), ("IesOverride", 300.0 / flux), ("PhWeb", 4.0))}
+        got = {n: energy[n] * strength[n] for n in strength if n in energy}
+        check("ies header: energy x the IES node's Strength = the file's candelas x s x IES_WATTS over 4.x's gain",
+              set(got) == set(cycles) and all(abs(got[n] - w) <= w * 1e-5 for n, w in cycles.items()),
+              "%s vs %s" % (got, cycles))
         check("ies header: the three share one Text fixture_web.ies, the file's text",
               len(texts) == 3 and len(set(texts)) == 1 and texts[0].name == "fixture_web.ies" and
               texts[0].as_string() == FIXTURE_WEB.rstrip(b"\n").decode("ascii"), str(texts))

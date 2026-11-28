@@ -276,7 +276,9 @@ class Photometric(unittest.TestCase):
         ld, issues = describe(photometric(**found))
         self.assertEqual((ld.profile.file, ld.profile.rotation, ld.profile.photometry), ("Lamp.IES", (10.0, 20.0, 30.0),
                                                                                          found["photometry"]))
-        self.assertEqual((ld.kind, ld.spot_size, issues), ("POINT", 0.0, [shines(L.WEB_PROFILE, "lamp.ies")]))
+        rotated = L.WEB_PROFILE % "lamp.ies" + L.ROTATION % (10.0, 20.0, 30.0) + L.UPWARD % "50"
+        self.assertEqual((ld.kind, ld.spot_size, issues), ("POINT", 0.0, [rotated]))
+        self.assertIn("rotation (10, 20, 30) is not applied", rotated)
         for missing in ({"photometry": None, "ies_name": None}, {"photometry": None, "photometry_issue": "bad"}):
             ld, issues = describe(photometric(**dict(found, **missing)))
             self.assertEqual((ld.profile, ld.spot_size, issues), (None, L.WEB_CONE, [L.WEB_FILE % "lamp.ies"]))
@@ -415,6 +417,9 @@ class SunAndIes(unittest.TestCase):
             self.assertAlmostEqual(ld.power, 1000.0 / 683.0, delta=1e-12)
         ld, issues = describe(with_file(ies(power=1000.0), ies_bytes(candela=0)))  # no light: 0 W, no upward share
         self.assertEqual((ld.kind, ld.power, issues), ("POINT", 0.0, [L.IES_DARK % "a.ies", L.IES_PROFILE % "a.ies"]))
+        ld, issues = describe(with_file(ies(power=300.0, override=1), ies_bytes(candela=0)))  # the node gives none
+        self.assertEqual((ld.kind, ld.watts, ld.power, issues),
+                         ("POINT", 0.0, 0.0, [L.IES_DARK % "a.ies", L.IES_PROFILE % "a.ies"]))
         ld, issues = describe(with_file(ies(power=1000.0), downlight_bytes(ballast_lamp="1e-320")))  # past the range
         self.assertEqual((ld.watts, ld.power, issues), (0.0, 0.0, [L.IES_PROFILE % "a.ies", L.OUT_OF_RANGE]))
         ld, issues = describe(with_file(ies(power=1000.0, override_shape=1, shape_type=L.IES_SPHERE, use_shape=2,

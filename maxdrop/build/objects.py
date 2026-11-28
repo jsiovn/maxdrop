@@ -42,9 +42,9 @@ material: build.curves); a LIGHT node an object of its Light (build.lights, powe
 with an IES profile its node tree, one Text per IES file in built.texts), with the light's object flags; a CAMERA
 node an object of its Camera (build.cameras). A mesh light's node (node.emitter) is a MESH of its emitter mesh,
 whose every face gets the emitter's Emission material (build.emitters, strength times light_strength), its only
-slot whatever the slots say, with the emitter's object flags. An object whose every
-slot holds a shadow-catcher material (convert.materials.shadow_catcher_users: CoronaShadowCatcherMtl) gets
-is_shadow_catcher (Cycles; EEVEE has no shadow catcher and draws its grey material).
+slot whatever the slots say, with the emitter's object flags. An object whose every slot holds a shadow-catcher
+material (convert.materials.shadow_catcher_users: CoronaShadowCatcherMtl) gets is_shadow_catcher (Cycles; EEVEE has
+no shadow catcher and draws its grey material).
 
 With collections (build.collections.make), each object goes into its layer's collection, else into collection.
 A node hidden in 3ds Max gets hide_viewport and is hidden in view_layer (hide_set), one that does not render

@@ -16,7 +16,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Lights: a VRayIES or photometric web light whose IES file is found and read shines with the file's distribution in
   Cycles (an IES Texture node on a point light, the file kept inside the .blend), instead of a spot of 170 degrees; a
   VRayIES as bright as V-Ray 5.2 lights it (V-Ray's and Blender's rules measured apart), a web light's strength and
-  azimuth not measured yet. EEVEE draws the plain point light.
+  azimuth not measured yet. EEVEE draws a plain point light of the light's flux.
 
 ## [1.0.2] - 2026-11-25
 

@@ -574,9 +574,10 @@ def check_ies_light():
     """Hand-made VRayIES descriptions (convert.lights.describe on test-written files): a light with a profile is a
     point light whose tree has one IES Texture in internal mode, its Text the profile's text (a CRLF file kept as it
     is, a NUL a space), its output into the Strength of the Emission on the active Light Output; its energy the
-    description's power x Light Strength over 4.x's layout gain (35/32 for one plane, 17/16 for planes 0 and 180); two
-    lights of one file share its Text, another file has its own; a light without a profile is the wide spot without
-    an IES node (4.x: no nodes)."""
+    description's watts x Light Strength (what EEVEE draws), the node's Strength input its power over its watts and
+    4.x's layout gain (35/32 for one plane, 17/16 for planes 0 and 180), so that Cycles gets power x Light Strength over
+    that gain; two lights of one file share its Text, another file has its own; a light without a profile is the wide
+    spot without an IES node (4.x: no nodes)."""
     from maxdrop import compat, options
     from maxdrop.build import lights as build_lights
     from maxdrop.convert import colors, ies
@@ -602,11 +603,15 @@ def check_ies_light():
         for light, ld in zip(made[:3], lds[:3]):
             label = "ies light %s" % ld.name
             planes = files[ld.profile.file][1]
-            want = ld.power * options.LIGHT_STRENGTH / _layout_gain(planes)
-            check(label + ": a point light, its power x Light Strength over 4.x's layout gain",
-                  light.type == 'POINT' and ld.power > 0 and abs(light.energy - want) <= want * 1e-6,
-                  "%s %g vs %g" % (light.type, light.energy, want))
             nodes = _ies_nodes(light)
+            want = ld.watts * options.LIGHT_STRENGTH
+            cycles = ld.power * options.LIGHT_STRENGTH / _layout_gain(planes)
+            got = light.energy * nodes[0].inputs["Strength"].default_value if nodes else None
+            check(label + ": a point light of its watts x Light Strength, times the node's Strength its power over "
+                  "4.x's layout gain",
+                  light.type == 'POINT' and ld.power > 0 and abs(light.energy - want) <= want * 1e-6 and
+                  got is not None and abs(got - cycles) <= cycles * 1e-6,
+                  "%s %g vs %g, %s vs %g" % (light.type, light.energy, want, got, cycles))
             _tree, emission, _output = compat.light_nodes(light)
             node = nodes[0] if len(nodes) == 1 else None
             linked = node is not None and [k.to_socket for k in node.outputs[0].links] == [emission.inputs["Strength"]]
@@ -670,7 +675,7 @@ def check_ies_cleanup(max_path):
                 for _ in _cancel_run([dst]).steps():
                     pass
             except Exception as e:  # the runner may wrap it
-                failed = "maxdrop test" in str(e) or isinstance(e, RuntimeError)
+                failed = "maxdrop test" in str(e)
         finally:
             build_cameras.set_render = original
         check("ies cleanup: a build that fails after making the Text leaves nothing",

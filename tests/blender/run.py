@@ -116,8 +116,9 @@ A normal map over a clipped image reads it black outside the image, never mixed 
 Images already in the file (an earlier import's) are reused by file and color space, unless modified, packed,
 generated or linked from a library; vray_maps imported twice with its textures adds no image the second time.
 lights_photometric copied beside a self-authored fixture_web.ies (rated 500 lm, 100 cd everywhere): IesPower,
-IesOverride and PhWeb shine with it, point lights sharing one Text, of the file's candelas times 3, 300 / 400 pi and 4
-(x 0.2604 W x Light Strength, over 4.x's one-plane gain), no rated-lumens line in the report; through the run's steps,
+IesOverride and PhWeb shine with it, point lights sharing one Text, of the flux they shed (EEVEE's plain light) times
+the node's Strength, together the file's candelas times 3, 300 / 400 pi and 4 (x 0.2604 W x Light Strength, over
+4.x's one-plane gain), no rated-lumens line in the report; through the run's steps,
 undo() and a build that fails after the lights leave no Text. Hand-made IES lights: one IES Texture of the profile's
 Text into the Emission's Strength, one Text per file, no node without a profile.
 The same beside filler files with a texture walk of 2 entries: IesPower takes its power as its flux and its line says
