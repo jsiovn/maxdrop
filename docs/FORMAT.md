@@ -2563,9 +2563,10 @@ from them within 0.01 %.
   the back's shading of the light on the other side. The back is backMtl when backMtlOn is set, else frontMtl (also
   with a backMtl assigned); with mult_by_front_diffuse on it is multiplied by the front's diffuse. Here t =
   lerp(translucency, map, multiplier / 100), per channel, the translucency's channels as stored. V-Ray 5.2 renders
-  the map whatever texmap_translucency_on says. With force1SidedSubMtls off, a double-sided sub-material lets no
-  light through from the other side, so with VRayMtl's default the back light is lost while the front keeps its
-  1 - t. From behind and with GI from other objects: not measured.
+  the map whatever texmap_translucency_on says (set off by script and read back off: 0.502, as on; without the map:
+  1). With force1SidedSubMtls off, a double-sided sub-material lets no light through from the other side, so with
+  VRayMtl's default the back light is lost while the front keeps its 1 - t. From behind and with GI from other
+  objects: not measured.
 - **Blend** `(0x250, 0)`, 3ds Max's Blend material rendered by V-Ray: w = the mask's value, the mean of its channels
   for a colored mask (one weight for all three), when a mask is set and maskEnabled is on, else the mix amount (a
   fraction). Use Curve runs the mask through smoothstep of (w - lower) / (upper - lower), a step at lower when lower
