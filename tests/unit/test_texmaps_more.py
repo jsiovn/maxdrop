@@ -25,9 +25,9 @@ if _TESTS not in sys.modules:
     sys.modules[_TESTS] = _tests
 from maxdrop_unit_tests.texmaps_support import (  # noqa: E402 (after the loader)
     _bitmap, _cbitmap, _cmix, _falloff, _PKG, _table, _tex, _vbitmap, cfb, Checks, chunks, classdir,
-    classids, colors, controllers_mod, FakeBlock, FakeChunk, FakeGraph, FakeMap, FakeOld, FakeScene,
+    classids, colors, controllers_mod, FakeGraph, FakeMap, FakeOld, FakeScene,
     Fixture, FIXTURE_DIR, mat, params_mod, pblock, reader_materials, reader_scene, Ref, tx,
-    UVGEN_OBJECT,
+    UVGEN_OBJECT, _ControllerEntry, _ControllerScene, _TypedBlock,
 )
 
 
@@ -317,43 +317,6 @@ class FalloffCurve(Checks):
         jump = tx.curve_samples((P((0, 0), (0, 0), (0, 0), 0), P((0.5, 0.2), (0.5, 0.2), (0.5, 0.2), 0),
                                  P((0.5, 0.9), (0.5, 0.9), (0.5, 0.9), 0), P((1, 1), (1, 1), (1, 1), 0)))
         self.assertEqual(jump, ((0, 0), (0.5, 0.2), (0.5, 0.9), (1, 1)))
-
-
-class _Typed(collections.namedtuple("_Typed", "base_type")):
-    pass
-
-
-class _TypedBlock(FakeBlock):
-    """A block whose parameters answer a ParamType2 (param(pid).base_type), as a ParamBlock2's do."""
-
-    def __init__(self, block_id, params, types_):
-        super().__init__(block_id, params)
-        self._types = types_
-
-    def param(self, pid):
-        return _Typed(self._types[pid]) if pid in self._types else None
-
-
-class _ControllerEntry(collections.namedtuple("_ControllerEntry", "superclass class_id name")):
-    pass
-
-
-class _ControllerScene(FakeScene):
-    """A FakeScene that also holds Bezier Float controllers: {object index: value saved at frame 0}."""
-
-    def __init__(self, objects, values):
-        super().__init__(objects, {i: self._bezier(v) for i, v in values.items()})
-        self.values = values
-
-    @staticmethod
-    def _bezier(value):
-        return FakeChunk(0x9003, children=[FakeChunk(0x7127, children=[
-            FakeChunk(0x2501, struct.pack("<f", value)), FakeChunk(0x2500, struct.pack("<ii", 0, 0))])])
-
-    def entry(self, i):
-        if i in self.values:
-            return _ControllerEntry(classids.SC_CTRL_FLOAT, classids.BEZIER_FLOAT, "Bezier Float")
-        return super().entry(i)
 
 
 class AnimatedRewiring(Checks):

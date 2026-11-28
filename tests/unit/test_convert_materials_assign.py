@@ -392,8 +392,8 @@ class FrameZeroParams(unittest.TestCase, Close):
 
     def test_normal_map_multipliers(self):
         """FixtureAnimNormal: normal_map_multiplier and bump_map_multiplier animated, read as the normal map rule reads
-        them (its Checker in the normal slot is left out and its Noise converts to nothing, so no NormalMap node is drawn
-        here)."""
+        them (its Checker in the normal slot is left out and its bump Noise is a Bump of the pattern, so no NormalMap
+        node is drawn here)."""
         ids = texmaps.NORMAL_MAPS[classids.VRAY_NORMAL_MAP]
         m = self.tex.graph.get(self.by_name["FixtureAnimNormal"])
         self.close(texmaps._num(m, ids.strength, 1.0), self.want("FixtureAnimNormal", 0, ids.strength))

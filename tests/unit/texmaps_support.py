@@ -217,6 +217,43 @@ def _falloff(index, map1=None, color1=(0.5, 0.5, 0.5), ftype=1, name="map"):
                    cls="Falloff", name=name)
 
 
+class _Typed(collections.namedtuple("_Typed", "base_type")):
+    pass
+
+
+class _TypedBlock(FakeBlock):
+    """A block whose parameters answer a ParamType2 (param(pid).base_type), as a ParamBlock2's do."""
+
+    def __init__(self, block_id, params, types_):
+        super().__init__(block_id, params)
+        self._types = types_
+
+    def param(self, pid):
+        return _Typed(self._types[pid]) if pid in self._types else None
+
+
+class _ControllerEntry(collections.namedtuple("_ControllerEntry", "superclass class_id name")):
+    pass
+
+
+class _ControllerScene(FakeScene):
+    """A FakeScene that also holds Bezier Float controllers: {object index: value saved at frame 0}."""
+
+    def __init__(self, objects, values):
+        super().__init__(objects, {i: self._bezier(v) for i, v in values.items()})
+        self.values = values
+
+    @staticmethod
+    def _bezier(value):
+        return FakeChunk(0x9003, children=[FakeChunk(0x7127, children=[
+            FakeChunk(0x2501, struct.pack("<f", value)), FakeChunk(0x2500, struct.pack("<ii", 0, 0))])])
+
+    def entry(self, i):
+        if i in self.values:
+            return _ControllerEntry(classids.SC_CTRL_FLOAT, classids.BEZIER_FLOAT, "Bezier Float")
+        return super().entry(i)
+
+
 def _table():
     return assets.AssetTable([assets.AssetEntry(G1, "Bitmap", "maps\\a.png", "")])
 

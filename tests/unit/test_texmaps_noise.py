@@ -20,8 +20,8 @@ if _TESTS not in sys.modules:
     _tests.__path__ = [os.path.dirname(os.path.abspath(__file__))]
     sys.modules[_TESTS] = _tests
 from maxdrop_unit_tests.texmaps_support import (  # noqa: E402 (after the loader)
-    _bitmap, _bw_mix, _decodes, _noise, _table, _vnormal, Checks, classids, colors, FakeMap, FakeOld, FakeGraph, Fixture, mat,
-    reader_materials, Ref, tx,
+    _bitmap, _bw_mix, _ControllerScene, _decodes, _noise, _table, _TypedBlock, _vnormal, assets, Checks, classids,
+    colors, FakeMap, FakeOld, FakeGraph, Fixture, mat, pblock, reader_materials, Ref, tx,
 )
 
 RED, BLUE = (1.0, 0.0, 0.0), (0.0, 0.0, 1.0)
@@ -78,13 +78,13 @@ class NoiseRule(Checks):
 
     def test_parameters(self):
         """Phase, levels, type and thresholds as stored; type 1 fractal, 2 turbulence; the defaults without them
-        (size 25 file units, phase 0, levels 3, regular, thresholds 0 and 1)."""
+        (size 3ds Max's 25 inches whatever the file's unit, phase 0, levels 3, regular, thresholds 0 and 1)."""
         n = _conv(_nz(p6=10.0, p7=1.5, p8=4.0, p9=0.2, p10=0.7, p11=1)).convert(mat.MapRef(1), tx.COLOR).root.mask
         self.assertEqual(n, tx.Noise(tx.Coordinates(), 0.1, 1.5, 4.0, 0.2, 0.7, tx.FRACTAL))
         n = _conv(_nz(p11=2)).convert(mat.MapRef(1), tx.COLOR).root.mask
         self.assertEqual(n.kind, tx.TURBULENCE)
         n = _conv(_nz()).convert(mat.MapRef(1), tx.COLOR).root.mask
-        self.assertEqual(n, tx.Noise(tx.Coordinates(), 0.25, 0.0, 3.0, 0.0, 1.0, tx.REGULAR))
+        self.assertEqual(n, tx.Noise(tx.Coordinates(), 0.635, 0.0, 3.0, 0.0, 1.0, tx.REGULAR))
 
     def test_detail(self):
         """Levels drive only fractal and turbulence noise (one octave a level): Detail levels - 1 within 0..15."""
@@ -133,12 +133,13 @@ class NoiseRule(Checks):
         self.close((n.low, n.high), (1.0 - tx.THRESHOLD_SPAN, 1.0))
 
     def test_unusable_size_and_type(self):
-        """A size not above 0 (or too small in meters) is the default, a type outside 0..2 regular: each a line."""
-        for size in (0.0, -3.0, 1e-9):
+        """A size not above 0, too small in meters or not a number is the default, a type outside 0..2 regular: each
+        a line."""
+        for size in (0.0, -3.0, 1e-9, float("nan")):
             with self.subTest(size):
                 g = _conv(_nz(p6=size)).convert(mat.MapRef(1), tx.COLOR)
-                self.close(g.root.mask.size, 0.25)
-                self.assertEqual(g.issues, ("Noise 'nz': size %r not converted: 25" % size,))
+                self.close(g.root.mask.size, 0.635)
+                self.assertEqual(g.issues, ("Noise 'nz': size %r not converted: 0.635 m" % size,))
         g = _conv(_nz(p11=7)).convert(mat.MapRef(1), tx.COLOR)
         self.assertEqual(g.root.mask.kind, tx.REGULAR)
         self.assertEqual(g.issues, ("Noise 'nz': type 7 drawn as regular",))
@@ -148,6 +149,23 @@ class NoiseRule(Checks):
         tex = tx.TexmapConverter(FakeGraph(_nz(p6=25.0)), _table())
         self.close(tex.meters, 0.0254)
         self.close(tex.convert(mat.MapRef(1), tx.COLOR).root.mask.size, 0.635)
+
+    def test_size_and_phase_held_by_controllers(self):
+        """A size or phase a controller holds: its value at frame 0, approximated as every such parameter; one that
+        cannot be read: the default, a line each."""
+        def leaf(values):
+            m = FakeMap(1, classids.NOISE, {6: pblock.Animated(30), 7: pblock.Animated(31)}, cls="Noise", name="nz")
+            m.blocks = {0: _TypedBlock(0, m.blocks[0]._params, {6: 0, 7: 0})}
+            graph = FakeGraph(m)
+            graph.scene = _ControllerScene(graph.objects, values)
+            return tx.TexmapConverter(graph, None, meters=CM).convert(mat.MapRef(1), tx.COLOR)
+        g = leaf({30: 40.0, 31: 2.0})
+        self.close((g.root.mask.size, g.root.mask.phase), (0.4, 2.0))
+        self.assertTrue(g.approximated)
+        g = leaf({})
+        self.close((g.root.mask.size, g.root.mask.phase), (0.635, 0.0))
+        self.assertEqual(len(g.issues), 2, g.issues)
+        self.assertTrue(all("its default used" in r for r in g.issues), g.issues)
 
     def test_sides(self):
         """Red and blue sides; map 2 used: the converted map on that side; switched off: its color. A data input:
@@ -229,7 +247,8 @@ class NoiseRule(Checks):
 class FixtureNoises(unittest.TestCase):
     """The committed fixtures that hold a Noise (pblock_animated, standard_shaders, vray_more, vray_texmaps): each one
     reached converts (approximated, never unsupported), stored size 635 in millimeters 0.635 m, regular, levels 3,
-    thresholds 0 and 1, on its stored coordinates (no offset, tiling 1, no angle)."""
+    thresholds 0 and 1, on its stored coordinates (no offset, tiling 1, no angle). The meters a converter is given
+    (the import's Units and Scale) win over the file's unit."""
 
     def test_fixtures(self):
         for name in ("pblock_animated", "standard_shaders", "vray_more", "vray_texmaps"):
@@ -241,14 +260,28 @@ class FixtureNoises(unittest.TestCase):
                     leaves = [leaf for ir in f.irs.values() for g in ir.textures.values()
                               for leaf in _noises(g.root)]
                     self.assertTrue(leaves)
+                    self.assertEqual(f.tex.meters, 0.001, "the file's unit, millimeters")
                     self.assertIn("Noise", f.tex.stats.approximated)
                     for leaf in leaves:
                         self.assertEqual((leaf.coords, leaf.phase, leaf.levels, leaf.low, leaf.high, leaf.kind),
                                          (tx.Coordinates(), 0.0, 3.0, 0.0, 1.0, tx.REGULAR))
-                        self.assertAlmostEqual(leaf.size, 635.0 * f.tex.meters)
+                        self.assertAlmostEqual(leaf.size, 0.635)
                     self.assertFalse([r for _i, r in f.tex.stats.issues if r.startswith("Noise")])
                 finally:
                     f.close()
+
+    def test_meters_given(self):
+        """vray_texmaps' Noise (size 635) with meters 0.002 (Units millimeters, Scale 2): 1.27 m."""
+        f = Fixture("vray_texmaps")
+        try:
+            tex = tx.TexmapConverter(f.graph, assets.AssetTable.from_file(f.cf), meters=0.002)
+            conv = mat.MaterialConverter(f.graph, texmaps=tex, meters=0.002)
+            ir = conv.convert(f.irs["FixtureCCNoise"].index)
+            leaves = [leaf for g in ir.textures.values() for leaf in _noises(g.root)]
+            self.assertEqual(len(leaves), 1)
+            self.assertAlmostEqual(leaves[0].size, 1.27)
+        finally:
+            f.close()
 
 
 def _noises(root):

@@ -233,7 +233,7 @@ class GammaOffChecker(Checks):
 
 class FixtureCheckers(unittest.TestCase):
     """The committed fixtures that hold a Checker (pblock_animated, standard_shaders, standard_maps, vray_more): each
-    one reached converts (no class without a rule but Noise), on its stored placement (tiling 1, no offset or angle)
+    one reached converts (no class without a rule), on its stored placement (tiling 1, no offset or angle)
     and black / white sides; pblock_animated's in a VRayNormalMap's normal slot is left out with its line."""
 
     def test_fixtures(self):

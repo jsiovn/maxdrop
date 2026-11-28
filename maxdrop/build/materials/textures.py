@@ -191,9 +191,8 @@ class _Textures:
         0.5, Lacunarity 2, no distortion; 4D with W the phase when there is one), a turbulence folded (|2 fac - 1|),
         then a clamped Map Range from the thresholds to 0..1. Every input set: the node's defaults are not 3ds
         Max's (Scale 5, Detail 2)."""
-        if "object" not in self.uvs:
-            self.uvs["object"] = _out(self.node("ShaderNodeTexCoord", depth + 5), "Object")
-        vector = self.placement(self.uvs["object"], tx.noise_placement(n), depth + 4)
+        coords = _out(self.uv(1, depth + 5).node, "Object")  # the Texture Coordinate node UV channel 1 uses
+        vector = self.placement(coords, tx.noise_placement(n), depth + 4)
         tex = self.node("ShaderNodeTexNoise", depth + 3)
         tex.noise_dimensions = '4D' if n.phase else '3D'
         tex.noise_type = 'FBM'

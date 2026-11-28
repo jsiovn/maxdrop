@@ -204,7 +204,8 @@ from .ids import (
     ChunkError, COLOR, DATA, MASK, NORMAL, BUMP, FLOATS, DATA_RGB, BUMP_RGB, _RGB_KINDS, _BASE_KINDS, STORED,
     STORED_RGB, _AS_STORED, SRGB, NON_COLOR, LINEAR, EXPLICIT, OBJECT_XYZ, VERTEX_COLOR, WORLD_XYZ, MAX_DEPTH,
     MAX_NODES, SRGB_GAMMA, GAMMA_TOLERANCE, SRGB_TWICE, FALLOFF, VRAY_DIRT, VRAY_COLOR2BUMP, OUTPUT, RGB_TINT, MIX,
-    RGB_MULTIPLY, COLOR_CORRECTION, COMPOSITE, CHECKER, NOISE, NORMAL_BUMP, CORONA_NORMAL, IMAGES, _NormalIds, NORMAL_MAPS,
+    RGB_MULTIPLY, COLOR_CORRECTION, COMPOSITE, CHECKER, NOISE, NORMAL_BUMP, CORONA_NORMAL, IMAGES, _NormalIds,
+    NORMAL_MAPS,
     NORMAL_BUMP_METHOD, CORONA_ADD_GAMMA, CB_FILE, CB_CHANNEL, CB_SCALE, CB_OFFSET, CB_BLUR, CB_TILE_U, CB_TILE_V,
     CB_REAL_WORLD, CB_MONO, CB_RGB, CB_CLIP_ON, CB_CLIP_MODE, CB_CLIP_U, CB_CLIP_V, CB_CLIP_W, CB_CLIP_H, CB_GAMMA,
     CB_W_ANGLE, CB_NO_TILE, CB_MIRROR, VB_FILE, VB_MULT, VB_MAP_TYPE, VB_GAMMA, VB_RENDER_MULT, VB_CROP_ON,
@@ -232,8 +233,8 @@ from .ids import (
 )
 from .ir import (
     Mapping, Crop, TexOutput, Image, Constant, Invert, Decode, Mix, Multiply, Blend, ColorCorrect, CompositeLayer,
-    Composite, Facing, Checker, Coordinates, Noise, Remap, Smoothstep, Adjust, Tint, Bump, NormalMap, TextureGraphIR, TexmapStats, _Walk,
-    _children,
+    Composite, Facing, Checker, Coordinates, Noise, Remap, Smoothstep, Adjust, Tint, Bump, NormalMap, TextureGraphIR,
+    TexmapStats, _Walk, _children,
     _has_decode, tree_size, first_image,
 )
 from .values import (

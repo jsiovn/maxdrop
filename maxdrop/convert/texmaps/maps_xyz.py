@@ -20,7 +20,7 @@ from .values import _num, _vec
 # of its vector (NOISE_SCALE), the XYZGen's order (offset, then tiling, then angle, about the object's origin), a
 # level as one octave (Detail = levels - 1), turbulence as the folded fBm and the thresholds as a clamped ramp.
 NOISE_SCALE = 1.0
-DEFAULT_SIZE = 25.0  # file units, 3ds Max's default: a size that is not above 0 (or below MIN_SIZE meters) takes it
+DEFAULT_SIZE = 0.635  # meters: 3ds Max's default, 25 inches (635 in a millimeter file); a size not read takes it
 MIN_SIZE = 1e-6  # meters
 MAX_DETAIL = 15.0  # the Noise Texture's Detail range is 0..15
 THRESHOLD_SPAN = 1e-3  # high threshold at least this above the low one: a step stays a ramp the Map Range can draw
@@ -58,11 +58,13 @@ def _coordinates(conv, m):
 
 
 def _noise_leaf(conv, m, walk):
-    """The Noise leaf of map m: size in meters (a controller's at frame 0, else the default, as every parameter),
+    """The Noise leaf of map m: size in meters (a controller's at frame 0, else DEFAULT_SIZE, as every parameter),
     phase, levels, its type (another than 0 to 2: regular, an issue) and thresholds within 0..1."""
-    size = _num(m, NZ_SIZE, DEFAULT_SIZE)
-    if not size * conv.meters >= MIN_SIZE:
-        conv._issue(walk, m.index, "Noise %r: size %r not converted: %g" % (m.name, m.param(NZ_SIZE, 0), DEFAULT_SIZE))
+    stored = m.param(NZ_SIZE, 0)
+    size = _num(m, NZ_SIZE, 0.0) * conv.meters
+    if not size >= MIN_SIZE:
+        if isinstance(stored, (int, float)) and not isinstance(stored, bool):  # a controller's has its own line
+            conv._issue(walk, m.index, "Noise %r: size %r not converted: %g m" % (m.name, stored, DEFAULT_SIZE))
         size = DEFAULT_SIZE
     ntype = m.param(NZ_TYPE, 0)
     kind = NOISE_TYPES.get(ntype, REGULAR) if isinstance(ntype, int) and not isinstance(ntype, bool) else REGULAR
@@ -72,8 +74,7 @@ def _noise_leaf(conv, m, walk):
     if high < low + THRESHOLD_SPAN:
         high = min(1.0, low + THRESHOLD_SPAN)
         low = high - THRESHOLD_SPAN
-    return Noise(_coordinates(conv, m), size * conv.meters, _num(m, NZ_PHASE, 0.0), _num(m, NZ_LEVELS, 3.0), low,
-                 high, kind)
+    return Noise(_coordinates(conv, m), size, _num(m, NZ_PHASE, 0.0), _num(m, NZ_LEVELS, 3.0), low, high, kind)
 
 
 def _noise(conv, m, kind, walk, depth, chain):
