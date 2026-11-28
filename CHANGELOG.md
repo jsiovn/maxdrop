@@ -34,6 +34,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
   Cycles (an IES Texture node on a point light, the file kept inside the .blend), instead of a spot of 170 degrees; a
   VRayIES as bright as V-Ray 5.2 lights it (V-Ray's and Blender's rules measured apart), a web light's strength and
   azimuth not measured yet. EEVEE draws a plain point light of the light's flux.
+- Materials: a material that lets light through from behind (a VRay2SidedMtl's translucency) shows that light in EEVEE
+  as in Cycles, on Blender 4.2, 4.5 and 5.2 (a thickness of 0 on its Material Output, measured); it renders Dithered,
+  also at an opacity below 1, as EEVEE's Blended method lets no light through from behind.
 
 ## [1.0.2] - 2026-11-25
 

@@ -2549,6 +2549,30 @@ as VRayBlendMtl's blend map is taken, is maxdrop-o53.3.2's); V-Ray's per-channel
 (MaxDrop takes the mean, a line in the report), mult_by_front_diffuse (a line in the report) and force1SidedSubMtls
 (not read). The engines' settings for thin surfaces are maxdrop-o53.1.10's.
 
+Two-sided in both engines (maxdrop-o53.1.10, measured, a scratch script outside the repository, Blender headless):
+a 4 x 4 m plane (front +Z), a 2 m square area light of 100 W 1 m behind it shining at its back, an orthographic camera
+(1 m across) 2 m in front of it, a black world, 8 x 8 px, Standard view; Cycles 256 samples (CPU, no denoising), EEVEE
+32 samples; the builder's material of base color 0.8, translucency color 0.8, translucency 0.5 against 0: the mean
+red. Translucency 0 renders 0.0000 everywhere. "Without" is the same material with its Thickness link removed (as
+maxdrop-o53.1.7 built it; at alpha 0.5 that build was Blended: 0.0506 on 4.5.16 and 5.2, 0.2023 on 4.2.23):
+
+| Blender | Cycles | EEVEE, the builder's | EEVEE without | Cycles, alpha 0.5 | EEVEE, alpha 0.5 | EEVEE without, alpha 0.5 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 4.2.23 | 1.6435 | 1.6287 | 4.5939 | 0.8222 | 0.7882 | 0.0793 |
+| 4.5.16 | 1.6435 | 1.6479 | 4.6515 | 0.8222 | 0.7936 | 0.0802 |
+| 5.2.0 | 1.6435 | 1.6486 | 0.1213 | 0.8222 | 0.7940 | 0.0803 |
+
+The setting is a Value of 0 (THIN_LABEL) on the Material Output's Thickness (compat.thin_surface; the socket and the
+material's Thickness Mode exist on all three versions): EEVEE then takes the surface as infinitely thin. Thickness
+Mode changes nothing once the thickness is 0 (Sphere and Slab gave the same numbers), so it is left at Sphere; Slab
+alone, or Thickness From Shadow, does not do it (Slab: 0.6560 / 4.7345 / 0.3817). With a constant alpha below 1 the
+builder's Blended method shows no light from behind with the thickness 0 (0.0000 on each version): a material with a
+translucency renders Dithered, as with an alpha map. Lit from the front instead (a sun of 3 W/m2 at 45 degrees),
+translucency 0.5: Cycles 0.2675, EEVEE 0.2676 / 0.2678 / 0.2681 (without the setting 0.3162 / 0.3164 / 0.3167);
+translucency 0: 0.5350 and 0.5352 / 0.5352 / 0.5356. Not measured: what EEVEE's refraction and subsurface make of
+the thickness 0 on the same material, and 4.3, 4.4, 5.0 and 5.1. Provisional until maxdrop-o53.3.2 has V-Ray's
+numbers for the same plane.
+
 ## Asset metadata
 
 - The files a scene names are listed in the stream `FileAssetMetaData3` (every fixture; empty, 0 bytes, when the
