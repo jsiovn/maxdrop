@@ -7,8 +7,9 @@ import contextlib
 import dataclasses
 import math
 
-from ...reader import classids
+from ...reader import classids, units
 from ...reader import materials as reader_materials
+from ...reader import scene as reader_scene
 from ...reader.classdir import ClassId
 from .. import colors, params
 from ..params import finite as _finite
@@ -16,8 +17,9 @@ from .ids import (
     _IMAGE_FILES, BM_APPLY, BM_CLIP_H, BM_CLIP_U, BM_CLIP_V, BM_CLIP_W, BM_CROP_PLACE, BM_FILE, BM_MONO, BM_RGB, BUMP,
     CB_BLUR, CB_CHANNEL, CB_CLIP_H, CB_CLIP_MODE, CB_CLIP_ON, CB_CLIP_U, CB_CLIP_V, CB_CLIP_W, CB_GAMMA, CB_MIRROR,
     CB_MONO, CB_NO_TILE, CB_OFFSET, CB_REAL_WORLD, CB_RGB, CB_SCALE, CB_TILE_U, CB_TILE_V, CB_W_ANGLE, ChunkError,
-    COLOR, CORONA_ADD_GAMMA, CORONA_NORMAL, DISPLAY_MIXES, EXPLICIT, FLOAT_IMAGES, FLOATS, IMAGES, MASK, MASK_MIXES,
-    MAX_DEPTH, MAX_MULTIPLIER, MAX_NODES, NON_COLOR, NORMAL, NORMAL_BUMP, NORMAL_BUMP_METHOD, NORMAL_MAPS, OBJECT_XYZ,
+    COLOR, CORONA_ADD_GAMMA, CORONA_NORMAL, DEFAULT_METERS, DISPLAY_MIXES, EXPLICIT, FLOAT_IMAGES, FLOATS, IMAGES,
+    MASK, MASK_MIXES, MAX_DEPTH, MAX_MULTIPLIER, MAX_NODES, NON_COLOR, NORMAL, NORMAL_BUMP, NORMAL_BUMP_METHOD,
+    NORMAL_MAPS, OBJECT_XYZ,
     OUT_AMOUNT, OUT_LEVEL, OUT_OFFSET, SRGB_GAMMA, STORED, STORED_RGB, UV_BLUR, UV_U_ANGLE, UV_U_OFFSET, UV_U_TILING,
     UV_V_ANGLE, UV_V_OFFSET, UV_V_TILING, UV_W_ANGLE, VB_ACESCG, VB_AUTOMATIC, VB_COLOR_SPACE, VB_CROP_H, VB_CROP_MODE,
     VB_CROP_ON, VB_CROP_U, VB_CROP_V, VB_CROP_W, VB_FROM_MAX, VB_GAMMA, VB_INTENSITY, VB_INVERSE_GAMMA, VB_LINEAR,
@@ -39,10 +41,13 @@ class TexmapConverter:
     """Converts the maps of one MaterialGraph; assets: the scene's reader.assets.AssetTable (None: no file is
     known); textures: a convert.textures.TextureIndex to look each file up (None: no lookup); swatches: the
     colors.Swatches rule of the scene (None: read from graph's scene); renderer: the scene's renderer ClassID
-    (reader.metadata's renderer class_id; None: not known), for the rules a renderer changes (corona)."""
+    (reader.metadata's renderer class_id; None: not known), for the rules a renderer changes (corona); meters: per
+    file unit, as the geometry is scaled (a 3D map's size and offset; None: the file's own unit, DEFAULT_METERS when
+    it says none)."""
 
-    def __init__(self, graph, assets=None, textures=None, swatches=None, renderer=None):
+    def __init__(self, graph, assets=None, textures=None, swatches=None, renderer=None, meters=None):
         self.graph, self.assets, self.textures = params.at_frame_zero(graph, self._heard), assets, textures
+        self.meters = meters if meters is not None else _scene_meters(graph)
         self.swatches = swatches if swatches is not None else colors.of_graph(graph)
         self.corona = renderer is not None and tuple(renderer) == CORONA_RENDERER
         self.stats = TexmapStats()
@@ -74,6 +79,13 @@ class TexmapConverter:
         heard = params.hearing(self._heard, m.index, "%r %s" % (m.name, what))
         v = params.old_value(self.graph.scene, part, index, heard, number=True)
         return float(v) if _finite(v) else default
+
+    def _old_vec(self, part, index, default, m, what):
+        """A Point3 of a part's old ParamBlock (params.old_value), default when it holds no three finite numbers."""
+        heard = params.hearing(self._heard, m.index, "%r %s" % (m.name, what))
+        v = params.old_value(self.graph.scene, part, index, heard)
+        ok = isinstance(v, tuple) and len(v) >= 3 and all(_finite(c) for c in v[:3])
+        return tuple(float(c) for c in v[:3]) if ok else default
 
     def _issue(self, walk, index, reason):
         self.note(index, reason)
@@ -569,6 +581,13 @@ class TexmapConverter:
         channel = channel if isinstance(channel, int) and not isinstance(channel, bool) and 0 <= channel <= 99 else 1
         return NormalMap(normal, max(0.0, _num(m, ids.strength, 1.0)), _flag(m, ids.flip_red, False),
                          _flag(m, ids.flip_green, False), _flag(m, ids.swap, False), bump, channel)
+
+
+def _scene_meters(graph):
+    """Meters per system unit of a MaterialGraph's scene: what the file says, else DEFAULT_METERS."""
+    s = getattr(graph, "scene", None)
+    unit = units.system_unit(s) if isinstance(s, reader_scene.Scene) else None
+    return unit.meters if unit is not None else DEFAULT_METERS
 
 
 def _add_gamma(image):

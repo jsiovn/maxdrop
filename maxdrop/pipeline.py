@@ -58,7 +58,8 @@ def _material_slots(sc, desc, table, index, meters=None, renderer=None):
     from .reader import materials as reader_materials
     graph = reader_materials.MaterialGraph(sc)
     swatches = convert_colors.of_scene(sc)
-    tex = convert_texmaps.TexmapConverter(graph, table, textures=index, swatches=swatches, renderer=renderer)
+    tex = convert_texmaps.TexmapConverter(graph, table, textures=index, swatches=swatches, renderer=renderer,
+                                          meters=meters)
     conv = convert_materials.MaterialConverter(graph, texmaps=tex, swatches=swatches, meters=meters)
     slots = convert_materials.assign(desc, convert_materials.node_materials(sc, desc), conv)
     return slots, (conv.stats, tex.stats, index.report, swatches)

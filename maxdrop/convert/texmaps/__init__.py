@@ -6,7 +6,8 @@
 
     tex = TexmapConverter(graph, assets, textures=index, swatches=sw)   # MaterialGraph, AssetTable, optional
                                         # TextureIndex, colors.Swatches (default: read from graph's scene),
-                                        # renderer= the scene's renderer ClassID (None: not known)
+                                        # renderer= the scene's renderer ClassID (None: not known), meters= per
+                                        # file unit (None: the file's own unit)
     g = tex.convert(map_ref, kind, value)   # TextureGraphIR, None when nothing usable drives the input
     g.root, g.kind, g.approximated, g.issues
     graphs = texture_graphs(ir, tex)        # {MaterialIR input name: TextureGraphIR}
@@ -85,7 +86,8 @@ found, Mapping, Crop, TexOutput, color space, gamma, alpha), Constant, Invert, D
 stored values, shown decoded), Mix(a, b, factor, mask), Multiply,
 Blend (an arithmetic operation, optionally in a gamma space),
 ColorCorrect (with its rewiring), Composite (CompositeLayers bottom first: node, opacity, blend mode, mask), Facing
-(a Falloff's ratio), Checker (a Checker's 0 / 1 pattern on its placement),
+(a Falloff's ratio), Checker (a Checker's 0 / 1 pattern on its placement), Noise (a Noise's pattern on its
+Coordinates, lengths in meters),
 Remap (a float through a polyline: a Falloff's mix curve), Smoothstep (a Mix's curve on its
 mask), Adjust (a wrapper's Output), Tint, NormalMap (an image, its strength, flips, the map channel of
 its tangents, an additional Bump) and Bump (a height input and its strength). A map reached by
@@ -139,6 +141,12 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
 - Checker -> Mix(side 1, side 2) by a Checker leaf on its UVGen's placement (maps_pattern: checker_value, the
   formula the builder draws), exact, not counted; in a bump input the Bump of the pattern, in a normal map's normal
   slot nothing (an issue). Its origin color, squares per tile and soften are not measured (maxdrop-o53.3.9).
+- Noise -> Mix(side 1, side 2) by a Noise leaf (maps_xyz) under its Output part, as a Falloff (also in a gamma-off
+  scene: MASK_MIXES), approximated and counted in stats.approximated: Blender's Noise Texture on the object's
+  coordinates (its XYZGen's offset, tiling and angle; the coordinate source is not decoded, drawn as Object XYZ),
+  its size in meters (TexmapConverter's meters), levels as octaves (fractal, turbulence), the thresholds as a
+  clamped ramp; in a bump input with black and white sides the Bump of the leaf, in a normal map's normal slot
+  nothing (an issue). Its scale, octaves and thresholds are not measured (maxdrop-o53.3.10).
 - Peeled to the first usable map below, an approximation counted by class: VRayDirt (the unoccluded map when on,
   else the unoccluded color), VRayColor2Bump (its map). An Output or RGB Tint without a map (or with it off) is
   drawn as over a white map, its own Output or tint applied; a VRayColor2Bump without a map (it has no switch) is
@@ -196,7 +204,7 @@ from .ids import (
     ChunkError, COLOR, DATA, MASK, NORMAL, BUMP, FLOATS, DATA_RGB, BUMP_RGB, _RGB_KINDS, _BASE_KINDS, STORED,
     STORED_RGB, _AS_STORED, SRGB, NON_COLOR, LINEAR, EXPLICIT, OBJECT_XYZ, VERTEX_COLOR, WORLD_XYZ, MAX_DEPTH,
     MAX_NODES, SRGB_GAMMA, GAMMA_TOLERANCE, SRGB_TWICE, FALLOFF, VRAY_DIRT, VRAY_COLOR2BUMP, OUTPUT, RGB_TINT, MIX,
-    RGB_MULTIPLY, COLOR_CORRECTION, COMPOSITE, CHECKER, NORMAL_BUMP, CORONA_NORMAL, IMAGES, _NormalIds, NORMAL_MAPS,
+    RGB_MULTIPLY, COLOR_CORRECTION, COMPOSITE, CHECKER, NOISE, NORMAL_BUMP, CORONA_NORMAL, IMAGES, _NormalIds, NORMAL_MAPS,
     NORMAL_BUMP_METHOD, CORONA_ADD_GAMMA, CB_FILE, CB_CHANNEL, CB_SCALE, CB_OFFSET, CB_BLUR, CB_TILE_U, CB_TILE_V,
     CB_REAL_WORLD, CB_MONO, CB_RGB, CB_CLIP_ON, CB_CLIP_MODE, CB_CLIP_U, CB_CLIP_V, CB_CLIP_W, CB_CLIP_H, CB_GAMMA,
     CB_W_ANGLE, CB_NO_TILE, CB_MIRROR, VB_FILE, VB_MULT, VB_MAP_TYPE, VB_GAMMA, VB_RENDER_MULT, VB_CROP_ON,
@@ -213,6 +221,8 @@ from .ids import (
     FO_AMOUNT1, FO_MAP1, FO_ON1, FO_COLOR2, FO_AMOUNT2, FO_MAP2, FO_ON2, FO_TYPE, FO_DIRECTION, FO_IOR_OVERRIDE, FO_IOR,
     TOWARDS, PERPENDICULAR, FRESNEL, FALLOFF_TYPES, CURVE_STEPS, CURVE_IDENTITY, MAX_CURVE_SAMPLES, MIX_LOWER,
     MIX_UPPER, CK_SOFTEN, CK_COLOR1, CK_COLOR2, CK_MAP1, CK_MAP2, CK_ON1, CK_ON2,
+    NZ_COLOR1, NZ_COLOR2, NZ_MAP1, NZ_MAP2, NZ_ON1, NZ_ON2, NZ_SIZE, NZ_PHASE, NZ_LEVELS, NZ_LOW, NZ_HIGH, NZ_TYPE,
+    REGULAR, FRACTAL, TURBULENCE, NOISE_TYPES, XYZ_OFFSET, XYZ_TILING, XYZ_ANGLE, DEFAULT_METERS,
     NORMAL_BLEND, AVERAGE, ADDITION, SUBTRACT, DARKEN, MULTIPLY_BLEND, COLOR_BURN, LINEAR_BURN, LIGHTEN,
     SCREEN, COLOR_DODGE, LINEAR_DODGE, SPOTLIGHT, SPOTLIGHT_BLEND, OVERLAY, SOFT_LIGHT, HARD_LIGHT, PIN_LIGHT, HARD_MIX,
     DIFFERENCE, EXCLUSION, HUE, SATURATION, COLOR_BLEND, VALUE, BLENDS, CC_REWIRE_MODE, CC_REWIRE, REWIRE_NONE,
@@ -222,7 +232,7 @@ from .ids import (
 )
 from .ir import (
     Mapping, Crop, TexOutput, Image, Constant, Invert, Decode, Mix, Multiply, Blend, ColorCorrect, CompositeLayer,
-    Composite, Facing, Checker, Remap, Smoothstep, Adjust, Tint, Bump, NormalMap, TextureGraphIR, TexmapStats, _Walk,
+    Composite, Facing, Checker, Coordinates, Noise, Remap, Smoothstep, Adjust, Tint, Bump, NormalMap, TextureGraphIR, TexmapStats, _Walk,
     _children,
     _has_decode, tree_size, first_image,
 )
@@ -242,5 +252,9 @@ from .maps_color import (
     _corona_peel, _gamma_value, _corona_mix,
 )
 from .maps_pattern import BLACK, CHECKER_SQUARES, _rotation, placed_uv, checker_value, _pattern_mapping, _checker
+from .maps_xyz import (
+    NOISE_SCALE, DEFAULT_SIZE, MIN_SIZE, MAX_DETAIL, THRESHOLD_SPAN, noise_placement, noise_detail, _coordinates,
+    _noise_leaf, _noise,
+)
 from .dispatch import _KEEP, _PEEL, SLOT_KINDS
 from .graphs import MEAN_ROW, _kept, _leveled, texture_graphs

@@ -158,18 +158,24 @@ class VRayTexmaps(Checks):
         self.assertEqual(textures["specular"].root,
                          tx.Decode(tx.Mix(black, white, 0.0, tx.Facing(tx.PERPENDICULAR))))
 
-    def test_color_correction_over_an_unsupported_map(self):
-        ir = self.f.irs["FixtureCCNoise"]
-        self.assertNotIn("base_color", ir.textures, "the material's own diffuse, not the Color Correction's black")
-        issues = [r for i, r in self.f.tex.stats.issues if "converts to nothing" in r]
-        self.assertEqual(len(issues), 1, issues)
-        self.assertIn("Color Correction", issues[0])
-        self.assertIn("Noise", issues[0])
+    def test_color_correction_over_a_noise(self):
+        """The Noise below a Color Correction is a Mix of black and white by its leaf, computed on the stored values
+        under one Decode (the gamma is off), approximated."""
+        g = self.f.irs["FixtureCCNoise"].textures["base_color"]
+        self.assertIsInstance(g.root, tx.Decode)
+        cc = g.root.input
+        self.assertIsInstance(cc, tx.ColorCorrect)
+        self.assertIsInstance(cc.input, tx.Mix)
+        self.assertEqual((cc.input.a, cc.input.b), (tx.Constant((0.0,) * 3), tx.Constant((1.0,) * 3)))
+        self.assertIsInstance(cc.input.mask, tx.Noise)
+        self.assertTrue(g.approximated)
+        self.assertFalse([r for _i, r in self.f.tex.stats.issues if "converts to nothing" in r])
 
     def test_peeled_and_unsupported_classes(self):
-        # the Noise below a Color Correction converts to nothing
+        # the Noise below a Color Correction is drawn with Blender's own pattern
         self.assertEqual(self.f.tex.stats.peeled, collections.Counter())
-        self.assertEqual(self.f.tex.stats.unsupported, collections.Counter({"Noise": 1}))
+        self.assertEqual(self.f.tex.stats.unsupported, collections.Counter())
+        self.assertEqual(self.f.tex.stats.approximated, collections.Counter({"Noise": 1}))
 
     def test_rgb_color_space_is_read_from_block_3(self):
         m = self.f.graph.get(self.f.irs["FixtureVBNormal"].textures["normal"].root.input.index)

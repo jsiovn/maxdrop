@@ -6,7 +6,7 @@
 import collections
 import dataclasses
 
-from .ids import EXPLICIT, NORMAL_BLEND, PERPENDICULAR, REWIRE_NONE, SRGB
+from .ids import EXPLICIT, NORMAL_BLEND, OBJECT_XYZ, PERPENDICULAR, REGULAR, REWIRE_NONE, SRGB
 
 
 @dataclasses.dataclass(frozen=True)
@@ -167,6 +167,31 @@ class Checker:
     the UV its Mapping places; soften as stored (drawn as 0). A leaf: the Mix above it holds the two sides."""
     mapping: Mapping = Mapping()
     soften: float = 0.0
+
+
+@dataclasses.dataclass(frozen=True)
+class Coordinates:
+    """How a 3D map (an XYZGen part) is laid in space: source (OBJECT_XYZ, the one drawn), map channel, offset (meters),
+    tiling and angle (X, Y, Z in radians)."""
+    source: int = OBJECT_XYZ
+    channel: int = 1
+    offset: tuple = (0.0, 0.0, 0.0)
+    tiling: tuple = (1.0, 1.0, 1.0)
+    angle: tuple = (0.0, 0.0, 0.0)
+
+
+@dataclasses.dataclass(frozen=True)
+class Noise:
+    """A Noise map's pattern, a float 0..1: Blender's Noise Texture on its Coordinates at its size (meters), phase,
+    levels, kind (REGULAR, FRACTAL, TURBULENCE) and thresholds low < high (noise_placement, noise_detail). A leaf: the
+    Mix above it holds the two sides."""
+    coords: Coordinates = Coordinates()
+    size: float = 0.635
+    phase: float = 0.0
+    levels: float = 3.0
+    low: float = 0.0
+    high: float = 1.0
+    kind: str = REGULAR
 
 
 @dataclasses.dataclass(frozen=True)
