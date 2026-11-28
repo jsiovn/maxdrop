@@ -10,9 +10,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ### Added
 
-- Maps: a Checker is drawn as nodes in every kind of slot (its two colors or maps mixed by the pattern on its
-  placement, the pattern as the height in a bump slot), instead of "no bitmap below"; the size of its squares,
-  which color is at the UV origin and soften are not measured against 3ds Max yet.
+- Maps: a Checker is drawn as nodes in color, data and bump slots (its two colors or maps mixed by the pattern on its
+  placement), instead of "no bitmap below"; in a normal map's normal slot it is left out, a line in the report. The
+  size of its squares, which color is at the UV origin and soften are not measured against 3ds Max yet.
 
 ### Changed
 

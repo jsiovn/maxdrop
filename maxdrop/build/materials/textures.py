@@ -161,7 +161,8 @@ class _Textures:
         """A Checker leaf's pattern, a float socket (texmaps.checker_value, drawn): the UV placed as a Bitmap's
         and scaled by the squares per tile (one Mapping node: k (L + R S uv) is kL + R (kS) uv), the parity of
         floor(x) + floor(y) by a Math WRAP to 0..2 (0 or 1, also below 0). Math nodes, so that the tests' node
-        evaluator reads the pattern without a render."""
+        evaluator reads the pattern without a render. Its map channel is 1 or more: texmaps reported a channel 0 and
+        drew it on UV channel 1, so self.channel() has nothing to say here."""
         k = tx.CHECKER_SQUARES
         location, rotation, scale = uv_transform(n.mapping) or ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), (1.0, 1.0, 1.0))
         vector = self.placement(self.uv(n.mapping.channel, depth + 5),

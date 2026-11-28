@@ -85,7 +85,8 @@ found, Mapping, Crop, TexOutput, color space, gamma, alpha), Constant, Invert, D
 stored values, shown decoded), Mix(a, b, factor, mask), Multiply,
 Blend (an arithmetic operation, optionally in a gamma space),
 ColorCorrect (with its rewiring), Composite (CompositeLayers bottom first: node, opacity, blend mode, mask), Facing
-(a Falloff's ratio), Checker (a Checker's 0 / 1 pattern on its placement), Remap (a float through a polyline: a Falloff's mix curve), Smoothstep (a Mix's curve on its
+(a Falloff's ratio), Checker (a Checker's 0 / 1 pattern on its placement),
+Remap (a float through a polyline: a Falloff's mix curve), Smoothstep (a Mix's curve on its
 mask), Adjust (a wrapper's Output), Tint, NormalMap (an image, its strength, flips, the map channel of
 its tangents, an additional Bump) and Bump (a height input and its strength). A map reached by
 several paths is converted once per kind and depth, so a graph is a DAG of shared nodes; a graph larger than
@@ -211,7 +212,8 @@ from .ids import (
     BM_CLIP_U, BM_CLIP_V, BM_CLIP_W, BM_CLIP_H, BM_APPLY, BM_CROP_PLACE, BM_MONO, BM_RGB, BM_FILE, FO_COLOR1,
     FO_AMOUNT1, FO_MAP1, FO_ON1, FO_COLOR2, FO_AMOUNT2, FO_MAP2, FO_ON2, FO_TYPE, FO_DIRECTION, FO_IOR_OVERRIDE, FO_IOR,
     TOWARDS, PERPENDICULAR, FRESNEL, FALLOFF_TYPES, CURVE_STEPS, CURVE_IDENTITY, MAX_CURVE_SAMPLES, MIX_LOWER,
-    MIX_UPPER, CK_SOFTEN, CK_COLOR1, CK_COLOR2, CK_MAP1, CK_MAP2, CK_ON1, CK_ON2, NORMAL_BLEND, AVERAGE, ADDITION, SUBTRACT, DARKEN, MULTIPLY_BLEND, COLOR_BURN, LINEAR_BURN, LIGHTEN,
+    MIX_UPPER, CK_SOFTEN, CK_COLOR1, CK_COLOR2, CK_MAP1, CK_MAP2, CK_ON1, CK_ON2,
+    NORMAL_BLEND, AVERAGE, ADDITION, SUBTRACT, DARKEN, MULTIPLY_BLEND, COLOR_BURN, LINEAR_BURN, LIGHTEN,
     SCREEN, COLOR_DODGE, LINEAR_DODGE, SPOTLIGHT, SPOTLIGHT_BLEND, OVERLAY, SOFT_LIGHT, HARD_LIGHT, PIN_LIGHT, HARD_MIX,
     DIFFERENCE, EXCLUSION, HUE, SATURATION, COLOR_BLEND, VALUE, BLENDS, CC_REWIRE_MODE, CC_REWIRE, REWIRE_NONE,
     REWIRE_INVERT, REWIRE_MONO, RW_ALPHA, RW_INV_ALPHA, RW_MONO, RW_ONE, RW_ZERO, TINT_RED, TINT_GREEN, TINT_BLUE,
@@ -220,7 +222,8 @@ from .ids import (
 )
 from .ir import (
     Mapping, Crop, TexOutput, Image, Constant, Invert, Decode, Mix, Multiply, Blend, ColorCorrect, CompositeLayer,
-    Composite, Facing, Checker, Remap, Smoothstep, Adjust, Tint, Bump, NormalMap, TextureGraphIR, TexmapStats, _Walk, _children,
+    Composite, Facing, Checker, Remap, Smoothstep, Adjust, Tint, Bump, NormalMap, TextureGraphIR, TexmapStats, _Walk,
+    _children,
     _has_decode, tree_size, first_image,
 )
 from .values import (

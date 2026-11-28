@@ -20,8 +20,8 @@ if _TESTS not in sys.modules:
     _tests.__path__ = [os.path.dirname(os.path.abspath(__file__))]
     sys.modules[_TESTS] = _tests
 from maxdrop_unit_tests.texmaps_support import (  # noqa: E402 (after the loader)
-    _bitmap, _noise, _tex, _vnormal, Checks, classids, FakeMap, FakeOld, FakeGraph, Fixture, mat, reader_materials,
-    Ref, tx, UVGEN_OBJECT,
+    _bitmap, _decodes, _noise, _table, _tex, _vnormal, _wtint, Checks, classids, colors, FakeMap, FakeOld, FakeGraph,
+    Fixture, mat, reader_materials, Ref, tx, UVGEN_OBJECT,
 )
 
 RED, BLUE = (1.0, 0.0, 0.0), (0.0, 0.0, 1.0)
@@ -126,20 +126,36 @@ class CheckerRule(Checks):
         self.assertIsInstance(mask.mask, tx.Checker)
 
     def test_bump_input(self):
-        """A bump input: the Bump of the pattern itself; sides other than black and white are a line."""
+        """A bump input: black to white the Bump of the pattern itself; other sides the Bump of the Mix of their
+        heights (each swatch's mean, a side map's height), exact, as a Mix's."""
         tex = _tex(_checker())
         g = tex.convert(mat.MapRef(1, 0.4), tx.BUMP)
         self.assertIsInstance(g.root, tx.Bump)
         self.assertIsInstance(g.root.input, tx.Checker)
         self.close(g.root.strength, 0.4)
         self.assertEqual(g.issues, ())
-        for params in (dict(p1=RED), dict(p2=BLUE), dict(p3=Ref(2))):
-            with self.subTest(params):
-                tex = _tex(_checker(**params), _bitmap(2))
-                g = tex.convert(mat.MapRef(1), tx.BUMP)
-                self.assertIsInstance(g.root.input, tx.Checker)
-                self.assertEqual(g.issues, ("Checker 'ck': its sides in a bump input not converted: drawn black to "
-                                            "white",))
+        g = _tex(_checker(p1=RED, p2=(0.6, 0.6, 0.6))).convert(mat.MapRef(1), tx.BUMP)
+        mix = g.root.input
+        self.assertIsInstance(mix, tx.Mix)
+        self.close((mix.a.value, mix.b.value), (1 / 3, 0.6))
+        self.assertIsInstance(mix.mask, tx.Checker)
+        self.assertEqual(g.issues, ())
+        g = _tex(_checker(p3=Ref(2)), _bitmap(2)).convert(mat.MapRef(1), tx.BUMP)
+        self.assertIsInstance(g.root.input.a, tx.Image, "a side map's height")
+        self.close(g.root.input.b.value, 1.0)
+        self.assertFalse(g.approximated)
+
+    def test_below_a_color_wrapper(self):
+        """Below an RGB Tint in a bump or data input (BUMP_RGB, DATA_RGB) the Mix of its sides' channels as stored:
+        the Tint acts on the color, the mean comes after it."""
+        for kind in (tx.BUMP, tx.DATA):
+            with self.subTest(kind):
+                g = _tex(_wtint(1, 2), _checker(2, p1=RED, p2=BLUE)).convert(mat.MapRef(1), kind)
+                tint = g.root.input if kind == tx.BUMP else g.root
+                self.assertIsInstance(tint, tx.Tint)
+                self.assertIsInstance(tint.input, tx.Mix)
+                self.close((tint.input.a.value, tint.input.b.value), (RED, BLUE))
+                self.assertIsInstance(tint.input.mask, tx.Checker)
 
     def test_normal_slot(self):
         """In a normal map's normal slot: left out with an issue, no graph, not counted as without a rule."""
@@ -171,7 +187,6 @@ class CheckerRule(Checks):
             "Checker 'ck': map channel 0 (vertex color) not imported: drawn on UV channel 1"))
 
 
-
 def _checkers(root):
     """The Checker leaves of a graph and the Mix nodes masked by one."""
     seen, stack, leaves, mixes = set(), [root], [], []
@@ -186,6 +201,34 @@ def _checkers(root):
             mixes.append(n)
         stack.extend(tx._children(n))
     return leaves, mixes
+
+
+class GammaOffChecker(Checks):
+    """With the gamma off a Checker is not computed on the stored values under a Decode, as a Mix of two colors is:
+    its 0 / 1 mask picks one side, the same decoded before or after. Below such a Mix it is in STORED with the rest."""
+
+    def _root(self, *objects):
+        tex = tx.TexmapConverter(FakeGraph(*objects), _table(), swatches=colors.GAMMA_OFF)
+        return tex.convert(mat.MapRef(objects[0].index), tx.COLOR).root
+
+    def test_at_a_color_root(self):
+        root = self._root(_checker(p1=(0.5, 0.5, 0.5), p2=BLUE))
+        self.assertIsInstance(root, tx.Mix)
+        self.close(root.a.value, (colors.srgb_to_linear(0.5),) * 3, "a decoded swatch")
+        self.close(root.b.value, BLUE)
+        self.assertIsInstance(root.mask, tx.Checker)
+        self.assertEqual(_decodes(root), [], "no Decode")
+
+    def test_below_a_mix_of_two_colors(self):
+        g40, g220 = (40 / 255,) * 3, (220 / 255,) * 3
+        mix = FakeMap(1, tx.MIX, {0: 0.5, 5: g220, 6: Ref(2)}, [2], cls="Mix")
+        root = self._root(mix, _checker(2, p1=g40, p2=g220))
+        self.assertEqual(len(_decodes(root)), 1)
+        held = self.held(root)
+        self.assertIsInstance(held, tx.Mix)
+        checker = held.a
+        self.assertIsInstance(checker.mask, tx.Checker)
+        self.close((checker.a.value, checker.b.value), (g40, g220), "its sides as stored")
 
 
 class FixtureCheckers(unittest.TestCase):

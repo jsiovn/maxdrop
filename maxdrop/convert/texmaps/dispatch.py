@@ -5,7 +5,8 @@
 """The map rules by ClassID (kept, peeled) and the kind of each material slot."""
 from ...reader import classids
 from .ids import (
-    CHECKER, COLOR, COLOR_CORRECTION, COMPOSITE, DATA, FALLOFF, MIX, OUTPUT, RGB_MULTIPLY, RGB_TINT, VRAY_COLOR2BUMP, VRAY_DIRT,
+    CHECKER, COLOR, COLOR_CORRECTION, COMPOSITE, DATA, FALLOFF, MIX, OUTPUT, RGB_MULTIPLY, RGB_TINT, VRAY_COLOR2BUMP,
+    VRAY_DIRT,
 )
 from .maps import (
     _color2bump, _color_correction, _composite, _falloff, _mix, _output_map, _rgb_multiply, _rgb_tint, _vray_dirt,

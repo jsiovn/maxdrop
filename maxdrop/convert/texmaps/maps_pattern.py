@@ -64,9 +64,9 @@ def _checker(conv, m, kind, walk, depth, chain):
     """0 soften, 1 / 2 color1 / 2, 3 / 4 map1 / 2, 5 / 6 their switches, 7 coords: Mix(side 1, side 2) by the Checker
     leaf (side k: map k when used, else color k). Exact: the mask is 0 or 1, so the sides stay in the input's kind
     also with the gamma off (decoding before or after picking one side is the same; not so once soften is drawn).
-    A soften above 0 is drawn as 0 (an issue). In a bump input the Bump of the pattern itself, its sides a line when
-    they are not black and white; in a normal map's normal slot nothing (an issue). A used map that converts to
-    nothing: the other side's map (a peel)."""
+    A soften above 0 is drawn as 0 (an issue). In a bump input with black and white sides the Bump of the pattern
+    itself, with other sides the Mix of their heights (as a Mix's); in a normal map's normal slot nothing (an issue).
+    A used map that converts to nothing: the other side's map (a peel)."""
     if kind == NORMAL:
         conv._issue(walk, m.index, "Checker %r: a pattern in a normal map's normal slot not converted" % (m.name,))
         return None
@@ -75,12 +75,9 @@ def _checker(conv, m, kind, walk, depth, chain):
         conv._issue(walk, m.index, "Checker %r: soften %g not converted: hard edges" % (m.name, soften))
     pattern = Checker(_pattern_mapping(conv, m, walk, "Checker"), soften)
     ids = ((CK_MAP1, CK_ON1), (CK_MAP2, CK_ON2))
-    if kind == BUMP:
-        if (any(conv._on(m, pid, on) is not None for pid, on in ids) or _vec(m, CK_COLOR1, BLACK) != BLACK
-                or _vec(m, CK_COLOR2, WHITE) != WHITE):
-            conv._issue(walk, m.index, "Checker %r: its sides in a bump input not converted: drawn black to white"
-                        % (m.name,))
-        return pattern
+    if (kind == BUMP and all(conv._on(m, pid, on) is None for pid, on in ids)
+            and _vec(m, CK_COLOR1, BLACK) == BLACK and _vec(m, CK_COLOR2, WHITE) == WHITE):
+        return pattern  # black to white: the height is the pattern itself (the Mix of 0 and 1 by it)
     (a, b), lost = _sides(conv, m, ids, kind, walk, depth, chain)
     if any(lost):
         return _other_side(conv, m, (a, b), walk)

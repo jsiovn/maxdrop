@@ -2154,8 +2154,8 @@ by the parity of floor(2x) + floor(2y), (x, y) the UV placed as a Bitmap's (tile
 Provisional, not measured until maxdrop-o53.3.9 has 3ds Max's samples: 2 squares per tile and axis, color 1 on the
 square at the placed origin, soften drawn as 0 (a soften above 0 is a line in the report). The pattern repeats
 whatever the UVGen's tile and mirror flags (a line when they are off / on). With the gamma off the sides keep the
-input's kind (a 0 / 1 mask picks one side: decoded before or after, the same). In a bump input the pattern itself
-(sides other than black and white a line), in a normal map's normal slot nothing (a line). The builder draws it with
+input's kind (a 0 / 1 mask picks one side: decoded before or after, the same). In a bump input the Mix of the sides'
+heights (black to white: the pattern itself), in a normal map's normal slot nothing (a line). The builder draws it with
 Math nodes (Mapping, Separate XYZ, FLOOR, ADD, WRAP to 0..2), which the Blender tests' node evaluator reads.
 
 Empty wrappers, measured (maxdrop-em3.76; 3ds Max 2020, gamma off, renderMap and V-Ray 5.2 renders with linear

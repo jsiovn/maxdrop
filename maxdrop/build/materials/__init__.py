@@ -116,7 +116,8 @@ Multiply, Blend (Gamma nodes around a Mix node of its operation or Vector Math n
 Invert, the mean or Separate / Combine Color, then Hue/Saturation/Value for the hue, the saturation in HSL (Math
 and Vector Math nodes), Bright/Contrast, gain, Gamma (a Vector Math ABSOLUTE before it with magnitude)), Composite
 (per layer its blend at factor 1, then a Mix by opacity x mask), Facing (Layer Weight Facing, Fresnel, or the
-Geometry node's Normal . Incoming), Remap (Float Curve, its points straight between them, not clipped; the Mix it
+Geometry node's Normal . Incoming), Checker (its placed UV through Separate XYZ, FLOOR, ADD and WRAP: 0 or 1),
+Remap (Float Curve, its points straight between them, not clipped; the Mix it
 drives does not clamp its factor), Smoothstep (Map Range SMOOTHSTEP, or a step: 1 - LESS_THAN), Adjust (a map's
 Output, as an image's), Tint (Separate Color, three scales, two adds), NormalMap (Normal Map node, flips through
 Separate / Combine Color), Bump (Bump node). A texture file that was not found (or does not load) keeps its Image
