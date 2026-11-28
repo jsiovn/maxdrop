@@ -142,7 +142,7 @@ class _Tree(_Surface, _Textures, _MapNodes):
             thickness = compat.thin_surface(m, out)
             if thickness is not None:
                 thickness.label = THIN_LABEL
-                thickness.location = (X_STEP * 0.5, -Y_STEP)
+                thickness.location = (X_STEP * 0.5, Y_STEP * 0.5)  # above the BSDF: every other node is below
         if volume_only:  # a volume boundary, no surface (see Medium above)
             self.links.remove(surface)
         elif self.thin or any(linked for linked, _v in alphas):  # EEVEE: a blended surface shows no light from behind

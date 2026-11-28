@@ -2553,8 +2553,8 @@ Two-sided in both engines (maxdrop-o53.1.10, measured, a scratch script outside 
 a 4 x 4 m plane (front +Z), a 2 m square area light of 100 W 1 m behind it shining at its back, an orthographic camera
 (1 m across) 2 m in front of it, a black world, 8 x 8 px, Standard view; Cycles 256 samples (CPU, no denoising), EEVEE
 32 samples; the builder's material of base color 0.8, translucency color 0.8, translucency 0.5 against 0: the mean
-red. Translucency 0 renders 0.0000 everywhere. "Without" is the same material with its Thickness link removed (as
-maxdrop-o53.1.7 built it; at alpha 0.5 that build was Blended: 0.0506 on 4.5.16 and 5.2, 0.2023 on 4.2.23):
+red. Translucency 0 renders 0.0000 everywhere. "Without" is the same material with its Thickness link removed, at
+alpha 0.5 still Dithered (maxdrop-o53.1.7 built it Blended there: 0.0506 on 4.5.16 and 5.2, 0.2023 on 4.2.23):
 
 | Blender | Cycles | EEVEE, the builder's | EEVEE without | Cycles, alpha 0.5 | EEVEE, alpha 0.5 | EEVEE without, alpha 0.5 |
 | --- | --- | --- | --- | --- | --- | --- |
