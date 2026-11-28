@@ -20,6 +20,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 - Materials: a VRayBlendMtl with coats is drawn as its base with each coat that is on over it (a Principled BSDF per
   coat, mixed, or added in additive mode, by its blend color or blend map), instead of its base alone; the weights are
   not measured against V-Ray yet, and a colored blend color is drawn as its mean (a line in the report).
+- Materials: a VRay2SidedMtl whose translucency is not black lets light through: its front material with a
+  Translucent BSDF mixed in by the translucency (its color or map), and its back material, when switched on, on back
+  faces, instead of its front material alone; the weight follows V-Ray's documented rule, not measured against V-Ray
+  yet, and a colored translucency is drawn as its mean (a line in the report).
 
 ### Changed
 

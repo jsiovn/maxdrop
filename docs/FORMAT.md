@@ -2032,7 +2032,7 @@ values by the fixture scripts or read by the tests):
 | | 2 BRDF | 10 brdf_type (4 = GGX), 54 anisotropy, 58 anisotropy_rotation (stored in degrees, as shown), 69 soften, 86 gtr_gamma, 89 brdf_useRoughness |
 | | 3 options | 11 option_traceReflection, 13 option_doubleSided, 22 option_cutOff, 84 option_opacityMode |
 | | 4 maps | map, on, multiplier: 100 / 150 / 200 diffuse, 101 / 151 / 201 reflection, 102 / 152 / 202 refraction, 103 / 153 / 203 bump, 104 / 154 / 204 reflectionGlossiness, 105 refractionGlossiness, 106 displacement, 109 refractionIOR, 110 hilightGlossiness, 111 reflectionIOR, 112 / 162 / 212 opacity, 113 roughness, 117 self_illumination, 119 metalness (multipliers in percent: 63.0 = 63 %) |
-| VRay2SidedMtl `(0x6066686A, 0x11731B4B)` | 0 | 0 frontMtl, 1 backMtl, 7 translucency, 3 backMtlOn, 4 texmap_translucency, 8 force1SidedSubMtls; V-Ray 5.2 renders an empty frontMtl's side not at all at translucency black (the back shows backMtl when backMtlOn, nothing otherwise); at the default translucency (0.5) the front is half transparent, with no front or back color (maxdrop-6n0.6.4) |
+| VRay2SidedMtl `(0x6066686A, 0x11731B4B)` | 0 | 0 frontMtl, 1 backMtl, 7 translucency, 3 backMtlOn, 4 texmap_translucency, 5 texmap_translucency_on, 6 texmap_translucency_multiplier (percent), 8 force1SidedSubMtls, 9 mult_by_front_diffuse (vray_wrappers' oracle; 2 an unnamed float, 0.5, not read); V-Ray 5.2 renders an empty frontMtl's side not at all at translucency black (the back shows backMtl when backMtlOn, nothing otherwise); at the default translucency (0.5) the front is half transparent, with no front or back color (maxdrop-6n0.6.4) |
 | VRayBlendMtl `(0x3DA0041B, 0x0F436E31)` | 0 | 0 baseMtl, 1 coatMtl (table), 2 blend (color table), 3 texmap_blend, 4 texmap_blend_multiplier, 6 coatMtl_enable, 5 additiveMode; V-Ray 5.2 renders an empty baseMtl as nothing below the coats (a coat at blend grey: alpha 0.5; blend black: not rendered) (maxdrop-6n0.6.4) |
 | Shell Material `(0x255, 0)` | 0 | 2 originalMaterial, 3 bakedMaterial, 0 viewportMtlIndex, 1 renderMtlIndex |
 | VRayOverrideMtl `(0x15D20E6B, 0x54E217EB)` | 0 | 0 baseMtl, 2 giMtl, 4 reflectMtl, 6 refractMtl, 8 shadowMtl (getSubMtl order), each followed by its switch (1 baseMtl_on ... 9 shadowMtl_on); V-Ray 5.2 renders baseMtl for the camera whatever baseMtl_on says, and an empty baseMtl black (maxdrop-em3.136) (vray_more) |
@@ -2528,6 +2528,20 @@ Blender side, measured (maxdrop-o53.1.6, a scratch script, 16 x 16 plane under a
 builder's own nodes): a base emitting 0.2 with a coat emitting 1.0 at weight 0.6 renders 0.798 (Cycles, 8 samples) /
 0.800 (EEVEE) added, 0.679 / 0.680 mixed, alpha 1, on Blender 4.2.23 and 5.2: the Mix Shader from an unlinked input
 scales the coat (0.2 + 0.6 and lerp(0.2, 1, 0.6) = 0.68).
+
+VRay2SidedMtl translucency (maxdrop-o53.1.7, no render in this bead): a front that is set (frontMtl, 0) and not itself
+a Multi/Sub-Object, with a translucency that is not black (7, or texmap_translucency 4 set, on (5) and at a multiplier
+(6) above 0) or a back material set (1), on (backMtlOn, 3) and not the front, converts to the front with a
+translucency t: V-Ray's documented rule, t of the light arriving on the other side and 1 - t of the side's own,
+drawn as a Translucent BSDF mixed in by t over the front's surface. t is the translucency color taken as a swatch on
+a mask (the scene's swatch rule on the mean of its channels, as VRayBlendMtl's blend color: vray_wrappers'
+FixtureTwoSided, 64 96 128 with the gamma off, gives 0.117, not the raw mean 0.376); with a translucency map, that
+weight and the map mixed by the multiplier, a data graph. The Translucent BSDF's color is the back material's base
+color where it is shown, else the front's; a back material that is shown is drawn on back faces (a Mix Shader by
+Geometry > Backfacing) with the same t in the front's color. A missing translucency is black (1.0.2's peel). Not
+measured: the weight against V-Ray (maxdrop-o53.3.2), V-Ray's per-channel mix of a colored translucency (MaxDrop takes
+the mean, a line in the report), mult_by_front_diffuse (a line in the report) and force1SidedSubMtls (not read). The
+engines' settings for thin surfaces are maxdrop-o53.1.10's.
 
 ## Asset metadata
 
