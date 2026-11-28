@@ -55,15 +55,14 @@ class Report:
     a material or map object ("object <index>"), a Blender material or a scene-level label ("scene", "environment",
     "color swatches"). materials_built is None when the import made no materials."""
     __slots__ = ("source", "unit", "meters", "nodes", "objects_built", "meshes_built", "curves_built",
-                 "lights_built", "cameras_built", "scene_camera", "scene_camera_note", "render_size", "exposure",
-                 "exposure_others", "layers",
+                 "lights_built", "cameras_built", "scene_camera", "scene_camera_note", "render_size", "layers",
                  "hidden_layers", "hidden", "unrenderable", "frozen", "groups", "placeholders", "unknown_controllers", "modifiers",
                  "modifiers_applied", "modifiers_converted",
                  "dropped_uv_layers", "unknown_controller_nodes", "geometry_errors", "issues", "pack", "pack_name",
                  "materials_built", "materials", "wrappers", "grey_materials", "maps_peeled", "maps_unsupported",
                  "maps_approximated",
                  "sockets_skipped", "blender", "textures_found", "textures_missing", "texture_search_stopped",
-                 "material_issues", "swatches", "world")
+                 "material_issues", "swatches", "world", "exposure", "exposure_others")
 
     def __init__(self, source=""):
         self.source, self.unit, self.meters = source, None, 1.0
@@ -172,9 +171,9 @@ class Report:
             lines.append("Render size: %s; scene camera: %s" % (self.render_size or NO_RENDER_SIZE,
                                                                 self.scene_camera or "none")
                          + (", " + self.scene_camera_note if self.scene_camera_note else "")
-                         + ("; exposure: %g" % self.exposure if self.exposure is not None else "")
+                         + ("; exposure: " + _stops(self.exposure) if self.exposure is not None else "")
                          + ("; other cameras' exposures, not applied: " + _names(
-                             ["%s %s" % (n, "none" if e is None else "%g" % e) for n, e in self.exposure_others])
+                             ["%s %s" % (n, _stops(e)) for n, e in self.exposure_others])
                             if self.exposure_others else ""))
         if self.world:
             lines.append("World: " + self.world)
@@ -297,6 +296,10 @@ def _counts(counter):
     return shown
 
 
+def _stops(exposure):
+    return "none" if exposure is None else "%g" % exposure
+
+
 def _names(items):
     shown = ", ".join(str(x) for x in items[:MAX_LISTED])
     if len(items) > MAX_LISTED:
@@ -374,7 +377,9 @@ def gather(desc, source="", objects_built=None, meshes_built=None, dropped_uv_la
         cds = list(getattr(desc, "cameras", {}).values())
         own = next((cd for cd in cds if camera in cd.users), None)
         rep.exposure = own.exposure if own is not None else None
-        rep.exposure_others = [(cd.name, cd.exposure) for cd in cds if cd is not own and cd.exposure != rep.exposure]
+        shown = _stops(rep.exposure)  # compared as printed: a difference the line cannot show is none
+        rep.exposure_others = [(labels.get(cd.users[0], "object %d" % cd.users[0]) if cd.users else cd.name,
+                                cd.exposure) for cd in cds if cd is not own and _stops(cd.exposure) != shown]
     for index, reason in desc.issues:
         label = index if isinstance(index, str) else SCENE if index is None else labels.get(index, "object %d" % index)
         if reason == UNKNOWN_CONTROLLER and desc.unknown_controllers:  # counted by class already

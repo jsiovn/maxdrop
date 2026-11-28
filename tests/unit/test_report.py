@@ -202,6 +202,11 @@ class TestSynthetic(unittest.TestCase):
                          ["Render size: not stored, Blender's kept; scene camera: Cam; other cameras' exposures, "
                           "not applied: Side -1"])
         self.assertEqual(render_line(cam("Side", [3], -1.0), camera=None), [])
+        self.assertEqual(render_line(cam("Cam", [2], 1.5), cam("Side", [3], 1.5000001)),
+                         ["Render size: not stored, Blender's kept; scene camera: Cam; exposure: 1.5"])
+        self.assertEqual(render_line(cam("Cam", [2], 1.5), cam("", [3], 0.5)),
+                         ["Render size: not stored, Blender's kept; scene camera: Cam; exposure: 1.5; other cameras' "
+                          "exposures, not applied: object 3 0.5"])
 
     def test_emitters_are_counted_with_the_lights(self):
         desc = conv.SceneDescription(1.0)
