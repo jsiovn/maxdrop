@@ -82,7 +82,7 @@ def check_builder_two_sided():
         empty_scene()
         tinted = cm.MaterialIR(45, "Tinted", "test", base_color=cm.Input((1.0, 0.0, 0.0), cm.MapRef(1)),
                                translucency=cm.Input(0.4), translucency_color=cm.Input((1.0, 0.0, 0.0), cm.MapRef(1)))
-        color = tx.TextureGraphIR(tx.Mix(tx.Constant((1.0, 0.0, 0.0)), tx.Constant((0.0, 0.0, 1.0)),
+        color = tx.TextureGraphIR(tx.Mix(tx.Constant((1.0, 0.0, 0.0)), tx.Constant((0.0, 0.0, 1.0)), 0.5,
                                          tx.Checker(tx.Mapping())), tx.COLOR)
         tinted.textures.update(base_color=color, translucency_color=color)
         m = make(tinted)
