@@ -486,7 +486,7 @@ class FrameZeroParams(unittest.TestCase, Close):
                                              {0: Typed(0, {1: pblock.Animated(9)})}, {})
         std.refs = {}  # no Texmaps object: the maps from block 3
         graph = FakeGraph(std)
-        graph.scene = object()
+        graph.scene = types.SimpleNamespace(entry=lambda i: None)  # no class directory: the class names of classids
         unknown = controllers.Issue(None, 9, None, None, controllers.UNKNOWN_CLASS)
         with mock.patch.object(controllers, "parameter_value", return_value=(None, [unknown])):
             conv = mat.MaterialConverter(graph)

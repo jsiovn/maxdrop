@@ -195,7 +195,7 @@ from .ids import (
 from .ir import MapRef, DiffuseLevel, Input, Medium, MaterialIR, Layer, ConvertStats
 from .values import (
     mean, class_name, _clamp01, _mix, _ior, ior_from_reflectance, _roughness, corona_legacy_roughness, _scene_meters,
-    f0_from_complex_ior,
+    f0_from_complex_ior, class_label, MAX_CLASS_NAME,
 )
 from .converter import MaterialConverter
 from .vray import vray_mtl, vray_light_mtl, vray_fast_sss2, _car_paint, vray_car_paint_mtl, vray_car_paint_mtl2

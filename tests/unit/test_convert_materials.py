@@ -29,6 +29,24 @@ from maxdrop_unit_tests.convert_materials_support import (  # noqa: E402 (after 
 )
 
 
+class _NamedScene:
+    """The class directory of a _NamedGraph: {object index: class name}."""
+
+    def __init__(self, names):
+        self.names = names
+
+    def entry(self, i):
+        return types.SimpleNamespace(name=self.names[i]) if i in self.names else None
+
+
+class _NamedGraph(FakeGraph):
+    """A FakeGraph whose scene names each object's class as the class directory does."""
+
+    def __init__(self, names, *objects):
+        super().__init__(*objects)
+        self.scene = _NamedScene(names)
+
+
 class Helpers(unittest.TestCase, Close):
     def test_swatch_rule(self):
         """A synthetic graph has no scene: its swatches are linear (UNKNOWN); a given rule wins, and the converter
@@ -64,6 +82,19 @@ class Helpers(unittest.TestCase, Close):
         self.assertEqual(mat.class_name(classids.SC_MATERIAL, classids.VRAY_MTL), "VRayMtl")
         self.assertEqual(mat.class_name(classids.SC_MATERIAL, classids.VRAY_LIGHT_MTL), "VRayLightMtl")
         self.assertEqual(mat.class_name(classids.SC_MATERIAL, (1, 2)), "ClassID(0x00000001, 0x00000002)")
+
+    def test_class_name_of_the_class_directory(self):
+        """A class without a classids entry is named by the file's class directory, cut and cleaned (the name comes
+        from the file); a known class keeps its own name; ClassID only without a usable directory name."""
+        sc, odd = classids.SC_MATERIAL, "ClassID(0x00000001, 0x00000002)"
+        self.assertEqual(mat.class_name(sc, (0x250, 0), "Blend"), "Blend")
+        self.assertEqual(mat.class_name(sc, classids.VRAY_MTL, "Something else"), "VRayMtl")
+        self.assertEqual(mat.class_name(sc, (1, 2), ""), odd)
+        self.assertEqual(mat.class_name(sc, (1, 2), "\r\n\x00 "), odd)
+        self.assertEqual(mat.class_name(sc, (1, 2), " Foo\r\nBar\x00‮ "), "Foo Bar")
+        long = mat.class_name(sc, (1, 2), "x" * 500)
+        self.assertEqual((len(long), long), (mat.MAX_CLASS_NAME, "x" * (mat.MAX_CLASS_NAME - 3) + "..."))
+        self.assertEqual(mat.class_label("y" * mat.MAX_CLASS_NAME), "y" * mat.MAX_CLASS_NAME, "at the limit: kept")
 
     def test_not_a_material(self):
         conv, ir = _convert(_map(0))
@@ -436,6 +467,25 @@ class OtherRules(unittest.TestCase, Close):
         self.close(ir.specular.value, 1.0, "the IOR's own Fresnel, Blender's default 0.5")
         self.assertEqual(dict(conv.stats.unknown), {"ClassID(0x00001234, 0x00005678)": 2})
         self.assertIs(conv.convert(0), ir)
+
+    def test_unknown_class_is_named_by_its_class_directory(self):
+        """A grey material and its count take the class-directory name of the object's class (Blend, ClassID
+        (0x250, 0), has no rule yet); a name of 500 characters or with a line break is cut and cleaned."""
+        for name, want in (("Blend", "Blend"), ("Bl\nend", "Bl end"),
+                           ("z" * 500, "z" * (mat.MAX_CLASS_NAME - 3) + "..."),
+                           ("", "ClassID(0x00000250, 0x00000000)")):
+            with self.subTest(name=name[:8]):
+                conv = mat.MaterialConverter(_NamedGraph({0: name}, FakeMtl(0, (0x250, 0), "Mix")))
+                ir = conv.convert(0)
+                self.assertTrue(ir.unknown)
+                self.assertEqual((ir.source, dict(conv.stats.unknown)), (want, {want: 1}))
+
+    def test_wrapper_peeled_is_named_by_its_class(self):
+        """The wrappers peeled are counted under the class's own name, whatever the class directory says."""
+        shell = _wrapper(0, classids.SHELL_MTL, {1: 0, 2: Ref(1)})
+        conv = mat.MaterialConverter(_NamedGraph({0: "\rshell", 1: "VRayMtl"}, shell, _vray(1)))
+        self.assertFalse(conv.convert(0).unknown)
+        self.assertEqual(dict(conv.stats.peeled), {"Shell Material": 1})
 
 
 class Wrappers(unittest.TestCase):

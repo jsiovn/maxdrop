@@ -4,6 +4,7 @@
 
 """Value helpers of the rules: means, clamps, IOR and roughness conversions."""
 import math
+import unicodedata
 
 from ...reader import classids, units
 from ...reader import scene as reader_scene
@@ -17,11 +18,24 @@ def mean(rgb):
     return sum(rgb[:3]) / 3.0
 
 
-def class_name(superclass, class_id):
-    """The class name for the report: the class directory's for a known class (without the blanks around it:
-    CoronaPhysicalMtl's starts with a carriage return), else the ClassID."""
+MAX_CLASS_NAME = 64  # characters of a class-directory name the report shows: the name comes from the file
+_HIDDEN = frozenset(("Cc", "Cf", "Cs", "Zl", "Zp"))  # control, format, surrogate, line and paragraph separators
+
+
+def class_label(text):
+    """A class-directory name as the report shows it: each hidden character a blank, the blanks collapsed and
+    stripped, cut to MAX_CLASS_NAME characters ("..." at the end); "" for a name of nothing else."""
+    text = " ".join("".join(" " if unicodedata.category(c) in _HIDDEN else c for c in text).split())
+    return text if len(text) <= MAX_CLASS_NAME else text[:MAX_CLASS_NAME - 3] + "..."
+
+
+def class_name(superclass, class_id, directory=""):
+    """The class name for the report: classids' for a known class (without the blanks around it: CoronaPhysicalMtl's
+    starts with a carriage return), else directory (the name the file's class directory gives the class, through
+    class_label), else the ClassID."""
     cid = ClassId(*class_id)
-    return (classids.name_of(superclass, cid) or "ClassID%s" % (cid,)).strip()
+    known = classids.name_of(superclass, cid)
+    return known.strip() if known else class_label(directory) or "ClassID%s" % (cid,)
 
 
 def _clamp01(v):
