@@ -1426,9 +1426,11 @@ sphere and a self-lit plane (VRayMtl self-illumination 255):
 
 So the 1500 of V-Ray's lx / 1500 is the physical scale P of an active Linear or Automatic control: a Free Light and
 a VRayLight render lx / P, a standard light and a self-lit material keep their pixel, and a white standard light of
-multiplier m stands for P · m cd (Omni / Free Light 1.504 at 1500, 3.008 at 3000). Under an active Physical Camera
-control P multiplies the image by P / 1500 except the VRayLight, which keeps its pixel; Logarithmic tone-maps (not
-linear) and its active switch does not stop it. 3ds Max gamma 2.2 changes nothing here (Omni 180 grey 0.7049, white
+multiplier m stands for P · m cd (Omni / Free Light 1.504 at 1500, 3.008 at 3000). An active Physical Camera
+control exposes the image (its 1500 row, about 8.23 times the unexposed pixel) and P multiplies that row by P / 1500,
+except the VRayLight's pixel, which stays at its 1500 value (Omni / Free Light 1.504 at both); Logarithmic tone-maps
+(not linear) and its active switch does not stop it. Pseudo Color shows false colors when active (not a row) and
+nothing when inactive. 3ds Max gamma 2.2 changes nothing here (Omni 180 grey 0.7049, white
 0.9986). MaxDrop reads no exposure control: its rules are those of a scene without one.
 
 **VRayIES power, measured** (the same scene, an isotropic LM-63 file of 100 cd, whose flux is 1256.6 lm, with rated
@@ -2729,7 +2731,8 @@ test; standard Omnis of multiplier 1 without decay sit 1 m in front of it (+Z, t
 behind it, each switched on as the case says; a Freecamera at 0.9 m looks down. Color mapping linear, gamma 1, clamp
 output off, no GI, no default lights, a black background; an HDR bitmap read with `getPixels ... linear:true`, the
 mean of the 8 x 8 center pixels. Every sub-material is a VRayMtl of reflection 0. A white one lit from the front
-reads E = 0.704897 (the Omni's floor, maxdrop-o53.2.9); the controls are a VRayLightMtl white at 1.0 and one at grey
+reads E = 0.704897 (the Omni's floor: MAXScript's 180 grey, maxdrop-o53.2.9); the controls are a VRayLightMtl
+white at 1.0 and one at grey
 128 at 0.502. The table gives shares of E as R / G / B (one number: a grey). Each case was rendered twice, with the
 scene's gamma off (as the fixtures are saved) and on (input 2.2). Both modes give the same internal value on every
 row except those with an image, a self-authored 8-bit 128 grey PNG as a Bitmap with automatic gamma: 0.502 with the
