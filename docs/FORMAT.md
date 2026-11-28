@@ -1390,8 +1390,11 @@ object of its own (no node). **Skylight** `(0x7BF61478, 0x522E4705)`: not built.
 pointing down, V-Ray linear, gamma off, no GI, the mean of the 8 × 8 center pixels): V-Ray's pixel is the floor's
 illuminance in lx / 1500 for every class: a 1 W VRayLight sphere 0.0362 (683 / 4π lx); a Free Light of 1000 cd,
 isotropic, spotlight or uniform diffuse, 0.667; a Free Rectangle 100 × 100 mm of 1000 cd 0.651; a VRayIES of 1000
-lm with an isotropic IES file 0.0531; an Omni, a Free Spot and a Direct of multiplier 1 without decay 1.0 (the same
-at any distance), an Omni with inverse-square decay from 1 m 1.0, from 0.5 m 0.25, with inverse decay from 0.5 m
+lm with an isotropic IES file 0.0531; an Omni, a Free Spot and a Direct of multiplier 1, color white, without decay
+1.0 (the same at any distance; the color multiplies: the 180 grey that MAXScript's `Omnilight`, `Freespot` and
+`Directionallight` give a new light, in batch and in an interactive session alike, renders 0.705 = 180 / 255, what
+maxdrop-o53.2.2's probes measured),
+an Omni with inverse-square decay from 1 m 1.0, from 0.5 m 0.25, with inverse decay from 0.5 m
 0.5; a VRaySun of multiplier 1 at the zenith 68.5 (102.7 klx). Cycles (Blender 5.2, a Diffuse BSDF of 1.0): a
 point or spot light of 1 W at 1 m 0.02526 (1 / 4π²), a disk area light of 1 W 0.1010 (1 / π² on its axis), a sun
 of strength 1 0.3176 (1 / π). So Light Strength 1.43 is π · 683 / 1500 (1.4305), and with it these powers render
@@ -1404,6 +1407,29 @@ as bright as V-Ray:
 - a standard Direct: a sun of 1500 m / 683 W/m²; a VRaySun: 146.4 m W/m² (the rules source's 100 klx / 683);
 - a VRayIES: its lumens / 683 W, on a spot of 170° and hotspot 100° (the rules source's wide spot), as a
   photometric web.
+
+**Power and the exposure control, measured** (maxdrop-o53.2.9; 3dsmaxbatch, the same scene, a Target camera 0.9 m
+up with FOV 60°, a 64 × 64 float bitmap; a new scene, in batch or in an interactive session, has no exposure
+control). The RenderEnvironment's exposure control, a reset scene and a fresh control and light per render, at
+physical scale 1500 and 3000; a white Omni of multiplier 1 at 1 m, a Free Light of 1000 cd, a 1 W VRayLight
+sphere and a self-lit plane (VRayMtl self-illumination 255):
+
+| Exposure control | Omni | Free Light | Sphere | Self-lit |
+|---|---|---|---|---|
+| none; Linear, Automatic, Physical Camera or V-Ray's inactive; Linear or Automatic at 1500 | 0.9986 | 0.6639 | 0.03608 | 1.0 |
+| Linear or Automatic at 3000 | 0.9986 | 0.3319 | 0.01804 | 1.0 |
+| Logarithmic at 1500, active or not, and at 3000 inactive | 0.8459 | 0.7999 | 0.2091 | 0.8460 |
+| Logarithmic at 3000 | 0.8971 | 0.7999 | 0.2091 | 0.8972 |
+| Physical Camera (its defaults: global EV 6) at 1500 | 8.2147 | 5.4610 | 0.2969 | 8.2264 |
+| Physical Camera at 3000 | 16.429 | 10.922 | 0.2969 | 16.453 |
+| V-Ray's (its defaults; the red channel) | 0.03559 | 0.02366 | 0.001286 | 0.03564 |
+
+So the 1500 of V-Ray's lx / 1500 is the physical scale P of an active Linear or Automatic control: a Free Light and
+a VRayLight render lx / P, a standard light and a self-lit material keep their pixel, and a white standard light of
+multiplier m stands for P · m cd (Omni / Free Light 1.504 at 1500, 3.008 at 3000). Under an active Physical Camera
+control P multiplies the image by P / 1500 except the VRayLight, which keeps its pixel; Logarithmic tone-maps (not
+linear) and its active switch does not stop it. 3ds Max gamma 2.2 changes nothing here (Omni 180 grey 0.7049, white
+0.9986). MaxDrop reads no exposure control: its rules are those of a scene without one.
 
 **VRayIES power, measured** (the same scene, an isotropic LM-63 file of 100 cd, whose flux is 1256.6 lm, with rated
 lumens of 1256.6, 500 or -1 in its header): with the intensity override off V-Ray scales the file's candelas by power /
@@ -1653,7 +1679,8 @@ meters: a white VRayMtl floor (diffuse 255, no reflection) 20 m square, a standa
 a free VRayPhysicalCamera 0.9 m above the floor looking down (FOV 60° specified, target distance 200 m, vignetting
 off, white balance 255 255 255, the still camera type), rendered into a 64 × 64 float bitmap; the mean of the 8 × 8
 center pixels. Exposure off renders 0.704897, as a Target camera does (the Omni at multiplier 2: 1.40979, so nothing
-clamps; "Power, measured" gives this Omni 1.0: maxdrop-o53.2.9). The ratio on / off does not depend on the light: a
+clamps; the Omni has MAXScript's 180 grey, 180 / 255 of the white Omni's 1.0 in "Power, measured").
+The ratio on / off does not depend on the light: a
 1 W VRayLight sphere (0.0360797 off; "Power, measured" says 0.0362) and a self-lit plane (1.0 off) give the Omni's
 ratio in meters, centimeters and inches, the plane also in millimeters (the sphere there: "Not measured" below). In
 centimeters and inches the ratio (0.030138, 0.0307069) is the formula's at the default target distance, 200 cm and
@@ -1707,7 +1734,7 @@ the formula. The lens and camera type, measured on a self-lit plane at the defau
 | focal 40 at d 1000: video at 30 fps, latency 0 and 0.01 | 0.190986, 0.248282 | 0.9216 |
 
 **In Blender.** MaxDrop's lights render as bright as V-Ray's unexposed pixel (Light Strength 1.43, "Power, measured";
-for the standard Omni, Spot and Direct see maxdrop-o53.2.9), so the camera's exposure is
+the standard Omni, Spot and Direct included: the 0.705 above is the light's color), so the camera's exposure is
 `scene.view_settings.exposure` = log2(factor) = 1.9924 + log2(ISO · t / N²) + 2 log2(f / v), in mode 2 8.6362 − EV +
 2 log2(f / v), in mode 0 0 stops. The exposure fixture: FixtureExpPhysical −2.3308 (focused at its target, 3816.08
 mm), FixtureExpValue −2.5076, FixtureExpTint −5.6515, FixtureExpStored −5.0076 (these three at the 200 mm target
