@@ -1469,8 +1469,10 @@ a free VRayPhysicalCamera 0.9 m above the floor looking down (FOV 60° specified
 off, white balance 255 255 255, the still camera type), rendered into a 64 × 64 float bitmap; the mean of the 8 × 8
 center pixels. Exposure off renders 0.704897, as a Target camera does (the Omni at multiplier 2: 1.40979, so nothing
 clamps; "Power, measured" gives this Omni 1.0: maxdrop-o53.2.9). The ratio on / off does not depend on the light: a
-1 W VRayLight sphere (0.0361 off, as "Power, measured") and a self-lit plane (1.0 off) give the Omni's ratio in
-meters, centimeters, millimeters and inches. Mode 1 unless the row says otherwise:
+1 W VRayLight sphere (0.0360797 off; "Power, measured" says 0.0362) and a self-lit plane (1.0 off) give the Omni's
+ratio in meters, centimeters and inches, the plane also in millimeters (the sphere there: "Not measured" below). In
+centimeters and inches the ratio (0.030138, 0.0307069) is the formula's at the default target distance, 200 cm and
+200 in (2000 and 5080 mm). Mode 1 unless the row says otherwise:
 
 | Setting (f-number, shutter speed, ISO) | Pixel | On / off | Formula | Stops |
 |---|---|---|---|---|
@@ -1496,22 +1498,22 @@ meters, centimeters, millimeters and inches. Mode 1 unless the row says otherwis
 | 8, 200, 100 in millimeters (target distance 200 mm) | 0.0164001 | 0.023266 | 0.023266 | −5.4256 |
 | 5.6, 125, 200 in millimeters | 0.107103 | 0.151941 | 0.151941 | −2.7184 |
 
-The formula: factor = (12.5 / π) · ISO · t / N² · (f / v)² in mode 1, (1250 / π) · 2^−EV · (f / v)² in mode 2 (EV
-the stored 56), 1 in mode 0. N is the f-number as stored (5.6², not 32); t the exposure time in seconds: for the
-still camera (`type` 0) 1 / shutter speed, the cinematic one (1) shutter angle / 360 / the scene's frame rate (180°
-at 30 fps: 1/60 s), the video one (2) 1 / frame rate + latency (s). (f / v)² is the thin lens of the next paragraph:
-f the focal length, d the focus distance (the specified focus distance, else the target distance, for a targeted
-camera its distance to its target node), in millimeters through the system unit, v = 1 / (1/f − 1/d), so (f / v)² =
-(1 − f / d)²; with a specified FOV v = film / (2 tan(FOV / 2)) and f / v = d / (d + v). Zoom and film width leave
-it as it is. Mode 1 reads the three settings and ignores 56 (FixtureExpTint renders from its 8, 200, 100, not from
-its stale 13), mode 2 reads 56 and ignores them; for the still camera mode 1 is mode 2 at EV = log2(N² · shutter
-speed · 100 / ISO). Every row above and below is within 0.01 % of the formula. The lens and camera type, measured on
-a self-lit plane at the defaults 8, 200, 100 (pixel = factor):
+The formula: factor = (12.5 / π) · ISO · t / N² · (f / v)² in mode 1, (1250 / π) · 2^−EV · (f / v)² in mode 2 (EV the
+stored 56), 1 in mode 0. N is the f-number as stored (5.6², not 32); t the exposure time in seconds: for the still
+camera (MAXScript `type` 0; its block id is not read) 1 / shutter speed, the cinematic one (1) shutter angle / 360 /
+the scene's frame rate (180° at 30 fps: 1/60 s), the video one (2) 1 / frame rate + latency (s). (f / v)² is the thin
+lens of the next paragraph: f the focal length, d the focus distance (the specified focus distance, else the target
+distance, for a targeted camera its distance to its target node), in millimeters through the system unit, v = 1 /
+(1/f − 1/d), so (f / v)² = (1 − f / d)²; with a specified FOV v = film / (2 tan(FOV / 2)) and f / v = d / (d + v).
+Zoom, and the film width at a given focal length, leave it as it is. Mode 1 reads the three settings and ignores 56
+(FixtureExpTint renders from its 8, 200, 100, not from its stale 13), mode 2 reads 56 and ignores them; for the still
+camera mode 1 is mode 2 at EV = log2(N² · shutter speed · 100 / ISO). Every row above and below is within 0.01 % of
+the formula. The lens and camera type, measured on a self-lit plane at the defaults 8, 200, 100 (pixel = factor):
 
 | Lens (millimeters) | Pixel | (f / v)² |
 |---|---|---|
 | focal 20, 40, 80 at d 200 000 | 0.0310787, 0.0310725, 0.0310601 | 0.9998, 0.9996, 0.9992 |
-| specified FOV 30°, 90° at d 200 000 | 0.0310641, 0.0310793 | 0.99932, 0.99982 |
+| specified FOV 30°, 90° at d 200 000 | 0.0310641, 0.0310793 | 0.99933, 0.99982 |
 | focal 17.9963 at d 200, 500, 1000, 5000 (target distance; a specified focus at 200 and 1000 the same) | 0.0257425, 0.0288876, 0.0299762, 0.0308616 | 0.8281, 0.9293, 0.9643, 0.9928 |
 | specified FOV 60° at d 200 | 0.0232675 | 0.7485 |
 | focal 20, 40, 80 at d 200 | 0.0251788, 0.0198944, 0.0111906 | 0.81, 0.64, 0.36 |
@@ -1519,12 +1521,13 @@ a self-lit plane at the defaults 8, 200, 100 (pixel = factor):
 | focal 40 at d 1000: cinematic 180° at 30 fps, 90° at 30 fps, 180° at 60 fps | 0.095493, 0.0477465, 0.0477465 | 0.9216 |
 | focal 40 at d 1000: video at 30 fps, latency 0 and 0.01 | 0.190986, 0.248282 | 0.9216 |
 
-**In Blender.** MaxDrop's lights render as bright as V-Ray's unexposed pixel (Light Strength 1.43, "Power,
-measured"), so the camera's exposure is `scene.view_settings.exposure` = log2(factor) = 1.9924 + log2(ISO · t / N²)
-+ 2 log2(f / v), in mode 2 8.6362 − EV + 2 log2(f / v), in mode 0 0 stops. The exposure fixture: FixtureExpPhysical
-−2.3308 (focused at its target, 3816.08 mm), FixtureExpValue −2.5076, FixtureExpTint −5.6515, FixtureExpStored
-−5.0076 (these three at the 200 mm target distance), FixtureExpOff 0; renders of the fixture's box under V-Ray's
-default lights, on / off, give these factors within 0.7 % (FixtureExpOff's view misses the box).
+**In Blender.** MaxDrop's lights render as bright as V-Ray's unexposed pixel (Light Strength 1.43, "Power, measured";
+for the standard Omni, Spot and Direct see maxdrop-o53.2.9), so the camera's exposure is
+`scene.view_settings.exposure` = log2(factor) = 1.9924 + log2(ISO · t / N²) + 2 log2(f / v), in mode 2 8.6362 − EV +
+2 log2(f / v), in mode 0 0 stops. The exposure fixture: FixtureExpPhysical −2.3308 (focused at its target, 3816.08
+mm), FixtureExpValue −2.5076, FixtureExpTint −5.6515, FixtureExpStored −5.0076 (these three at the 200 mm target
+distance), FixtureExpOff 0; renders of the fixture's box under V-Ray's default lights, on / off, give these factors
+within 0.7 % (FixtureExpOff's view misses the box).
 
 Left out of the factor:
 
