@@ -1431,7 +1431,8 @@ horizontal tilt, 4 distortion, 10 exposure (0 off), 32 clip on, 33 / 34 near / f
 focal length are typed as world units but stay millimeters in a centimeter scene (probed).
 
 **Exposure and f-number** (3ds Max 2020 + V-Ray 5.2: the ParamBlock2 descriptors through the .NET wrapper, maxdiff of
-saves that change one setting, V-Ray renders of a self-lit white plane with linear color mapping). VRayPhysicalCamera,
+saves that change one setting, V-Ray renders of a self-lit white plane filling a 32 x 32 view, linear color mapping,
+gamma off, no GI, the mean of the 8 x 8 center pixels: a camera-side ratio, not the calibration floor). VRayPhysicalCamera,
 block 0: 10 exposure (int: 0 off, 1 physical exposure, 2 exposure value; default 1), 2 f-number (float, 8), 12 shutter
 speed (float, the denominator in 1/s: 200 = 1/200 s), 16 ISO (float, 100), 56 exposure value (float, EV; default 13),
 11 vignetting (bool, off), 39 vignetting amount (float, 1), 37 white balance preset (int, default 4), 19 white balance
@@ -1443,10 +1444,13 @@ ISO, and in mode 2 a new f-number or shutter speed keeps the exposure value and 
 EV 13, not the 13.6439 of its defaults, until one of them is set. Mode 1 renders from the f-number, shutter speed and
 ISO, mode 2 from the stored exposure value (the defaults render 0.0199 in mode 1, 0.0311 in mode 2 at EV 13: 2^0.644
 apart; 3 EV lower renders 8 times brighter); mode 0 renders as if there were no exposure. The factor itself is not
-measured here. The white balance presets set the color (4 and the default: the color above; 5: 1 0.890094 0.755618);
-what each preset stands for is not read. **Physical**, block 0: 6 f-number (float, 8); its exposure (22 exposure gain
-type, 23 ISO, 24 exposure value) is for the exposure control of the RenderEnvironment, not read. The exposure fixture
-(`tools/fixtures/exposure.ms`, system unit millimeters; values read back through `maxdrop/reader`):
+measured here. A white balance preset stores its color in 19 (FixtureExpTint's preset 5 stores its own; maxdiff of 4 -> 0,
+the same color, changes 37 only): 0 and 4 the color above, 1 white, 2 0.75 0.886365 1, 3 0.816122 0.889125 1, 5 1 0.890094
+0.755618, 6 1 0.825353 0.628004, 7 to 9 white; what each preset stands for is not read. **Physical**, block 0: 6 f-number (float, 8); its exposure (22 exposure gain
+type, 23 ISO, 24 exposure value: descriptor names only, not checked by maxdiff) is for the exposure control of the
+RenderEnvironment, not read. The exposure fixture
+(`tools/fixtures/exposure.ms`, system unit millimeters; values read back through `maxdrop/reader`; the column heads
+are VRayPhysicalCamera's ids, the Physical row names its own):
 
 | Camera | 10 | 2 | 12 | 16 | 56 | Other |
 |---|---|---|---|---|---|---|
