@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Checks of texture placement: mirror tiling, clip masks and a clipped normal map."""
+"""Checks of texture placement: mirror tiling, clip masks, a clipped normal map and a Checker's pattern."""
 import math
 import os
 import shutil
@@ -100,6 +100,7 @@ def _sample_vector(socket, uv):
         return {'PINGPONG': lambda: _pingpong(a, b), 'FLOOR': lambda: math.floor(a),
                 'WRAP': lambda: a - (b - c) * math.floor((a - c) / (b - c)), 'MULTIPLY_ADD': lambda: a * b + c,
                 'COMPARE': lambda: float(abs(a - b) <= max(c, 1e-5)), 'MULTIPLY': lambda: a * b,
+                'ADD': lambda: a + b,
                 }[n.operation]()
     v = _sample_vector(n.inputs["Vector"], uv)
     if n.bl_idname == "ShaderNodeVectorMath":
@@ -372,3 +373,69 @@ def check_builder_clipped_normal():
         for img in list(bpy.data.images):
             bpy.data.images.remove(img)
         shutil.rmtree(scratch, ignore_errors=True)
+
+
+def check_builder_checker():
+    """MaterialBuilder on hand-made IRs (bead maxdrop-o53.1.4): a Checker leaf is Math nodes on the placed UV that the
+    node evaluator reads as texmaps.checker_value on a 12 x 12 grid of UVs (tiling 2 x 3; tiled, offset and turned;
+    on UV channel 2), 0 or 1 and both; the Mix between the two colors by it; in a bump input the Bump's height."""
+    from maxdrop.build import materials as build_materials
+    from maxdrop.build.materials.sockets import uv_layer_name
+    from maxdrop.convert import materials as cm
+    from maxdrop.convert import texmaps as tx
+    empty_scene()
+    builder = build_materials.MaterialBuilder()
+    red, blue, grid = (1.0, 0.0, 0.0), (0.0, 0.0, 1.0), 12
+
+    def sampled(socket, pattern):
+        """The (i, j, node value, checker_value) where they differ on the grid, and the values the nodes gave."""
+        bad, seen = [], set()
+        for i in range(grid):
+            for j in range(grid):
+                uv = ((i + 0.5) / grid, (j + 0.5) / grid)
+                got, want = _sample_value(socket, uv), tx.checker_value(pattern, *uv)
+                seen.add(got)
+                if abs(got - want) > 1e-6:
+                    bad.append((i, j, got, want))
+        return bad, seen
+
+    try:
+        cases = (("tiling 2 x 3", tx.Mapping(tiling=(2.0, 3.0))),
+                 ("tiled, offset and turned", tx.Mapping(tiling=(1.5, 1.0), offset=(0.1, -0.2),
+                                                         angle=(0.0, 0.0, math.radians(30.0)))),
+                 ("UV channel 2", tx.Mapping(channel=2)))
+        for k, (label, mapping) in enumerate(cases):
+            pattern = tx.Checker(mapping)
+            ir = cm.MaterialIR(80 + k, "Checker%d" % k, "test", base_color=cm.Input((0.5, 0.5, 0.5), cm.MapRef(1)))
+            ir.textures = {"base_color": tx.TextureGraphIR(
+                tx.Mix(tx.Constant(red), tx.Constant(blue), 0.0, pattern), tx.COLOR)}
+            m = builder.make(ir)
+            mix = _from(_principled(m).inputs["Base Color"])
+            ok = mix is not None and mix.bl_idname == "ShaderNodeMix" and mix.data_type == 'RGBA'
+            check("builder checker (%s): a Mix of the two colors drives the base color" % label,
+                  ok and close(list(_input(mix, "A_Color").default_value)[:3], list(red), 1e-6)
+                  and close(list(_input(mix, "B_Color").default_value)[:3], list(blue), 1e-6),
+                  getattr(mix, "bl_idname", None))
+            if not ok:
+                continue
+            factor = _input(mix, "Factor_Float")
+            bad, seen = sampled(factor, pattern)
+            check("builder checker (%s): the nodes give the pattern texmaps.checker_value gives, 0 and 1" % label,
+                  not bad and seen == {0.0, 1.0}, "%s %s" % (bad[:4], sorted(seen)))
+            if mapping.channel != 1:
+                uvs = [(n.bl_idname, getattr(n, "uv_map", "")) for n in m.node_tree.nodes
+                       if n.bl_idname in ("ShaderNodeUVMap", "ShaderNodeTexCoord")]
+                check("builder checker (%s): on that UV layer" % label,
+                      uvs == [("ShaderNodeUVMap", uv_layer_name(2))], str(uvs))
+        pattern = tx.Checker(tx.Mapping(tiling=(2.0, 3.0)))
+        ir = cm.MaterialIR(90, "CheckerBump", "test")
+        ir.bump = cm.MapRef(1)
+        ir.textures = {"bump": tx.TextureGraphIR(tx.Bump(pattern, 0.5), tx.BUMP)}
+        bump = _from(_principled(builder.make(ir)).inputs["Normal"])
+        ok = bump is not None and bump.bl_idname == "ShaderNodeBump"
+        bad, seen = sampled(_input(bump, "Height"), pattern) if ok else ([None], set())
+        check("builder checker (bump): a Bump whose height is the pattern",
+              ok and not bad and seen == {0.0, 1.0} and abs(_input(bump, "Strength").default_value - 0.5) < 1e-6,
+              "%s %s" % (getattr(bump, "bl_idname", None), bad[:4]))
+    finally:
+        empty_scene()

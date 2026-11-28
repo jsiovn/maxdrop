@@ -123,13 +123,7 @@ class _Textures:
         if placed is not None or double is not None or cell or channel != 1:
             vector = self.uv(channel, depth + 6)
         if placed is not None:
-            m = self.node("ShaderNodeMapping", depth + 5)
-            m.vector_type = 'POINT'
-            _in(m, "Location").default_value = placed[0]
-            _in(m, "Rotation").default_value = placed[1]
-            _in(m, "Scale").default_value = placed[2]
-            self.links.new(vector, _in(m, "Vector"))
-            vector = _out(m, "Vector")
+            vector = self.placement(vector, placed, depth + 5)
         if double is not None:
             n = self.node("ShaderNodeVectorMath", depth + 4)
             n.operation = 'MULTIPLY'
@@ -152,6 +146,43 @@ class _Textures:
         if clip and tex.image is not None:
             self.clip_masks[id(img)] = self.clip_mask(vector, clip, depth + 1)
         return tex
+
+    def placement(self, vector, placed, depth):
+        """vector through a POINT Mapping node of placed's (location, rotation, scale)."""
+        m = self.node("ShaderNodeMapping", depth)
+        m.vector_type = 'POINT'
+        _in(m, "Location").default_value = placed[0]
+        _in(m, "Rotation").default_value = placed[1]
+        _in(m, "Scale").default_value = placed[2]
+        self.links.new(vector, _in(m, "Vector"))
+        return _out(m, "Vector")
+
+    def checker(self, n, depth):
+        """A Checker leaf's pattern, a float socket (texmaps.checker_value, drawn): the UV placed as a Bitmap's
+        and scaled by the squares per tile (one Mapping node: k (L + R S uv) is kL + R (kS) uv), the parity of
+        floor(x) + floor(y) by a Math WRAP to 0..2 (0 or 1, also below 0). Math nodes, so that the tests' node
+        evaluator reads the pattern without a render."""
+        k = tx.CHECKER_SQUARES
+        location, rotation, scale = uv_transform(n.mapping) or ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), (1.0, 1.0, 1.0))
+        vector = self.placement(self.uv(n.mapping.channel, depth + 5),
+                                (tuple(k * c for c in location), rotation, tuple(k * c for c in scale)), depth + 4)
+        sep = self.node("ShaderNodeSeparateXYZ", depth + 3)
+        self.links.new(vector, _in(sep, "Vector"))
+        floors = []
+        for axis in "XY":
+            f = self.node("ShaderNodeMath", depth + 2)
+            f.operation = 'FLOOR'
+            self.links.new(_out(sep, axis), _in(f, "Value"))
+            floors.append(_out(f, "Value"))
+        add = self.node("ShaderNodeMath", depth + 1)
+        add.operation = 'ADD'
+        self.links.new(floors[0], _in(add, "Value"))
+        self.links.new(floors[1], _in(add, "Value_001"))
+        wrap = self.node("ShaderNodeMath", depth)
+        wrap.operation = 'WRAP'  # inputs: value, max, min
+        self.links.new(_out(add, "Value"), _in(wrap, "Value"))
+        _in(wrap, "Value_001").default_value, _in(wrap, "Value_002").default_value = 2.0, 0.0
+        return _out(wrap, "Value")
 
     def clip_mask(self, vector, axes, depth):
         """1 where the image coordinate lies in 0..1 on each of the axes, else 0 (Math COMPARE, |x - 0.5| <= 0.5)."""

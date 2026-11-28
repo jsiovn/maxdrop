@@ -28,7 +28,9 @@ from .checks_builder_more import (
     check_builder_debt, check_builder_diffuse_level, check_builder_multiply, check_builder_wrapper_constants,
     check_double_import, check_image_reuse, check_linear_fallback,
 )
-from .checks_placement import check_builder_clip_mask, check_builder_clipped_normal, check_builder_mirror
+from .checks_placement import (
+    check_builder_checker, check_builder_clip_mask, check_builder_clipped_normal, check_builder_mirror,
+)
 from .checks_failures import (
     check_asset_table_once, check_conversion_failure, check_ies_header, check_ies_search_stopped,
     check_light_note_on_failure, check_reader_defect, check_renderer_reaches_converters,
@@ -92,6 +94,7 @@ def main():
                                  ("builder fresnel off", check_builder_fresnel_off),
                                  ("builder clip mask", check_builder_clip_mask),
                                  ("builder clipped normal", check_builder_clipped_normal),
+                                 ("builder checker", check_builder_checker),
                                  ("builder mask mean", check_builder_mask_mean),
                                  ("builder saturation", check_builder_saturation),
                                  ("world shown sky", check_world_shown_sky),
