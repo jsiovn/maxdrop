@@ -1444,9 +1444,10 @@ ISO, and in mode 2 a new f-number or shutter speed keeps the exposure value and 
 EV 13, not the 13.6439 of its defaults, until one of them is set. Mode 1 renders from the f-number, shutter speed and
 ISO, mode 2 from the stored exposure value (the defaults render 0.0199 in mode 1, 0.0311 in mode 2 at EV 13: 2^0.644
 apart; 3 EV lower renders 8 times brighter); mode 0 renders as if there were no exposure. The factor itself is not
-measured here. A white balance preset stores its color in 19 (FixtureExpTint's preset 5 stores its own; maxdiff of 4 -> 0,
-the same color, changes 37 only): 0 and 4 the color above, 1 white, 2 0.75 0.886365 1, 3 0.816122 0.889125 1, 5 1 0.890094
-0.755618, 6 1 0.825353 0.628004, 7 to 9 white; what each preset stands for is not read. **Physical**, block 0: 6 f-number (float, 8); its exposure (22 exposure gain
+measured here. A white balance preset stores its color in 19 (FixtureExpTint's preset 5 stores its own). Set one after the
+other from the default 4: 1 white, 2 0.75 0.886365 1, 3 0.816122 0.889125 1, 4 the color above, 5 1 0.890094 0.755618, 6
+1 0.825353 0.628004, 7 white; 0 (after 4), 8 and 9 (after 7) left the color as it was, whether they set or keep one is
+not measured (maxdiff of 4 -> 0 changes 37 only). What each preset stands for is not read. **Physical**, block 0: 6 f-number (float, 8); its exposure (22 exposure gain
 type, 23 ISO, 24 exposure value: descriptor names only, not checked by maxdiff) is for the exposure control of the
 RenderEnvironment, not read. The exposure fixture
 (`tools/fixtures/exposure.ms`, system unit millimeters; values read back through `maxdrop/reader`; the column heads
