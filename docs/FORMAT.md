@@ -2538,10 +2538,16 @@ a mask (the scene's swatch rule on the mean of its channels, as VRayBlendMtl's b
 FixtureTwoSided, 64 96 128 with the gamma off, gives 0.117, not the raw mean 0.376); with a translucency map, that
 weight and the map mixed by the multiplier, a data graph. The Translucent BSDF's color is the back material's base
 color where it is shown, else the front's; a back material that is shown is drawn on back faces (a Mix Shader by
-Geometry > Backfacing) with the same t in the front's color. A missing translucency is black (1.0.2's peel). Not
-measured: the weight against V-Ray (maxdrop-o53.3.2), V-Ray's per-channel mix of a colored translucency (MaxDrop takes
-the mean, a line in the report), mult_by_front_diffuse (a line in the report) and force1SidedSubMtls (not read). The
-engines' settings for thin surfaces are maxdrop-o53.1.10's.
+Geometry > Backfacing) with the same t in the front's color. A missing translucency is black (1.0.2's peel). A front
+that is itself a Multi/Sub-Object keeps the peel and its face IDs (translucency and back not drawn, a line); one
+reached through a wrapper (a VRayMtlWrapper over a Multi/Sub-Object) is drawn as its first entry, a line: unlike
+1.0.2, which kept its face IDs. A front with layers of its own gets the translucency below them (a line). Not
+measured: the weight against V-Ray (maxdrop-o53.3.2); the gamma of a translucency map: the map is a data graph (read
+as stored with the gamma off) while the color goes through the swatch rule of a mask (decoded with the gamma off), so
+with the gamma off a 128 grey map gives 0.502 and the 128 grey color 0.216 (whether V-Ray reads the map as a mask,
+as VRayBlendMtl's blend map is taken, is maxdrop-o53.3.2's); V-Ray's per-channel mix of a colored translucency
+(MaxDrop takes the mean, a line in the report), mult_by_front_diffuse (a line in the report) and force1SidedSubMtls
+(not read). The engines' settings for thin surfaces are maxdrop-o53.1.10's.
 
 ## Asset metadata
 

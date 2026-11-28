@@ -171,9 +171,25 @@ class TwoSidedSynthetic(unittest.TestCase, Close):
         self.assertTrue(ir.unknown)
 
     def test_mult_by_front_diffuse(self):
+        line = "Two: Mult by front diffuse not drawn: the translucency is not tinted by the front's diffuse"
         conv, ir = _two({0: Ref(1), 7: (0.5, 0.5, 0.5), 9: 1}, *_front_back())
-        self.assertIn("Two: Mult by front diffuse not drawn: the translucency is not tinted by the front's diffuse",
-                      ir.issues)
+        self.assertIn(line, ir.issues)
+        conv, ir = _two({0: Ref(1), 1: Ref(2), 3: 1, 7: (0.0, 0.0, 0.0), 9: 1}, *_front_back())
+        self.assertNotIn(line, ir.issues, "black: nothing to tint")
+
+    def test_front_with_layers(self):
+        """A front with its own layers: the translucency below them, a line; a front that lets light through itself:
+        its translucency replaced, a line."""
+        coated = _wrapper(1, classids.VRAY_BLEND_MTL, {0: Ref(3), 1: [Ref(3)]}, "Coated")
+        conv, ir = _two({0: Ref(1), 7: (0.5, 0.5, 0.5)}, coated, _vray(3, "C"))
+        self.assertEqual([la.mode for la in ir.layers], [mat.MIX])
+        self.assertIn("Two: translucency drawn below the front material's layers, which let no light through", ir.issues)
+        inner = _wrapper(1, TWO, {0: Ref(3), 7: (0.2, 0.2, 0.2)}, "Inner")
+        conv, ir = _two({0: Ref(1), 7: (0.5, 0.5, 0.5)}, inner, _vray(3, "C"))
+        self.close(ir.translucency.value, 0.5)
+        self.assertIn("Two: the front material's own translucency replaced by this one", ir.issues)
+        conv, ir = _two({0: Ref(1), 7: (0.5, 0.5, 0.5)}, *_front_back())
+        self.assertEqual(ir.issues, [], "a plain front: no line")
 
     def test_bsdf_cap(self):
         """A back that would take the material past MAX_LAYER_BSDFS Principled BSDFs is left out, with a line."""

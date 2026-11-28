@@ -150,6 +150,7 @@ class MaterialConverter:
                         self._issue_once(m.index, "%s: facing material switched off: drawn all the same, as V-Ray "
                                          "renders it (the scanline renders it black)" % name)
                     if (key == classids.VRAY_2SIDED_MTL and pid == pids[0]
+                            and self.is_class(v.index, classids.SC_MATERIAL, classids.MULTI_SUB_MTL)
                             and (self.two_sided_translucent(m) or self.two_sided_back(m) is not None)):
                         self._issue_once(m.index, "%s: front material is a Multi/Sub-Object: drawn by face ID, its "
                                          "translucency and back material not drawn" % name)
@@ -210,11 +211,18 @@ class MaterialConverter:
             return None
         return back.index
 
-    def two_sided_translucent(self, m):
-        """Whether a VRay2SidedMtl's translucency is not black: its color (a missing or unusable one black), or a
-        translucency map set, on and at a multiplier above 0."""
+    def two_sided_color(self, m):
+        """A VRay2SidedMtl's translucency color as stored, each channel clamped to 0..1; a missing or unusable one
+        black (the peel of 1.0.2)."""
         v = m.param(VRAY_2SIDED_TRANSLUCENCY, 0)
-        if isinstance(v, tuple) and len(v) >= 3 and all(_finite(c) for c in v[:3]) and max(v[:3]) > 0.0:
+        if not (isinstance(v, tuple) and len(v) >= 3 and all(_finite(c) for c in v[:3])):
+            return (0.0, 0.0, 0.0)
+        return tuple(min(1.0, max(0.0, c)) for c in v[:3])
+
+    def two_sided_translucent(self, m):
+        """Whether a VRay2SidedMtl's translucency is not black: its color (two_sided_color), or a translucency map
+        set, on and at a multiplier above 0."""
+        if max(self.two_sided_color(m)) > 0.0:
             return True
         ref = m.param(VRAY_2SIDED_MAP, 0)
         return (_flag(m, VRAY_2SIDED_MAP_ON, 0, True) and _num(m, VRAY_2SIDED_MULTIPLIER, 0, 100.0) > 0.0

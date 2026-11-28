@@ -80,6 +80,18 @@ def check_builder_two_sided():
               and translucent[0].inputs["Normal"].links[0].from_socket == p.inputs["Normal"].links[0].from_socket)
 
         empty_scene()
+        tinted = cm.MaterialIR(45, "Tinted", "test", base_color=cm.Input((1.0, 0.0, 0.0), cm.MapRef(1)),
+                               translucency=cm.Input(0.4), translucency_color=cm.Input((1.0, 0.0, 0.0), cm.MapRef(1)))
+        color = tx.TextureGraphIR(tx.Mix(tx.Constant((1.0, 0.0, 0.0)), tx.Constant((0.0, 0.0, 1.0)),
+                                         tx.Checker(tx.Mapping())), tx.COLOR)
+        tinted.textures.update(base_color=color, translucency_color=color)
+        m = make(tinted)
+        p, translucent = _bsdfs(m)[0], _kind(m, "ShaderNodeBsdfTranslucent")
+        check("two-sided: a translucency color graph linked into the Translucent BSDF, the base color's own nodes",
+              len(translucent) == 1 and translucent[0].inputs["Color"].is_linked and p.inputs["Base Color"].is_linked
+              and translucent[0].inputs["Color"].links[0].from_socket == p.inputs["Base Color"].links[0].from_socket)
+
+        empty_scene()
         back = cm.MaterialIR(44, "TwoBack", "test", base_color=cm.Input((0.0, 1.0, 0.0)),
                              translucency=cm.Input(0.3), translucency_color=cm.Input((1.0, 0.0, 0.0)))
         front.layers = [cm.Layer(back, mode=cm.BACK)]

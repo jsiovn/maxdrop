@@ -12,7 +12,7 @@ from ..params import finite as _finite, flag as _flag
 from .ids import (
     CORONA_AMOUNTS, CORONA_BASE, CORONA_MASK_AMOUNTS, CORONA_MASKS, CORONA_MASKS_ON, MAX_LAYER_BSDFS, MAX_LAYERS,
     VRAY_2SIDED_FRONT, VRAY_2SIDED_MAP, VRAY_2SIDED_MAP_ON, VRAY_2SIDED_MULT_DIFFUSE, VRAY_2SIDED_MULTIPLIER,
-    VRAY_2SIDED_TRANSLUCENCY, VRAY_BLEND_ADDITIVE, VRAY_BLEND_BASE, VRAY_BLEND_COLOR, VRAY_BLEND_COLORS,
+    VRAY_BLEND_ADDITIVE, VRAY_BLEND_BASE, VRAY_BLEND_COLOR, VRAY_BLEND_COLORS,
     VRAY_BLEND_MAPS, VRAY_BLEND_MULTIPLIERS,
 )
 from .ir import ADD, BACK, Input, Layer, MIX
@@ -132,9 +132,12 @@ def vray_2sided_mtl(conv, m, ir):
     own), not measured (maxdrop-o53.3.2 calibrates it). t: the translucency color taken as a swatch on a mask (the
     scene's swatch rule on the mean of its channels, each clamped to 0..1: what V-Ray 5.2 was measured to render for a
     constant mask, TexmapConverter._swatch; a missing one black); with a translucency map on, that weight and the map
-    mixed by the multiplier (percent), a DATA graph. A colored translucency color where it counts is an issue (V-Ray
-    mixes per channel), and so is Mult by front diffuse. A back material that is set, on and not the front
-    (two_sided_back) is a Layer (BACK) shown on back faces, with the same t in the front's base color."""
+    mixed by the multiplier (percent), a DATA graph, as the bead's scope sets it (a mask's rule, MASK, would decode
+    the map as the color is with the gamma off: which V-Ray follows is not measured, maxdrop-o53.3.2). A colored
+    translucency color where it counts is an issue (V-Ray mixes per channel), and so are Mult by front diffuse, a
+    front's own layers (the translucency is drawn below them) and a front's own translucency (replaced). A back
+    material that is set, on and not the front (two_sided_back) is a Layer (BACK) shown on back faces, with the same t
+    in the front's base color."""
     name = m.name or conv._class_name(m)
     front_index = m.param(VRAY_2SIDED_FRONT, 0).index
     front = conv.convert(front_index)
@@ -143,10 +146,7 @@ def vray_2sided_mtl(conv, m, ir):
     out = dataclasses.replace(front, index=ir.index, name=ir.name, source=ir.source, unknown=False,
                               shadow_catcher=False, textures=dict(front.textures), issues=list(front.issues),
                               layers=list(front.layers))
-    v = m.param(VRAY_2SIDED_TRANSLUCENCY, 0)
-    if not (isinstance(v, tuple) and len(v) >= 3 and all(_finite(c) for c in v[:3])):
-        v = (0.0, 0.0, 0.0)
-    stored = tuple(min(1.0, max(0.0, c)) for c in v[:3])
+    stored = conv.two_sided_color(m)
     weight = conv.swatches.channel(mean(stored))
     ref = conv.map_ref(m, VRAY_2SIDED_MAP, VRAY_2SIDED_MAP_ON, VRAY_2SIDED_MULTIPLIER, 0, ir=out)
     graph = conv.texmaps.convert(ref, _texmaps.DATA, weight) if ref is not None and conv.texmaps is not None else None
@@ -155,9 +155,15 @@ def vray_2sided_mtl(conv, m, ir):
     if (graph is None or ref.amount < 1.0) and max(stored) - min(stored) > 0.5 / 255:
         conv.issue(m.index, "%s: translucency color (%.3f, %.3f, %.3f) drawn as its mean, not per channel"
                    % ((name,) + stored), out)
-    if _flag(m, VRAY_2SIDED_MULT_DIFFUSE, 0, False):
+    through = weight > 0.0 or graph is not None
+    if through and _flag(m, VRAY_2SIDED_MULT_DIFFUSE, 0, False):
         conv.issue(m.index, "%s: Mult by front diffuse not drawn: the translucency is not tinted by the front's diffuse"
                    % name, out)
+    if through and front.layers:
+        conv.issue(m.index, "%s: translucency drawn below the front material's layers, which let no light through"
+                   % name, out)
+    if through and (front.translucency.value > 0.0 or "translucency" in front.textures):
+        conv.issue(m.index, "%s: the front material's own translucency replaced by this one" % name, out)
     back_index = conv.two_sided_back(m)
     for sub in (front_index, back_index):
         peeled = conv.peel(sub)[0] if sub is not None else None
