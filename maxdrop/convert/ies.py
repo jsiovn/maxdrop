@@ -237,17 +237,19 @@ def _planes(vertical, horizontal, candelas, zone, above=None):
     """Per horizontal plane the integral over its vertical angles (the candelas linear in angle between them); above:
     over the angles past that one (degrees) only."""
     nv = len(vertical)
+    rad = [math.radians(a) for a in vertical]
     planes = []
     for j in range(len(horizontal)):
         row = candelas[j * nv:(j + 1) * nv]
         total = 0.0
         for i in range(nv - 1):
-            a, b, ia, ib = vertical[i], vertical[i + 1], row[i], row[i + 1]
-            if above is not None and a < above:
-                if b <= above:
+            ra, ia, ib = rad[i], row[i], row[i + 1]
+            if above is not None and vertical[i] < above:
+                if vertical[i + 1] <= above:
                     continue
-                ia, a = ia + (ib - ia) * (above - a) / (b - a), above
-            total += zone(math.radians(a), math.radians(b), ia, ib)
+                ia += (ib - ia) * (above - vertical[i]) / (vertical[i + 1] - vertical[i])
+                ra = math.radians(above)
+            total += zone(ra, rad[i + 1], ia, ib)
         planes.append(total)
     return planes
 
