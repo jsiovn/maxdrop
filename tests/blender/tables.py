@@ -159,6 +159,7 @@ CAMERA_SHIFTS = {"CamPhysShift": (-0.1, 0.15), "CamVRayShift": (-0.1, -0.25)}
 CAMERA_SENSORS = {"CamVRayTarget": 30.0}
 FOV_TOLERANCE = 0.05  # degrees
 KEPT_SIZE = (1234, 567, 50)  # the scene's render size before each import (empty_scene)
+KEPT_EXPOSURE = -0.25  # the scene's view exposure before each import (empty_scene): no fixture's camera has one
 USER_WORLD = "UserWorld"  # the scene's World before each import (empty_scene)
 BARE_MESHES = {"FixtureMeshSource", "FixtureEmitterSource"}  # meshes a fixture leaves without a material: the
 # mesh lights' sources (vray_dome, vray_mesh_light)

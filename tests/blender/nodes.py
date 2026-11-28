@@ -382,11 +382,12 @@ CANCEL_KINDS = ("objects", "meshes", "curves", "lights", "cameras", "materials",
 
 def _state():
     """What a cancelled run must leave as it found it: the datablocks of each kind, the scene camera, render size,
-    the scene's World."""
+    the scene's World and view exposure."""
     r = bpy.context.scene.render
     return ({kind: sorted(b.as_pointer() for b in getattr(bpy.data, kind)) for kind in CANCEL_KINDS},
             bpy.context.scene.camera, (r.resolution_x, r.resolution_y, r.resolution_percentage, r.pixel_aspect_x,
-                                       r.pixel_aspect_y), bpy.context.scene.world)
+                                       r.pixel_aspect_y), bpy.context.scene.world,
+            bpy.context.scene.view_settings.exposure)
 
 
 def _cancel_run(paths):

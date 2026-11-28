@@ -12,9 +12,10 @@ from mathutils import Matrix, Vector
 from mathutils.geometry import interpolate_bezier
 
 from .core import check, close, empty_scene, max_rows, objects_of, world_of
+from .nodes import _advance, _cancel_run, _state
 from .tables import (
     BBOX_TOLERANCE, CAMERA_SENSORS, CAMERA_SHIFTS, EXTRUDE_EULER, EXTRUDE_SHARP_EDGES, EXTRUDE_UV_LAYERS, FOV_TOLERANCE,
-    KEPT_SIZE, MATRIX_TOLERANCE,
+    KEPT_EXPOSURE, KEPT_SIZE, MATRIX_TOLERANCE,
 )
 
 
@@ -25,10 +26,11 @@ def check_camera(label, ob, node, desc, o):
     if ob.type != 'CAMERA':
         return
     cam, cd = ob.data, desc.cameras[node.camera]
-    got = (cam.type, cam.sensor_fit, cam.sensor_width, cam.lens, cam.shift_x, cam.shift_y, cam.dof.use_dof)
-    want = (cd.kind, 'HORIZONTAL', cd.sensor, cd.lens, cd.shift_x, cd.shift_y, False)
-    check(label + ": type, sensor fit, sensor, lens, shift, no depth of field", got[:2] == want[:2] and
-          close(got[2:6], want[2:6], 1e-5) and got[6] == want[6], "%s vs %s" % (got, want))
+    got = (cam.type, cam.sensor_fit, cam.sensor_width, cam.lens, cam.shift_x, cam.shift_y, cam.dof.use_dof,
+           "maxdrop_exposure" in cam)
+    want = (cd.kind, 'HORIZONTAL', cd.sensor, cd.lens, cd.shift_x, cd.shift_y, False, False)
+    check(label + ": type, sensor fit, sensor, lens, shift, no depth of field, no exposure", got[:2] == want[:2] and
+          close(got[2:6], want[2:6], 1e-5) and got[6:] == want[6:], "%s vs %s" % (got, want))
     sx, sy = CAMERA_SHIFTS.get(o["name"], (0.0, 0.0))
     check(label + ": the shift and sensor the fixture script made", close((cam.shift_x, cam.shift_y), (sx, sy), 1e-6)
           and abs(cam.sensor_width - CAMERA_SENSORS.get(o["name"], 36.0)) < 1e-5, "%g, %g, %g" % (
@@ -54,7 +56,8 @@ def check_camera(label, ob, node, desc, o):
 
 def check_render(name, oracle, obs, desc):
     """Every fixture: with a camera, the scene's render size is the oracle's and scene.camera the oracle's render
-    camera or else the first camera; without one, the scene's render size and camera stay as they were."""
+    camera or else the first camera; without one, the scene's render size and camera stay as they were. No fixture's
+    camera has an exposure: the scene's view exposure stays as it was."""
     scene = bpy.context.scene
     r = oracle["render"]
     got = (scene.render.resolution_x, scene.render.resolution_y, scene.render.resolution_percentage,
@@ -70,6 +73,8 @@ def check_render(name, oracle, obs, desc):
     else:
         check("%s: no camera: the scene's render size and camera are kept" % name,
               got == KEPT_SIZE + (1.0,) and scene.camera is None, "%s %s" % (got, scene.camera))
+    check("%s: the scene's view exposure is kept" % name, scene.view_settings.exposure == KEPT_EXPOSURE,
+          "%g" % scene.view_settings.exposure)
     if name == "cameras":
         check("cameras: eleven camera objects, one Camera each, CamTarget the scene camera",
               len(cams) == 11 and len(bpy.data.cameras) == 11 and scene.camera.name == "CamTarget",
@@ -79,6 +84,69 @@ def check_render(name, oracle, obs, desc):
               scene.camera is not None and scene.camera.name == "FixtureCam" and desc.camera is not None
               and desc.camera_note is not None and not any(r.startswith("camera: ") for _i, r in desc.issues),
               str(desc.camera_note))
+
+
+def check_camera_settings(cameras_max, no_camera_max):
+    """Hand-made exposures and depth of field (convert.cameras leaves them None until their ids are read): a Camera
+    with dof_distance 2.5 and fstop 4 has depth of field on at 2.5 m, f/4, and its exposure as maxdrop_exposure;
+    cameras_max with its scene camera's exposure 1.5 and another camera's 0.5, then no_camera_max (no camera), run
+    through pipeline._Run: the view exposure is 1.5 (the second file leaves it), the render line names it and the
+    other camera; undo() and a run closed after the first file put the exposure before back."""
+    from maxdrop import pipeline
+    from maxdrop.build import cameras as build_cameras
+    from maxdrop.convert import cameras as convert_cameras
+    empty_scene()
+    scene = bpy.context.scene
+    cam = build_cameras.make_camera(convert_cameras.CameraDescription("k", "DofCam", exposure=1.5, dof_distance=2.5,
+                                                                      fstop=4.0))
+    got = (cam.dof.use_dof, cam.dof.focus_distance, cam.dof.aperture_fstop, cam.get("maxdrop_exposure"))
+    check("camera settings: dof_distance 2.5, fstop 4: depth of field on, focus 2.5 m, f/4, exposure 1.5 on the Camera",
+          got == (True, 2.5, 4.0, 1.5), str(got))
+    plain = build_cameras.make_camera(convert_cameras.CameraDescription("k", "PlainCam"))
+    check("camera settings: without them depth of field is off and the Camera has no exposure",
+          not plain.dof.use_dof and "maxdrop_exposure" not in plain, str(plain.dof.use_dof))
+    bpy.data.cameras.remove(cam)
+    bpy.data.cameras.remove(plain)
+
+    real_read, others = pipeline._read_scene, []
+
+    def read_with_exposures(max_path, opts, dirs, cancel=None):
+        read = real_read(max_path, opts, dirs, cancel)
+        desc = read.desc
+        if desc.camera is not None:
+            cds = list(desc.cameras.values())
+            own = next(cd for cd in cds if desc.camera in cd.users)
+            other = next(cd for cd in cds if cd is not own)
+            own.exposure, other.exposure = 1.5, 0.5
+            others.append(other.name)
+        return read
+
+    pipeline._read_scene = read_with_exposures
+    try:
+        before = _state()
+        run = _cancel_run([cameras_max, no_camera_max])
+        ended = not _advance(run.steps(), lambda: False)
+        applied = scene.view_settings.exposure
+        text = bpy.data.texts.get("MaxDrop Report")
+        lines = [x for x in (text.as_string() if text else "").split("\n") if "; exposure: " in x]
+        check("camera settings: the scene camera's exposure 1.5 is the view exposure, the file without a camera "
+              "leaves it, the render line names it and the other camera's 0.5",
+              ended and applied == 1.5 and len(lines) == 1 and "; exposure: 1.5; " in lines[0]
+              and "not applied: " in lines[0] and "%s 0.5" % others[0] in lines[0],
+              "%s %g %s %s" % (ended, applied, others, lines))
+        run.undo()
+        check("camera settings: undo() puts the view exposure before back", _state() == before,
+              "%s | %s" % (_state(), before))
+        run = _cancel_run([cameras_max, no_camera_max])
+        steps = run.steps()
+        held = _advance(steps, lambda: len(run._made) == 1)
+        applied = scene.view_settings.exposure
+        steps.close()
+        check("camera settings: a run closed after the first file (exposure 1.5) puts the view exposure before back",
+              held and applied == 1.5 and _state() == before, "%s %g | %s | %s" % (held, applied, _state(), before))
+    finally:
+        pipeline._read_scene = real_read
+        empty_scene()
 
 
 def check_extruded(label, ob, node, o, meters, plan):

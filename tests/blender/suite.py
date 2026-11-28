@@ -12,7 +12,7 @@ import traceback
 import bpy
 
 from .core import argv, check, ROOT
-from .checks_objects import check_ignore_option
+from .checks_objects import check_camera_settings, check_ignore_option
 from .checks_lights import check_dome_undo, check_ies_cleanup, check_ies_light, check_light_nodes, check_spread_cancel
 from .checks_maps import check_builder_volume, check_curve_step
 from .checks_operator import check_mesh_steps, check_read_cancel, check_worker_errors
@@ -111,6 +111,9 @@ def main():
                                  ("linear fallback", check_linear_fallback),
                                  ("image reuse", check_image_reuse), ("double import", check_double_import),
                                  ("worker errors", check_worker_errors),
+                                 ("camera settings", lambda: check_camera_settings(
+                                     os.path.join(ROOT, "tests", "fixtures", "cameras.max"),
+                                     os.path.join(ROOT, "tests", "fixtures", "primitives.max"))),
                                  ("read cancel", lambda: check_read_cancel(
                                      os.path.join(ROOT, "tests", "fixtures", "primitives.max"))),
                                  ("mesh steps", lambda: check_mesh_steps(

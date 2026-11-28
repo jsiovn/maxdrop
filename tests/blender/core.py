@@ -10,7 +10,7 @@ import sys
 
 import bpy
 
-from .tables import KEPT_SIZE, MIRROR_INPUTS, USER_WORLD
+from .tables import KEPT_EXPOSURE, KEPT_SIZE, MIRROR_INPUTS, USER_WORLD
 
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -49,6 +49,7 @@ def empty_scene():
     r = bpy.context.scene.render  # a size no fixture has: a file without a camera must leave it
     r.resolution_x, r.resolution_y, r.resolution_percentage = KEPT_SIZE
     r.pixel_aspect_x = r.pixel_aspect_y = 1.0
+    bpy.context.scene.view_settings.exposure = KEPT_EXPOSURE
     bpy.context.scene.camera = None
     for material in list(bpy.data.materials):
         bpy.data.materials.remove(material)
