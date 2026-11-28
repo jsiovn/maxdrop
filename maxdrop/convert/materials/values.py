@@ -6,11 +6,11 @@
 import math
 import unicodedata
 
-from ...reader import classids, units
-from ...reader import scene as reader_scene
+from ...reader import classids
 from ...reader.classdir import ClassId
 from ..params import finite as _finite
-from .ids import CORONA_LEGACY_GLOSS, DEFAULT_METERS, MAX_COMPLEX_IOR
+from ..texmaps.converter import _scene_meters as _scene_meters  # the texture maps' rule: one for both
+from .ids import CORONA_LEGACY_GLOSS, MAX_COMPLEX_IOR
 
 
 def mean(rgb):
@@ -68,13 +68,6 @@ def corona_legacy_roughness(gloss):
     i = min(int(g * step), step - 1)
     t = g * step - i
     return CORONA_LEGACY_GLOSS[i] * (1.0 - t) + CORONA_LEGACY_GLOSS[i + 1] * t
-
-
-def _scene_meters(graph):
-    """Meters per system unit of a MaterialGraph's scene: what the file says, else DEFAULT_METERS."""
-    s = getattr(graph, "scene", None)
-    unit = units.system_unit(s) if isinstance(s, reader_scene.Scene) else None
-    return unit.meters if unit is not None else DEFAULT_METERS
 
 
 def f0_from_complex_ior(n, k):

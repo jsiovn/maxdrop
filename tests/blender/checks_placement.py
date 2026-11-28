@@ -11,7 +11,7 @@ import tempfile
 import bpy
 from mathutils import Vector
 
-from .core import check, close, empty_scene
+from .core import check, close, empty_scene, ROOT
 from .nodes import (
     _clip_axes_of, _clip_mask_input, _from, _image_of, _input, _meaned, _principled, _write_png, CLIP_LABEL,
 )
@@ -528,3 +528,20 @@ def check_builder_noise():
             chain(_input(bump, "Height"), noise, "bump")
     finally:
         empty_scene()
+
+
+def check_import_noise_meters():
+    """The import hands its meters per file unit to the texture maps (pipeline._material_slots, bead maxdrop-o53.1.5):
+    vray_texmaps' Noise (size 635 in a millimeter file) gets a Mapping scale of 1 / 0.635 per meter at Scale 1 and
+    of 1 / 1.27 at Scale 2, the object's coordinates being in meters as built."""
+    path = os.path.join(ROOT, "tests", "fixtures", "vray_texmaps.max")
+    for scale in (1.0, 2.0):
+        empty_scene()
+        result = bpy.ops.import_scene.maxdrop(filepath=path, scale_objects=scale)
+        mappings = [_from(_input(n, "Vector")) for m in bpy.data.materials if m.node_tree is not None
+                    for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeTexNoise"]
+        want = 1.0 / (0.635 * scale)
+        got = [list(_input(mp, "Scale").default_value) for mp in mappings if mp is not None]
+        check("import noise meters (Scale %g): the Noise's Mapping scale is 1 / (size x meters)" % scale,
+              result == {'FINISHED'} and len(got) == 1 and close(got[0], [want] * 3, 1e-5), "%s %s" % (result, got))
+    empty_scene()

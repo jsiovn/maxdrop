@@ -4,6 +4,7 @@
 
 """The material rules' limits, wrapper tables, parameter ids and constants."""
 from ...reader import chunks, classids
+from ..texmaps.ids import DEFAULT_METERS as DEFAULT_METERS  # meters per system unit of a scene that does not say
 
 
 ChunkError = chunks.ChunkError
@@ -60,7 +61,6 @@ MAX_LAYERS = 16  # layers mixed over a CoronaLayeredMtl's base (Corona offers 10
 MAX_LAYER_BSDFS = 64  # Principled BSDFs one material may draw, its layers' layers counted at each use
 # (each may come with a twin without reflection, the reflection weight of build/materials/: at most twice as many nodes)
 MAX_COMPLEX_IOR = 100.0  # n and k of a complex IOR are held within 0..this
-DEFAULT_METERS = 0.0254  # meters per system unit of a scene that does not say: 3ds Max's default, inches
 
 LUMENS_PER_WATT = 683.0  # luminous efficacy at 555 nm: cd/m2 -> W/(m2 sr)
 

@@ -2160,8 +2160,8 @@ Math nodes (Mapping, Separate XYZ, FLOOR, ADD, WRAP to 0..2), which the Blender 
 
 | Class (ClassID) | Parameters |
 |---|---|
-| Noise `(0x234, 0)` (pblock_animated, standard_shaders, vray_more, vray_texmaps) | 0 color1, 1 color2, 2 map1, 3 map2, 4 / 5 map1Enabled / map2Enabled, 6 size (file units; 635 in the millimeter fixtures, 3ds Max's 25 inches), 7 phase, 8 levels, 9 thresholdLow, 10 thresholdHigh, 11 type (0 regular, 1 fractal, 2 turbulence), 12 coords (its XYZGen, a part), 13 output (its Output part) |
-| XYZGen `(0x100, 0)`, superclass `0x0C30` (a Noise's coords) | old ParamBlock: 0 offset (Point3, file units), 1 tiling (Point3), 2 angle (Point3), 3 blur, 4 blur offset; its u32 leaves `0x0002`, `0x0010`, `0x0004` hold 0, 1, 1 in every fixture Noise: the coordinate source is among them, not decoded (maxdrop-o53.2.6) |
+| Noise `(0x234, 0)` (pblock_animated, standard_shaders, vray_more, vray_texmaps) | 0 color1, 1 color2, 2 map1, 3 map2, 4 / 5 map1Enabled / map2Enabled, 6 size (file units; 635 in the millimeter fixtures, whose scripts create the Noise without a size: 3ds Max's default, 25 inches), 7 phase, 8 levels, 9 thresholdLow, 10 thresholdHigh, 11 type (0 regular, 1 fractal, 2 turbulence), 12 coords (its XYZGen, a part), 13 output (its Output part) |
+| XYZGen `(0x100, 0)`, superclass `0x0C30` (a Noise's coords) | old ParamBlock: 0 offset (Point3, file units), 1 tiling (Point3), 2 angle (Point3), 3 / 4 floats (1 and 0 in every fixture; assumed blur and blur offset, not read); its u32 leaves `0x0002`, `0x0010`, `0x0004` hold 0, 1, 1 in every fixture Noise: the coordinate source is among them, not decoded (maxdrop-o53.2.6) |
 
 Noise (maxdrop-o53.1.5) is a Mix of its two sides by a Noise leaf, approximated (counted as a procedural map drawn
 with Blender's own pattern): a Noise Texture (fBm, normalized, roughness 0.5, lacunarity 2) on Blender's object
@@ -2169,9 +2169,12 @@ coordinates p (meters) through a Mapping node, q = R(angle) (tiling * (p - offse
 meters (file units times the import's meters per unit), the angle in radians (as a UVGen's old ParamBlock).
 Provisional, not measured until maxdrop-o53.3.10 fits them against 3ds Max's samples: that scale (one Blender noise
 unit per size), the order offset, tiling, angle; Detail = levels - 1 for fractal and turbulence (a level an octave),
-0 for regular (3ds Max uses levels only for those two); turbulence as |2 fBm - 1|; phase as the 4D noise's W; the
+0 for regular (3ds Max uses levels only for those two); turbulence as |2 fBm - 1|; phase as the 4D noise's W (3D
+at phase 0: another function, so the spots change as soon as the phase leaves 0); the
 thresholds as a clamped Map Range from low to high (high at least 0.001 above low). The coordinate source is drawn
-as Object XYZ (maxdrop-o53.3.3 applies the others). With the gamma off it is computed on the stored values, as a
+as Object XYZ (maxdrop-o53.3.3 applies the others), on Blender's object coordinates, which hold the pivot offset
+the build bakes into the mesh (3ds Max's Object XYZ may not: with an offset rotation or scale and a tiling not the
+same on every axis the pattern may turn). With the gamma off it is computed on the stored values, as a
 Falloff (MASK_MIXES; not measured); its Output part an Adjust. In a bump input with black and white sides the leaf
 itself, in a normal map's normal slot nothing (a line). Blender's noise is another function than 3ds Max's: only
 the scale, the octaves and the contrast can match.
