@@ -10,7 +10,7 @@
     g = tex.convert(map_ref, kind, value)   # TextureGraphIR, None when nothing usable drives the input
     g.root, g.kind, g.approximated, g.issues
     graphs = texture_graphs(ir, tex)        # {MaterialIR input name: TextureGraphIR}
-    tex.stats.peeled, tex.stats.unsupported, tex.stats.issues
+    tex.stats.peeled, tex.stats.unsupported, tex.stats.approximated, tex.stats.issues
 
 kind says what the input is: COLOR (base color, specular and transmission, which V-Ray and Standard drive with the
 reflection and refraction colors, emission), DATA (roughness, metallic, opacity, and every mask below them), MASK (a
@@ -167,7 +167,8 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
   rows 1/3 (the mean) over lerp(level, the map as a MASK, its amount)), each side over its constant where its
   images are missing (_leveled).
 
-Each map object counts at most once in stats.peeled or stats.unsupported, each issue once in stats.issues. The file
+Each map object counts at most once in stats.peeled, stats.unsupported or stats.approximated (a procedural map
+drawn with Blender's own pattern), each issue once in stats.issues. The file
 comes from anywhere: a reference cycle, a chain deeper than MAX_DEPTH, a reference to an object that is not a map or
 a damaged object end that branch (an issue), a shared map is converted once (no blow-up through repeated
 references), and unreadable Placement, Output or BitmapInfo chunks take the defaults. Those chunks are read by

@@ -52,10 +52,10 @@ class MaterialConverter:
         v = tuple(min(1.0, max(0.0, c)) for c in v[:3])
         if ir is not None and max(v) - min(v) > 0.5 / 255:
             self.issue(m.index, "%s %r: opacity color (%.3f, %.3f, %.3f) drawn as its mean %.3f: Corona renders it per "
-                       "channel" % ((self.class_name(m), m.name) + v + (mean(v),)), ir)
+                       "channel" % ((self._class_name(m), m.name) + v + (mean(v),)), ir)
         return mean(v)
 
-    def class_name(self, m):
+    def _class_name(self, m):
         """The report's name of material m's class (values.class_name), the class directory of the graph's scene
         naming a class classids does not know."""
         scene = getattr(self.graph, "scene", None)
@@ -123,7 +123,7 @@ class MaterialConverter:
         else:
             pids = WRAPPERS[key]
         block = m.block(0)
-        name = m.name or self.class_name(m)
+        name = m.name or self._class_name(m)
         if key in WRAPPER_STOPS:
             slot, switch, shows = WRAPPER_STOPS[key]
             first = block.value(pids[0]) if block is not None else None
@@ -219,7 +219,7 @@ class MaterialConverter:
                 break
             if i not in self._counted:
                 self._counted.add(i)
-                self.stats.peeled[self.class_name(m)] += 1
+                self.stats.peeled[self._class_name(m)] += 1
             chain.append(i)
             sub, reason = self._sub(m, key)
             if sub is None:
@@ -386,7 +386,7 @@ class MaterialConverter:
         """The grey material for an object no rule converts, named after it."""
         try:
             m = self.graph.get(index)
-            name, source = m.name, self.class_name(m)
+            name, source = m.name, self._class_name(m)
         except ChunkError:
             name, source = "", ""
         g = colors.srgb_to_linear(GREY_SRGB)
@@ -400,7 +400,7 @@ class MaterialConverter:
             m = self.graph.get(index)
         except ChunkError as e:
             return self._grey(index, "object %d: %s" % (index, e))
-        source = self.class_name(m)
+        source = self._class_name(m)
         rule = RULES.get((m.superclass, ClassId(*m.class_id)))
         if rule is None:
             self.stats.unknown[source] += 1

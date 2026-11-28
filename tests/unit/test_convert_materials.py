@@ -90,8 +90,8 @@ class Helpers(unittest.TestCase, Close):
         self.assertEqual(mat.class_name(sc, (0x250, 0), "Blend"), "Blend")
         self.assertEqual(mat.class_name(sc, classids.VRAY_MTL, "Something else"), "VRayMtl")
         self.assertEqual(mat.class_name(sc, (1, 2), ""), odd)
-        self.assertEqual(mat.class_name(sc, (1, 2), "\r\n\x00 "), odd)
-        self.assertEqual(mat.class_name(sc, (1, 2), " Foo\r\nBar\x00‮ "), "Foo Bar")
+        self.assertEqual(mat.class_name(sc, (1, 2), "\r\n\x00\u2028"), odd)
+        self.assertEqual(mat.class_name(sc, (1, 2), " Foo\r\nBar\x00\u202e "), "Foo Bar")
         long = mat.class_name(sc, (1, 2), "x" * 500)
         self.assertEqual((len(long), long), (mat.MAX_CLASS_NAME, "x" * (mat.MAX_CLASS_NAME - 3) + "..."))
         self.assertEqual(mat.class_label("y" * mat.MAX_CLASS_NAME), "y" * mat.MAX_CLASS_NAME, "at the limit: kept")
