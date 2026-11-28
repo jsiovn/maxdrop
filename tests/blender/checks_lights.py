@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """Checks of lights: emitters spread over their meshes, VRayLights, standard lights, the dome and its undo,
-Light Strength."""
+Light Strength, a light's node tree."""
 import math
 import os
 
@@ -513,7 +513,8 @@ def check_light_strength(path):
 def check_light_nodes():
     """compat.light_nodes on a new point and spot light (4.x: use_nodes off, no tree; 5.x: a tree at once): the
     light's tree, a Light Output and an Emission linked into its Surface; a second call returns the same nodes and adds
-    none; a tree emptied of its nodes gets both back, linked."""
+    none; a tree emptied of its nodes gets both back, linked; with a second Light Output made active, its Emission
+    renamed and a loose Emission named "Emission", the active output and the Emission linked into it."""
     from maxdrop import compat
     for kind in ('POINT', 'SPOT'):
         light = bpy.data.lights.new("LightNodes" + kind.title(), kind)
@@ -521,7 +522,7 @@ def check_light_nodes():
             tree, emission, output = compat.light_nodes(light)
             label = "light nodes (%s)" % kind.lower()
             check(label + ": the light's tree, nodes enabled", tree is not None and tree == light.node_tree and
-                  getattr(light, "use_nodes", True), str(tree))
+                  (bpy.app.version >= (5, 0, 0) or light.use_nodes), str(tree))
             linked = [k.from_node for k in output.inputs["Surface"].links]
             check(label + ": an Emission linked into the Light Output's Surface",
                   output.bl_idname == "ShaderNodeOutputLight" and emission.bl_idname == "ShaderNodeEmission" and
@@ -535,5 +536,16 @@ def check_light_nodes():
             linked = [k.from_node for k in output.inputs["Surface"].links]
             check(label + ": an emptied tree gets both nodes back, linked", len(tree.nodes) == 2 and
                   linked == [emission] and emission.bl_idname == "ShaderNodeEmission", str(len(tree.nodes)))
+            emission.name, output.name = "Lamp", "Out"
+            active = tree.nodes.new("ShaderNodeOutputLight")
+            glow = tree.nodes.new("ShaderNodeEmission")
+            glow.name = "Glow"
+            tree.links.new(glow.outputs["Emission"], active.inputs["Surface"])
+            tree.nodes.new("ShaderNodeEmission").name = "Emission"
+            active.is_active_output = True
+            found = compat.light_nodes(light)
+            check(label + ": the active Light Output and the Emission linked into it, by type",
+                  output.is_active_output is False and found == (tree, glow, active) and len(tree.nodes) == 5,
+                  "%s %s %d" % (found[1].name, found[2].name, len(tree.nodes)))
         finally:
             bpy.data.lights.remove(light)
