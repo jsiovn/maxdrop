@@ -162,6 +162,14 @@ class Facing:
 
 
 @dataclasses.dataclass(frozen=True)
+class Checker:
+    """A Checker map's pattern, a float: 0 on the squares of its color 1, 1 on those of color 2 (checker_value), on
+    the UV its Mapping places; soften as stored (drawn as 0). A leaf: the Mix above it holds the two sides."""
+    mapping: Mapping = Mapping()
+    soften: float = 0.0
+
+
+@dataclasses.dataclass(frozen=True)
 class Remap:
     """A float input through a curve: points, (x, y) pairs with x ascending, joined by straight lines and flat past
     the ends (a Falloff's mix curve, curve_samples; flat is assumed, a Falloff's ratio stays within 0..1). Its result

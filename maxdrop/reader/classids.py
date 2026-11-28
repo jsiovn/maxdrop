@@ -144,6 +144,7 @@ VRAY_COLOR2BUMP = ClassId(0x31E15D1D, 0x7D7E2810)
 RGB_TINT = ClassId(0x00000224, 0)
 MIX = ClassId(0x00000230, 0)
 NOISE = ClassId(0x00000234, 0)
+CHECKER = ClassId(0x00000200, 0)  # the same pair as MULTI_SUB_MTL, under the texmap superclass
 COMPOSITE = ClassId(0x00000280, 0)
 RGB_MULTIPLY = ClassId(0x00000290, 0)
 OUTPUT_MAP = ClassId(0x000002B0, 0)  # the Output map (superclass Texmap), not a map's TexOutput part
@@ -292,6 +293,7 @@ CLASSES = {
     (SC_TEXMAP, RGB_TINT): "RGB Tint",
     (SC_TEXMAP, MIX): "Mix",
     (SC_TEXMAP, NOISE): "Noise",
+    (SC_TEXMAP, CHECKER): "Checker",
     (SC_TEXMAP, COMPOSITE): "Composite",
     (SC_TEXMAP, RGB_MULTIPLY): "RGB Multiply",
     (SC_TEXMAP, OUTPUT_MAP): "Output",

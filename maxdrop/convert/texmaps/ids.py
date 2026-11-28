@@ -45,6 +45,7 @@ MIX = classids.MIX
 RGB_MULTIPLY = classids.RGB_MULTIPLY
 COLOR_CORRECTION = classids.COLOR_CORRECTION
 COMPOSITE = classids.COMPOSITE
+CHECKER = classids.CHECKER
 NORMAL_BUMP = classids.NORMAL_BUMP
 CORONA_NORMAL = classids.CORONA_NORMAL
 IMAGES = (classids.BITMAP_TEX, classids.CORONA_BITMAP, classids.VRAY_BITMAP)  # map classes that are an image file
@@ -148,6 +149,8 @@ FALLOFF_TYPES = {0: TOWARDS, 1: PERPENDICULAR, 2: FRESNEL}
 CURVE_STEPS, CURVE_IDENTITY, MAX_CURVE_SAMPLES = 32, 1e-6, 256
 # Mix, block 0: 1 lower, 2 upper (Use Curve's transition zone, 3ds Max's defaults 0.3 and 0.7)
 MIX_LOWER, MIX_UPPER = 1, 2
+# Checker, block 0: 0 soften, 1 / 2 color1 / 2, 3 / 4 map1 / 2, 5 / 6 their switches, 7 coords (its UVGen, a part)
+CK_SOFTEN, CK_COLOR1, CK_COLOR2, CK_MAP1, CK_MAP2, CK_ON1, CK_ON2 = range(7)
 # Composite blend modes (blendMode, per layer); measured with renderMap: result = lerp(below, blend(below, layer),
 # opacity x mask). 7 linear burn, 15 soft light (Photoshop's), 17 pin light and 18 hard mix are not drawn: peeled
 (NORMAL_BLEND, AVERAGE, ADDITION, SUBTRACT, DARKEN, MULTIPLY_BLEND, COLOR_BURN, LINEAR_BURN, LIGHTEN, SCREEN,

@@ -85,7 +85,7 @@ found, Mapping, Crop, TexOutput, color space, gamma, alpha), Constant, Invert, D
 stored values, shown decoded), Mix(a, b, factor, mask), Multiply,
 Blend (an arithmetic operation, optionally in a gamma space),
 ColorCorrect (with its rewiring), Composite (CompositeLayers bottom first: node, opacity, blend mode, mask), Facing
-(a Falloff's ratio), Remap (a float through a polyline: a Falloff's mix curve), Smoothstep (a Mix's curve on its
+(a Falloff's ratio), Checker (a Checker's 0 / 1 pattern on its placement), Remap (a float through a polyline: a Falloff's mix curve), Smoothstep (a Mix's curve on its
 mask), Adjust (a wrapper's Output), Tint, NormalMap (an image, its strength, flips, the map channel of
 its tangents, an additional Bump) and Bump (a height input and its strength). A map reached by
 several paths is converted once per kind and depth, so a graph is a DAG of shared nodes; a graph larger than
@@ -135,6 +135,9 @@ files, the map angle kept, a height map in a bump slot a Bump node instead of dr
   be read is drawn linear, an issue); another type or direction is peeled to map 1, else color 1, counted, an
   issue), Output (its Output part as an Adjust) and RGB Tint (a Tint unless the identity). Measured in 3ds Max 2020
   (renderMap, a rendered sphere for the Falloff): see the constants below.
+- Checker -> Mix(side 1, side 2) by a Checker leaf on its UVGen's placement (maps_pattern: checker_value, the
+  formula the builder draws), exact, not counted; in a bump input the Bump of the pattern, in a normal map's normal
+  slot nothing (an issue). Its origin color, squares per tile and soften are not measured (maxdrop-o53.3.9).
 - Peeled to the first usable map below, an approximation counted by class: VRayDirt (the unoccluded map when on,
   else the unoccluded color), VRayColor2Bump (its map). An Output or RGB Tint without a map (or with it off) is
   drawn as over a white map, its own Output or tint applied; a VRayColor2Bump without a map (it has no switch) is
@@ -192,7 +195,7 @@ from .ids import (
     ChunkError, COLOR, DATA, MASK, NORMAL, BUMP, FLOATS, DATA_RGB, BUMP_RGB, _RGB_KINDS, _BASE_KINDS, STORED,
     STORED_RGB, _AS_STORED, SRGB, NON_COLOR, LINEAR, EXPLICIT, OBJECT_XYZ, VERTEX_COLOR, WORLD_XYZ, MAX_DEPTH,
     MAX_NODES, SRGB_GAMMA, GAMMA_TOLERANCE, SRGB_TWICE, FALLOFF, VRAY_DIRT, VRAY_COLOR2BUMP, OUTPUT, RGB_TINT, MIX,
-    RGB_MULTIPLY, COLOR_CORRECTION, COMPOSITE, NORMAL_BUMP, CORONA_NORMAL, IMAGES, _NormalIds, NORMAL_MAPS,
+    RGB_MULTIPLY, COLOR_CORRECTION, COMPOSITE, CHECKER, NORMAL_BUMP, CORONA_NORMAL, IMAGES, _NormalIds, NORMAL_MAPS,
     NORMAL_BUMP_METHOD, CORONA_ADD_GAMMA, CB_FILE, CB_CHANNEL, CB_SCALE, CB_OFFSET, CB_BLUR, CB_TILE_U, CB_TILE_V,
     CB_REAL_WORLD, CB_MONO, CB_RGB, CB_CLIP_ON, CB_CLIP_MODE, CB_CLIP_U, CB_CLIP_V, CB_CLIP_W, CB_CLIP_H, CB_GAMMA,
     CB_W_ANGLE, CB_NO_TILE, CB_MIRROR, VB_FILE, VB_MULT, VB_MAP_TYPE, VB_GAMMA, VB_RENDER_MULT, VB_CROP_ON,
@@ -208,7 +211,7 @@ from .ids import (
     BM_CLIP_U, BM_CLIP_V, BM_CLIP_W, BM_CLIP_H, BM_APPLY, BM_CROP_PLACE, BM_MONO, BM_RGB, BM_FILE, FO_COLOR1,
     FO_AMOUNT1, FO_MAP1, FO_ON1, FO_COLOR2, FO_AMOUNT2, FO_MAP2, FO_ON2, FO_TYPE, FO_DIRECTION, FO_IOR_OVERRIDE, FO_IOR,
     TOWARDS, PERPENDICULAR, FRESNEL, FALLOFF_TYPES, CURVE_STEPS, CURVE_IDENTITY, MAX_CURVE_SAMPLES, MIX_LOWER,
-    MIX_UPPER, NORMAL_BLEND, AVERAGE, ADDITION, SUBTRACT, DARKEN, MULTIPLY_BLEND, COLOR_BURN, LINEAR_BURN, LIGHTEN,
+    MIX_UPPER, CK_SOFTEN, CK_COLOR1, CK_COLOR2, CK_MAP1, CK_MAP2, CK_ON1, CK_ON2, NORMAL_BLEND, AVERAGE, ADDITION, SUBTRACT, DARKEN, MULTIPLY_BLEND, COLOR_BURN, LINEAR_BURN, LIGHTEN,
     SCREEN, COLOR_DODGE, LINEAR_DODGE, SPOTLIGHT, SPOTLIGHT_BLEND, OVERLAY, SOFT_LIGHT, HARD_LIGHT, PIN_LIGHT, HARD_MIX,
     DIFFERENCE, EXCLUSION, HUE, SATURATION, COLOR_BLEND, VALUE, BLENDS, CC_REWIRE_MODE, CC_REWIRE, REWIRE_NONE,
     REWIRE_INVERT, REWIRE_MONO, RW_ALPHA, RW_INV_ALPHA, RW_MONO, RW_ONE, RW_ZERO, TINT_RED, TINT_GREEN, TINT_BLUE,
@@ -217,7 +220,7 @@ from .ids import (
 )
 from .ir import (
     Mapping, Crop, TexOutput, Image, Constant, Invert, Decode, Mix, Multiply, Blend, ColorCorrect, CompositeLayer,
-    Composite, Facing, Remap, Smoothstep, Adjust, Tint, Bump, NormalMap, TextureGraphIR, TexmapStats, _Walk, _children,
+    Composite, Facing, Checker, Remap, Smoothstep, Adjust, Tint, Bump, NormalMap, TextureGraphIR, TexmapStats, _Walk, _children,
     _has_decode, tree_size, first_image,
 )
 from .values import (
@@ -235,5 +238,6 @@ from .maps_color import (
     _hex_rgb, _corona_color, _vray_color, _corona_layer, _corona_gamma_exponent, _cm_top, _cm_bottom, _gamma_layers,
     _corona_peel, _gamma_value, _corona_mix,
 )
+from .maps_pattern import BLACK, CHECKER_SQUARES, _rotation, placed_uv, checker_value, _pattern_mapping, _checker
 from .dispatch import _KEEP, _PEEL, SLOT_KINDS
 from .graphs import MEAN_ROW, _kept, _leveled, texture_graphs
