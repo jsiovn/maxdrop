@@ -8,6 +8,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). T
 
 ## [Unreleased]
 
+### Added
+
+- Maps: a Checker is drawn as nodes in every kind of slot (its two colors or maps mixed by the pattern on its
+  placement, the pattern as the height in a bump slot), instead of "no bitmap below"; the size of its squares,
+  which color is at the UV origin and soften are not measured against 3ds Max yet.
+
 ### Changed
 
 - Report: a material class MaxDrop has no rule for is named as the file's class directory names it (a Blend material

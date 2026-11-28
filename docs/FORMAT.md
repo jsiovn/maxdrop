@@ -2147,6 +2147,16 @@ The maps of texmap_rules (block 0 each; `convert/texmaps/`):
 | Composite `(0x280, 0)` | tables: 1 mapEnabled, 3 maskEnabled, 5 blendMode (0 normal, 1 average, 2 addition, 3 subtract, 4 darken, 5 multiply, 6 color burn, 7 linear burn, 8 lighten, 9 screen, 10 color dodge, 11 linear dodge, 12 spotlight, 13 spotlight blend, 14 overlay, 15 soft light, 16 hard light, 17 pin light, 18 hard mix, 19 difference, 20 exclusion, 21 hue, 22 saturation, 23 color, 24 value: measured with renderMap), 6 layerName, 8 opacity (%), 9 mapList, 10 mask; 0, 2 and 4 have no name and are empty tables, not saved. As a constructor keyword `name` is the layer names; assigned afterwards it is the map's name (texmap_wrappers names its three) |
 | Normal Bump `(0x243E22C6, 0x63F6A014)` | 0 mult_spin, 1 bump_spin, 2 normal_map, 3 bump_map, 4 / 5 their switches, 6 method (0 tangent), 7 flipred, 8 flipgreen, 9 swap_rg |
 | CoronaNormal `(0x2870CEAA, 0xCC18437C)` | 500 normalMap, 501 multiplier, 502 addGamma, 503 flipRed, 504 flipGreen, 505 swapRedGreen, 507 additionalBump, 508 additionalBumpStrength, 509 additionalBumpOn |
+| Checker `(0x200, 0)` (pblock_animated, standard_shaders, standard_maps, vray_more) | 0 soften, 1 color1, 2 color2, 3 map1, 4 map2, 5 / 6 map1Enabled / map2Enabled, 7 coords (its UVGen, a Placement part as a Bitmap's) |
+
+Checker (maxdrop-o53.1.4) is a Mix of its two sides (map k when set and on, else color k) by a pattern leaf: 0 or 1
+by the parity of floor(2x) + floor(2y), (x, y) the UV placed as a Bitmap's (tiled and turned about the tile center).
+Provisional, not measured until maxdrop-o53.3.9 has 3ds Max's samples: 2 squares per tile and axis, color 1 on the
+square at the placed origin, soften drawn as 0 (a soften above 0 is a line in the report). The pattern repeats
+whatever the UVGen's tile and mirror flags (a line when they are off / on). With the gamma off the sides keep the
+input's kind (a 0 / 1 mask picks one side: decoded before or after, the same). In a bump input the pattern itself
+(sides other than black and white a line), in a normal map's normal slot nothing (a line). The builder draws it with
+Math nodes (Mapping, Separate XYZ, FLOOR, ADD, WRAP to 0..2), which the Blender tests' node evaluator reads.
 
 Empty wrappers, measured (maxdrop-em3.76; 3ds Max 2020, gamma off, renderMap and V-Ray 5.2 renders with linear
 color mapping, a plane under an orthographic camera). An Output or RGB Tint with map1 unset or map1Enabled off renders
