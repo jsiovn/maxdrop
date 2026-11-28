@@ -2,12 +2,12 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""_Surface: the reflection weight, the mirror and the refraction twin of a Principled BSDF."""
+"""_Surface: the reflection weight, the mirror and the refraction twin of a Principled BSDF; its translucency."""
 import bpy
 
 from .sockets import (
-    _default, _in, _on, _out, MIRROR_INPUTS, MIRROR_LABEL, REFRACTION_LABEL, SPECULAR_LEVEL, TIR_FRESNEL, TIR_LABEL,
-    TWIN_LABEL, WEIGHT_LABEL, X_STEP, Y_STEP,
+    _default, _in, _mean, _on, _out, COLOR, MIRROR_INPUTS, MIRROR_LABEL, MISSING, REFRACTION_LABEL, SPECULAR_LEVEL,
+    TIR_FRESNEL, TIR_LABEL, TRANSLUCENCY_ALPHA_LABEL, TRANSLUCENCY_LABEL, TWIN_LABEL, WEIGHT_LABEL, X_STEP, Y_STEP,
 )
 
 
@@ -37,6 +37,52 @@ class _Surface:
         mirror = not ir.fresnel and (isinstance(w, bpy.types.NodeSocket) or ir.specular.map is None)
         _default(s, 0.0 if mirror else SPECULAR_LEVEL)
         return w, mirror
+
+    def translucent(self, top, ir, normal):
+        """top with a Translucent BSDF mixed in by the IR's translucency (a VRay2SidedMtl's share of the light arriving
+        on the other side, convert/materials/), a Mix Shader (TRANSLUCENCY_LABEL); top itself where the translucency
+        is 0 and no node drives it. The Translucent BSDF takes translucency_color and the Principled BSDF's normal
+        (normal: a node output, or None), and the same alpha: below 1 or linked, a Mix Shader
+        (TRANSLUCENCY_ALPHA_LABEL) from a Transparent BSDF to it by that alpha, so a leaf's cutout stays one."""
+        tex = ir.textures
+        graph = tex.get("translucency")
+        if graph is None and _mean(ir.translucency.value) <= 0.0:
+            return top
+        weight = self.float_value(ir.translucency, graph)
+        if not isinstance(weight, bpy.types.NodeSocket):
+            weight = min(1.0, max(0.0, weight))
+            if weight <= 0.0:
+                return top
+        self.start_row()
+        y = self.row - Y_STEP
+        self.columns[-1] = self.row - 2 * Y_STEP
+        x = self.bsdf.location[0]
+        node = self.nodes.new("ShaderNodeBsdfTranslucent")
+        node.location = (x, y)
+        color = self.graph(tex["translucency_color"].root, COLOR, 0) if "translucency_color" in tex else MISSING
+        self.feed(_in(node, "Color"), ir.translucency_color.value if color is MISSING else color)
+        if normal is not None:
+            self.links.new(normal, _in(node, "Normal"))
+        shader = _out(node, "BSDF")
+        alpha = self.bsdf.inputs.get("Alpha")
+        if alpha is not None and (alpha.is_linked or alpha.default_value < 1.0):
+            transparent = self.nodes.new("ShaderNodeBsdfTransparent")
+            transparent.location = (x, y - Y_STEP)
+            self.columns[-1] = y - 2 * Y_STEP
+            cut = self.nodes.new("ShaderNodeMixShader")
+            cut.label = TRANSLUCENCY_ALPHA_LABEL
+            cut.location = (x + X_STEP * 0.5, y)
+            self.feed(cut.inputs[0], alpha.links[0].from_socket if alpha.is_linked else alpha.default_value)
+            self.links.new(transparent.outputs[0], cut.inputs[1])
+            self.links.new(shader, cut.inputs[2])
+            shader = cut.outputs[0]
+        mix = self.nodes.new("ShaderNodeMixShader")
+        mix.label = TRANSLUCENCY_LABEL
+        mix.location = (x + X_STEP * 0.75, y + Y_STEP * 0.5)
+        self.feed(mix.inputs[0], weight)
+        self.links.new(top, mix.inputs[1])
+        self.links.new(shader, mix.inputs[2])
+        return mix.outputs[0]
 
     def constant_at_least(self, name, bound):
         s = self.bsdf.inputs.get(name)

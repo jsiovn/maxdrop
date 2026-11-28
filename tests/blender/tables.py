@@ -275,4 +275,6 @@ MIRROR_INPUTS = {"Metallic": 1.0, "Base Color": (1.0, 1.0, 1.0, 1.0), "Specular 
 REFRACTION_LABEL = "Refraction without reflection"  # refracting glass's twin (maxdrop-em3.135)
 TIR_LABEL = "Total internal reflection"  # the weight's mask where glass reflects totally (maxdrop-em3.135)
 COAT_WEIGHT_LABEL = "Coat weight"  # an added layer's Mix Shader from nothing by its weight (maxdrop-o53.1.6)
+TRANSLUCENCY_LABEL = "Translucency"  # the Translucent BSDF's Mix Shader by the translucency (maxdrop-o53.1.7)
+TRANSLUCENCY_ALPHA_LABEL = "Translucency alpha"  # its Mix Shader from a Transparent BSDF by the alpha (maxdrop-o53.1.7)
 DEG = math.pi / 180.0

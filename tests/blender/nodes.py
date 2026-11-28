@@ -9,7 +9,9 @@ import math
 import bpy
 
 from .core import _mirror_inputs, close
-from .tables import DEG, MIRROR_LABEL, TIR_LABEL, TWIN_LABEL, VALUE_TOLERANCE, WEIGHT_LABEL
+from .tables import (
+    DEG, MIRROR_LABEL, TIR_LABEL, TRANSLUCENCY_ALPHA_LABEL, TRANSLUCENCY_LABEL, TWIN_LABEL, VALUE_TOLERANCE, WEIGHT_LABEL,
+)
 
 
 def _irs(path):
@@ -35,9 +37,9 @@ def _bsdfs(material):
 
 
 def _shaders(material):
-    """The Mix Shaders of a material's layers (a reflection weight's and its twin's left out)."""
+    """The Mix Shaders of a material's layers (a reflection weight's and its twin's, a translucency's left out)."""
     return [n for n in material.node_tree.nodes if n.bl_idname == "ShaderNodeMixShader"
-            and n.label not in (WEIGHT_LABEL, TWIN_LABEL)]
+            and n.label not in (WEIGHT_LABEL, TWIN_LABEL, TRANSLUCENCY_LABEL, TRANSLUCENCY_ALPHA_LABEL)]
 
 
 def _principled(material):

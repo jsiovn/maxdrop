@@ -38,6 +38,7 @@ from .checks_failures import (
     check_light_note_on_failure, check_reader_defect, check_renderer_reaches_converters,
 )
 from .checks_layers import check_crease_open_edges, check_material_slots, check_shear
+from .checks_two_sided import check_builder_two_sided
 from .fixture import run_fixture
 
 
@@ -86,6 +87,7 @@ def main():
                                  ("builder debt", check_builder_debt), ("builder mirror", check_builder_mirror),
                                  ("builder blend", check_builder_blend), ("builder mono", check_builder_mono),
                                  ("builder added layers", check_builder_added_layers),
+                                 ("builder two-sided", check_builder_two_sided),
                                  ("builder blend modes", check_builder_blend_modes),
                                  ("builder gamma magnitude", check_builder_gamma_magnitude),
                                  ("builder multiply", check_builder_multiply),

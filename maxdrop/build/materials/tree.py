@@ -190,7 +190,8 @@ class _Tree(_Surface, _Textures, _MapNodes):
     def layered(self, bsdf, ir, alphas, level):
         """Fill bsdf from ir and mix (or add) ir's layers over it: the shader output on top. alphas gets (alpha linked,
         alpha value or None) of every IR filled. An added layer is a Mix Shader (COAT_WEIGHT_LABEL) by its weight from
-        nothing (its first shader unlinked: no closure) to the layer, into an Add Shader over what is below."""
+        nothing (its first shader unlinked: no closure) to the layer, into an Add Shader over what is below; a back
+        layer (Layer.mode BACK) a Mix Shader by Geometry > Backfacing from what is below to the layer."""
         below, alpha = self.fill(bsdf, ir)
         alphas.append(alpha)
         if not ir.layers or level >= MAX_LAYER_DEPTH:
@@ -204,10 +205,14 @@ class _Tree(_Surface, _Textures, _MapNodes):
             mix = self.nodes.new("ShaderNodeMixShader")
             mix.location = (X_STEP * 0.5, node.location[1])
             factor = MISSING
-            if layer.graph is not None:
+            if layer.graph is not None and layer.mode != cm.BACK:
                 self.start_row()
                 factor = self.graph(layer.graph.root, FLOAT, 1)
-            if isinstance(factor, bpy.types.NodeSocket):
+            if layer.mode == cm.BACK:  # shown on back faces instead of what is below
+                geometry = self.nodes.new("ShaderNodeNewGeometry")
+                geometry.location = (X_STEP * 0.25, node.location[1] + Y_STEP * 0.5)
+                self.links.new(_out(geometry, "Backfacing"), mix.inputs[0])
+            elif isinstance(factor, bpy.types.NodeSocket):
                 if layer.amount != 1.0:
                     factor = self.times(factor, layer.amount, 0)
                     factor.node.use_clamp = True
@@ -233,7 +238,8 @@ class _Tree(_Surface, _Textures, _MapNodes):
 
     def fill(self, bsdf, ir):
         """Set a Principled BSDF's inputs from a MaterialIR: (the shader output, (alpha linked, the constant alpha
-        or None)); the output is bsdf's, or a Mix Shader's over a twin of it (reflection_weight)."""
+        or None)); the output is bsdf's, or a Mix Shader's over a twin of it (reflection_weight), a Translucent BSDF
+        mixed in by the translucency (translucent)."""
         self.bsdf, tex = bsdf, ir.textures
         self.color_input("Base Color", ir.base_color, tex.get("base_color"))
         self.float_input("Metallic", ir.metallic, tex.get("metallic"))
@@ -268,6 +274,7 @@ class _Tree(_Surface, _Textures, _MapNodes):
             self.value("Thin Wall", True)
         alpha = self.bsdf_input("Alpha", needed=False)
         top = _out(bsdf, "BSDF") if weight is None else self.reflection_weight(bsdf, *weight, color=ir.mirror_color)
+        top = self.translucent(top, ir, out)
         return top, (alpha_map, (None if alpha is None or alpha_map else alpha.default_value))
 
     def graph(self, node, space, depth):

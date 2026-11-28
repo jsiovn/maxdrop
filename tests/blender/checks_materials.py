@@ -6,7 +6,9 @@
 import bpy
 
 from .core import _mirror_inputs, check, close
-from .tables import COAT_WEIGHT_LABEL, MIRROR_LABEL, REFRACTION_LABEL, SPECULAR_LEVEL, TIR_LABEL, TWIN_LABEL
+from .tables import (
+    COAT_WEIGHT_LABEL, MIRROR_LABEL, REFRACTION_LABEL, SPECULAR_LEVEL, TIR_LABEL, TRANSLUCENCY_LABEL, TWIN_LABEL,
+)
 from .nodes import (
     _alpha_of, _bsdfs, _color_into_float, _constant_one, _fold, _from, _images_of, _layers_of, _mean, _medium_of,
     _normal_linked, _on, _refracting, _same_inputs, _same_source, _shaders, _thin, _value_ok, _weight_factor,
@@ -205,6 +207,32 @@ def check_principled(label, material, ir, present=False):
     check(label + ": no color output linked into a float input (a data map is the mean of its channels)",
           mixed == [], str(mixed))
     check_medium(label, material, ir)
+    check_translucency(label, material, [ir] + [layer.ir for layer in layers], present)
+
+
+def check_translucency(label, material, irs, present):
+    """A Translucent BSDF under a Mix Shader (TRANSLUCENCY_LABEL) for each of irs (the material's and its layers'
+    IRs) whose translucency is above 0 or driven by a node: the factor linked when a node drives it, else the
+    translucency (the graph's constant, or the IR's value when its images are missing)."""
+    want, linked = [], 0
+    for ir in irs:
+        graph = ir.textures.get("translucency")
+        folded = _fold(graph.root, present) if graph is not None else LOST
+        if folded is MAP:
+            linked += 1
+            continue
+        weight = min(1.0, max(0.0, _mean(ir.translucency.value if folded is LOST else folded)))
+        if weight > 0.0:
+            want.append(round(weight, 5))
+    nodes = material.node_tree.nodes
+    mixes = [n for n in nodes if n.bl_idname == "ShaderNodeMixShader" and n.label == TRANSLUCENCY_LABEL]
+    translucent = [n for n in nodes if n.bl_idname == "ShaderNodeBsdfTranslucent"]
+    check(label + ": a Translucent BSDF under a Mix Shader per translucency", len(mixes) == len(translucent)
+          == len(want) + linked, "%d Mix, %d Translucent for %d" % (len(mixes), len(translucent), len(want) + linked))
+    got = sorted(round(m.inputs[0].default_value, 5) for m in mixes if not m.inputs[0].is_linked)
+    check(label + ": the translucency on its Mix Shader's factor, linked where a node drives it",
+          got == sorted(want) and sum(1 for m in mixes if m.inputs[0].is_linked) == linked,
+          "%s vs %s, %d linked" % (got, sorted(want), linked))
 
 
 def check_medium(label, material, ir):
@@ -243,8 +271,11 @@ def check_layers(label, material, layers, present=False):
     surface = out.inputs["Surface"]
     check(label + ": the top Mix Shader (Add Shader for an added layer) is the surface",
           surface.is_linked and surface.links[0].from_node in mixes + adds)
-    plain = []
+    plain, backs = [], []
     for layer in layers:
+        if getattr(layer, "mode", "mix") == "back":  # its factor: Geometry > Backfacing
+            backs.append(layer)
+            continue
         folded = _fold(layer.graph.root, present) if layer.graph is not None else LOST
         fallback = getattr(layer, "fallback", None)
         if folded is LOST and layer.graph is not None and fallback is not None:  # its map lost: the fallback weight
@@ -256,3 +287,7 @@ def check_layers(label, material, layers, present=False):
     linked = sum(1 for m in mixes if m.inputs[0].is_linked)
     check(label + ": the layers' amounts, masks linked", got == plain and linked == len(layers) - len(plain),
           "%s vs %s, %d linked" % (got, plain, linked))
+    facing = [m for m in mixes if m.inputs[0].is_linked and _from(m.inputs[0]).bl_idname == "ShaderNodeNewGeometry"
+              and m.inputs[0].links[0].from_socket.identifier == "Backfacing"]
+    check(label + ": a back layer's Mix Shader driven by Geometry > Backfacing", len(facing) == len(backs),
+          "%d for %d" % (len(facing), len(backs)))
