@@ -1402,6 +1402,99 @@ number out of range or out of order, are not read (a line in the report).
 3ds Max: Blender blends in cosine space (full intensity where cos θ ≥ cos(size / 2) + (1 − cos(size / 2)) · blend),
 so blend = (cos(hotspot / 2) − cos(falloff / 2)) / (1 − cos(falloff / 2)), 0.636 for 30° in 50°.
 
+**Photometric web, measured** (maxdrop-o53.2.7; 3dsmaxbatch, 3ds Max 2020 + V-Ray 5.2). One self-authored LM-63 file
+without symmetry through a Free Light of distribution 3 (photometric web) and through a VRayIES. The file, type C, is
+written from
+
+    I(θ, φ) = 400 · max(0, cos θ) · (1 + sin θ · cos(φ − 30°))² · (1 + 0.5 · sin θ · cos(2 · (φ − 75°)))  cd
+
+θ the vertical angle (0 at the nadir), φ the horizontal one: 400 cd at the nadir, nothing above the horizontal, its
+largest value 960.46 cd at θ 45°, φ 60°; at θ 26.57° (the four side points below) 555.22, 639.39, 108.30 and 257.42
+cd at φ 0, 90, 180 and 270°. The first factor alone is mirror-symmetric about φ 30°, so a mirrored azimuth looks like
+a turned one; the second factor breaks that. Grid: vertical angles 0 to 180 in steps of 5° (37), horizontal 0 to 360
+in steps of 15° (25; 0 and 360 the same plane). The file, byte for byte (ASCII, every line ended by CR LF, the last
+included; numbers one space apart):
+
+    IESNA:LM-63-2002
+    [TEST] MaxDrop asymmetric reference
+    TILT=NONE
+    1 1000 1 37 25 1 2 0 0 0
+    1 1 0
+    <the 37 vertical angles, each written as %g>
+    <the 25 horizontal angles, each written as %g>
+    <25 lines, one per horizontal angle in order: its 37 candelas from θ 0 to 180, each written as %.2f>
+
+That is 5718 bytes, SHA-256 `b4e79c77de5d2bf4929587610ff075ad5f7e15313133dd5efda6abc4759a8890`; `convert/ies.py`
+reads it (rated 1000 lm, flux 1569.0 lm). The variants below change one header field: candela multiplier 2 (line 4:
+`1 1000 2 ...`), rated 500 lm (`1 500 1 ...`), ballast factor 0.5 (line 5: `0.5 1 0`).
+
+Setup: the calibration floor of "Power, measured" in millimeters (a VRayIES's shadow bias of 0.2 world units moves
+the shaded point in meters, "VRayIES header, measured"): a white VRayMtl floor 20 m square, the light 1 m above it
+with its node rotation identity (its local axes are the world's), V-Ray linear color mapping, gamma 1, clamp output
+off, no GI, no default lights, 3ds Max's gamma off; a Freecamera of identity rotation 0.9 m above the floor looking
+down, FOV 90°, a 360 × 360 float bitmap: 5 mm per pixel, image right +X and up +Y (self-lit markers at +X 600 mm and
++Y 300 mm land on column 300 and on row 119.5, the center being 179.5); the mean of the 4 × 4 pixels centered on each floor point. The pixel is
+the illuminance in lx / 1500: an isotropic Free Light of 1000 cd renders 0.6666 below it and 0.4770 at 0.5 m (1000 ·
+cos θ / r² / 1500). The candela a point sees is pixel · 1500 · r² / cos θ: r² 1.25 m² and cos θ 0.8944 at the side
+points. The five points (0.5 m toward the light's local +X, −X, +Y and −Y):
+
+| Light | Below | +X | −X | +Y | −Y |
+|---|---|---|---|---|---|
+| the file's candelas at φ 0 → +X, 90 → +Y (formula) | 0.2667 | 0.2649 | 0.0517 | 0.3050 | 0.1228 |
+| VRayIES, power 1000 lm (= rated: the file's candelas) | 0.2666 | 0.2649 | 0.0517 | 0.3053 | 0.1228 |
+| web, intensity 960.46 cd (what loading the file sets) | 0.2666 | 0.2648 | 0.0517 | 0.1229 | 0.3050 |
+| web, 1000 cd | 0.2776 | 0.2757 | 0.0538 | 0.1279 | 0.3175 |
+| web, 2000 cd | 0.5552 | 0.5515 | 0.1076 | 0.2557 | 0.6350 |
+| web, 1000 cd, multiplier 2 / rated 500 / ballast 0.5 | 0.2776 | 0.2757 | 0.0538 | 0.1279 | 0.3175 |
+| web, ballast 0.5, 480.23 cd (what loading it sets) | 0.1333 | 0.1324 | 0.0258 | 0.0614 | 0.1525 |
+
+The web rotation (block 3, parameters 1, 2, 3: X, Y, Z in degrees), the web light at 960.46 cd; the error is the
+largest difference over nine points (the five and the four at ±0.5 m, ±0.5 m) over the row's brightest; "rule" is
+the rule below on the formula, "linear" the same on the file's candelas interpolated linearly in angle, "other" the
+best of every other assignment of a turn about local ±X, ±Y or ±Z to each non-zero parameter in any order, "order"
+the rule's turns in another order:
+
+| X, Y, Z | Below | +X | −X | +Y | −Y | Rule | Linear | Other | Order |
+|---|---|---|---|---|---|---|---|---|---|
+| 30, 0, 0 | 0.1580 | 0.1685 | 0.0259 | 0.0487 | 0.1841 | 0.11 % | 0.44 % | 53.6 % | |
+| −30, 0, 0 | 0.4389 | 0.4441 | 0.0870 | 0.2065 | 0.2875 | 0.17 % | 0.53 % | 38.8 % | |
+| 90, 0, 0 | 0.0002 | 0.0002 | 0.0000 | 0.0000 | 0.0362 | 0.43 % | 0.88 % | 84.8 % | |
+| 0, 30, 0 | 0.3717 | 0.1992 | 0.2047 | 0.1685 | 0.4442 | 0.14 % | 0.40 % | 27.4 % | |
+| 0, 0, 60 | 0.2665 | 0.3920 | 0.0765 | 0.2061 | 0.0830 | 0.04 % | 0.12 % | 35.9 % | |
+| 0, 0, 90 | 0.2665 | 0.3049 | 0.1227 | 0.2650 | 0.0517 | 0.06 % | 0.19 % | 91.9 % | |
+| 45, 45, 0 | 0.1428 | 0.0305 | 0.1105 | 0.0281 | 0.1694 | 0.17 % | 0.80 % | 34.3 % | 52.0 % |
+| 30, 0, 60 | 0.2827 | 0.3228 | 0.1197 | 0.1349 | 0.1965 | 0.08 % | 0.87 % | 20.9 % | 55.7 % |
+| 0, 30, 60 | 0.5766 | 0.4247 | 0.2150 | 0.3229 | 0.2319 | 0.21 % | 0.26 % | 23.9 % | 35.6 % |
+| 30, 45, 60 | 0.4528 | 0.1791 | 0.2581 | 0.1301 | 0.4612 | 0.11 % | 1.28 % | 9.4 % | 20.5 % |
+| 30, 45, 60 at 1000 cd, saved, reset and loaded | 0.4714 | 0.1865 | 0.2687 | 0.1355 | 0.4802 | 0.11 % | 1.28 % | 9.4 % | 20.5 % |
+
+The rules, d a direction from the light in its local frame (it shines along local −Z), R_x, R_y, R_z right-handed
+turns of a column vector:
+
+- **Azimuth.** A web light reads the file at θ = acos(−u_z), φ = atan2(−u_y, u_x), u = d without a web rotation: φ 0
+  toward local +X, 90 toward local −Y (clockwise seen from above). Proved by the web rows of the five-point table:
+  +Y sees φ 270 and −Y φ 90, the mirror of the VRayIES. A VRayIES reads φ = atan2(u_y, u_x) (90 toward +Y); its own
+  `rotation_Z` of 90 turns the profile 90° about local +Z (0.04 %); its `rotation_X` / `rotation_Y` are not measured.
+- **Rotation.** With the web rotation a, b, c: u = R_z(−c) · R_y(−b) · R_x(a) · d. The profile is turned by
+  R_x(−a) · R_y(b) · R_z(c) about the light's local axes: Z first, then Y, then X, X with the opposite sign. In the
+  file's own frame (x local +X, y local −Y, z local −Z; θ from +z, φ from +x toward +y) that is u_f = R_z(c) · R_y(b)
+  · R_x(a) · d_f: X first, then Y, then Z, all positive. Proved by the one-parameter rows (axis and sign: every other
+  axis misses by 27 % or more; the node turned +30° about its X renders as web X −30, 0.17 %) and the 30, 45, 60 row
+  (the order: 20.5 % for the next). The node's own rotation comes on top: a node turned 90° about Z with web X 30
+  renders within 0.10 % of the rule in the light's frame, 139 % off with X taken about the world's axis.
+- **Intensity.** The web light's intensity (block 0, parameter 6, cd) is the file's largest candela: the file is
+  scaled by intensity / (its largest table value × candela multiplier × ballast factor), the peak 960.46 here.
+  Loading a file sets the intensity to that peak (960.46; with multiplier 2 1920.92; with ballast 0.5 480.23), so as
+  loaded it renders its own candelas. At a given intensity the candela multiplier, the rated lumens and the ballast
+  factor change nothing (the 1000 cd rows are equal to 7 digits); 2000 cd renders twice 1000 (1.9990 to 2.0004 over the nine points). Scaled so
+  that the nadir were the intensity, 1000 cd would miss by 140 %. The dimmer is not measured here. Saved, reset and
+  loaded, the scene renders the same pixels (within 2 · 10⁻⁵): the stored intensity and rotation carry it (3ds Max also
+  stores the peak as `originalIntensity`; MaxDrop takes it from the file).
+
+The web light renders within 0.43 % of the formula in every row, closer than the file's candelas interpolated linearly
+in angle (up to 1.28 %): between the grid angles it interpolates more smoothly than linearly (not ruled here). The
+VRayIES unrotated: 0.07 % from the formula.
+
 ## Cameras
 
 `convert/cameras.py`, 3ds Max 2020 + V-Ray 5.2; ids read through the SDK's .NET wrapper and by changing one setting at
